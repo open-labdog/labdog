@@ -1,0 +1,10 @@
+pyproject.toml
+app/__init__.py
+app/config.py
+app/db.py
+app/main.py
+barricade_backend.egg-info/PKG-INFO
+barricade_backend.egg-info/SOURCES.txt
+barricade_backend.egg-info/dependency_links.txt
+barricade_backend.egg-info/requires.txt
+barricade_backend.egg-info/top_level.txt
