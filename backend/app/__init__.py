@@ -1,0 +1,1 @@
+"""Barricade FastAPI backend application."""
