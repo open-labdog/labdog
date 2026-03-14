@@ -1,9 +1,41 @@
 from fastapi import FastAPI
-from app.config import settings
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.auth.schemas import UserCreate, UserRead, UserUpdate
+from app.auth.users import auth_backend, fastapi_users
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Barricade", version="0.1.0")
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Auth routes: POST /auth/jwt/login, POST /auth/jwt/logout
+    app.include_router(
+        fastapi_users.get_auth_router(auth_backend),
+        prefix="/auth/jwt",
+        tags=["auth"],
+    )
+
+    # Register route: POST /auth/register
+    app.include_router(
+        fastapi_users.get_register_router(UserRead, UserCreate),
+        prefix="/auth",
+        tags=["auth"],
+    )
+
+    # User routes: GET /users/me, PATCH /users/me, GET /users/{id}, etc.
+    app.include_router(
+        fastapi_users.get_users_router(UserRead, UserUpdate),
+        prefix="/users",
+        tags=["users"],
+    )
 
     @app.get("/health")
     async def health():
