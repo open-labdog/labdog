@@ -1,0 +1,79 @@
+"use client"
+
+import Link from "next/link"
+import { useQuery } from "@tanstack/react-query"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import { apiFetch } from "@/lib/api"
+import type { HostGroup } from "@/lib/types"
+
+export default function GroupsPage() {
+  const { data: groups, isLoading, error } = useQuery<HostGroup[]>({
+    queryKey: ["groups"],
+    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
+  })
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Groups</h1>
+          <p className="text-slate-400 text-sm mt-1">Manage host groups for firewall rule organization</p>
+        </div>
+        <Link href="/groups/new" className={cn(buttonVariants())}>New Group</Link>
+      </div>
+
+      {isLoading && (
+        <div className="text-slate-400 py-8 text-center">Loading groups...</div>
+      )}
+
+      {error && (
+        <div className="text-red-400 py-8 text-center">Failed to load groups</div>
+      )}
+
+      {!isLoading && !error && groups && groups.length === 0 && (
+        <div className="text-slate-400 py-8 text-center">
+          No groups yet.{" "}
+          <Link href="/groups/new" className="underline hover:text-white">
+            Create your first group
+          </Link>
+        </div>
+      )}
+
+      {!isLoading && !error && groups && groups.length > 0 && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-700">
+                <TableHead>Name</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.map((group) => (
+                <TableRow key={group.id} className="border-slate-700">
+                  <TableCell className="font-medium text-white">{group.name}</TableCell>
+                  <TableCell>{group.priority}</TableCell>
+                  <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
+                  <TableCell>
+                    <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  )
+}
