@@ -16,3 +16,20 @@ export interface SSHKey {
   id: number; name: string; public_key: string | null
   is_default: boolean; created_at: string
 }
+
+export interface FirewallRule {
+  id: number
+  group_id: number
+  action: string
+  protocol: string
+  direction: string
+  source_cidr: string | null
+  destination_cidr: string | null
+  port_start: number | null
+  port_end: number | null
+  comment: string | null
+  priority: number
+  is_system: boolean
+  created_at: string
+  updated_at: string
+}
