@@ -1,0 +1,129 @@
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timezone
+from app.db import get_db
+from app.models.host import Host, HostGroupMembership
+from app.models.host_group import HostGroup
+from app.models.firewall_rule import FirewallRule
+from app.models.user import User
+from app.auth.users import current_active_user
+from app.auth.rbac import get_user_accessible_group_ids
+from app.drift.detector import check_drift
+from app.rules.model import FirewallRuleSpec
+from app.rules.merge import merge_group_rules
+
+router = APIRouter(prefix="/drift", tags=["drift"])
+
+
+class DriftResponse(BaseModel):
+    host_id: int
+    status: str
+    has_changes: bool
+    add_count: int
+    remove_count: int
+    error_message: str | None = None
+    checked_at: str
+
+
+class DriftSettingsUpdate(BaseModel):
+    drift_check_enabled: bool
+
+
+async def _get_desired_rules_for_host(host_id: int, db: AsyncSession) -> list[FirewallRuleSpec]:
+    memberships = await db.execute(
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
+    )
+    group_ids = [r[0] for r in memberships.all()]
+    if not group_ids:
+        return []
+    groups_data = []
+    for gid in group_ids:
+        g = await db.execute(select(HostGroup).where(HostGroup.id == gid))
+        group = g.scalar_one()
+        r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
+        rules = [
+            FirewallRuleSpec(
+                action=rule.action.value if hasattr(rule.action, 'value') else rule.action,
+                protocol=rule.protocol.value if hasattr(rule.protocol, 'value') else rule.protocol,
+                direction=rule.direction.value if hasattr(rule.direction, 'value') else rule.direction,
+                source_cidr=rule.source_cidr, destination_cidr=rule.destination_cidr,
+                port_start=rule.port_start, port_end=rule.port_end,
+                comment=rule.comment, is_system=rule.is_system, priority=rule.priority,
+            )
+            for rule in r.scalars().all()
+        ]
+        groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
+    return merge_group_rules(groups_data)
+
+
+@router.post("/hosts/{host_id}/check", response_model=DriftResponse)
+async def check_host_drift(
+    host_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    desired = await _get_desired_rules_for_host(host_id, db)
+    result = await check_drift(host_id, desired)
+    host.sync_status = result.status
+    host.last_drift_check_at = datetime.now(timezone.utc)
+    await db.commit()
+    return DriftResponse(
+        host_id=host_id, status=result.status,
+        has_changes=result.diff.has_changes if result.diff else False,
+        add_count=len(result.diff.rules_to_add) if result.diff else 0,
+        remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
+        error_message=result.error_message,
+        checked_at=result.checked_at.isoformat(),
+    )
+
+
+@router.post("/groups/{group_id}/check", response_model=list[DriftResponse])
+async def check_group_drift(
+    group_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    memberships = await db.execute(
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
+    )
+    host_ids = [r[0] for r in memberships.all()]
+    results = []
+    for hid in host_ids:
+        host_result = await db.execute(select(Host).where(Host.id == hid))
+        host = host_result.scalar_one()
+        desired = await _get_desired_rules_for_host(hid, db)
+        result = await check_drift(hid, desired)
+        host.sync_status = result.status
+        host.last_drift_check_at = datetime.now(timezone.utc)
+        results.append(DriftResponse(
+            host_id=hid, status=result.status,
+            has_changes=result.diff.has_changes if result.diff else False,
+            add_count=len(result.diff.rules_to_add) if result.diff else 0,
+            remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
+            error_message=result.error_message,
+            checked_at=result.checked_at.isoformat(),
+        ))
+    await db.commit()
+    return results
+
+
+@router.put("/hosts/{host_id}/settings")
+async def update_drift_settings(
+    host_id: int,
+    body: DriftSettingsUpdate,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    host.drift_check_enabled = body.drift_check_enabled
+    await db.commit()
+    return {"drift_check_enabled": host.drift_check_enabled}
