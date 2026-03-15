@@ -1,6 +1,9 @@
 {
-  "active_plan": "C:\\Users\\Logan\\Documents\\Code\\barricade\\.sisyphus\\plans\\barricade.md",
-  "started_at": "2026-03-15T16:00:00.000Z",
-  "session_ids": ["ses_30dd17b2cffeypsnZEtSmjFBRW"],
-  "plan_name": "barricade"
+  "active_plan": "/home/dennis/priv/barricade/.sisyphus/plans/barricade.md",
+  "started_at": "2026-03-15T20:07:49.382Z",
+  "session_ids": [
+    "ses_30ce350c5ffexsJIZfkC78R46i"
+  ],
+  "plan_name": "barricade",
+  "agent": "atlas"
 }

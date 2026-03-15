@@ -9,7 +9,9 @@ from app.models.user import User
 from app.auth.users import current_active_user
 from app.auth.rbac import require_group_role, get_user_accessible_group_ids
 from app.models.user_group_permission import GroupRole
-from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder
+from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse
+from app.rules.model import FirewallRuleSpec
+from app.rules.merge import merge_group_rules
 
 router = APIRouter(tags=["rules"])
 
@@ -118,13 +120,13 @@ async def delete_rule(
     await db.commit()
 
 
-@router.get("/hosts/{host_id}/effective-rules", response_model=list[RuleResponse])
+@router.get("/hosts/{host_id}/effective-rules", response_model=list[EffectiveRuleResponse])
 async def get_effective_rules(
     host_id: int,
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get merged ruleset for a host (all groups, priority-merged)."""
+    """Get merged ruleset for a host (all groups, priority-merged, with SSH lockout rule)."""
     # Check host access — superuser bypasses, others need at least one matching group
     accessible = await get_user_accessible_group_ids(user, db)
     if accessible is not None:
@@ -144,30 +146,71 @@ async def get_effective_rules(
     group_ids = [r[0] for r in memberships_all.all()]
 
     if not group_ids:
-        return []
-
-    # Get all rules from all groups, ordered by group priority then rule priority
-    rules_result = await db.execute(
-        select(FirewallRule, HostGroup.priority.label("group_priority"))
-        .join(HostGroup, FirewallRule.group_id == HostGroup.id)
-        .where(FirewallRule.group_id.in_(group_ids))
-        .order_by(HostGroup.priority.desc(), FirewallRule.priority.desc())
-    )
-
-    # Deduplicate by signature (higher group priority wins — first seen wins)
-    seen: set[tuple] = set()
-    merged = []
-    for rule, _ in rules_result.all():
-        sig = (
-            rule.protocol,
-            rule.direction,
-            rule.port_start,
-            rule.port_end,
-            rule.source_cidr,
-            rule.destination_cidr,
+        # Return just the SSH lockout rule even if no groups
+        ssh_rule = FirewallRuleSpec(
+            action="allow",
+            protocol="tcp",
+            direction="input",
+            source_cidr=None,  # Will be set by merge_group_rules
+            port_start=22,
+            comment="Barricade server SSH access — auto-injected, do not remove",
+            is_system=True,
+            priority=999999,
         )
-        if sig not in seen:
-            seen.add(sig)
-            merged.append(rule)
+        return [EffectiveRuleResponse(
+            action=ssh_rule.action,
+            protocol=ssh_rule.protocol,
+            direction=ssh_rule.direction,
+            source_cidr=ssh_rule.source_cidr,
+            destination_cidr=ssh_rule.destination_cidr,
+            port_start=ssh_rule.port_start,
+            port_end=ssh_rule.port_end,
+            comment=ssh_rule.comment,
+            priority=ssh_rule.priority,
+            is_system=ssh_rule.is_system,
+        )]
 
-    return merged
+    # Build groups_data with FirewallRuleSpec objects (same pattern as sync.py)
+    groups_data = []
+    for gid in group_ids:
+        group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
+        group = group_result.scalar_one()
+        rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
+        rules = [
+            FirewallRuleSpec(
+                action=r.action.value if hasattr(r.action, "value") else r.action,
+                protocol=r.protocol.value if hasattr(r.protocol, "value") else r.protocol,
+                direction=r.direction.value if hasattr(r.direction, "value") else r.direction,
+                source_cidr=r.source_cidr,
+                destination_cidr=r.destination_cidr,
+                port_start=r.port_start,
+                port_end=r.port_end,
+                comment=r.comment,
+                is_system=r.is_system,
+                priority=r.priority,
+                group_id=r.group_id,
+                rule_id=r.id,
+            )
+            for r in rules_result.scalars().all()
+        ]
+        groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
+
+    # Call merge_group_rules to get merged rules WITH SSH lockout rule
+    merged_specs = merge_group_rules(groups_data)
+
+    # Convert FirewallRuleSpec objects to EffectiveRuleResponse
+    return [
+        EffectiveRuleResponse(
+            action=spec.action,
+            protocol=spec.protocol,
+            direction=spec.direction,
+            source_cidr=spec.source_cidr,
+            destination_cidr=spec.destination_cidr,
+            port_start=spec.port_start,
+            port_end=spec.port_end,
+            comment=spec.comment,
+            priority=spec.priority,
+            is_system=spec.is_system,
+        )
+        for spec in merged_specs
+    ]

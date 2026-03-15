@@ -5,7 +5,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -50,7 +50,7 @@ export default function RegisterPage() {
   return (
     <Card>
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
+        <h2 className="text-2xl font-bold text-center text-base leading-snug">Create Account</h2>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">

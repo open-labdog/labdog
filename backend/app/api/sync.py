@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -174,12 +175,12 @@ class SyncJobResponse(BaseModel):
     host_id: int
     group_id: int | None
     status: str
-    started_at: str | None
-    completed_at: str | None
+    started_at: datetime | None
+    completed_at: datetime | None
     ansible_output: str | None
     error_message: str | None
     triggered_by_user_id: int | None
-    created_at: str
+    created_at: datetime
     model_config = {"from_attributes": True}
 
 

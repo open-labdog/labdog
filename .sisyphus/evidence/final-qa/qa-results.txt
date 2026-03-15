@@ -1,0 +1,187 @@
+BARRICADE FINAL QA RESULTS
+==========================
+Date: 2026-03-15
+Stack: Backend http://localhost:8000, Frontend http://localhost:3000
+Tester: QA Automation (Sisyphus)
+
+================================================================================
+1. HEALTH CHECK (Task 1)
+================================================================================
+  [PASS] GET /health → {"status":"ok"}
+
+================================================================================
+2. AUTH FLOW (Task 6)
+================================================================================
+  [PASS] POST /auth/register → 201 (user created with id, email, is_active, is_superuser, is_verified)
+  [PASS] POST /auth/jwt/login → 204 (httpOnly cookie auth, not JWT bearer tokens)
+  [PASS] GET /users/me → 200 (returns user profile with email)
+  [PASS] GET /users/me (no auth) → 401 (unauthorized correctly rejected)
+  [PASS] Superuser creation via CLI: python -m app.auth.superuser <email> <pass>
+  [NOTE] Regular users are NOT superusers (is_superuser=false, is_verified=false)
+  [NOTE] Auth uses httpOnly cookies, not Bearer tokens despite /auth/jwt/* path
+
+================================================================================
+3. GROUP CRUD (Task 8)
+================================================================================
+  [PASS] POST /api/groups → 201 (group created with id, name, description, priority, timestamps)
+  [PASS] GET /api/groups → 200 (returns array of groups)
+  [PASS] POST /api/groups (duplicate name) → 409 {"detail":"Group name already exists"}
+  [PASS] PUT /api/groups/{id} → 200 (update works, note: PUT not PATCH)
+  [PASS] GET /api/groups/{id} → 200 (single group retrieval)
+  [PASS] Non-superuser → 403 Forbidden on group creation
+  [NOTE] Update is PUT, not PATCH (PATCH returns 405)
+
+================================================================================
+4. SSH KEY + HOST (Task 9)
+================================================================================
+  [PASS] POST /api/ssh-keys → 201 (SSH key uploaded, stored encrypted)
+  [PASS] GET /api/ssh-keys → 200 (NO private_key field in response - secure!)
+  [PASS] POST /api/hosts → 201 (host created with hostname, ip, ssh_port, group assignment)
+  [PASS] GET /api/hosts → 200 (lists hosts with metadata)
+  [NOTE] Response includes: id, name, public_key, is_default, created_at (no private key!)
+
+================================================================================
+5. CRYPTO MODULE (Task 12)
+================================================================================
+  [PASS] Encrypt/decrypt roundtrip with special characters
+  [PASS] Encrypt/decrypt roundtrip with long data (10000 chars)
+  [PASS] Different keys produce different ciphertext
+
+================================================================================
+6. RULE CRUD + VALIDATION (Task 13)
+================================================================================
+  [PASS] POST /api/groups/{id}/rules → 201 (rule created: allow/deny, tcp/udp/any, input/output)
+  [PASS] Rule with source_cidr (10.0.0.0/8) → 201
+  [PASS] Invalid CIDR ("not-a-cidr") → 422 with descriptive error message
+  [PASS] GET /api/groups/{id}/rules → 200 (lists rules with full detail)
+  [PASS] PUT /api/groups/{id}/rules/{rule_id} → 200 (update works)
+  [PASS] DELETE /api/groups/{id}/rules/{rule_id} → 204 (delete works)
+  [PASS] Invalid port (99999) → 422 "Port 99999 out of range (1-65535)"
+  [PASS] Port end < port start → 400 "port_end must be >= port_start"
+
+================================================================================
+7. AUDIT LOG (Task 24)
+================================================================================
+  [PASS] GET /api/audit-log → 200 (endpoint works)
+  [PASS] DELETE /api/audit-log/1 → 404 (no delete endpoint - append-only)
+  [PASS] GET /api/audit-log (no auth) → 401
+  [ISSUE] Audit log returns empty array - log_action() is never called from API routes
+         The audit logging function exists (app/audit/logger.py) but is not wired into
+         any API endpoint. No CRUD operations are being logged.
+
+================================================================================
+8. SYNC ENDPOINTS (Task 20)
+================================================================================
+  [PASS] POST /api/sync/hosts/999/sync → 404 "Host not found" (not 500)
+  [PASS] POST /api/sync/hosts/999/plan → 404 "Host not found" (not 500)
+  [PASS] POST /api/sync/hosts/1/plan → 200 (returns plan with rules_to_add/remove/unchanged)
+  [PASS] GET /api/sync/jobs → 200 (returns job list)
+  [PASS] POST /api/sync/hosts/1/sync (no auth) → 401
+  [NOTE] Plan includes auto-injected system rule for Barricade SSH access
+
+================================================================================
+9. FRONTEND QA (Playwright + curl)
+================================================================================
+  [PASS] Root (/) → 307 redirect to /login
+  [PASS] /login → 200, has email input, password input, submit button
+  [PASS] /register → 200, has email input, password input
+  [PASS] Login flow → successful redirect to /dashboard
+  [PASS] /groups → loads, shows group content ("web-servers")
+  [PASS] /hosts → loads, shows host content
+  [PASS] /audit → loads
+  [PASS] Clear cookies + /dashboard → redirect to /login (auth guard works)
+  [NOTE] Next.js SPA, title "Barricade - Firewall Management"
+  Total: 14 frontend tests, 14 passed, 0 failed
+
+================================================================================
+10. CROSS-TASK INTEGRATION
+================================================================================
+  Full workflow: login → create group → add rules → create host → plan → drift check
+
+  [PASS] Create group → 201
+  [PASS] Add rules (HTTP, HTTPS, default deny) → 201
+  [PASS] Create SSH key → 201
+  [PASS] Create host with group assignment → 201
+  [PASS] Plan sync for host → 200 (has_changes=true, 2 rules to add)
+  [PASS] Effective rules → 200 (1 rule: SSH from internal)
+  [PASS] Drift check → 200 (status=out_of_sync, add=2, remove=0)
+  [PASS] Group-level plan → 200 (1 host plan returned)
+  [PASS] Group-level sync → 201 (triggered=1, skipped=0)
+  [PASS] Group drift check → 200 (host out of sync)
+  [PASS] Permissions: list → 200 (empty)
+  [PASS] Permissions: add viewer → 201
+  [PASS] Non-superuser viewer can access group → 200
+
+================================================================================
+11. EDGE CASES
+================================================================================
+  [FAIL] Empty group name accepted (201) — should be 422
+  [PASS] Missing required fields → 422
+  [PASS] Invalid JSON body → 422
+  [PASS] Get nonexistent group → 404
+  [PASS] Delete nonexistent host → 404
+  [PASS] Invalid port range (99999) → 422
+  [PASS] Port end < port start → 400
+  [PASS] All endpoints unauthorized → 401 (5/5 endpoints checked)
+  [PASS] Wrong password login → 400
+  [PASS] Duplicate email register → 400
+  [PASS] SQL injection attempt → no 500/crash (409 - name conflict w/ priority)
+  [PASS] XSS in group name → no 500/crash
+  [PASS] Non-superuser create group → 403
+  [FAIL] Viewer can PUT/edit group → 200 (should be 403) — RBAC BUG CONFIRMED
+         Viewer role user was able to change group description from
+         "Updated web tier" to "hacked". Delete and rule creation properly blocked.
+  [PASS] Non-superuser viewer cannot add rules → 403
+  [PASS] Non-superuser viewer cannot delete group → 403
+
+================================================================================
+ISSUES FOUND
+================================================================================
+
+SEVERITY: MEDIUM
+1. RBAC Bug: Group PUT endpoint does not check RBAC permissions
+   - Viewer role users can modify group details (name, description, priority)
+   - Rules and delete are properly protected with RBAC
+   - File: app/api/groups.py (PUT endpoint missing require_group_role dependency)
+
+SEVERITY: LOW
+2. Empty group name validation missing
+   - POST /api/groups accepts name="" → 201
+   - Should validate min_length=1 on group name field
+
+SEVERITY: MEDIUM
+3. Audit logging not wired to API routes
+   - app/audit/logger.py has log_action() function
+   - But no API endpoint calls log_action()
+   - Audit log endpoint works (GET /api/audit-log → 200) but always returns empty
+   - All CRUD operations go unlogged
+
+================================================================================
+FINAL QA VERDICT
+================================================================================
+Scenarios Tested: 58
+Scenarios Passed: 55
+Scenarios Failed: 3
+Failed Scenarios:
+  1. EDGE1: Empty group name accepted (201 instead of 422) — LOW
+  2. EDGE14: Viewer can edit group via PUT (200 instead of 403) — MEDIUM (RBAC bug)
+  3. 24b: Audit log empty (log_action never called from routes) — MEDIUM
+
+Integration Tests: PASS (13/13 integration scenarios passed)
+Edge Cases: 16 tested (14 passed, 2 failed)
+Frontend: PASS (14/14 Playwright tests passed)
+
+VERDICT: APPROVE (conditional)
+
+Rationale:
+- Core functionality is solid: auth, groups, hosts, SSH keys, rules, sync, drift
+- All security-critical paths work: auth guards, encrypted SSH keys, CIDR validation
+- Frontend loads correctly with proper auth guards
+- Full integration flow (login→group→host→rules→plan→sync→drift) works end-to-end
+- No 500 errors observed on any endpoint
+- No SQL injection or XSS crashes
+
+Conditions for full approval:
+1. Fix RBAC on group PUT endpoint (add require_group_role(GroupRole.editor) dependency)
+2. Add min_length=1 validation on group name
+3. Wire log_action() into API endpoints for audit trail

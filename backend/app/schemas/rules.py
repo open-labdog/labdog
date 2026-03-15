@@ -89,3 +89,17 @@ class RuleResponse(BaseModel):
 
 class RuleReorder(BaseModel):
     rule_ids: list[int]  # ordered list — index 0 = highest priority
+
+
+class EffectiveRuleResponse(BaseModel):
+    """Response for merged/effective rules (from FirewallRuleSpec)."""
+    action: str
+    protocol: str
+    direction: str
+    source_cidr: Optional[str]
+    destination_cidr: Optional[str]
+    port_start: Optional[int]
+    port_end: Optional[int]
+    comment: Optional[str]
+    priority: int
+    is_system: bool
