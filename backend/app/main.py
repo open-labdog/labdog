@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth.schemas import UserCreate, UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.api.permissions import router as permissions_router
+from app.api.groups import router as groups_router
 
 
 def create_app() -> FastAPI:
@@ -39,6 +40,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(permissions_router, prefix="/api")
+    app.include_router(groups_router, prefix="/api")
 
     @app.get("/health")
     async def health():
