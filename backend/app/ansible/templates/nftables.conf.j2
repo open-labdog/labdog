@@ -1,0 +1,20 @@
+#!/usr/sbin/nft -f
+flush ruleset
+
+table inet filter {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state established,related accept
+    iif lo accept
+{% for rule in input_rules %}
+    {{ rule }}
+{% endfor %}
+  }
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+{% for rule in output_rules %}
+    {{ rule }}
+{% endfor %}
+  }
+}
