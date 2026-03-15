@@ -6,7 +6,7 @@ from app.db import get_db
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
-from app.models.sync_job import SyncJob, JobStatus
+from app.models.sync_job import SyncJob
 from app.models.user_group_permission import GroupRole
 from app.models.user import User
 from app.auth.users import current_active_user
@@ -29,6 +29,7 @@ class RuleDiffItem(BaseModel):
     comment: str | None = None
     is_system: bool = False
 
+
 class HostDiff(BaseModel):
     host_id: int
     hostname: str
@@ -40,10 +41,15 @@ class HostDiff(BaseModel):
 
 def _spec_to_diff_item(spec: FirewallRuleSpec) -> RuleDiffItem:
     return RuleDiffItem(
-        action=spec.action, protocol=spec.protocol, direction=spec.direction,
-        source_cidr=spec.source_cidr, destination_cidr=spec.destination_cidr,
-        port_start=spec.port_start, port_end=spec.port_end,
-        comment=spec.comment, is_system=spec.is_system,
+        action=spec.action,
+        protocol=spec.protocol,
+        direction=spec.direction,
+        source_cidr=spec.source_cidr,
+        destination_cidr=spec.destination_cidr,
+        port_start=spec.port_start,
+        port_end=spec.port_end,
+        comment=spec.comment,
+        is_system=spec.is_system,
     )
 
 
@@ -63,13 +69,18 @@ async def _get_desired_rules(host_id: int, db: AsyncSession) -> list[FirewallRul
         rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = [
             FirewallRuleSpec(
-                action=r.action.value if hasattr(r.action, 'value') else r.action,
-                protocol=r.protocol.value if hasattr(r.protocol, 'value') else r.protocol,
-                direction=r.direction.value if hasattr(r.direction, 'value') else r.direction,
-                source_cidr=r.source_cidr, destination_cidr=r.destination_cidr,
-                port_start=r.port_start, port_end=r.port_end,
-                comment=r.comment, is_system=r.is_system, priority=r.priority,
-                group_id=r.group_id, rule_id=r.id,
+                action=r.action.value if hasattr(r.action, "value") else r.action,
+                protocol=r.protocol.value if hasattr(r.protocol, "value") else r.protocol,
+                direction=r.direction.value if hasattr(r.direction, "value") else r.direction,
+                source_cidr=r.source_cidr,
+                destination_cidr=r.destination_cidr,
+                port_start=r.port_start,
+                port_end=r.port_end,
+                comment=r.comment,
+                is_system=r.is_system,
+                priority=r.priority,
+                group_id=r.group_id,
+                rule_id=r.id,
             )
             for r in rules_result.scalars().all()
         ]
@@ -96,7 +107,7 @@ async def plan_host(
         memberships = await db.execute(
             select(HostGroupMembership.c.group_id).where(
                 HostGroupMembership.c.host_id == host_id,
-                HostGroupMembership.c.group_id.in_(accessible)
+                HostGroupMembership.c.group_id.in_(accessible),
             )
         )
         if not memberships.all():
@@ -139,12 +150,16 @@ async def plan_group(
         desired = await _get_desired_rules(hid, db)
         current = await fetch_current_state_stub(hid)
         diff = compute_diff(current, desired)
-        results.append(HostDiff(
-            host_id=hid, hostname=host.hostname, has_changes=diff.has_changes,
-            rules_to_add=[_spec_to_diff_item(r) for r in diff.rules_to_add],
-            rules_to_remove=[_spec_to_diff_item(r) for r in diff.rules_to_remove],
-            rules_unchanged=[_spec_to_diff_item(r) for r in diff.rules_unchanged],
-        ))
+        results.append(
+            HostDiff(
+                host_id=hid,
+                hostname=host.hostname,
+                has_changes=diff.has_changes,
+                rules_to_add=[_spec_to_diff_item(r) for r in diff.rules_to_add],
+                rules_to_remove=[_spec_to_diff_item(r) for r in diff.rules_to_remove],
+                rules_unchanged=[_spec_to_diff_item(r) for r in diff.rules_unchanged],
+            )
+        )
 
     return results
 
@@ -152,6 +167,7 @@ async def plan_group(
 # ---------------------------------------------------------------------------
 # Sync execution endpoints
 # ---------------------------------------------------------------------------
+
 
 class SyncJobResponse(BaseModel):
     id: int
@@ -202,7 +218,10 @@ async def trigger_host_sync(
         select(func.count(FirewallRule.id)).where(FirewallRule.group_id.in_(group_ids))
     )
     if rules_count.scalar() == 0:
-        raise HTTPException(status_code=400, detail="Cannot sync — no rules defined. This would remove all firewall rules.")
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot sync — no rules defined. This would remove all firewall rules.",
+        )
 
     # Create sync job
     job = SyncJob(
@@ -216,6 +235,7 @@ async def trigger_host_sync(
 
     # Dispatch Celery task
     from app.tasks.sync import run_sync_playbook
+
     run_sync_playbook.delay(job_id=job.id, host_id=host_id)
 
     return job
@@ -245,14 +265,19 @@ async def trigger_group_sync(
 
     jobs = []
     from app.tasks.sync import run_sync_playbook
+
     for hid in host_ids:
         # Skip hosts with running syncs
         running = await db.execute(
-            select(SyncJob).where(SyncJob.host_id == hid, SyncJob.status.in_(["pending", "running"]))
+            select(SyncJob).where(
+                SyncJob.host_id == hid, SyncJob.status.in_(["pending", "running"])
+            )
         )
         if running.scalar_one_or_none():
             continue
-        job = SyncJob(host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user.id)
+        job = SyncJob(
+            host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user.id
+        )
         db.add(job)
         await db.flush()
         run_sync_playbook.delay(job_id=job.id, host_id=hid)

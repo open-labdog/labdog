@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
-from app.models.host import Host, HostGroupMembership
+from app.models.host import HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.auth.users import current_active_user
@@ -139,9 +139,7 @@ async def get_effective_rules(
 
     # Get all groups for this host
     memberships_all = await db.execute(
-        select(HostGroupMembership.c.group_id).where(
-            HostGroupMembership.c.host_id == host_id
-        )
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     group_ids = [r[0] for r in memberships_all.all()]
 

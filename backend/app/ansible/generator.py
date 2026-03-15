@@ -1,4 +1,3 @@
-import json
 import yaml
 from app.rules.model import FirewallRuleSpec
 from app.rules.renderers.nftables import render_nftables_config
@@ -6,7 +5,9 @@ from app.rules.renderers.firewalld import render_firewalld_tasks
 from app.rules.renderers.ufw import render_ufw_rules
 
 
-def generate_nftables_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str) -> str:
+def generate_nftables_playbook(
+    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+) -> str:
     """Generate playbook that writes nftables.conf and reloads."""
     nft_config = render_nftables_config(rules)
     tasks = [
@@ -30,17 +31,21 @@ def generate_nftables_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh_
             },
         },
     ]
-    playbook = [{
-        "name": "Apply nftables firewall rules",
-        "hosts": "target",
-        "become": True,
-        "gather_facts": False,
-        "tasks": tasks,
-    }]
+    playbook = [
+        {
+            "name": "Apply nftables firewall rules",
+            "hosts": "target",
+            "become": True,
+            "gather_facts": False,
+            "tasks": tasks,
+        }
+    ]
     return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
 
 
-def generate_firewalld_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str) -> str:
+def generate_firewalld_playbook(
+    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+) -> str:
     """Generate playbook with per-rule firewalld tasks."""
     fw_tasks = render_firewalld_tasks(rules)
     tasks = [
@@ -51,17 +56,21 @@ def generate_firewalld_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh
         },
     ]
     for i, fw_params in enumerate(fw_tasks):
-        tasks.append({
-            "name": f"Apply firewall rule {i+1}",
-            "ansible.posix.firewalld": fw_params,
-        })
-    playbook = [{
-        "name": "Apply firewalld firewall rules",
-        "hosts": "target",
-        "become": True,
-        "gather_facts": False,
-        "tasks": tasks,
-    }]
+        tasks.append(
+            {
+                "name": f"Apply firewall rule {i + 1}",
+                "ansible.posix.firewalld": fw_params,
+            }
+        )
+    playbook = [
+        {
+            "name": "Apply firewalld firewall rules",
+            "hosts": "target",
+            "become": True,
+            "gather_facts": False,
+            "tasks": tasks,
+        }
+    ]
     return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
 
 
@@ -95,17 +104,21 @@ def generate_ufw_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh_key_p
             "changed_when": True,
         },
     ]
-    playbook = [{
-        "name": "Apply UFW firewall rules",
-        "hosts": "target",
-        "become": True,
-        "gather_facts": False,
-        "tasks": tasks,
-    }]
+    playbook = [
+        {
+            "name": "Apply UFW firewall rules",
+            "hosts": "target",
+            "become": True,
+            "gather_facts": False,
+            "tasks": tasks,
+        }
+    ]
     return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
 
 
-def generate_playbook(backend: str, host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str) -> str:
+def generate_playbook(
+    backend: str, host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+) -> str:
     """Dispatch to backend-specific generator."""
     generators = {
         "nftables": generate_nftables_playbook,

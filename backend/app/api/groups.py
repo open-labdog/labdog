@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
@@ -89,8 +89,11 @@ async def delete_group(
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.host import HostGroupMembership
+
     # Check no hosts assigned
-    members = await db.execute(select(HostGroupMembership).where(HostGroupMembership.c.group_id == group_id))
+    members = await db.execute(
+        select(HostGroupMembership).where(HostGroupMembership.c.group_id == group_id)
+    )
     if members.fetchone():
         raise HTTPException(status_code=400, detail="Cannot delete group with hosts assigned")
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))

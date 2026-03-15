@@ -2,7 +2,6 @@ import os
 import tempfile
 import shutil
 from datetime import datetime, timezone
-from celery import current_task
 from app.tasks import celery_app
 
 
@@ -81,9 +80,13 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     )
                     rules = [
                         FirewallRuleSpec(
-                            action=r.action.value if hasattr(r.action, 'value') else r.action,
-                            protocol=r.protocol.value if hasattr(r.protocol, 'value') else r.protocol,
-                            direction=r.direction.value if hasattr(r.direction, 'value') else r.direction,
+                            action=r.action.value if hasattr(r.action, "value") else r.action,
+                            protocol=r.protocol.value
+                            if hasattr(r.protocol, "value")
+                            else r.protocol,
+                            direction=r.direction.value
+                            if hasattr(r.direction, "value")
+                            else r.direction,
                             source_cidr=r.source_cidr,
                             destination_cidr=r.destination_cidr,
                             port_start=r.port_start,
@@ -101,8 +104,14 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 merged_rules = merge_group_rules(groups_data)
 
                 # Generate playbook and inventory
-                backend = host.firewall_backend.value if hasattr(host.firewall_backend, 'value') else host.firewall_backend
-                playbook_yaml = generate_playbook(backend, host.ip_address, merged_rules, ssh_key_path)
+                backend = (
+                    host.firewall_backend.value
+                    if hasattr(host.firewall_backend, "value")
+                    else host.firewall_backend
+                )
+                playbook_yaml = generate_playbook(
+                    backend, host.ip_address, merged_rules, ssh_key_path
+                )
                 inventory_json = generate_inventory(host.ip_address, host.ssh_port, ssh_key_path)
 
                 # Write to private_data_dir
@@ -132,7 +141,9 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 job = job_result.scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
                 job.completed_at = datetime.now(timezone.utc)
-                job.ansible_output = runner.stdout.read() if hasattr(runner.stdout, 'read') else str(runner.stdout)
+                job.ansible_output = (
+                    runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
+                )
                 if runner.status != "successful":
                     job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
 
@@ -153,6 +164,9 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         }
 
     except Exception as e:
+        # Capture error message before closure (e is unbound after except block exits)
+        error_msg = str(e)
+
         # Update job as failed
         import asyncio
         from sqlalchemy import select
@@ -166,7 +180,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 if job:
                     job.status = "failed"
                     job.completed_at = datetime.now(timezone.utc)
-                    job.error_message = str(e)
+                    job.error_message = error_msg
                     await db.commit()
 
         try:
