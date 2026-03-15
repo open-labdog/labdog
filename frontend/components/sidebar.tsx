@@ -5,11 +5,11 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { href: '/', label: 'Dashboard' },
+  { href: '/dashboard', label: 'Dashboard' },
   { href: '/groups', label: 'Groups' },
   { href: '/hosts', label: 'Hosts' },
   { href: '/ssh-keys', label: 'SSH Keys' },
-  { href: '/audit-log', label: 'Audit Log' },
+  { href: '/audit', label: 'Audit Log' },
 ]
 
 export function Sidebar() {
