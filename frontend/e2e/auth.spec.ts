@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@barricade.test"
+const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@barricade.io"
 const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || "E2eTestPass1"
 
 // These tests run WITHOUT auth state (unauthenticated)
@@ -70,7 +70,7 @@ test.describe("Register page", () => {
   })
 
   test("successful registration redirects to /login", async ({ page }) => {
-    const uniqueEmail = `e2e-reg-${Date.now()}@barricade.test`
+    const uniqueEmail = `e2e-reg-${Date.now()}@barricade.io`
     await page.goto("/register")
     await page.locator("#email").fill(uniqueEmail)
     await page.locator("#password").fill("E2eTestPass1")

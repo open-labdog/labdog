@@ -113,8 +113,9 @@ export default function AuditPage() {
       {/* Filters */}
       <div className="flex gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-400">Action:</label>
+          <label htmlFor="action-filter" className="text-sm text-slate-400">Action:</label>
           <select
+            id="action-filter"
             value={actionFilter}
             onChange={(e) => { setActionFilter(e.target.value); setPage(1) }}
             className="rounded-md border border-slate-700 bg-slate-900 text-slate-200 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-slate-500"
@@ -127,8 +128,9 @@ export default function AuditPage() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-slate-400">Entity:</label>
+          <label htmlFor="entity-filter" className="text-sm text-slate-400">Entity:</label>
           <select
+            id="entity-filter"
             value={entityFilter}
             onChange={(e) => { setEntityFilter(e.target.value); setPage(1) }}
             className="rounded-md border border-slate-700 bg-slate-900 text-slate-200 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-slate-500"
