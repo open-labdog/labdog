@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 from app.db import get_db
@@ -49,5 +49,6 @@ async def list_audit_logs(
         q = q.where(AuditLog.user_id == user_id)
     result = await db.execute(q)
     return result.scalars().all()
+
 
 # NOTE: No PUT, PATCH, or DELETE endpoints — audit log is append-only

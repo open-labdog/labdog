@@ -9,7 +9,6 @@ from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
 from app.models.user import User
 from app.auth.users import current_active_user
-from app.auth.rbac import get_user_accessible_group_ids
 from app.drift.detector import check_drift
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
@@ -45,12 +44,18 @@ async def _get_desired_rules_for_host(host_id: int, db: AsyncSession) -> list[Fi
         r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = [
             FirewallRuleSpec(
-                action=rule.action.value if hasattr(rule.action, 'value') else rule.action,
-                protocol=rule.protocol.value if hasattr(rule.protocol, 'value') else rule.protocol,
-                direction=rule.direction.value if hasattr(rule.direction, 'value') else rule.direction,
-                source_cidr=rule.source_cidr, destination_cidr=rule.destination_cidr,
-                port_start=rule.port_start, port_end=rule.port_end,
-                comment=rule.comment, is_system=rule.is_system, priority=rule.priority,
+                action=rule.action.value if hasattr(rule.action, "value") else rule.action,
+                protocol=rule.protocol.value if hasattr(rule.protocol, "value") else rule.protocol,
+                direction=rule.direction.value
+                if hasattr(rule.direction, "value")
+                else rule.direction,
+                source_cidr=rule.source_cidr,
+                destination_cidr=rule.destination_cidr,
+                port_start=rule.port_start,
+                port_end=rule.port_end,
+                comment=rule.comment,
+                is_system=rule.is_system,
+                priority=rule.priority,
             )
             for rule in r.scalars().all()
         ]
@@ -74,7 +79,8 @@ async def check_host_drift(
     host.last_drift_check_at = datetime.now(timezone.utc)
     await db.commit()
     return DriftResponse(
-        host_id=host_id, status=result.status,
+        host_id=host_id,
+        status=result.status,
         has_changes=result.diff.has_changes if result.diff else False,
         add_count=len(result.diff.rules_to_add) if result.diff else 0,
         remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
@@ -101,14 +107,17 @@ async def check_group_drift(
         result = await check_drift(hid, desired)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(timezone.utc)
-        results.append(DriftResponse(
-            host_id=hid, status=result.status,
-            has_changes=result.diff.has_changes if result.diff else False,
-            add_count=len(result.diff.rules_to_add) if result.diff else 0,
-            remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
-            error_message=result.error_message,
-            checked_at=result.checked_at.isoformat(),
-        ))
+        results.append(
+            DriftResponse(
+                host_id=hid,
+                status=result.status,
+                has_changes=result.diff.has_changes if result.diff else False,
+                add_count=len(result.diff.rules_to_add) if result.diff else 0,
+                remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
+                error_message=result.error_message,
+                checked_at=result.checked_at.isoformat(),
+            )
+        )
     await db.commit()
     return results
 

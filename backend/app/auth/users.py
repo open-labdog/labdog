@@ -1,3 +1,4 @@
+import logging
 from typing import Optional
 
 from fastapi import Depends, Request
@@ -14,11 +15,13 @@ from app.config import settings
 from app.db import get_db
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
+
 # ── Cookie transport — httpOnly for XSS protection ──────────────────────────
 cookie_transport = CookieTransport(
     cookie_name="barricade_auth",
     cookie_max_age=86400,  # 24 hours
-    cookie_secure=False,   # Set True in production with HTTPS
+    cookie_secure=False,  # Set True in production with HTTPS
     cookie_httponly=True,
     cookie_samesite="lax",
 )
@@ -46,17 +49,17 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     verification_token_secret = settings.SECRET_KEY
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
-        print(f"User {user.id} ({user.email}) registered.")
+        logger.info("User %d (%s) registered.", user.id, user.email)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
     ):
-        print(f"User {user.id} forgot password. Reset token: {token}")
+        logger.info("User %d forgot password.", user.id)
 
     async def on_after_request_verify(
         self, user: User, token: str, request: Optional[Request] = None
     ):
-        print(f"Verification requested for user {user.id}. Token: {token}")
+        logger.info("Verification requested for user %d.", user.id)
 
 
 async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db)):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,8 +23,17 @@ class PermissionResponse(BaseModel):
 
 
 @router.post("", response_model=PermissionResponse, status_code=201)
-async def grant_permission(group_id: int, body: PermissionCreate, _: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(UserGroupPermission).where(UserGroupPermission.user_id == body.user_id, UserGroupPermission.group_id == group_id))
+async def grant_permission(
+    group_id: int,
+    body: PermissionCreate,
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserGroupPermission).where(
+            UserGroupPermission.user_id == body.user_id, UserGroupPermission.group_id == group_id
+        )
+    )
     perm = result.scalar_one_or_none()
     if perm:
         perm.role = body.role
@@ -37,12 +46,25 @@ async def grant_permission(group_id: int, body: PermissionCreate, _: User = Depe
 
 
 @router.get("", response_model=list[PermissionResponse])
-async def list_permissions(group_id: int, _: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(UserGroupPermission).where(UserGroupPermission.group_id == group_id))
+async def list_permissions(
+    group_id: int, _: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)
+):
+    result = await db.execute(
+        select(UserGroupPermission).where(UserGroupPermission.group_id == group_id)
+    )
     return result.scalars().all()
 
 
 @router.delete("/{user_id}", status_code=204)
-async def revoke_permission(group_id: int, user_id: int, _: User = Depends(current_superuser), db: AsyncSession = Depends(get_db)):
-    await db.execute(delete(UserGroupPermission).where(UserGroupPermission.user_id == user_id, UserGroupPermission.group_id == group_id))
+async def revoke_permission(
+    group_id: int,
+    user_id: int,
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    await db.execute(
+        delete(UserGroupPermission).where(
+            UserGroupPermission.user_id == user_id, UserGroupPermission.group_id == group_id
+        )
+    )
     await db.commit()

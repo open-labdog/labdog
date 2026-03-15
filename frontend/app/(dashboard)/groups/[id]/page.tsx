@@ -6,13 +6,12 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { HostGroup, Host } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card"
 import {
   Table,

@@ -4,7 +4,7 @@ from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.models.host import Host, HostGroupMembership, FirewallBackend, SyncStatus
+from app.models.host import Host, HostGroupMembership
 from app.models.firewall_rule import FirewallRule
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
@@ -15,6 +15,7 @@ from app.schemas.hosts import HostCreate, HostUpdate, HostResponse
 class ImportRulesRequest(BaseModel):
     group_id: int
     rules: list[dict]  # list of rule specs to import
+
 
 router = APIRouter(prefix="/hosts", tags=["hosts"])
 
