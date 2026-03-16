@@ -1,7 +1,6 @@
 """Parse /etc/ufw/user.rules (iptables-save format) into FirewallRuleSpec list."""
 
 import re
-from typing import Optional
 
 from app.rules.model import FirewallRuleSpec
 
@@ -33,7 +32,7 @@ def _parse_rule_flags(flags_str: str) -> dict[str, str]:
     return result
 
 
-def _parse_port_spec(port_str: str) -> tuple[int, Optional[int]]:
+def _parse_port_spec(port_str: str) -> tuple[int, int | None]:
     """Parse '80' or '3306:3310' (iptables colon range) into (port_start, port_end)."""
     if ":" in port_str:
         start, end = port_str.split(":", 1)
@@ -72,8 +71,8 @@ def parse_ufw_rules(content: str) -> list[FirewallRuleSpec]:
         source_cidr = flags.get("-s")
         dest_cidr = flags.get("-d")
 
-        port_start: Optional[int] = None
-        port_end: Optional[int] = None
+        port_start: int | None = None
+        port_end: int | None = None
         dport = flags.get("--dport")
         if dport:
             port_start, port_end = _parse_port_spec(dport)

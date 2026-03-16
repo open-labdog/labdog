@@ -3,7 +3,11 @@
 import pytest
 
 from app.models.firewall_rule import FirewallRule
-from app.rules.converter import firewall_rule_to_spec, firewall_rules_to_specs, spec_to_firewall_rule
+from app.rules.converter import (
+    firewall_rule_to_spec,
+    firewall_rules_to_specs,
+    spec_to_firewall_rule,
+)
 from app.rules.model import FirewallRuleSpec
 
 pytestmark = pytest.mark.integration

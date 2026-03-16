@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.tasks import celery_app
 
@@ -27,10 +27,8 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
     from app.gitops.git_service import cleanup_repo, clone_repo, read_file_at_sha
     from app.gitops.importer import import_group_from_yaml
     from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
-    from app.models.host import HostGroupMembership
     from app.models.host_group import HostGroup
     from app.models.ssh_key import SSHKey
-    from app.models.sync_job import SyncJob
 
     repo_dir: Path | None = None
 
@@ -82,7 +80,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                     "GitOps: no gitops-enabled groups for repo %s", repo.name
                 )
                 repo.last_commit_sha = commit_sha
-                repo.last_sync_at = datetime.now(timezone.utc)
+                repo.last_sync_at = datetime.now(UTC)
                 await db.commit()
                 return
 
@@ -132,7 +130,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                     await db.flush()
 
             repo.last_commit_sha = commit_sha
-            repo.last_sync_at = datetime.now(timezone.utc)
+            repo.last_sync_at = datetime.now(UTC)
             await db.commit()
 
             logger.info(

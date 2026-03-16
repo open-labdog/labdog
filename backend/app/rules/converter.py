@@ -1,5 +1,5 @@
-from app.rules.model import FirewallRuleSpec
 from app.models.firewall_rule import FirewallRule
+from app.rules.model import FirewallRuleSpec
 
 
 def firewall_rule_to_spec(rule: FirewallRule) -> FirewallRuleSpec:

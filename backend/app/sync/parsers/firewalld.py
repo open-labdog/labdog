@@ -1,7 +1,6 @@
 """Parse firewall-cmd --list-all output into FirewallRuleSpec list."""
 
 import re
-from typing import Optional
 
 from app.rules.model import FirewallRuleSpec
 
@@ -16,7 +15,7 @@ _RICH_RULE_RE = re.compile(
 )
 
 
-def _parse_port_spec(port_str: str) -> tuple[int, Optional[int]]:
+def _parse_port_spec(port_str: str) -> tuple[int, int | None]:
     """Parse '80' or '3306-3310' into (port_start, port_end)."""
     if "-" in port_str:
         start, end = port_str.split("-", 1)
@@ -45,7 +44,7 @@ def _parse_ports_line(line: str) -> list[FirewallRuleSpec]:
     return rules
 
 
-def _parse_rich_rule(line: str) -> Optional[FirewallRuleSpec]:
+def _parse_rich_rule(line: str) -> FirewallRuleSpec | None:
     """Parse a single firewalld rich rule string."""
     m = _RICH_RULE_RE.search(line)
     if not m:
@@ -61,8 +60,8 @@ def _parse_rich_rule(line: str) -> Optional[FirewallRuleSpec]:
     source = m.group("source")
     dest = m.group("dest")
 
-    port_start: Optional[int] = None
-    port_end: Optional[int] = None
+    port_start: int | None = None
+    port_end: int | None = None
     if m.group("port"):
         port_start, port_end = _parse_port_spec(m.group("port"))
 
