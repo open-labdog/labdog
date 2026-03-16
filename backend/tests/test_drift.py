@@ -9,7 +9,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .conftest import create_group, create_ssh_key, create_host, create_rule
+from .conftest import create_group, create_host, create_rule, create_ssh_key
 
 pytestmark = pytest.mark.integration
 
@@ -19,7 +19,7 @@ class TestDrift:
 
     @pytest.mark.asyncio
     async def test_check_drift_returns_status(self, superuser_client):
-        """Create host via API, POST /api/drift/hosts/{id}/check → 200, response has status and host_id."""
+        """POST /api/drift/hosts/{id}/check → 200 with status and host_id."""
         # Create group via API
         resp = await superuser_client.post(
             "/api/groups",
@@ -56,7 +56,7 @@ class TestDrift:
 
     @pytest.mark.asyncio
     async def test_update_drift_settings(self, superuser_client):
-        """Create host via API, PUT /api/drift/hosts/{id}/settings → 200, toggles drift_check_enabled."""
+        """PUT /api/drift/hosts/{id}/settings → 200, toggles drift_check_enabled."""
         # Create host via API (without SSH key)
         resp = await superuser_client.post(
             "/api/hosts",
@@ -111,7 +111,7 @@ class TestDrift:
 
     @pytest.mark.asyncio
     async def test_check_drift_with_rules_out_of_sync(self, db: AsyncSession, superuser_client):
-        """Create host with rules, POST /api/drift/hosts/{id}/check → status is out_of_sync (stub returns [])."""
+        """Host with rules, drift check → out_of_sync (stub returns [])."""
         # Setup: create SSH key, group, host, and add a rule
         ssh_key = await create_ssh_key(db)
         group = await create_group(db)

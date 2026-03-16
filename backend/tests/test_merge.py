@@ -8,7 +8,7 @@ rules from multiple groups with priority-based conflict resolution.
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .conftest import create_group, create_ssh_key, create_host, create_rule
+from .conftest import create_group, create_host, create_rule, create_ssh_key
 
 pytestmark = pytest.mark.integration
 
@@ -31,7 +31,7 @@ class TestMerge:
         group = await create_group(db, priority=100)
         
         # Create 2 rules in the group
-        rule1 = await create_rule(
+        await create_rule(
             db,
             group_id=group.id,
             action="allow",
@@ -41,7 +41,7 @@ class TestMerge:
             port_end=80,
             comment="Allow HTTP",
         )
-        rule2 = await create_rule(
+        await create_rule(
             db,
             group_id=group.id,
             action="allow",
@@ -92,7 +92,7 @@ class TestMerge:
         
         # Create group with priority 100 (lower)
         group_low = await create_group(db, priority=100)
-        rule_low = await create_rule(
+        await create_rule(
             db,
             group_id=group_low.id,
             action="allow",
@@ -105,7 +105,7 @@ class TestMerge:
         
         # Create group with priority 200 (higher)
         group_high = await create_group(db, priority=200)
-        rule_high = await create_rule(
+        await create_rule(
             db,
             group_id=group_high.id,
             action="deny",
@@ -127,7 +127,10 @@ class TestMerge:
         rules = resp.json()
         
         # Find rules for port 8080 (excluding system rules)
-        port_8080_rules = [r for r in rules if r.get("port_start") == 8080 and not r.get("is_system")]
+        port_8080_rules = [
+            r for r in rules
+            if r.get("port_start") == 8080 and not r.get("is_system")
+        ]
         
         # Should have exactly 1 rule for port 8080 (higher priority wins)
         assert len(port_8080_rules) == 1
