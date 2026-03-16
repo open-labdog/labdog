@@ -9,6 +9,7 @@ from app.models.firewall_rule import FirewallRule, RuleAction, RuleProtocol, Rul
 from app.models.sync_job import SyncJob, JobStatus
 from app.models.audit_log import AuditLog
 from app.models.user_group_permission import UserGroupPermission, GroupRole
+from app.models.git_repository import GitRepository, GitAuthType, GitOpsStatus
 
 __all__ = [
     "Base",
@@ -28,4 +29,7 @@ __all__ = [
     "AuditLog",
     "UserGroupPermission",
     "GroupRole",
+    "GitRepository",
+    "GitAuthType",
+    "GitOpsStatus",
 ]

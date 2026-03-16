@@ -12,6 +12,7 @@ from app.auth.users import current_active_user
 from app.drift.detector import check_drift
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
+from app.rules.converter import firewall_rules_to_specs
 
 router = APIRouter(prefix="/drift", tags=["drift"])
 
@@ -42,23 +43,7 @@ async def _get_desired_rules_for_host(host_id: int, db: AsyncSession) -> list[Fi
         g = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = g.scalar_one()
         r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
-        rules = [
-            FirewallRuleSpec(
-                action=rule.action.value if hasattr(rule.action, "value") else rule.action,
-                protocol=rule.protocol.value if hasattr(rule.protocol, "value") else rule.protocol,
-                direction=rule.direction.value
-                if hasattr(rule.direction, "value")
-                else rule.direction,
-                source_cidr=rule.source_cidr,
-                destination_cidr=rule.destination_cidr,
-                port_start=rule.port_start,
-                port_end=rule.port_end,
-                comment=rule.comment,
-                is_system=rule.is_system,
-                priority=rule.priority,
-            )
-            for rule in r.scalars().all()
-        ]
+        rules = firewall_rules_to_specs(r.scalars().all())
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
     return merge_group_rules(groups_data)
 

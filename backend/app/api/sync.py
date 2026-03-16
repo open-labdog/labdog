@@ -14,6 +14,7 @@ from app.auth.users import current_active_user
 from app.auth.rbac import get_user_accessible_group_ids, require_group_role
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
+from app.rules.converter import firewall_rules_to_specs
 from app.sync.diff import compute_diff, fetch_current_state_stub
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -68,23 +69,7 @@ async def _get_desired_rules(host_id: int, db: AsyncSession) -> list[FirewallRul
         group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = group_result.scalar_one()
         rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
-        rules = [
-            FirewallRuleSpec(
-                action=r.action.value if hasattr(r.action, "value") else r.action,
-                protocol=r.protocol.value if hasattr(r.protocol, "value") else r.protocol,
-                direction=r.direction.value if hasattr(r.direction, "value") else r.direction,
-                source_cidr=r.source_cidr,
-                destination_cidr=r.destination_cidr,
-                port_start=r.port_start,
-                port_end=r.port_end,
-                comment=r.comment,
-                is_system=r.is_system,
-                priority=r.priority,
-                group_id=r.group_id,
-                rule_id=r.id,
-            )
-            for r in rules_result.scalars().all()
-        ]
+        rules = firewall_rules_to_specs(rules_result.scalars().all())
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
     return merge_group_rules(groups_data)

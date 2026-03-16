@@ -47,13 +47,13 @@ User wants to specify a network CIDR, have Barricade scan for hosts with port 22
 Enable network-based host discovery so admins can find SSH-accessible hosts on their network and bulk-add them to Barricade without manual IP entry.
 
 ### Definition of Done
-- [ ] User can enter CIDR, start scan, see discovered hosts with progress
-- [ ] Already-known hosts (by IP) are excluded from results
-- [ ] User can select multiple hosts, pick an SSH key, optionally assign groups, and bulk-add
-- [ ] Invalid/oversized CIDRs are rejected with clear error messages
-- [ ] Reserved/dangerous ranges (loopback, link-local, multicast) are blocked
-- [ ] Scan completes /24 in under 10 seconds
-- [ ] All tests pass
+- [x] User can enter CIDR, start scan, see discovered hosts with progress
+- [x] Already-known hosts (by IP) are excluded from results
+- [x] User can select multiple hosts, pick an SSH key, optionally assign groups, and bulk-add
+- [x] Invalid/oversized CIDRs are rejected with clear error messages
+- [x] Reserved/dangerous ranges (loopback, link-local, multicast) are blocked
+- [x] Scan completes /24 in under 10 seconds
+- [x] All tests pass
 
 ### Must Have
 - CIDR validation: `ipaddress.ip_network(strict=False)`, reject prefix < configurable min (default /20)
