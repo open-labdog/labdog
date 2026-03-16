@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Lock } from "lucide-react"
+import { Lock, GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/table"
 import { RuleDialog } from "@/components/rule-dialog"
 import { apiFetch } from "@/lib/api"
-import type { FirewallRule } from "@/lib/types"
+import type { FirewallRule, HostGroup } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -48,6 +48,12 @@ export default function GroupRulesPage() {
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+
+  const { data: group, isLoading: groupLoading } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
 
   const { data: rules, isLoading, error } = useQuery<FirewallRule[]>({
     queryKey: ["rules", id],
@@ -86,8 +92,18 @@ export default function GroupRulesPage() {
           <h1 className="text-2xl font-bold text-white">Firewall Rules</h1>
           <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
         </div>
-        <Button onClick={handleAdd}>Add Rule</Button>
+        {!group?.gitops_enabled && <Button onClick={handleAdd}>Add Rule</Button>}
       </div>
+
+      {group?.gitops_enabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Rules are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {isLoading && (
         <div className="text-slate-400 py-8 text-center">Loading rules…</div>
@@ -143,29 +159,41 @@ export default function GroupRulesPage() {
                   <TableCell className="font-mono text-slate-300 text-xs">{rule.destination_cidr ?? "any"}</TableCell>
                   <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
                   <TableCell className="text-slate-400 text-xs max-w-[160px] truncate">{rule.comment ?? "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={rule.is_system}
-                        onClick={() => handleEdit(rule)}
-                        title={rule.is_system ? "System rules cannot be edited" : "Edit rule"}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={rule.is_system || deletingId === rule.id}
-                        onClick={() => handleDelete(rule)}
-                        title={rule.is_system ? "System rules cannot be deleted" : "Delete rule"}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                      >
-                        {deletingId === rule.id ? "…" : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
+                   <TableCell>
+                     <div className="flex gap-1">
+                       <Button
+                         size="sm"
+                         variant="ghost"
+                         disabled={rule.is_system || group?.gitops_enabled}
+                         onClick={() => handleEdit(rule)}
+                         title={
+                           group?.gitops_enabled
+                             ? "Rules are managed via GitOps"
+                             : rule.is_system
+                               ? "System rules cannot be edited"
+                               : "Edit rule"
+                         }
+                       >
+                         Edit
+                       </Button>
+                       <Button
+                         size="sm"
+                         variant="ghost"
+                         disabled={rule.is_system || deletingId === rule.id || group?.gitops_enabled}
+                         onClick={() => handleDelete(rule)}
+                         title={
+                           group?.gitops_enabled
+                             ? "Rules are managed via GitOps"
+                             : rule.is_system
+                               ? "System rules cannot be deleted"
+                               : "Delete rule"
+                         }
+                         className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                       >
+                         {deletingId === rule.id ? "…" : "Delete"}
+                       </Button>
+                     </div>
+                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>

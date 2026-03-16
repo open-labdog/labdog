@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 from typing import Any
 
@@ -71,6 +72,22 @@ def yaml_rules_to_specs(rules: list[FirewallRuleYAML]) -> list[FirewallRuleSpec]
                     port_start = int(rule.port)
                 except ValueError:
                     raise YAMLParseError(f"Invalid port value: {rule.port}")
+
+        # Validate CIDR notation
+        if rule.source:
+            try:
+                ipaddress.ip_network(rule.source, strict=False)
+            except ValueError:
+                raise YAMLParseError(f"Invalid source CIDR: {rule.source}")
+        if rule.dest:
+            try:
+                ipaddress.ip_network(rule.dest, strict=False)
+            except ValueError:
+                raise YAMLParseError(f"Invalid dest CIDR: {rule.dest}")
+
+        # ICMP + port conflict
+        if rule.protocol == "icmp" and rule.port is not None:
+            raise YAMLParseError("ICMP protocol cannot have a port specified")
 
         specs.append(
             FirewallRuleSpec(
