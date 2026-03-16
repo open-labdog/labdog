@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { GitOpsStatusBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
 import type { HostGroup } from "@/lib/types"
 
@@ -55,6 +56,7 @@ export default function GroupsPage() {
               <TableRow className="border-slate-700">
                 <TableHead>Name</TableHead>
                 <TableHead>Priority</TableHead>
+                <TableHead>GitOps</TableHead>
                 <TableHead>Description</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
@@ -64,6 +66,13 @@ export default function GroupsPage() {
                 <TableRow key={group.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{group.name}</TableCell>
                   <TableCell>{group.priority}</TableCell>
+                  <TableCell>
+                    {group.gitops_enabled && group.gitops_status ? (
+                      <GitOpsStatusBadge status={group.gitops_status} />
+                    ) : (
+                      <span className="text-slate-500">—</span>
+                    )}
+                  </TableCell>
                   <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
                   <TableCell>
                     <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>

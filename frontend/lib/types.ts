@@ -24,6 +24,49 @@ export interface SSHKey {
   is_default: boolean; created_at: string
 }
 
+export interface GitRepository {
+  id: number
+  name: string
+  url: string
+  branch: string
+  auth_type: "ssh_key" | "https_token"
+  ssh_key_id: number | null
+  webhook_secret: string | null
+  last_commit_sha: string | null
+  last_sync_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface GitRepoCreate {
+  name: string
+  url: string
+  branch?: string
+  auth_type: "ssh_key" | "https_token"
+  ssh_key_id?: number | null
+  https_token?: string | null
+  webhook_secret?: string | null
+}
+
+export interface GitRepoUpdate {
+  name?: string
+  url?: string
+  branch?: string
+  auth_type?: string
+  ssh_key_id?: number | null
+  https_token?: string | null
+  webhook_secret?: string | null
+}
+
+export interface GitOpsStatusResponse {
+  gitops_enabled: boolean
+  git_repository_id: number | null
+  gitops_file_path: string | null
+  gitops_status: string
+  gitops_error_message: string | null
+  gitops_last_import_at: string | null
+}
+
 export interface FirewallRule {
   id: number
   group_id: number
