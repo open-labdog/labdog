@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Barricade Frontend
 
-## Getting Started
+Next.js 16 web UI for Barricade firewall management.
 
-First, run the development server:
+## Stack
+
+- Next.js 16 (App Router)
+- React 19
+- shadcn/ui + Tailwind CSS v4
+- TanStack Query (data fetching)
+- Playwright (E2E testing)
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Requires the backend API running at `http://localhost:8000` (configurable via `NEXT_PUBLIC_API_URL`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Testing
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npx playwright install --with-deps
+npx playwright test          # requires full Docker stack running
+npx playwright test --ui     # interactive test runner
+```
 
-## Learn More
+## Pages
 
-To learn more about Next.js, take a look at the following resources:
+| Route | Description |
+|-------|-------------|
+| `/login` | Login page |
+| `/register` | Registration page |
+| `/dashboard` | Overview dashboard |
+| `/groups` | Host group management |
+| `/groups/[id]` | Group detail |
+| `/groups/[id]/rules` | Rule management per group |
+| `/groups/[id]/sync` | Sync with plan preview |
+| `/hosts` | Host management |
+| `/hosts/[id]` | Host detail and drift status |
+| `/ssh-keys` | SSH key management |
+| `/audit` | Audit log viewer |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Build
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npm run build    # production build (standalone output)
+```
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See the [root README](../README.md) for full project documentation.
