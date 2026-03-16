@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth.schemas import UserCreate, UserRead, UserUpdate
+from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
+from app.api.auth_setup import router as auth_setup_router
 from app.api.hosts import router as hosts_router
 from app.api.permissions import router as permissions_router
 from app.api.groups import router as groups_router
@@ -35,12 +36,7 @@ def create_app() -> FastAPI:
         tags=["auth"],
     )
 
-    # Register route: POST /auth/register
-    app.include_router(
-        fastapi_users.get_register_router(UserRead, UserCreate),
-        prefix="/auth",
-        tags=["auth"],
-    )
+    app.include_router(auth_setup_router)
 
     # User routes: GET /users/me, PATCH /users/me, GET /users/{id}, etc.
     app.include_router(
