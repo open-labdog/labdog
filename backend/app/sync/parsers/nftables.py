@@ -1,7 +1,6 @@
 """Parse nftables JSON output (nft -j list ruleset) into FirewallRuleSpec list."""
 
 import json
-from typing import Optional
 
 from app.rules.model import FirewallRuleSpec
 
@@ -21,7 +20,7 @@ def _is_infrastructure_rule(exprs: list[dict]) -> bool:
     return False
 
 
-def _extract_port(right: object) -> tuple[Optional[int], Optional[int]]:
+def _extract_port(right: object) -> tuple[int | None, int | None]:
     """Extract port or port range from nftables match right-hand side."""
     if isinstance(right, int):
         return right, None
@@ -32,7 +31,7 @@ def _extract_port(right: object) -> tuple[Optional[int], Optional[int]]:
     return None, None
 
 
-def _extract_cidr(right: object) -> Optional[str]:
+def _extract_cidr(right: object) -> str | None:
     """Extract CIDR notation from nftables address match (string or prefix object)."""
     if isinstance(right, str):
         return right
@@ -79,13 +78,13 @@ def parse_nftables_json(json_str: str) -> list[FirewallRuleSpec]:
         if _is_infrastructure_rule(exprs):
             continue
 
-        action: Optional[str] = None
+        action: str | None = None
         protocol: str = "any"
-        port_start: Optional[int] = None
-        port_end: Optional[int] = None
-        source_cidr: Optional[str] = None
-        dest_cidr: Optional[str] = None
-        comment: Optional[str] = None
+        port_start: int | None = None
+        port_end: int | None = None
+        source_cidr: str | None = None
+        dest_cidr: str | None = None
+        comment: str | None = None
 
         for expr in exprs:
             for nft_action, canonical in _ACTION_MAP.items():

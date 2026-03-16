@@ -27,6 +27,7 @@ class TestPipeline:
     def test_task_is_bound(self):
         """process_gitops_webhook is a bound task (bind=True in decorator)."""
         import inspect
+
         from app.tasks.gitops import process_gitops_webhook
 
         source = inspect.getsource(process_gitops_webhook)

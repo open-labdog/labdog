@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
-from app.models.user import User
-from app.models.git_repository import GitRepository, GitAuthType
-from app.models.host_group import HostGroup
 from app.auth.users import current_superuser
-from app.schemas.git_repos import GitRepoCreate, GitRepoUpdate, GitRepoResponse
 from app.crypto import encrypt_ssh_key, get_master_key
+from app.db import get_db
+from app.models.git_repository import GitAuthType, GitRepository
+from app.models.host_group import HostGroup
+from app.models.user import User
+from app.schemas.git_repos import GitRepoCreate, GitRepoResponse, GitRepoUpdate
 
 router = APIRouter(prefix="/git-repos", tags=["git-repos"])
 

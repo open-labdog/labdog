@@ -5,11 +5,11 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.gitops.importer import ImportResult, import_group_from_yaml
+from app.gitops.importer import import_group_from_yaml
 from app.models.firewall_rule import FirewallRule
 from app.models.git_repository import GitOpsStatus
 from app.models.host_group import HostGroup
-from tests.conftest import create_group, create_rule
+from tests.conftest import create_group
 
 pytestmark = pytest.mark.integration
 

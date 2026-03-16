@@ -1,7 +1,6 @@
 import logging
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,8 +24,8 @@ class ImportResult:
     rules_added: int = 0
     rules_removed: int = 0
     rules_unchanged: int = 0
-    diff: Optional[RulesetDiff] = None
-    error_message: Optional[str] = None
+    diff: RulesetDiff | None = None
+    error_message: str | None = None
 
 
 async def import_group_from_yaml(
@@ -131,7 +130,7 @@ async def import_group_from_yaml(
     # Update group status
     group.gitops_status = GitOpsStatus.synced
     group.gitops_error_message = None
-    group.gitops_last_import_at = datetime.now(timezone.utc)
+    group.gitops_last_import_at = datetime.now(UTC)
     await db.flush()
 
     logger.info(
