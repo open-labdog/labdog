@@ -3,6 +3,7 @@ import { test, expect } from "@playwright/test"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 test.describe("Sync page", () => {
+  test.describe.configure({ mode: "serial" })
   let groupId: number
 
   test.beforeAll(async ({ request }) => {
