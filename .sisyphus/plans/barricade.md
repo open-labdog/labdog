@@ -2307,7 +2307,7 @@ Max Concurrent: 4 (Waves 1, 3, 4, 5, 6, 7)
   Run linter + `pytest`. Review all changed files for: `as any`/type ignores, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Verify no secrets in code (grep for key patterns).
   Output: `Build [PASS/FAIL] | Lint [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill) [DEFERRED — requires running Docker stack]
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill) [DEFERRED — requires running Docker stack]
   Start from clean state (docker-compose down -v && docker-compose up). Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration (login → create group → add host → add rules → plan → sync → drift check). Test edge cases: empty state, invalid input, unauthorized access. Save to `.sisyphus/evidence/final-qa/`.
   Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
 
