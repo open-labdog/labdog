@@ -223,7 +223,7 @@ Max Concurrent: 4 (Wave 2)
 
 ## TODOs
 
-- [ ] 1. Fix T18/T19: Implement Real `fetch_current_state` for nftables/firewalld/ufw
+- [x] 1. Fix T18/T19: Implement Real `fetch_current_state` for nftables/firewalld/ufw
 
   **What to do**:
   - Replace `fetch_current_state_stub()` in `app/sync/diff.py` with real implementations
@@ -338,7 +338,7 @@ Max Concurrent: 4 (Wave 2)
   - Files: `backend/app/sync/diff.py`, `backend/app/sync/parsers/`
   - Pre-commit: `cd backend && python -c "from app.sync.parsers import nftables, firewalld, ufw"`
 
-- [ ] 2. Extract Shared FirewallRule↔RuleSpec Converter
+- [x] 2. Extract Shared FirewallRule↔RuleSpec Converter
 
   **What to do**:
   - Create `app/rules/converter.py` with:
@@ -425,7 +425,7 @@ Max Concurrent: 4 (Wave 2)
   - Files: `backend/app/rules/converter.py`, `backend/app/api/rules.py`, `backend/app/api/sync.py`, `backend/app/tasks/sync.py`, `backend/app/api/drift.py`
   - Pre-commit: `cd backend && pytest -v --tb=short`
 
-- [ ] 3. GitRepository Model + HostGroup GitOps Fields + Alembic Migration
+- [x] 3. GitRepository Model + HostGroup GitOps Fields + Alembic Migration
 
   **What to do**:
   - Create `app/models/git_repository.py`:
@@ -545,7 +545,7 @@ Max Concurrent: 4 (Wave 2)
   - Files: `backend/app/models/git_repository.py`, `backend/app/models/host_group.py`, `backend/alembic/versions/0002_gitops_schema.py`
   - Pre-commit: `cd backend && alembic upgrade head`
 
-- [ ] 4. Git Operations Service (Clone/Pull with SSH + HTTPS Auth)
+- [x] 4. Git Operations Service (Clone/Pull with SSH + HTTPS Auth)
 
   **What to do**:
   - Create `app/gitops/git_service.py`:
@@ -640,7 +640,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(gitops): add git clone/pull service with SSH+HTTPS auth`
   - Files: `backend/app/gitops/git_service.py`, `backend/pyproject.toml`
 
-- [ ] 5. Multi-Module YAML Serializer/Deserializer
+- [x] 5. Multi-Module YAML Serializer/Deserializer
 
   **What to do**:
   - Create `app/gitops/schema.py` — Pydantic models for YAML validation:
@@ -781,7 +781,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(gitops): add multi-module YAML serializer/deserializer`
   - Files: `backend/app/gitops/serializer.py`, `backend/app/gitops/schema.py`
 
-- [ ] 6. GitRepository CRUD API + GitOps Enable/Disable
+- [x] 6. GitRepository CRUD API + GitOps Enable/Disable
 
   **What to do**:
   - Create `app/api/git_repos.py` with REST endpoints:
@@ -857,7 +857,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(api): add GitRepository CRUD + GitOps enable/disable`
   - Files: `backend/app/api/git_repos.py`, `backend/app/schemas/git_repos.py`, `backend/app/api/groups.py` (additions)
 
-- [ ] 7. Webhook Endpoints for GitHub/GitLab/Gitea
+- [x] 7. Webhook Endpoints for GitHub/GitLab/Gitea
 
   **What to do**:
   - Create `app/api/webhooks.py` with endpoints:
@@ -949,7 +949,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(api): add webhook endpoints for GitHub/GitLab/Gitea`
   - Files: `backend/app/api/webhooks.py`, `backend/app/main.py` (router registration)
 
-- [ ] 8. Import/Reconcile Engine
+- [x] 8. Import/Reconcile Engine
 
   **What to do**:
   - Create `app/gitops/importer.py`:
@@ -1047,7 +1047,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(gitops): add import/reconcile engine`
   - Files: `backend/app/gitops/importer.py`
 
-- [ ] 9. Rule Mutation Lockdown + GitOps UI Indicators
+- [x] 9. Rule Mutation Lockdown + GitOps UI Indicators
 
   **What to do**:
   - **Backend** — Modify `app/api/rules.py`:
@@ -1136,7 +1136,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(gitops): lock rule mutations on GitOps groups + UI indicators`
   - Files: `backend/app/api/rules.py` (modification), `frontend/app/(dashboard)/groups/[id]/page.tsx`, `frontend/app/(dashboard)/groups/[id]/rules/page.tsx`
 
-- [ ] 10. barricade-lint Standalone Pip Package
+- [x] 10. barricade-lint Standalone Pip Package
 
   **What to do**:
   - Create `barricade-lint/` directory at project root (NOT inside `backend/`):
