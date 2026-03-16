@@ -15,7 +15,7 @@ from app.auth.rbac import get_user_accessible_group_ids, require_group_role
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
 from app.rules.converter import firewall_rules_to_specs
-from app.sync.diff import compute_diff, fetch_current_state_stub
+from app.sync.diff import compute_diff, fetch_current_state
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -100,7 +100,7 @@ async def plan_host(
             raise HTTPException(status_code=403, detail="Not authorized")
 
     desired = await _get_desired_rules(host_id, db)
-    current = await fetch_current_state_stub(host_id)
+    current = await fetch_current_state(host_id)
     diff = compute_diff(current, desired)
 
     return HostDiff(
@@ -134,7 +134,7 @@ async def plan_group(
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
         desired = await _get_desired_rules(hid, db)
-        current = await fetch_current_state_stub(hid)
+        current = await fetch_current_state(hid)
         diff = compute_diff(current, desired)
         results.append(
             HostDiff(

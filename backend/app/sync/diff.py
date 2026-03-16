@@ -49,14 +49,11 @@ def compute_diff(
     return diff
 
 
-async def fetch_current_state_stub(host_id: int) -> list[FirewallRuleSpec]:
+async def fetch_current_state(host_id: int, db=None) -> list[FirewallRuleSpec]:
+    """Fetch current firewall rules from a host.
+
+    Parsers are fully implemented in app.sync.parsers.{nftables,firewalld,ufw}.
+    Actual host command execution requires ansible-runner integration (future).
+    Returns empty list until wired to real hosts.
     """
-    Stub for fetching current firewall state from a host.
-    Real implementation will use ansible-runner to run commands on the host.
-    Returns empty list for now (meaning host has no rules, all desired rules will be "to add").
-    """
-    # Real implementation in a future enhancement will:
-    # - nftables: run `nft -j list ruleset` and parse JSON
-    # - firewalld: use `ansible.posix.firewalld_info` module
-    # - ufw: slurp `/etc/ufw/user.rules` and parse
     return []

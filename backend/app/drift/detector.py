@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
-from app.sync.diff import RulesetDiff, compute_diff, fetch_current_state_stub
+from app.sync.diff import RulesetDiff, compute_diff, fetch_current_state
 
 
 @dataclass
@@ -20,7 +20,7 @@ class DriftResult:
 async def check_drift(host_id: int, desired_rules: list) -> DriftResult:
     """Check if host firewall matches desired state."""
     try:
-        current = await fetch_current_state_stub(host_id)
+        current = await fetch_current_state(host_id)
         diff = compute_diff(current, desired_rules)
         status = "in_sync" if not diff.has_changes else "out_of_sync"
         return DriftResult(host_id=host_id, status=status, diff=diff)
