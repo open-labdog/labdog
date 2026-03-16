@@ -5,6 +5,7 @@ from app.rules.model import FirewallRuleSpec
 @dataclass
 class RulesetDiff:
     """Result of comparing current vs desired firewall rules."""
+
     rules_to_add: list[FirewallRuleSpec] = field(default_factory=list)
     rules_to_remove: list[FirewallRuleSpec] = field(default_factory=list)
     rules_unchanged: list[FirewallRuleSpec] = field(default_factory=list)
@@ -49,11 +50,46 @@ def compute_diff(
     return diff
 
 
-async def fetch_current_state(host_id: int, db=None) -> list[FirewallRuleSpec]:
-    """Fetch current firewall rules from a host.
+async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
+    """Fetch current firewall rules from a host via SSH.
 
-    Parsers are fully implemented in app.sync.parsers.{nftables,firewalld,ufw}.
-    Actual host command execution requires ansible-runner integration (future).
-    Returns empty list until wired to real hosts.
+    Looks up host details and SSH key from DB, decrypts the key,
+    SSHes into the host, and parses the current firewall config.
+
+    Returns empty list if:
+    - Host has no SSH key assigned
+    - Host firewall backend is "unknown"
     """
-    return []
+    from sqlalchemy import select
+    from app.models.host import Host
+    from app.models.ssh_key import SSHKey
+    from app.crypto import decrypt_ssh_key, get_master_key
+    from app.sync.collector import collect_current_rules
+
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    if not host:
+        return []
+
+    backend = (
+        host.firewall_backend.value
+        if hasattr(host.firewall_backend, "value")
+        else host.firewall_backend
+    )
+    if backend == "unknown" or not host.ssh_key_id:
+        return []
+
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+    ssh_key = key_result.scalar_one_or_none()
+    if not ssh_key:
+        return []
+
+    master_key = get_master_key()
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
+
+    return await collect_current_rules(
+        host_ip=host.ip_address,
+        ssh_port=host.ssh_port,
+        private_key_pem=private_key_pem,
+        firewall_backend=backend,
+    )

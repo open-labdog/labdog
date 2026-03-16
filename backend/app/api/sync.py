@@ -100,7 +100,7 @@ async def plan_host(
             raise HTTPException(status_code=403, detail="Not authorized")
 
     desired = await _get_desired_rules(host_id, db)
-    current = await fetch_current_state(host_id)
+    current = await fetch_current_state(host_id, db)
     diff = compute_diff(current, desired)
 
     return HostDiff(
@@ -134,7 +134,7 @@ async def plan_group(
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
         desired = await _get_desired_rules(hid, db)
-        current = await fetch_current_state(hid)
+        current = await fetch_current_state(hid, db)
         diff = compute_diff(current, desired)
         results.append(
             HostDiff(

@@ -163,14 +163,32 @@ async def get_current_rules(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fetch current firewall rules from host. Stub returns empty list."""
+    """Fetch current firewall rules from host via SSH."""
+    from app.sync.diff import fetch_current_state
+
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-    # Stub: real implementation will use ansible-runner to fetch actual rules
-    # For now return empty list (real detection deferred to Ansible integration)
-    return []
+
+    try:
+        rules = await fetch_current_state(host_id, db)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch rules from host: {e}")
+
+    return [
+        {
+            "action": r.action,
+            "protocol": r.protocol,
+            "direction": r.direction,
+            "source_cidr": r.source_cidr,
+            "destination_cidr": r.destination_cidr,
+            "port_start": r.port_start,
+            "port_end": r.port_end,
+            "comment": r.comment,
+        }
+        for r in rules
+    ]
 
 
 @router.post("/{host_id}/import-rules", status_code=201)

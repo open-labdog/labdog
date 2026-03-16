@@ -59,7 +59,7 @@ async def check_host_drift(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     desired = await _get_desired_rules_for_host(host_id, db)
-    result = await check_drift(host_id, desired)
+    result = await check_drift(host_id, desired, db)
     host.sync_status = result.status
     host.last_drift_check_at = datetime.now(timezone.utc)
     await db.commit()
@@ -89,7 +89,7 @@ async def check_group_drift(
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
         desired = await _get_desired_rules_for_host(hid, db)
-        result = await check_drift(hid, desired)
+        result = await check_drift(hid, desired, db)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(timezone.utc)
         results.append(
