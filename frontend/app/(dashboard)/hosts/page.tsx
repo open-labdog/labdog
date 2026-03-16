@@ -29,7 +29,12 @@ export default function HostsPage() {
           <h1 className="text-2xl font-bold text-white">Hosts</h1>
           <p className="text-slate-400 text-sm mt-1">Manage firewall hosts</p>
         </div>
-        <Link href="/hosts/new" className={cn(buttonVariants())}>Add Host</Link>
+        <div className="flex gap-2">
+          <Link href="/hosts/discover" className={cn(buttonVariants({ variant: "outline" }))}>
+            Discover Hosts
+          </Link>
+          <Link href="/hosts/new" className={cn(buttonVariants())}>Add Host</Link>
+        </div>
       </div>
 
       {isLoading && (
