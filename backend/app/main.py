@@ -14,6 +14,7 @@ from app.api.audit import router as audit_router
 from app.api.discovery import router as discovery_router
 from app.api.webhooks import router as webhooks_router
 from app.api.git_repos import router as git_repos_router
+from app.api.admin_users import router as admin_users_router
 
 
 def create_app() -> FastAPI:
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
+    app.include_router(admin_users_router, prefix="/api")
 
     # Webhooks at /webhooks/ (NOT under /api prefix)
     app.include_router(webhooks_router)
