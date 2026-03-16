@@ -17,6 +17,7 @@ celery_app.conf.update(
         "app.tasks.sync.*": {"queue": "long_running"},
         "app.tasks.drift.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
+        "gitops.*": {"queue": "long_running"},
     },
     worker_max_tasks_per_child=100,
 )
