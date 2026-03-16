@@ -211,7 +211,7 @@ export default function GroupSyncPage() {
     return () => clearInterval(interval)
   }, [jobId, jobStatus?.status, pollJob])
 
-  const hasChanges = plan && plan.hosts.some(
+  const hasChanges = plan && plan.hosts?.some(
     (h) => h.diffs.some((d) => d.status !== "unchanged")
   )
 
