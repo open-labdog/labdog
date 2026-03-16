@@ -1,7 +1,7 @@
 """drop user_group_permissions and grouprole enum
 
 Revision ID: 0003_drop_rbac
-Revises: 0002_gitops_schema
+Revises: 0002
 Create Date: 2026-03-16
 """
 
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "0003_drop_rbac"
-down_revision: str = "0002_gitops_schema"
+down_revision: str = "0002"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
