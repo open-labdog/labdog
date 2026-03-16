@@ -40,3 +40,13 @@ export interface FirewallRule {
   created_at: string
   updated_at: string
 }
+
+export interface AdminUser {
+  id: number
+  email: string
+  is_active: boolean
+  is_superuser: boolean
+  is_verified: boolean
+  created_at: string
+  updated_at: string
+}
