@@ -17,10 +17,10 @@ class DriftResult:
             self.checked_at = datetime.now(timezone.utc)
 
 
-async def check_drift(host_id: int, desired_rules: list) -> DriftResult:
+async def check_drift(host_id: int, desired_rules: list, db=None) -> DriftResult:
     """Check if host firewall matches desired state."""
     try:
-        current = await fetch_current_state(host_id)
+        current = await fetch_current_state(host_id, db)
         diff = compute_diff(current, desired_rules)
         status = "in_sync" if not diff.has_changes else "out_of_sync"
         return DriftResult(host_id=host_id, status=status, diff=diff)
