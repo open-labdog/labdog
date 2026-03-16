@@ -9,11 +9,11 @@ Tests cover:
 """
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
 
-from app.discovery.scanner import validate_cidr, scan_network
+from app.discovery.scanner import scan_network, validate_cidr
 from tests.conftest import create_ssh_key
 
 pytestmark = pytest.mark.integration

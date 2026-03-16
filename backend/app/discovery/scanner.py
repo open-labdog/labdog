@@ -28,7 +28,7 @@ async def check_port(
         except ConnectionResetError:
             # Port was open; service reset connection immediately (treat as open)
             return host
-        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+        except (TimeoutError, ConnectionRefusedError, OSError):
             return None
 
 
