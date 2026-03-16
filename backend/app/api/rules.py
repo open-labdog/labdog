@@ -17,6 +17,17 @@ from app.rules.converter import firewall_rules_to_specs
 router = APIRouter(tags=["rules"])
 
 
+async def _check_gitops_lock(group_id: int, db: AsyncSession):
+    """Block rule mutations on GitOps-managed groups."""
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    group = result.scalar_one_or_none()
+    if group and group.gitops_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail="This group is managed by GitOps. Rule changes must be made via Git.",
+        )
+
+
 @router.get("/groups/{group_id}/rules", response_model=list[RuleResponse])
 async def list_rules(
     group_id: int,
@@ -38,7 +49,7 @@ async def create_rule(
     _: None = Depends(require_group_role(GroupRole.editor)),
     db: AsyncSession = Depends(get_db),
 ):
-    # Validate ICMP + port
+    await _check_gitops_lock(group_id, db)
     if body.protocol == "icmp" and body.port_start is not None:
         raise HTTPException(status_code=400, detail="ICMP rules cannot specify ports")
     # Validate port range
@@ -58,7 +69,7 @@ async def reorder_rules(
     _: None = Depends(require_group_role(GroupRole.editor)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Batch update rule priorities. rule_ids[0] gets highest priority."""
+    await _check_gitops_lock(group_id, db)
     for idx, rule_id in enumerate(reversed(body.rule_ids)):
         result = await db.execute(
             select(FirewallRule).where(
@@ -81,6 +92,7 @@ async def update_rule(
     _: None = Depends(require_group_role(GroupRole.editor)),
     db: AsyncSession = Depends(get_db),
 ):
+    await _check_gitops_lock(group_id, db)
     result = await db.execute(
         select(FirewallRule).where(
             FirewallRule.id == rule_id,
@@ -106,6 +118,7 @@ async def delete_rule(
     _: None = Depends(require_group_role(GroupRole.editor)),
     db: AsyncSession = Depends(get_db),
 ):
+    await _check_gitops_lock(group_id, db)
     result = await db.execute(
         select(FirewallRule).where(
             FirewallRule.id == rule_id,

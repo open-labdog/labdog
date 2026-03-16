@@ -1,9 +1,16 @@
 export type FirewallBackend = "nftables" | "firewalld" | "ufw" | "unknown"
 export type SyncStatus = "pending" | "in_sync" | "out_of_sync" | "unknown" | "error"
+export type GitOpsStatus = "disconnected" | "synced" | "error" | "importing"
 
 export interface HostGroup {
   id: number; name: string; description: string | null; priority: number
   created_at: string; updated_at: string
+  gitops_enabled: boolean
+  gitops_status: GitOpsStatus | null
+  gitops_error_message: string | null
+  gitops_last_import_at: string | null
+  gitops_file_path: string | null
+  git_repository_id: number | null
 }
 export interface Host {
   id: number; hostname: string; ip_address: string; ssh_port: number
