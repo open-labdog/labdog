@@ -149,7 +149,7 @@ Max Concurrent: 2 (Waves 1-2)
 
 ## TODOs
 
-- [ ] 1. Network Scanner Module + CIDR Validation
+- [x] 1. Network Scanner Module + CIDR Validation
 
   **What to do**:
   - Create `backend/app/discovery/__init__.py` (empty)
@@ -246,7 +246,7 @@ Max Concurrent: 2 (Waves 1-2)
   - Message: `feat(discovery): add async network scanner with CIDR validation`
   - Files: `backend/app/discovery/__init__.py`, `backend/app/discovery/scanner.py`
 
-- [ ] 2. Discovery Schemas + Settings Config
+- [x] 2. Discovery Schemas + Settings Config
 
   **What to do**:
   - Create `backend/app/schemas/discovery.py`:
@@ -330,7 +330,7 @@ Max Concurrent: 2 (Waves 1-2)
   - Message: `feat(discovery): add discovery schemas and settings`
   - Files: `backend/app/schemas/discovery.py`, `backend/app/config.py`
 
-- [ ] 3. Discovery Scan API + Celery Task
+- [x] 3. Discovery Scan API + Celery Task
 
   **What to do**:
   - Create `backend/app/tasks/discovery.py` — Celery task:
@@ -410,7 +410,7 @@ Max Concurrent: 2 (Waves 1-2)
   - Message: `feat(api): add discovery scan and bulk-add endpoints`
   - Files: `backend/app/tasks/discovery.py`, `backend/app/api/discovery.py`, `backend/app/main.py`
 
-- [ ] 4. Bulk Add Hosts Endpoint
+- [x] 4. Bulk Add Hosts Endpoint
 
   **What to do**:
   - Add to `backend/app/api/discovery.py`:
@@ -477,7 +477,7 @@ Max Concurrent: 2 (Waves 1-2)
 
   **Commit**: YES (grouped with T3)
 
-- [ ] 5. Discovery UI Page
+- [x] 5. Discovery UI Page
 
   **What to do**:
   - Create `frontend/app/(dashboard)/hosts/discover/page.tsx`:
@@ -566,7 +566,7 @@ Max Concurrent: 2 (Waves 1-2)
   - Message: `feat(ui): add host discovery page`
   - Files: `frontend/app/(dashboard)/hosts/discover/page.tsx`, `frontend/app/(dashboard)/hosts/page.tsx` (button)
 
-- [ ] 6. Discovery Pytest Suite
+- [x] 6. Discovery Pytest Suite
 
   **What to do**:
   - Create `backend/tests/test_discovery.py` with:
@@ -636,16 +636,16 @@ Max Concurrent: 2 (Waves 1-2)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify all Must Have items implemented. Check blocked ranges enforced. Verify max bulk-add limit. Check superuser-only access.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run pytest + ruff. Check for fd leaks (writer.wait_closed). Check no secrets in code. Verify CIDR validation covers edge cases.
 
-- [ ] F3. **Real QA** — `unspecified-high`
+- [x] F3. **Real QA** — `unspecified-high`
   Start Docker stack. Scan localhost/24 or test network. Verify results exclude existing hosts. Bulk-add 3 hosts. Verify they appear in hosts list.
 
-- [ ] F4. **Scope Fidelity Check** — `unspecified-high`
+- [x] F4. **Scope Fidelity Check** — `unspecified-high`
   Verify no nmap/scapy dependencies. No scheduled scans. No firewall auto-detect. No non-22 port scanning. Only discovery-related files changed.
 
 ---
