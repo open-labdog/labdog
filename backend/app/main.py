@@ -5,7 +5,6 @@ from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.api.auth_setup import router as auth_setup_router
 from app.api.hosts import router as hosts_router
-from app.api.permissions import router as permissions_router
 from app.api.groups import router as groups_router
 from app.api.ssh_keys import router as ssh_keys_router
 from app.api.rules import router as rules_router
@@ -45,7 +44,6 @@ def create_app() -> FastAPI:
         tags=["users"],
     )
 
-    app.include_router(permissions_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(ssh_keys_router, prefix="/api")
