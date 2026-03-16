@@ -20,6 +20,7 @@ dependencies = [
     "ansible-runner>=2.4",
     "cryptography>=43",
     "fastapi-users[sqlalchemy]>=14",
+    "gitpython>=3.1",
 ]
 
 [project.optional-dependencies]
