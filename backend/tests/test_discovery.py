@@ -178,14 +178,14 @@ class TestDiscoveryAPI:
         )
         assert resp.status_code == 404
 
-    async def test_non_superuser_scan_rejected(self, viewer_client):
-        resp = await viewer_client.post(
+    async def test_non_superuser_scan_rejected(self, regular_user_client):
+        resp = await regular_user_client.post(
             "/api/discovery/scan", json={"cidr": "10.0.0.0/28"}
         )
         assert resp.status_code == 403
 
-    async def test_non_superuser_add_rejected(self, viewer_client):
-        resp = await viewer_client.post(
+    async def test_non_superuser_add_rejected(self, regular_user_client):
+        resp = await regular_user_client.post(
             "/api/discovery/add-hosts",
             json={"ips": ["10.0.0.1"], "ssh_key_id": 1},
         )

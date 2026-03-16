@@ -6,7 +6,6 @@ from app.models.host_group import HostGroup
 from app.models.git_repository import GitRepository, GitOpsStatus
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
-from app.auth.rbac import get_user_accessible_group_ids
 from app.schemas.groups import GroupCreate, GroupUpdate, GroupResponse
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
 
@@ -15,14 +14,10 @@ router = APIRouter(prefix="/groups", tags=["groups"])
 
 @router.get("", response_model=list[GroupResponse])
 async def list_groups(
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    accessible = await get_user_accessible_group_ids(user, db)
-    q = select(HostGroup).order_by(HostGroup.priority.desc())
-    if accessible is not None:
-        q = q.where(HostGroup.id.in_(accessible))
-    result = await db.execute(q)
+    result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
     return result.scalars().all()
 
 
@@ -50,12 +45,9 @@ async def create_group(
 @router.get("/{group_id}", response_model=GroupResponse)
 async def get_group(
     group_id: int,
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None and group_id not in accessible:
-        raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
     group = result.scalar_one_or_none()
     if not group:
@@ -70,9 +62,6 @@ async def update_group(
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None and group_id not in accessible:
-        raise HTTPException(status_code=403, detail="Not authorized")
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
     group = result.scalar_one_or_none()
     if not group:

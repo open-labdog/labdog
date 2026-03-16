@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, FormEvent } from "react"
+import { useState, useEffect, FormEvent } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -13,6 +13,42 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetch("http://localhost:8000/auth/setup-status", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setNeedsSetup(data.needs_setup === true))
+      .catch(() => setNeedsSetup(false))
+  }, [])
+
+  if (needsSetup === null) {
+    return (
+      <Card>
+        <CardContent className="py-8">
+          <p className="text-center text-muted-foreground">Loading...</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!needsSetup) {
+    return (
+      <Card>
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl font-bold text-center">Registration Closed</CardTitle>
+          <CardDescription className="text-center">
+            Registration is closed. Contact your administrator to get an account.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link href="/login" className="block text-center text-sm underline underline-offset-4 hover:text-primary text-muted-foreground">
+            Back to login
+          </Link>
+        </CardContent>
+      </Card>
+    )
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -24,24 +60,22 @@ export default function RegisterPage() {
     }
 
     setLoading(true)
-
     try {
       const res = await fetch("http://localhost:8000/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       })
 
-      if (res.status === 201) {
+      if (res.ok) {
         window.location.href = "/login"
       } else {
         const data = await res.json().catch(() => null)
-        setError(data?.detail ?? "Registration failed. Please try again.")
+        setError(data?.detail || "Registration failed")
       }
     } catch {
-      setError("Registration failed. Please try again.")
+      setError("Registration failed")
     } finally {
       setLoading(false)
     }
@@ -50,7 +84,8 @@ export default function RegisterPage() {
   return (
     <Card>
       <CardHeader className="space-y-1">
-        <h2 className="text-2xl font-bold text-center text-base leading-snug">Create Account</h2>
+        <CardTitle className="text-2xl font-bold text-center">Create Admin Account</CardTitle>
+        <CardDescription className="text-center">Set up the first administrator account</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -59,7 +94,7 @@ export default function RegisterPage() {
             <Input
               id="email"
               type="email"
-              placeholder="you@example.com"
+              placeholder="admin@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -78,9 +113,9 @@ export default function RegisterPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="confirmPassword">Confirm Password</Label>
+            <Label htmlFor="confirm-password">Confirm Password</Label>
             <Input
-              id="confirmPassword"
+              id="confirm-password"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
