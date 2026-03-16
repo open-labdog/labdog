@@ -1,0 +1,46 @@
+Task 11: Auto-Sync Pipeline (webhook → import → sync)
+=======================================================
+
+Files created:
+- backend/app/tasks/gitops.py — Celery task process_gitops_webhook
+- backend/app/gitops/pipeline.py — Intentionally minimal (orchestration in task)
+
+Verification 1: Task imports and name
+--------------------------------------
+$ cd backend && .venv/bin/python -c "
+from app.tasks.gitops import process_gitops_webhook
+print('PASS: task imports')
+print('Task name:', process_gitops_webhook.name)
+assert process_gitops_webhook.name == 'gitops.process_webhook'
+print('Max retries:', process_gitops_webhook.max_retries)
+"
+PASS: task imports
+Task name: gitops.process_webhook
+Max retries: 3
+
+Verification 2: Celery route configured
+-----------------------------------------
+$ cd backend && .venv/bin/python -c "
+from app.tasks import celery_app
+routes = celery_app.conf.task_routes
+print('Task routes:', routes)
+assert any('gitops' in k for k in routes)
+print('PASS: gitops route configured')
+"
+Task routes: {'app.tasks.sync.*': {'queue': 'long_running'}, 'app.tasks.drift.*': {'queue': 'long_running'}, 'discovery.*': {'queue': 'long_running'}, 'gitops.*': {'queue': 'long_running'}}
+PASS: gitops route configured
+
+Verification 3: All 91 tests pass
+-----------------------------------
+$ cd backend && .venv/bin/pytest tests/ --ignore=tests/integration -q --tb=short
+91 passed, 89 warnings in 12.59s
+
+Key design decisions:
+- run_sync_playbook requires (job_id, host_id) → SyncJob created per host before dispatch
+- Skips hosts with already-running syncs (mirrors api/sync.py pattern)
+- SSH key resolved from SSHKey model for SSH auth repos
+- triggered_by_user_id=None distinguishes gitops-triggered from user-triggered syncs
+- Idempotency: same commit SHA processed twice → second is no-op
+- Missing YAML file → group status "error", other groups still processed
+- Import failure → no sync triggered for that group
+- Temp repo directory cleaned in finally block
