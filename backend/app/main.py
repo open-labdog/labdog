@@ -11,6 +11,7 @@ from app.api.rules import router as rules_router
 from app.api.sync import router as sync_router
 from app.api.drift import router as drift_router
 from app.api.audit import router as audit_router
+from app.api.discovery import router as discovery_router
 
 
 def create_app() -> FastAPI:
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(sync_router, prefix="/api")
     app.include_router(drift_router, prefix="/api")
     app.include_router(audit_router, prefix="/api")
+    app.include_router(discovery_router, prefix="/api")
 
     @app.get("/health")
     async def health():
