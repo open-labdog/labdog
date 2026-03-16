@@ -9,6 +9,7 @@ const navItems = [
   { href: '/groups', label: 'Groups' },
   { href: '/hosts', label: 'Hosts' },
   { href: '/ssh-keys', label: 'SSH Keys' },
+  { href: '/git-repos', label: 'Git Repos' },
   { href: '/audit', label: 'Audit Log' },
 ]
 
