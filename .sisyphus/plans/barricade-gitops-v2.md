@@ -1246,7 +1246,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(lint): add barricade-lint standalone pip package`
   - Files: `barricade-lint/`
 
-- [ ] 11. Auto-Sync Pipeline Wiring (Webhook → Import → Diff → Sync)
+- [x] 11. Auto-Sync Pipeline Wiring (Webhook → Import → Diff → Sync)
 
   **What to do**:
   - Create `app/tasks/gitops.py` — Celery task on `long_running` queue:
@@ -1341,7 +1341,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `feat(gitops): wire auto-sync pipeline (webhook→import→sync)`
   - Files: `backend/app/tasks/gitops.py`, `backend/app/gitops/pipeline.py`
 
-- [ ] 12. GitOps Pytest Suite
+- [x] 12. GitOps Pytest Suite
 
   **What to do**:
   - Create test files in `backend/tests/`:
@@ -1433,7 +1433,7 @@ Max Concurrent: 4 (Wave 2)
   - Message: `test(gitops): add pytest suite for GitOps features`
   - Files: `backend/tests/test_gitops_*.py`
 
-- [ ] 13. End-to-End GitOps Pipeline Integration Test
+- [x] 13. End-to-End GitOps Pipeline Integration Test
 
   **What to do**:
   - Create `backend/tests/integration/test_gitops_workflow.py`:
