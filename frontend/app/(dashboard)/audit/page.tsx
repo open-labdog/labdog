@@ -158,7 +158,7 @@ export default function AuditPage() {
         <div className="text-slate-400 py-8 text-center">No audit entries found.</div>
       )}
 
-      {!isLoading && filtered.length > 0 && (
+      {!isLoading && (
         <>
           <div className="rounded-lg border border-slate-700 bg-slate-900">
             <Table>
@@ -206,9 +206,11 @@ export default function AuditPage() {
             </div>
           )}
 
-          <p className="text-center text-xs text-slate-500">
-            Showing {paginated.length} of {filtered.length} entries
-          </p>
+          {filtered.length > 0 && (
+            <p className="text-center text-xs text-slate-500">
+              Showing {paginated.length} of {filtered.length} entries
+            </p>
+          )}
         </>
       )}
     </div>
