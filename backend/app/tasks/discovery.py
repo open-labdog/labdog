@@ -1,5 +1,6 @@
 import asyncio
 import socket
+
 from app.tasks import celery_app
 
 
@@ -9,8 +10,8 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
     Scan network for SSH hosts, excluding IPs already in the DB.
     Runs asyncio scanner in a Celery worker (sync task, bridges to async via asyncio.run).
     """
-    from app.discovery.scanner import validate_cidr, check_port
     from app.config import settings
+    from app.discovery.scanner import check_port, validate_cidr
 
     # Validate and enumerate hosts
     network = validate_cidr(cidr, settings.DISCOVERY_MIN_PREFIX)

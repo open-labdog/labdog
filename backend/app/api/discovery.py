@@ -1,21 +1,26 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, insert as sa_insert
-from sqlalchemy.ext.asyncio import AsyncSession
 from celery.result import AsyncResult
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import insert as sa_insert
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_superuser
+from app.config import settings
 from app.db import get_db
-from app.models.user import User
-from app.models.host import Host
+from app.discovery.scanner import validate_cidr
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.ssh_key import SSHKey
-from app.models.host import HostGroupMembership
-from app.auth.users import current_superuser
-from app.discovery.scanner import validate_cidr
-from app.schemas.discovery import ScanRequest, ScanStatus, DiscoveredHost, BulkAddRequest, BulkAddResponse
+from app.models.user import User
+from app.schemas.discovery import (
+    BulkAddRequest,
+    BulkAddResponse,
+    DiscoveredHost,
+    ScanRequest,
+    ScanStatus,
+)
 from app.schemas.hosts import HostResponse
-from app.config import settings
 from app.tasks import celery_app
-
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 
@@ -112,7 +117,10 @@ async def add_discovered_hosts(
     if len(body.ips) > settings.DISCOVERY_MAX_BULK_ADD:
         raise HTTPException(
             status_code=422,
-            detail=f"Too many hosts. Maximum is {settings.DISCOVERY_MAX_BULK_ADD}, got {len(body.ips)}."
+            detail=(
+                f"Too many hosts. Maximum is {settings.DISCOVERY_MAX_BULK_ADD}, "
+                f"got {len(body.ips)}."
+            )
         )
 
     # Validate SSH key exists
