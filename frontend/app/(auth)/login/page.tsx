@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, FormEvent } from "react"
+import { useState, useEffect, FormEvent } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -12,6 +12,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [needsSetup, setNeedsSetup] = useState(false)
+
+  useEffect(() => {
+    fetch("http://localhost:8000/auth/setup-status", { credentials: "include" })
+      .then((res) => res.json())
+      .then((data) => setNeedsSetup(data.needs_setup === true))
+      .catch(() => setNeedsSetup(false))
+  }, [])
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -78,12 +86,14 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign In"}
           </Button>
         </form>
-        <p className="mt-4 text-center text-sm text-muted-foreground">
-          Don&apos;t have an account?{" "}
-          <Link href="/register" className="underline underline-offset-4 hover:text-primary">
-            Register
-          </Link>
-        </p>
+        {needsSetup && (
+          <p className="mt-4 text-center text-sm text-muted-foreground">
+            First time?{" "}
+            <Link href="/register" className="underline underline-offset-4 hover:text-primary">
+              Create admin account
+            </Link>
+          </p>
+        )}
       </CardContent>
     </Card>
   )
