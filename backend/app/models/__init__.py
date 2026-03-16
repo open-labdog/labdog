@@ -8,7 +8,6 @@ from app.models.host import Host, HostGroupMembership, FirewallBackend, SyncStat
 from app.models.firewall_rule import FirewallRule, RuleAction, RuleProtocol, RuleDirection
 from app.models.sync_job import SyncJob, JobStatus
 from app.models.audit_log import AuditLog
-from app.models.user_group_permission import UserGroupPermission, GroupRole
 from app.models.git_repository import GitRepository, GitAuthType, GitOpsStatus
 
 __all__ = [
@@ -27,8 +26,6 @@ __all__ = [
     "SyncJob",
     "JobStatus",
     "AuditLog",
-    "UserGroupPermission",
-    "GroupRole",
     "GitRepository",
     "GitAuthType",
     "GitOpsStatus",

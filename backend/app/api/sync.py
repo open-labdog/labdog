@@ -8,10 +8,8 @@ from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
 from app.models.sync_job import SyncJob
-from app.models.user_group_permission import GroupRole
 from app.models.user import User
 from app.auth.users import current_active_user
-from app.auth.rbac import get_user_accessible_group_ids, require_group_role
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
 from app.rules.converter import firewall_rules_to_specs
@@ -78,7 +76,7 @@ async def _get_desired_rules(host_id: int, db: AsyncSession) -> list[FirewallRul
 @router.post("/hosts/{host_id}/plan", response_model=HostDiff)
 async def plan_host(
     host_id: int,
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview changes for a single host (does NOT apply)."""
@@ -86,18 +84,6 @@ async def plan_host(
     host = host_result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-
-    # Check access
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None:
-        memberships = await db.execute(
-            select(HostGroupMembership.c.group_id).where(
-                HostGroupMembership.c.host_id == host_id,
-                HostGroupMembership.c.group_id.in_(accessible),
-            )
-        )
-        if not memberships.all():
-            raise HTTPException(status_code=403, detail="Not authorized")
 
     desired = await _get_desired_rules(host_id, db)
     current = await fetch_current_state(host_id, db)
@@ -116,14 +102,10 @@ async def plan_host(
 @router.post("/groups/{group_id}/plan", response_model=list[HostDiff])
 async def plan_group(
     group_id: int,
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Preview changes for all hosts in a group (does NOT apply)."""
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None and group_id not in accessible:
-        raise HTTPException(status_code=403, detail="Not authorized")
-
     memberships = await db.execute(
         select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
@@ -230,7 +212,6 @@ async def trigger_host_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_sync(
     group_id: int,
-    _: None = Depends(require_group_role(GroupRole.editor)),
     user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):

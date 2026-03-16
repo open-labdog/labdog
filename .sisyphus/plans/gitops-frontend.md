@@ -48,15 +48,15 @@ What's MISSING:
 Give superusers a complete UI to manage GitOps — create git repos, link them to groups, see sync status, and get webhook URLs for setup.
 
 ### Definition of Done
-- [ ] User can create a Git repository (name, URL, branch, auth type, credentials, webhook secret)
-- [ ] User can see all Git repositories in a list with linked group count
-- [ ] User can edit and delete Git repositories
-- [ ] User can enable GitOps on a group (select repo, enter file path)
-- [ ] User can disable GitOps on a group
-- [ ] User can see GitOps sync status (synced/error/importing/disconnected) on group detail
-- [ ] Groups list shows which groups are GitOps-managed
-- [ ] Sidebar has "Git Repos" navigation item
-- [ ] Frontend builds without errors
+- [x] User can create a Git repository (name, URL, branch, auth type, credentials, webhook secret)
+- [x] User can see all Git repositories in a list with linked group count
+- [x] User can edit and delete Git repositories
+- [x] User can enable GitOps on a group (select repo, enter file path)
+- [x] User can disable GitOps on a group
+- [x] User can see GitOps sync status (synced/error/importing/disconnected) on group detail
+- [x] Groups list shows which groups are GitOps-managed
+- [x] Sidebar has "Git Repos" navigation item
+- [x] Frontend builds without errors
 
 ### Must NOT Have
 - No webhook management UI (user configures webhooks in Git hosting, we just show the URL)
@@ -110,7 +110,7 @@ Max Concurrent: 2
 
 ## TODOs
 
-- [ ] 1. TypeScript Interfaces + Sidebar Navigation Update
+- [x] 1. TypeScript Interfaces + Sidebar Navigation Update
 
   **What to do**:
   - Add to `frontend/lib/types.ts`:
@@ -168,7 +168,7 @@ Max Concurrent: 2
 
   **Commit**: YES — `feat(ui): add GitRepository types and sidebar navigation`
 
-- [ ] 2. Git Repositories Management Page
+- [x] 2. Git Repositories Management Page
 
   **What to do**:
   - Create `frontend/app/(dashboard)/git-repos/page.tsx`:
@@ -232,7 +232,7 @@ Max Concurrent: 2
 
   **Commit**: YES — `feat(ui): add Git Repositories management page`
 
-- [ ] 3. GitOps Settings on Group Detail Page
+- [x] 3. GitOps Settings on Group Detail Page
 
   **What to do**:
   - Modify `frontend/app/(dashboard)/groups/[id]/page.tsx`:
@@ -295,7 +295,7 @@ Max Concurrent: 2
 
   **Commit**: YES — `feat(ui): add GitOps settings section on group detail page`
 
-- [ ] 4. GitOps Status Column on Groups List Page
+- [x] 4. GitOps Status Column on Groups List Page
 
   **What to do**:
   - Modify `frontend/app/(dashboard)/groups/page.tsx`:
@@ -322,7 +322,7 @@ Max Concurrent: 2
 
   **Commit**: YES — `feat(ui): add GitOps status column to groups list`
 
-- [ ] 5. Build Verification
+- [x] 5. Build Verification
 
   **What to do**:
   - Run `cd frontend && npm run build` — must pass with 0 errors
@@ -344,10 +344,10 @@ Max Concurrent: 2
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — `unspecified-high`
+- [x] F1. **Plan Compliance Audit** — `unspecified-high`
   Verify all Definition of Done items. Check all pages render. Check sidebar has nav item. Check groups list has GitOps column.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `npm run build`. Check TypeScript types match backend schemas. No `any` types. No hardcoded URLs.
 
 ---

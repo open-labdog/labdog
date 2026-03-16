@@ -7,8 +7,6 @@ from app.models.host import HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.auth.users import current_active_user
-from app.auth.rbac import require_group_role, get_user_accessible_group_ids
-from app.models.user_group_permission import GroupRole
 from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
@@ -31,7 +29,7 @@ async def _check_gitops_lock(group_id: int, db: AsyncSession):
 @router.get("/groups/{group_id}/rules", response_model=list[RuleResponse])
 async def list_rules(
     group_id: int,
-    _: None = Depends(require_group_role(GroupRole.viewer)),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -46,7 +44,7 @@ async def list_rules(
 async def create_rule(
     group_id: int,
     body: RuleCreate,
-    _: None = Depends(require_group_role(GroupRole.editor)),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -66,7 +64,7 @@ async def create_rule(
 async def reorder_rules(
     group_id: int,
     body: RuleReorder,
-    _: None = Depends(require_group_role(GroupRole.editor)),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -89,7 +87,7 @@ async def update_rule(
     group_id: int,
     rule_id: int,
     body: RuleUpdate,
-    _: None = Depends(require_group_role(GroupRole.editor)),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -115,7 +113,7 @@ async def update_rule(
 async def delete_rule(
     group_id: int,
     rule_id: int,
-    _: None = Depends(require_group_role(GroupRole.editor)),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -137,22 +135,10 @@ async def delete_rule(
 @router.get("/hosts/{host_id}/effective-rules", response_model=list[EffectiveRuleResponse])
 async def get_effective_rules(
     host_id: int,
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Get merged ruleset for a host (all groups, priority-merged, with SSH lockout rule)."""
-    # Check host access — superuser bypasses, others need at least one matching group
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None:
-        memberships_check = await db.execute(
-            select(HostGroupMembership.c.group_id).where(
-                HostGroupMembership.c.host_id == host_id,
-                HostGroupMembership.c.group_id.in_(accessible),
-            )
-        )
-        if not memberships_check.first():
-            raise HTTPException(status_code=403, detail="Not authorized")
-
     # Get all groups for this host
     memberships_all = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)

@@ -66,17 +66,17 @@ Make Barricade deployable and usable: fix the superuser bootstrap, give superuse
 - Tests: Updated backend fixtures + E2E tests
 
 ### Definition of Done
-- [ ] First registered user auto-becomes superuser
-- [ ] Second registration attempt returns 403
-- [ ] Superuser can create/edit/delete users via `/users` page
-- [ ] Last superuser cannot be deleted or demoted
-- [ ] Sidebar shows user email and logout button
-- [ ] Password change works from sidebar
-- [ ] All `require_group_role` references removed
-- [ ] All `UserGroupPermission` references removed
-- [ ] `npm run build` passes
-- [ ] `pytest tests/` passes
-- [ ] `npx playwright test` passes
+- [x] First registered user auto-becomes superuser
+- [x] Second registration attempt returns 403
+- [x] Superuser can create/edit/delete users via `/users` page
+- [x] Last superuser cannot be deleted or demoted
+- [x] Sidebar shows user email and logout button
+- [x] Password change works from sidebar
+- [x] All `require_group_role` references removed
+- [x] All `UserGroupPermission` references removed
+- [x] `npm run build` passes
+- [x] `pytest tests/` passes
+- [x] `npx playwright test` passes
 
 ### Must Have
 - `on_after_register` hook for first-user superuser promotion (NOT `create()` override due to `safe=True`)
@@ -180,7 +180,7 @@ Max Concurrent: 3 (Wave 3)
 
 ## TODOs
 
-- [ ] 1. First-User Auto-Promotion + Registration Gating + Setup-Status Endpoint
+- [x] 1. First-User Auto-Promotion + Registration Gating + Setup-Status Endpoint
 
   **What to do**:
   - Modify `backend/app/auth/users.py` — override `on_after_register` in `UserManager`:
@@ -262,7 +262,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `feat(auth): auto-promote first user to superuser and gate registration`
   - Files: `backend/app/auth/users.py`, `backend/app/api/auth_setup.py`, `backend/app/main.py`
 
-- [ ] 2. User Management Admin API (CRUD + Last-Superuser Guard)
+- [x] 2. User Management Admin API (CRUD + Last-Superuser Guard)
 
   **What to do**:
   - Create `backend/app/api/admin_users.py` with router prefix `/admin/users`:
@@ -356,7 +356,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `feat(api): add user management admin endpoints with last-superuser guard`
   - Files: `backend/app/api/admin_users.py`, `backend/app/main.py`
 
-- [ ] 3. Remove RBAC System From All API Endpoints
+- [x] 3. Remove RBAC System From All API Endpoints
 
   **What to do**:
   - **Delete files**:
@@ -447,7 +447,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `refactor(api): remove RBAC system and simplify authorization`
   - Files: deleted `auth/rbac.py`, `api/permissions.py`, `models/user_group_permission.py`; modified `api/rules.py`, `api/sync.py`, `api/groups.py`, `api/hosts.py`, `main.py`
 
-- [ ] 4. Alembic Migration to Drop user_group_permissions Table
+- [x] 4. Alembic Migration to Drop user_group_permissions Table
 
   **What to do**:
   - Create new Alembic migration: `cd backend && alembic revision --autogenerate -m "drop user_group_permissions and grouprole enum"`
@@ -498,7 +498,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `feat(db): add migration to drop user_group_permissions and grouprole enum`
   - Files: `backend/alembic/versions/0003_*.py`
 
-- [ ] 5. User Management Frontend Page (/users)
+- [x] 5. User Management Frontend Page (/users)
 
   **What to do**:
   - Create `frontend/app/(dashboard)/users/page.tsx`:
@@ -588,7 +588,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `feat(ui): add user management page with CRUD dialogs`
   - Files: `frontend/app/(dashboard)/users/page.tsx`, `frontend/lib/types.ts`
 
-- [ ] 6. Sidebar User Menu (Email + Logout + Password Change + Conditional Nav)
+- [x] 6. Sidebar User Menu (Email + Logout + Password Change + Conditional Nav)
 
   **What to do**:
   - Modify `frontend/components/sidebar.tsx`:
@@ -670,7 +670,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `feat(ui): add sidebar user menu with logout and password change`
   - Files: `frontend/components/sidebar.tsx`
 
-- [ ] 7. Update Registration Flow (Setup-Status Gating)
+- [x] 7. Update Registration Flow (Setup-Status Gating)
 
   **What to do**:
   - Modify `frontend/app/(auth)/login/page.tsx`:
@@ -729,7 +729,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `refactor(ui): gate registration page behind setup-status check`
   - Files: `frontend/app/(auth)/login/page.tsx`, `frontend/app/(auth)/register/page.tsx`
 
-- [ ] 8. Update Backend Test Fixtures for RBAC Removal
+- [x] 8. Update Backend Test Fixtures for RBAC Removal
 
   **What to do**:
   - Modify `backend/tests/conftest.py`:
@@ -782,7 +782,7 @@ Max Concurrent: 3 (Wave 3)
   - Message: `test: update fixtures and add tests for RBAC removal and registration gating`
   - Files: `backend/tests/conftest.py`, `backend/tests/test_admin_users.py`, `backend/tests/test_auth.py`, any updated test files
 
-- [ ] 9. Build Verification + Full Test Suite Pass
+- [x] 9. Build Verification + Full Test Suite Pass
 
   **What to do**:
   - Run `cd frontend && npm run build` — must pass with 0 errors
@@ -816,19 +816,19 @@ Max Concurrent: 3 (Wave 3)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE. Rejection → fix → re-run.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, curl endpoint, run command). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Check evidence files exist in .sisyphus/evidence/. Compare deliverables against plan.
   Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `npm run build` + `pytest tests/ --ignore=tests/integration -v` + ruff. Review all changed files for: `as any`/type ignores, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names.
   Output: `Build [PASS/FAIL] | Tests [N pass/N fail] | Files [N clean/N issues] | VERDICT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
   Start from clean state. Register first user → verify superuser. Try register second user → verify blocked. Create user via admin page. Log out. Log in as new user → verify no "Users" nav. Change password. Log out/in with new password.
   Output: `Scenarios [N/N pass] | VERDICT`
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   For each task: read "What to do", read actual diff (git log/diff). Verify 1:1 — everything in spec was built (no missing), nothing beyond spec was built (no creep). Check "Must NOT do" compliance. Flag unaccounted changes.
   Output: `Tasks [N/N compliant] | Unaccounted [CLEAN/N files] | VERDICT`
 
@@ -874,9 +874,9 @@ cd frontend && npx playwright test
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] All tests pass
-- [ ] First-user flow works end-to-end
-- [ ] User management CRUD works
-- [ ] Logout + password change works
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] All tests pass
+- [x] First-user flow works end-to-end
+- [x] User management CRUD works
+- [x] Logout + password change works

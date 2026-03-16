@@ -8,7 +8,6 @@ from app.models.host import Host, HostGroupMembership
 from app.models.firewall_rule import FirewallRule
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
-from app.auth.rbac import get_user_accessible_group_ids
 from app.schemas.hosts import HostCreate, HostUpdate, HostResponse
 
 
@@ -22,21 +21,10 @@ router = APIRouter(prefix="/hosts", tags=["hosts"])
 
 @router.get("", response_model=list[HostResponse])
 async def list_hosts(
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None:
-        # Get host IDs in accessible groups
-        memberships = await db.execute(
-            select(HostGroupMembership.c.host_id).where(
-                HostGroupMembership.c.group_id.in_(accessible)
-            )
-        )
-        host_ids = [r[0] for r in memberships.all()]
-        result = await db.execute(select(Host).where(Host.id.in_(host_ids)))
-    else:
-        result = await db.execute(select(Host))
+    result = await db.execute(select(Host))
     return result.scalars().all()
 
 
@@ -69,26 +57,13 @@ async def create_host(
 @router.get("/{host_id}", response_model=HostResponse)
 async def get_host(
     host_id: int,
-    user: User = Depends(current_active_user),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-
-    # Check access
-    accessible = await get_user_accessible_group_ids(user, db)
-    if accessible is not None:
-        memberships = await db.execute(
-            select(HostGroupMembership).where(
-                HostGroupMembership.c.host_id == host_id,
-                HostGroupMembership.c.group_id.in_(accessible),
-            )
-        )
-        if not memberships.first():
-            raise HTTPException(status_code=403, detail="Not authorized")
-
     return host
 
 

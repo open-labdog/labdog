@@ -82,17 +82,22 @@ async def client(app, db):
 async def _make_superuser(app, db):
     import httpx
     from httpx import ASGITransport
+    from fastapi_users.password import PasswordHelper
+    from app.models.user import User as UserModel
     email = f"superuser_{uuid.uuid4().hex[:8]}@test.com"
     password = "TestPass1!"
+    ph = PasswordHelper()
+    user = UserModel(
+        email=email,
+        hashed_password=ph.hash(password),
+        is_active=True,
+        is_superuser=True,
+        is_verified=True,
+    )
+    db.add(user)
+    await db.flush()
     transport = ASGITransport(app=app)
     c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
-    resp = await c.post("/auth/register", json={"email": email, "password": password})
-    assert resp.status_code == 201, f"Register failed: {resp.text}"
-    await db.execute(
-        text("UPDATE users SET is_superuser = TRUE, is_verified = TRUE WHERE email = :email"),
-        {"email": email},
-    )
-    await db.flush()
     resp = await c.post("/auth/jwt/login", data={"username": email, "password": password})
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
     return c
@@ -106,69 +111,32 @@ async def superuser_client(app, db):
 
 
 @pytest.fixture
-async def viewer_client(app, db, superuser_client):
+async def regular_user_client(app, db):
     import httpx
     from httpx import ASGITransport
-
-    from app.models.user_group_permission import GroupRole, UserGroupPermission
-    email = f"viewer_{uuid.uuid4().hex[:8]}@test.com"
+    from fastapi_users.password import PasswordHelper
+    from app.models.user import User as UserModel
+    email = f"regular_{uuid.uuid4().hex[:8]}@test.com"
     password = "TestPass1!"
-    resp = await superuser_client.post(
-        "/api/groups",
-        json={"name": f"vg-{uuid.uuid4().hex[:6]}", "priority": 500},
+    ph = PasswordHelper()
+    user = UserModel(
+        email=email,
+        hashed_password=ph.hash(password),
+        is_active=True,
+        is_superuser=False,
+        is_verified=True,
     )
-    assert resp.status_code == 201
-    group_id = resp.json()["id"]
-    transport = ASGITransport(app=app)
-    c = httpx.AsyncClient(
-        transport=transport, base_url="http://testserver", follow_redirects=True,
-    )
-    resp = await c.post("/auth/register", json={"email": email, "password": password})
-    assert resp.status_code == 201
-    user_id = resp.json()["id"]
-    await db.execute(
-        text("UPDATE users SET is_verified = TRUE WHERE email = :email"),
-        {"email": email},
-    )
-    db.add(UserGroupPermission(user_id=user_id, group_id=group_id, role=GroupRole.viewer))
+    db.add(user)
     await db.flush()
+    transport = ASGITransport(app=app)
+    c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
     resp = await c.post("/auth/jwt/login", data={"username": email, "password": password})
-    assert resp.status_code in (200, 204)
+    assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
     yield c
     await c.aclose()
 
 
-@pytest.fixture
-async def editor_client(app, db, superuser_client):
-    import httpx
-    from httpx import ASGITransport
 
-    from app.models.user_group_permission import GroupRole, UserGroupPermission
-    email = f"editor_{uuid.uuid4().hex[:8]}@test.com"
-    password = "TestPass1!"
-    resp = await superuser_client.post(
-        "/api/groups",
-        json={"name": f"eg-{uuid.uuid4().hex[:6]}", "priority": 501},
-    )
-    assert resp.status_code == 201
-    group_id = resp.json()["id"]
-    transport = ASGITransport(app=app)
-    c = httpx.AsyncClient(
-        transport=transport, base_url="http://testserver", follow_redirects=True,
-    )
-    resp = await c.post("/auth/register", json={"email": email, "password": password})
-    assert resp.status_code == 201
-    user_id = resp.json()["id"]
-    await db.execute(
-        text("UPDATE users SET is_verified = TRUE WHERE email = :email"),
-        {"email": email},
-    )
-    db.add(UserGroupPermission(user_id=user_id, group_id=group_id, role=GroupRole.editor))
-    await db.flush()
-    resp = await c.post("/auth/jwt/login", data={"username": email, "password": password})
-    assert resp.status_code in (200, 204)
-    yield c
-    await c.aclose()
 
 
 @pytest.fixture

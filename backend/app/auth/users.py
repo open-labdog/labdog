@@ -11,8 +11,10 @@ from fastapi_users.authentication import (
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import select, func
+
 from app.config import settings
-from app.db import get_db
+from app.db import AsyncSessionLocal, get_db
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,15 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
 
     async def on_after_register(self, user: User, request: Optional[Request] = None):
         logger.info("User %d (%s) registered.", user.id, user.email)
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(func.count()).select_from(User))
+            count = result.scalar_one()
+            if count == 1:
+                user.is_superuser = True
+                user.is_verified = True
+                session.add(user)
+                await session.commit()
+                logger.info("First user %d promoted to superuser.", user.id)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None
