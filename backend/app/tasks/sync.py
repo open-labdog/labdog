@@ -38,6 +38,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         from app.ansible.inventory import generate_inventory
         from app.rules.model import FirewallRuleSpec
         from app.rules.merge import merge_group_rules
+        from app.rules.converter import firewall_rules_to_specs
 
         async def _run():
             async with AsyncSessionLocal() as db:
@@ -78,27 +79,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     rules_result = await db.execute(
                         select(FirewallRule).where(FirewallRule.group_id == gid)
                     )
-                    rules = [
-                        FirewallRuleSpec(
-                            action=r.action.value if hasattr(r.action, "value") else r.action,
-                            protocol=r.protocol.value
-                            if hasattr(r.protocol, "value")
-                            else r.protocol,
-                            direction=r.direction.value
-                            if hasattr(r.direction, "value")
-                            else r.direction,
-                            source_cidr=r.source_cidr,
-                            destination_cidr=r.destination_cidr,
-                            port_start=r.port_start,
-                            port_end=r.port_end,
-                            comment=r.comment,
-                            is_system=r.is_system,
-                            priority=r.priority,
-                            group_id=r.group_id,
-                            rule_id=r.id,
-                        )
-                        for r in rules_result.scalars().all()
-                    ]
+                    rules = firewall_rules_to_specs(rules_result.scalars().all())
                     groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
                 merged_rules = merge_group_rules(groups_data)

@@ -12,6 +12,7 @@ from app.models.user_group_permission import GroupRole
 from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
+from app.rules.converter import firewall_rules_to_specs
 
 router = APIRouter(tags=["rules"])
 
@@ -176,23 +177,7 @@ async def get_effective_rules(
         group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = group_result.scalar_one()
         rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
-        rules = [
-            FirewallRuleSpec(
-                action=r.action.value if hasattr(r.action, "value") else r.action,
-                protocol=r.protocol.value if hasattr(r.protocol, "value") else r.protocol,
-                direction=r.direction.value if hasattr(r.direction, "value") else r.direction,
-                source_cidr=r.source_cidr,
-                destination_cidr=r.destination_cidr,
-                port_start=r.port_start,
-                port_end=r.port_end,
-                comment=r.comment,
-                is_system=r.is_system,
-                priority=r.priority,
-                group_id=r.group_id,
-                rule_id=r.id,
-            )
-            for r in rules_result.scalars().all()
-        ]
+        rules = firewall_rules_to_specs(rules_result.scalars().all())
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
     # Call merge_group_rules to get merged rules WITH SSH lockout rule
