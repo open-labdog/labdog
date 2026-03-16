@@ -130,7 +130,8 @@ Max Concurrent: 8 (Wave 2)
 
 ## TODOs
 
-- [ ] 1. Add Redbeat Dependency to pyproject.toml
+- [x] 1. Add Redbeat Dependency to pyproject.toml
+
 
   **What to do**:
   - Add `"redbeat>=2.0",` to the `dependencies` list in `backend/pyproject.toml` (after the `"celery[redis]>=5.4",` line)
@@ -176,7 +177,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `fix(deps): add missing redbeat dependency for celery-beat`
   - Files: `backend/pyproject.toml`
 
-- [ ] 2. Build conftest.py + Update Pytest Config
+- [x] 2. Build conftest.py + Update Pytest Config
 
   **What to do**:
   - **Update `backend/pyproject.toml`**: Add `asyncio_default_fixture_loop_scope = "session"` to `[tool.pytest.ini_options]`
@@ -267,7 +268,7 @@ Max Concurrent: 8 (Wave 2)
   - Message: `test(backend): add conftest fixtures and 8 integration test modules`
   - Files: `backend/tests/conftest.py`, `backend/pyproject.toml`
 
-- [ ] 3. Write test_auth.py
+- [x] 3. Write test_auth.py
 
   **What to do**:
   - Create `backend/tests/test_auth.py` with class `TestAuth`:
@@ -312,7 +313,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped with T2 and T4-T10)
 
-- [ ] 4. Write test_rbac.py
+- [x] 4. Write test_rbac.py
 
   **What to do**:
   - Create `backend/tests/test_rbac.py` with class `TestRBAC`:
@@ -355,7 +356,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 5. Write test_groups.py
+- [x] 5. Write test_groups.py
 
   **What to do**:
   - Create `backend/tests/test_groups.py` with class `TestGroups`:
@@ -394,7 +395,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 6. Write test_hosts.py
+- [x] 6. Write test_hosts.py
 
   **What to do**:
   - Create `backend/tests/test_hosts.py` with class `TestHosts`:
@@ -432,7 +433,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 7. Write test_sync.py
+- [x] 7. Write test_sync.py
 
   **What to do**:
   - Create `backend/tests/test_sync.py` with class `TestSync`:
@@ -475,7 +476,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 8. Write test_audit.py
+- [x] 8. Write test_audit.py
 
   **What to do**:
   - Create `backend/tests/test_audit.py` with class `TestAudit`:
@@ -517,7 +518,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 9. Write test_drift.py
+- [x] 9. Write test_drift.py
 
   **What to do**:
   - Create `backend/tests/test_drift.py` with class `TestDrift`:
@@ -554,7 +555,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 10. Write test_merge.py
+- [x] 10. Write test_merge.py
 
   **What to do**:
   - Create `backend/tests/test_merge.py` with class `TestMerge`:
@@ -596,7 +597,7 @@ Max Concurrent: 8 (Wave 2)
 
   **Commit**: YES (grouped)
 
-- [ ] 11. Full Test Suite Validation
+- [x] 11. Full Test Suite Validation
 
   **What to do**:
   - Run the complete test suite: `cd backend && pytest tests/ -v --tb=short`
@@ -641,16 +642,16 @@ Max Concurrent: 8 (Wave 2)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify: redbeat in pyproject.toml, all 12 test modules exist, 60+ tests pass, conftest has required fixtures.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `pytest tests/ -v`. Check test files for: proper assertions, no hardcoded DB URLs, no `as any`, clean imports. Verify Celery mocking is correct.
 
-- [ ] F3. **Real QA** — `unspecified-high`
+- [x] F3. **Real QA** — `unspecified-high`
   Run full test suite from clean state. Verify all 60+ tests pass. Check test isolation (run tests in random order with `pytest --randomly`).
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   Verify no scope creep: only redbeat dep + test files added. No source code changes (except pyproject.toml config). No new features.
 
 ---

@@ -1,9 +1,9 @@
 {
-  "active_plan": "/home/dennis/priv/barricade/.sisyphus/plans/barricade.md",
-  "started_at": "2026-03-15T20:07:49.382Z",
+  "active_plan": "/home/dennis/priv/barricade/.sisyphus/plans/barricade-gap-fixes.md",
+  "started_at": "2026-03-16T07:54:55.962Z",
   "session_ids": [
-    "ses_30ce350c5ffexsJIZfkC78R46i"
+    "ses_30ca343e1ffeG08oPGHTCrzTUH"
   ],
-  "plan_name": "barricade",
+  "plan_name": "barricade-gap-fixes",
   "agent": "atlas"
 }
