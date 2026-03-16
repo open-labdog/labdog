@@ -42,3 +42,6 @@ Thumbs.db
 # Ansible runner artifacts
 artifacts/
 tmp/
+
+# Sisyphus execution evidence
+.sisyphus/evidence/
