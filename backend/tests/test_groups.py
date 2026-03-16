@@ -10,6 +10,7 @@ Tests cover:
 """
 
 import uuid
+
 import pytest
 
 pytestmark = pytest.mark.integration
@@ -119,12 +120,15 @@ class TestGroups:
 
     async def test_delete_group_with_hosts_400(self, superuser_client, db):
         """Create group + host in that group, DELETE group → 400."""
-        from tests.conftest import create_group, create_ssh_key, create_host
+        from tests.conftest import create_group, create_host, create_ssh_key
 
         # Create group, SSH key, and host in that group
-        group = await create_group(db, name=f"group-{uuid.uuid4().hex[:8]}", priority=int(uuid.uuid4().int % 10000))
+        group = await create_group(
+            db, name=f"group-{uuid.uuid4().hex[:8]}",
+            priority=int(uuid.uuid4().int % 10000),
+        )
         ssh_key = await create_ssh_key(db)
-        host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+        await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         # Try to delete the group
         resp = await superuser_client.delete(f"/api/groups/{group.id}")

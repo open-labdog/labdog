@@ -11,7 +11,7 @@ Tests cover:
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tests.conftest import create_group, create_ssh_key, create_host, create_rule
+from tests.conftest import create_group, create_host, create_rule, create_ssh_key
 
 pytestmark = pytest.mark.integration
 
@@ -86,7 +86,8 @@ class TestSync:
 
         # Verify Celery task was dispatched
         assert mock_celery_tasks.call_count >= 1, (
-            f"Expected run_sync_playbook.delay to be called, got {mock_celery_tasks.call_count} calls"
+            "Expected run_sync_playbook.delay to be called, "
+            f"got {mock_celery_tasks.call_count} calls"
         )
 
     async def test_get_job_status(

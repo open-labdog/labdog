@@ -55,7 +55,7 @@ class TestAudit:
 
     @pytest.mark.asyncio
     async def test_filter_by_entity_type(self, superuser_client, db: AsyncSession):
-        """Insert records with different entity_type, filter by entity_type=rule → returns only rule entries."""
+        """Insert records with different entity_type, filter → only rule entries."""
         # Insert entries with different entity types
         entity_types = ["rule", "host", "group", "rule", "host"]
         for i, entity_type in enumerate(entity_types):
@@ -81,7 +81,7 @@ class TestAudit:
 
     @pytest.mark.asyncio
     async def test_cursor_pagination(self, superuser_client, db: AsyncSession):
-        """Insert 5 records, GET with limit=2 → returns 2 items, then use cursor to get next batch."""
+        """Insert 5 records, GET limit=2 → 2 items, then cursor to get next batch."""
         # Insert 5 audit log entries
         for i in range(5):
             entry = AuditLog(
@@ -121,7 +121,7 @@ class TestAudit:
 
     @pytest.mark.asyncio
     async def test_filter_by_action(self, superuser_client, db: AsyncSession):
-        """Insert records with different actions, filter by action → returns only matching entries."""
+        """Insert records with different actions, filter → only matching entries."""
         # Insert entries with different actions
         actions = ["create", "update", "delete", "create", "update"]
         for i, action in enumerate(actions):
