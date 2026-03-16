@@ -1,8 +1,19 @@
 import { test, expect } from "@playwright/test"
+import { execSync } from "child_process"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
+function dbExec(sql: string) {
+  try {
+    execSync(
+      `docker exec barricade-postgres-1 psql -U barricade -d barricade -c '${sql.replace(/'/g, "'\\''")}'`,
+      { stdio: "pipe" }
+    )
+  } catch { /* ignore */ }
+}
+
 test.describe("Rules page", () => {
+  test.describe.configure({ mode: "serial" })
   let groupId: number
 
   test.beforeAll(async ({ request }) => {
@@ -75,8 +86,7 @@ test.describe("Rules page", () => {
   })
 
   test("system rules have disabled Edit and Delete buttons", async ({ request, page }) => {
-    // Create a system rule via API
-    await request.post(`${API_BASE}/api/groups/${groupId}/rules`, {
+    const ruleRes = await request.post(`${API_BASE}/api/groups/${groupId}/rules`, {
       data: {
         action: "allow",
         protocol: "tcp",
@@ -86,9 +96,10 @@ test.describe("Rules page", () => {
         port_start: null,
         port_end: null,
         comment: "system-rule-e2e",
-        is_system: true,
       },
     })
+    const rule = await ruleRes.json()
+    dbExec(`UPDATE firewall_rules SET is_system = TRUE WHERE id = ${rule.id}`)
 
     await page.goto(`/groups/${groupId}/rules`)
 
