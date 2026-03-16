@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge"
-import type { SyncStatus, FirewallBackend } from "@/lib/types"
+import type { SyncStatus, FirewallBackend, GitOpsStatus } from "@/lib/types"
 
 export function SyncStatusBadge({ status }: { status: SyncStatus }) {
   const config: Record<SyncStatus, { label: string; className: string }> = {
@@ -15,4 +15,15 @@ export function SyncStatusBadge({ status }: { status: SyncStatus }) {
 
 export function FirewallBadge({ backend }: { backend: FirewallBackend }) {
   return <Badge variant="outline">{backend}</Badge>
+}
+
+export function GitOpsStatusBadge({ status }: { status: GitOpsStatus }) {
+  const config: Record<GitOpsStatus, { label: string; className: string }> = {
+    synced: { label: "Synced", className: "bg-green-600 text-white" },
+    error: { label: "Error", className: "bg-red-600 text-white" },
+    importing: { label: "Importing", className: "bg-blue-600 text-white" },
+    disconnected: { label: "Disconnected", className: "bg-slate-600 text-slate-300" },
+  }
+  const c = config[status] ?? config.disconnected
+  return <Badge className={c.className}>{c.label}</Badge>
 }

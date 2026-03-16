@@ -5,7 +5,8 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { HostGroup, Host } from "@/lib/types"
-import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { SyncStatusBadge, FirewallBadge, GitOpsStatusBadge } from "@/components/status-badge"
+import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
@@ -74,7 +75,12 @@ export default function GroupDetailPage() {
             <span className="text-slate-600">/</span>
             <span className="text-white text-sm">{group?.name}</span>
           </div>
-          <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+            {group?.gitops_enabled && (
+              <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+            )}
+          </div>
           {group?.description && (
             <p className="text-slate-400 text-sm mt-1">{group.description}</p>
           )}
@@ -97,7 +103,7 @@ export default function GroupDetailPage() {
 
       {/* Group info card */}
       {group && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className={`grid grid-cols-1 gap-4 ${group.gitops_enabled ? "sm:grid-cols-4" : "sm:grid-cols-3"}`}>
           <Card>
             <CardHeader>
               <CardTitle className="text-sm text-slate-400">Priority</CardTitle>
@@ -126,6 +132,23 @@ export default function GroupDetailPage() {
               </div>
             </CardContent>
           </Card>
+          {group.gitops_enabled && group.gitops_status && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm text-slate-400">GitOps Status</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col gap-2">
+                  <GitOpsStatusBadge status={group.gitops_status} />
+                  {group.gitops_file_path && (
+                    <div className="text-xs text-slate-500 font-mono truncate" title={group.gitops_file_path}>
+                      {group.gitops_file_path}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
