@@ -491,19 +491,22 @@ Some modules depend on others:
 
 ---
 
-## Suggested Implementation Order
+## Implementation Plans (Individual Files)
 
-| Priority | Module | Reason |
-|----------|--------|--------|
-| 1 | Service Management | Most requested, simplest, high value |
-| 2 | User Management | Security-critical, high demand |
-| 3 | /etc/hosts | Simple, immediate value |
-| 4 | Package Management | Enables other modules |
-| 5 | Sysctl | Security hardening use case |
-| 6 | Cron Jobs | Operational automation |
-| 7 | DNS Resolver | Niche but useful |
-| 8 | File Management | Complex but powerful |
-| 9 | TLS Certificates | Complex, ACME integration |
+| Priority | Module | Plan File | Status |
+|----------|--------|-----------|--------|
+| 1 | Service Management | [`ext-service-management.md`](ext-service-management.md) | Ready (10 tasks) |
+| 2 | Linux User Management | [`ext-linux-user-management.md`](ext-linux-user-management.md) | Ready (10 tasks, depends on #1) |
+| 3 | /etc/hosts | _Not yet planned_ | — |
+| 4 | Package Management | _Not yet planned_ | — |
+| 5 | Sysctl | _Not yet planned_ | — |
+| 6 | Cron Jobs | _Not yet planned_ | — |
+| 7 | DNS Resolver | _Not yet planned_ | — |
+| 8 | File Management | _Not yet planned_ | — |
+| 9 | TLS Certificates | _Not yet planned_ | — |
+
+### Execution Order
+Service Management MUST be built first — it creates shared infrastructure (`host_module_status` table, `SyncJob.module_type` column) that all subsequent modules reuse. Linux User Management depends on Service Management being complete.
 
 ---
 

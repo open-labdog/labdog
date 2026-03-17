@@ -157,6 +157,400 @@ Max Concurrent: 3 (Waves 1-2)
 
 ## TODOs
 
+- [ ] 1. ServiceRule Model + host_module_status Table + SyncJob module_type + Alembic Migration
+
+  **What to do**:
+  - Create `backend/app/services/__init__.py` (empty)
+  - Create `backend/app/services/models.py`:
+    - `ServiceState` enum: `running`, `stopped`
+    - `ServiceRule` SQLAlchemy model:
+      - `id` (Integer, PK), `group_id` (FK to host_groups, nullable), `host_id` (FK to hosts, nullable)
+      - `service_name` (String(100), NOT NULL), `state` (Enum ServiceState, default running)
+      - `enabled` (Boolean, default True — systemd enable/disable)
+      - `priority` (Integer, default 0), `comment` (Text, nullable)
+      - `created_at`, `updated_at` (DateTime with timezone)
+      - CHECK constraint: `(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)`
+  - Create `backend/app/models/host_module_status.py`:
+    - `HostModuleStatus` model: `id`, `host_id` (FK), `module_type` (String(50)), `sync_status` (String(20), default "unknown"), `drift_check_enabled` (Boolean, default False), `last_sync_at` (DateTime nullable), `last_drift_check_at` (DateTime nullable)
+    - Unique constraint on `(host_id, module_type)`
+  - Add `module_type` column to `SyncJob`: `String(50)`, `server_default='firewall'`, nullable=False
+  - Create Alembic migration for all three changes
+  - Register models in `backend/app/models/__init__.py` if needed
+
+  **Must NOT do**:
+  - Do NOT modify existing `Host.sync_status` or `Host.drift_check_enabled` fields
+  - Do NOT modify `FirewallRule` model
+  - Do NOT change SyncJob behavior for existing firewall jobs
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 1 (with T2, T3)
+  - **Blocks**: T3, T4, T7, T8
+  - **Blocked By**: None
+
+  **References**:
+  - `backend/app/models/firewall_rule.py` — Model pattern to follow
+  - `backend/app/models/sync_job.py` — SyncJob to extend
+  - `backend/alembic/versions/` — Migration numbering pattern
+
+  **Acceptance Criteria**:
+  - [ ] `ServiceRule` table created with CHECK constraint
+  - [ ] `host_module_status` table created with unique constraint
+  - [ ] `SyncJob.module_type` column exists with default 'firewall'
+  - [ ] Existing firewall SyncJob queries still work (backward-compat)
+  - [ ] Migration reversible: `alembic downgrade -1` succeeds
+
+  **Commit**: YES — `feat(models): add ServiceRule, host_module_status, SyncJob module_type`
+
+- [ ] 2. Service Schemas + Deny-List Constants
+
+  **What to do**:
+  - Create `backend/app/services/constants.py`:
+    - `PROTECTED_SERVICES`: frozenset of service names that cannot be managed: `{"sshd", "ssh", "networking", "NetworkManager", "systemd-journald", "systemd-logind", "systemd-udevd", "systemd-resolved", "dbus"}`
+  - Create `backend/app/services/schemas.py`:
+    - `ServiceRuleCreate(BaseModel)`: `service_name` (str), `state` (Literal["running","stopped"]), `enabled` (bool, default True), `priority` (int, default 0), `comment` (str|None)
+      - Validator: reject `service_name` in `PROTECTED_SERVICES`
+      - Validator: strip `.service` suffix from service_name (normalize)
+    - `ServiceRuleUpdate(BaseModel)`: same fields, all optional
+    - `ServiceRuleResponse(BaseModel)`: all fields + `id`, `group_id`, `host_id`, `created_at`, `updated_at`, `model_config = ConfigDict(from_attributes=True)`
+    - `EffectiveServiceResponse(BaseModel)`: `service_name`, `state`, `enabled`, `source` (Literal["group","host"]), `source_id` (int), `source_name` (str)
+
+  **Must NOT do**:
+  - Do NOT allow `restarted`/`reloaded` as valid states for DB storage (those are sync-time actions only)
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 1 (with T1, T3)
+  - **Blocks**: T4, T5, T6
+  - **Blocked By**: None
+
+  **References**:
+  - `backend/app/schemas/rules.py` — Schema pattern to follow
+  - `backend/app/services/constants.py` — Deny-list location
+
+  **Acceptance Criteria**:
+  - [ ] `PROTECTED_SERVICES` contains sshd and systemd-* services
+  - [ ] `ServiceRuleCreate` rejects protected service names with 422
+  - [ ] `service_name` normalized: `"nginx.service"` → `"nginx"`
+
+  **Commit**: YES — `feat(services): add schemas and deny-list constants`
+
+- [ ] 3. Service Merge Engine
+
+  **What to do**:
+  - Create `backend/app/services/merge.py`:
+    - `async def get_effective_services(host_id: int, db: AsyncSession) -> list[EffectiveServiceResponse]`:
+      1. Get host's group memberships (ordered by group priority DESC)
+      2. For each group, get `ServiceRule` where `group_id=gid` ordered by priority
+      3. Merge: higher-priority group wins (key = `service_name`)
+      4. Get host-level overrides: `ServiceRule` where `host_id=host_id`
+      5. Host overrides replace group entries (full record, keyed by `service_name`)
+      6. Return list with `source="group"|"host"` annotation
+
+  **Must NOT do**:
+  - Do NOT do field-level merge — host override replaces entire record
+  - Do NOT modify `app/rules/merge.py` (firewall merge)
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 1 (with T1, T2) but depends on T1 model
+  - **Blocks**: T4, T7
+  - **Blocked By**: T1
+
+  **References**:
+  - `backend/app/rules/merge.py` — Firewall merge pattern (adapt, don't modify)
+  - `backend/app/api/drift.py:34-48` — `_get_desired_rules_for_host` pattern
+
+  **Acceptance Criteria**:
+  - [ ] Higher-priority group rule wins on `service_name` conflict
+  - [ ] Host override replaces group default entirely
+  - [ ] Source annotation shows "group" or "host" for each entry
+
+  **Commit**: YES — `feat(services): add merge engine with host-override support`
+
+- [ ] 4. Service CRUD API
+
+  **What to do**:
+  - Create `backend/app/api/services.py` with router prefix `/api`:
+    - **Group-level CRUD**:
+      - `GET /api/groups/{group_id}/services` — list rules for group
+      - `POST /api/groups/{group_id}/services` — create rule (superuser only)
+      - `PUT /api/groups/{group_id}/services/{rule_id}` — update rule
+      - `DELETE /api/groups/{group_id}/services/{rule_id}` — delete rule
+    - **Host-level overrides**:
+      - `GET /api/hosts/{host_id}/services` — list host-specific overrides
+      - `POST /api/hosts/{host_id}/services` — create host override (superuser only)
+      - `PUT /api/hosts/{host_id}/services/{rule_id}` — update override
+      - `DELETE /api/hosts/{host_id}/services/{rule_id}` — delete override
+    - **Effective config**:
+      - `GET /api/hosts/{host_id}/effective-services` — merged group + host overrides
+  - Register router in `backend/app/main.py`
+  - Call `log_action()` on all mutations with `entity_type="service_rule"`
+
+  **Must NOT do**:
+  - Do NOT add RBAC role checks (RBAC was removed — superuser-only via `current_superuser`)
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 2 (with T5, T6)
+  - **Blocks**: T7, T9
+  - **Blocked By**: T1, T2, T3
+
+  **References**:
+  - `backend/app/api/rules.py` — CRUD pattern to follow
+  - `backend/app/main.py` — Router registration
+  - `backend/app/audit/logger.py` — `log_action()` usage
+
+  **Acceptance Criteria**:
+  - [ ] All 9 endpoints registered and responding
+  - [ ] Protected services rejected with 422
+  - [ ] Effective-services merges group + host correctly
+  - [ ] Audit log entries created on mutations
+
+  **Commit**: YES — `feat(api): add service management CRUD + effective-config endpoints`
+
+- [ ] 5. Ansible Service Playbook Generator
+
+  **What to do**:
+  - Create `backend/app/services/generator.py`:
+    - `def generate_service_playbook(host_ip: str, services: list, ssh_key_path: str) -> dict`:
+      - Generates Ansible playbook with `ansible.builtin.service` tasks
+      - Map `state`: `running` → `started`, `stopped` → `stopped`
+      - Map `enabled`: bool directly
+      - Returns YAML-serializable playbook dict
+      - Inventory generation reuses `backend/app/ansible/inventory.py`
+
+  **Must NOT do**:
+  - Do NOT use `state: restarted` or `state: reloaded` in generated playbook (those are transient)
+  - Do NOT modify `backend/app/ansible/generator.py` (firewall-specific)
+
+  **Recommended Agent Profile**:
+  - **Category**: `quick`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 2 (with T4, T6)
+  - **Blocks**: T7
+  - **Blocked By**: T2
+
+  **References**:
+  - `backend/app/ansible/generator.py` — Firewall playbook pattern (do not modify)
+  - `backend/app/ansible/inventory.py` — Reuse for inventory generation
+
+  **Acceptance Criteria**:
+  - [ ] Generated playbook uses `ansible.builtin.service` module
+  - [ ] `state: running` maps to `state: started` in Ansible
+  - [ ] Playbook includes `become: true` and `gather_facts: false`
+
+  **Commit**: YES — `feat(ansible): add service playbook generator`
+
+- [ ] 6. Service Drift Collector + Diff
+
+  **What to do**:
+  - Create `backend/app/services/collector.py`:
+    - `async def collect_service_states(host_ip, ssh_port, private_key_pem, service_names: list[str]) -> list[dict]`:
+      - SSH into host via asyncssh
+      - For each service: run `systemctl is-active {name}` and `systemctl is-enabled {name}`
+      - Parse output: `active` → running, `inactive`/`failed` → stopped, `enabled` → True, `disabled` → False
+      - Handle service not found: `systemctl is-active unknown` returns exit code 4 → mark as `error`
+  - Create `backend/app/services/diff.py`:
+    - `ServiceDiff` dataclass: `services_to_update`, `services_in_sync`, `services_with_errors`
+    - `def compute_service_diff(current: list, desired: list) -> ServiceDiff`
+    - **CRITICAL**: Normalize desired `restarted`/`reloaded` to `running` for comparison
+
+  **Must NOT do**:
+  - Do NOT modify `backend/app/sync/collector.py` or `backend/app/sync/diff.py`
+  - Do NOT check service health — only state (active/inactive) and enabled status
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 2 (with T4, T5)
+  - **Blocks**: T7, T8
+  - **Blocked By**: T2
+
+  **References**:
+  - `backend/app/sync/collector.py` — SSH collection pattern (do not modify)
+  - `backend/app/sync/diff.py` — Diff pattern (do not modify)
+
+  **Acceptance Criteria**:
+  - [ ] Collector SSHes in and runs `systemctl` commands
+  - [ ] Service not found returns error state (not crash)
+  - [ ] Diff normalizes `restarted`/`reloaded` to `running`
+
+  **Commit**: YES — `feat(services): add drift collector via systemctl SSH`
+
+- [ ] 7. Service Sync Celery Task + Sync API
+
+  **What to do**:
+  - Create `backend/app/tasks/service_sync.py`:
+    - `@celery_app.task` named `app.tasks.service_sync.run_service_sync`
+    - Same pattern as `tasks/sync.py`: DB lookup → merge effective services → generate playbook → ansible-runner → update SyncJob + host_module_status
+    - Set `module_type="service"` on SyncJob
+  - Create `backend/app/api/service_sync.py` with router:
+    - `POST /api/services/hosts/{host_id}/plan` — preview changes (diff current vs desired)
+    - `POST /api/services/hosts/{host_id}/sync` — trigger sync (creates SyncJob, dispatches task)
+    - `POST /api/services/groups/{group_id}/sync` — sync all hosts in group
+    - `GET /api/services/jobs/{job_id}` — get job status
+  - Register router in `app/main.py`
+
+  **Must NOT do**:
+  - Do NOT modify `backend/app/tasks/sync.py` or `backend/app/api/sync.py`
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 3 (with T8)
+  - **Blocks**: T9, T10
+  - **Blocked By**: T4, T5, T6
+
+  **References**:
+  - `backend/app/tasks/sync.py` — Celery sync task pattern
+  - `backend/app/api/sync.py` — Sync API pattern
+
+  **Acceptance Criteria**:
+  - [ ] Plan endpoint returns diff of current vs desired service states
+  - [ ] Sync creates SyncJob with `module_type="service"`
+  - [ ] Job status queryable via GET endpoint
+
+  **Commit**: YES — `feat(tasks): add service sync Celery task + sync API`
+
+- [ ] 8. Service Drift Detection Task + API
+
+  **What to do**:
+  - Create `backend/app/tasks/service_drift.py`:
+    - Celery task for periodic service drift checks
+    - Checks all hosts with `host_module_status.module_type="service"` and `drift_check_enabled=True`
+    - Uses collector + diff to determine drift status
+    - Updates `host_module_status` record
+  - Add drift API endpoints to `backend/app/api/service_sync.py` (or separate file):
+    - `POST /api/services/hosts/{host_id}/drift-check` — manual drift check
+    - `PUT /api/services/hosts/{host_id}/drift-settings` — enable/disable periodic drift
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 3 (with T7)
+  - **Blocks**: T10
+  - **Blocked By**: T1, T6
+
+  **References**:
+  - `backend/app/drift/detector.py` — Drift pattern
+  - `backend/app/tasks/drift.py` — Periodic drift task pattern
+
+  **Acceptance Criteria**:
+  - [ ] Manual drift check returns current vs desired comparison
+  - [ ] Drift settings toggleable per host
+  - [ ] `host_module_status` updated after each check
+
+  **Commit**: YES — `feat(tasks): add service drift detection task + API`
+
+- [ ] 9. Frontend — Group Services Page + Host Detail Services Tab
+
+  **What to do**:
+  - Create `frontend/app/(dashboard)/groups/[id]/services/page.tsx`:
+    - Table of service rules for the group (CRUD)
+    - "Add Service" button → dialog with service_name, state (running/stopped), enabled toggle
+    - Edit/delete per row
+  - Modify `frontend/app/(dashboard)/hosts/[id]/page.tsx`:
+    - Add tab navigation: "Overview" | "Services" (future: "Users")
+    - "Services" tab shows effective services (merged group + host overrides)
+    - Each row shows: service_name, state, enabled, source (group name or "Host Override")
+    - "Add Override" button for host-level overrides
+    - Edit/delete for host overrides only (group rules shown read-only)
+  - Add "Services" link on group detail page (alongside existing "Rules" and "Sync" links)
+  - Add TypeScript interfaces for ServiceRule in `frontend/lib/types.ts`
+
+  **Must NOT do**:
+  - Do NOT add services to sidebar navigation (accessed via group/host detail pages)
+  - Do NOT add service monitoring or live status polling
+
+  **Recommended Agent Profile**:
+  - **Category**: `visual-engineering`
+  - **Skills**: [`frontend-ui-ux`]
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 4 (with T10)
+  - **Blocks**: F1-F4
+  - **Blocked By**: T4, T7
+
+  **References**:
+  - `frontend/app/(dashboard)/groups/[id]/rules/page.tsx` — Group rules page pattern
+  - `frontend/app/(dashboard)/hosts/[id]/page.tsx` — Host detail page to modify
+  - `frontend/lib/api.ts` — `apiFetch` helper
+  - `frontend/lib/types.ts` — Type definitions
+
+  **Acceptance Criteria**:
+  - [ ] Group services page shows CRUD for service rules
+  - [ ] Host detail page has tab navigation with "Services" tab
+  - [ ] Effective services show source annotation (group vs host)
+  - [ ] Host overrides editable; group rules read-only on host page
+  - [ ] `npm run build` passes
+
+  **Commit**: YES — `feat(ui): add service management pages`
+
+- [ ] 10. Service Management Test Suite
+
+  **What to do**:
+  - Create `backend/tests/test_services.py`:
+    - **TestServiceSchemas** (pure, no DB):
+      - `test_protected_service_rejected` — sshd in PROTECTED_SERVICES
+      - `test_service_name_normalized` — `"nginx.service"` → `"nginx"`
+      - `test_valid_service_accepted` — `"nginx"` passes
+    - **TestServiceMerge** (needs DB):
+      - `test_group_priority_wins` — higher-priority group's service rule wins
+      - `test_host_override_replaces_group` — host override replaces group default
+      - `test_effective_services_annotated` — source="group"|"host" correct
+    - **TestServiceAPI** (needs DB):
+      - `test_create_group_service` — POST /api/groups/{id}/services → 201
+      - `test_create_host_override` — POST /api/hosts/{id}/services → 201
+      - `test_effective_services_endpoint` — GET /api/hosts/{id}/effective-services correct
+      - `test_protected_service_rejected_by_api` — POST with sshd → 422
+    - **TestServiceDiff** (pure):
+      - `test_in_sync_detected` — desired=running, actual=running → in_sync
+      - `test_drift_detected` — desired=running, actual=stopped → out_of_sync
+      - `test_restarted_normalized` — desired=restarted treated as running for comparison
+  - Add factory helper `create_service_rule()` to conftest.py (or local fixture)
+
+  **Recommended Agent Profile**:
+  - **Category**: `unspecified-high`
+  - **Skills**: []
+
+  **Parallelization**:
+  - **Can Run In Parallel**: YES — Wave 4 (with T9)
+  - **Blocks**: F1-F4
+  - **Blocked By**: T7, T8
+
+  **References**:
+  - `backend/tests/conftest.py` — Fixtures and factory pattern
+  - `backend/tests/test_rules.py` — Test structure to follow
+
+  **Acceptance Criteria**:
+  - [ ] 12+ tests, all passing
+  - [ ] Schema, merge, API, and diff all covered
+  - [ ] Protected service deny-list tested
+  - [ ] Drift normalization tested
+
+  **Commit**: YES — `test(services): add service management test suite`
+
 ---
 
 ## Final Verification Wave (MANDATORY — after ALL implementation tasks)
