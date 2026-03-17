@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -38,6 +38,9 @@ class SyncJob(Base):
     triggered_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
+    )
+    module_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, server_default="firewall"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -147,6 +147,7 @@ class SyncJobResponse(BaseModel):
     ansible_output: str | None
     error_message: str | None
     triggered_by_user_id: int | None
+    module_type: str = "firewall"
     created_at: datetime
     model_config = {"from_attributes": True}
 
@@ -164,10 +165,11 @@ async def trigger_host_sync(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    # Check no running sync for this host
+    # Check no running firewall sync for this host
     running = await db.execute(
         select(SyncJob).where(
             SyncJob.host_id == host_id,
+            SyncJob.module_type == "firewall",
             SyncJob.status.in_(["pending", "running"]),
         )
     )
@@ -272,6 +274,7 @@ async def list_jobs(
     host_id: int | None = None,
     group_id: int | None = None,
     status: str | None = None,
+    module_type: str | None = None,
     limit: int = 20,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
@@ -283,5 +286,7 @@ async def list_jobs(
         q = q.where(SyncJob.group_id == group_id)
     if status:
         q = q.where(SyncJob.status == status)
+    if module_type:
+        q = q.where(SyncJob.module_type == module_type)
     result = await db.execute(q)
     return result.scalars().all()
