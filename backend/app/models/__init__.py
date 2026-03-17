@@ -9,6 +9,8 @@ from app.models.firewall_rule import FirewallRule, RuleAction, RuleProtocol, Rul
 from app.models.sync_job import SyncJob, JobStatus
 from app.models.audit_log import AuditLog
 from app.models.git_repository import GitRepository, GitAuthType, GitOpsStatus
+from app.models.host_module_status import HostModuleStatus
+from app.services.models import ServiceRule
 
 __all__ = [
     "Base",
@@ -29,4 +31,6 @@ __all__ = [
     "GitRepository",
     "GitAuthType",
     "GitOpsStatus",
+    "HostModuleStatus",
+    "ServiceRule",
 ]
