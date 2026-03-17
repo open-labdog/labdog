@@ -11,6 +11,7 @@ from app.models.audit_log import AuditLog
 from app.models.git_repository import GitRepository, GitAuthType, GitOpsStatus
 from app.models.host_module_status import HostModuleStatus
 from app.services.models import ServiceRule
+from app.hosts_mgmt.models import HostsEntry
 
 __all__ = [
     "Base",
@@ -33,4 +34,5 @@ __all__ = [
     "GitOpsStatus",
     "HostModuleStatus",
     "ServiceRule",
+    "HostsEntry",
 ]
