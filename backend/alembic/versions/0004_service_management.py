@@ -17,12 +17,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Create servicestate enum
-    sa.Enum("running", "stopped", name="servicestate").create(
-        op.get_bind(), checkfirst=True
-    )
-
-    # 2. Create service_rules table
+    # 1. Create service_rules table (enum created implicitly by create_table)
     op.create_table(
         "service_rules",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -100,8 +95,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Reverse order
     op.drop_column("sync_jobs", "module_type")
     op.drop_table("host_module_status")
     op.drop_table("service_rules")
-    sa.Enum(name="servicestate").drop(op.get_bind(), checkfirst=True)
+    sa.Enum("running", "stopped", name="servicestate").drop(op.get_bind(), checkfirst=True)
