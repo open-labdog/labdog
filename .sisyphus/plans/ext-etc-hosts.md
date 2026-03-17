@@ -101,7 +101,7 @@ Max Concurrent: 3
 
 ## TODOs
 
-- [ ] 1. HostsEntry Model + Alembic Migration
+- [x] 1. HostsEntry Model + Alembic Migration
 
   **What to do**:
   - Create `backend/app/hosts_mgmt/__init__.py` (empty)
@@ -129,7 +129,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(models): add HostsEntry model for /etc/hosts management`
 
-- [ ] 2. Hosts Entry Schemas + Validators
+- [x] 2. Hosts Entry Schemas + Validators
 
   **What to do**:
   - Create `backend/app/hosts_mgmt/schemas.py`:
@@ -156,7 +156,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(hosts_mgmt): add schemas and validators`
 
-- [ ] 3. Hosts Entry Merge Engine + File Renderer
+- [x] 3. Hosts Entry Merge Engine + File Renderer
 
   **What to do**:
   - Create `backend/app/hosts_mgmt/merge.py`:
@@ -186,7 +186,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(hosts_mgmt): add merge engine and file renderer`
 
-- [ ] 4. Hosts Entry CRUD API + Preview Endpoint
+- [x] 4. Hosts Entry CRUD API + Preview Endpoint
 
   **What to do**:
   - Create `backend/app/api/hosts_entries.py`:
@@ -213,7 +213,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(api): add hosts entry CRUD + preview endpoints`
 
-- [ ] 5. Ansible /etc/hosts Template Playbook Generator
+- [x] 5. Ansible /etc/hosts Template Playbook Generator
 
   **What to do**:
   - Create `backend/app/hosts_mgmt/generator.py`:
@@ -235,7 +235,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ansible): add /etc/hosts playbook generator`
 
-- [ ] 6. Hosts File Drift Collector + Parser
+- [x] 6. Hosts File Drift Collector + Parser
 
   **What to do**:
   - Create `backend/app/hosts_mgmt/collector.py`:
@@ -262,7 +262,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(hosts_mgmt): add drift collector and parser`
 
-- [ ] 7. Hosts File Sync Celery Task + Sync API
+- [x] 7. Hosts File Sync Celery Task + Sync API
 
   **What to do**:
   - Create `backend/app/tasks/hosts_sync.py`:
@@ -289,7 +289,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add hosts file sync Celery task + sync API`
 
-- [ ] 8. Hosts File Drift Detection Task + API
+- [x] 8. Hosts File Drift Detection Task + API
 
   **What to do**:
   - Create `backend/app/tasks/hosts_drift.py`:
@@ -312,7 +312,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add hosts file drift detection task + API`
 
-- [ ] 9. Frontend — Group Hosts-Entries Page + Host Detail Tab
+- [x] 9. Frontend — Group Hosts-Entries Page + Host Detail Tab
 
   **What to do**:
   - Create `frontend/app/(dashboard)/groups/[id]/hosts-entries/page.tsx`:
@@ -340,7 +340,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add /etc/hosts management pages`
 
-- [ ] 10. pytest Suite
+- [x] 10. pytest Suite
 
   **What to do**:
   - Create `backend/tests/test_hosts_mgmt.py`:

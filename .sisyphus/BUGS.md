@@ -95,6 +95,12 @@ These are static analysis issues that do not affect runtime behavior. Documented
   **Commit**: `34a4f7e fix(security): add regex validation to service_name to prevent SSH command injection`
   **Discovered by**: F2 code quality review
 
+- [x] **BUG-14** `frontend/app/(dashboard)/hosts/[id]/page.tsx` — Preview File button broken (plain text response)
+  The "Preview File" button in the hosts-file tab called `apiFetch()` which always calls `res.json()`. The `/api/hosts/{id}/hosts-file-preview` endpoint returns `text/plain` (`PlainTextResponse`). Clicking the button threw `SyntaxError: Unexpected token` and showed "Failed to load preview".
+  **Fix applied**: Replaced `apiFetch` call with raw `fetch()` using `res.text()` and `credentials: "include"` for auth cookies.
+  **Commit**: `8d4617c fix(ui): use res.text() for hosts-file-preview plain text response`
+  **Discovered by**: F2 code quality review (ext-etc-hosts)
+
 ---
 
 ## Fixed
@@ -102,3 +108,4 @@ These are static analysis issues that do not affect runtime behavior. Documented
 All 12 original bugs fixed on 2026-03-17.
 Type errors TYPE-01 through TYPE-03 fixed on 2026-03-17.
 BUG-13 and SEC-01 found during ext-service-management final review and fixed immediately.
+BUG-14 found during ext-etc-hosts final review and fixed immediately.
