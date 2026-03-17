@@ -116,3 +116,28 @@ export interface EffectiveService {
   source_id: number
   source_name: string
 }
+
+export interface HostsEntry {
+  id: number
+  ip_address: string
+  hostname: string
+  aliases: string[]
+  comment: string | null
+  priority: number
+  is_system: boolean
+  group_id: number | null
+  host_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EffectiveHostsEntry {
+  ip_address: string
+  hostname: string
+  aliases: string[]
+  comment: string | null
+  is_system: boolean
+  source: "group" | "host" | "system"
+  source_id: number
+  source_name: string
+}
