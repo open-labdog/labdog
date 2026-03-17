@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -64,7 +64,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file">("overview")
   const [editOpen, setEditOpen] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
@@ -107,6 +107,96 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
     enabled: !!id && activeTab === "services",
   })
+
+  const { data: effectiveHosts, isLoading: hostsEntriesLoading, error: hostsEntriesError } = useQuery<EffectiveHostsEntry[]>({
+    queryKey: ["host-effective-hosts-entries", id],
+    queryFn: () => apiFetch<EffectiveHostsEntry[]>(`/api/hosts/${id}/effective-hosts-entries`),
+    enabled: !!id && activeTab === "hosts-file",
+  })
+
+  const { data: hostHostsOverrides } = useQuery<HostsEntry[]>({
+    queryKey: ["host-hosts-overrides", id],
+    queryFn: () => apiFetch<HostsEntry[]>(`/api/hosts/${id}/hosts-entries`),
+    enabled: !!id && activeTab === "hosts-file",
+  })
+
+  const [hostsPreview, setHostsPreview] = useState<string | null>(null)
+  const [hostsPreviewLoading, setHostsPreviewLoading] = useState(false)
+  const [hostsPreviewError, setHostsPreviewError] = useState<string | null>(null)
+
+  const [hostsDialogOpen, setHostsDialogOpen] = useState(false)
+  const [hostsIp, setHostsIp] = useState("")
+  const [hostsHostname, setHostsHostname] = useState("")
+  const [hostsAliases, setHostsAliases] = useState("")
+  const [hostsComment, setHostsComment] = useState("")
+  const [hostsPriority, setHostsPriority] = useState(100)
+  const [hostsFormError, setHostsFormError] = useState<string | null>(null)
+  const [hostsFormLoading, setHostsFormLoading] = useState(false)
+  const [hostsDeletingId, setHostsDeletingId] = useState<number | null>(null)
+  const [hostsDeleteError, setHostsDeleteError] = useState<string | null>(null)
+
+  function openHostsDialog() {
+    setHostsIp("")
+    setHostsHostname("")
+    setHostsAliases("")
+    setHostsComment("")
+    setHostsPriority(100)
+    setHostsFormError(null)
+    setHostsDialogOpen(true)
+  }
+
+  async function handleHostsSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setHostsFormError(null)
+    setHostsFormLoading(true)
+    try {
+      await apiFetch(`/api/hosts/${id}/hosts-entries`, {
+        method: "POST",
+        body: JSON.stringify({
+          ip_address: hostsIp,
+          hostname: hostsHostname,
+          aliases: hostsAliases.split(",").map((a) => a.trim()).filter(Boolean),
+          comment: hostsComment || null,
+          priority: hostsPriority,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
+      setHostsDialogOpen(false)
+    } catch (err) {
+      setHostsFormError(err instanceof Error ? err.message : "Failed to create entry")
+    } finally {
+      setHostsFormLoading(false)
+    }
+  }
+
+  async function handleHostsEntryDelete(entry: HostsEntry) {
+    if (!confirm(`Delete hosts entry "${entry.ip_address} ${entry.hostname}"?`)) return
+    setHostsDeletingId(entry.id)
+    setHostsDeleteError(null)
+    try {
+      await apiFetch(`/api/hosts/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
+    } catch (err) {
+      setHostsDeleteError(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setHostsDeletingId(null)
+    }
+  }
+
+  async function fetchHostsPreview() {
+    setHostsPreviewLoading(true)
+    setHostsPreviewError(null)
+    try {
+      const text = await apiFetch<string>(`/api/hosts/${id}/hosts-file-preview`)
+      setHostsPreview(text)
+    } catch (err) {
+      setHostsPreviewError(err instanceof Error ? err.message : "Failed to load preview")
+    } finally {
+      setHostsPreviewLoading(false)
+    }
+  }
 
   const [svcDialogOpen, setSvcDialogOpen] = useState(false)
   const [svcName, setSvcName] = useState("")
@@ -353,6 +443,16 @@ export default function HostDetailPage() {
           }`}
         >
           Services
+        </button>
+        <button
+          onClick={() => setActiveTab("hosts-file")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "hosts-file"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Hosts File
         </button>
       </div>
 
@@ -623,6 +723,210 @@ export default function HostDetailPage() {
                     type="button"
                     variant="outline"
                     onClick={() => setSvcDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {activeTab === "hosts-file" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Hosts File</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                /etc/hosts entries applied to this host from groups, overrides, and system defaults.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={fetchHostsPreview}
+                disabled={hostsPreviewLoading}
+              >
+                {hostsPreviewLoading ? "Loading..." : "Preview File"}
+              </Button>
+              <Button onClick={openHostsDialog}>Add Override</Button>
+            </div>
+          </div>
+
+          {hostsDeleteError && (
+            <div className="text-red-400 text-sm">{hostsDeleteError}</div>
+          )}
+
+          {hostsPreviewError && (
+            <div className="text-red-400 text-sm">{hostsPreviewError}</div>
+          )}
+
+          {hostsPreview !== null && (
+            <div className="rounded-lg border border-slate-700 bg-slate-950 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-medium text-slate-300">/etc/hosts preview</h3>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setHostsPreview(null)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  Close
+                </Button>
+              </div>
+              <pre className="text-xs text-slate-300 font-mono whitespace-pre overflow-x-auto">{hostsPreview}</pre>
+            </div>
+          )}
+
+          {hostsEntriesLoading && (
+            <div className="text-slate-400 py-6 text-center">Loading hosts entries…</div>
+          )}
+
+          {hostsEntriesError && (
+            <div className="text-red-400 py-6 text-center">Failed to load hosts entries</div>
+          )}
+
+          {!hostsEntriesLoading && !hostsEntriesError && effectiveHosts && effectiveHosts.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No hosts entries configured. Add a host override or assign entries to a group.
+            </div>
+          )}
+
+          {!hostsEntriesLoading && !hostsEntriesError && effectiveHosts && effectiveHosts.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>IP Address</TableHead>
+                    <TableHead>Hostname</TableHead>
+                    <TableHead>Aliases</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveHosts.map((entry) => (
+                    <TableRow key={`${entry.source}-${entry.source_id}-${entry.hostname}`} className="border-slate-700">
+                      <TableCell className="font-mono text-white text-sm">{entry.ip_address}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-sm">{entry.hostname}</TableCell>
+                      <TableCell className="text-slate-300 text-xs max-w-[200px] truncate">
+                        {entry.aliases.length > 0 ? entry.aliases.join(", ") : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {entry.source === "system"
+                            ? "System"
+                            : entry.source === "group"
+                              ? `Group: ${entry.source_name}`
+                              : "Host override"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {entry.source === "host" && !entry.is_system ? (
+                          (() => {
+                            const override = hostHostsOverrides?.find(
+                              (o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address
+                            )
+                            return override ? (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={hostsDeletingId === override.id}
+                                onClick={() => handleHostsEntryDelete(override)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                              >
+                                {hostsDeletingId === override.id ? "…" : "Delete"}
+                              </Button>
+                            ) : null
+                          })()
+                        ) : (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <Dialog open={hostsDialogOpen} onOpenChange={setHostsDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Hosts Entry Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleHostsSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="hosts-ip">IP Address</Label>
+                  <Input
+                    id="hosts-ip"
+                    type="text"
+                    placeholder="e.g. 192.168.1.10"
+                    value={hostsIp}
+                    onChange={(e) => setHostsIp(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hosts-hostname">Hostname</Label>
+                  <Input
+                    id="hosts-hostname"
+                    type="text"
+                    placeholder="e.g. myserver.local"
+                    value={hostsHostname}
+                    onChange={(e) => setHostsHostname(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hosts-aliases">Aliases (comma-separated)</Label>
+                  <Input
+                    id="hosts-aliases"
+                    type="text"
+                    placeholder="e.g. myserver, ms"
+                    value={hostsAliases}
+                    onChange={(e) => setHostsAliases(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hosts-comment">Comment</Label>
+                  <Input
+                    id="hosts-comment"
+                    type="text"
+                    placeholder="Optional comment"
+                    value={hostsComment}
+                    onChange={(e) => setHostsComment(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="hosts-priority">Priority</Label>
+                  <Input
+                    id="hosts-priority"
+                    type="number"
+                    value={hostsPriority}
+                    onChange={(e) => setHostsPriority(Number(e.target.value))}
+                    required
+                    min={0}
+                  />
+                </div>
+
+                {hostsFormError && (
+                  <p className="text-sm text-red-400">{hostsFormError}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={hostsFormLoading}>
+                    {hostsFormLoading ? "Saving..." : "Create Override"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setHostsDialogOpen(false)}
                   >
                     Cancel
                   </Button>
