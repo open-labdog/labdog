@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import {
@@ -154,6 +154,8 @@ export default function GroupSyncPage() {
 
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [pollError, setPollError] = useState<string | null>(null)
+  const pollFailures = useRef(0)
 
   const handlePreview = async () => {
     setPreviewing(true)
@@ -161,6 +163,8 @@ export default function GroupSyncPage() {
     setPlan(null)
     setJobId(null)
     setJobStatus(null)
+    setPollError(null)
+    pollFailures.current = 0
     try {
       const data = await apiFetch<PlanResponse>(`/api/sync/groups/${id}/plan`, {
         method: "POST",
@@ -177,6 +181,8 @@ export default function GroupSyncPage() {
     setConfirmOpen(false)
     setApplying(true)
     setApplyError(null)
+    setPollError(null)
+    pollFailures.current = 0
     try {
       const data = await apiFetch<SyncResponse>(`/api/sync/groups/${id}/sync`, {
         method: "POST",
@@ -188,28 +194,35 @@ export default function GroupSyncPage() {
     }
   }
 
+  const MAX_POLL_FAILURES = 5
+
   const pollJob = useCallback(async (jid: string) => {
     try {
       const data = await apiFetch<JobStatus>(`/api/sync/jobs/${jid}`)
+      pollFailures.current = 0
       setJobStatus(data)
       if (data.status === "success" || data.status === "failed") {
         setApplying(false)
       }
-    } catch {
-      // keep polling
+    } catch (err) {
+      pollFailures.current += 1
+      if (pollFailures.current >= MAX_POLL_FAILURES) {
+        setPollError(err instanceof Error ? err.message : "Lost connection while polling job status")
+        setApplying(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     if (!jobId) return
     const terminal = jobStatus?.status === "success" || jobStatus?.status === "failed"
-    if (terminal) return
+    if (terminal || pollError) return
 
     const interval = setInterval(() => pollJob(jobId), 3000)
     // Poll immediately
     pollJob(jobId)
     return () => clearInterval(interval)
-  }, [jobId, jobStatus?.status, pollJob])
+  }, [jobId, jobStatus?.status, pollError, pollJob])
 
   const hasChanges = plan && plan.hosts?.some(
     (h) => h.diffs.some((d) => d.status !== "unchanged")
@@ -248,6 +261,12 @@ export default function GroupSyncPage() {
       {applyError && (
         <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
           {applyError}
+        </div>
+      )}
+
+      {pollError && (
+        <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
+          Polling stopped: {pollError}
         </div>
       )}
 

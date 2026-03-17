@@ -56,90 +56,97 @@ async def import_group_from_yaml(
     await db.flush()
 
     try:
-        parsed = parse_yaml(yaml_content)
-    except YAMLParseError as e:
-        group.gitops_status = GitOpsStatus.error
-        group.gitops_error_message = f"YAML parse error: {e}"
-        await db.flush()
-        return ImportResult(error_message=str(e))
-
-    if not parsed.firewall or not parsed.firewall.rules:
-        desired_specs = []
-        logger.warning("Group %d: YAML has empty firewall rules", group_id)
-    else:
         try:
-            desired_specs = yaml_rules_to_specs(parsed.firewall.rules)
+            parsed = parse_yaml(yaml_content)
         except YAMLParseError as e:
             group.gitops_status = GitOpsStatus.error
-            group.gitops_error_message = f"Rule validation error: {e}"
+            group.gitops_error_message = f"YAML parse error: {e}"
             await db.flush()
             return ImportResult(error_message=str(e))
 
-    current_result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.group_id == group_id,
-            FirewallRule.is_system == False,  # noqa: E712
-        )
-    )
-    current_rules = list(current_result.scalars().all())
-    current_specs = firewall_rules_to_specs(current_rules)
+        if not parsed.firewall or not parsed.firewall.rules:
+            desired_specs = []
+            logger.warning("Group %d: YAML has empty firewall rules", group_id)
+        else:
+            try:
+                desired_specs = yaml_rules_to_specs(parsed.firewall.rules)
+            except YAMLParseError as e:
+                group.gitops_status = GitOpsStatus.error
+                group.gitops_error_message = f"Rule validation error: {e}"
+                await db.flush()
+                return ImportResult(error_message=str(e))
 
-    diff = compute_diff(current_specs, desired_specs)
-
-    import_result = ImportResult(
-        success=True,
-        rules_added=len(diff.rules_to_add),
-        rules_removed=len(diff.rules_to_remove),
-        rules_unchanged=len(diff.rules_unchanged),
-        diff=diff,
-    )
-
-    if diff.has_changes:
-        await db.execute(
-            delete(FirewallRule).where(
+        current_result = await db.execute(
+            select(FirewallRule).where(
                 FirewallRule.group_id == group_id,
                 FirewallRule.is_system == False,  # noqa: E712
             )
         )
+        current_rules = list(current_result.scalars().all())
+        current_specs = firewall_rules_to_specs(current_rules)
 
-        for i, spec in enumerate(desired_specs):
-            rule = spec_to_firewall_rule(spec, group_id)
-            rule.priority = i
-            db.add(rule)
+        diff = compute_diff(current_specs, desired_specs)
 
-        # Create audit log entry
-        before_state = {
-            "rules": [asdict(s) for s in current_specs],
-            "count": len(current_specs),
-        }
-        after_state = {
-            "rules": [asdict(s) for s in desired_specs],
-            "count": len(desired_specs),
-            "commit_sha": commit_sha,
-            "file_path": group.gitops_file_path,
-        }
-        await log_action(
-            db=db,
-            action="gitops.import",
-            entity_type="group",
-            entity_id=group_id,
-            before_state=before_state,
-            after_state=after_state,
+        import_result = ImportResult(
+            success=True,
+            rules_added=len(diff.rules_to_add),
+            rules_removed=len(diff.rules_to_remove),
+            rules_unchanged=len(diff.rules_unchanged),
+            diff=diff,
         )
 
-    # Update group status
-    group.gitops_status = GitOpsStatus.synced
-    group.gitops_error_message = None
-    group.gitops_last_import_at = datetime.now(UTC)
-    await db.flush()
+        if diff.has_changes:
+            await db.execute(
+                delete(FirewallRule).where(
+                    FirewallRule.group_id == group_id,
+                    FirewallRule.is_system == False,  # noqa: E712
+                )
+            )
 
-    logger.info(
-        "GitOps import for group %d: +%d -%d =%d (SHA: %s)",
-        group_id,
-        import_result.rules_added,
-        import_result.rules_removed,
-        import_result.rules_unchanged,
-        commit_sha[:8],
-    )
+            for i, spec in enumerate(desired_specs):
+                rule = spec_to_firewall_rule(spec, group_id)
+                rule.priority = i
+                db.add(rule)
 
-    return import_result
+            # Create audit log entry
+            before_state = {
+                "rules": [asdict(s) for s in current_specs],
+                "count": len(current_specs),
+            }
+            after_state = {
+                "rules": [asdict(s) for s in desired_specs],
+                "count": len(desired_specs),
+                "commit_sha": commit_sha,
+                "file_path": group.gitops_file_path,
+            }
+            await log_action(
+                db=db,
+                action="gitops.import",
+                entity_type="group",
+                entity_id=group_id,
+                before_state=before_state,
+                after_state=after_state,
+            )
+
+        # Update group status
+        group.gitops_status = GitOpsStatus.synced
+        group.gitops_error_message = None
+        group.gitops_last_import_at = datetime.now(UTC)
+        await db.flush()
+
+        logger.info(
+            "GitOps import for group %d: +%d -%d =%d (SHA: %s)",
+            group_id,
+            import_result.rules_added,
+            import_result.rules_removed,
+            import_result.rules_unchanged,
+            commit_sha[:8],
+        )
+
+        return import_result
+
+    except Exception as e:
+        group.gitops_status = GitOpsStatus.error
+        group.gitops_error_message = f"Unexpected error: {e}"
+        await db.flush()
+        raise

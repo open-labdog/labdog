@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
+import { API_BASE } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -48,7 +49,7 @@ export function Sidebar() {
 
     setPasswordLoading(true)
     try {
-      const res = await fetch("http://localhost:8000/users/me", {
+      const res = await fetch(`${API_BASE}/users/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
