@@ -64,6 +64,13 @@ async def get_host(
     host = result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
+
+    memberships = await db.execute(
+        select(HostGroupMembership.c.group_id).where(
+            HostGroupMembership.c.host_id == host_id
+        )
+    )
+    setattr(host, "group_ids", [r[0] for r in memberships.all()])
     return host
 
 
@@ -97,6 +104,13 @@ async def update_host(
 
     await db.commit()
     await db.refresh(host)
+
+    memberships = await db.execute(
+        select(HostGroupMembership.c.group_id).where(
+            HostGroupMembership.c.host_id == host_id
+        )
+    )
+    setattr(host, "group_ids", [r[0] for r in memberships.all()])
     return host
 
 

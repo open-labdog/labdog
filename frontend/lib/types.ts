@@ -17,6 +17,7 @@ export interface Host {
   firewall_backend: FirewallBackend; sync_status: SyncStatus
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
+  group_ids: number[]
   created_at: string; updated_at: string
 }
 export interface SSHKey {
