@@ -69,10 +69,10 @@ Enable centralized systemd service management with plan-before-apply diffs, drif
 - Drift normalization: desired `restarted`/`reloaded` = actual `running`
 - Host override: full record replacement by `service_name` merge key
 - Alembic migration (reversible)
-- RBAC: group-level endpoints use `require_group_role()`, host overrides require superuser
+- All service CRUD endpoints use `current_active_user` dependency (matches firewall rules pattern)
 
 ### Must NOT Have (Guardrails)
-- No modification to existing firewall module code
+- No modification to existing firewall module code **except** these narrow, backward-compatible changes to `backend/app/api/sync.py`: (1) add `module_type: str = "firewall"` field to `SyncJobResponse`, (2) add optional `module_type` query param to `list_jobs()`, (3) scope `trigger_host_sync()` running-sync check to `module_type="firewall"`
 - No systemd unit file management (services must pre-exist)
 - No service health checks / HTTP probes
 - No service dependency ordering
@@ -157,7 +157,7 @@ Max Concurrent: 3 (Waves 1-2)
 
 ## TODOs
 
-- [ ] 1. ServiceRule Model + host_module_status Table + SyncJob module_type + Alembic Migration
+- [x] 1. ServiceRule Model + host_module_status Table + SyncJob module_type + Alembic Migration
 
   **What to do**:
   - Create `backend/app/services/__init__.py` (empty)
@@ -205,7 +205,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(models): add ServiceRule, host_module_status, SyncJob module_type`
 
-- [ ] 2. Service Schemas + Deny-List Constants
+- [x] 2. Service Schemas + Deny-List Constants
 
   **What to do**:
   - Create `backend/app/services/constants.py`:
@@ -241,7 +241,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(services): add schemas and deny-list constants`
 
-- [ ] 3. Service Merge Engine
+- [x] 3. Service Merge Engine
 
   **What to do**:
   - Create `backend/app/services/merge.py`:
@@ -277,7 +277,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(services): add merge engine with host-override support`
 
-- [ ] 4. Service CRUD API
+- [x] 4. Service CRUD API
 
   **What to do**:
   - Create `backend/app/api/services.py` with router prefix `/api`:
@@ -296,8 +296,11 @@ Max Concurrent: 3 (Waves 1-2)
   - Register router in `backend/app/main.py`
   - Call `log_action()` on all mutations with `entity_type="service_rule"`
 
+  **Auth**: Use `current_active_user` for all service endpoints (consistent with firewall rules API pattern). Do NOT use `current_superuser`.
+
   **Must NOT do**:
-  - Do NOT add RBAC role checks (RBAC was removed — superuser-only via `current_superuser`)
+  - Do NOT use `current_superuser` — service rule CRUD follows the same auth pattern as firewall rule CRUD
+  - Do NOT add any role-based access checks
 
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
@@ -321,7 +324,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(api): add service management CRUD + effective-config endpoints`
 
-- [ ] 5. Ansible Service Playbook Generator
+- [x] 5. Ansible Service Playbook Generator
 
   **What to do**:
   - Create `backend/app/services/generator.py`:
@@ -356,7 +359,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(ansible): add service playbook generator`
 
-- [ ] 6. Service Drift Collector + Diff
+- [x] 6. Service Drift Collector + Diff
 
   **What to do**:
   - Create `backend/app/services/collector.py`:
@@ -394,22 +397,33 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(services): add drift collector via systemctl SSH`
 
-- [ ] 7. Service Sync Celery Task + Sync API
+- [x] 7. Service Sync Celery Task + Sync API
 
   **What to do**:
   - Create `backend/app/tasks/service_sync.py`:
-    - `@celery_app.task` named `app.tasks.service_sync.run_service_sync`
+    - `@celery_app.task(bind=True, name="app.tasks.service_sync.run_service_sync", queue="long_running")`
     - Same pattern as `tasks/sync.py`: DB lookup → merge effective services → generate playbook → ansible-runner → update SyncJob + host_module_status
     - Set `module_type="service"` on SyncJob
   - Create `backend/app/api/service_sync.py` with router:
     - `POST /api/services/hosts/{host_id}/plan` — preview changes (diff current vs desired)
     - `POST /api/services/hosts/{host_id}/sync` — trigger sync (creates SyncJob, dispatches task)
+      - Running-sync check MUST scope to `module_type="service"`: `SyncJob.where(host_id == x, module_type == "service", status.in_(["pending", "running"]))`
     - `POST /api/services/groups/{group_id}/sync` — sync all hosts in group
     - `GET /api/services/jobs/{job_id}` — get job status
   - Register router in `app/main.py`
+  - **Modify existing `backend/app/api/sync.py`** (narrow, backward-compatible changes):
+    1. Add `module_type: str = "firewall"` field to `SyncJobResponse` schema
+    2. Add optional `module_type: str | None = None` query param to `list_jobs()` endpoint with filter: `if module_type: q = q.where(SyncJob.module_type == module_type)`
+    3. Scope `trigger_host_sync()` running-sync check to firewall: add `.where(SyncJob.module_type == "firewall")` to the existing pending/running query
+  - **Update `backend/app/tasks/__init__.py`** — add Celery task routing:
+    ```python
+    "app.tasks.service_sync.*": {"queue": "long_running"},
+    "app.tasks.service_drift.*": {"queue": "long_running"},
+    ```
 
   **Must NOT do**:
-  - Do NOT modify `backend/app/tasks/sync.py` or `backend/app/api/sync.py`
+  - Do NOT modify `backend/app/tasks/sync.py` (Celery task logic)
+  - Do NOT change existing sync behavior — only add `module_type` awareness to `sync.py` API as described above
 
   **Recommended Agent Profile**:
   - **Category**: `unspecified-high`
@@ -421,17 +435,23 @@ Max Concurrent: 3 (Waves 1-2)
   - **Blocked By**: T4, T5, T6
 
   **References**:
-  - `backend/app/tasks/sync.py` — Celery sync task pattern
-  - `backend/app/api/sync.py` — Sync API pattern
+  - `backend/app/tasks/sync.py` — Celery sync task pattern (read only, do not modify)
+  - `backend/app/api/sync.py` — Sync API pattern + narrow modifications target
+  - `backend/app/tasks/__init__.py` — Celery config and task routing
 
   **Acceptance Criteria**:
   - [ ] Plan endpoint returns diff of current vs desired service states
   - [ ] Sync creates SyncJob with `module_type="service"`
   - [ ] Job status queryable via GET endpoint
+  - [ ] Running firewall sync does NOT block service sync (and vice versa)
+  - [ ] `GET /api/sync/jobs?module_type=service` returns only service jobs
+  - [ ] `GET /api/sync/jobs` (no filter) returns all jobs (backward-compatible)
+  - [ ] `SyncJobResponse` includes `module_type` field in all responses
+  - [ ] Celery task routes updated for service_sync and service_drift
 
-  **Commit**: YES — `feat(tasks): add service sync Celery task + sync API`
+  **Commit**: YES — `feat(tasks): add service sync Celery task + sync API with module-scoped sync`
 
-- [ ] 8. Service Drift Detection Task + API
+- [x] 8. Service Drift Detection Task + API
 
   **What to do**:
   - Create `backend/app/tasks/service_drift.py`:
@@ -463,7 +483,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(tasks): add service drift detection task + API`
 
-- [ ] 9. Frontend — Group Services Page + Host Detail Services Tab
+- [x] 9. Frontend — Group Services Page + Host Detail Services Tab
 
   **What to do**:
   - Create `frontend/app/(dashboard)/groups/[id]/services/page.tsx`:
@@ -507,7 +527,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(ui): add service management pages`
 
-- [ ] 10. Service Management Test Suite
+- [x] 10. Service Management Test Suite
 
   **What to do**:
   - Create `backend/tests/test_services.py`:

@@ -72,7 +72,33 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Dead Code
+
+- [ ] **DEAD-01** `api/permissions.py`, `auth/rbac.py` — Leftover RBAC files after removal
+  The `user-management.md` plan removed RBAC (dropped `user_group_permissions` table, `GroupRole` enum, model file). These two files were not deleted. Both import `app.models.user_group_permission` which no longer exists (confirmed by LSP errors). They contain `require_group_role()` and permission-checking logic that nothing calls.
+  **Fix**: Delete both files. Verify nothing imports from them.
+  **Discovered**: 2026-03-17 (during `ext-service-management` plan review)
+
+---
+
+## Found & Fixed During ext-service-management (2026-03-17)
+
+- [x] **BUG-13** `frontend/app/(dashboard)/hosts/[id]/page.tsx` — Host override delete sends `service_name` instead of `rule_id`
+  The services tab on the host detail page called `DELETE /api/hosts/${id}/services/${service_name}` but the backend expects `rule_id` (int). This always resulted in a 404/422. The effective-services response doesn't include rule IDs, so the page had no way to delete host overrides.
+  **Fix applied**: Added a second query fetching host overrides (`GET /api/hosts/${id}/services`) which returns `ServiceRule[]` with `id` fields. Delete handler now looks up the override by `service_name` and sends `override.id` to the API.
+  **Commit**: `d6bc2d5 fix(ui): use rule_id for host override delete/edit instead of service_name`
+  **Discovered by**: F2 code quality review
+
+- [x] **SEC-01** `backend/app/services/collector.py:43,65` — SSH command injection via service_name
+  `f"systemctl is-active {name}"` interpolates user-provided service names directly into SSH commands. A name like `nginx; rm -rf /` would pass existing validators (only deny-list and suffix strip) and execute arbitrary commands on remote hosts.
+  **Fix applied**: Added regex validator `^[a-zA-Z0-9_@:.-]+$` to both `ServiceRuleCreate` and `ServiceRuleUpdate` in `schemas.py`. Rejects shell metacharacters (`;`, `|`, `&`, `$`, backticks, spaces, etc.) while allowing all valid systemd unit name characters.
+  **Commit**: `34a4f7e fix(security): add regex validation to service_name to prevent SSH command injection`
+  **Discovered by**: F2 code quality review
+
+---
+
 ## Fixed
 
-All 12 bugs fixed on 2026-03-17.
+All 12 original bugs fixed on 2026-03-17.
 Type errors TYPE-01 through TYPE-03 fixed on 2026-03-17.
+BUG-13 and SEC-01 found during ext-service-management final review and fixed immediately.
