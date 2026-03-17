@@ -161,6 +161,12 @@ export default function GroupDetailPage() {
             Manage Rules
           </Link>
           <Link
+            href={`/groups/${id}/services`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Manage Services
+          </Link>
+          <Link
             href={`/groups/${id}/sync`}
             className={cn(buttonVariants())}
           >
@@ -229,6 +235,12 @@ export default function GroupDetailPage() {
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             View &amp; Edit Rules
+          </Link>
+          <Link
+            href={`/groups/${id}/services`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            View &amp; Edit Services
           </Link>
           <Link
             href={`/groups/${id}/sync`}

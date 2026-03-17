@@ -94,3 +94,25 @@ export interface AdminUser {
   created_at: string
   updated_at: string
 }
+
+export interface ServiceRule {
+  id: number
+  service_name: string
+  state: "running" | "stopped"
+  enabled: boolean
+  priority: number
+  comment: string | null
+  group_id: number | null
+  host_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EffectiveService {
+  service_name: string
+  state: string
+  enabled: boolean
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}
