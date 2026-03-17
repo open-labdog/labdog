@@ -56,11 +56,14 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
             result = await session.execute(select(func.count()).select_from(User))
             count = result.scalar_one()
             if count == 1:
-                user.is_superuser = True
-                user.is_verified = True
-                session.add(user)
-                await session.commit()
-                logger.info("First user %d promoted to superuser.", user.id)
+                # Re-fetch the user within this session to avoid cross-session
+                # object sharing (the `user` arg belongs to fastapi_users' session).
+                fresh = await session.get(User, user.id)
+                if fresh:
+                    fresh.is_superuser = True
+                    fresh.is_verified = True
+                    await session.commit()
+                    logger.info("First user %d promoted to superuser.", user.id)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Optional[Request] = None

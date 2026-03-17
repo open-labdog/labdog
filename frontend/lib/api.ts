@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 export async function apiFetch<T>(
   path: string,
@@ -16,7 +16,15 @@ export async function apiFetch<T>(
     let detail = `API error ${res.status}`
     try {
       const body = await res.json()
-      if (body.detail) detail = body.detail
+      if (Array.isArray(body.detail)) {
+        detail = body.detail
+          .map((e: { msg: string; loc?: (string | number)[] }) =>
+            e.loc && e.loc.length > 1 ? `${e.loc.slice(1).join(".")}: ${e.msg}` : e.msg
+          )
+          .join(", ")
+      } else if (body.detail) {
+        detail = body.detail
+      }
     } catch {}
     throw new Error(detail)
   }

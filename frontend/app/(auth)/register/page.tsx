@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { API_BASE } from "@/lib/api"
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("")
@@ -16,7 +17,7 @@ export default function RegisterPage() {
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
 
   useEffect(() => {
-    fetch("http://localhost:8000/auth/setup-status", { credentials: "include" })
+    fetch(`${API_BASE}/auth/setup-status`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => setNeedsSetup(data.needs_setup === true))
       .catch(() => setNeedsSetup(false))
@@ -61,7 +62,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const res = await fetch("http://localhost:8000/auth/register", {
+      const res = await fetch(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -72,7 +73,16 @@ export default function RegisterPage() {
         window.location.href = "/login"
       } else {
         const data = await res.json().catch(() => null)
-        setError(data?.detail || "Registration failed")
+        const detail = data?.detail
+        setError(
+          Array.isArray(detail)
+            ? detail
+                .map((e: { msg: string; loc?: (string | number)[] }) =>
+                  e.loc && e.loc.length > 1 ? `${e.loc.slice(1).join(".")}: ${e.msg}` : e.msg
+                )
+                .join(", ")
+            : detail || "Registration failed"
+        )
       }
     } catch {
       setError("Registration failed")
