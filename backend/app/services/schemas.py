@@ -1,6 +1,7 @@
 from pydantic import BaseModel, field_validator
 from datetime import datetime
 from typing import Literal, Optional
+import re
 from app.services.constants import PROTECTED_SERVICES
 
 
@@ -17,6 +18,9 @@ class ServiceRuleCreate(BaseModel):
         # Strip .service suffix
         if v.endswith(".service"):
             v = v[:-8]
+        # Reject shell metacharacters
+        if not re.match(r'^[a-zA-Z0-9_@:.-]+$', v):
+            raise ValueError(f"Invalid service name '{v}': only alphanumeric, underscore, @, colon, dot, and hyphen allowed")
         # Reject protected services
         if v in PROTECTED_SERVICES:
             raise ValueError(f"'{v}' is a protected service and cannot be managed")
@@ -38,6 +42,9 @@ class ServiceRuleUpdate(BaseModel):
         # Strip .service suffix
         if v.endswith(".service"):
             v = v[:-8]
+        # Reject shell metacharacters
+        if not re.match(r'^[a-zA-Z0-9_@:.-]+$', v):
+            raise ValueError(f"Invalid service name '{v}': only alphanumeric, underscore, @, colon, dot, and hyphen allowed")
         # Reject protected services
         if v in PROTECTED_SERVICES:
             raise ValueError(f"'{v}' is a protected service and cannot be managed")
