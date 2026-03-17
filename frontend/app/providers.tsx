@@ -4,6 +4,7 @@ import { ReactNode, useState, useEffect, useCallback } from 'react'
 import { ThemeProvider } from 'next-themes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthContext, User } from '@/lib/auth'
+import { API_BASE } from '@/lib/api'
 
 const queryClient = new QueryClient()
 
@@ -12,7 +13,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('http://localhost:8000/users/me', {
+    fetch(`${API_BASE}/users/me`, {
       credentials: 'include',
     })
       .then((res) => {
@@ -32,7 +33,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch('http://localhost:8000/auth/jwt/logout', {
+      await fetch(`${API_BASE}/auth/jwt/logout`, {
         method: 'POST',
         credentials: 'include',
       })

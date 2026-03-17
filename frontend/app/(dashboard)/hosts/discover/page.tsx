@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -77,7 +77,8 @@ export default function DiscoverHostsPage() {
   })
 
   // Transition to done/error when scan completes
-  if (scanStatus && phase === "scanning") {
+  useEffect(() => {
+    if (!scanStatus || phase !== "scanning") return
     if (scanStatus.status === "done") {
       setPhase("done")
     } else if (scanStatus.status === "error") {
@@ -85,7 +86,7 @@ export default function DiscoverHostsPage() {
       setPhase("idle")
       setJobId(null)
     }
-  }
+  }, [scanStatus, phase])
 
   // --- Fetch SSH keys & groups ---
   const { data: sshKeys } = useQuery<SSHKey[]>({
@@ -166,10 +167,11 @@ export default function DiscoverHostsPage() {
   }
 
   // Pre-select default SSH key
-  if (sshKeys && selectedKeyId === null) {
+  useEffect(() => {
+    if (!sshKeys || selectedKeyId !== null) return
     const defaultKey = sshKeys.find((k) => k.is_default)
     if (defaultKey) setSelectedKeyId(defaultKey.id)
-  }
+  }, [sshKeys, selectedKeyId])
 
   const hostsFound = scanStatus?.hosts_found ?? []
   const progressPct = scanStatus && scanStatus.total > 0

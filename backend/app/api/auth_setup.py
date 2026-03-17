@@ -25,9 +25,12 @@ async def register(
     user_create: UserCreate,
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    async with AsyncSessionLocal() as session:
-        result = await session.execute(select(func.count()).select_from(User))
-        count = result.scalar_one()
+    try:
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(func.count()).select_from(User))
+            count = result.scalar_one()
+    except Exception:
+        raise HTTPException(status_code=503, detail="Database unavailable")
 
     if count > 0:
         raise HTTPException(

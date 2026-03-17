@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -37,8 +37,10 @@ async def create_ssh_key(
     master_key = get_master_key()
     encrypted = encrypt_ssh_key(body.private_key, master_key)
 
-    # If is_default, unset other defaults
+    # Serialize concurrent default-key creation with an advisory lock so that
+    # only one request can unset existing defaults and insert the new key at a time.
     if body.is_default:
+        await db.execute(text("SELECT pg_advisory_xact_lock(1)"))
         await db.execute(update(SSHKey).values(is_default=False))
 
     key = SSHKey(
@@ -58,15 +60,15 @@ async def delete_ssh_key(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    # Check no hosts reference this key
-    hosts = await db.execute(select(Host).where(Host.ssh_key_id == key_id))
-    if hosts.scalars().first():
-        raise HTTPException(status_code=400, detail="Cannot delete key referenced by hosts")
-
     result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
     key = result.scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=404, detail="SSH key not found")
+
+    # Check no hosts reference this key
+    hosts = await db.execute(select(Host.id).where(Host.ssh_key_id == key_id).limit(1))
+    if hosts.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=400, detail="Cannot delete key referenced by hosts")
 
     await db.delete(key)
     await db.commit()

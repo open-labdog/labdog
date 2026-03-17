@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -170,11 +170,14 @@ export default function GitReposPage() {
     setTimeout(() => setCopiedUrl(null), 2000)
   }
 
-  const webhookUrls = [
-    { label: "GitHub", url: `${typeof window !== "undefined" ? window.location.origin : ""}/webhooks/github` },
-    { label: "GitLab", url: `${typeof window !== "undefined" ? window.location.origin : ""}/webhooks/gitlab` },
-    { label: "Gitea", url: `${typeof window !== "undefined" ? window.location.origin : ""}/webhooks/gitea` },
-  ]
+  const webhookUrls = useMemo(() => {
+    const origin = typeof window !== "undefined" ? window.location.origin : ""
+    return [
+      { label: "GitHub", url: `${origin}/webhooks/github` },
+      { label: "GitLab", url: `${origin}/webhooks/gitlab` },
+      { label: "Gitea", url: `${origin}/webhooks/gitea` },
+    ]
+  }, [])
 
   return (
     <div className="space-y-6">
