@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -102,6 +102,12 @@ export default function HostDetailPage() {
     enabled: !!id && activeTab === "services",
   })
 
+  const { data: hostOverrides } = useQuery<ServiceRule[]>({
+    queryKey: ["host-service-overrides", id],
+    queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
+    enabled: !!id && activeTab === "services",
+  })
+
   const [svcDialogOpen, setSvcDialogOpen] = useState(false)
   const [svcName, setSvcName] = useState("")
   const [svcState, setSvcState] = useState<"running" | "stopped">("running")
@@ -139,6 +145,7 @@ export default function HostDetailPage() {
         }),
       })
       await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
       setSvcDialogOpen(false)
     } catch (err) {
       setSvcFormError(err instanceof Error ? err.message : "Failed to create override")
@@ -149,11 +156,17 @@ export default function HostDetailPage() {
 
   async function handleSvcDelete(serviceName: string) {
     if (!confirm(`Delete host override for "${serviceName}"?`)) return
+    const override = hostOverrides?.find(o => o.service_name === serviceName)
+    if (!override) {
+      setSvcDeleteError("Override not found")
+      return
+    }
     setSvcDeletingName(serviceName)
     setSvcDeleteError(null)
     try {
-      await apiFetch(`/api/hosts/${id}/services/${encodeURIComponent(serviceName)}`, { method: "DELETE" })
+      await apiFetch(`/api/hosts/${id}/services/${override.id}`, { method: "DELETE" })
       await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
     } catch (err) {
       setSvcDeleteError(err instanceof Error ? err.message : "Delete failed")
     } finally {
