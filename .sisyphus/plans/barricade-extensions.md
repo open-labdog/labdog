@@ -497,8 +497,8 @@ Some modules depend on others:
 |----------|--------|-----------|--------|
 | 1 | Service Management | [`ext-service-management.md`](ext-service-management.md) | Ready (10 tasks) |
 | 2 | Linux User Management | [`ext-linux-user-management.md`](ext-linux-user-management.md) | Ready (10 tasks, depends on #1) |
-| 3 | /etc/hosts | _Not yet planned_ | — |
-| 4 | Package Management | _Not yet planned_ | — |
+| 3 | /etc/hosts Management | [`ext-etc-hosts.md`](ext-etc-hosts.md) | Ready (10 tasks, depends on #1) |
+| 4 | Package Management | [`ext-package-management.md`](ext-package-management.md) | Ready (10 tasks, depends on #1) |
 | 5 | Sysctl | _Not yet planned_ | — |
 | 6 | Cron Jobs | _Not yet planned_ | — |
 | 7 | DNS Resolver | _Not yet planned_ | — |
