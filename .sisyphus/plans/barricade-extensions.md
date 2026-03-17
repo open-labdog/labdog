@@ -500,8 +500,8 @@ Some modules depend on others:
 | 3 | /etc/hosts Management | [`ext-etc-hosts.md`](ext-etc-hosts.md) | Ready (10 tasks, depends on #1) |
 | 4 | Package Management | [`ext-package-management.md`](ext-package-management.md) | Ready (10 tasks, depends on #1) |
 | 5 | Sysctl | _Not yet planned_ | — |
-| 6 | Cron Jobs | _Not yet planned_ | — |
-| 7 | DNS Resolver | _Not yet planned_ | — |
+| 6 | Cron Jobs | [`ext-cron-jobs.md`](ext-cron-jobs.md) | Ready (10 tasks, depends on #1) |
+| 7 | DNS Resolver | [`ext-dns-resolver.md`](ext-dns-resolver.md) | Ready (10 tasks, depends on #1) |
 | 8 | File Management | _Not yet planned_ | — |
 | 9 | TLS Certificates | _Not yet planned_ | — |
 
