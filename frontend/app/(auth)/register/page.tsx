@@ -72,7 +72,12 @@ export default function RegisterPage() {
         window.location.href = "/login"
       } else {
         const data = await res.json().catch(() => null)
-        setError(data?.detail || "Registration failed")
+        const detail = data?.detail
+        setError(
+          Array.isArray(detail)
+            ? detail.map((e: { msg: string }) => e.msg).join(", ")
+            : detail || "Registration failed"
+        )
       }
     } catch {
       setError("Registration failed")

@@ -16,7 +16,11 @@ export async function apiFetch<T>(
     let detail = `API error ${res.status}`
     try {
       const body = await res.json()
-      if (body.detail) detail = body.detail
+      if (Array.isArray(body.detail)) {
+        detail = body.detail.map((e: { msg: string }) => e.msg).join(", ")
+      } else if (body.detail) {
+        detail = body.detail
+      }
     } catch {}
     throw new Error(detail)
   }
