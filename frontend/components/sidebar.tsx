@@ -83,7 +83,7 @@ export function Sidebar() {
             href={item.href}
             className={cn(
               "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
-              pathname === item.href
+              (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
                 ? "bg-slate-800 text-white"
                 : "text-slate-300 hover:bg-slate-800 hover:text-white"
             )}
