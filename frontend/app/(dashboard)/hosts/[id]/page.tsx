@@ -23,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
-import { apiFetch } from "@/lib/api"
+import { apiFetch, API_BASE } from "@/lib/api"
 import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
@@ -189,7 +189,11 @@ export default function HostDetailPage() {
     setHostsPreviewLoading(true)
     setHostsPreviewError(null)
     try {
-      const text = await apiFetch<string>(`/api/hosts/${id}/hosts-file-preview`)
+      const res = await fetch(`${API_BASE}/api/hosts/${id}/hosts-file-preview`, {
+        credentials: "include",
+      })
+      if (!res.ok) throw new Error("Failed to load preview")
+      const text = await res.text()
       setHostsPreview(text)
     } catch (err) {
       setHostsPreviewError(err instanceof Error ? err.message : "Failed to load preview")
