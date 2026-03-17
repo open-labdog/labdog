@@ -24,7 +24,8 @@ def check_all_drift():
                     host.sync_status = drift_result.status
                     host.last_drift_check_at = datetime.now(timezone.utc)
                 except Exception:
-                    host.sync_status = "error"
+                    from app.models.host import SyncStatus
+                    host.sync_status = SyncStatus.error
                     host.last_drift_check_at = datetime.now(timezone.utc)
             await db.commit()
             return len(hosts)

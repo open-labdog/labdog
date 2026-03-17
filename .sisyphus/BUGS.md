@@ -53,6 +53,26 @@ Status: `[ ]` open · `[x]` fixed
 
 ---
 
+## Type Errors (Upstream / Cosmetic)
+
+These are static analysis issues that do not affect runtime behavior. Documented and suppressed.
+
+- [x] **TYPE-01** `auth/users.py` — fastapi-users `UserProtocol` vs SQLAlchemy `Mapped` type mismatch
+  `SQLAlchemyUserDatabase`, `BaseUserManager[User, int]`, and `FastAPIUsers[User, int]` all expect `UserProtocol` which defines fields as plain `str`/`bool`/`int`. SQLAlchemy 2.0's `Mapped[str]` is a different type at static analysis time, even though it resolves to `str` at runtime. This is a known upstream incompatibility — fastapi-users hasn't updated their protocols for SQLAlchemy 2.0.
+  **Fix applied**: `# type: ignore[type-var]` on the 3 affected lines with explanation comment.
+  **Upstream**: https://github.com/fastapi-users/fastapi-users/issues — awaiting protocol update.
+
+- [x] **TYPE-02** `rules/converter.py` — `Sequence[FirewallRule]` vs `list[FirewallRule]`
+  `firewall_rules_to_specs()` accepted `list[FirewallRule]` but SQLAlchemy's `.scalars().all()` returns `Sequence[FirewallRule]`. Callers in `api/rules.py`, `api/sync.py`, and `api/drift.py` all pass the SQLAlchemy result directly.
+  **Fix applied**: Changed function signature to accept `Sequence[FirewallRule]` (from `collections.abc`).
+
+- [x] **TYPE-03** `api/drift.py`, `tasks/drift.py`, `tasks/sync.py` — `sync_status` assigned as string instead of `SyncStatus` enum
+  `host.sync_status = "error"` and `host.sync_status = "in_sync"` assign bare strings to a `Mapped[SyncStatus]` column. Works at runtime (SQLAlchemy coerces), but type checkers flag it.
+  **Fix applied**: Changed all assignments to use `SyncStatus.error`, `SyncStatus.in_sync`, etc. Also updated `DriftResult.status` from `str` to `SyncStatus` enum.
+
+---
+
 ## Fixed
 
 All 12 bugs fixed on 2026-03-17.
+Type errors TYPE-01 through TYPE-03 fixed on 2026-03-17.

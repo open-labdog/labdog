@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from app.models.firewall_rule import FirewallRule
 from app.rules.model import FirewallRuleSpec
 
@@ -20,7 +22,7 @@ def firewall_rule_to_spec(rule: FirewallRule) -> FirewallRuleSpec:
     )
 
 
-def firewall_rules_to_specs(rules: list[FirewallRule]) -> list[FirewallRuleSpec]:
+def firewall_rules_to_specs(rules: Sequence[FirewallRule]) -> list[FirewallRuleSpec]:
     """Batch convert FirewallRule models to specs."""
     return [firewall_rule_to_spec(r) for r in rules]
 

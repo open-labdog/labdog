@@ -131,7 +131,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 # Update host sync status
                 host_result = await db.execute(select(Host).where(Host.id == host_id))
                 host = host_result.scalar_one()
-                host.sync_status = "in_sync" if runner.status == "successful" else "error"
+                from app.models.host import SyncStatus
+                host.sync_status = SyncStatus.in_sync if runner.status == "successful" else SyncStatus.error
                 host.last_sync_at = datetime.now(timezone.utc)
 
                 await db.commit()
