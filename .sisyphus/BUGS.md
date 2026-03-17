@@ -103,9 +103,24 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Infra / DevEx
+
+- [x] **BUG-15** `alembic/versions/0004_service_management.py` — Migration creates servicestate enum twice
+  The explicit `sa.Enum(...).create(checkfirst=True)` call creates the enum, then `op.create_table()` with an inline `sa.Enum(...)` column tries to create it again within the same transaction. Fails with `DuplicateObjectError: type "servicestate" already exists`.
+  **Fix applied**: Removed explicit `.create()` call; let `create_table` handle enum creation implicitly.
+  **Discovered**: 2026-03-17 (running `./dev.sh start`)
+
+- [x] **BUG-16** `docker-compose.yml` — Redis port not exposed to host
+  Redis container had no `ports` mapping. Backend celery workers running locally (not in Docker) couldn't connect to `localhost:6379`. Workers retried endlessly with `Error 111 connecting to localhost:6379. Connection refused`.
+  **Fix applied**: Added `ports: ["6379:6379"]` to redis service in docker-compose.yml.
+  **Discovered**: 2026-03-17 (running `./dev.sh start`)
+
+---
+
 ## Fixed
 
 All 12 original bugs fixed on 2026-03-17.
 Type errors TYPE-01 through TYPE-03 fixed on 2026-03-17.
 BUG-13 and SEC-01 found during ext-service-management final review and fixed immediately.
 BUG-14 found during ext-etc-hosts final review and fixed immediately.
+BUG-15 and BUG-16 found while testing dev.sh script and fixed immediately.
