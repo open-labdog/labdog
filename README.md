@@ -1,16 +1,18 @@
 # Barricade
 
-Centralized Linux firewall management via Ansible. Define firewall rules in a web UI, preview changes before applying, and sync to hosts running nftables, firewalld, or ufw.
+Centralized Linux configuration management via Ansible. Manage firewall rules, systemd services, `/etc/hosts`, and more from a web UI — preview changes before applying, detect drift, and sync to hosts over SSH.
 
 ## Features
 
-- **Multi-backend support**: nftables, firewalld, ufw -- same rules, any backend
-- **Plan-before-apply**: Preview exact changes (add/remove/unchanged) before syncing
+- **Firewall management**: nftables, firewalld, ufw — same rules, any backend
+- **Service management**: Declare systemd service states (running/stopped), sync via Ansible, detect drift
+- **/etc/hosts management**: Manage host file entries with full-file rendering, system entry protection, and file preview
+- **Plan-before-apply**: Preview exact changes before syncing to remote hosts
 - **SSH lockout prevention**: Auto-injected system rule ensures SSH access is never accidentally blocked
-- **Role-based access control**: Superuser, admin, editor, viewer roles per host group
-- **Drift detection**: Periodic and manual checks for out-of-sync hosts
+- **Drift detection**: Periodic and manual checks for out-of-sync hosts across all modules
 - **Audit trail**: Append-only log of all actions with before/after state
-- **Priority-based rule merge**: Groups with higher priority override lower ones on shared hosts
+- **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
+- **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
 
 ## Architecture
 
@@ -64,8 +66,8 @@ Centralized Linux firewall management via Ansible. Define firewall rules in a we
 |----------|----------|---------|-------------|
 | `POSTGRES_PASSWORD` | Docker | `barricade` | PostgreSQL password |
 | `SECRET_KEY` | Yes (production) | `change-me-in-production` | JWT signing key |
-| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption. Must be exactly 32 bytes base64-encoded. Generate with: `python3 -c "import base64,os; print(base64.b64encode(os.urandom(32)).decode())"` |
-| `BARRICADE_SERVER_IP` | Yes | `127.0.0.1` | IP of the Barricade server (used in auto-injected SSH lockout rule) |
+| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes, base64) |
+| `BARRICADE_SERVER_IP` | Yes | `127.0.0.1` | IP of the Barricade server (used in SSH lockout rule) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://localhost:8000` | Backend API URL |
 | `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://barricade:barricade@localhost:5432/barricade` | Async PostgreSQL connection string |
 | `REDIS_URL` | Auto (Docker) | `redis://localhost:6379/0` | Redis URL for Celery broker and result backend |
@@ -73,33 +75,43 @@ Centralized Linux firewall management via Ansible. Define firewall rules in a we
 
 ## Local Development
 
-### Backend
+The `dev.sh` script manages all dev processes:
 
+```bash
+./dev.sh start       # Start postgres + redis (Docker) + backend + frontend
+./dev.sh stop        # Stop everything
+./dev.sh status      # Show running processes
+./dev.sh logs        # Tail all dev logs
+
+./dev.sh infra       # Start only postgres + redis
+./dev.sh backend     # Start only backend (uvicorn + celery worker + celery beat)
+./dev.sh frontend    # Start only frontend (next dev)
+
+./dev.sh migrate     # Run alembic upgrade head
+./dev.sh migrate-down    # Roll back one migration
+./dev.sh migrate-new "description"  # Generate new migration
+```
+
+### Manual Setup (without dev.sh)
+
+**Backend:**
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-
-# Start PostgreSQL + Redis (or use Docker for just those)
 docker compose up -d postgres redis
-
-# Run migrations
 alembic upgrade head
-
-# Start dev server
 uvicorn app.main:app --reload --port 8000
 ```
 
-### Frontend
-
+**Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev  # http://localhost:3000
 ```
 
-### Celery Workers (for sync/drift)
-
+**Celery workers:**
 ```bash
 cd backend && source .venv/bin/activate
 celery -A app.tasks worker -Q default,long_running --loglevel=info
@@ -108,16 +120,15 @@ celery -A app.tasks beat --scheduler redbeat.RedBeatScheduler --loglevel=info
 
 ## Testing
 
-### Backend Unit + Integration Tests
+### Backend
 
 ```bash
-cd backend
-source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v    # unit + integration via testcontainers
-pytest tests/integration/ -v -m integration     # full workflow test (requires Docker)
+cd backend && source .venv/bin/activate
+pytest tests/ --ignore=tests/integration -v
+pytest tests/integration/ -v -m integration     # requires Docker
 ```
 
-### Frontend E2E Tests (Playwright)
+### Frontend E2E (Playwright)
 
 ```bash
 cd frontend
@@ -127,23 +138,54 @@ npx playwright test          # requires running Docker stack
 
 ## API Endpoints
 
+### Auth
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/auth/register` | Register new user |
 | `POST` | `/auth/jwt/login` | Login (sets httpOnly cookie) |
 | `POST` | `/auth/jwt/logout` | Logout |
 | `GET` | `/users/me` | Current user info |
+
+### Infrastructure
+| Method | Path | Description |
+|--------|------|-------------|
 | `GET/POST` | `/api/groups` | List/create host groups |
 | `GET/POST` | `/api/hosts` | List/create hosts |
 | `POST` | `/api/ssh-keys` | Upload SSH key (encrypted at rest) |
-| `GET/POST/PUT/DELETE` | `/api/groups/{id}/rules` | Manage firewall rules per group |
-| `GET` | `/api/hosts/{id}/effective-rules` | Get merged effective rules for a host |
-| `POST` | `/api/sync/hosts/{id}/plan` | Preview changes without applying |
-| `POST` | `/api/sync/hosts/{id}/sync` | Apply changes to host via Ansible |
-| `GET` | `/api/sync/jobs/{id}` | Check sync job status |
-| `POST` | `/api/drift/hosts/{id}/check` | Check if host firewall matches desired state |
-| `GET` | `/api/audit-log` | View audit trail (filterable, paginated) |
+| `GET` | `/api/audit-log` | View audit trail |
 | `GET` | `/health` | Health check |
+
+### Firewall Rules
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/rules` | Manage firewall rules per group |
+| `GET` | `/api/hosts/{id}/effective-rules` | Get merged effective rules |
+| `POST` | `/api/sync/hosts/{id}/plan` | Preview firewall changes |
+| `POST` | `/api/sync/hosts/{id}/sync` | Apply firewall changes via Ansible |
+| `GET` | `/api/sync/jobs/{id}` | Check sync job status |
+| `POST` | `/api/drift/hosts/{id}/check` | Check firewall drift |
+
+### Service Management
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/services` | Manage service rules per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/services` | Host-level service overrides |
+| `GET` | `/api/hosts/{id}/effective-services` | Merged effective services |
+| `POST` | `/api/services/hosts/{id}/plan` | Preview service changes |
+| `POST` | `/api/services/hosts/{id}/sync` | Sync services via Ansible |
+| `POST` | `/api/services/hosts/{id}/drift-check` | Check service drift |
+| `PUT` | `/api/services/hosts/{id}/drift-settings` | Toggle service drift detection |
+
+### /etc/hosts Management
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/hosts-entries` | Manage hosts file entries per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/hosts-entries` | Host-level hosts file overrides |
+| `GET` | `/api/hosts/{id}/effective-hosts-entries` | Merged effective entries |
+| `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts |
+| `POST` | `/api/hosts-mgmt/hosts/{id}/plan` | Preview hosts file changes |
+| `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible |
+| `POST` | `/api/hosts-mgmt/hosts/{id}/drift-check` | Check hosts file drift |
 
 ## Project Structure
 
@@ -151,36 +193,53 @@ npx playwright test          # requires running Docker stack
 barricade/
 ├── backend/
 │   ├── app/
-│   │   ├── api/           # FastAPI route handlers
-│   │   ├── ansible/       # Playbook + inventory generators
-│   │   ├── audit/         # Audit logging
-│   │   ├── auth/          # JWT auth + RBAC
-│   │   ├── crypto/        # AES-256-GCM encryption
-│   │   ├── drift/         # Drift detection engine
-│   │   ├── models/        # SQLAlchemy models
-│   │   ├── rules/         # Rule model, validation, renderers, merge
-│   │   ├── schemas/       # Pydantic request/response schemas
-│   │   ├── sync/          # Plan/diff engine
-│   │   └── tasks/         # Celery tasks (sync + drift)
-│   ├── alembic/           # Database migrations
-│   ├── tests/             # pytest suite
+│   │   ├── api/             # FastAPI route handlers
+│   │   ├── ansible/         # Playbook + inventory generators
+│   │   ├── audit/           # Audit logging
+│   │   ├── auth/            # JWT auth (cookie-based)
+│   │   ├── crypto/          # AES-256-GCM encryption
+│   │   ├── drift/           # Firewall drift detection
+│   │   ├── hosts_mgmt/      # /etc/hosts management module
+│   │   ├── models/          # SQLAlchemy models
+│   │   ├── rules/           # Firewall rule validation, renderers, merge
+│   │   ├── schemas/         # Pydantic request/response schemas
+│   │   ├── services/        # Service management module
+│   │   ├── sync/            # Firewall plan/diff engine
+│   │   └── tasks/           # Celery tasks (sync + drift)
+│   ├── alembic/             # Database migrations
+│   ├── tests/               # pytest suite
 │   ├── Dockerfile
 │   └── pyproject.toml
 ├── frontend/
-│   ├── app/               # Next.js App Router pages
-│   ├── components/        # React components (shadcn/ui)
-│   ├── e2e/               # Playwright E2E tests
-│   ├── lib/               # API client, utilities
+│   ├── app/                 # Next.js App Router pages
+│   ├── components/          # React components (shadcn/ui)
+│   ├── e2e/                 # Playwright E2E tests
+│   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
 │   └── package.json
-├── docker-compose.yml     # Full stack: 7 services
-├── .env.example
-└── .sisyphus/             # Work plans (internal tooling)
+├── dev.sh                   # Dev environment management script
+├── build.sh                 # Local Docker build script
+├── docker-compose.yml       # Full stack
+└── .env.example
 ```
+
+## Extension Modules
+
+Barricade uses a modular extension architecture. Each module follows the same pattern: model → schemas → merge engine → API → Ansible generator → drift detector → Celery tasks → frontend UI.
+
+| Module | Status | Description |
+|--------|--------|-------------|
+| Firewall Rules | Shipped | nftables/firewalld/ufw rule management |
+| Service Management | Shipped | systemd service state management |
+| /etc/hosts | Shipped | Host file entry management |
+| Package Management | Planned | apt/dnf/yum package management |
+| Linux User Management | Planned | System users, SSH keys, sudo rules |
+| Cron Jobs | Planned | Cron job scheduling |
+| DNS Resolver | Planned | resolv.conf / systemd-resolved config |
 
 ## Known Limitations
 
-- **Firewall state parsing is stubbed**: `fetch_current_state()` returns `[]`. Plan/diff always shows "add all" and drift detection always reports "out of sync". Real parser implementation is planned.
+- **Firewall state parsing is stubbed**: `fetch_current_state()` returns `[]`. Plan/diff always shows "add all". Real parser implementation is planned.
 - **No HTTPS in dev**: Cookie `secure=False` by default. Set `cookie_secure=True` for production with HTTPS.
 - **Single Ansible control node**: All sync operations run from the Barricade server. No distributed execution.
 
