@@ -42,11 +42,11 @@ auth_backend = AuthenticationBackend(
 
 # ── User database dependency ─────────────────────────────────────────────────
 async def get_user_db(session: AsyncSession = Depends(get_db)):
-    yield SQLAlchemyUserDatabase(session, User)
+    yield SQLAlchemyUserDatabase(session, User)  # type: ignore[type-var]  # SQLAlchemy Mapped vs fastapi-users protocol
 
 
 # ── User manager ─────────────────────────────────────────────────────────────
-class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
+class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[type-var]  # SQLAlchemy Mapped vs fastapi-users protocol
     reset_password_token_secret = settings.SECRET_KEY
     verification_token_secret = settings.SECRET_KEY
 
@@ -81,7 +81,7 @@ async def get_user_manager(user_db: SQLAlchemyUserDatabase = Depends(get_user_db
 
 
 # ── FastAPIUsers instance ────────────────────────────────────────────────────
-fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])
+fastapi_users = FastAPIUsers[User, int](get_user_manager, [auth_backend])  # type: ignore[type-var]  # SQLAlchemy Mapped vs fastapi-users protocol
 
 current_active_user = fastapi_users.current_user(active=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
