@@ -190,7 +190,7 @@ export default function GitReposPage() {
           setDialogOpen(open)
           if (!open) { resetForm(); setShowWebhooks(false) }
         }}>
-          <DialogTrigger asChild>
+          <DialogTrigger>
             <Button onClick={openCreateDialog}>Add Repository</Button>
           </DialogTrigger>
           <DialogContent>
