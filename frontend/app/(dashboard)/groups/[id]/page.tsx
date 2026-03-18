@@ -179,6 +179,12 @@ export default function GroupDetailPage() {
             Manage Users
           </Link>
           <Link
+            href={`/groups/${id}/cron-jobs`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Manage Cron Jobs
+          </Link>
+          <Link
             href={`/groups/${id}/sync`}
             className={cn(buttonVariants())}
           >
@@ -265,6 +271,12 @@ export default function GroupDetailPage() {
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             View &amp; Edit Users
+          </Link>
+          <Link
+            href={`/groups/${id}/cron-jobs`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            View &amp; Edit Cron Jobs
           </Link>
           <Link
             href={`/groups/${id}/sync`}

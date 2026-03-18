@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch, API_BASE } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup, EffectiveCronJob, CronJob } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -51,6 +51,20 @@ function formatPorts(rule: FirewallRule): string {
   return String(rule.port_start)
 }
 
+function cronToHuman(schedule: string): string {
+  const s = schedule.trim()
+  if (s === "* * * * *") return "Every minute"
+  if (s === "0 * * * *") return "Every hour"
+  if (s === "0 0 * * *") return "Every day at midnight"
+  // 0 N * * *  => Every day at N:00
+  const dailyMatch = s.match(/^0\s+(\d+)\s+\*\s+\*\s+\*$/)
+  if (dailyMatch) return `Every day at ${dailyMatch[1]}:00`
+  // */N * * * *  => Every N minutes
+  const everyNMin = s.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
+  if (everyNMin) return `Every ${everyNMin[1]} minutes`
+  return s
+}
+
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-4 py-2 border-b border-slate-800 last:border-0">
@@ -64,7 +78,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs">("overview")
   const [editOpen, setEditOpen] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
@@ -174,6 +188,95 @@ export default function HostDetailPage() {
   const [luFormLoading, setLuFormLoading] = useState(false)
   const [luDeletingId, setLuDeletingId] = useState<number | null>(null)
   const [luDeleteError, setLuDeleteError] = useState<string | null>(null)
+
+  const { data: effectiveCronJobs, isLoading: cronJobsLoading, error: cronJobsError } = useQuery<EffectiveCronJob[]>({
+    queryKey: ["host-effective-cron-jobs", id],
+    queryFn: () => apiFetch<EffectiveCronJob[]>(`/api/hosts/${id}/effective-cron-jobs`),
+    enabled: !!id && activeTab === "cron-jobs",
+  })
+
+  const { data: hostCronOverrides } = useQuery<CronJob[]>({
+    queryKey: ["host-cron-overrides", id],
+    queryFn: () => apiFetch<CronJob[]>(`/api/hosts/${id}/cron-jobs`),
+    enabled: !!id && activeTab === "cron-jobs",
+  })
+
+  const [cjDialogOpen, setCjDialogOpen] = useState(false)
+  const [cjName, setCjName] = useState("")
+  const [cjUser, setCjUser] = useState("root")
+  const [cjSchedule, setCjSchedule] = useState("")
+  const [cjCommand, setCjCommand] = useState("")
+  const [cjState, setCjState] = useState<"present" | "absent">("present")
+  const [cjPriority, setCjPriority] = useState(100)
+  const [cjComment, setCjComment] = useState("")
+  const [cjEnvVars, setCjEnvVars] = useState<{ key: string; value: string }[]>([])
+  const [cjFormError, setCjFormError] = useState<string | null>(null)
+  const [cjFormLoading, setCjFormLoading] = useState(false)
+  const [cjDeletingId, setCjDeletingId] = useState<number | null>(null)
+  const [cjDeleteError, setCjDeleteError] = useState<string | null>(null)
+
+  function openCjDialog() {
+    setCjName("")
+    setCjUser("root")
+    setCjSchedule("")
+    setCjCommand("")
+    setCjState("present")
+    setCjPriority(100)
+    setCjComment("")
+    setCjEnvVars([])
+    setCjFormError(null)
+    setCjDialogOpen(true)
+  }
+
+  async function handleCjSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setCjFormError(null)
+    setCjFormLoading(true)
+    const env: Record<string, string> = {}
+    for (const v of cjEnvVars) {
+      const k = v.key.trim()
+      if (k) env[k] = v.value
+    }
+    try {
+      await apiFetch(`/api/hosts/${id}/cron-jobs`, {
+        method: "POST",
+        body: JSON.stringify({
+          name: cjName,
+          user: cjUser,
+          schedule: cjSchedule,
+          command: cjCommand,
+          state: cjState,
+          priority: cjPriority,
+          comment: cjComment || null,
+          environment: env,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
+      setCjDialogOpen(false)
+    } catch (err) {
+      setCjFormError(err instanceof Error ? err.message : "Failed to create cron job override")
+    } finally {
+      setCjFormLoading(false)
+    }
+  }
+
+  async function handleCjDelete(name: string, user: string) {
+    if (!confirm(`Delete host cron job override for "${name}" (user: ${user})?`)) return
+    const override = hostCronOverrides?.find(o => o.name === name && o.user === user)
+    if (!override) { setCjDeleteError("Override not found"); return }
+    setCjDeletingId(override.id)
+    setCjDeleteError(null)
+    try {
+      await apiFetch(`/api/hosts/${id}/cron-jobs/${override.id}`, { method: "DELETE" })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
+    } catch (err) {
+      setCjDeleteError(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setCjDeletingId(null)
+    }
+  }
 
   const [lgDialogOpen, setLgDialogOpen] = useState(false)
   const [lgGroupname, setLgGroupname] = useState("")
@@ -696,6 +799,16 @@ export default function HostDetailPage() {
           }`}
         >
           Users
+        </button>
+        <button
+          onClick={() => setActiveTab("cron-jobs")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "cron-jobs"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Cron Jobs
         </button>
       </div>
 
@@ -1718,6 +1831,278 @@ export default function HostDetailPage() {
                     type="button"
                     variant="outline"
                     onClick={() => setLgDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {activeTab === "cron-jobs" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Cron Jobs</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Cron jobs applied to this host from groups and host-level overrides.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
+                  queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
+                }}
+              >
+                Refresh
+              </Button>
+              <Button onClick={openCjDialog}>Add Override</Button>
+            </div>
+          </div>
+
+          {cjDeleteError && (
+            <div className="text-red-400 text-sm">{cjDeleteError}</div>
+          )}
+
+          {cronJobsLoading && (
+            <div className="text-slate-400 py-6 text-center">Loading cron jobs...</div>
+          )}
+
+          {cronJobsError && (
+            <div className="text-red-400 py-6 text-center">Failed to load cron jobs</div>
+          )}
+
+          {!cronJobsLoading && !cronJobsError && effectiveCronJobs && effectiveCronJobs.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No cron jobs configured. Add a host override or assign cron jobs to a group.
+            </div>
+          )}
+
+          {!cronJobsLoading && !cronJobsError && effectiveCronJobs && effectiveCronJobs.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Name</TableHead>
+                    <TableHead>User</TableHead>
+                    <TableHead>Schedule</TableHead>
+                    <TableHead>Command</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveCronJobs.map((job) => (
+                    <TableRow key={`${job.source}-${job.source_id}-${job.name}-${job.user}`} className="border-slate-700">
+                      <TableCell className="font-mono text-white text-sm">{job.name}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{job.user}</TableCell>
+                      <TableCell>
+                        <div>
+                          <span className="font-mono text-slate-300 text-xs">{job.schedule}</span>
+                          {cronToHuman(job.schedule) !== job.schedule && (
+                            <div className="text-slate-500 text-xs mt-0.5">{cronToHuman(job.schedule)}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs max-w-[200px]">
+                        <span title={job.command}>
+                          {job.command.length > 60 ? job.command.slice(0, 60) + "..." : job.command}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={job.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                          {job.state.charAt(0).toUpperCase() + job.state.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {job.source === "group" ? `Group: ${job.source_name}` : "Host override"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {job.source === "host" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={cjDeletingId != null}
+                            onClick={() => handleCjDelete(job.name, job.user)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {cjDeletingId != null ? "..." : "Delete"}
+                          </Button>
+                        ) : (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <Dialog open={cjDialogOpen} onOpenChange={setCjDialogOpen}>
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Cron Job Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCjSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="cj-name">Name</Label>
+                  <Input
+                    id="cj-name"
+                    type="text"
+                    placeholder="e.g. backup-db, cleanup-logs"
+                    value={cjName}
+                    onChange={(e) => setCjName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-user">User</Label>
+                  <Input
+                    id="cj-user"
+                    type="text"
+                    placeholder="root"
+                    value={cjUser}
+                    onChange={(e) => setCjUser(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-schedule">Schedule (cron expression)</Label>
+                  <Input
+                    id="cj-schedule"
+                    type="text"
+                    placeholder="*/5 * * * *"
+                    value={cjSchedule}
+                    onChange={(e) => setCjSchedule(e.target.value)}
+                    required
+                  />
+                  {cjSchedule.trim() && (
+                    <p className="text-xs text-slate-400">
+                      {cronToHuman(cjSchedule)}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-command">Command</Label>
+                  <textarea
+                    id="cj-command"
+                    placeholder="e.g. /usr/local/bin/backup.sh --full"
+                    value={cjCommand}
+                    onChange={(e) => setCjCommand(e.target.value)}
+                    required
+                    rows={3}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-state">State</Label>
+                  <select
+                    id="cj-state"
+                    value={cjState}
+                    onChange={(e) => setCjState(e.target.value as "present" | "absent")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-priority">Priority</Label>
+                  <Input
+                    id="cj-priority"
+                    type="number"
+                    value={cjPriority}
+                    onChange={(e) => setCjPriority(Number(e.target.value))}
+                    required
+                    min={0}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cj-comment">Comment (optional)</Label>
+                  <textarea
+                    id="cj-comment"
+                    placeholder="Optional description"
+                    value={cjComment}
+                    onChange={(e) => setCjComment(e.target.value)}
+                    rows={2}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Environment Variables</Label>
+                  <div className="space-y-2">
+                    {cjEnvVars.map((v, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          placeholder="KEY"
+                          value={v.key}
+                          onChange={(e) => {
+                            const updated = cjEnvVars.map((ev, i) => i === idx ? { ...ev, key: e.target.value } : ev)
+                            setCjEnvVars(updated)
+                          }}
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <span className="text-slate-500 text-xs">=</span>
+                        <Input
+                          type="text"
+                          placeholder="value"
+                          value={v.value}
+                          onChange={(e) => {
+                            const updated = cjEnvVars.map((ev, i) => i === idx ? { ...ev, value: e.target.value } : ev)
+                            setCjEnvVars(updated)
+                          }}
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCjEnvVars(cjEnvVars.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-950 px-2"
+                        >
+                          &times;
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCjEnvVars([...cjEnvVars, { key: "", value: "" }])}
+                    >
+                      + Add variable
+                    </Button>
+                  </div>
+                </div>
+
+                {cjFormError && (
+                  <p className="text-sm text-red-400">{cjFormError}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={cjFormLoading}>
+                    {cjFormLoading ? "Saving..." : "Create Override"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setCjDialogOpen(false)}
                   >
                     Cancel
                   </Button>
