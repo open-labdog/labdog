@@ -41,15 +41,15 @@
 ## Work Objectives
 
 ### Definition of Done
-- [ ] Group-level entries: CRUD on `/api/groups/{id}/hosts-entries`
-- [ ] Host-level overrides: CRUD on `/api/hosts/{id}/hosts-entries`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-hosts-entries` merges group defaults + host overrides
-- [ ] Preview: `GET /api/hosts/{id}/hosts-file-preview` returns rendered `/etc/hosts` content
-- [ ] Plan: `POST /api/hosts-mgmt/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/hosts-mgmt/hosts/{id}/sync` applies via Ansible
-- [ ] Drift: `POST /api/hosts-mgmt/hosts/{id}/drift-check` detects mismatches
-- [ ] Frontend: `/groups/{id}/hosts-entries` page + "Hosts File" tab on host detail
-- [ ] Tests: 10+ tests
+- [x] Group-level entries: CRUD on `/api/groups/{id}/hosts-entries`
+- [x] Host-level overrides: CRUD on `/api/hosts/{id}/hosts-entries`
+- [x] Effective config: `GET /api/hosts/{id}/effective-hosts-entries` merges group defaults + host overrides
+- [x] Preview: `GET /api/hosts/{id}/hosts-file-preview` returns rendered `/etc/hosts` content
+- [x] Plan: `POST /api/hosts-mgmt/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/hosts-mgmt/hosts/{id}/sync` applies via Ansible
+- [x] Drift: `POST /api/hosts-mgmt/hosts/{id}/drift-check` detects mismatches
+- [x] Frontend: `/groups/{id}/hosts-entries` page + "Hosts File" tab on host detail
+- [x] Tests: 10+ tests
 
 ### Must Have
 - `HostsEntry` model: `ip_address`, `hostname`, `aliases` (JSONB array), `comment`, `priority`, `is_system` (bool)

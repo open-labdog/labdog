@@ -48,15 +48,15 @@ Add service management as the first Barricade extension module. Manage systemd s
 Enable centralized systemd service management with plan-before-apply diffs, drift detection, and audit logging — following the established Barricade pattern.
 
 ### Definition of Done
-- [ ] Group-level service rules: CRUD on `/api/groups/{id}/services`
-- [ ] Host-level overrides: CRUD on `/api/hosts/{id}/services`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-services` merges group defaults + host overrides
-- [ ] Plan: `POST /api/services/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/services/hosts/{id}/sync` applies via Ansible
-- [ ] Drift: `POST /api/services/hosts/{id}/drift-check` detects mismatches
-- [ ] Audit: All service changes logged
-- [ ] Frontend: `/groups/{id}/services` page + Services tab on `/hosts/{id}`
-- [ ] Tests: 10+ tests covering CRUD, merge, drift, deny-list
+- [x] Group-level service rules: CRUD on `/api/groups/{id}/services`
+- [x] Host-level overrides: CRUD on `/api/hosts/{id}/services`
+- [x] Effective config: `GET /api/hosts/{id}/effective-services` merges group defaults + host overrides
+- [x] Plan: `POST /api/services/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/services/hosts/{id}/sync` applies via Ansible
+- [x] Drift: `POST /api/services/hosts/{id}/drift-check` detects mismatches
+- [x] Audit: All service changes logged
+- [x] Frontend: `/groups/{id}/services` page + Services tab on `/hosts/{id}`
+- [x] Tests: 10+ tests covering CRUD, merge, drift, deny-list
 
 ### Must Have
 - `ServiceRule` model with `service_name`, `state` (running/stopped), `enabled` (bool), group_id/host_id

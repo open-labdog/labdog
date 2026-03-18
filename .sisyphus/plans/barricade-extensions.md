@@ -22,18 +22,19 @@ All extensions support **group-level defaults + per-host overrides** with priori
 
 ## Implementation Plans
 
-| # | Module | Plan | Effort | Key Points |
-|---|--------|------|--------|------------|
-| 1 | **Service Management** | [`ext-service-management.md`](ext-service-management.md) | S | Systemd services (running/stopped, enabled/disabled). Creates shared infrastructure: `host_module_status` table, `SyncJob.module_type`. **Build first.** |
-| 2 | **Linux User Management** | [`ext-linux-user-management.md`](ext-linux-user-management.md) | M | Users, SSH authorized_keys, sudo rules, supplementary groups. Depends on #1. |
-| 3 | **/etc/hosts** | [`ext-etc-hosts.md`](ext-etc-hosts.md) | S | Hostname-to-IP mappings. Full-file template rendering with localhost safety. Depends on #1. |
-| 4 | **Package Management** | [`ext-package-management.md`](ext-package-management.md) | M | System packages (apt/dnf/yum). Version pinning, repository management. Multi-distro drift. Depends on #1. |
-| 5 | **Cron Jobs** | [`ext-cron-jobs.md`](ext-cron-jobs.md) | S | Scheduled tasks via `ansible.builtin.cron`. 5-field cron validation. Depends on #1. |
-| 6 | **DNS Resolver** | [`ext-dns-resolver.md`](ext-dns-resolver.md) | M | Nameservers, search domains. 3 backends (resolv.conf, systemd-resolved, NetworkManager). Singleton config per scope. Depends on #1. |
-| 7 | **TLS Certificates** | _Not yet planned_ | XL | ACME, uploaded PEM, expiry monitoring, service reload. |
+| # | Module | Plan | Effort | Status | Key Points |
+|---|--------|------|--------|--------|------------|
+| 1 | **Service Management** | [`ext-service-management.md`](ext-service-management.md) | S | ✅ Shipped | Systemd services (running/stopped, enabled/disabled). Created shared infrastructure: `host_module_status` table, `SyncJob.module_type`. |
+| 1a | **Service Live Control** | [`service-live-control.md`](service-live-control.md) | S | 📋 Planned | Live service inventory + ad-hoc start/stop/restart via SSH. Extends #1. |
+| 2 | **Linux User Management** | [`ext-linux-user-management.md`](ext-linux-user-management.md) | M | 📋 Planned | Users, SSH authorized_keys, sudo rules, supplementary groups. Depends on #1. |
+| 3 | **/etc/hosts** | [`ext-etc-hosts.md`](ext-etc-hosts.md) | S | ✅ Shipped | Hostname-to-IP mappings. Full-file template rendering with localhost safety. |
+| 4 | **Package Management** | [`ext-package-management.md`](ext-package-management.md) | M | 📋 Planned | System packages (apt/dnf/yum). Version pinning, repository management. Multi-distro drift. Depends on #1. |
+| 5 | **Cron Jobs** | [`ext-cron-jobs.md`](ext-cron-jobs.md) | S | 📋 Planned | Scheduled tasks via `ansible.builtin.cron`. 5-field cron validation. Depends on #1. |
+| 6 | **DNS Resolver** | [`ext-dns-resolver.md`](ext-dns-resolver.md) | M | 📋 Planned | Nameservers, search domains. 3 backends (resolv.conf, systemd-resolved, NetworkManager). Singleton config per scope. Depends on #1. |
+| 7 | **TLS Certificates** | _Not yet planned_ | XL | — | ACME, uploaded PEM, expiry monitoring, service reload. |
 
 ### Execution Order
-Service Management (#1) **must be built first** — it creates `host_module_status` and `SyncJob.module_type` that all other modules reuse. After that, modules #2–6 can be built in any order.
+Service Management (#1) was built first — it created `host_module_status` and `SyncJob.module_type` that all other modules reuse. /etc/hosts (#3) is also complete. Modules #1a, #2, #4–6 can be built in any order.
 
 ---
 
