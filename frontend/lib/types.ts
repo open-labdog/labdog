@@ -214,3 +214,33 @@ export interface EffectiveLinuxGroup {
   source_id: number
   source_name: string
 }
+
+export interface CronJob {
+  id: number
+  name: string
+  user: string
+  schedule: string
+  command: string
+  environment: Record<string, string>
+  state: "present" | "absent"
+  priority: number
+  comment: string | null
+  group_id: number | null
+  host_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EffectiveCronJob {
+  name: string
+  user: string
+  schedule: string
+  command: string
+  environment: Record<string, string>
+  state: "present" | "absent"
+  priority: number
+  comment: string | null
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}
