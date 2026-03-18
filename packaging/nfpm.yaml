@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
+name: barricade
+arch: amd64
+platform: linux
+version: ${VERSION}
+release: "1"
+maintainer: "Barricade <barricade@barricade.io>"
+description: |
+  Barricade — Linux node configuration management platform.
+  Manages firewall rules, services, users, cron jobs, /etc/hosts, and more
+  using Ansible under the hood with a web UI and drift detection.
+  Requires PostgreSQL 14+ and Redis 6+.
+homepage: https://github.com/barricade/barricade
+license: MIT
+
+# Runtime deps (Python deps bundled in venv; Node.js binary embedded)
+depends:
+  - python3 (>= 3.12)
+
+recommends:
+  - postgresql-client
+  - redis-tools
+
+contents:
+  # ── Application code (venv + backend + frontend + node) ────────────────
+  - src: staging/usr/lib/barricade/
+    dst: /usr/lib/barricade/
+    type: tree
+    file_info:
+      owner: root
+      group: root
+      mode: "0755"
+
+  # ── Config file (config|noreplace — preserved on upgrade) ─────────────
+  - src: etc/barricade.env
+    dst: /etc/barricade/barricade.env
+    type: config|noreplace
+    file_info:
+      mode: "0640"
+      owner: root
+      group: barricade
+
+  # ── Systemd units ──────────────────────────────────────────────────────
+  - src: systemd/barricade.target
+    dst: /usr/lib/systemd/system/barricade.target
+  - src: systemd/barricade-migrate.service
+    dst: /usr/lib/systemd/system/barricade-migrate.service
+  - src: systemd/barricade-api.service
+    dst: /usr/lib/systemd/system/barricade-api.service
+  - src: systemd/barricade-worker.service
+    dst: /usr/lib/systemd/system/barricade-worker.service
+  - src: systemd/barricade-beat.service
+    dst: /usr/lib/systemd/system/barricade-beat.service
+  - src: systemd/barricade-frontend.service
+    dst: /usr/lib/systemd/system/barricade-frontend.service
+
+  # ── tmpfiles.d ─────────────────────────────────────────────────────────
+  - src: tmpfiles.d/barricade.conf
+    dst: /usr/lib/tmpfiles.d/barricade.conf
+
+  # ── Owned directories ──────────────────────────────────────────────────
+  - dst: /usr/lib/barricade/
+    type: dir
+    file_info:
+      owner: root
+      group: root
+      mode: "0755"
+  - dst: /etc/barricade/
+    type: dir
+    file_info:
+      owner: root
+      group: barricade
+      mode: "0750"
+  - dst: /var/lib/barricade/
+    type: dir
+    file_info:
+      owner: barricade
+      group: barricade
+      mode: "0750"
+  - dst: /var/log/barricade/
+    type: dir
+    file_info:
+      owner: barricade
+      group: barricade
+      mode: "0750"
+
+scripts:
+  preinstall:  scripts/preinst.sh
+  postinstall: scripts/postinst.sh
+  preremove:   scripts/prerm.sh
+  postremove:  scripts/postrm.sh
+
+deb:
+  compression: zstd
+
+overrides:
+  rpm:
+    depends:
+      - python3.12
+    recommends:
+      - postgresql
+      - redis
