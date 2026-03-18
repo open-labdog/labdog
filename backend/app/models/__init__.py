@@ -12,6 +12,9 @@ from app.models.git_repository import GitRepository, GitAuthType, GitOpsStatus
 from app.models.host_module_status import HostModuleStatus
 from app.services.models import ServiceRule
 from app.hosts_mgmt.models import HostsEntry
+from app.cron.models import CronJob
+from app.user_mgmt.models import LinuxUser, LinuxGroup
+from app.packages.models import PackageRule, PackageRepository
 
 __all__ = [
     "Base",
@@ -35,4 +38,9 @@ __all__ = [
     "HostModuleStatus",
     "ServiceRule",
     "HostsEntry",
+    "CronJob",
+    "LinuxUser",
+    "LinuxGroup",
+    "PackageRule",
+    "PackageRepository",
 ]
