@@ -182,6 +182,12 @@ export default function GroupDetailPage() {
             Manage Cron Jobs
           </Link>
           <Link
+            href={`/groups/${id}/packages`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Manage Packages
+          </Link>
+          <Link
             href={`/groups/${id}/sync`}
             className={cn(buttonVariants())}
           >
