@@ -149,6 +149,19 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Found During Packaging + Package-Management (2026-03-18)
+
+- [x] **BUG-22** `frontend/app/(auth)/login/page.tsx:19`, `providers.tsx:16,36`, `register/page.tsx:20,65`, `sidebar.tsx:52` — Auth/user API calls broken after `API_BASE=""` change
+  The packaging plan changed `API_BASE` from `http://localhost:8000` to `""` (empty string) for relative URL support. This broke all 7 frontend calls to `/auth/*` and `/users/*` because Next.js has an `app/(auth)/` route group that intercepts `/auth/*` requests before the proxy rewrite can fire. The browser received HTML (the login page) instead of JSON. The `.catch(() => setNeedsSetup(false))` silently swallowed the JSON parse error, so the "First time? Create admin account" link never appeared — users saw only a login form with no way to register.
+  **Fix applied**: Moved backend auth routes from `/auth/*` → `/api/auth/*` and user routes from `/users/*` → `/api/users/*` in `main.py` and `auth_setup.py`. Updated all 7 frontend fetch calls to use `/api/auth/*` and `/api/users/*`. Updated test fixtures and test_auth.py to match. All calls now go through the single `/api/:path*` proxy rewrite.
+  **Root cause**: Next.js route groups with parentheses `(auth)` don't create URL segments, but the rewrite engine still matches `/auth/*` to the route group before falling through to rewrites.
+
+- [x] **BUG-23** `frontend/next.config.ts:10-11` — Proxy rewrite stripped `/api/` prefix from destination
+  The original rewrite rule `source: "/api/:path*"` → `destination: "${API_URL}/:path*"` stripped the `/api/` prefix when proxying. After moving backend routes under `/api/`, the proxy sent `/api/auth/jwt/login` → `http://localhost:8000/auth/jwt/login` (wrong — missing `/api/`).
+  **Fix applied**: Changed destination to `${API_URL}/api/:path*` to preserve the prefix.
+
+---
+
 ## Fixed
 
 All 12 original bugs fixed on 2026-03-17.
