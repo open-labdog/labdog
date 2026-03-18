@@ -68,7 +68,7 @@ async def create_group_linux_group(
         entity_type="linux_group",
         entity_id=rule.id,
         user_id=user.id,
-        after_state={"groupname": rule.groupname, "state": rule.state.value},
+        after_state={"groupname": rule.groupname, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -96,7 +96,7 @@ async def update_group_linux_group(
     if not rule:
         raise HTTPException(status_code=404, detail="Linux group rule not found")
 
-    before = {"groupname": rule.groupname, "state": rule.state.value}
+    before = {"groupname": rule.groupname, "state": str(rule.state)}
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(rule, field, value)
@@ -110,7 +110,7 @@ async def update_group_linux_group(
         entity_id=rule.id,
         user_id=user.id,
         before_state=before,
-        after_state={"groupname": rule.groupname, "state": rule.state.value},
+        after_state={"groupname": rule.groupname, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -134,7 +134,7 @@ async def delete_group_linux_group(
     if not rule:
         raise HTTPException(status_code=404, detail="Linux group rule not found")
 
-    before = {"groupname": rule.groupname, "state": rule.state.value}
+    before = {"groupname": rule.groupname, "state": str(rule.state)}
     rule_id_for_log = rule.id
 
     await db.delete(rule)
@@ -199,7 +199,7 @@ async def create_host_linux_group(
         entity_type="linux_group",
         entity_id=rule.id,
         user_id=user.id,
-        after_state={"groupname": rule.groupname, "state": rule.state.value},
+        after_state={"groupname": rule.groupname, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -227,7 +227,7 @@ async def update_host_linux_group(
     if not rule:
         raise HTTPException(status_code=404, detail="Linux group rule not found")
 
-    before = {"groupname": rule.groupname, "state": rule.state.value}
+    before = {"groupname": rule.groupname, "state": str(rule.state)}
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(rule, field, value)
@@ -241,7 +241,7 @@ async def update_host_linux_group(
         entity_id=rule.id,
         user_id=user.id,
         before_state=before,
-        after_state={"groupname": rule.groupname, "state": rule.state.value},
+        after_state={"groupname": rule.groupname, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -265,7 +265,7 @@ async def delete_host_linux_group(
     if not rule:
         raise HTTPException(status_code=404, detail="Linux group rule not found")
 
-    before = {"groupname": rule.groupname, "state": rule.state.value}
+    before = {"groupname": rule.groupname, "state": str(rule.state)}
     rule_id_for_log = rule.id
 
     await db.delete(rule)
