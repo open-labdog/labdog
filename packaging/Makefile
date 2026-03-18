@@ -16,7 +16,7 @@ NODE_DIST_URL := https://nodejs.org/dist/v$(NODE_VERSION)/node-v$(NODE_VERSION)-
 NODE_CACHE    := $(CURDIR)/.cache/node-v$(NODE_VERSION)-linux-x64.tar.xz
 
 # --- Phony targets ---
-.PHONY: help build build-venv build-frontend download-node clean
+.PHONY: help build build-venv build-frontend download-node clean deb rpm tarball all
 
 # --- Default ---
 help:
@@ -99,3 +99,35 @@ download-node:
 clean:
 	rm -rf $(DESTDIR) $(DIST)
 	@echo "✓ cleaned staging and dist directories"
+
+# --- Packaging targets ---
+
+TARBALL_NAME := barricade-$(VERSION)-linux-$(ARCH).tar.gz
+TARBALL_DIR  := barricade-$(VERSION)-linux-$(ARCH)
+
+deb: build
+	@mkdir -p $(DIST)
+	VERSION=$(VERSION) nfpm pkg --packager deb --config nfpm.yaml --target $(DIST)/
+	@echo "✓ .deb built: $$(ls $(DIST)/barricade_*.deb | tail -1)"
+
+rpm: build
+	@mkdir -p $(DIST)
+	VERSION=$(VERSION) nfpm pkg --packager rpm --config nfpm.yaml --target $(DIST)/
+	@echo "✓ .rpm built: $$(ls $(DIST)/barricade-*.rpm | tail -1)"
+
+tarball: build
+	@mkdir -p $(DIST)/$(TARBALL_DIR)
+	@echo "[tarball] Assembling tarball directory..."
+	cp -r $(DESTDIR)/. $(DIST)/$(TARBALL_DIR)/
+	cp install.sh uninstall.sh $(DIST)/$(TARBALL_DIR)/
+	chmod +x $(DIST)/$(TARBALL_DIR)/install.sh $(DIST)/$(TARBALL_DIR)/uninstall.sh
+	@echo "[tarball] Creating archive..."
+	tar -czf $(DIST)/$(TARBALL_NAME) -C $(DIST) $(TARBALL_DIR)
+	rm -rf $(DIST)/$(TARBALL_DIR)
+	@echo "✓ tarball: $(DIST)/$(TARBALL_NAME)"
+	@sha256sum $(DIST)/$(TARBALL_NAME)
+
+all: tarball deb rpm
+	@echo ""
+	@echo "=== Build complete ==="
+	@ls -lh $(DIST)/
