@@ -7,6 +7,7 @@ from pydantic import BaseModel, field_validator
 from app.cron.validators import validate_cron_expression
 
 _NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]*$")
+_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
 
 
 class CronJobCreate(BaseModel):
@@ -34,6 +35,11 @@ class CronJobCreate(BaseModel):
     def validate_user(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("user must not be empty")
+        if not _USER_RE.match(v) or len(v) > 32:
+            raise ValueError(
+                f"Invalid user '{v}': must match [a-zA-Z0-9_][a-zA-Z0-9_.-]* "
+                "and be at most 32 characters (no shell metacharacters)"
+            )
         return v
 
     @field_validator("schedule")
@@ -75,8 +81,15 @@ class CronJobUpdate(BaseModel):
     @field_validator("user")
     @classmethod
     def validate_user(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not v.strip():
+        if v is None:
+            return v
+        if not v.strip():
             raise ValueError("user must not be empty")
+        if not _USER_RE.match(v) or len(v) > 32:
+            raise ValueError(
+                f"Invalid user '{v}': must match [a-zA-Z0-9_][a-zA-Z0-9_.-]* "
+                "and be at most 32 characters (no shell metacharacters)"
+            )
         return v
 
     @field_validator("schedule")

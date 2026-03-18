@@ -74,9 +74,9 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ## Dead Code
 
-- [ ] **DEAD-01** `api/permissions.py`, `auth/rbac.py` — Leftover RBAC files after removal
+- [x] **DEAD-01** `api/permissions.py`, `auth/rbac.py` — Leftover RBAC files after removal
   The `user-management.md` plan removed RBAC (dropped `user_group_permissions` table, `GroupRole` enum, model file). These two files were not deleted. Both import `app.models.user_group_permission` which no longer exists (confirmed by LSP errors). They contain `require_group_role()` and permission-checking logic that nothing calls.
-  **Fix**: Delete both files. Verify nothing imports from them.
+  **Fix applied**: Both files deleted. Verified nothing imports from them.
   **Discovered**: 2026-03-17 (during `ext-service-management` plan review)
 
 ---
@@ -119,9 +119,33 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ## Found During service-live-control (2026-03-18)
 
-- [ ] **BUG-17** `frontend/app/(dashboard)/groups/[id]/rules/page.tsx` — Missing `@dnd-kit/*` dependencies break build
+- [x] **BUG-17** `frontend/app/(dashboard)/groups/[id]/rules/page.tsx` — Missing `@dnd-kit/*` dependencies break build
   `npm run build` fails with 3 module-not-found errors: `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`. These packages are imported but not listed in `package.json`.
-  **Fix**: `cd frontend && npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities`
+  **Fix applied**: `cd frontend && npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities`
+
+---
+
+## Found During Full Codebase Audit (2026-03-18)
+
+- [x] **SEC-02** `backend/app/cron/schemas.py:32-37` — SSH command injection via cron job `user` field
+  `CronJobCreate.validate_user` only checks `v.strip()` is not empty. No regex validation. A name like `root; cat /etc/shadow` passes validation and gets stored in the database. The collector at `cron/collector.py:54` runs `crontab -l -u {user}` via SSH, interpolating directly into the command. Same class of bug as SEC-01 (service_name injection).
+  **Fix applied**: Added regex validator `^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$` (max 32 chars) to both `CronJobCreate` and `CronJobUpdate` `user` field. Rejects shell metacharacters (`;`, `|`, `&`, `$`, backticks, spaces, etc.) while allowing all valid Unix username characters.
+
+- [x] **BUG-18** `frontend/app/(dashboard)/groups/[id]/page.tsx:67` — Group detail page shows ALL hosts instead of group members
+  `const groupHosts = hosts ?? []` assigns the full hosts list without filtering. The `Host` type has `group_ids: number[]` so filtering by `host.group_ids.includes(id)` is possible. The comment on line 65 said "API doesn't expose group membership on Host" but this was wrong — `Host.group_ids` exists.
+  **Fix applied**: Replaced with `hosts?.filter((h) => h.group_ids?.includes(id)) ?? []`. Removed incorrect comment.
+
+- [x] **BUG-19** `backend/app/api/hosts.py:22-28` — `list_hosts()` doesn't populate `group_ids`
+  `HostResponse` schema has `group_ids: list[int] = []` but `list_hosts()` returns raw `Host` objects without populating `group_ids` from the `HostGroupMembership` join table. Every host in the list returns `group_ids: []` (the Pydantic default). Only `get_host()` and `update_host()` manually set it via `setattr(host, "group_ids", ...)`.
+  **Fix applied**: Added batch query in `list_hosts()` to populate `group_ids` for all hosts in a single `HostGroupMembership` query (avoids N+1).
+
+- [x] **BUG-20** `backend/app/main.py:37` — CORS `allow_origins` hardcoded to `http://localhost:3000`
+  `allow_origins=["http://localhost:3000"]` breaks any non-localhost deployment. Frontend running on a different hostname/port gets CORS rejections.
+  **Fix applied**: Reads from `ALLOWED_ORIGINS` env var (comma-separated), defaults to `http://localhost:3000`.
+
+- [x] **BUG-21** `docker-compose.yml:84-98` — `celery-beat` missing `postgres` dependency
+  `celery-beat` depends only on `redis`, not `postgres`. The beat scheduler dispatches tasks (drift checks) that immediately query the database. If postgres isn't ready or migrations haven't completed, scheduled tasks crash on startup.
+  **Fix applied**: Added `postgres: condition: service_healthy` to `celery-beat.depends_on`.
 
 ---
 
@@ -132,3 +156,4 @@ Type errors TYPE-01 through TYPE-03 fixed on 2026-03-17.
 BUG-13 and SEC-01 found during ext-service-management final review and fixed immediately.
 BUG-14 found during ext-etc-hosts final review and fixed immediately.
 BUG-15 and BUG-16 found while testing dev.sh script and fixed immediately.
+DEAD-01 and BUG-17 verified as already resolved during 2026-03-18 audit.
