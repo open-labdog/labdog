@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, LiveService, ServiceCommandResult } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -119,6 +119,18 @@ export default function HostDetailPage() {
   const [svcDeletingName, setSvcDeletingName] = useState<string | null>(null)
   const [svcDeleteError, setSvcDeleteError] = useState<string | null>(null)
 
+  // Live inventory state
+  const [inventoryLoaded, setInventoryLoaded] = useState(false)
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventory, setInventory] = useState<LiveService[]>([])
+  const [inventoryError, setInventoryError] = useState<string | null>(null)
+  const [inventoryFilter, setInventoryFilter] = useState("")
+  const [pendingAction, setPendingAction] = useState<{ service: string; action: string } | null>(null)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [protectedConfirmOpen, setProtectedConfirmOpen] = useState(false)
+  const [protectedTarget, setProtectedTarget] = useState<{ service: string; action: string } | null>(null)
+
   function openSvcDialog() {
     setSvcName("")
     setSvcState("running")
@@ -173,6 +185,61 @@ export default function HostDetailPage() {
       setSvcDeletingName(null)
     }
   }
+
+  async function loadInventory() {
+    setInventoryLoading(true)
+    setInventoryError(null)
+    setActionResult(null)
+    try {
+      const data = await apiFetch<LiveService[]>(`/api/services/hosts/${id}/inventory`)
+      setInventory(data)
+      setInventoryLoaded(true)
+    } catch (err) {
+      setInventoryError(err instanceof Error ? err.message : "Failed to load inventory")
+    } finally {
+      setInventoryLoading(false)
+    }
+  }
+
+  async function executeCommand(serviceName: string, action: string) {
+    setActionLoading(true)
+    setActionResult(null)
+    setPendingAction({ service: serviceName, action })
+    try {
+      const result = await apiFetch<ServiceCommandResult>(`/api/services/hosts/${id}/command`, {
+        method: "POST",
+        body: JSON.stringify({ service_name: serviceName, action }),
+      })
+      if (result.success) {
+        setActionResult({ success: true, message: `${action} ${serviceName}: success` })
+        await loadInventory()
+      } else {
+        setActionResult({ success: false, message: `${action} ${serviceName} failed: ${result.stderr}` })
+      }
+    } catch (err) {
+      setActionResult({ success: false, message: err instanceof Error ? err.message : "Command failed" })
+    } finally {
+      setActionLoading(false)
+      setPendingAction(null)
+    }
+  }
+
+  function handleActionClick(service: LiveService, action: string) {
+    if (service.is_protected) {
+      setProtectedTarget({ service: service.unit, action })
+      setProtectedConfirmOpen(true)
+    } else {
+      if (confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${service.unit}?`)) {
+        executeCommand(service.unit, action)
+      }
+    }
+  }
+
+  const filteredInventory = inventory.filter(
+    (svc) =>
+      svc.unit.toLowerCase().includes(inventoryFilter.toLowerCase()) ||
+      svc.description.toLowerCase().includes(inventoryFilter.toLowerCase())
+  )
 
   useEffect(() => {
     if (editOpen && host) {
@@ -628,6 +695,159 @@ export default function HostDetailPage() {
                   </Button>
                 </div>
               </form>
+            </DialogContent>
+          </Dialog>
+
+          {/* Live Service Inventory */}
+          <hr className="border-slate-700" />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Service Inventory</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Live systemd services on this host. Fetched via SSH on demand.
+              </p>
+            </div>
+            <Button
+              onClick={loadInventory}
+              disabled={inventoryLoading}
+            >
+              {inventoryLoading ? "Loading..." : inventoryLoaded ? "Refresh" : "Load Inventory"}
+            </Button>
+          </div>
+
+          {actionResult && (
+            <div
+              className={`flex items-center justify-between rounded-lg border p-3 text-sm ${
+                actionResult.success
+                  ? "border-green-700 bg-green-950 text-green-300"
+                  : "border-red-700 bg-red-950 text-red-300"
+              }`}
+            >
+              <span>{actionResult.message}</span>
+              <button
+                onClick={() => setActionResult(null)}
+                className="ml-4 text-slate-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {inventoryError && (
+            <div className="text-red-400 text-sm">{inventoryError}</div>
+          )}
+
+          {inventoryLoaded && inventory.length === 0 && !inventoryLoading && (
+            <div className="text-slate-400 py-6 text-center">No services found.</div>
+          )}
+
+          {inventoryLoaded && inventory.length > 0 && (
+            <>
+              <Input
+                placeholder="Filter services..."
+                value={inventoryFilter}
+                onChange={(e) => setInventoryFilter(e.target.value)}
+                className="max-w-sm"
+              />
+
+              <div className="rounded-lg border border-slate-700 bg-slate-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead>Unit</TableHead>
+                      <TableHead>Active State</TableHead>
+                      <TableHead>Sub State</TableHead>
+                      <TableHead>Load State</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-48">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInventory.map((svc) => (
+                      <TableRow key={svc.unit} className="border-slate-700">
+                        <TableCell className="font-mono text-white text-sm">
+                          {svc.unit}
+                          {svc.is_managed && (
+                            <Badge variant="outline" className="text-xs ml-2">Managed</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={
+                              svc.active_state === "active"
+                                ? "bg-green-600 text-white"
+                                : svc.active_state === "failed"
+                                  ? "bg-red-600 text-white"
+                                  : svc.active_state === "activating" || svc.active_state === "deactivating"
+                                    ? "bg-yellow-600 text-white"
+                                    : "bg-slate-600 text-white"
+                            }
+                          >
+                            {svc.active_state}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-slate-300 text-xs">{svc.sub_state}</TableCell>
+                        <TableCell className="text-slate-300 text-xs">{svc.load_state}</TableCell>
+                        <TableCell className="text-slate-400 text-xs max-w-[200px] truncate">{svc.description}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1">
+                            {(["start", "stop", "restart"] as const).map((action) => (
+                              <Button
+                                key={action}
+                                size="sm"
+                                variant="ghost"
+                                disabled={actionLoading && pendingAction?.service === svc.unit}
+                                onClick={() => handleActionClick(svc, action)}
+                                className="text-xs"
+                              >
+                                {actionLoading && pendingAction?.service === svc.unit && pendingAction?.action === action
+                                  ? "..."
+                                  : action.charAt(0).toUpperCase() + action.slice(1)}
+                              </Button>
+                            ))}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              <p className="text-slate-500 text-xs">
+                Showing {filteredInventory.length} of {inventory.length} services
+              </p>
+            </>
+          )}
+
+          {/* Protected Service Confirmation Dialog */}
+          <Dialog open={protectedConfirmOpen} onOpenChange={setProtectedConfirmOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Protected Service Warning</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2">
+                <p className="text-amber-400 text-sm">
+                  <strong>{protectedTarget?.service}</strong> is a protected system service.
+                  Performing <strong>{protectedTarget?.action}</strong> on this service could
+                  cause system instability or loss of access.
+                </p>
+                <p className="text-slate-400 text-sm">Are you sure you want to proceed?</p>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setProtectedConfirmOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      setProtectedConfirmOpen(false)
+                      if (protectedTarget) executeCommand(protectedTarget.service, protectedTarget.action)
+                    }}
+                  >
+                    Confirm {protectedTarget?.action}
+                  </Button>
+                </div>
+              </div>
             </DialogContent>
           </Dialog>
         </div>

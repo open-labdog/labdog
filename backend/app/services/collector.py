@@ -1,5 +1,8 @@
 """Collect current systemd service states from remote hosts via SSH."""
 
+import asyncio
+import shlex
+
 import asyncssh
 from dataclasses import dataclass
 
@@ -39,9 +42,7 @@ async def collect_service_states(
             for name in service_names:
                 try:
                     # Check active state
-                    active_result = await conn.run(
-                        f"systemctl is-active {name}", check=False
-                    )
+                    active_result = await conn.run(f"systemctl is-active {name}", check=False)
                     active_stdout = active_result.stdout.strip()
                     exit_code = active_result.exit_status
 
@@ -56,14 +57,10 @@ async def collect_service_states(
                         )
                         continue
 
-                    active_state = (
-                        "running" if active_stdout == "active" else "stopped"
-                    )
+                    active_state = "running" if active_stdout == "active" else "stopped"
 
                     # Check enabled state
-                    enabled_result = await conn.run(
-                        f"systemctl is-enabled {name}", check=False
-                    )
+                    enabled_result = await conn.run(f"systemctl is-enabled {name}", check=False)
                     enabled_stdout = enabled_result.stdout.strip()
                     enabled = enabled_stdout == "enabled"
 
@@ -94,3 +91,119 @@ async def collect_service_states(
             )
 
     return results
+
+
+async def list_all_services(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+) -> list[dict]:
+    """
+    SSH into host and list all systemd services via systemctl.
+
+    Returns a list of dicts with keys: unit, load_state, active_state, sub_state, description.
+    Returns empty list on any error (connection failure, timeout, parse error).
+    """
+    try:
+        private_key = asyncssh.import_private_key(private_key_pem)
+
+        async def _run() -> list[dict]:
+            async with asyncssh.connect(
+                host_ip,
+                port=ssh_port,
+                username="root",
+                client_keys=[private_key],
+                known_hosts=None,
+            ) as conn:
+                result = await conn.run(
+                    "systemctl list-units --type=service --all --no-pager --plain",
+                    check=False,
+                )
+                services = []
+                for line in (result.stdout or "").splitlines():
+                    # Skip empty lines
+                    if not line.strip():
+                        continue
+                    # Skip header line and summary lines
+                    if line.startswith("UNIT") or "loaded units listed" in line:
+                        continue
+                    # Skip bullet/dot-style lines (e.g. "● service.service ...")
+                    stripped = line.strip()
+                    if stripped.startswith("●"):
+                        continue
+                    parts = stripped.split(maxsplit=4)
+                    if len(parts) < 4:
+                        continue
+                    unit = parts[0].removesuffix(".service")
+                    load_state = parts[1]
+                    active_state = parts[2]
+                    sub_state = parts[3]
+                    description = parts[4] if len(parts) > 4 else ""
+                    services.append(
+                        {
+                            "unit": unit,
+                            "load_state": load_state,
+                            "active_state": active_state,
+                            "sub_state": sub_state,
+                            "description": description,
+                        }
+                    )
+                return services
+
+        return await asyncio.wait_for(_run(), timeout=30.0)
+    except Exception:
+        return []
+
+
+async def execute_service_command(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+    service_name: str,
+    action: str,
+) -> dict:
+    """
+    SSH into host and execute a systemctl action on a service.
+
+    action must be one of: "start", "stop", "restart".
+    Returns a dict with keys: success, exit_code, stdout, stderr.
+    """
+    if action not in ("start", "stop", "restart"):
+        raise ValueError(f"Invalid action {action!r}. Must be one of: start, stop, restart")
+
+    cmd = f"systemctl {action} {shlex.quote(service_name)}"
+
+    try:
+        private_key = asyncssh.import_private_key(private_key_pem)
+
+        async def _run() -> dict:
+            async with asyncssh.connect(
+                host_ip,
+                port=ssh_port,
+                username="root",
+                client_keys=[private_key],
+                known_hosts=None,
+            ) as conn:
+                result = await conn.run(cmd, check=False)
+                return {
+                    "success": result.exit_status == 0,
+                    "exit_code": result.exit_status,
+                    "stdout": result.stdout or "",
+                    "stderr": result.stderr or "",
+                }
+
+        return await asyncio.wait_for(_run(), timeout=30.0)
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": "Command timed out after 30s",
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "exit_code": -1,
+            "stdout": "",
+            "stderr": str(e),
+        }

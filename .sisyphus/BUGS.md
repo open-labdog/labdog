@@ -117,6 +117,14 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Found During service-live-control (2026-03-18)
+
+- [ ] **BUG-17** `frontend/app/(dashboard)/groups/[id]/rules/page.tsx` — Missing `@dnd-kit/*` dependencies break build
+  `npm run build` fails with 3 module-not-found errors: `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`. These packages are imported but not listed in `package.json`.
+  **Fix**: `cd frontend && npm install @dnd-kit/core @dnd-kit/sortable @dnd-kit/utilities`
+
+---
+
 ## Fixed
 
 All 12 original bugs fixed on 2026-03-17.

@@ -116,3 +116,23 @@ export interface EffectiveService {
   source_id: number
   source_name: string
 }
+
+export interface LiveService {
+  unit: string
+  load_state: string
+  active_state: string
+  sub_state: string
+  description: string
+  is_managed: boolean
+  is_protected: boolean
+}
+
+export interface ServiceCommandResult {
+  success: boolean
+  exit_code: number
+  stdout: string
+  stderr: string
+  service_name: string
+  action: string
+  is_protected: boolean
+}
