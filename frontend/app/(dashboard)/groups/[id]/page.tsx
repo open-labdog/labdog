@@ -167,6 +167,12 @@ export default function GroupDetailPage() {
             Manage Services
           </Link>
           <Link
+            href={`/groups/${id}/hosts-entries`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Manage Hosts File
+          </Link>
+          <Link
             href={`/groups/${id}/sync`}
             className={cn(buttonVariants())}
           >
@@ -241,6 +247,12 @@ export default function GroupDetailPage() {
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             View &amp; Edit Services
+          </Link>
+          <Link
+            href={`/groups/${id}/hosts-entries`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            View &amp; Edit Hosts File
           </Link>
           <Link
             href={`/groups/${id}/sync`}
