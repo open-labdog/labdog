@@ -109,7 +109,7 @@ Max Concurrent: 3
 
 ## TODOs
 
-- [ ] 1. PackageRule + PackageRepository Models + Alembic Migration
+- [x] 1. PackageRule + PackageRepository Models + Alembic Migration
 
   **What to do**:
   - Create `backend/app/packages/__init__.py` (empty)
@@ -170,7 +170,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(models): add PackageRule and PackageRepository models`
 
-- [ ] 2. Package Schemas + Deny-List + Update Schemas + Repository Schemas
+- [x] 2. Package Schemas + Deny-List + Update Schemas + Repository Schemas
 
   **What to do**:
   - Create `backend/app/packages/constants.py`:
@@ -222,7 +222,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(packages): add schemas, deny-list, repo schemas`
 
-- [ ] 3. Package Merge Engine
+- [x] 3. Package Merge Engine
 
   **What to do**:
   - Create `backend/app/packages/merge.py`:
@@ -255,7 +255,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(packages): add merge engine`
 
-- [ ] 4. Package + Repository CRUD API
+- [x] 4. Package + Repository CRUD API
 
   **What to do**:
   - Create `backend/app/api/packages.py`:
@@ -298,7 +298,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(api): add package + repository CRUD endpoints`
 
-- [ ] 5. Ansible Package Playbook Generator
+- [x] 5. Ansible Package Playbook Generator
 
   **What to do**:
   - Create `backend/app/packages/generator.py`:
@@ -341,7 +341,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ansible): add package playbook generator`
 
-- [ ] 6. Package Drift Collector + Diff
+- [x] 6. Package Drift Collector + Diff
 
   **What to do**:
   - Create `backend/app/packages/collector.py`:
@@ -381,7 +381,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(packages): add drift collector (dpkg/rpm) + diff`
 
-- [ ] 7. Package Sync + Drift Celery Tasks + Combined API + Celery Routing
+- [x] 7. Package Sync + Drift Celery Tasks + Combined API + Celery Routing
 
   **What to do**:
   - Create `backend/app/tasks/package_sync.py`:
@@ -444,7 +444,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add package sync + drift tasks and combined API`
 
-- [ ] 9. Frontend — Group Packages Page + Host Detail Tab
+- [x] 9. Frontend — Group Packages Page + Host Detail Tab
 
   **What to do**:
   - Add TypeScript interfaces to `frontend/lib/types.ts`:
@@ -495,7 +495,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add package management pages`
 
-- [ ] 10. pytest Suite
+- [x] 10. pytest Suite
 
   **What to do**:
   - Create `backend/tests/test_packages.py`:
@@ -535,10 +535,10 @@ Max Concurrent: 3
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
-- [ ] F2. **Code Quality Review** — `unspecified-high`
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
-- [ ] F4. **Scope Fidelity Check** — `deep` — Verify: no purge, no kernel packages, no pip/npm, no source compilation.
+- [x] F1. **Plan Compliance Audit** — `oracle`
+- [x] F2. **Code Quality Review** — `unspecified-high`
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
+- [x] F4. **Scope Fidelity Check** — `deep` — Verify: no purge, no kernel packages, no pip/npm, no source compilation.
 
 ---
 
