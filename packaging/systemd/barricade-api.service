@@ -1,0 +1,24 @@
+[Unit]
+Description=Barricade API Server
+After=network-online.target postgresql.service redis.service barricade-migrate.service
+Requires=postgresql.service redis.service
+Wants=barricade-migrate.service
+PartOf=barricade.target
+
+[Service]
+Type=simple
+User=barricade
+Group=barricade
+WorkingDirectory=/usr/lib/barricade/backend
+EnvironmentFile=/etc/barricade/barricade.env
+Environment=PATH=/usr/lib/barricade/venv/bin:/usr/bin:/bin
+ExecStart=/usr/lib/barricade/venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5s
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/barricade /var/log/barricade /tmp /dev/shm
+
+[Install]
+WantedBy=barricade.target
