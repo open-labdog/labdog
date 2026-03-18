@@ -36,6 +36,7 @@ All extensions support **group-level defaults + per-host overrides** with priori
 | 9 | **GitOps Frontend** | [`gitops-frontend.md`](gitops-frontend.md) | S | ✅ Shipped | Git Repos page, group GitOps settings, status badges. |
 | 10 | **Host Discovery** | [`host-discovery.md`](host-discovery.md) | S | ✅ Shipped | Network CIDR scan for SSH hosts, bulk-add UI. |
 | 11 | **Web Shell** | [`web-shell.md`](web-shell.md) | M | 📋 Planned | Browser-based SSH terminal via xterm.js + WebSocket + asyncssh PTY. |
+| 12 | **Packaging** | [`packaging.md`](packaging.md) | L | 📋 Planned | Pre-built tarball, .deb, .rpm via nfpm. Systemd services. Embedded Node.js. FHS layout. install.sh for tarball installs. |
 
 ### Execution Order
 Service Management (#1) was built first — it created `host_module_status` and `SyncJob.module_type` that all other modules reuse. /etc/hosts (#3), User Management (#8), GitOps Frontend (#9), and Host Discovery (#10) are also complete. Modules #1a, #2, #4–7, #11 can be built in any order.
@@ -104,6 +105,7 @@ Future: `enabled_modules` list on HostGroup to control which modules apply.
 
 | Idea | Notes |
 |------|-------|
+| **APT/YUM repository hosting** | — |
 | **Repository management** | — |
 | **Change name and description of application** | — |
 | **Dashboard metrics & charts** | Host count, drift status breakdown, sync success/failure rates, recent activity on the main dashboard |
