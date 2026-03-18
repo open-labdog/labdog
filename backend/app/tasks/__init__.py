@@ -20,6 +20,7 @@ celery_app.conf.update(
         "app.tasks.service_drift.*": {"queue": "long_running"},
         "app.tasks.hosts_sync.*": {"queue": "long_running"},
         "app.tasks.hosts_drift.*": {"queue": "long_running"},
+        "app.tasks.user_drift.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
     },

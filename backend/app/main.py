@@ -24,6 +24,7 @@ from app.api.hosts_drift import router as hosts_drift_router
 from app.api.hosts_sync import router as hosts_sync_router
 from app.api.linux_users import router as linux_users_router
 from app.api.linux_groups import router as linux_groups_router
+from app.api.user_sync import router as user_sync_router
 
 
 def create_app() -> FastAPI:
@@ -72,6 +73,7 @@ def create_app() -> FastAPI:
     app.include_router(hosts_sync_router, prefix="/api")
     app.include_router(linux_users_router, prefix="/api")
     app.include_router(linux_groups_router, prefix="/api")
+    app.include_router(user_sync_router, prefix="/api")
 
     # Webhooks at /webhooks/ (NOT under /api prefix)
     app.include_router(webhooks_router)
