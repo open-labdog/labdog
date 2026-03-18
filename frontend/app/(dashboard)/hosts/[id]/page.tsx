@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch, API_BASE } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -64,7 +64,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users">("overview")
   const [editOpen, setEditOpen] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
@@ -134,6 +134,168 @@ export default function HostDetailPage() {
   const [hostsFormLoading, setHostsFormLoading] = useState(false)
   const [hostsDeletingId, setHostsDeletingId] = useState<number | null>(null)
   const [hostsDeleteError, setHostsDeleteError] = useState<string | null>(null)
+
+  const { data: effectiveLinuxUsers, isLoading: linuxUsersLoading, error: linuxUsersError } = useQuery<EffectiveLinuxUser[]>({
+    queryKey: ["host-effective-linux-users", id],
+    queryFn: () => apiFetch<EffectiveLinuxUser[]>(`/api/hosts/${id}/effective-users`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  const { data: effectiveLinuxGroups, isLoading: linuxGroupsLoading, error: linuxGroupsError } = useQuery<EffectiveLinuxGroup[]>({
+    queryKey: ["host-effective-linux-groups", id],
+    queryFn: () => apiFetch<EffectiveLinuxGroup[]>(`/api/hosts/${id}/effective-groups`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  const { data: hostLinuxUserOverrides } = useQuery<LinuxUser[]>({
+    queryKey: ["host-linux-user-overrides", id],
+    queryFn: () => apiFetch<LinuxUser[]>(`/api/hosts/${id}/linux-users`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  const { data: hostLinuxGroupOverrides } = useQuery<LinuxGroup[]>({
+    queryKey: ["host-linux-group-overrides", id],
+    queryFn: () => apiFetch<LinuxGroup[]>(`/api/hosts/${id}/linux-groups`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  const [luDialogOpen, setLuDialogOpen] = useState(false)
+  const [luUsername, setLuUsername] = useState("")
+  const [luUid, setLuUid] = useState("")
+  const [luShell, setLuShell] = useState("/bin/bash")
+  const [luHomeDir, setLuHomeDir] = useState("")
+  const [luState, setLuState] = useState<"present" | "absent">("present")
+  const [luComment, setLuComment] = useState("")
+  const [luSudoRule, setLuSudoRule] = useState("")
+  const [luAuthorizedKeys, setLuAuthorizedKeys] = useState("")
+  const [luSupplementaryGroups, setLuSupplementaryGroups] = useState("")
+  const [luPriority, setLuPriority] = useState(100)
+  const [luFormError, setLuFormError] = useState<string | null>(null)
+  const [luFormLoading, setLuFormLoading] = useState(false)
+  const [luDeletingId, setLuDeletingId] = useState<number | null>(null)
+  const [luDeleteError, setLuDeleteError] = useState<string | null>(null)
+
+  const [lgDialogOpen, setLgDialogOpen] = useState(false)
+  const [lgGroupname, setLgGroupname] = useState("")
+  const [lgGid, setLgGid] = useState("")
+  const [lgState, setLgState] = useState<"present" | "absent">("present")
+  const [lgPriority, setLgPriority] = useState(100)
+  const [lgFormError, setLgFormError] = useState<string | null>(null)
+  const [lgFormLoading, setLgFormLoading] = useState(false)
+  const [lgDeletingId, setLgDeletingId] = useState<number | null>(null)
+  const [lgDeleteError, setLgDeleteError] = useState<string | null>(null)
+
+  function openLuDialog() {
+    setLuUsername("")
+    setLuUid("")
+    setLuShell("/bin/bash")
+    setLuHomeDir("")
+    setLuState("present")
+    setLuComment("")
+    setLuSudoRule("")
+    setLuAuthorizedKeys("")
+    setLuSupplementaryGroups("")
+    setLuPriority(100)
+    setLuFormError(null)
+    setLuDialogOpen(true)
+  }
+
+  async function handleLuSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setLuFormError(null)
+    setLuFormLoading(true)
+    try {
+      await apiFetch(`/api/hosts/${id}/linux-users`, {
+        method: "POST",
+        body: JSON.stringify({
+          username: luUsername,
+          uid: luUid ? Number(luUid) : null,
+          shell: luShell,
+          home_dir: luHomeDir || null,
+          state: luState,
+          comment: luComment || null,
+          sudo_rule: luSudoRule || null,
+          authorized_keys: luAuthorizedKeys.split("\n").map((k) => k.trim()).filter(Boolean),
+          supplementary_groups: luSupplementaryGroups.split(",").map((g) => g.trim()).filter(Boolean),
+          priority: luPriority,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
+      setLuDialogOpen(false)
+    } catch (err) {
+      setLuFormError(err instanceof Error ? err.message : "Failed to create user override")
+    } finally {
+      setLuFormLoading(false)
+    }
+  }
+
+  async function handleLuDelete(username: string) {
+    if (!confirm(`Delete host user override for "${username}"?`)) return
+    const override = hostLinuxUserOverrides?.find(o => o.username === username)
+    if (!override) { setLuDeleteError("Override not found"); return }
+    setLuDeletingId(override.id)
+    setLuDeleteError(null)
+    try {
+      await apiFetch(`/api/hosts/${id}/linux-users/${override.id}`, { method: "DELETE" })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
+    } catch (err) {
+      setLuDeleteError(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setLuDeletingId(null)
+    }
+  }
+
+  function openLgDialog() {
+    setLgGroupname("")
+    setLgGid("")
+    setLgState("present")
+    setLgPriority(100)
+    setLgFormError(null)
+    setLgDialogOpen(true)
+  }
+
+  async function handleLgSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setLgFormError(null)
+    setLgFormLoading(true)
+    try {
+      await apiFetch(`/api/hosts/${id}/linux-groups`, {
+        method: "POST",
+        body: JSON.stringify({
+          groupname: lgGroupname,
+          gid: lgGid ? Number(lgGid) : null,
+          state: lgState,
+          priority: lgPriority,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
+      setLgDialogOpen(false)
+    } catch (err) {
+      setLgFormError(err instanceof Error ? err.message : "Failed to create group override")
+    } finally {
+      setLgFormLoading(false)
+    }
+  }
+
+  async function handleLgDelete(groupname: string) {
+    if (!confirm(`Delete host group override for "${groupname}"?`)) return
+    const override = hostLinuxGroupOverrides?.find(o => o.groupname === groupname)
+    if (!override) { setLgDeleteError("Override not found"); return }
+    setLgDeletingId(override.id)
+    setLgDeleteError(null)
+    try {
+      await apiFetch(`/api/hosts/${id}/linux-groups/${override.id}`, { method: "DELETE" })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
+    } catch (err) {
+      setLgDeleteError(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setLgDeletingId(null)
+    }
+  }
 
   function openHostsDialog() {
     setHostsIp("")
@@ -524,6 +686,16 @@ export default function HostDetailPage() {
           }`}
         >
           Hosts File
+        </button>
+        <button
+          onClick={() => setActiveTab("users")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "users"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Users
         </button>
       </div>
 
@@ -1151,6 +1323,401 @@ export default function HostDetailPage() {
                     type="button"
                     variant="outline"
                     onClick={() => setHostsDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {activeTab === "users" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Linux Users</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Users applied to this host from groups and host-level overrides.
+              </p>
+            </div>
+            <Button onClick={openLuDialog}>Add User Override</Button>
+          </div>
+
+          {luDeleteError && (
+            <div className="text-red-400 text-sm">{luDeleteError}</div>
+          )}
+
+          {linuxUsersLoading && (
+            <div className="text-slate-400 py-6 text-center">Loading users…</div>
+          )}
+
+          {linuxUsersError && (
+            <div className="text-red-400 py-6 text-center">Failed to load users</div>
+          )}
+
+          {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No Linux users configured. Add a host override or assign users to a group.
+            </div>
+          )}
+
+          {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Username</TableHead>
+                    <TableHead>UID</TableHead>
+                    <TableHead>Shell</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Keys</TableHead>
+                    <TableHead>Sudo</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveLinuxUsers.map((user) => (
+                    <TableRow key={`${user.source}-${user.source_id}-${user.username}`} className="border-slate-700">
+                      <TableCell className="font-mono text-white text-sm">{user.username}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{user.shell}</TableCell>
+                      <TableCell>
+                        <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                          {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.sudo_rule ? (
+                          <Badge className="bg-amber-600 text-white">Yes</Badge>
+                        ) : (
+                          <span className="text-slate-600 text-xs">No</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {user.source === "group" ? `Group: ${user.source_name}` : "Host override"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {user.source === "host" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={luDeletingId != null}
+                            onClick={() => handleLuDelete(user.username)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {luDeletingId != null ? "…" : "Delete"}
+                          </Button>
+                        ) : (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <hr className="border-slate-700" />
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Linux Groups</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                System groups applied to this host.
+              </p>
+            </div>
+            <Button onClick={openLgDialog}>Add Group Override</Button>
+          </div>
+
+          {lgDeleteError && (
+            <div className="text-red-400 text-sm">{lgDeleteError}</div>
+          )}
+
+          {linuxGroupsLoading && (
+            <div className="text-slate-400 py-6 text-center">Loading groups…</div>
+          )}
+
+          {linuxGroupsError && (
+            <div className="text-red-400 py-6 text-center">Failed to load groups</div>
+          )}
+
+          {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No Linux groups configured. Add a host override or assign groups to a group.
+            </div>
+          )}
+
+          {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Group Name</TableHead>
+                    <TableHead>GID</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveLinuxGroups.map((group) => (
+                    <TableRow key={`${group.source}-${group.source_id}-${group.groupname}`} className="border-slate-700">
+                      <TableCell className="font-mono text-white text-sm">{group.groupname}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</TableCell>
+                      <TableCell>
+                        <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                          {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {group.source === "group" ? `Group: ${group.source_name}` : "Host override"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {group.source === "host" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={lgDeletingId != null}
+                            onClick={() => handleLgDelete(group.groupname)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {lgDeletingId != null ? "…" : "Delete"}
+                          </Button>
+                        ) : (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <Dialog open={luDialogOpen} onOpenChange={setLuDialogOpen}>
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Linux User Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleLuSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="lu-username">Username</Label>
+                  <Input
+                    id="lu-username"
+                    type="text"
+                    placeholder="e.g. deploy, appuser"
+                    value={luUsername}
+                    onChange={(e) => setLuUsername(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-uid">UID (optional)</Label>
+                  <Input
+                    id="lu-uid"
+                    type="number"
+                    placeholder="Auto-assign if empty"
+                    value={luUid}
+                    onChange={(e) => setLuUid(e.target.value)}
+                    min={1000}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-shell">Shell</Label>
+                  <Input
+                    id="lu-shell"
+                    type="text"
+                    value={luShell}
+                    onChange={(e) => setLuShell(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-home">Home Directory (optional)</Label>
+                  <Input
+                    id="lu-home"
+                    type="text"
+                    placeholder="e.g. /home/deploy"
+                    value={luHomeDir}
+                    onChange={(e) => setLuHomeDir(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-state">State</Label>
+                  <select
+                    id="lu-state"
+                    value={luState}
+                    onChange={(e) => setLuState(e.target.value as "present" | "absent")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-keys">SSH Authorized Keys</Label>
+                  <textarea
+                    id="lu-keys"
+                    placeholder="One SSH public key per line"
+                    value={luAuthorizedKeys}
+                    onChange={(e) => setLuAuthorizedKeys(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+                  />
+                  <p className="text-xs text-slate-500">One SSH public key per line</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-groups">Supplementary Groups</Label>
+                  <Input
+                    id="lu-groups"
+                    type="text"
+                    placeholder="e.g. docker, wheel, sudo"
+                    value={luSupplementaryGroups}
+                    onChange={(e) => setLuSupplementaryGroups(e.target.value)}
+                  />
+                  <p className="text-xs text-slate-500">Comma-separated group names</p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-sudo">Sudo Rule (optional)</Label>
+                  <Input
+                    id="lu-sudo"
+                    type="text"
+                    placeholder="e.g. ALL=(ALL) NOPASSWD: ALL"
+                    value={luSudoRule}
+                    onChange={(e) => setLuSudoRule(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-comment">Comment (optional)</Label>
+                  <Input
+                    id="lu-comment"
+                    type="text"
+                    placeholder="GECOS / description"
+                    value={luComment}
+                    onChange={(e) => setLuComment(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lu-priority">Priority</Label>
+                  <Input
+                    id="lu-priority"
+                    type="number"
+                    value={luPriority}
+                    onChange={(e) => setLuPriority(Number(e.target.value))}
+                    required
+                    min={0}
+                  />
+                </div>
+
+                {luFormError && (
+                  <p className="text-sm text-red-400">{luFormError}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={luFormLoading}>
+                    {luFormLoading ? "Saving..." : "Create Override"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setLuDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={lgDialogOpen} onOpenChange={setLgDialogOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Add Linux Group Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleLgSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="lg-name">Group Name</Label>
+                  <Input
+                    id="lg-name"
+                    type="text"
+                    placeholder="e.g. docker, developers"
+                    value={lgGroupname}
+                    onChange={(e) => setLgGroupname(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lg-gid">GID (optional)</Label>
+                  <Input
+                    id="lg-gid"
+                    type="number"
+                    placeholder="Auto-assign if empty"
+                    value={lgGid}
+                    onChange={(e) => setLgGid(e.target.value)}
+                    min={1000}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lg-state">State</Label>
+                  <select
+                    id="lg-state"
+                    value={lgState}
+                    onChange={(e) => setLgState(e.target.value as "present" | "absent")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lg-priority">Priority</Label>
+                  <Input
+                    id="lg-priority"
+                    type="number"
+                    value={lgPriority}
+                    onChange={(e) => setLgPriority(Number(e.target.value))}
+                    required
+                    min={0}
+                  />
+                </div>
+
+                {lgFormError && (
+                  <p className="text-sm text-red-400">{lgFormError}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={lgFormLoading}>
+                    {lgFormLoading ? "Saving..." : "Create Override"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setLgDialogOpen(false)}
                   >
                     Cancel
                   </Button>

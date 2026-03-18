@@ -161,3 +161,56 @@ export interface ServiceCommandResult {
   action: string
   is_protected: boolean
 }
+
+export interface LinuxUser {
+  id: number
+  username: string
+  uid: number | null
+  shell: string
+  home_dir: string | null
+  state: "present" | "absent"
+  comment: string | null
+  sudo_rule: string | null
+  authorized_keys: string[]
+  supplementary_groups: string[]
+  priority: number
+  group_id: number | null
+  host_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface LinuxGroup {
+  id: number
+  groupname: string
+  gid: number | null
+  state: "present" | "absent"
+  priority: number
+  group_id: number | null
+  host_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EffectiveLinuxUser {
+  username: string
+  uid: number | null
+  shell: string
+  home_dir: string | null
+  state: "present" | "absent"
+  sudo_rule: string | null
+  authorized_keys: string[]
+  supplementary_groups: string[]
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}
+
+export interface EffectiveLinuxGroup {
+  groupname: string
+  gid: number | null
+  state: "present" | "absent"
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}
