@@ -26,6 +26,7 @@ from app.api.linux_users import router as linux_users_router
 from app.api.linux_groups import router as linux_groups_router
 from app.api.cron_jobs import router as cron_jobs_router
 from app.api.user_sync import router as user_sync_router
+from app.api.cron_sync import router as cron_sync_router
 
 
 def create_app() -> FastAPI:
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(linux_groups_router, prefix="/api")
     app.include_router(cron_jobs_router, prefix="/api")
     app.include_router(user_sync_router, prefix="/api")
+    app.include_router(cron_sync_router, prefix="/api")
 
     # Webhooks at /webhooks/ (NOT under /api prefix)
     app.include_router(webhooks_router)
