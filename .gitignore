@@ -50,3 +50,6 @@ tmp/
 # Dev script runtime
 .dev-logs/
 .dev-pids/
+
+# Packaging build cache
+packaging/.cache/
