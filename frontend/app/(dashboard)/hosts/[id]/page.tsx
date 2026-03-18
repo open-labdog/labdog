@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch, API_BASE } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup, EffectiveCronJob, CronJob } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup, EffectiveCronJob, CronJob, EffectivePackage, PackageRule } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
@@ -78,7 +78,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages">("overview")
   const [editOpen, setEditOpen] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
@@ -214,6 +214,84 @@ export default function HostDetailPage() {
   const [cjFormLoading, setCjFormLoading] = useState(false)
   const [cjDeletingId, setCjDeletingId] = useState<number | null>(null)
   const [cjDeleteError, setCjDeleteError] = useState<string | null>(null)
+
+  const { data: effectivePackages, isLoading: packagesLoading, error: packagesError } = useQuery<EffectivePackage[]>({
+    queryKey: ["host-effective-packages", id],
+    queryFn: () => apiFetch<EffectivePackage[]>(`/api/hosts/${id}/effective-packages`),
+    enabled: !!id && activeTab === "packages",
+  })
+
+  const { data: hostPackageOverrides } = useQuery<PackageRule[]>({
+    queryKey: ["host-package-overrides", id],
+    queryFn: () => apiFetch<PackageRule[]>(`/api/hosts/${id}/packages`),
+    enabled: !!id && activeTab === "packages",
+  })
+
+  const [ppDialogOpen, setPpDialogOpen] = useState(false)
+  const [ppName, setPpName] = useState("")
+  const [ppVersion, setPpVersion] = useState("")
+  const [ppState, setPpState] = useState<"present" | "absent" | "latest">("present")
+  const [ppManager, setPpManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
+  const [ppPriority, setPpPriority] = useState(0)
+  const [ppComment, setPpComment] = useState("")
+  const [ppFormError, setPpFormError] = useState<string | null>(null)
+  const [ppFormLoading, setPpFormLoading] = useState(false)
+  const [ppDeletingId, setPpDeletingId] = useState<number | null>(null)
+  const [ppDeleteError, setPpDeleteError] = useState<string | null>(null)
+
+  function openPpDialog() {
+    setPpName("")
+    setPpVersion("")
+    setPpState("present")
+    setPpManager("auto")
+    setPpPriority(0)
+    setPpComment("")
+    setPpFormError(null)
+    setPpDialogOpen(true)
+  }
+
+  async function handlePpSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setPpFormError(null)
+    setPpFormLoading(true)
+    try {
+      await apiFetch(`/api/hosts/${id}/packages`, {
+        method: "POST",
+        body: JSON.stringify({
+          package_name: ppName,
+          version: ppVersion || null,
+          state: ppState,
+          package_manager: ppManager,
+          priority: ppPriority,
+          comment: ppComment || null,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
+      setPpDialogOpen(false)
+    } catch (err) {
+      setPpFormError(err instanceof Error ? err.message : "Failed to create package override")
+    } finally {
+      setPpFormLoading(false)
+    }
+  }
+
+  async function handlePpDelete(packageName: string) {
+    if (!confirm(`Delete host package override for "${packageName}"?`)) return
+    const override = hostPackageOverrides?.find(o => o.package_name === packageName)
+    if (!override) { setPpDeleteError("Override not found"); return }
+    setPpDeletingId(override.id)
+    setPpDeleteError(null)
+    try {
+      await apiFetch(`/api/hosts/${id}/packages/${override.id}`, { method: "DELETE" })
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
+    } catch (err) {
+      setPpDeleteError(err instanceof Error ? err.message : "Delete failed")
+    } finally {
+      setPpDeletingId(null)
+    }
+  }
 
   function openCjDialog() {
     setCjName("")
@@ -809,6 +887,16 @@ export default function HostDetailPage() {
           }`}
         >
           Cron Jobs
+        </button>
+        <button
+          onClick={() => setActiveTab("packages")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "packages"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Packages
         </button>
       </div>
 
@@ -2103,6 +2191,197 @@ export default function HostDetailPage() {
                     type="button"
                     variant="outline"
                     onClick={() => setCjDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      )}
+
+      {activeTab === "packages" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Packages</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Packages applied to this host from groups and host-level overrides.
+              </p>
+            </div>
+            <Button onClick={openPpDialog}>Add Override</Button>
+          </div>
+
+          {ppDeleteError && (
+            <div className="text-red-400 text-sm">{ppDeleteError}</div>
+          )}
+
+          {packagesLoading && (
+            <div className="text-slate-400 py-6 text-center">Loading packages...</div>
+          )}
+
+          {packagesError && (
+            <div className="text-red-400 py-6 text-center">Failed to load packages</div>
+          )}
+
+          {!packagesLoading && !packagesError && effectivePackages && effectivePackages.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No packages configured. Add a host override or assign packages to a group.
+            </div>
+          )}
+
+          {!packagesLoading && !packagesError && effectivePackages && effectivePackages.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Package Name</TableHead>
+                    <TableHead>Version</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Package Manager</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectivePackages.map((pkg) => (
+                    <TableRow key={`${pkg.source}-${pkg.source_id}-${pkg.package_name}`} className="border-slate-700">
+                      <TableCell className="font-mono text-white text-sm">{pkg.package_name}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</TableCell>
+                      <TableCell>
+                        <Badge className={
+                          pkg.state === "present" ? "bg-green-600 text-white"
+                            : pkg.state === "latest" ? "bg-blue-600 text-white"
+                            : "bg-red-600 text-white"
+                        }>
+                          {pkg.state.charAt(0).toUpperCase() + pkg.state.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {pkg.source === "group" ? `Group: ${pkg.source_name}` : "Host override"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {pkg.source === "host" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={ppDeletingId != null}
+                            onClick={() => handlePpDelete(pkg.package_name)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {ppDeletingId != null ? "..." : "Delete"}
+                          </Button>
+                        ) : (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <Dialog open={ppDialogOpen} onOpenChange={setPpDialogOpen}>
+            <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add Package Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handlePpSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="pp-name">Package Name</Label>
+                  <Input
+                    id="pp-name"
+                    type="text"
+                    placeholder="e.g. nginx, curl, htop"
+                    value={ppName}
+                    onChange={(e) => setPpName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pp-version">Version</Label>
+                  <Input
+                    id="pp-version"
+                    type="text"
+                    placeholder="any version"
+                    value={ppVersion}
+                    onChange={(e) => setPpVersion(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pp-state">State</Label>
+                  <select
+                    id="pp-state"
+                    value={ppState}
+                    onChange={(e) => setPpState(e.target.value as "present" | "absent" | "latest")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                    <option value="latest">Latest</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pp-manager">Package Manager</Label>
+                  <select
+                    id="pp-manager"
+                    value={ppManager}
+                    onChange={(e) => setPpManager(e.target.value as "auto" | "apt" | "dnf" | "yum")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="auto">Auto-detect</option>
+                    <option value="apt">apt</option>
+                    <option value="dnf">dnf</option>
+                    <option value="yum">yum</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pp-priority">Priority</Label>
+                  <Input
+                    id="pp-priority"
+                    type="number"
+                    value={ppPriority}
+                    onChange={(e) => setPpPriority(Number(e.target.value))}
+                    required
+                    min={0}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pp-comment">Comment (optional)</Label>
+                  <textarea
+                    id="pp-comment"
+                    placeholder="Optional description"
+                    value={ppComment}
+                    onChange={(e) => setPpComment(e.target.value)}
+                    rows={2}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+                  />
+                </div>
+
+                {ppFormError && (
+                  <p className="text-sm text-red-400">{ppFormError}</p>
+                )}
+
+                <div className="flex gap-3 pt-2">
+                  <Button type="submit" disabled={ppFormLoading}>
+                    {ppFormLoading ? "Saving..." : "Create Override"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPpDialogOpen(false)}
                   >
                     Cancel
                   </Button>

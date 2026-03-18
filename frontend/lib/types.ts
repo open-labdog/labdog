@@ -244,3 +244,38 @@ export interface EffectiveCronJob {
   source_id: number
   source_name: string
 }
+
+export interface PackageRule {
+  id: number
+  group_id: number | null
+  host_id: number | null
+  package_name: string
+  version: string | null
+  state: "present" | "absent" | "latest"
+  package_manager: "auto" | "apt" | "dnf" | "yum"
+  priority: number
+  comment: string | null
+}
+
+export interface PackageRepository {
+  id: number
+  group_id: number
+  name: string
+  url: string
+  key_url: string | null
+  repo_type: "apt" | "yum"
+  distribution: string | null
+  components: string | null
+  state: "present" | "absent"
+}
+
+export interface EffectivePackage {
+  package_name: string
+  version: string | null
+  state: "present" | "absent" | "latest"
+  package_manager: "auto" | "apt" | "dnf" | "yum"
+  priority: number
+  source: string
+  source_id: number
+  source_name: string
+}
