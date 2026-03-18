@@ -1,0 +1,22 @@
+[Unit]
+Description=Barricade Frontend
+After=network-online.target barricade-api.service
+PartOf=barricade.target
+
+[Service]
+Type=simple
+User=barricade
+Group=barricade
+WorkingDirectory=/usr/lib/barricade/frontend
+EnvironmentFile=/etc/barricade/barricade.env
+Environment=NODE_ENV=production PORT=3000 HOSTNAME=127.0.0.1
+ExecStart=/usr/lib/barricade/node/bin/node /usr/lib/barricade/frontend/server.js
+Restart=on-failure
+RestartSec=5s
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/barricade /var/log/barricade /tmp
+
+[Install]
+WantedBy=barricade.target
