@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { apiFetch, API_BASE } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry } from "@/lib/types"
+import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
