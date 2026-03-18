@@ -17,7 +17,7 @@ export default function RegisterPage() {
   const [needsSetup, setNeedsSetup] = useState<boolean | null>(null)
 
   useEffect(() => {
-    fetch(`${API_BASE}/auth/setup-status`, { credentials: "include" })
+    fetch(`${API_BASE}/api/auth/setup-status`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => setNeedsSetup(data.needs_setup === true))
       .catch(() => setNeedsSetup(false))
@@ -62,7 +62,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/auth/register`, {
+      const res = await fetch(`${API_BASE}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

@@ -6,7 +6,7 @@ from app.auth.users import get_user_manager, UserManager
 from app.db import AsyncSessionLocal
 from app.models.user import User
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.get("/setup-status")

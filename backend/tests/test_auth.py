@@ -2,9 +2,9 @@
 Authentication endpoint tests for Barricade.
 
 Tests cover:
-- User registration (POST /auth/register)
-- JWT login with cookie (POST /auth/jwt/login)
-- Current user retrieval (GET /users/me)
+- User registration (POST /api/auth/register)
+- JWT login with cookie (POST /api/auth/jwt/login)
+- Current user retrieval (GET /api/users/me)
 - Login error handling
 """
 
@@ -24,7 +24,7 @@ class TestAuth:
         password = "TestPass1!"
 
         resp = await client.post(
-            "/auth/register",
+            "/api/auth/register",
             json={"email": email, "password": password},
         )
 
@@ -40,14 +40,14 @@ class TestAuth:
 
         # Register user
         resp = await client.post(
-            "/auth/register",
+            "/api/auth/register",
             json={"email": email, "password": password},
         )
         assert resp.status_code == 201
 
         # Login with form data (FastAPI-Users requirement)
         resp = await client.post(
-            "/auth/jwt/login",
+            "/api/auth/jwt/login",
             data={"username": email, "password": password},
         )
 
@@ -56,8 +56,8 @@ class TestAuth:
         assert "barricade_auth" in resp.cookies
 
     async def test_get_current_user(self, superuser_client):
-        """Test retrieving current user info via GET /users/me."""
-        resp = await superuser_client.get("/users/me")
+        """Test retrieving current user info via GET /api/users/me."""
+        resp = await superuser_client.get("/api/users/me")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -72,14 +72,14 @@ class TestAuth:
 
         # Register user
         resp = await client.post(
-            "/auth/register",
+            "/api/auth/register",
             json={"email": email, "password": password},
         )
         assert resp.status_code == 201
 
         # Attempt login with wrong password
         resp = await client.post(
-            "/auth/jwt/login",
+            "/api/auth/jwt/login",
             data={"username": email, "password": "WrongPassword123!"},
         )
 
