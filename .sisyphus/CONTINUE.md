@@ -81,21 +81,20 @@ Centralized Linux firewall management via Ansible. Define firewall rules in a we
 
 ## What's Planned (Future)
 
-### 1. Platform Extensions — `ext-service-management.md`
-**Status**: Plan exists, nothing built.
+See [`.sisyphus/plans/MASTER-PLAN.md`](plans/MASTER-PLAN.md) for the full extension roadmap, current status of each module, and work tracking protocol.
 
-First extension module: systemd service management (start/stop/enable/disable services across hosts).
+**Shipped extensions**: Service Management (#1), /etc/hosts (#3)
+**Planned extensions**: Service Live Control (#1a), Linux User Management (#2), Package Management (#4), Cron Jobs (#5), DNS Resolver (#6), TLS Certificates (#7)
 
-### 2. Additional Extension Modules — `barricade-extensions.md`
-**Status**: Design document only, nothing built. Roadmap for extending Barricade beyond firewalls.
+---
 
-Proposed modules:
-- **User management** — Manage Linux users/groups/SSH authorized_keys
-- **Certificate management** — TLS certificate deployment + renewal
-- **DNS resolver** — Manage /etc/resolv.conf and /etc/hosts
-- **Package management** — Ensure packages installed/removed/pinned
+## Work Tracking
 
-Each module follows the same "Barricade pattern": DB model → Ansible renderer → drift detector → sync engine → audit log → React UI.
+When working on any plan or bug:
+
+1. **Plans** — Update the module's plan file as work progresses and set its status to `🔨 Ongoing` in [`MASTER-PLAN.md`](plans/MASTER-PLAN.md). See the Work Tracking Protocol section in that file.
+2. **Bugs** — Update [`BUGS.md`](BUGS.md) when bugs are discovered or fixed.
+3. **This file** — Update the "What's Built" section above when features ship.
 
 ---
 
