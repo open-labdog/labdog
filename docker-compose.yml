@@ -93,6 +93,8 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-32-bytes-base64-encoded}
       BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped

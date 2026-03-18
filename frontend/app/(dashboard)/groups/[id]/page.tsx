@@ -61,10 +61,7 @@ export default function GroupDetailPage() {
 
   const group = groups?.find((g) => g.id === id)
 
-  // Filter hosts that belong to this group
-  // The API doesn't expose group membership directly on Host, so we show all hosts
-  // and note that group membership is managed server-side
-  const groupHosts = hosts ?? []
+  const groupHosts = hosts?.filter((h) => h.group_ids?.includes(id)) ?? []
 
   function relativeTime(iso: string | null): string {
     if (!iso) return "Never"

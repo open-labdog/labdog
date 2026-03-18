@@ -25,7 +25,23 @@ async def list_hosts(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host))
-    return result.scalars().all()
+    hosts = result.scalars().all()
+
+    # Populate group_ids for all hosts in a single query
+    if hosts:
+        host_ids = [h.id for h in hosts]
+        memberships = await db.execute(
+            select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id).where(
+                HostGroupMembership.c.host_id.in_(host_ids)
+            )
+        )
+        groups_by_host: dict[int, list[int]] = {}
+        for host_id, group_id in memberships.all():
+            groups_by_host.setdefault(host_id, []).append(group_id)
+        for h in hosts:
+            setattr(h, "group_ids", groups_by_host.get(h.id, []))
+
+    return hosts
 
 
 @router.post("", response_model=HostResponse, status_code=201)
