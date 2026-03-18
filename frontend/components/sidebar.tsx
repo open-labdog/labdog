@@ -49,7 +49,7 @@ export function Sidebar() {
 
     setPasswordLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/users/me`, {
+      const res = await fetch(`${API_BASE}/api/users/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

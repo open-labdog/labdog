@@ -47,19 +47,19 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Auth routes: POST /auth/jwt/login, POST /auth/jwt/logout
+    # Auth routes: POST /api/auth/jwt/login, POST /api/auth/jwt/logout
     app.include_router(
         fastapi_users.get_auth_router(auth_backend),
-        prefix="/auth/jwt",
+        prefix="/api/auth/jwt",
         tags=["auth"],
     )
 
     app.include_router(auth_setup_router)
 
-    # User routes: GET /users/me, PATCH /users/me, GET /users/{id}, etc.
+    # User routes: GET /api/users/me, PATCH /api/users/me, GET /api/users/{id}, etc.
     app.include_router(
         fastapi_users.get_users_router(UserRead, UserUpdate),
-        prefix="/users",
+        prefix="/api/users",
         tags=["users"],
     )
 

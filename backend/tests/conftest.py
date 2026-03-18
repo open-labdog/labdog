@@ -98,7 +98,7 @@ async def _make_superuser(app, db):
     await db.flush()
     transport = ASGITransport(app=app)
     c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
-    resp = await c.post("/auth/jwt/login", data={"username": email, "password": password})
+    resp = await c.post("/api/auth/jwt/login", data={"username": email, "password": password})
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
     return c
 
@@ -130,7 +130,7 @@ async def regular_user_client(app, db):
     await db.flush()
     transport = ASGITransport(app=app)
     c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
-    resp = await c.post("/auth/jwt/login", data={"username": email, "password": password})
+    resp = await c.post("/api/auth/jwt/login", data={"username": email, "password": password})
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
     yield c
     await c.aclose()

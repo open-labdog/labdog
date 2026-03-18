@@ -13,7 +13,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`${API_BASE}/users/me`, {
+    fetch(`${API_BASE}/api/users/me`, {
       credentials: 'include',
     })
       .then((res) => {
@@ -33,7 +33,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetch(`${API_BASE}/auth/jwt/logout`, {
+      await fetch(`${API_BASE}/api/auth/jwt/logout`, {
         method: 'POST',
         credentials: 'include',
       })

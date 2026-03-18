@@ -16,7 +16,7 @@ export default function LoginPage() {
   const [needsSetup, setNeedsSetup] = useState(false)
 
   useEffect(() => {
-    fetch(`${API_BASE}/auth/setup-status`, { credentials: "include" })
+    fetch(`${API_BASE}/api/auth/setup-status`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => setNeedsSetup(data.needs_setup === true))
       .catch(() => setNeedsSetup(false))
@@ -28,7 +28,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${API_BASE}/auth/jwt/login`, {
+      const res = await fetch(`${API_BASE}/api/auth/jwt/login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
