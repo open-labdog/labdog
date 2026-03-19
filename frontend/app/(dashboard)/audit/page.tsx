@@ -2,11 +2,13 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Table,
@@ -76,6 +78,7 @@ const ENTITY_TYPES = ["all", "group", "host", "rule", "ssh_key"]
 const PAGE_SIZE = 20
 
 export default function AuditPage() {
+  const [searchQuery, setSearchQuery] = useState("")
   const [actionFilter, setActionFilter] = useState("all")
   const [entityFilter, setEntityFilter] = useState("all")
   const [page, setPage] = useState(1)
@@ -99,6 +102,15 @@ export default function AuditPage() {
   const filtered = entries.filter((e) => {
     if (actionFilter !== "all" && e.action !== actionFilter) return false
     if (entityFilter !== "all" && e.entity_type !== entityFilter) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      return (
+        e.action.toLowerCase().includes(q) ||
+        e.entity_type.toLowerCase().includes(q) ||
+        (e.details?.toLowerCase().includes(q) ?? false) ||
+        e.user.toLowerCase().includes(q)
+      )
+    }
     return true
   })
 
@@ -115,8 +127,25 @@ export default function AuditPage() {
         </p>
       </div>
 
-      {/* Filters */}
-      <div className="flex gap-4 flex-wrap">
+      {/* Search and Filters */}
+      <div className="flex gap-4 flex-wrap items-end">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search audit log..."
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => { setSearchQuery(""); setPage(1) }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           <label htmlFor="action-filter" className="text-sm text-slate-400">Action:</label>
           <select
@@ -157,7 +186,13 @@ export default function AuditPage() {
         </div>
       )}
 
-      {!isLoading && filtered.length === 0 && (
+      {!isLoading && filtered.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && filtered.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">No audit entries found.</div>
       )}
 
@@ -212,6 +247,9 @@ export default function AuditPage() {
           {filtered.length > 0 && (
             <p className="text-center text-xs text-slate-500">
               Showing {paginated.length} of {filtered.length} entries
+              {(searchQuery || actionFilter !== "all" || entityFilter !== "all") && entries.length !== filtered.length && (
+                <> (filtered from {entries.length} total)</>
+              )}
             </p>
           )}
         </>

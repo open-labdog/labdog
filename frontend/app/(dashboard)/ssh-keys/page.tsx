@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,6 +32,7 @@ import type { SSHKey } from "@/lib/types"
 
 export default function SSHKeysPage() {
   const queryClient = useQueryClient()
+  const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [keyName, setKeyName] = useState("")
   const [privateKey, setPrivateKey] = useState("")
@@ -47,6 +49,10 @@ export default function SSHKeysPage() {
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const filteredKeys = sshKeys?.filter(k =>
+    k.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) ?? []
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -170,19 +176,50 @@ export default function SSHKeysPage() {
         </Dialog>
       </div>
 
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search SSH keys..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-sm text-slate-400">
+            Showing {filteredKeys.length} of {sshKeys?.length ?? 0} keys
+          </span>
+        )}
+      </div>
+
       {showLoading && <TableSkeleton rows={5} columns={3} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load SSH keys</div>
       )}
 
-      {!isLoading && !error && sshKeys && sshKeys.length === 0 && (
+      {!isLoading && !error && filteredKeys.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && !error && sshKeys?.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">
           No SSH keys yet. Upload your first key to get started.
         </div>
       )}
 
-      {!isLoading && !error && sshKeys && sshKeys.length > 0 && (
+      {!isLoading && !error && filteredKeys.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
           <Table>
             <TableHeader>
@@ -194,7 +231,7 @@ export default function SSHKeysPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sshKeys.map((key) => (
+              {filteredKeys.map((key) => (
                 <TableRow key={key.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{key.name}</TableCell>
                   <TableCell>
