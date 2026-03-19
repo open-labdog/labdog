@@ -157,68 +157,16 @@ export default function GroupDetailPage() {
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group" }]} />
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
-            {group?.gitops_enabled && (
-              <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
-            )}
-          </div>
-          {group?.description && (
-            <p className="text-slate-400 text-sm mt-1">{group.description}</p>
+      <div>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+          {group?.gitops_enabled && (
+            <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
           )}
         </div>
-        <div className="flex gap-3 flex-wrap">
-          <Link
-            href={`/groups/${id}/rules`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Rules
-          </Link>
-          <Link
-            href={`/groups/${id}/services`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Services
-          </Link>
-          <Link
-            href={`/groups/${id}/hosts-entries`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Hosts File
-          </Link>
-          <Link
-            href={`/groups/${id}/users`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Users
-          </Link>
-          <Link
-            href={`/groups/${id}/cron-jobs`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Cron Jobs
-          </Link>
-          <Link
-            href={`/groups/${id}/packages`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Manage Packages
-          </Link>
-          <Link
-            href={`/groups/${id}/resolver`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            DNS Resolver
-          </Link>
-          <Link
-            href={`/groups/${id}/sync`}
-            className={cn(buttonVariants())}
-          >
-            Sync
-          </Link>
-        </div>
+        {group?.description && (
+          <p className="text-slate-400 text-sm mt-1">{group.description}</p>
+        )}
       </div>
 
       {/* Group info card */}
@@ -272,109 +220,203 @@ export default function GroupDetailPage() {
         </div>
       )}
 
-      {/* GitOps Settings */}
-      {group && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-          <h2 className="text-base font-semibold text-white mb-3">GitOps</h2>
-          {!group.gitops_enabled ? (
-            <div className="flex items-center justify-between">
-              <p className="text-slate-400 text-sm">
-                Enable GitOps to manage this group&apos;s rules from a Git repository.
-              </p>
-              <Dialog open={enableDialogOpen} onOpenChange={setEnableDialogOpen}>
-                <DialogTrigger render={<Button variant="outline" size="sm" />}>
-                  Enable GitOps
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Enable GitOps</DialogTitle>
-                  </DialogHeader>
-                  <form onSubmit={handleEnableGitOps} className="space-y-4 mt-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="git-repo">Git Repository</Label>
-                      <select
-                        id="git-repo"
-                        value={selectedRepoId ?? ""}
-                        onChange={(e) => setSelectedRepoId(e.target.value ? Number(e.target.value) : null)}
-                        required
-                        className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-input/30"
-                      >
-                        <option value="">Select a repository…</option>
-                        {gitRepos?.map((repo) => (
-                          <option key={repo.id} value={repo.id}>{repo.name} ({repo.url})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="file-path">File Path</Label>
-                      <Input
-                        id="file-path"
-                        type="text"
-                        placeholder="groups/my-group.yaml"
-                        value={filePath}
-                        onChange={(e) => setFilePath(e.target.value)}
-                        required
-                      />
-                    </div>
-                    {enableGitopsMutation.error && (
-                      <p className="text-sm text-red-400">{enableGitopsMutation.error.message}</p>
-                    )}
-                    <div className="flex gap-3 pt-2">
-                      <Button type="submit" disabled={enableGitopsMutation.isPending}>
-                        {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
-                      </Button>
-                      <Button type="button" variant="outline" onClick={() => setEnableDialogOpen(false)}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs text-slate-500 mb-1">Status</div>
-                  <GitOpsStatusBadge status={group.gitops_status!} />
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500 mb-1">Repository</div>
-                  <div className="text-sm text-slate-300">
-                    {gitRepos?.find((r) => r.id === group.git_repository_id)?.name ?? "Unknown"}
+      {/* Sync & GitOps */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Sync Status */}
+        {(() => {
+          const synced = groupHosts.filter((h) => h.sync_status === "in_sync").length
+          const outOfSync = groupHosts.filter((h) => h.sync_status === "out_of_sync").length
+          const errored = groupHosts.filter((h) => h.sync_status === "error").length
+          const unknown = groupHosts.filter((h) => h.sync_status === "unknown" || h.sync_status === "pending").length
+          const total = groupHosts.length
+          return (
+            <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-base font-semibold text-white">Sync Status — {group?.name}</h2>
+                <Link
+                  href={`/groups/${id}/sync`}
+                  className={cn(buttonVariants({ size: "sm" }))}
+                >
+                  Sync
+                </Link>
+              </div>
+              {total > 0 ? (
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
+                  <div>
+                    <div className="text-xs text-slate-500">Hosts</div>
+                    <div className="text-xl font-bold text-white">{total}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">In Sync</div>
+                    <div className="text-xl font-bold text-green-400">{synced}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">Out of Sync</div>
+                    <div className="text-xl font-bold text-amber-400">{outOfSync}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">Error</div>
+                    <div className="text-xl font-bold text-red-400">{errored}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500">Unknown</div>
+                    <div className="text-xl font-bold text-slate-400">{unknown}</div>
                   </div>
                 </div>
-                <div>
-                  <div className="text-xs text-slate-500 mb-1">File Path</div>
-                  <div className="text-sm text-slate-300 font-mono">{group.gitops_file_path ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-slate-500 mb-1">Last Import</div>
-                  <div className="text-sm text-slate-300">{relativeTime(group.gitops_last_import_at)}</div>
-                </div>
-              </div>
-              {group.gitops_status === "error" && group.gitops_error_message && (
-                <div className="text-sm text-red-400 bg-red-950/30 border border-red-900/50 rounded-md px-3 py-2">
-                  {group.gitops_error_message}
-                </div>
+              ) : (
+                <p className="text-slate-400 text-sm">No hosts in this group yet.</p>
               )}
-              <p className="text-xs text-slate-500">
-                Push changes to your Git repository or configure a webhook to trigger automatic imports.
-              </p>
-              <div className="pt-1">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleDisableGitOps}
-                  disabled={disableGitopsMutation.isPending}
-                >
-                  {disableGitopsMutation.isPending ? "Disabling..." : "Disable GitOps"}
-                </Button>
-              </div>
             </div>
-          )}
-        </div>
-      )}
+          )
+        })()}
+
+        {/* GitOps */}
+        {group && (
+          <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
+            <h2 className="text-base font-semibold text-white mb-3">GitOps</h2>
+            {!group.gitops_enabled ? (
+              <div className="flex items-center justify-between flex-1">
+                <p className="text-slate-400 text-sm">
+                  Manage rules from a Git repository.
+                </p>
+                <Dialog open={enableDialogOpen} onOpenChange={setEnableDialogOpen}>
+                  <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                    Enable
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Enable GitOps</DialogTitle>
+                    </DialogHeader>
+                    <form onSubmit={handleEnableGitOps} className="space-y-4 mt-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="git-repo">Git Repository</Label>
+                        <select
+                          id="git-repo"
+                          value={selectedRepoId ?? ""}
+                          onChange={(e) => setSelectedRepoId(e.target.value ? Number(e.target.value) : null)}
+                          required
+                          className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-input/30"
+                        >
+                          <option value="">Select a repository…</option>
+                          {gitRepos?.map((repo) => (
+                            <option key={repo.id} value={repo.id}>{repo.name} ({repo.url})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="file-path">File Path</Label>
+                        <Input
+                          id="file-path"
+                          type="text"
+                          placeholder="groups/my-group.yaml"
+                          value={filePath}
+                          onChange={(e) => setFilePath(e.target.value)}
+                          required
+                        />
+                      </div>
+                      {enableGitopsMutation.error && (
+                        <p className="text-sm text-red-400">{enableGitopsMutation.error.message}</p>
+                      )}
+                      <div className="flex gap-3 pt-2">
+                        <Button type="submit" disabled={enableGitopsMutation.isPending}>
+                          {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={() => setEnableDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">Status</div>
+                    <GitOpsStatusBadge status={group.gitops_status!} />
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">Repository</div>
+                    <div className="text-sm text-slate-300 truncate">
+                      {gitRepos?.find((r) => r.id === group.git_repository_id)?.name ?? "Unknown"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">File Path</div>
+                    <div className="text-sm text-slate-300 font-mono truncate">{group.gitops_file_path ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">Last Import</div>
+                    <div className="text-sm text-slate-300">{relativeTime(group.gitops_last_import_at)}</div>
+                  </div>
+                </div>
+                {group.gitops_status === "error" && group.gitops_error_message && (
+                  <div className="text-sm text-red-400 bg-red-950/30 border border-red-900/50 rounded-md px-3 py-2">
+                    {group.gitops_error_message}
+                  </div>
+                )}
+                <div className="pt-1">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDisableGitOps}
+                    disabled={disableGitopsMutation.isPending}
+                  >
+                    {disableGitopsMutation.isPending ? "Disabling..." : "Disable GitOps"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <div className="flex gap-3 flex-wrap">
+        <Link
+          href={`/groups/${id}/rules`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Rules
+        </Link>
+        <Link
+          href={`/groups/${id}/services`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Services
+        </Link>
+        <Link
+          href={`/groups/${id}/hosts-entries`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Hosts File
+        </Link>
+        <Link
+          href={`/groups/${id}/users`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Users
+        </Link>
+        <Link
+          href={`/groups/${id}/cron-jobs`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Cron Jobs
+        </Link>
+        <Link
+          href={`/groups/${id}/packages`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Manage Packages
+        </Link>
+        <Link
+          href={`/groups/${id}/resolver`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          DNS Resolver
+        </Link>
+      </div>
 
       {/* Hosts section */}
       <div>
@@ -449,6 +491,7 @@ export default function GroupDetailPage() {
           onConfirm={confirmState.action}
         />
       )}
+
     </div>
   )
 }
