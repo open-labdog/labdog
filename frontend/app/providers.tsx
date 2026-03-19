@@ -3,6 +3,7 @@
 import { ReactNode, useState, useEffect, useCallback } from 'react'
 import { ThemeProvider } from 'next-themes'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { Toaster } from 'sonner'
 import { AuthContext, User } from '@/lib/auth'
 import { API_BASE } from '@/lib/api'
 
@@ -46,6 +47,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>
       {children}
+      <Toaster position="bottom-right" theme="dark" richColors closeButton />
     </AuthContext.Provider>
   )
 }
