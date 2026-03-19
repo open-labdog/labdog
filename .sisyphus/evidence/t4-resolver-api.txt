@@ -1,0 +1,34 @@
+=== Import Check ===
+from app.main import app: OK
+
+=== Registered Resolver Routes ===
+  GET      /api/groups/{group_id}/resolver
+  PUT      /api/groups/{group_id}/resolver
+  DELETE   /api/groups/{group_id}/resolver
+  GET      /api/hosts/{host_id}/resolver
+  PUT      /api/hosts/{host_id}/resolver
+  DELETE   /api/hosts/{host_id}/resolver
+  GET      /api/hosts/{host_id}/effective-resolver
+  GET      /api/hosts/{host_id}/resolver-preview
+
+=== Endpoint Summary ===
+Group-level:
+  GET    /api/groups/{group_id}/resolver
+  PUT    /api/groups/{group_id}/resolver
+  DELETE /api/groups/{group_id}/resolver
+Host-level:
+  GET    /api/hosts/{host_id}/resolver
+  PUT    /api/hosts/{host_id}/resolver
+  DELETE /api/hosts/{host_id}/resolver
+Effective + Preview:
+  GET    /api/hosts/{host_id}/effective-resolver
+  GET    /api/hosts/{host_id}/resolver-preview
+
+Audit logging: log_action() on PUT/DELETE ops
+Auth: current_active_user on PUT/DELETE ops
+
+Files created:
+  backend/app/api/resolver.py (new)
+  backend/app/main.py (modified - added resolver_router)
+
+RESULT: ALL CHECKS PASSED
