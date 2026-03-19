@@ -11,6 +11,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
+from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import SyncJob
 from app.models.user import User
@@ -197,3 +198,96 @@ async def get_resolver_sync_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.post("/hosts/{host_id}/drift-check")
+async def check_resolver_drift(
+    host_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_superuser),
+):
+    host = (
+        await db.execute(select(Host).where(Host.id == host_id))
+    ).scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+    if not host.ssh_key_id:
+        raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
+
+    effective = await get_effective_resolver(host_id, db)
+    if not effective:
+        raise HTTPException(
+            status_code=404, detail="No resolver config applies to this host"
+        )
+
+    ssh_key = (
+        await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+    ).scalar_one()
+    private_key_pem = decrypt_ssh_key(
+        ssh_key.encrypted_private_key, get_master_key()
+    )
+
+    actual = await collect_resolver_state(
+        host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type
+    )
+    desired = {
+        "nameservers": effective.nameservers,
+        "search_domains": effective.search_domains,
+        "options": effective.options,
+    }
+    diff = compute_resolver_diff(actual, desired)
+
+    hms = (
+        await db.execute(
+            select(HostModuleStatus).where(
+                HostModuleStatus.host_id == host_id,
+                HostModuleStatus.module_type == "resolver",
+            )
+        )
+    ).scalar_one_or_none()
+    if hms is None:
+        hms = HostModuleStatus(host_id=host_id, module_type="resolver")
+        db.add(hms)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+
+    from datetime import datetime, timezone
+
+    hms.last_drift_check_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    return {
+        "host_id": host_id,
+        "has_drift": diff.has_changes,
+        "nameservers_changed": diff.nameservers_changed,
+        "search_domains_changed": diff.search_domains_changed,
+        "options_changed": diff.options_changed,
+        "current": diff.current,
+        "desired": diff.desired,
+    }
+
+
+@router.put("/hosts/{host_id}/drift-settings")
+async def update_resolver_drift_settings(
+    host_id: int,
+    enabled: bool = True,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(current_superuser),
+):
+    hms = (
+        await db.execute(
+            select(HostModuleStatus).where(
+                HostModuleStatus.host_id == host_id,
+                HostModuleStatus.module_type == "resolver",
+            )
+        )
+    ).scalar_one_or_none()
+    if hms is None:
+        hms = HostModuleStatus(host_id=host_id, module_type="resolver")
+        db.add(hms)
+    hms.drift_check_enabled = enabled
+    await db.commit()
+    return {
+        "host_id": host_id,
+        "module_type": "resolver",
+        "drift_check_enabled": enabled,
+    }
