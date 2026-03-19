@@ -13,6 +13,7 @@ async def collect_cron_jobs(
     ssh_port: int,
     private_key_pem: str,
     users: list[str],
+    ssh_user: str = "root",
 ) -> list[dict]:
     """SSH into a host and parse Ansible-managed crontab entries for each user.
 
@@ -30,7 +31,7 @@ async def collect_cron_jobs(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:

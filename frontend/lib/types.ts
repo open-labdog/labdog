@@ -13,7 +13,7 @@ export interface HostGroup {
   git_repository_id: number | null
 }
 export interface Host {
-  id: number; hostname: string; ip_address: string; ssh_port: number
+  id: number; hostname: string; ip_address: string; ssh_port: number; ssh_user: string
   firewall_backend: FirewallBackend; sync_status: SyncStatus
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null

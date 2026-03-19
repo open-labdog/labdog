@@ -13,6 +13,7 @@ async def collect_hosts_file(
     host_ip: str,
     ssh_port: int,
     private_key_pem: str,
+    ssh_user: str = "root",
 ) -> list[ParsedHostsEntry]:
     """
     SSH into host, cat /etc/hosts, parse entries.
@@ -25,7 +26,7 @@ async def collect_hosts_file(
         async with asyncssh.connect(
             host_ip,
             port=ssh_port,
-            username="root",
+            username=ssh_user,
             client_keys=[private_key],
             known_hosts=None,
         ) as conn:

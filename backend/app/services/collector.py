@@ -19,6 +19,7 @@ async def collect_service_states(
     ssh_port: int,
     private_key_pem: str,
     service_names: list[str],
+    ssh_user: str = "root",
 ) -> list[ServiceCurrentState]:
     """
     SSH into host and check service states via systemctl.
@@ -35,7 +36,7 @@ async def collect_service_states(
         async with asyncssh.connect(
             host_ip,
             port=ssh_port,
-            username="root",
+            username=ssh_user,
             client_keys=[private_key],
             known_hosts=None,
         ) as conn:
@@ -97,6 +98,7 @@ async def list_all_services(
     host_ip: str,
     ssh_port: int,
     private_key_pem: str,
+    ssh_user: str = "root",
 ) -> list[dict]:
     """
     SSH into host and list all systemd services via systemctl.
@@ -111,7 +113,7 @@ async def list_all_services(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:
@@ -161,6 +163,7 @@ async def execute_service_command(
     private_key_pem: str,
     service_name: str,
     action: str,
+    ssh_user: str = "root",
 ) -> dict:
     """
     SSH into host and execute a systemctl action on a service.
@@ -180,7 +183,7 @@ async def execute_service_command(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:
