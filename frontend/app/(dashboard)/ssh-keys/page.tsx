@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,21 +31,25 @@ import { apiFetch } from "@/lib/api"
 import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
 import type { SSHKey } from "@/lib/types"
 
 export default function SSHKeysPage() {
   const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [keyName, setKeyName] = useState("")
-  const [privateKey, setPrivateKey] = useState("")
-  const [isDefault, setIsDefault] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
+
+  const form = useForm<SshKeyInput>({
+    resolver: zodResolver(sshKeySchema),
+    defaultValues: { name: "", private_key: "", is_default: false },
+    mode: "onSubmit",
+  })
 
   const { data: sshKeys, isLoading, error } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -55,8 +61,7 @@ export default function SSHKeysPage() {
     k.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
 
-  async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  const onUpload = form.handleSubmit(async (data) => {
     setFormError(null)
     setFormLoading(true)
 
@@ -64,22 +69,20 @@ export default function SSHKeysPage() {
       await apiFetch("/api/ssh-keys", {
         method: "POST",
         body: JSON.stringify({
-          name: keyName,
-          private_key: privateKey,
-          is_default: isDefault,
+          name: data.name,
+          private_key: data.private_key,
+          is_default: data.is_default ?? false,
         }),
       })
       await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
       setDialogOpen(false)
-      setKeyName("")
-      setPrivateKey("")
-      setIsDefault(false)
+      form.reset()
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to upload key")
     } finally {
       setFormLoading(false)
     }
-  }
+  })
 
   function handleDelete(keyId: number) {
     setConfirmState({
@@ -111,7 +114,10 @@ export default function SSHKeysPage() {
           <h1 className="text-2xl font-bold text-white">SSH Keys</h1>
           <p className="text-slate-400 text-sm mt-1">Manage SSH keys for host access</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          setDialogOpen(open)
+          if (!open) { form.reset(); setFormError(null) }
+        }}>
           <DialogTrigger>
             <Button>Upload Key</Button>
           </DialogTrigger>
@@ -119,17 +125,18 @@ export default function SSHKeysPage() {
             <DialogHeader>
               <DialogTitle>Upload SSH Key</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleUpload} className="space-y-4 mt-2">
+            <form onSubmit={onUpload} noValidate className="space-y-4 mt-2">
               <div className="space-y-2">
                 <Label htmlFor="key-name">Name</Label>
                 <Input
                   id="key-name"
                   type="text"
                   placeholder="e.g. production-key"
-                  value={keyName}
-                  onChange={(e) => setKeyName(e.target.value)}
-                  required
+                  {...form.register("name")}
                 />
+                {form.formState.errors.name && (
+                  <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+                )}
               </div>
 
                <div className="space-y-2">
@@ -142,20 +149,20 @@ export default function SSHKeysPage() {
                  <textarea
                    id="private-key"
                    placeholder="Paste your private key here..."
-                   value={privateKey}
-                   onChange={(e) => setPrivateKey(e.target.value)}
+                   {...form.register("private_key")}
                    rows={6}
-                   required
                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
                  />
+                 {form.formState.errors.private_key && (
+                   <p className="text-sm text-red-400">{form.formState.errors.private_key.message}</p>
+                 )}
                </div>
 
               <div className="flex items-center gap-2">
                 <input
                   id="is-default"
                   type="checkbox"
-                  checked={isDefault}
-                  onChange={(e) => setIsDefault(e.target.checked)}
+                  {...form.register("is_default")}
                   className="rounded border-input"
                 />
                 <Label htmlFor="is-default">Set as default key</Label>
@@ -172,7 +179,7 @@ export default function SSHKeysPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setDialogOpen(false)}
+                  onClick={() => { setDialogOpen(false); form.reset(); setFormError(null) }}
                 >
                   Cancel
                 </Button>

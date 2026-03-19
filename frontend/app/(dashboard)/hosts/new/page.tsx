@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, FormEvent } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -10,17 +12,21 @@ import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
+import { hostSchema, type HostInput } from "@/lib/schemas"
 import type { SSHKey, HostGroup } from "@/lib/types"
 
 export default function NewHostPage() {
   const router = useRouter()
-  const [hostname, setHostname] = useState("")
-  const [ipAddress, setIpAddress] = useState("")
-  const [sshPort, setSshPort] = useState(22)
-  const [sshKeyId, setSshKeyId] = useState<number | null>(null)
-  const [selectedGroups, setSelectedGroups] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  const form = useForm<HostInput>({
+    resolver: zodResolver(hostSchema),
+    defaultValues: { hostname: "", ip_address: "", ssh_port: 22, ssh_key_id: "", group_ids: [] },
+    mode: "onSubmit",
+  })
+
+  const selectedGroups = form.watch("group_ids") ?? []
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -33,13 +39,16 @@ export default function NewHostPage() {
   })
 
   function toggleGroup(id: number) {
-    setSelectedGroups((prev) =>
-      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
-    )
+    const current = form.getValues("group_ids") ?? []
+    const strId = String(id)
+    if (current.includes(strId)) {
+      form.setValue("group_ids", current.filter((g) => g !== strId))
+    } else {
+      form.setValue("group_ids", [...current, strId])
+    }
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  const onSubmit = form.handleSubmit(async (data) => {
     setError(null)
     setLoading(true)
 
@@ -47,11 +56,11 @@ export default function NewHostPage() {
       await apiFetch("/api/hosts", {
         method: "POST",
         body: JSON.stringify({
-          hostname,
-          ip_address: ipAddress,
-          ssh_port: sshPort,
-          ssh_key_id: sshKeyId,
-          group_ids: selectedGroups,
+          hostname: data.hostname,
+          ip_address: data.ip_address,
+          ssh_port: data.ssh_port,
+          ssh_key_id: data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          group_ids: (data.group_ids ?? []).map(Number),
         }),
       })
       router.push("/hosts")
@@ -60,7 +69,7 @@ export default function NewHostPage() {
     } finally {
       setLoading(false)
     }
-  }
+  })
 
   return (
     <div className="max-w-lg space-y-6">
@@ -71,17 +80,18 @@ export default function NewHostPage() {
       </div>
 
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="hostname">Hostname</Label>
             <Input
               id="hostname"
               type="text"
               placeholder="e.g. web-server-01"
-              value={hostname}
-              onChange={(e) => setHostname(e.target.value)}
-              required
+              {...form.register("hostname")}
             />
+            {form.formState.errors.hostname && (
+              <p className="text-sm text-red-400">{form.formState.errors.hostname.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -90,10 +100,11 @@ export default function NewHostPage() {
               id="ip_address"
               type="text"
               placeholder="e.g. 192.168.1.100"
-              value={ipAddress}
-              onChange={(e) => setIpAddress(e.target.value)}
-              required
+              {...form.register("ip_address")}
             />
+            {form.formState.errors.ip_address && (
+              <p className="text-sm text-red-400">{form.formState.errors.ip_address.message}</p>
+            )}
           </div>
 
            <div className="space-y-2">
@@ -106,20 +117,20 @@ export default function NewHostPage() {
              <Input
                id="ssh_port"
                type="number"
-               value={sshPort}
-               onChange={(e) => setSshPort(Number(e.target.value))}
-               required
+               {...form.register("ssh_port", { valueAsNumber: true })}
                min={1}
                max={65535}
              />
+             {form.formState.errors.ssh_port && (
+               <p className="text-sm text-red-400">{form.formState.errors.ssh_port.message}</p>
+             )}
            </div>
 
           <div className="space-y-2">
             <Label htmlFor="ssh_key">SSH Key</Label>
             <select
               id="ssh_key"
-              value={sshKeyId ?? ""}
-              onChange={(e) => setSshKeyId(e.target.value ? Number(e.target.value) : null)}
+              {...form.register("ssh_key_id")}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
             >
               <option value="">No SSH key</option>
@@ -139,7 +150,7 @@ export default function NewHostPage() {
                   <label key={group.id} className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
-                      checked={selectedGroups.includes(group.id)}
+                      checked={selectedGroups.includes(String(group.id))}
                       onChange={() => toggleGroup(group.id)}
                       className="rounded border-input"
                     />
