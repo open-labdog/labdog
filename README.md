@@ -24,7 +24,7 @@ Each host group has a **priority** (higher number = higher priority). When a hos
 
 1. Groups are sorted by priority (highest first)
 2. For each configuration item, **first occurrence wins** — the highest-priority group's version is kept, lower-priority duplicates are discarded
-3. Host-level overrides (services and /etc/hosts only) **fully replace** the group-level entry for that item
+3. Host-level overrides **fully replace** the group-level entry for that item (available on all modules except firewall rules)
 
 **Conflict resolution key** — what counts as "the same item":
 
@@ -33,12 +33,21 @@ Each host group has a **priority** (higher number = higher priority). When a hos
 | Firewall rules | Signature: protocol + direction + ports + source/dest CIDR | Two groups both defining TCP ACCEPT on port 443 from 0.0.0.0/0 — higher-priority group wins |
 | Services | `service_name` | Two groups both managing `nginx` — higher-priority group's state/enabled wins |
 | /etc/hosts | `ip_address` | Two groups both mapping `10.0.0.5` — higher-priority group's hostname wins |
+| Packages | `package_name` | Two groups both managing `curl` — higher-priority group's version/state wins |
+| Linux users | `username` | Two groups both defining user `deploy` — higher-priority group's config wins |
+| Linux groups | `groupname` | Two groups both defining group `developers` — higher-priority group wins |
+| Cron jobs | `name` + `user` | Two groups both defining cron job "backup" for user "root" — higher-priority group wins |
+| DNS resolver | None (singleton) | Only one resolver config per host — highest-priority group wins entirely |
 
 ### Host-Level Overrides
 
 - **Firewall rules**: No host-level overrides. Rules are group-level only.
 - **Services**: A host-level service entry completely replaces the group-level entry for that `service_name`.
 - **/etc/hosts**: A host-level entry completely replaces the group-level entry for that `ip_address`.
+- **Packages**: A host-level package entry completely replaces the group-level entry for that `package_name`.
+- **Linux users/groups**: A host-level entry completely replaces the group-level entry for that `username` or `groupname`.
+- **Cron jobs**: A host-level entry completely replaces the group-level entry for that `name` + `user` pair.
+- **DNS resolver**: A host-level resolver config completely replaces any group-level config.
 
 Host overrides are applied after the group merge, so they always win regardless of group priority.
 
@@ -53,14 +62,19 @@ When you sync, Barricade computes the full effective configuration and pushes it
 | **Firewall (firewalld)** | Per-rule tasks | Adds/removes individual `firewalld` rules | Preserved (unmanaged rules are left alone) |
 | **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
 | **Services** | Per-service tasks | Sets `state` (started/stopped) and `enabled` (true/false) per service individually | Preserved (unmanaged services are left alone) |
+| **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
+| **Linux users** | Per-user tasks | Creates/removes users, sets authorized_keys (`exclusive=true`), writes `/etc/sudoers.d/{user}` | Preserved (unmanaged users are left alone) |
+| **Cron jobs** | Per-job tasks | Creates/removes individual cron entries via `crontab` (identified by job name) | Preserved (unmanaged cron jobs are left alone) |
+| **DNS resolver** | Full replacement | Writes complete resolver config (`/etc/resolv.conf`, `systemd-resolved`, or NetworkManager), restarts service | Overwritten |
 
-**Key takeaway**: Firewall rules (nftables/ufw) and `/etc/hosts` are **fully managed** — Barricade owns the entire file and any manual edits will be lost on next sync. Services and firewalld rules are **selectively managed** — only the services/rules you define in Barricade are touched; everything else on the host is left alone.
+**Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/ufw, /etc/hosts, DNS resolver) use **full replacement** — Barricade owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs, firewall/firewalld) are **selectively managed** — only the items you define in Barricade are touched; everything else on the host is left alone.
 
 ### Automatic Safety Rules
 
 - **SSH lockout prevention**: An SSH ACCEPT rule for the Barricade server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
 - **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure.
 - **Protected service deny-list**: Critical services (`sshd`, `systemd-*`) are blocked from management to prevent accidental lockout.
+- **DNS resolver header**: A `# Managed by Barricade` comment is injected into rendered resolver config files.
 
 ## Architecture
 
@@ -280,10 +294,10 @@ Barricade uses a modular extension architecture. Each module follows the same pa
 | Firewall Rules | Shipped | nftables/firewalld/ufw rule management |
 | Service Management | Shipped | systemd service state management |
 | /etc/hosts | Shipped | Host file entry management |
-| Package Management | Planned | apt/dnf/yum package management |
-| Linux User Management | Planned | System users, SSH keys, sudo rules |
-| Cron Jobs | Planned | Cron job scheduling |
-| DNS Resolver | Planned | resolv.conf / systemd-resolved config |
+| Package Management | Shipped | apt/dnf/yum package management |
+| Linux User Management | Shipped | System users, SSH keys, sudo rules |
+| Cron Jobs | Shipped | Cron job scheduling |
+| DNS Resolver | Shipped | resolv.conf / systemd-resolved config |
 
 ## Known Limitations
 
