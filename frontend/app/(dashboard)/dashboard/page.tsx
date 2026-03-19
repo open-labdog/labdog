@@ -5,6 +5,8 @@ import { apiFetch } from "@/lib/api"
 import type { Host, HostGroup, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { TableSkeleton } from "@/components/ui/skeleton"
+import { useDelayedLoading } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -53,6 +55,7 @@ export default function DashboardPage() {
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
     refetchInterval: 10000,
   })
+  const showHostsLoading = useDelayedLoading(hostsLoading)
 
   const { data: groups } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -129,9 +132,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Host table */}
-      {hostsLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading hosts…</div>
-      )}
+      {showHostsLoading && <TableSkeleton rows={5} columns={5} />}
 
       {!hostsLoading && hosts && hosts.length === 0 && (
         <div className="text-slate-400 py-8 text-center">No hosts configured yet.</div>
