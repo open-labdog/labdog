@@ -980,3 +980,9 @@ tar -tf dist/barricade-*.tar.gz | grep install.sh  # Expected: install.sh in tar
 - [x] Package installs cleanly on Ubuntu 24.04
 - [x] Systemd units pass verification
 - [x] Config preserved on upgrade
+
+---
+
+## CI/CD Integration
+
+GitLab CI has been added to automate the package build process. The `.gitlab-ci.yml` pipeline includes a `package` stage that runs on tagged releases, invoking `packaging/build.sh` to produce tarball, .deb, and .rpm artifacts. A `release` stage then creates a GitLab release with download links for all three artifacts. Manual builds via `packaging/build.sh` still work as documented above.
