@@ -255,6 +255,7 @@ export interface PackageRule {
   package_manager: "auto" | "apt" | "dnf" | "yum"
   priority: number
   comment: string | null
+  hold: boolean
 }
 
 export interface PackageRepository {
@@ -275,6 +276,7 @@ export interface EffectivePackage {
   state: "present" | "absent" | "latest"
   package_manager: "auto" | "apt" | "dnf" | "yum"
   priority: number
+  hold: boolean
   source: string
   source_id: number
   source_name: string

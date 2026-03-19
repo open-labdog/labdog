@@ -12,6 +12,8 @@ class PackageEntry:
     desired_version: Optional[str]
     actual_state: str  # "present" or "absent"
     actual_version: Optional[str]
+    desired_hold: bool = False
+    actual_hold: bool = False
 
 
 @dataclass
@@ -51,6 +53,8 @@ def compute_diff(
             desired_version=desired_version,
             actual_state=actual_state,
             actual_version=actual_version,
+            desired_hold=desired_pkg.get("hold", False),
+            actual_hold=actual_pkg.get("hold", False),
         )
 
         if desired_state == "absent":

@@ -109,6 +109,39 @@ def generate_package_playbook(
                     },
                 })
 
+    # STEP 3: Hold/unhold tasks (after packages are installed)
+    hold_pkgs = [p["package_name"] for p in packages if p.get("hold") and p.get("state") != "absent"]
+    unhold_pkgs = [p["package_name"] for p in packages if not p.get("hold") and p.get("state") != "absent"]
+
+    if hold_pkgs:
+        tasks.append({
+            "name": f"Hold packages: {', '.join(hold_pkgs)}",
+            "ansible.builtin.command": f"apt-mark hold {' '.join(hold_pkgs)}",
+            "when": "ansible_os_family == 'Debian'",
+            "changed_when": True,
+        })
+        tasks.append({
+            "name": f"Hold packages (dnf): {', '.join(hold_pkgs)}",
+            "ansible.builtin.command": f"dnf versionlock add {' '.join(hold_pkgs)}",
+            "when": "ansible_os_family == 'RedHat'",
+            "changed_when": True,
+        })
+
+    if unhold_pkgs:
+        tasks.append({
+            "name": f"Unhold packages: {', '.join(unhold_pkgs)}",
+            "ansible.builtin.command": f"apt-mark unhold {' '.join(unhold_pkgs)}",
+            "when": "ansible_os_family == 'Debian'",
+            "changed_when": False,
+        })
+        tasks.append({
+            "name": f"Unhold packages (dnf): {', '.join(unhold_pkgs)}",
+            "ansible.builtin.command": f"dnf versionlock delete {' '.join(unhold_pkgs)}",
+            "when": "ansible_os_family == 'RedHat'",
+            "failed_when": False,
+            "changed_when": False,
+        })
+
     playbook = [
         {
             "name": "Barricade Package Management",

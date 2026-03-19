@@ -15,6 +15,7 @@ class PackageRuleCreate(BaseModel):
     package_manager: Literal["auto", "apt", "dnf", "yum"] = "auto"
     priority: int = 0
     comment: Optional[str] = None
+    hold: bool = False
 
     @field_validator("package_name")
     @classmethod
@@ -39,6 +40,7 @@ class PackageRuleUpdate(BaseModel):
     package_manager: Optional[Literal["auto", "apt", "dnf", "yum"]] = None
     priority: Optional[int] = None
     comment: Optional[str] = None
+    hold: Optional[bool] = None
 
 
 class PackageRuleResponse(BaseModel):
@@ -53,6 +55,7 @@ class PackageRuleResponse(BaseModel):
     package_manager: str
     priority: int
     comment: Optional[str] = None
+    hold: bool = False
 
 
 class EffectivePackageResponse(BaseModel):
@@ -61,6 +64,7 @@ class EffectivePackageResponse(BaseModel):
     state: str
     package_manager: str
     priority: int
+    hold: bool = False
     source: str
     source_id: int
     source_name: str
