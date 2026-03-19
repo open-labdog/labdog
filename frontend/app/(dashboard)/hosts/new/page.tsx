@@ -75,11 +75,16 @@ export default function NewHostPage() {
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
         <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="hostname">Hostname</Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="hostname">Hostname</Label>
+              <Tooltip content="Leave empty to auto-detect via SSH (requires an SSH key)">
+                <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+              </Tooltip>
+            </div>
             <Input
               id="hostname"
               type="text"
-              placeholder="e.g. web-server-01"
+              placeholder="Leave empty to auto-detect via SSH"
               {...form.register("hostname")}
             />
             {form.formState.errors.hostname && (
