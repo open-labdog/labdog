@@ -1,0 +1,9 @@
+TypeScript compilation completed
+---
+Files migrated to React Hook Form + Zod:
+  - frontend/components/rule-dialog.tsx (useForm + ruleSchema)
+  - frontend/app/(dashboard)/groups/[id]/services/page.tsx (useForm + serviceSchema)
+  - frontend/app/(dashboard)/groups/[id]/hosts-entries/page.tsx (useForm + hostsEntrySchema)
+  - frontend/app/(dashboard)/groups/[id]/cron-jobs/page.tsx (useForm + cronJobSchema)
+  - frontend/components/sidebar.tsx (useForm + passwordChangeSchema)
+  - frontend/lib/schemas.ts (added priority/state fields)

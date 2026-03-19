@@ -47,6 +47,7 @@ export const serviceSchema = z.object({
   service_name: z.string().min(1, "Service name is required"),
   state: z.enum(["running", "stopped"]),
   enabled: z.boolean(),
+  priority: z.number().int().min(0, "Priority must be non-negative"),
   comment: z.string().optional(),
 })
 export type ServiceInput = z.infer<typeof serviceSchema>
@@ -57,6 +58,7 @@ export const hostsEntrySchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   aliases: z.string().optional(),
   comment: z.string().optional(),
+  priority: z.number().int().min(0, "Priority must be non-negative"),
 })
 export type HostsEntryInput = z.infer<typeof hostsEntrySchema>
 
@@ -89,7 +91,9 @@ export const cronJobSchema = z.object({
   month: z.string().regex(cronFieldRegex, "Invalid cron field"),
   weekday: z.string().regex(cronFieldRegex, "Invalid cron field"),
   command: z.string().min(1, "Command is required"),
-  user: z.string().default("root"),
+  user: z.string().min(1, "User is required"),
+  state: z.enum(["present", "absent"]),
+  priority: z.number().int().min(0, "Priority must be non-negative"),
   comment: z.string().optional(),
 })
 export type CronJobInput = z.infer<typeof cronJobSchema>

@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { serviceSchema, type ServiceInput } from "@/lib/schemas"
 import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -57,14 +60,14 @@ export default function GroupServicesPage() {
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
 
-  // Form fields
-  const [serviceName, setServiceName] = useState("")
-  const [state, setState] = useState<"running" | "stopped">("running")
-  const [enabled, setEnabled] = useState(true)
-  const [priority, setPriority] = useState(100)
-  const [comment, setComment] = useState("")
+  const serviceDefaults: ServiceInput = { service_name: "", state: "running", enabled: true, priority: 100, comment: "" }
+
+  const form = useForm<ServiceInput>({
+    resolver: zodResolver(serviceSchema),
+    defaultValues: serviceDefaults,
+    mode: "onSubmit",
+  })
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
@@ -81,37 +84,35 @@ export default function GroupServicesPage() {
 
   function openCreateDialog() {
     setEditingService(null)
-    setServiceName("")
-    setState("running")
-    setEnabled(true)
-    setPriority(100)
-    setComment("")
+    form.reset(serviceDefaults)
     setFormError(null)
     setDialogOpen(true)
   }
 
   function openEditDialog(service: ServiceRule) {
     setEditingService(service)
-    setServiceName(service.service_name)
-    setState(service.state)
-    setEnabled(service.enabled)
-    setPriority(service.priority)
-    setComment(service.comment ?? "")
     setFormError(null)
     setDialogOpen(true)
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  useEffect(() => {
+    if (dialogOpen && editingService) {
+      form.reset({
+        service_name: editingService.service_name,
+        state: editingService.state,
+        enabled: editingService.enabled,
+        priority: editingService.priority,
+        comment: editingService.comment ?? "",
+      })
+    }
+  }, [dialogOpen, editingService, form])
+
+  const onSubmit = form.handleSubmit(async (data) => {
     setFormError(null)
-    setFormLoading(true)
 
     const payload = {
-      service_name: serviceName,
-      state,
-      enabled,
-      priority,
-      comment: comment || null,
+      ...data,
+      comment: data.comment || null,
     }
 
     try {
@@ -130,10 +131,8 @@ export default function GroupServicesPage() {
       setDialogOpen(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save service")
-    } finally {
-      setFormLoading(false)
     }
-  }
+  })
 
   function handleDelete(service: ServiceRule) {
     setConfirmState({
@@ -238,25 +237,23 @@ export default function GroupServicesPage() {
           <DialogHeader>
             <DialogTitle>{editingService ? "Edit Service Rule" : "Add Service Rule"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <form onSubmit={onSubmit} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label htmlFor="service-name">Service Name</Label>
               <Input
                 id="service-name"
                 type="text"
                 placeholder="e.g. nginx, sshd, docker"
-                value={serviceName}
-                onChange={(e) => setServiceName(e.target.value)}
-                required
+                {...form.register("service_name")}
               />
+              {form.formState.errors.service_name?.message && <p className="text-sm text-red-400">{form.formState.errors.service_name.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="service-state">State</Label>
               <select
                 id="service-state"
-                value={state}
-                onChange={(e) => setState(e.target.value as "running" | "stopped")}
+                {...form.register("state")}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
               >
                 <option value="running">Running</option>
@@ -268,8 +265,7 @@ export default function GroupServicesPage() {
               <input
                 id="service-enabled"
                 type="checkbox"
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
+                {...form.register("enabled")}
                 className="rounded border-input"
               />
               <Label htmlFor="service-enabled">Enabled</Label>
@@ -280,11 +276,10 @@ export default function GroupServicesPage() {
               <Input
                 id="service-priority"
                 type="number"
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value))}
-                required
                 min={0}
+                {...form.register("priority", { valueAsNumber: true })}
               />
+              {form.formState.errors.priority?.message && <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -293,8 +288,7 @@ export default function GroupServicesPage() {
                 id="service-comment"
                 type="text"
                 placeholder="Optional comment"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                {...form.register("comment")}
               />
             </div>
 
@@ -303,8 +297,8 @@ export default function GroupServicesPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={formLoading}>
-                {formLoading ? "Saving..." : editingService ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Saving..." : editingService ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

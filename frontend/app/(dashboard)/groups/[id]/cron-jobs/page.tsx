@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +28,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { cronJobSchema, type CronJobInput } from "@/lib/schemas"
 import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -134,16 +137,25 @@ export default function GroupCronJobsPage() {
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
-
-  const [name, setName] = useState("")
-  const [user, setUser] = useState("root")
-  const [schedule, setSchedule] = useState("")
-  const [command, setCommand] = useState("")
-  const [state, setState] = useState<"present" | "absent">("present")
-  const [priority, setPriority] = useState(100)
-  const [comment, setComment] = useState("")
   const [envVars, setEnvVars] = useState<EnvVar[]>([])
+
+  const cronDefaults: CronJobInput = {
+    name: "", user: "root", minute: "*", hour: "*", day: "*", month: "*", weekday: "*",
+    command: "", state: "present", priority: 100, comment: "",
+  }
+
+  const form = useForm<CronJobInput>({
+    resolver: zodResolver(cronJobSchema),
+    defaultValues: cronDefaults,
+    mode: "onSubmit",
+  })
+
+  const minute = form.watch("minute")
+  const hour = form.watch("hour")
+  const day = form.watch("day")
+  const month = form.watch("month")
+  const weekday = form.watch("weekday")
+  const schedulePreview = `${minute} ${hour} ${day} ${month} ${weekday}`
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
@@ -158,15 +170,20 @@ export default function GroupCronJobsPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
+  function parseSchedule(schedule: string) {
+    const parts = schedule.trim().split(/\s+/)
+    return {
+      minute: parts[0] ?? "*",
+      hour: parts[1] ?? "*",
+      day: parts[2] ?? "*",
+      month: parts[3] ?? "*",
+      weekday: parts[4] ?? "*",
+    }
+  }
+
   function openCreateDialog() {
     setEditing(null)
-    setName("")
-    setUser("root")
-    setSchedule("")
-    setCommand("")
-    setState("present")
-    setPriority(100)
-    setComment("")
+    form.reset(cronDefaults)
     setEnvVars([])
     setFormError(null)
     setDialogOpen(true)
@@ -174,31 +191,37 @@ export default function GroupCronJobsPage() {
 
   function openEditDialog(job: CronJob) {
     setEditing(job)
-    setName(job.name)
-    setUser(job.user)
-    setSchedule(job.schedule)
-    setCommand(job.command)
-    setState(job.state)
-    setPriority(job.priority)
-    setComment(job.comment ?? "")
     setEnvVars(envRecordToVars(job.environment ?? {}))
     setFormError(null)
     setDialogOpen(true)
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  useEffect(() => {
+    if (dialogOpen && editing) {
+      const sched = parseSchedule(editing.schedule)
+      form.reset({
+        name: editing.name,
+        user: editing.user,
+        ...sched,
+        command: editing.command,
+        state: editing.state,
+        priority: editing.priority,
+        comment: editing.comment ?? "",
+      })
+    }
+  }, [dialogOpen, editing, form])
+
+  const onSubmit = form.handleSubmit(async (data) => {
     setFormError(null)
-    setFormLoading(true)
 
     const payload = {
-      name,
-      user,
-      schedule,
-      command,
-      state,
-      priority,
-      comment: comment || null,
+      name: data.name,
+      user: data.user,
+      schedule: `${data.minute} ${data.hour} ${data.day} ${data.month} ${data.weekday}`,
+      command: data.command,
+      state: data.state,
+      priority: data.priority,
+      comment: data.comment || null,
       environment: envVarsToRecord(envVars),
     }
 
@@ -218,10 +241,8 @@ export default function GroupCronJobsPage() {
       setDialogOpen(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save cron job")
-    } finally {
-      setFormLoading(false)
     }
-  }
+  })
 
   function handleDelete(job: CronJob) {
     setConfirmState({
@@ -336,17 +357,16 @@ export default function GroupCronJobsPage() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Cron Job" : "Add Cron Job"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <form onSubmit={onSubmit} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label htmlFor="cj-name">Name</Label>
               <Input
                 id="cj-name"
                 type="text"
                 placeholder="e.g. backup-db, cleanup-logs"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
+                {...form.register("name")}
               />
+              {form.formState.errors.name?.message && <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -355,30 +375,47 @@ export default function GroupCronJobsPage() {
                 id="cj-user"
                 type="text"
                 placeholder="root"
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-                required
+                {...form.register("user")}
               />
             </div>
 
              <div className="space-y-2">
                <div className="flex items-center gap-1.5">
-                 <Label htmlFor="cj-schedule">Schedule (cron expression)</Label>
+                 <Label>Schedule (cron expression)</Label>
                  <Tooltip content="Standard 5-field cron: minute hour day-of-month month day-of-week. E.g., '0 2 * * *' = 2am daily.">
                    <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
                  </Tooltip>
                </div>
-               <Input
-                 id="cj-schedule"
-                 type="text"
-                 placeholder="*/5 * * * *"
-                 value={schedule}
-                 onChange={(e) => setSchedule(e.target.value)}
-                 required
-               />
-               {schedule.trim() && (
+               <div className="grid grid-cols-5 gap-2">
+                 <div>
+                   <Input id="cj-minute" type="text" placeholder="*" {...form.register("minute")} className="font-mono text-center" />
+                   <span className="text-[10px] text-slate-500 block text-center mt-0.5">min</span>
+                   {form.formState.errors.minute?.message && <p className="text-xs text-red-400">{form.formState.errors.minute.message}</p>}
+                 </div>
+                 <div>
+                   <Input id="cj-hour" type="text" placeholder="*" {...form.register("hour")} className="font-mono text-center" />
+                   <span className="text-[10px] text-slate-500 block text-center mt-0.5">hour</span>
+                   {form.formState.errors.hour?.message && <p className="text-xs text-red-400">{form.formState.errors.hour.message}</p>}
+                 </div>
+                 <div>
+                   <Input id="cj-day" type="text" placeholder="*" {...form.register("day")} className="font-mono text-center" />
+                   <span className="text-[10px] text-slate-500 block text-center mt-0.5">day</span>
+                   {form.formState.errors.day?.message && <p className="text-xs text-red-400">{form.formState.errors.day.message}</p>}
+                 </div>
+                 <div>
+                   <Input id="cj-month" type="text" placeholder="*" {...form.register("month")} className="font-mono text-center" />
+                   <span className="text-[10px] text-slate-500 block text-center mt-0.5">month</span>
+                   {form.formState.errors.month?.message && <p className="text-xs text-red-400">{form.formState.errors.month.message}</p>}
+                 </div>
+                 <div>
+                   <Input id="cj-weekday" type="text" placeholder="*" {...form.register("weekday")} className="font-mono text-center" />
+                   <span className="text-[10px] text-slate-500 block text-center mt-0.5">wday</span>
+                   {form.formState.errors.weekday?.message && <p className="text-xs text-red-400">{form.formState.errors.weekday.message}</p>}
+                 </div>
+               </div>
+               {schedulePreview.trim() && (
                  <p className="text-xs text-slate-400">
-                   {cronToHuman(schedule)}
+                   {cronToHuman(schedulePreview)}
                  </p>
                )}
              </div>
@@ -388,20 +425,18 @@ export default function GroupCronJobsPage() {
               <textarea
                 id="cj-command"
                 placeholder="e.g. /usr/local/bin/backup.sh --full"
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-                required
+                {...form.register("command")}
                 rows={3}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
               />
+              {form.formState.errors.command?.message && <p className="text-sm text-red-400">{form.formState.errors.command.message}</p>}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="cj-state">State</Label>
               <select
                 id="cj-state"
-                value={state}
-                onChange={(e) => setState(e.target.value as "present" | "absent")}
+                {...form.register("state")}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
               >
                 <option value="present">Present</option>
@@ -414,11 +449,10 @@ export default function GroupCronJobsPage() {
               <Input
                 id="cj-priority"
                 type="number"
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value))}
-                required
                 min={0}
+                {...form.register("priority", { valueAsNumber: true })}
               />
+              {form.formState.errors.priority?.message && <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -426,8 +460,7 @@ export default function GroupCronJobsPage() {
               <textarea
                 id="cj-comment"
                 placeholder="Optional description"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                {...form.register("comment")}
                 rows={2}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
               />
@@ -443,8 +476,8 @@ export default function GroupCronJobsPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={formLoading}>
-                {formLoading ? "Saving..." : editing ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Saving..." : editing ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"
