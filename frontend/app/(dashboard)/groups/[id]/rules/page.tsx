@@ -34,6 +34,8 @@ import {
 } from "@/components/ui/table"
 import { RuleDialog } from "@/components/rule-dialog"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { FirewallRule, HostGroup } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
@@ -253,6 +255,7 @@ export default function GroupRulesPage() {
     queryFn: () => apiFetch<FirewallRule[]>(`/api/groups/${id}/rules`),
     enabled: !!id,
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   const systemRules = useMemo(() => rules?.filter((r) => r.is_system) ?? [], [rules])
   const userRules = useMemo(() => rules?.filter((r) => !r.is_system) ?? [], [rules])
@@ -355,9 +358,7 @@ export default function GroupRulesPage() {
         </div>
       )}
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading rules…</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={5} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load rules</div>

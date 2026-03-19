@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { HostsEntry, HostGroup } from "@/lib/types"
 
 export default function GroupHostsEntriesPage() {
@@ -55,6 +57,7 @@ export default function GroupHostsEntriesPage() {
     queryFn: () => apiFetch<HostsEntry[]>(`/api/groups/${id}/hosts-entries`),
     enabled: !!id,
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   function openCreateDialog() {
     setEditingEntry(null)
@@ -140,9 +143,7 @@ export default function GroupHostsEntriesPage() {
         <Button onClick={openCreateDialog}>Add Entry</Button>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading hosts entries…</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={4} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts entries</div>

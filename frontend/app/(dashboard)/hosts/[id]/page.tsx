@@ -24,6 +24,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
 import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup, EffectiveCronJob, CronJob, EffectivePackage, PackageRule } from "@/lib/types"
 
@@ -100,6 +102,7 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectiveRule[]>(`/api/hosts/${id}/effective-rules`),
     enabled: !!id,
   })
+  const showRulesLoading = useDelayedLoading(rulesLoading)
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -116,6 +119,7 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectiveService[]>(`/api/hosts/${id}/effective-services`),
     enabled: !!id && activeTab === "services",
   })
+  const showServicesLoading = useDelayedLoading(servicesLoading)
 
   const { data: hostOverrides } = useQuery<ServiceRule[]>({
     queryKey: ["host-service-overrides", id],
@@ -128,6 +132,7 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectiveHostsEntry[]>(`/api/hosts/${id}/effective-hosts-entries`),
     enabled: !!id && activeTab === "hosts-file",
   })
+  const showHostsEntriesLoading = useDelayedLoading(hostsEntriesLoading)
 
   const { data: hostHostsOverrides } = useQuery<HostsEntry[]>({
     queryKey: ["host-hosts-overrides", id],
@@ -155,12 +160,14 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectiveLinuxUser[]>(`/api/hosts/${id}/effective-users`),
     enabled: !!id && activeTab === "users",
   })
+  const showLinuxUsersLoading = useDelayedLoading(linuxUsersLoading)
 
   const { data: effectiveLinuxGroups, isLoading: linuxGroupsLoading, error: linuxGroupsError } = useQuery<EffectiveLinuxGroup[]>({
     queryKey: ["host-effective-linux-groups", id],
     queryFn: () => apiFetch<EffectiveLinuxGroup[]>(`/api/hosts/${id}/effective-groups`),
     enabled: !!id && activeTab === "users",
   })
+  const showLinuxGroupsLoading = useDelayedLoading(linuxGroupsLoading)
 
   const { data: hostLinuxUserOverrides } = useQuery<LinuxUser[]>({
     queryKey: ["host-linux-user-overrides", id],
@@ -195,6 +202,7 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectiveCronJob[]>(`/api/hosts/${id}/effective-cron-jobs`),
     enabled: !!id && activeTab === "cron-jobs",
   })
+  const showCronJobsLoading = useDelayedLoading(cronJobsLoading)
 
   const { data: hostCronOverrides } = useQuery<CronJob[]>({
     queryKey: ["host-cron-overrides", id],
@@ -221,6 +229,7 @@ export default function HostDetailPage() {
     queryFn: () => apiFetch<EffectivePackage[]>(`/api/hosts/${id}/effective-packages`),
     enabled: !!id && activeTab === "packages",
   })
+  const showPackagesLoading = useDelayedLoading(packagesLoading)
 
   const { data: hostPackageOverrides } = useQuery<PackageRule[]>({
     queryKey: ["host-package-overrides", id],
@@ -949,9 +958,7 @@ export default function HostDetailPage() {
               Combined rules applied to this host from all assigned groups, in priority order.
             </p>
 
-            {rulesLoading && (
-              <div className="text-slate-400 py-6 text-center">Loading effective rules…</div>
-            )}
+            {showRulesLoading && <TableSkeleton rows={3} columns={4} />}
 
             {rulesError && (
               <div className="text-red-400 py-6 text-center">Failed to load effective rules</div>
@@ -1023,9 +1030,7 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{svcDeleteError}</div>
           )}
 
-          {servicesLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading services…</div>
-          )}
+          {showServicesLoading && <TableSkeleton rows={3} columns={4} />}
 
           {servicesError && (
             <div className="text-red-400 py-6 text-center">Failed to load services</div>
@@ -1378,9 +1383,7 @@ export default function HostDetailPage() {
             </div>
           )}
 
-          {hostsEntriesLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading hosts entries…</div>
-          )}
+          {showHostsEntriesLoading && <TableSkeleton rows={3} columns={4} />}
 
           {hostsEntriesError && (
             <div className="text-red-400 py-6 text-center">Failed to load hosts entries</div>
@@ -1552,9 +1555,7 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{luDeleteError}</div>
           )}
 
-          {linuxUsersLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading users…</div>
-          )}
+          {showLinuxUsersLoading && <TableSkeleton rows={3} columns={4} />}
 
           {linuxUsersError && (
             <div className="text-red-400 py-6 text-center">Failed to load users</div>
@@ -1647,9 +1648,7 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{lgDeleteError}</div>
           )}
 
-          {linuxGroupsLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading groups…</div>
-          )}
+          {showLinuxGroupsLoading && <TableSkeleton rows={3} columns={4} />}
 
           {linuxGroupsError && (
             <div className="text-red-400 py-6 text-center">Failed to load groups</div>
@@ -1958,9 +1957,7 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{cjDeleteError}</div>
           )}
 
-          {cronJobsLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading cron jobs...</div>
-          )}
+          {showCronJobsLoading && <TableSkeleton rows={3} columns={4} />}
 
           {cronJobsError && (
             <div className="text-red-400 py-6 text-center">Failed to load cron jobs</div>
@@ -2219,9 +2216,7 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{ppDeleteError}</div>
           )}
 
-          {packagesLoading && (
-            <div className="text-slate-400 py-6 text-center">Loading packages...</div>
-          )}
+          {showPackagesLoading && <TableSkeleton rows={3} columns={4} />}
 
           {packagesError && (
             <div className="text-red-400 py-6 text-center">Failed to load packages</div>

@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
 
 function StateBadge({ state }: { state: string }) {
@@ -85,12 +87,14 @@ export default function GroupPackagesPage() {
     queryFn: () => apiFetch<PackageRule[]>(`/api/groups/${id}/packages`),
     enabled: !!id,
   })
+  const showPkgLoading = useDelayedLoading(pkgLoading)
 
   const { data: repos = [], isLoading: repoLoading, error: repoError } = useQuery<PackageRepository[]>({
     queryKey: ["group-package-repos", id],
     queryFn: () => apiFetch<PackageRepository[]>(`/api/groups/${id}/package-repos`),
     enabled: !!id,
   })
+  const showRepoLoading = useDelayedLoading(repoLoading)
 
   function openPkgCreateDialog() {
     setPkgEditing(null)
@@ -266,9 +270,7 @@ export default function GroupPackagesPage() {
           <Button onClick={openPkgCreateDialog}>Add Package</Button>
         </div>
 
-        {pkgLoading && (
-          <div className="text-slate-400 py-8 text-center">Loading packages...</div>
-        )}
+        {showPkgLoading && <TableSkeleton rows={5} columns={4} />}
 
         {pkgError && (
           <div className="text-red-400 py-8 text-center">Failed to load packages</div>
@@ -349,9 +351,7 @@ export default function GroupPackagesPage() {
           <Button onClick={openRepoCreateDialog}>Add Repository</Button>
         </div>
 
-        {repoLoading && (
-          <div className="text-slate-400 py-8 text-center">Loading repositories...</div>
-        )}
+        {showRepoLoading && <TableSkeleton rows={5} columns={4} />}
 
         {repoError && (
           <div className="text-red-400 py-8 text-center">Failed to load repositories</div>

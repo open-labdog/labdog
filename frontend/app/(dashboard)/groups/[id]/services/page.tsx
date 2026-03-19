@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { ServiceRule, HostGroup } from "@/lib/types"
 
 function StateBadge({ state }: { state: string }) {
@@ -71,6 +73,7 @@ export default function GroupServicesPage() {
     queryFn: () => apiFetch<ServiceRule[]>(`/api/groups/${id}/services`),
     enabled: !!id,
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   function openCreateDialog() {
     setEditingService(null)
@@ -153,9 +156,7 @@ export default function GroupServicesPage() {
         <Button onClick={openCreateDialog}>Add Service</Button>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading services…</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={4} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load services</div>

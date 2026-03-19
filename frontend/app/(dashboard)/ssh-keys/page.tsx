@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { SSHKey } from "@/lib/types"
 
 export default function SSHKeysPage() {
@@ -39,6 +41,7 @@ export default function SSHKeysPage() {
     queryKey: ["ssh-keys"],
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   async function handleUpload(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -153,9 +156,7 @@ export default function SSHKeysPage() {
         </Dialog>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading SSH keys...</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={3} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load SSH keys</div>

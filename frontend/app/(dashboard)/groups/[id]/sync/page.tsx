@@ -6,6 +6,8 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { CardSkeleton } from "@/components/ui/skeleton"
 import type { HostGroup } from "@/lib/types"
 import {
   Dialog,
@@ -290,9 +292,7 @@ export default function GroupSyncPage() {
         </div>
       )}
 
-      {previewing && (
-        <div className="text-slate-400 py-8 text-center">Loading preview…</div>
-      )}
+      {previewing && <CardSkeleton />}
 
       {plan && !previewing && (
         <div className="space-y-4">
