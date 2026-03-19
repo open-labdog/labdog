@@ -162,6 +162,24 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Found During Group Hosts View (2026-03-19)
+
+- [x] **BUG-24** `frontend/app/(dashboard)/groups/[id]/page.tsx:334-335` — Nested `<button>` inside `<button>` causes hydration error
+  A `<Button>` component (which renders `<button>`) is wrapped inside a `<DialogTrigger>` (which also renders `<button>` via `DialogPrimitive.Trigger`). HTML does not allow `<button>` as a descendant of `<button>`. This triggers two React hydration errors:
+  1. "In HTML, `<button>` cannot be a descendant of `<button>`" — from `components/ui/button.tsx:52` via `GroupDetailPage` at line 335
+  2. "`<button>` cannot contain a nested `<button>`" — from `components/ui/dialog.tsx:15` (`DialogTrigger`) via `GroupDetailPage` at line 334
+  **Fix applied**: Used `<DialogTrigger render={<Button variant="outline" size="sm" />}>` so the trigger renders as the Button directly (base-ui `render` prop pattern) instead of wrapping it in its own `<button>`.
+
+- [x] **BUG-25** `frontend/app/(dashboard)/hosts/[id]/page.tsx:889` — Duplicate `key` props in effective rules table
+  `effectiveRules.map((rule) => ...)` uses `key={rule.id}` on `<TableRow>`, but multiple rules can share the same `id` (e.g. group-level rules appearing on multiple hosts, or rules from different sources). React warns: "Each child in a list should have a unique key prop" in the `TableBody` render of `HostDetailPage`.
+  **Fix applied**: Changed key to `` `${rule.id}-${rule.group_id}` `` which is unique since rule IDs are unique within a group.
+
+- [x] **BUG-26** `frontend/app/(dashboard)/hosts/[id]/page.tsx:1310` — Duplicate keys in effective hosts table
+  `effectiveHosts.map((entry) => ...)` uses `` key={`${entry.source}-${entry.source_id}-${entry.hostname}`} `` but multiple entries can produce the same key (e.g. `system-0-localhost`). React warns: "Encountered two children with the same key". Non-unique keys cause children to be duplicated or omitted.
+  **Fix applied**: Added `entry.ip_address` to the key: `` `${entry.source}-${entry.source_id}-${entry.ip_address}-${entry.hostname}` ``.
+
+---
+
 ## Fixed
 
 All 12 original bugs fixed on 2026-03-17.

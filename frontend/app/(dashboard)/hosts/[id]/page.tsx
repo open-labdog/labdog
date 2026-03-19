@@ -867,7 +867,7 @@ export default function HostDetailPage() {
                   </TableHeader>
                   <TableBody>
                     {effectiveRules.map((rule) => (
-                      <TableRow key={rule.id} className="border-slate-700">
+                      <TableRow key={`${rule.id}-${rule.group_id}`} className="border-slate-700">
                         <TableCell className="font-mono text-slate-300 text-xs">{rule.priority}</TableCell>
                         <TableCell>
                           <ActionBadge action={rule.action} />
@@ -1288,7 +1288,7 @@ export default function HostDetailPage() {
                 </TableHeader>
                 <TableBody>
                   {effectiveHosts.map((entry) => (
-                    <TableRow key={`${entry.source}-${entry.source_id}-${entry.hostname}`} className="border-slate-700">
+                    <TableRow key={`${entry.source}-${entry.source_id}-${entry.ip_address}-${entry.hostname}`} className="border-slate-700">
                       <TableCell className="font-mono text-white text-sm">{entry.ip_address}</TableCell>
                       <TableCell className="font-mono text-slate-300 text-sm">{entry.hostname}</TableCell>
                       <TableCell className="text-slate-300 text-xs max-w-[200px] truncate">
