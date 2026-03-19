@@ -14,6 +14,54 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 - **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
 - **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
 
+## How Configuration Is Applied
+
+Barricade organizes configuration through **host groups**. You define rules at the group level, assign hosts to one or more groups, and Barricade merges everything into a single effective configuration per host.
+
+### Groups, Hosts, and Priority
+
+Each host group has a **priority** (higher number = higher priority). When a host belongs to multiple groups, configurations are merged with higher-priority groups winning conflicts:
+
+1. Groups are sorted by priority (highest first)
+2. For each configuration item, **first occurrence wins** — the highest-priority group's version is kept, lower-priority duplicates are discarded
+3. Host-level overrides (services and /etc/hosts only) **fully replace** the group-level entry for that item
+
+**Conflict resolution key** — what counts as "the same item":
+
+| Module | Identity Key | Example |
+|--------|-------------|---------|
+| Firewall rules | Signature: protocol + direction + ports + source/dest CIDR | Two groups both defining TCP ACCEPT on port 443 from 0.0.0.0/0 — higher-priority group wins |
+| Services | `service_name` | Two groups both managing `nginx` — higher-priority group's state/enabled wins |
+| /etc/hosts | `ip_address` | Two groups both mapping `10.0.0.5` — higher-priority group's hostname wins |
+
+### Host-Level Overrides
+
+- **Firewall rules**: No host-level overrides. Rules are group-level only.
+- **Services**: A host-level service entry completely replaces the group-level entry for that `service_name`.
+- **/etc/hosts**: A host-level entry completely replaces the group-level entry for that `ip_address`.
+
+Host overrides are applied after the group merge, so they always win regardless of group priority.
+
+### How Sync Applies to the Remote Host
+
+When you sync, Barricade computes the full effective configuration and pushes it to the host via Ansible. The apply strategy differs by module:
+
+| Module | Strategy | What happens on sync | Manual edits on host? |
+|--------|----------|---------------------|-----------------------|
+| **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
+| **Firewall (ufw)** | Full replacement | Writes complete `/etc/ufw/user.rules` + `user6.rules`, reloads | Overwritten |
+| **Firewall (firewalld)** | Per-rule tasks | Adds/removes individual `firewalld` rules | Preserved (unmanaged rules are left alone) |
+| **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
+| **Services** | Per-service tasks | Sets `state` (started/stopped) and `enabled` (true/false) per service individually | Preserved (unmanaged services are left alone) |
+
+**Key takeaway**: Firewall rules (nftables/ufw) and `/etc/hosts` are **fully managed** — Barricade owns the entire file and any manual edits will be lost on next sync. Services and firewalld rules are **selectively managed** — only the services/rules you define in Barricade are touched; everything else on the host is left alone.
+
+### Automatic Safety Rules
+
+- **SSH lockout prevention**: An SSH ACCEPT rule for the Barricade server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
+- **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure.
+- **Protected service deny-list**: Critical services (`sshd`, `systemd-*`) are blocked from management to prevent accidental lockout.
+
 ## Architecture
 
 | Component | Technology | Port |

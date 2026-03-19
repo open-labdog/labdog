@@ -282,8 +282,8 @@ export default function GroupDetailPage() {
                 Enable GitOps to manage this group&apos;s rules from a Git repository.
               </p>
               <Dialog open={enableDialogOpen} onOpenChange={setEnableDialogOpen}>
-                <DialogTrigger>
-                  <Button variant="outline" size="sm">Enable GitOps</Button>
+                <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                  Enable GitOps
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
