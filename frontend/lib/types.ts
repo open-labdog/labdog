@@ -3,7 +3,7 @@ export type SyncStatus = "pending" | "in_sync" | "out_of_sync" | "unknown" | "er
 export type GitOpsStatus = "disconnected" | "synced" | "error" | "importing"
 
 export interface HostGroup {
-  id: number; name: string; description: string | null; priority: number
+  id: number; name: string; description: string | null; category: string | null; priority: number
   created_at: string; updated_at: string
   gitops_enabled: boolean
   gitops_status: GitOpsStatus | null

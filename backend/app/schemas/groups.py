@@ -5,12 +5,14 @@ from datetime import datetime
 class GroupCreate(BaseModel):
     name: str
     description: str | None = None
+    category: str | None = None
     priority: int
 
 
 class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    category: str | None = None
     priority: int | None = None
 
 
@@ -18,6 +20,7 @@ class GroupResponse(BaseModel):
     id: int
     name: str
     description: str | None
+    category: str | None
     priority: int
     created_at: datetime
     updated_at: datetime

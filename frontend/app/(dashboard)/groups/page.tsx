@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon } from "lucide-react"
+import { SearchIcon, XIcon, LayoutListIcon, TableIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -29,7 +29,14 @@ export default function GroupsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
+    typeof window !== "undefined" && localStorage.getItem("barricade-groups-view") === "grouped" ? "grouped" : "flat"
+  )
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    localStorage.setItem("barricade-groups-view", viewMode)
+  }, [viewMode])
 
   const { data: groups, isLoading, error } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -40,6 +47,20 @@ export default function GroupsPage() {
   const filteredGroups = groups?.filter(g =>
     g.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
+
+  const groupedByCategory = useMemo(() => {
+    const sections = new Map<string, HostGroup[]>()
+    for (const group of filteredGroups) {
+      const key = group.category || "__uncategorized__"
+      if (!sections.has(key)) sections.set(key, [])
+      sections.get(key)!.push(group)
+    }
+    return [...sections.entries()].sort(([a], [b]) => {
+      if (a === "__uncategorized__") return 1
+      if (b === "__uncategorized__") return -1
+      return a.localeCompare(b)
+    })
+  }, [filteredGroups])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -113,6 +134,13 @@ export default function GroupsPage() {
             </button>
           )}
         </div>
+        <button
+          onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+        >
+          {viewMode === "flat" ? <LayoutListIcon className="w-4 h-4" /> : <TableIcon className="w-4 h-4" />}
+          {viewMode === "flat" ? "Category View" : "Flat View"}
+        </button>
         {searchQuery && (
           <span className="text-sm text-slate-400">
             Showing {filteredGroups.length} of {groups?.length ?? 0} groups
@@ -163,54 +191,125 @@ export default function GroupsPage() {
               </Button>
             </div>
           )}
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === filteredGroups.length && filteredGroups.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-600"
-                    />
-                  </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>GitOps</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredGroups.map((group) => (
-                  <TableRow key={group.id} className="border-slate-700">
-                    <TableCell>
+          {viewMode === "flat" ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead className="w-10">
                       <input
                         type="checkbox"
-                        checked={selected.has(group.id)}
-                        onChange={() => toggleSelect(group.id)}
+                        checked={selected.size === filteredGroups.length && filteredGroups.length > 0}
+                        onChange={toggleSelectAll}
                         className="rounded border-slate-600"
                       />
-                    </TableCell>
-                    <TableCell className="font-medium text-white">{group.name}</TableCell>
-                    <TableCell>{group.priority}</TableCell>
-                    <TableCell>
-                      {group.gitops_enabled && group.gitops_status ? (
-                        <GitOpsStatusBadge status={group.gitops_status} />
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
-                    <TableCell>
-                      <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                    </TableCell>
+                    </TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>GitOps</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filteredGroups.map((group) => (
+                    <TableRow key={group.id} className="border-slate-700">
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(group.id)}
+                          onChange={() => toggleSelect(group.id)}
+                          className="rounded border-slate-600"
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium text-white">{group.name}</TableCell>
+                      <TableCell className="text-slate-400">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
+                      <TableCell>{group.priority}</TableCell>
+                      <TableCell>
+                        {group.gitops_enabled && group.gitops_status ? (
+                          <GitOpsStatusBadge status={group.gitops_status} />
+                        ) : (
+                          <span className="text-slate-500">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
+                      <TableCell>
+                        <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {groupedByCategory.map(([category, categoryGroups]) => (
+                <details key={category} open className="group">
+                  <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
+                    <span className="transition-transform group-open:rotate-90">▶</span>
+                    <span>{category === "__uncategorized__" ? "Uncategorized" : category}</span>
+                    <span className="text-slate-500 font-normal">({categoryGroups.length})</span>
+                  </summary>
+                  <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-slate-700">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={categoryGroups.every(g => selected.has(g.id)) && categoryGroups.length > 0}
+                              onChange={() => {
+                                const allSelected = categoryGroups.every(g => selected.has(g.id))
+                                setSelected(prev => {
+                                  const next = new Set(prev)
+                                  categoryGroups.forEach(g => allSelected ? next.delete(g.id) : next.add(g.id))
+                                  return next
+                                })
+                              }}
+                              className="rounded border-slate-600"
+                            />
+                          </TableHead>
+                          <TableHead>Name</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>GitOps</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {categoryGroups.map((group) => (
+                          <TableRow key={group.id} className="border-slate-700">
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selected.has(group.id)}
+                                onChange={() => toggleSelect(group.id)}
+                                className="rounded border-slate-600"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium text-white">{group.name}</TableCell>
+                            <TableCell>{group.priority}</TableCell>
+                            <TableCell>
+                              {group.gitops_enabled && group.gitops_status ? (
+                                <GitOpsStatusBadge status={group.gitops_status} />
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
+                            <TableCell>
+                              <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
         </>
       )}
 
