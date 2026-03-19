@@ -72,8 +72,8 @@ function cronToHuman(schedule: string): string {
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4 py-2 border-b border-slate-800 last:border-0">
-      <span className="text-slate-400 text-sm w-40 shrink-0">{label}</span>
+    <div className="grid grid-cols-[12rem_1fr] items-center gap-4 py-2 border-b border-slate-800 last:border-0">
+      <span className="text-slate-400 text-sm">{label}</span>
       <span className="text-white text-sm">{children}</span>
     </div>
   )
@@ -644,8 +644,8 @@ export default function HostDetailPage() {
               Terminal
             </Button>
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogTrigger>
-              <Button variant="outline" size="sm">Edit</Button>
+            <DialogTrigger render={<Button variant="outline" size="sm" />}>
+              Edit
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>

@@ -1,11 +1,15 @@
+import asyncssh
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crypto.encryption import decrypt_ssh_key
+from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
 from app.models.firewall_rule import FirewallRule
+from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
 from app.schemas.hosts import HostCreate, HostUpdate, HostResponse
@@ -50,8 +54,44 @@ async def create_host(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    hostname = body.hostname
+
+    # If hostname is empty, try to fetch it from the host via SSH
+    if not hostname and body.ssh_key_id:
+        try:
+            key_result = await db.execute(
+                select(SSHKey).where(SSHKey.id == body.ssh_key_id)
+            )
+            ssh_key = key_result.scalar_one_or_none()
+            if ssh_key:
+                master_key = get_master_key()
+                private_pem = decrypt_ssh_key(
+                    ssh_key.encrypted_private_key, master_key
+                )
+                imported_key = asyncssh.import_private_key(private_pem)
+                async with asyncssh.connect(
+                    body.ip_address,
+                    port=body.ssh_port,
+                    username=body.ssh_user,
+                    client_keys=[imported_key],
+                    known_hosts=None,
+                ) as conn:
+                    result = await conn.run("hostname", check=True)
+                    hostname = result.stdout.strip()
+        except Exception:
+            raise HTTPException(
+                status_code=422,
+                detail="Hostname not provided and could not be fetched via SSH",
+            )
+
+    if not hostname:
+        raise HTTPException(
+            status_code=422,
+            detail="Hostname is required (provide it or assign an SSH key to auto-detect)",
+        )
+
     host = Host(
-        hostname=body.hostname,
+        hostname=hostname,
         ip_address=body.ip_address,
         ssh_port=body.ssh_port,
         ssh_key_id=body.ssh_key_id,
