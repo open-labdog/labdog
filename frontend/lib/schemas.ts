@@ -60,11 +60,11 @@ export const hostsEntrySchema = z.object({
 })
 export type HostsEntryInput = z.infer<typeof hostsEntrySchema>
 
-// SSH key schema
+// SSH key schema (upload form — public key is derived server-side)
 export const sshKeySchema = z.object({
   name: z.string().min(1, "Name is required"),
-  public_key: z.string().min(1, "Public key is required"),
   private_key: z.string().min(1, "Private key is required"),
+  is_default: z.boolean(),
 })
 export type SshKeyInput = z.infer<typeof sshKeySchema>
 
@@ -72,8 +72,11 @@ export type SshKeyInput = z.infer<typeof sshKeySchema>
 export const gitRepoSchema = z.object({
   name: z.string().min(1, "Name is required"),
   url: z.string().min(1, "URL is required"),
-  branch: z.string().default("main"),
+  branch: z.string().min(1, "Branch is required"),
+  auth_type: z.enum(["ssh_key", "https_token"]),
   ssh_key_id: z.string().optional().nullable(),
+  https_token: z.string().optional(),
+  webhook_secret: z.string().optional().nullable(),
 })
 export type GitRepoInput = z.infer<typeof gitRepoSchema>
 

@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +29,7 @@ import { apiFetch } from "@/lib/api"
 import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { gitRepoSchema, type GitRepoInput } from "@/lib/schemas"
 import type { GitRepository, GitRepoCreate, GitRepoUpdate, SSHKey } from "@/lib/types"
 
 function relativeTime(dateStr: string | null): string {
@@ -43,6 +46,16 @@ function relativeTime(dateStr: string | null): string {
   return `${days} day${days === 1 ? "" : "s"} ago`
 }
 
+const defaultFormValues: GitRepoInput = {
+  name: "",
+  url: "",
+  branch: "main",
+  auth_type: "ssh_key",
+  ssh_key_id: "",
+  https_token: "",
+  webhook_secret: "",
+}
+
 export default function GitReposPage() {
   const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
@@ -51,17 +64,17 @@ export default function GitReposPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [showWebhooks, setShowWebhooks] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
-
-  const [name, setName] = useState("")
-  const [url, setUrl] = useState("")
-  const [branch, setBranch] = useState("main")
-  const [authType, setAuthType] = useState<"ssh_key" | "https_token">("ssh_key")
-  const [sshKeyId, setSshKeyId] = useState<number | null>(null)
-  const [httpsToken, setHttpsToken] = useState("")
-  const [webhookSecret, setWebhookSecret] = useState("")
   const [formError, setFormError] = useState<string | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+
+  const form = useForm<GitRepoInput>({
+    resolver: zodResolver(gitRepoSchema),
+    defaultValues: defaultFormValues,
+    mode: "onSubmit",
+  })
+
+  const authType = form.watch("auth_type")
 
   const { data: repos, isLoading, error } = useQuery<GitRepository[]>({
     queryKey: ["git-repos"],
@@ -79,55 +92,46 @@ export default function GitReposPage() {
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
 
-  function resetForm() {
-    setName("")
-    setUrl("")
-    setBranch("main")
-    setAuthType("ssh_key")
-    setSshKeyId(null)
-    setHttpsToken("")
-    setWebhookSecret("")
-    setFormError(null)
-    setEditingRepo(null)
-  }
-
   function openCreateDialog() {
-    resetForm()
+    form.reset(defaultFormValues)
+    setEditingRepo(null)
+    setFormError(null)
     setShowWebhooks(false)
     setDialogOpen(true)
   }
 
   function openEditDialog(repo: GitRepository) {
     setEditingRepo(repo)
-    setName(repo.name)
-    setUrl(repo.url)
-    setBranch(repo.branch)
-    setAuthType(repo.auth_type)
-    setSshKeyId(repo.ssh_key_id)
-    setHttpsToken("")
-    setWebhookSecret(repo.webhook_secret || "")
+    form.reset({
+      name: repo.name,
+      url: repo.url,
+      branch: repo.branch,
+      auth_type: repo.auth_type,
+      ssh_key_id: repo.ssh_key_id ? String(repo.ssh_key_id) : "",
+      https_token: "",
+      webhook_secret: repo.webhook_secret || "",
+    })
     setFormError(null)
     setShowWebhooks(false)
     setDialogOpen(true)
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  const onSubmit = form.handleSubmit(async (data) => {
     setFormError(null)
     setFormLoading(true)
 
     try {
       if (editingRepo) {
         const body: GitRepoUpdate = {
-          name,
-          url,
-          branch,
-          auth_type: authType,
-          ssh_key_id: authType === "ssh_key" ? sshKeyId : null,
-          webhook_secret: webhookSecret || null,
+          name: data.name,
+          url: data.url,
+          branch: data.branch,
+          auth_type: data.auth_type,
+          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          webhook_secret: data.webhook_secret || null,
         }
-        if (authType === "https_token" && httpsToken) {
-          body.https_token = httpsToken
+        if (data.auth_type === "https_token" && data.https_token) {
+          body.https_token = data.https_token
         }
         await apiFetch(`/api/git-repos/${editingRepo.id}`, {
           method: "PUT",
@@ -135,33 +139,35 @@ export default function GitReposPage() {
         })
       } else {
         const body: GitRepoCreate = {
-          name,
-          url,
-          branch,
-          auth_type: authType,
-          ssh_key_id: authType === "ssh_key" ? sshKeyId : null,
-          webhook_secret: webhookSecret || null,
+          name: data.name,
+          url: data.url,
+          branch: data.branch,
+          auth_type: data.auth_type,
+          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          webhook_secret: data.webhook_secret || null,
         }
-        if (authType === "https_token" && httpsToken) {
-          body.https_token = httpsToken
+        if (data.auth_type === "https_token" && data.https_token) {
+          body.https_token = data.https_token
         }
         await apiFetch("/api/git-repos", {
           method: "POST",
           body: JSON.stringify(body),
         })
-        setShowWebhooks(true)
       }
       await queryClient.invalidateQueries({ queryKey: ["git-repos"] })
-      if (!showWebhooks || editingRepo) {
+      if (editingRepo) {
         setDialogOpen(false)
-        resetForm()
+        form.reset(defaultFormValues)
+        setEditingRepo(null)
+      } else {
+        setShowWebhooks(true)
       }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save repository")
     } finally {
       setFormLoading(false)
     }
-  }
+  })
 
   async function handleDelete(id: number) {
     setDeletingId(id)
@@ -201,7 +207,7 @@ export default function GitReposPage() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open)
-          if (!open) { resetForm(); setShowWebhooks(false) }
+          if (!open) { form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false); setFormError(null) }
         }}>
           <DialogTrigger>
             <Button onClick={openCreateDialog}>Add Repository</Button>
@@ -235,23 +241,24 @@ export default function GitReposPage() {
                   ))}
                 </div>
                 <div className="flex gap-3 pt-2">
-                  <Button onClick={() => { setDialogOpen(false); resetForm(); setShowWebhooks(false) }}>
+                  <Button onClick={() => { setDialogOpen(false); form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false) }}>
                     Done
                   </Button>
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              <form onSubmit={onSubmit} noValidate className="space-y-4 mt-2">
                 <div className="space-y-2">
                   <Label htmlFor="repo-name">Name</Label>
                   <Input
                     id="repo-name"
                     type="text"
                     placeholder="e.g. infra-config"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
+                    {...form.register("name")}
                   />
+                  {form.formState.errors.name && (
+                    <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -260,10 +267,11 @@ export default function GitReposPage() {
                     id="repo-url"
                     type="text"
                     placeholder="git@github.com:org/repo.git"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    required
+                    {...form.register("url")}
                   />
+                  {form.formState.errors.url && (
+                    <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -272,9 +280,7 @@ export default function GitReposPage() {
                     id="repo-branch"
                     type="text"
                     placeholder="main"
-                    value={branch}
-                    onChange={(e) => setBranch(e.target.value)}
-                    required
+                    {...form.register("branch")}
                   />
                 </div>
 
@@ -282,8 +288,7 @@ export default function GitReposPage() {
                   <Label htmlFor="auth-type">Auth Type</Label>
                   <select
                     id="auth-type"
-                    value={authType}
-                    onChange={(e) => setAuthType(e.target.value as "ssh_key" | "https_token")}
+                    {...form.register("auth_type")}
                     className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
                   >
                     <option value="ssh_key">SSH Key</option>
@@ -296,8 +301,7 @@ export default function GitReposPage() {
                     <Label htmlFor="ssh-key-select">SSH Key</Label>
                     <select
                       id="ssh-key-select"
-                      value={sshKeyId ?? ""}
-                      onChange={(e) => setSshKeyId(e.target.value ? Number(e.target.value) : null)}
+                      {...form.register("ssh_key_id")}
                       className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
                     >
                       <option value="">Select an SSH key...</option>
@@ -317,9 +321,7 @@ export default function GitReposPage() {
                       id="https-token"
                       type="password"
                       placeholder={editingRepo ? "Leave blank to keep existing token" : "Personal access token"}
-                      value={httpsToken}
-                      onChange={(e) => setHttpsToken(e.target.value)}
-                      required={!editingRepo}
+                      {...form.register("https_token")}
                     />
                   </div>
                 )}
@@ -330,8 +332,7 @@ export default function GitReposPage() {
                     id="webhook-secret"
                     type="text"
                     placeholder="Optional webhook secret"
-                    value={webhookSecret}
-                    onChange={(e) => setWebhookSecret(e.target.value)}
+                    {...form.register("webhook_secret")}
                   />
                 </div>
 
@@ -346,7 +347,7 @@ export default function GitReposPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => { setDialogOpen(false); resetForm() }}
+                    onClick={() => { setDialogOpen(false); form.reset(defaultFormValues); setEditingRepo(null) }}
                   >
                     Cancel
                   </Button>

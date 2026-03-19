@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -17,8 +20,6 @@ import {
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
 import type { SSHKey, HostGroup } from "@/lib/types"
-
-// --- Types ---
 
 interface DiscoveredHost {
   ip: string
@@ -39,33 +40,34 @@ interface AddResult {
   skipped: number
 }
 
-// --- Helpers ---
-
-const CIDR_REGEX = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/
+const cidrSchema = z.object({
+  cidr: z.string()
+    .min(1, "CIDR is required")
+    .regex(/^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/, "Invalid CIDR format (e.g., 192.168.1.0/24)"),
+})
+type CidrInput = z.infer<typeof cidrSchema>
 
 type Phase = "idle" | "scanning" | "done" | "adding"
 
-// --- Component ---
-
 export default function DiscoverHostsPage() {
-  // Phase
   const [phase, setPhase] = useState<Phase>("idle")
-
-  // Scan
-  const [cidr, setCidr] = useState("")
   const [jobId, setJobId] = useState<string | null>(null)
   const [scanError, setScanError] = useState<string | null>(null)
-
-  // Selection
   const [selectedHosts, setSelectedHosts] = useState<Set<string>>(new Set())
-
-  // Add
   const [selectedKeyId, setSelectedKeyId] = useState<number | null>(null)
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
   const [addResult, setAddResult] = useState<AddResult | null>(null)
   const [addError, setAddError] = useState<string | null>(null)
 
-  // --- Polling for scan status ---
+  const form = useForm<CidrInput>({
+    resolver: zodResolver(cidrSchema),
+    defaultValues: { cidr: "" },
+    mode: "onChange",
+  })
+
+  const cidrValue = form.watch("cidr")
+  const cidrValid = !form.formState.errors.cidr && cidrValue.length > 0
+
   const { data: scanStatus } = useQuery<ScanStatus>({
     queryKey: ["discovery-scan", jobId],
     queryFn: () => apiFetch<ScanStatus>(`/api/discovery/scan/${jobId}`),
@@ -77,7 +79,6 @@ export default function DiscoverHostsPage() {
     },
   })
 
-  // Transition to done/error when scan completes
   useEffect(() => {
     if (!scanStatus || phase !== "scanning") return
     if (scanStatus.status === "done") {
@@ -89,7 +90,6 @@ export default function DiscoverHostsPage() {
     }
   }, [scanStatus, phase])
 
-  // --- Fetch SSH keys & groups ---
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
@@ -100,11 +100,7 @@ export default function DiscoverHostsPage() {
     queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
   })
 
-  // --- Handlers ---
-
-  const cidrValid = CIDR_REGEX.test(cidr)
-
-  const handleScan = async () => {
+  const handleScan = form.handleSubmit(async (data) => {
     setScanError(null)
     setAddResult(null)
     setAddError(null)
@@ -113,14 +109,14 @@ export default function DiscoverHostsPage() {
     try {
       const status = await apiFetch<ScanStatus>("/api/discovery/scan", {
         method: "POST",
-        body: JSON.stringify({ cidr }),
+        body: JSON.stringify({ cidr: data.cidr }),
       })
       setJobId(status.job_id)
     } catch (err) {
       setScanError(err instanceof Error ? err.message : "Failed to start scan")
       setPhase("idle")
     }
-  }
+  })
 
   const handleAdd = async () => {
     setAddError(null)
@@ -167,7 +163,6 @@ export default function DiscoverHostsPage() {
     )
   }
 
-  // Pre-select default SSH key
   useEffect(() => {
     if (!sshKeys || selectedKeyId !== null) return
     const defaultKey = sshKeys.find((k) => k.is_default)
@@ -182,7 +177,6 @@ export default function DiscoverHostsPage() {
   return (
     <div className="max-w-3xl space-y-6">
       <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discover" }]} />
-      {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white">Discover Hosts</h1>
         <p className="text-slate-400 text-sm mt-1">
@@ -190,9 +184,8 @@ export default function DiscoverHostsPage() {
         </p>
       </div>
 
-      {/* 1. CIDR Input */}
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-        <div className="space-y-4">
+        <form onSubmit={handleScan} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cidr">Network CIDR</Label>
             <div className="flex gap-3">
@@ -200,28 +193,26 @@ export default function DiscoverHostsPage() {
                 id="cidr"
                 type="text"
                 placeholder="192.168.1.0/24"
-                value={cidr}
-                onChange={(e) => setCidr(e.target.value)}
+                {...form.register("cidr")}
                 disabled={phase === "scanning" || phase === "adding"}
                 className="font-mono"
               />
               <Button
-                onClick={handleScan}
+                type="submit"
                 disabled={!cidrValid || phase === "scanning" || phase === "adding"}
               >
                 {phase === "scanning" ? "Scanning…" : "Scan Network"}
               </Button>
             </div>
-            {cidr && !cidrValid && (
+            {form.formState.errors.cidr && cidrValue && (
               <p className="text-xs text-red-400">
-                Enter a valid CIDR (e.g. 192.168.1.0/24)
+                {form.formState.errors.cidr.message}
               </p>
             )}
           </div>
-        </div>
+        </form>
       </div>
 
-      {/* 2. Progress */}
       {phase === "scanning" && scanStatus && (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-3">
           <div className="flex items-center gap-3">
@@ -244,7 +235,6 @@ export default function DiscoverHostsPage() {
         </div>
       )}
 
-      {/* Scanning without status yet */}
       {phase === "scanning" && !scanStatus && (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
           <div className="flex items-center gap-3">
@@ -257,14 +247,12 @@ export default function DiscoverHostsPage() {
         </div>
       )}
 
-      {/* 3. Error */}
       {scanError && (
         <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
           {scanError}
         </div>
       )}
 
-      {/* 4. Results */}
       {phase !== "scanning" && phase !== "idle" && hostsFound.length === 0 && !addResult && (
         <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-8 text-center text-slate-400">
           No new SSH hosts found on this network.
@@ -316,14 +304,12 @@ export default function DiscoverHostsPage() {
         </div>
       )}
 
-      {/* 5. Add section */}
       {(phase === "done" || phase === "adding") && selectedHosts.size > 0 && !addResult && (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 space-y-4">
           <h2 className="text-lg font-semibold text-white">
             Add {selectedHosts.size} Host{selectedHosts.size !== 1 ? "s" : ""}
           </h2>
 
-          {/* SSH Key select */}
           <div className="space-y-2">
             <Label htmlFor="ssh_key">SSH Key</Label>
             <select
@@ -342,7 +328,6 @@ export default function DiscoverHostsPage() {
             </select>
           </div>
 
-          {/* Groups multi-select */}
           {groups && groups.length > 0 && (
             <div className="space-y-2">
               <Label>Groups (optional)</Label>
@@ -377,7 +362,6 @@ export default function DiscoverHostsPage() {
         </div>
       )}
 
-      {/* 6. Success */}
       {addResult && (
         <div className="rounded-lg border border-green-800 bg-green-950/30 px-4 py-4 space-y-2">
           <p className="text-green-400 text-sm font-medium">

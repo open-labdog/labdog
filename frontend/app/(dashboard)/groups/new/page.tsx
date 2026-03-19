@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, FormEvent } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,17 +11,20 @@ import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
+import { groupSchema, type GroupInput } from "@/lib/schemas"
 
 export default function NewGroupPage() {
   const router = useRouter()
-  const [name, setName] = useState("")
-  const [description, setDescription] = useState("")
-  const [priority, setPriority] = useState(100)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  const form = useForm<GroupInput>({
+    resolver: zodResolver(groupSchema),
+    defaultValues: { name: "", description: "", priority: 100 },
+    mode: "onSubmit",
+  })
+
+  const onSubmit = form.handleSubmit(async (data) => {
     setError(null)
     setLoading(true)
 
@@ -27,9 +32,9 @@ export default function NewGroupPage() {
       await apiFetch("/api/groups", {
         method: "POST",
         body: JSON.stringify({
-          name,
-          description: description || null,
-          priority,
+          name: data.name,
+          description: data.description || null,
+          priority: data.priority,
         }),
       })
       router.push("/groups")
@@ -38,7 +43,7 @@ export default function NewGroupPage() {
     } finally {
       setLoading(false)
     }
-  }
+  })
 
   return (
     <div className="max-w-lg space-y-6">
@@ -49,17 +54,18 @@ export default function NewGroupPage() {
       </div>
 
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} noValidate className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
               type="text"
               placeholder="e.g. production-servers"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
+              {...form.register("name")}
             />
+            {form.formState.errors.name && (
+              <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -67,8 +73,7 @@ export default function NewGroupPage() {
             <textarea
               id="description"
               placeholder="Optional description..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              {...form.register("description")}
               rows={3}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
             />
@@ -84,11 +89,12 @@ export default function NewGroupPage() {
              <Input
                id="priority"
                type="number"
-               value={priority}
-               onChange={(e) => setPriority(Number(e.target.value))}
-               required
+               {...form.register("priority", { valueAsNumber: true })}
                min={0}
              />
+             {form.formState.errors.priority && (
+               <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>
+             )}
            </div>
 
           {error && (
