@@ -100,7 +100,7 @@ Max Concurrent: 1 (sequential — all modify hosts/page.tsx)
 
 ## TODOs
 
-- [ ] 1. Add Groups Query + Group Badges Column + Filter Dropdown
+- [x] 1. Add Groups Query + Group Badges Column + Filter Dropdown
 
   **What to do**:
   - Add parallel `useQuery` for `HostGroup[]` from `/api/groups` (reuse existing query key `["groups"]`)
@@ -172,7 +172,7 @@ Max Concurrent: 1 (sequential — all modify hosts/page.tsx)
   - Message: `feat(frontend): add group badges and filter to hosts list`
   - Files: `frontend/app/(dashboard)/hosts/page.tsx`
 
-- [ ] 2. Add View Toggle + Grouped Section View
+- [x] 2. Add View Toggle + Grouped Section View
 
   **What to do**:
   - Add view toggle state: `const [viewMode, setViewMode] = useState<"flat" | "grouped">(() => (typeof window !== "undefined" && localStorage.getItem("barricade-hosts-view") === "grouped") ? "grouped" : "flat")`
@@ -281,7 +281,7 @@ Max Concurrent: 1 (sequential — all modify hosts/page.tsx)
   - Message: `feat(frontend): add grouped view toggle for hosts list`
   - Files: `frontend/app/(dashboard)/hosts/page.tsx`
 
-- [ ] 3. Playwright E2E Test
+- [x] 3. Playwright E2E Test
 
   **What to do**:
   - Create `frontend/e2e/ux-hosts-grouping.spec.ts`:
@@ -327,9 +327,9 @@ Max Concurrent: 1 (sequential — all modify hosts/page.tsx)
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — verify all Must Have items present, all Must NOT Have guardrails respected
-- [ ] F2. **Code Quality Review** — `rtk tsc --noEmit` + `rtk npm run build`, check for anti-patterns
-- [ ] F3. **Scope Fidelity Check** — verify no backend changes, no other pages modified
+- [x] F1. **Plan Compliance Audit** — verify all Must Have items present, all Must NOT Have guardrails respected
+- [x] F2. **Code Quality Review** — `rtk tsc --noEmit` + `rtk npm run build`, check for anti-patterns
+- [x] F3. **Scope Fidelity Check** — verify no backend changes, no other pages modified
 
 ---
 
@@ -350,13 +350,13 @@ cd frontend && rtk npm run build   # Expected: successful build
 ```
 
 ### Final Checklist
-- [ ] Group badges visible in hosts table
-- [ ] Group filter dropdown works
-- [ ] Flat/Grouped toggle works
-- [ ] Grouped view has collapsible sections
-- [ ] Ungrouped hosts have their own section
-- [ ] Multi-group hosts appear in each group section
-- [ ] Search works in both views
-- [ ] Bulk actions work in both views
-- [ ] View preference persisted in localStorage
-- [ ] Frontend build passes
+- [x] Group badges visible in hosts table
+- [x] Group filter dropdown works
+- [x] Flat/Grouped toggle works
+- [x] Grouped view has collapsible sections
+- [x] Ungrouped hosts have their own section
+- [x] Multi-group hosts appear in each group section
+- [x] Search works in both views
+- [x] Bulk actions work in both views
+- [x] View preference persisted in localStorage
+- [x] Frontend build passes

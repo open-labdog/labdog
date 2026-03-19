@@ -57,16 +57,16 @@ Browser                    Backend                     Remote Host
 ## Work Objectives
 
 ### Definition of Done
-- [ ] `ssh_user` column on Host model with default "root"
-- [ ] WebSocket at `/api/ssh-terminal/ws/{host_id}` with JWT cookie auth
-- [ ] Interactive PTY session bridged to browser via xterm.js
-- [ ] Terminal resize support (client → server → SSH channel)
-- [ ] Session registry: per-user limit (5), global limit (50)
-- [ ] Idle timeout (30min) auto-disconnects
-- [ ] Audit: session_start and session_end logged with metadata
-- [ ] Host detail page: "Terminal" button → drawer with embedded terminal
-- [ ] Full-page route: `/hosts/{id}/terminal`
-- [ ] Backend tests (auth, registry, endpoint) + Playwright E2E
+- [x] `ssh_user` column on Host model with default "root"
+- [x] WebSocket at `/api/ssh-terminal/ws/{host_id}` with JWT cookie auth
+- [x] Interactive PTY session bridged to browser via xterm.js
+- [x] Terminal resize support (client → server → SSH channel)
+- [x] Session registry: per-user limit (5), global limit (50)
+- [x] Idle timeout (30min) auto-disconnects
+- [x] Audit: session_start and session_end logged with metadata
+- [x] Host detail page: "Terminal" button → drawer with embedded terminal
+- [x] Full-page route: `/hosts/{id}/terminal`
+- [x] Backend tests (auth, registry, endpoint) + Playwright E2E
 
 ### Must Have
 - `ssh_user` column on Host (default "root", max 32 chars)
@@ -159,7 +159,7 @@ Max Concurrent: 3
 
 ## TODOs
 
-- [ ] 1. Add `ssh_user` Column to Host Model
+- [x] 1. Add `ssh_user` Column to Host Model
 
   **What to do**:
   - Add `ssh_user` column to `Host` model: `String(32)`, default `"root"`, NOT NULL
@@ -188,7 +188,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add ssh_user column to Host model`
 
-- [ ] 2. WebSocket JWT Auth Dependency
+- [x] 2. WebSocket JWT Auth Dependency
 
   **What to do**:
   - Create `backend/app/auth/ws_auth.py`:
@@ -219,7 +219,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add WebSocket JWT auth dependency`
 
-- [ ] 3. Session Registry + Config Settings
+- [x] 3. Session Registry + Config Settings
 
   **What to do**:
   - Add to `backend/app/config.py`:
@@ -251,7 +251,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add SSH session registry with limits`
 
-- [ ] 4. SSH Connection Helper
+- [x] 4. SSH Connection Helper
 
   **What to do**:
   - Create `backend/app/ssh_terminal/ssh_connect.py`:
@@ -278,7 +278,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add SSH shell connection helper`
 
-- [ ] 5. WebSocket SSH Terminal Endpoint
+- [x] 5. WebSocket SSH Terminal Endpoint
 
   **What to do**:
   - Create `backend/app/ssh_terminal/__init__.py` (empty)
@@ -324,7 +324,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add WebSocket SSH terminal endpoint`
 
-- [ ] 6. SSH Session Audit Logging
+- [x] 6. SSH Session Audit Logging
 
   **What to do**:
   - Wire `log_action()` calls into the WebSocket endpoint:
@@ -345,7 +345,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat: add SSH session audit logging`
 
-- [ ] 7. Backend Test Suite
+- [x] 7. Backend Test Suite
 
   **What to do**:
   - Create `backend/tests/test_ssh_terminal.py`:
@@ -374,7 +374,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `test: add SSH terminal backend tests`
 
-- [ ] 8. Frontend xterm.js Component + WebSocket Hook
+- [x] 8. Frontend xterm.js Component + WebSocket Hook
 
   **What to do**:
   - Install: `npm install @xterm/xterm @xterm/addon-fit @xterm/addon-web-links`
@@ -416,7 +416,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add xterm.js terminal component and WebSocket hook`
 
-- [ ] 9. Host Detail Drawer + Full-Page Terminal Route
+- [x] 9. Host Detail Drawer + Full-Page Terminal Route
 
   **What to do**:
   - Modify `frontend/app/(dashboard)/hosts/[id]/page.tsx`:
@@ -445,7 +445,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add terminal drawer and full-page route`
 
-- [ ] 10. Playwright E2E Tests
+- [x] 10. Playwright E2E Tests
 
   **What to do**:
   - Create `frontend/e2e/ssh-terminal.spec.ts`:
@@ -474,16 +474,16 @@ Max Concurrent: 3
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify: all Must Have present, all close codes implemented, session limits enforced, audit entries created, ssh_user used.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run pytest + ruff + `npm run build`. Check: no terminal content logging, no `@xterm/addon-attach`, asyncssh mocked in tests, no hardcoded "root".
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
   Login → navigate to host → click Terminal → assert drawer opens with xterm → verify full-page route.
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   Verify: no session recording, no SFTP, no port forwarding, no themes, no multi-tab, no reconnection.
 
 ---
@@ -514,10 +514,10 @@ cd backend && alembic upgrade head && alembic downgrade -1
 ```
 
 ### Final Checklist
-- [ ] All Must Have present
-- [ ] All Must NOT Have absent
-- [ ] All close codes implemented (4401, 4404, 4400, 4429, 4408, 4502)
-- [ ] Session limits enforced
-- [ ] Audit entries created (session_start + session_end)
-- [ ] `ssh_user` used from DB (no hardcoded "root")
-- [ ] No terminal content recorded anywhere
+- [x] All Must Have present
+- [x] All Must NOT Have absent
+- [x] All close codes implemented (4401, 4404, 4400, 4429, 4408, 4502)
+- [x] Session limits enforced
+- [x] Audit entries created (session_start + session_end)
+- [x] `ssh_user` used from DB (no hardcoded "root")
+- [x] No terminal content recorded anywhere
