@@ -2,10 +2,12 @@
 
 import { useState, FormEvent } from "react"
 import { useRouter } from "next/navigation"
+import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
 
 export default function NewGroupPage() {
@@ -72,17 +74,22 @@ export default function NewGroupPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="priority">Priority</Label>
-            <Input
-              id="priority"
-              type="number"
-              value={priority}
-              onChange={(e) => setPriority(Number(e.target.value))}
-              required
-              min={0}
-            />
-          </div>
+           <div className="space-y-2">
+             <div className="flex items-center gap-1.5">
+               <Label htmlFor="priority">Priority</Label>
+               <Tooltip content="Higher number = higher priority. Rules from higher-priority groups override lower ones.">
+                 <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+               </Tooltip>
+             </div>
+             <Input
+               id="priority"
+               type="number"
+               value={priority}
+               onChange={(e) => setPriority(Number(e.target.value))}
+               required
+               min={0}
+             />
+           </div>
 
           {error && (
             <p className="text-sm text-red-400">{error}</p>

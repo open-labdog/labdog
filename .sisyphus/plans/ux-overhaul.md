@@ -978,7 +978,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): replace browser dialogs in module pages`
   - Files: All module page.tsx files listed above
 
-- [ ] 15. Add Search/Filter to All List Pages
+- [x] 15. Add Search/Filter to All List Pages
 
   **What to do**:
   - Add a search input above the data table on every list page:

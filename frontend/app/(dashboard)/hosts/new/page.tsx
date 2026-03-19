@@ -3,10 +3,12 @@
 import { useState, FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
 import type { SSHKey, HostGroup } from "@/lib/types"
 
@@ -94,18 +96,23 @@ export default function NewHostPage() {
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ssh_port">SSH Port</Label>
-            <Input
-              id="ssh_port"
-              type="number"
-              value={sshPort}
-              onChange={(e) => setSshPort(Number(e.target.value))}
-              required
-              min={1}
-              max={65535}
-            />
-          </div>
+           <div className="space-y-2">
+             <div className="flex items-center gap-1.5">
+               <Label htmlFor="ssh_port">SSH Port</Label>
+               <Tooltip content="Default is 22. Change if your server uses a non-standard SSH port.">
+                 <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+               </Tooltip>
+             </div>
+             <Input
+               id="ssh_port"
+               type="number"
+               value={sshPort}
+               onChange={(e) => setSshPort(Number(e.target.value))}
+               required
+               min={1}
+               max={65535}
+             />
+           </div>
 
           <div className="space-y-2">
             <Label htmlFor="ssh_key">SSH Key</Label>

@@ -2,12 +2,13 @@
 
 import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon } from "lucide-react"
+import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { Tooltip } from "@/components/ui/tooltip"
 import {
   Dialog,
   DialogContent,
@@ -131,18 +132,23 @@ export default function SSHKeysPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="private-key">Private Key</Label>
-                <textarea
-                  id="private-key"
-                  placeholder="Paste your private key here..."
-                  value={privateKey}
-                  onChange={(e) => setPrivateKey(e.target.value)}
-                  rows={6}
-                  required
-                  className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
-                />
-              </div>
+               <div className="space-y-2">
+                 <div className="flex items-center gap-1.5">
+                   <Label htmlFor="private-key">Private Key</Label>
+                   <Tooltip content="Your private key is encrypted at rest with AES-256-GCM before storage.">
+                     <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                   </Tooltip>
+                 </div>
+                 <textarea
+                   id="private-key"
+                   placeholder="Paste your private key here..."
+                   value={privateKey}
+                   onChange={(e) => setPrivateKey(e.target.value)}
+                   rows={6}
+                   required
+                   className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
+                 />
+               </div>
 
               <div className="flex items-center gap-2">
                 <input
