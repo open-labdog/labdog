@@ -99,7 +99,11 @@ export default function UsersPage() {
   })
 
   if (authLoading) {
-    return <div className="text-slate-400 py-8 text-center">Loading...</div>
+    return (
+      <div className="space-y-6">
+        <TableSkeleton rows={5} columns={3} />
+      </div>
+    )
   }
 
   if (!currentUser?.is_superuser) {
