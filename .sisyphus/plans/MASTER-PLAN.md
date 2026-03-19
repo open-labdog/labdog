@@ -36,7 +36,7 @@ All extensions support **group-level defaults + per-host overrides** with priori
 | 9 | **GitOps Frontend** | [`gitops-frontend.md`](gitops-frontend.md) | S | ✅ Shipped | Git Repos page, group GitOps settings, status badges. |
 | 10 | **Host Discovery** | [`host-discovery.md`](host-discovery.md) | S | ✅ Shipped | Network CIDR scan for SSH hosts, bulk-add UI. |
 | 11 | **Web Shell** | [`web-shell.md`](web-shell.md) | M | 📋 Planned | Browser-based SSH terminal via xterm.js + WebSocket + asyncssh PTY. |
-| 12 | **Packaging** | [`packaging.md`](packaging.md) | L | 📋 Planned | Pre-built tarball, .deb, .rpm via nfpm. Systemd services. Embedded Node.js. FHS layout. install.sh for tarball installs. |
+| 12 | **Packaging** | [`packaging.md`](packaging.md) | L | ✅ Shipped | Pre-built tarball, .deb, .rpm via nfpm. Systemd services. FHS layout. install.sh + uninstall.sh for tarball installs. |
 | 13 | **UX Overhaul** | [`ux-overhaul.md`](ux-overhaul.md) | L | ✅ Shipped | Comprehensive frontend UX improvements: ConfirmDialog, Sonner toasts, skeletons, breadcrumbs, cmdk command palette, mobile sidebar, RHF+Zod forms, useMutation migration, optimistic updates, bulk actions, search/filter. Frontend-only (no backend changes). |
 
 ### Execution Order
