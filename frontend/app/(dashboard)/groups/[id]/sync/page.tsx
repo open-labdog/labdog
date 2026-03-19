@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { apiFetch } from "@/lib/api"
+import type { HostGroup } from "@/lib/types"
 import {
   Dialog,
   DialogContent,
@@ -10,7 +14,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { apiFetch } from "@/lib/api"
 
 interface RuleDiff {
   rule: string
@@ -228,8 +231,15 @@ export default function GroupSyncPage() {
     (h) => h.diffs.some((d) => d.status !== "unchanged")
   )
 
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Sync Group</h1>

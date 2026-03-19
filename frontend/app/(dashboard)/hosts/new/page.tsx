@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { apiFetch } from "@/lib/api"
 import type { SSHKey, HostGroup } from "@/lib/types"
 
@@ -61,6 +62,7 @@ export default function NewHostPage() {
 
   return (
     <div className="max-w-lg space-y-6">
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "New Host" }]} />
       <div>
         <h1 className="text-2xl font-bold text-white">Add Host</h1>
         <p className="text-slate-400 text-sm mt-1">Register a new host for firewall management</p>

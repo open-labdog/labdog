@@ -45,15 +45,15 @@
 ## Work Objectives
 
 ### Definition of Done
-- [ ] Group-level package rules: CRUD on `/api/groups/{id}/packages`
-- [ ] Host-level overrides: CRUD on `/api/hosts/{id}/packages`
-- [ ] Repository management: CRUD on `/api/groups/{id}/package-repos`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-packages` merges group defaults + host overrides
-- [ ] Plan: `POST /api/packages/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/packages/hosts/{id}/sync` applies via Ansible (repos first, then packages)
-- [ ] Drift: `POST /api/packages/hosts/{id}/drift-check` detects version/state mismatches
-- [ ] Frontend: `/groups/{id}/packages` page + "Packages" tab on host detail
-- [ ] Tests: 12+ tests
+- [x] Group-level package rules: CRUD on `/api/groups/{id}/packages`
+- [x] Host-level overrides: CRUD on `/api/hosts/{id}/packages`
+- [x] Repository management: CRUD on `/api/groups/{id}/package-repos`
+- [x] Effective config: `GET /api/hosts/{id}/effective-packages` merges group defaults + host overrides
+- [x] Plan: `POST /api/packages/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/packages/hosts/{id}/sync` applies via Ansible (repos first, then packages)
+- [x] Drift: `POST /api/packages/hosts/{id}/drift-check` detects version/state mismatches
+- [x] Frontend: `/groups/{id}/packages` page + "Packages" tab on host detail
+- [x] Tests: 12+ tests (30 passing)
 
 ### Must Have
 - `PackageRule` model: `package_name`, `version` (nullable), `state` (present/absent/latest), `package_manager` (enum: apt/dnf/yum/auto, default auto), `priority`, `comment` + UniqueConstraint on `(group_id, package_name)` and `(host_id, package_name)`
@@ -524,10 +524,10 @@ Max Concurrent: 3
   ```
 
   **Acceptance Criteria**:
-  - [ ] 12+ tests, all passing
-  - [ ] Protected package deny-list with wildcards tested
-  - [ ] Multi-distro diff tested (dpkg + rpm)
-  - [ ] Repo deduplication by (url, repo_type, distribution) tested
+  - [x] 12+ tests, all passing (30 tests)
+  - [x] Protected package deny-list with wildcards tested
+  - [x] Multi-distro diff tested (dpkg + rpm)
+  - [x] Repo deduplication by (url, repo_type, distribution) tested
 
   **Commit**: YES — `test(packages): add package management test suite`
 

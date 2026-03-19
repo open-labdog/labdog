@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import type { ServiceRule } from "@/lib/types"
+import type { ServiceRule, HostGroup } from "@/lib/types"
 
 function StateBadge({ state }: { state: string }) {
   return (
@@ -58,6 +59,12 @@ export default function GroupServicesPage() {
   const [enabled, setEnabled] = useState(true)
   const [priority, setPriority] = useState(100)
   const [comment, setComment] = useState("")
+
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
 
   const { data: services, isLoading, error } = useQuery<ServiceRule[]>({
     queryKey: ["services", id],
@@ -137,6 +144,7 @@ export default function GroupServicesPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Services" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Service Rules</h1>

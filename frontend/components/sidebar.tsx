@@ -16,7 +16,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-export function Sidebar() {
+export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
   const pathname = usePathname()
   const { user, logout } = useAuth()
 
@@ -81,6 +81,7 @@ export function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
+            onClick={onNavigation}
             className={cn(
               "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
               (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))

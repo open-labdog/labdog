@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Table,
   TableBody,
@@ -103,6 +104,7 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Audit Log" }]} />
       <div>
         <h1 className="text-2xl font-bold text-white">Audit Log</h1>
         <p className="text-slate-400 text-sm mt-1">

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { Host, HostGroup, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -85,6 +86,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Dashboard" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Drift Dashboard</h1>
