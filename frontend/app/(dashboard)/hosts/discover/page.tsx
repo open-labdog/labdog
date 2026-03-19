@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { GroupMultiSelect } from "@/components/group-multi-select"
 import {
   Table,
   TableBody,
@@ -155,12 +156,6 @@ export default function DiscoverHostsPage() {
     } else {
       setSelectedHosts(new Set(allIps))
     }
-  }
-
-  const toggleGroup = (id: number) => {
-    setSelectedGroupIds((prev) =>
-      prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
-    )
   }
 
   useEffect(() => {
@@ -329,23 +324,13 @@ export default function DiscoverHostsPage() {
           </div>
 
           {groups && groups.length > 0 && (
-            <div className="space-y-2">
-              <Label>Groups (optional)</Label>
-              <div className="space-y-2 rounded-lg border border-input p-3 dark:bg-input/10">
-                {groups.map((group) => (
-                  <label key={group.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedGroupIds.includes(group.id)}
-                      onChange={() => toggleGroup(group.id)}
-                      disabled={phase === "adding"}
-                      className="rounded border-input"
-                    />
-                    <span className="text-sm text-foreground">{group.name}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
+            <GroupMultiSelect
+              groups={groups}
+              selected={selectedGroupIds}
+              onChange={setSelectedGroupIds}
+              disabled={phase === "adding"}
+              label="Groups (optional)"
+            />
           )}
 
           {addError && (
