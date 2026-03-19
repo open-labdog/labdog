@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { SearchIcon, XIcon } from "lucide-react"
@@ -21,10 +21,11 @@ import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
-import type { Host } from "@/lib/types"
+import type { Host, HostGroup } from "@/lib/types"
 
 export default function HostsPage() {
   const [searchQuery, setSearchQuery] = useState("")
+  const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
@@ -35,11 +36,24 @@ export default function HostsPage() {
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
+  const { data: groups } = useQuery<HostGroup[]>({
+    queryKey: ["groups"],
+    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
+  })
+  const groupMap = useMemo(() => {
+    const map = new Map<number, HostGroup>()
+    groups?.forEach(g => map.set(g.id, g))
+    return map
+  }, [groups])
   const showLoading = useDelayedLoading(isLoading)
 
   const filteredHosts = hosts?.filter(h => {
     const q = searchQuery.toLowerCase()
-    return h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
+    const matchesSearch = h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
+    const matchesGroup = filterGroup === null ? true
+      : filterGroup === "ungrouped" ? h.group_ids.length === 0
+      : h.group_ids.includes(filterGroup)
+    return matchesSearch && matchesGroup
   }) ?? []
 
   const toggleSelect = (id: number) => {
@@ -119,7 +133,21 @@ export default function HostsPage() {
             </button>
           )}
         </div>
-        {searchQuery && (
+        <select
+          value={filterGroup === null ? "" : String(filterGroup)}
+          onChange={(e) => {
+            const v = e.target.value
+            setFilterGroup(v === "" ? null : v === "ungrouped" ? "ungrouped" : Number(v))
+          }}
+          className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300"
+        >
+          <option value="">All Groups</option>
+          {groups?.sort((a, b) => a.name.localeCompare(b.name)).map(g => (
+            <option key={g.id} value={g.id}>{g.name}</option>
+          ))}
+          <option value="ungrouped">Ungrouped</option>
+        </select>
+        {(searchQuery || filterGroup !== null) && (
           <span className="text-sm text-slate-400">
             Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
           </span>
@@ -183,6 +211,7 @@ export default function HostsPage() {
                   </TableHead>
                   <TableHead>Hostname</TableHead>
                   <TableHead>IP Address</TableHead>
+                  <TableHead>Groups</TableHead>
                   <TableHead>Firewall</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
@@ -201,6 +230,22 @@ export default function HostsPage() {
                     </TableCell>
                     <TableCell className="font-medium text-white">{host.hostname}</TableCell>
                     <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {host.group_ids.length > 0 ? (
+                          host.group_ids.map(gid => {
+                            const g = groupMap.get(gid)
+                            return g ? (
+                              <Link key={gid} href={`/groups/${gid}`} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors">
+                                {g.name}
+                              </Link>
+                            ) : null
+                          })
+                        ) : (
+                          <span className="text-xs text-slate-500">&mdash;</span>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <FirewallBadge backend={host.firewall_backend} />
                     </TableCell>
