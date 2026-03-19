@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { API_BASE } from "@/lib/api"
+import { showSuccess, showError } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,8 +24,6 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
   const [newPassword, setNewPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [passwordError, setPasswordError] = useState<string | null>(null)
-  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null)
   const [passwordLoading, setPasswordLoading] = useState(false)
 
   const navItems = [
@@ -39,11 +38,9 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
 
   async function handlePasswordChange(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setPasswordError(null)
-    setPasswordSuccess(null)
 
     if (newPassword !== confirmPassword) {
-      setPasswordError("Passwords do not match")
+      showError("Passwords do not match")
       return
     }
 
@@ -59,11 +56,12 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         const data = await res.json().catch(() => null)
         throw new Error(data?.detail || "Failed to update password")
       }
-      setPasswordSuccess("Password updated successfully")
+      showSuccess("Password updated successfully")
       setNewPassword("")
       setConfirmPassword("")
+      setPasswordDialogOpen(false)
     } catch (err) {
-      setPasswordError(err instanceof Error ? err.message : "Failed to update password")
+      showError(err instanceof Error ? err.message : "Failed to update password")
     } finally {
       setPasswordLoading(false)
     }
@@ -97,9 +95,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       <div className="mt-auto border-t border-slate-700 pt-4">
         <div className="text-sm text-slate-300 truncate">{user?.email}</div>
         <div className="flex gap-2 mt-2">
-          <Button size="sm" variant="outline" onClick={() => {
-            setPasswordError(null)
-            setPasswordSuccess(null)
+           <Button size="sm" variant="outline" onClick={() => {
             setNewPassword("")
             setConfirmPassword("")
             setPasswordDialogOpen(true)
@@ -115,8 +111,6 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       <Dialog open={passwordDialogOpen} onOpenChange={(open) => {
         setPasswordDialogOpen(open)
         if (!open) {
-          setPasswordError(null)
-          setPasswordSuccess(null)
           setNewPassword("")
           setConfirmPassword("")
         }
@@ -130,13 +124,11 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
               <Label htmlFor="new-password">New Password</Label>
               <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-            </div>
-            {passwordError && <p className="text-sm text-red-400">{passwordError}</p>}
-            {passwordSuccess && <p className="text-sm text-green-400">{passwordSuccess}</p>}
-            <div className="flex gap-3 pt-2">
+             <div className="space-y-2">
+               <Label htmlFor="confirm-password">Confirm New Password</Label>
+               <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+             </div>
+             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={passwordLoading}>
                 {passwordLoading ? "Updating..." : "Update Password"}
               </Button>
