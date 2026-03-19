@@ -48,15 +48,15 @@ This is a **config module**, not a **rules module**:
 ## Work Objectives
 
 ### Definition of Done
-- [ ] Group-level resolver config: CRUD on `/api/groups/{id}/resolver`
-- [ ] Host-level override: CRUD on `/api/hosts/{id}/resolver`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-resolver` returns the ONE applicable config
-- [ ] Preview: `GET /api/hosts/{id}/resolver-preview` returns rendered config file content
-- [ ] Plan: `POST /api/resolver/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/resolver/hosts/{id}/sync` applies via Ansible
-- [ ] Drift: `POST /api/resolver/hosts/{id}/drift-check`
-- [ ] Frontend: `/groups/{id}/resolver` page + "DNS" tab on host detail
-- [ ] Tests: 10+ tests
+- [x] Group-level resolver config: CRUD on `/api/groups/{id}/resolver`
+- [x] Host-level override: CRUD on `/api/hosts/{id}/resolver`
+- [x] Effective config: `GET /api/hosts/{id}/effective-resolver` returns the ONE applicable config
+- [x] Preview: `GET /api/hosts/{id}/resolver-preview` returns rendered config file content
+- [x] Plan: `POST /api/resolver/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/resolver/hosts/{id}/sync` applies via Ansible
+- [x] Drift: `POST /api/resolver/hosts/{id}/drift-check`
+- [x] Frontend: `/groups/{id}/resolver` page + "DNS" tab on host detail
+- [x] Tests: 10+ tests (26 passing)
 
 ### Must Have
 - `ResolverConfig` model: `nameservers` (JSONB array of IP strings, ordered), `search_domains` (JSONB array), `options` (JSONB dict), `resolver_type` (enum: resolv_conf/systemd_resolved/networkmanager), `dns_over_tls` (bool, default False)
@@ -112,7 +112,7 @@ Max Concurrent: 3
 
 ## TODOs
 
-- [ ] 1. ResolverConfig Model + Alembic Migration
+- [x] 1. ResolverConfig Model + Alembic Migration
 
   **What to do**:
   - Create `backend/app/resolver/__init__.py` (empty)
@@ -143,7 +143,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(models): add ResolverConfig model`
 
-- [ ] 2. Resolver Schemas + Validators
+- [x] 2. Resolver Schemas + Validators
 
   **What to do**:
   - Create `backend/app/resolver/schemas.py`:
@@ -168,7 +168,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(resolver): add schemas and validators`
 
-- [ ] 3. Resolver Merge Engine + Config File Renderers
+- [x] 3. Resolver Merge Engine + Config File Renderers
 
   **What to do**:
   - Create `backend/app/resolver/merge.py`:
@@ -212,7 +212,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(resolver): add merge engine and config file renderers`
 
-- [ ] 4. Resolver CRUD API + Preview
+- [x] 4. Resolver CRUD API + Preview
 
   **What to do**:
   - Create `backend/app/api/resolver.py`:
@@ -234,7 +234,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(api): add resolver CRUD + preview endpoints`
 
-- [ ] 5. Ansible Resolver Playbook Generator
+- [x] 5. Ansible Resolver Playbook Generator
 
   **What to do**:
   - Create `backend/app/resolver/generator.py`:
@@ -255,7 +255,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ansible): add resolver playbook generator`
 
-- [ ] 6. Resolver Drift Collector + Parser
+- [x] 6. Resolver Drift Collector + Parser
 
   **What to do**:
   - Create `backend/app/resolver/collector.py`:
@@ -279,7 +279,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(resolver): add drift collector and parser`
 
-- [ ] 7. Resolver Sync Celery Task + Sync API
+- [x] 7. Resolver Sync Celery Task + Sync API
 
   **What to do**:
   - Create `backend/app/tasks/resolver_sync.py`:
@@ -302,7 +302,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add resolver sync Celery task + sync API`
 
-- [ ] 8. Resolver Drift Detection Task + API
+- [x] 8. Resolver Drift Detection Task + API
 
   **What to do**:
   - Create `backend/app/tasks/resolver_drift.py`
@@ -320,7 +320,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add resolver drift detection + API`
 
-- [ ] 9. Frontend — Group Resolver Page + Host Detail DNS Tab
+- [x] 9. Frontend — Group Resolver Page + Host Detail DNS Tab
 
   **What to do**:
   - Create `frontend/app/(dashboard)/groups/[id]/resolver/page.tsx`:
@@ -351,7 +351,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add DNS resolver management pages`
 
-- [ ] 10. pytest Suite
+- [x] 10. pytest Suite
 
   **What to do**:
   - Create `backend/tests/test_resolver.py`:
@@ -377,10 +377,10 @@ Max Concurrent: 3
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
-- [ ] F2. **Code Quality Review** — `unspecified-high`
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
-- [ ] F4. **Scope Fidelity Check** — `deep` — Verify: no DNS server management, no DNSSEC, no DoH, no auto-detection.
+- [x] F1. **Plan Compliance Audit** — `oracle`
+- [x] F2. **Code Quality Review** — `unspecified-high`
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
+- [x] F4. **Scope Fidelity Check** — `deep` — Verify: no DNS server management, no DNSSEC, no DoH, no auto-detection.
 
 ---
 

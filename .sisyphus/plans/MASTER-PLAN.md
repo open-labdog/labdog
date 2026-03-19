@@ -30,7 +30,7 @@ All extensions support **group-level defaults + per-host overrides** with priori
 | 3 | **/etc/hosts** | [`ext-etc-hosts.md`](ext-etc-hosts.md) | S | ✅ Shipped | Hostname-to-IP mappings. Full-file template rendering with localhost safety. |
 | 4 | **Package Management** | [`ext-package-management.md`](ext-package-management.md) | M | ✅ Shipped | System packages (apt/dnf/yum). Version pinning, repository management. Multi-distro drift (dpkg/rpm). Protected package deny-list. Group-level repos. Depends on #1. |
 | 5 | **Cron Jobs** | [`ext-cron-jobs.md`](ext-cron-jobs.md) | S | ✅ Shipped | Scheduled tasks via `ansible.builtin.cron`. 5-field cron validation. Depends on #1. |
-| 6 | **DNS Resolver** | [`ext-dns-resolver.md`](ext-dns-resolver.md) | M | 📋 Planned | Nameservers, search domains. 3 backends (resolv.conf, systemd-resolved, NetworkManager). Singleton config per scope. Depends on #1. |
+| 6 | **DNS Resolver** | [`ext-dns-resolver.md`](ext-dns-resolver.md) | M | ✅ Shipped | Nameservers, search domains. 3 backends (resolv.conf, systemd-resolved, NetworkManager). Singleton config per scope. 14 API routes, 26 tests. Depends on #1. |
 | 7 | **TLS Certificates** | _Not yet planned_ | XL | — | ACME, uploaded PEM, expiry monitoring, service reload. |
 | 8 | **User Management & Auth** | [`user-management.md`](user-management.md) | M | ✅ Shipped | First-user bootstrap, registration gating, admin CRUD, RBAC removal. |
 | 9 | **GitOps Frontend** | [`gitops-frontend.md`](gitops-frontend.md) | S | ✅ Shipped | Git Repos page, group GitOps settings, status badges. |
