@@ -71,16 +71,28 @@ export default function GroupDetailPage() {
     queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
   })
 
-  const enableGitopsMutation = useApiMutation({
-    mutationFn: (data: { git_repository_id: number; file_path: string }) =>
+  const enableGitopsMutation = useApiMutation<unknown, { git_repository_id: number; file_path: string }, HostGroup>({
+    mutationFn: (data) =>
       apiFetch(`/api/groups/${id}/gitops/enable`, { method: "POST", body: JSON.stringify(data) }),
     invalidateKeys: [["groups"]],
     onSuccess: () => { setEnableDialogOpen(false); setSelectedRepoId(null); setFilePath("") },
+    optimisticUpdate: {
+      queryKey: ["groups"],
+      updater: (old, data) => old.map((g) =>
+        g.id === id ? { ...g, gitops_enabled: true, git_repository_id: data.git_repository_id, gitops_file_path: data.file_path } : g
+      ),
+    },
   })
 
-  const disableGitopsMutation = useApiMutation({
+  const disableGitopsMutation = useApiMutation<unknown, void, HostGroup>({
     mutationFn: () => apiFetch(`/api/groups/${id}/gitops/disable`, { method: "POST" }),
     invalidateKeys: [["groups"]],
+    optimisticUpdate: {
+      queryKey: ["groups"],
+      updater: (old) => old.map((g) =>
+        g.id === id ? { ...g, gitops_enabled: false, gitops_status: null, gitops_error_message: null } : g
+      ),
+    },
   })
 
   const group = groups?.find((g) => g.id === id)

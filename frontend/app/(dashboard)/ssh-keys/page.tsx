@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
@@ -31,6 +31,7 @@ import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { showSuccess, showError } from "@/lib/toast"
 import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
 import type { SSHKey } from "@/lib/types"
 
@@ -40,6 +41,11 @@ export default function SSHKeysPage() {
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const queryClient = useQueryClient()
 
   const form = useForm<SshKeyInput>({
     resolver: zodResolver(sshKeySchema),
@@ -74,11 +80,15 @@ export default function SSHKeysPage() {
     },
   })
 
-  const deleteMutation = useApiMutation({
-    mutationFn: (keyId: number) =>
+  const deleteMutation = useApiMutation<unknown, number, SSHKey>({
+    mutationFn: (keyId) =>
       apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" }),
     invalidateKeys: [["ssh-keys"]],
     successMessage: "SSH key deleted",
+    optimisticUpdate: {
+      queryKey: ["ssh-keys"],
+      updater: (old, keyId) => old.filter((k) => k.id !== keyId),
+    },
   })
 
   const onUpload = form.handleSubmit((data) => {
@@ -99,6 +109,49 @@ export default function SSHKeysPage() {
         }
       },
     })
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selected.size === filteredKeys.length && filteredKeys.length > 0) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filteredKeys.map(k => k.id)))
+    }
+  }
+
+  async function handleBulkDelete() {
+    const ids = Array.from(selected)
+    setBulkDeleting(true)
+    setBulkProgress({ done: 0, total: ids.length })
+    let success = 0, failed = 0
+    for (const id of ids) {
+      try {
+        await apiFetch(`/api/ssh-keys/${id}`, { method: "DELETE" })
+        success++
+      } catch {
+        failed++
+      }
+      setBulkProgress({ done: success + failed, total: ids.length })
+    }
+    setBulkDeleting(false)
+    setBulkProgress(null)
+    setSelected(new Set())
+    await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
+    if (failed === 0) {
+      showSuccess(`Deleted ${success} SSH key${success !== 1 ? "s" : ""}`)
+    } else {
+      showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
+    }
+    setBulkConfirmOpen(false)
   }
 
   return (
@@ -228,45 +281,83 @@ export default function SSHKeysPage() {
       )}
 
       {!isLoading && !error && filteredKeys.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Name</TableHead>
-                <TableHead>Default</TableHead>
-                <TableHead>Created At</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredKeys.map((key) => (
-                <TableRow key={key.id} className="border-slate-700">
-                  <TableCell className="font-medium text-white">{key.name}</TableCell>
-                  <TableCell>
-                    {key.is_default ? (
-                      <Badge className="bg-green-600 text-white">Default</Badge>
-                    ) : (
-                      <span className="text-slate-500">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-slate-400">
-                    {new Date(key.created_at).toLocaleDateString()}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => handleDelete(key.id)}
-                      disabled={deleteMutation.isPending}
-                    >
-                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                    </Button>
-                  </TableCell>
+        <>
+          {selected.size > 0 && (
+            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
+              <span className="text-sm text-slate-300">{selected.size} selected</span>
+              {bulkProgress ? (
+                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={() => setBulkConfirmOpen(true)}
+                  disabled={bulkDeleting}
+                >
+                  Delete Selected
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
+          <div className="rounded-lg border border-slate-700 bg-slate-900">
+            <Table>
+              <TableHeader>
+                <TableRow className="border-slate-700">
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={selected.size === filteredKeys.length && filteredKeys.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded border-slate-600"
+                    />
+                  </TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Default</TableHead>
+                  <TableHead>Created At</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filteredKeys.map((key) => (
+                  <TableRow key={key.id} className="border-slate-700">
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(key.id)}
+                        onChange={() => toggleSelect(key.id)}
+                        className="rounded border-slate-600"
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium text-white">{key.name}</TableCell>
+                    <TableCell>
+                      {key.is_default ? (
+                        <Badge className="bg-green-600 text-white">Default</Badge>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-slate-400">
+                      {new Date(key.created_at).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDelete(key.id)}
+                        disabled={deleteMutation.isPending}
+                      >
+                        {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {confirmState && (
@@ -281,6 +372,17 @@ export default function SSHKeysPage() {
           onConfirm={confirmState.action}
         />
       )}
+
+      <ConfirmDialog
+        open={bulkConfirmOpen}
+        onOpenChange={setBulkConfirmOpen}
+        title={`Delete ${selected.size} ${selected.size === 1 ? "key" : "keys"}?`}
+        description="This action cannot be undone."
+        confirmLabel="Delete All"
+        variant="destructive"
+        loading={bulkDeleting}
+        onConfirm={handleBulkDelete}
+      />
     </div>
   )
 }
