@@ -207,6 +207,12 @@ export default function GroupDetailPage() {
             Manage Packages
           </Link>
           <Link
+            href={`/groups/${id}/resolver`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            DNS Resolver
+          </Link>
+          <Link
             href={`/groups/${id}/sync`}
             className={cn(buttonVariants())}
           >
@@ -299,6 +305,12 @@ export default function GroupDetailPage() {
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             View &amp; Edit Cron Jobs
+          </Link>
+          <Link
+            href={`/groups/${id}/resolver`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            DNS Resolver
           </Link>
           <Link
             href={`/groups/${id}/sync`}

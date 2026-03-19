@@ -31,3 +31,43 @@
 
 ## Wave 1 Started (2026-03-19)
 T1 (model), T2 (schemas), T3 (merge+renderer)
+## ResolverConfig Model Implementation
+
+### Key Learnings
+
+1. **Enum Creation in Migrations**: When models are imported in alembic/env.py, SQLAlchemy automatically creates enums defined in models. To avoid duplicate enum creation errors:
+   - Use `postgresql.ENUM(..., create_type=False)` in migration column definitions
+   - Use a DO block with exception handling for idempotent enum creation
+   - Example: `DO $$ BEGIN CREATE TYPE ... EXCEPTION WHEN duplicate_object THEN null; END $$;`
+
+2. **Partial Unique Indexes**: PostgreSQL supports partial unique indexes with `postgresql_where` clause:
+   - Allows multiple NULL values while enforcing uniqueness on non-NULL values
+   - Perfect for group_id/host_id pattern where exactly one must be set
+   - Syntax: `Index(..., unique=True, postgresql_where=text("group_id IS NOT NULL"))`
+
+3. **Check Constraints**: Enforce business logic at database level:
+   - Pattern: `(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)`
+   - Ensures exactly one of two foreign keys is set
+
+4. **JSONB Defaults**: Use `server_default` with string literals for JSONB columns:
+   - `server_default="[]"` for empty arrays
+   - `server_default="{}"` for empty objects
+   - NOT `Boolean()` or Python defaults
+
+5. **Migration Reversibility**: Always test `upgrade -> downgrade -> upgrade` cycle:
+   - Ensures migrations are truly reversible
+   - Catches issues with enum/type cleanup
+
+### Files Created
+- `backend/app/resolver/__init__.py` - Module marker
+- `backend/app/resolver/models.py` - ResolverConfig + ResolverType
+- `backend/alembic/versions/0008_resolver_config.py` - Migration
+
+### Files Modified
+- `backend/app/models/__init__.py` - Added imports
+
+### Testing
+All migration cycles passed:
+- ✓ upgrade head
+- ✓ downgrade -1
+- ✓ upgrade head

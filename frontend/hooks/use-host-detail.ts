@@ -21,13 +21,15 @@ import type {
   CronJob,
   EffectivePackage,
   PackageRule,
+  EffectiveResolverConfig,
+  ResolverConfig,
 } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
   group_id: number
 }
 
-type ActiveTab = "overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages"
+type ActiveTab = "overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
   const host = useQuery<Host>({
@@ -136,6 +138,27 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id && activeTab === "packages",
   })
 
+  const effectiveResolver = useQuery<EffectiveResolverConfig>({
+    queryKey: ["host-effective-resolver", id],
+    queryFn: () => apiFetch<EffectiveResolverConfig>(`/api/hosts/${id}/effective-resolver`),
+    enabled: !!id && activeTab === "dns",
+    retry: (count, error) => {
+      if (error && "status" in error && (error as { status: number }).status === 404) return false
+      return count < 3
+    },
+  })
+  const showResolverLoading = useDelayedLoading(effectiveResolver.isLoading)
+
+  const hostResolverOverride = useQuery<ResolverConfig>({
+    queryKey: ["host-resolver-override", id],
+    queryFn: () => apiFetch<ResolverConfig>(`/api/hosts/${id}/resolver`),
+    enabled: !!id && activeTab === "dns",
+    retry: (count, error) => {
+      if (error && "status" in error && (error as { status: number }).status === 404) return false
+      return count < 3
+    },
+  })
+
   return {
     host,
     effectiveRules,
@@ -160,6 +183,9 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     effectivePackages,
     showPackagesLoading,
     hostPackageOverrides,
+    effectiveResolver,
+    showResolverLoading,
+    hostResolverOverride,
   }
 }
 
