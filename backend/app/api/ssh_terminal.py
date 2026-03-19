@@ -16,6 +16,9 @@ from app.ssh_terminal.ssh_connect import (
     SSHConnectionError,
 )
 from app.config import settings
+from app.audit.logger import log_action
+from app.models.host import Host
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,25 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             await registry.deregister(session_id)
             await websocket.close(code=4502, reason=str(e)[:120])
             return
+
+        host_result = await db.execute(select(Host).where(Host.id == host_id))
+        host = host_result.scalar_one_or_none()
+        await log_action(
+            db,
+            action="session_start",
+            entity_type="ssh_session",
+            entity_id=host_id,
+            user_id=user.id,
+            after_state={
+                "host_id": host_id,
+                "hostname": host.hostname if host else "unknown",
+                "ssh_user": host.ssh_user if host else "root",
+                "session_id": session_id,
+            },
+        )
+        await db.commit()
+
+    user_id_for_audit = user.id
 
     async with registry._lock:
         if session_id in registry._sessions:
@@ -135,6 +157,25 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         except Exception:
             pass
         await registry.deregister(session_id)
+        duration = int(time.time() - start_time)
+        try:
+            async with AsyncSessionLocal() as audit_db:
+                await log_action(
+                    audit_db,
+                    action="session_end",
+                    entity_type="ssh_session",
+                    entity_id=host_id,
+                    user_id=user_id_for_audit,
+                    after_state={
+                        "host_id": host_id,
+                        "duration_seconds": duration,
+                        "disconnect_reason": disconnect_reason,
+                        "session_id": session_id,
+                    },
+                )
+                await audit_db.commit()
+        except Exception:
+            logger.exception("Failed to log session_end audit entry")
         try:
             await websocket.close()
         except Exception:
