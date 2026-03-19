@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
 
 function UserStateBadge({ state }: { state: string }) {
@@ -78,12 +80,14 @@ export default function GroupUsersPage() {
     queryFn: () => apiFetch<LinuxUser[]>(`/api/groups/${id}/linux-users`),
     enabled: !!id,
   })
+  const showUsersLoading = useDelayedLoading(usersLoading)
 
   const { data: linuxGroups, isLoading: groupsLoading, error: groupsError } = useQuery<LinuxGroup[]>({
     queryKey: ["linux-groups", id],
     queryFn: () => apiFetch<LinuxGroup[]>(`/api/groups/${id}/linux-groups`),
     enabled: !!id,
   })
+  const showGroupsLoading = useDelayedLoading(groupsLoading)
 
   // --- Linux Users CRUD ---
 
@@ -266,9 +270,7 @@ export default function GroupUsersPage() {
           <Button onClick={openCreateUserDialog}>Add User</Button>
         </div>
 
-        {usersLoading && (
-          <div className="text-slate-400 py-8 text-center">Loading users…</div>
-        )}
+        {showUsersLoading && <TableSkeleton rows={5} columns={4} />}
 
         {usersError && (
           <div className="text-red-400 py-8 text-center">Failed to load users</div>
@@ -359,9 +361,7 @@ export default function GroupUsersPage() {
           <Button onClick={openCreateGroupDialog}>Add Group</Button>
         </div>
 
-        {groupsLoading && (
-          <div className="text-slate-400 py-8 text-center">Loading groups…</div>
-        )}
+        {showGroupsLoading && <TableSkeleton rows={5} columns={4} />}
 
         {groupsError && (
           <div className="text-red-400 py-8 text-center">Failed to load groups</div>

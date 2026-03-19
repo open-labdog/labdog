@@ -24,7 +24,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { cn } from "@/lib/utils"
+import { cn, useDelayedLoading } from "@/lib/utils"
+import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import {
   Dialog,
   DialogContent,
@@ -54,6 +55,8 @@ export default function GroupDetailPage() {
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
+  const showGroupLoading = useDelayedLoading(groupsLoading)
+  const showHostsLoading = useDelayedLoading(hostsLoading)
 
   const { data: gitRepos } = useQuery<GitRepository[]>({
     queryKey: ["git-repos"],
@@ -111,8 +114,12 @@ export default function GroupDetailPage() {
     }
   }
 
+  if (showGroupLoading) {
+    return <CardSkeleton />
+  }
+
   if (groupsLoading) {
-    return <div className="text-slate-400 py-8 text-center">Loading group…</div>
+    return null
   }
 
   if (!group && !groupsLoading) {
@@ -393,9 +400,7 @@ export default function GroupDetailPage() {
           All hosts that may be affected by this group&apos;s rules.
         </p>
 
-        {hostsLoading && (
-          <div className="text-slate-400 py-4 text-center">Loading hosts…</div>
-        )}
+        {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
 
         {!hostsLoading && groupHosts.length === 0 && (
           <div className="text-slate-400 py-4 text-center">

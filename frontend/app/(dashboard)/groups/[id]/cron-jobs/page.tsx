@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { CronJob, HostGroup } from "@/lib/types"
 
 function cronToHuman(schedule: string): string {
@@ -148,6 +150,7 @@ export default function GroupCronJobsPage() {
     queryFn: () => apiFetch<CronJob[]>(`/api/groups/${id}/cron-jobs`),
     enabled: !!id,
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   function openCreateDialog() {
     setEditing(null)
@@ -243,9 +246,7 @@ export default function GroupCronJobsPage() {
         <Button onClick={openCreateDialog}>Add Cron Job</Button>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading cron jobs...</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={4} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load cron jobs</div>

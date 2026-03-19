@@ -4,7 +4,8 @@ import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { buttonVariants } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { cn } from "@/lib/utils"
+import { cn, useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -22,6 +23,7 @@ export default function HostsPage() {
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   return (
     <div className="space-y-6">
@@ -39,9 +41,7 @@ export default function HostsPage() {
         </div>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading hosts...</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={4} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts</div>

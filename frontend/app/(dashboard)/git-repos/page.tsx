@@ -23,6 +23,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import type { GitRepository, GitRepoCreate, GitRepoUpdate, SSHKey } from "@/lib/types"
 
 function relativeTime(dateStr: string | null): string {
@@ -62,6 +64,7 @@ export default function GitReposPage() {
     queryKey: ["git-repos"],
     queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -346,9 +349,7 @@ export default function GitReposPage() {
         </Dialog>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading repositories...</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={3} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load repositories</div>

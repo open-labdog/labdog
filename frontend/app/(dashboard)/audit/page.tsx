@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -90,6 +92,7 @@ export default function AuditPage() {
     },
     retry: false,
   })
+  const showLoading = useDelayedLoading(isLoading)
 
   const entries = data ?? []
 
@@ -146,9 +149,7 @@ export default function AuditPage() {
         </div>
       </div>
 
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading audit log…</div>
-      )}
+      {showLoading && <TableSkeleton rows={5} columns={5} />}
 
       {error && (
         <div className="rounded-lg border border-amber-800 bg-amber-950/30 px-4 py-3 text-amber-400 text-sm">
