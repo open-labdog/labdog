@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     DISCOVERY_SCAN_TIMEOUT: float = 1.0  # per-host TCP timeout in seconds
     DISCOVERY_MAX_CONCURRENT: int = 100  # max simultaneous TCP connections
     DISCOVERY_MAX_BULK_ADD: int = 50  # max hosts per bulk-add request
+    SSH_MAX_SESSIONS_PER_USER: int = 5
+    SSH_MAX_TOTAL_SESSIONS: int = 50
+    SSH_IDLE_TIMEOUT_SECONDS: int = 1800
 
 
 settings = Settings()
