@@ -1,8 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -19,11 +22,16 @@ import { apiFetch } from "@/lib/api"
 import type { HostGroup } from "@/lib/types"
 
 export default function GroupsPage() {
+  const [searchQuery, setSearchQuery] = useState("")
   const { data: groups, isLoading, error } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
     queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const filteredGroups = groups?.filter(g =>
+    g.name.toLowerCase().includes(searchQuery.toLowerCase())
+  ) ?? []
 
   return (
     <div className="space-y-6">
@@ -36,13 +44,44 @@ export default function GroupsPage() {
         <Link href="/groups/new" className={cn(buttonVariants())}>New Group</Link>
       </div>
 
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search groups..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-sm text-slate-400">
+            Showing {filteredGroups.length} of {groups?.length ?? 0} groups
+          </span>
+        )}
+      </div>
+
       {showLoading && <TableSkeleton rows={5} columns={3} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load groups</div>
       )}
 
-      {!isLoading && !error && groups && groups.length === 0 && (
+      {!isLoading && !error && filteredGroups.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && !error && groups?.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">
           No groups yet.{" "}
           <Link href="/groups/new" className="underline hover:text-white">
@@ -51,7 +90,7 @@ export default function GroupsPage() {
         </div>
       )}
 
-      {!isLoading && !error && groups && groups.length > 0 && (
+      {!isLoading && !error && filteredGroups.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
           <Table>
             <TableHeader>
@@ -64,7 +103,7 @@ export default function GroupsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {groups.map((group) => (
+              {filteredGroups.map((group) => (
                 <TableRow key={group.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{group.name}</TableCell>
                   <TableCell>{group.priority}</TableCell>

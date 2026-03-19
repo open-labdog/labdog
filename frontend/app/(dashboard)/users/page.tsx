@@ -3,6 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -32,6 +33,7 @@ import type { AdminUser } from "@/lib/types"
 export default function UsersPage() {
   const { user: currentUser, loading: authLoading } = useAuth()
   const queryClient = useQueryClient()
+  const [searchQuery, setSearchQuery] = useState("")
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -63,6 +65,10 @@ export default function UsersPage() {
     enabled: !!currentUser?.is_superuser,
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const filteredUsers = users?.filter(u =>
+    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  ) ?? []
 
   if (authLoading) {
     return <div className="text-slate-400 py-8 text-center">Loading...</div>
@@ -238,14 +244,45 @@ export default function UsersPage() {
         </Dialog>
       </div>
 
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search by email..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-sm text-slate-400">
+            Showing {filteredUsers.length} of {users?.length ?? 0} users
+          </span>
+        )}
+      </div>
+
       {showLoading && <TableSkeleton rows={5} columns={3} />}
       {error && <div className="text-red-400 py-8 text-center">Failed to load users</div>}
 
-      {!isLoading && !error && users && users.length === 0 && (
+      {!isLoading && !error && filteredUsers.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && !error && users?.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">No users found.</div>
       )}
 
-      {!isLoading && !error && users && users.length > 0 && (
+      {!isLoading && !error && filteredUsers.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
           <Table>
             <TableHeader>
@@ -258,7 +295,7 @@ export default function UsersPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {users.map((u) => (
+              {filteredUsers.map((u) => (
                 <TableRow key={u.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{u.email}</TableCell>
                   <TableCell>

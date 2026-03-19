@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -44,6 +45,7 @@ function relativeTime(dateStr: string | null): string {
 
 export default function GitReposPage() {
   const queryClient = useQueryClient()
+  const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
@@ -66,6 +68,11 @@ export default function GitReposPage() {
     queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const filteredRepos = repos?.filter(r => {
+    const q = searchQuery.toLowerCase()
+    return r.name.toLowerCase().includes(q) || r.url.toLowerCase().includes(q)
+  }) ?? []
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -350,19 +357,50 @@ export default function GitReposPage() {
         </Dialog>
       </div>
 
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search by name or URL..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-sm text-slate-400">
+            Showing {filteredRepos.length} of {repos?.length ?? 0} repos
+          </span>
+        )}
+      </div>
+
       {showLoading && <TableSkeleton rows={5} columns={3} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load repositories</div>
       )}
 
-      {!isLoading && !error && repos && repos.length === 0 && (
+      {!isLoading && !error && filteredRepos.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && !error && repos?.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">
           No git repositories yet. Add your first repository to get started.
         </div>
       )}
 
-      {!isLoading && !error && repos && repos.length > 0 && (
+      {!isLoading && !error && filteredRepos.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
           <Table>
             <TableHeader>
@@ -376,7 +414,7 @@ export default function GitReposPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {repos.map((repo) => (
+              {filteredRepos.map((repo) => (
                 <TableRow key={repo.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{repo.name}</TableCell>
                   <TableCell className="font-mono text-sm text-slate-300 max-w-[250px] truncate">

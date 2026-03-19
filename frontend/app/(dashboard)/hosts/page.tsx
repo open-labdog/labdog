@@ -1,8 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
+import { SearchIcon, XIcon } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -19,11 +22,17 @@ import { apiFetch } from "@/lib/api"
 import type { Host } from "@/lib/types"
 
 export default function HostsPage() {
+  const [searchQuery, setSearchQuery] = useState("")
   const { data: hosts, isLoading, error } = useQuery<Host[]>({
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const filteredHosts = hosts?.filter(h => {
+    const q = searchQuery.toLowerCase()
+    return h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
+  }) ?? []
 
   return (
     <div className="space-y-6">
@@ -41,13 +50,44 @@ export default function HostsPage() {
         </div>
       </div>
 
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-sm">
+          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            placeholder="Search by hostname or IP..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-9 pr-8"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+            >
+              <XIcon className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {searchQuery && (
+          <span className="text-sm text-slate-400">
+            Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
+          </span>
+        )}
+      </div>
+
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts</div>
       )}
 
-      {!isLoading && !error && hosts && hosts.length === 0 && (
+      {!isLoading && !error && filteredHosts.length === 0 && searchQuery && (
+        <div className="text-slate-400 py-8 text-center">
+          No results matching &apos;{searchQuery}&apos;
+        </div>
+      )}
+
+      {!isLoading && !error && hosts?.length === 0 && !searchQuery && (
         <div className="text-slate-400 py-8 text-center">
           No hosts yet.{" "}
           <Link href="/hosts/new" className="underline hover:text-white">
@@ -56,7 +96,7 @@ export default function HostsPage() {
         </div>
       )}
 
-      {!isLoading && !error && hosts && hosts.length > 0 && (
+      {!isLoading && !error && filteredHosts.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
           <Table>
             <TableHeader>
@@ -69,7 +109,7 @@ export default function HostsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {hosts.map((host) => (
+              {filteredHosts.map((host) => (
                 <TableRow key={host.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{host.hostname}</TableCell>
                   <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
