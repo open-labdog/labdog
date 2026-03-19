@@ -202,8 +202,8 @@ export default function UsersPage() {
           setCreateDialogOpen(open)
           if (!open) resetCreateForm()
         }}>
-          <DialogTrigger>
-            <Button onClick={() => { resetCreateForm(); setCreateDialogOpen(true) }}>New User</Button>
+          <DialogTrigger render={<Button />} onClick={() => { resetCreateForm(); setCreateDialogOpen(true) }}>
+            New User
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>

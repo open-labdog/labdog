@@ -208,8 +208,8 @@ export default function GroupDetailPage() {
          )}
          <div className="mt-3">
            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-             <DialogTrigger>
-               <Button variant="outline" size="sm">Edit Group</Button>
+             <DialogTrigger render={<Button variant="outline" size="sm" />}>
+               Edit Group
              </DialogTrigger>
              <DialogContent>
                <DialogHeader>
@@ -387,8 +387,8 @@ export default function GroupDetailPage() {
                   Manage rules from a Git repository.
                 </p>
                 <Dialog open={enableDialogOpen} onOpenChange={setEnableDialogOpen}>
-                   <DialogTrigger>
-                     <Button variant="outline" size="sm">Enable</Button>
+                   <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                     Enable
                    </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>

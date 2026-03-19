@@ -166,8 +166,8 @@ export default function SSHKeysPage() {
           setDialogOpen(open)
           if (!open) { form.reset(); uploadMutation.reset() }
         }}>
-          <DialogTrigger>
-            <Button>Upload Key</Button>
+          <DialogTrigger render={<Button />}>
+            Upload Key
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
