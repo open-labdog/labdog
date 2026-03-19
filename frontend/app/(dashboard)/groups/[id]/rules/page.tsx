@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Lock, GitBranch, GripVertical, ChevronUp, ChevronDown } from "lucide-react"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
@@ -35,7 +35,7 @@ import {
 import { RuleDialog } from "@/components/rule-dialog"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { FirewallRule, HostGroup } from "@/lib/types"
@@ -229,12 +229,8 @@ function SortableRow({
 export default function GroupRulesPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
-
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [reorderError, setReorderError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -268,18 +264,21 @@ export default function GroupRulesPage() {
 
   const gitopsEnabled = !!group?.gitops_enabled
 
-  async function handleReorder(newOrder: FirewallRule[]) {
+  const reorderMutation = useApiMutation({
+    mutationFn: (ruleIds: number[]) =>
+      apiFetch(`/api/groups/${id}/rules/reorder`, { method: "PUT", body: JSON.stringify({ rule_ids: ruleIds }) }),
+    invalidateKeys: [["rules", id]],
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (ruleId: number) =>
+      apiFetch(`/api/groups/${id}/rules/${ruleId}`, { method: "DELETE" }),
+    invalidateKeys: [["rules", id]],
+  })
+
+  function handleReorder(newOrder: FirewallRule[]) {
     const ruleIds = newOrder.filter((r) => !r.is_system).map((r) => r.id)
-    setReorderError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/rules/reorder`, {
-        method: "PUT",
-        body: JSON.stringify({ rule_ids: ruleIds }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["rules", id] })
-    } catch (err) {
-      setReorderError(err instanceof Error ? err.message : "Reorder failed")
-    }
+    reorderMutation.mutate(ruleIds)
   }
 
   function handleMoveUp(rule: FirewallRule) {
@@ -334,16 +333,10 @@ export default function GroupRulesPage() {
       description: `Delete rule #${rule.priority} (${rule.action} ${rule.protocol})? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev: typeof confirmState) => prev ? { ...prev, loading: true } : null)
-        setDeletingId(rule.id)
         try {
-          await apiFetch(`/api/groups/${id}/rules/${rule.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["rules", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
+          await deleteMutation.mutateAsync(rule.id)
         } finally {
-          setDeletingId(null)
+          setConfirmState(null)
         }
       },
     })
@@ -376,8 +369,8 @@ export default function GroupRulesPage() {
         <div className="text-red-400 py-8 text-center">Failed to load rules</div>
       )}
 
-      {reorderError && (
-        <div className="text-red-400 text-sm">{reorderError}</div>
+      {reorderMutation.error && (
+        <div className="text-red-400 text-sm">{reorderMutation.error.message}</div>
       )}
 
       {!isLoading && !error && rules && rules.length === 0 && (
@@ -427,7 +420,7 @@ export default function GroupRulesPage() {
                         onMoveDown={handleMoveDown}
                         onEdit={handleEdit}
                         onDelete={handleDelete}
-                        deletingId={deletingId}
+                        deletingId={deleteMutation.isPending ? -1 : null}
                         gitopsEnabled={gitopsEnabled}
                       />
                     )

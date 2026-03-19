@@ -1,0 +1,41 @@
+=== Task 20: useApiMutation Migration Evidence ===
+Date: 2026-03-19T10:57:11+01:00
+
+=== TypeScript Check ===
+TypeScript compilation completed
+
+=== Files Modified ===
+.sisyphus/plans/ux-overhaul.md                     |   2 +-
+ frontend/app/(dashboard)/git-repos/page.tsx        | 225 +++------
+ .../app/(dashboard)/groups/[id]/cron-jobs/page.tsx |  73 ++-
+ .../(dashboard)/groups/[id]/hosts-entries/page.tsx |  78 ++-
+ .../app/(dashboard)/groups/[id]/packages/page.tsx  | 162 +++----
+ frontend/app/(dashboard)/groups/[id]/page.tsx      |  55 +--
+ .../app/(dashboard)/groups/[id]/rules/page.tsx     |  49 +-
+ .../app/(dashboard)/groups/[id]/services/page.tsx  |  78 ++-
+ frontend/app/(dashboard)/groups/[id]/sync/page.tsx |  70 ++-
+ .../app/(dashboard)/groups/[id]/users/page.tsx     | 176 +++----
+ frontend/app/(dashboard)/hosts/[id]/page.tsx       | 524 ++++++++-------------
+ frontend/app/(dashboard)/ssh-keys/page.tsx         |  65 ++-
+ frontend/app/(dashboard)/users/page.tsx            | 140 +++---
+ frontend/components/rule-dialog.tsx                |  57 +--
+ 14 files changed, 663 insertions(+), 1091 deletions(-)
+
+=== useApiMutation Usage Count ===
+frontend/lib/mutations.ts
+frontend/app/(dashboard)/hosts/[id]/page.tsx
+frontend/app/(dashboard)/users/page.tsx
+frontend/app/(dashboard)/git-repos/page.tsx
+frontend/app/(dashboard)/groups/[id]/cron-jobs/page.tsx
+frontend/app/(dashboard)/groups/[id]/hosts-entries/page.tsx
+frontend/app/(dashboard)/groups/[id]/sync/page.tsx
+frontend/app/(dashboard)/groups/[id]/page.tsx
+frontend/app/(dashboard)/groups/[id]/users/page.tsx
+frontend/app/(dashboard)/groups/[id]/packages/page.tsx
+frontend/app/(dashboard)/groups/[id]/rules/page.tsx
+frontend/app/(dashboard)/groups/[id]/services/page.tsx
+frontend/app/(dashboard)/ssh-keys/page.tsx
+frontend/components/rule-dialog.tsx
+
+=== Remaining manual setFormLoading/setFormError for API mutations ===
+frontend/app/(dashboard)/users/page.tsx

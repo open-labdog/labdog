@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
@@ -90,8 +90,12 @@ export default function HostDetailPage() {
   const [editSshPort, setEditSshPort] = useState(22)
   const [editSshKeyId, setEditSshKeyId] = useState<number | null>(null)
   const [editGroups, setEditGroups] = useState<number[]>([])
-  const [editError, setEditError] = useState<string | null>(null)
-  const [editLoading, setEditLoading] = useState(false)
+  const editMutation = useApiMutation({
+    mutationFn: (data: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    invalidateKeys: [["host", id], ["host-effective-rules", id]],
+    onSuccess: () => setEditOpen(false),
+  })
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -161,10 +165,18 @@ export default function HostDetailPage() {
   const [hostsAliases, setHostsAliases] = useState("")
   const [hostsComment, setHostsComment] = useState("")
   const [hostsPriority, setHostsPriority] = useState(100)
-  const [hostsFormError, setHostsFormError] = useState<string | null>(null)
-  const [hostsFormLoading, setHostsFormLoading] = useState(false)
-  const [hostsDeletingId, setHostsDeletingId] = useState<number | null>(null)
-  const [hostsDeleteError, setHostsDeleteError] = useState<string | null>(null)
+  const hostsSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/hosts-entries`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
+    onSuccess: () => setHostsDialogOpen(false),
+  })
+
+  const hostsDeleteMutation = useApiMutation({
+    mutationFn: (entryId: number) =>
+      apiFetch(`/api/hosts/${id}/hosts-entries/${entryId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
+  })
 
   const { data: effectiveLinuxUsers, isLoading: linuxUsersLoading, error: linuxUsersError } = useQuery<EffectiveLinuxUser[]>({
     queryKey: ["host-effective-linux-users", id],
@@ -203,10 +215,18 @@ export default function HostDetailPage() {
   const [luAuthorizedKeys, setLuAuthorizedKeys] = useState("")
   const [luSupplementaryGroups, setLuSupplementaryGroups] = useState("")
   const [luPriority, setLuPriority] = useState(100)
-  const [luFormError, setLuFormError] = useState<string | null>(null)
-  const [luFormLoading, setLuFormLoading] = useState(false)
-  const [luDeletingId, setLuDeletingId] = useState<number | null>(null)
-  const [luDeleteError, setLuDeleteError] = useState<string | null>(null)
+  const luSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/linux-users`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-linux-users", id], ["host-linux-user-overrides", id]],
+    onSuccess: () => setLuDialogOpen(false),
+  })
+
+  const luDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/linux-users/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-linux-users", id], ["host-linux-user-overrides", id]],
+  })
 
   const { data: effectiveCronJobs, isLoading: cronJobsLoading, error: cronJobsError } = useQuery<EffectiveCronJob[]>({
     queryKey: ["host-effective-cron-jobs", id],
@@ -230,10 +250,18 @@ export default function HostDetailPage() {
   const [cjPriority, setCjPriority] = useState(100)
   const [cjComment, setCjComment] = useState("")
   const [cjEnvVars, setCjEnvVars] = useState<{ key: string; value: string }[]>([])
-  const [cjFormError, setCjFormError] = useState<string | null>(null)
-  const [cjFormLoading, setCjFormLoading] = useState(false)
-  const [cjDeletingId, setCjDeletingId] = useState<number | null>(null)
-  const [cjDeleteError, setCjDeleteError] = useState<string | null>(null)
+  const cjSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/cron-jobs`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
+    onSuccess: () => setCjDialogOpen(false),
+  })
+
+  const cjDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/cron-jobs/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
+  })
 
   const { data: effectivePackages, isLoading: packagesLoading, error: packagesError } = useQuery<EffectivePackage[]>({
     queryKey: ["host-effective-packages", id],
@@ -255,10 +283,18 @@ export default function HostDetailPage() {
   const [ppManager, setPpManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
   const [ppPriority, setPpPriority] = useState(0)
   const [ppComment, setPpComment] = useState("")
-  const [ppFormError, setPpFormError] = useState<string | null>(null)
-  const [ppFormLoading, setPpFormLoading] = useState(false)
-  const [ppDeletingId, setPpDeletingId] = useState<number | null>(null)
-  const [ppDeleteError, setPpDeleteError] = useState<string | null>(null)
+  const ppSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/packages`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-packages", id], ["host-package-overrides", id]],
+    onSuccess: () => setPpDialogOpen(false),
+  })
+
+  const ppDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/packages/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-packages", id], ["host-package-overrides", id]],
+  })
 
   function openPpDialog() {
     setPpName("")
@@ -267,34 +303,16 @@ export default function HostDetailPage() {
     setPpManager("auto")
     setPpPriority(0)
     setPpComment("")
-    setPpFormError(null)
+    ppSaveMutation.reset()
     setPpDialogOpen(true)
   }
 
-  async function handlePpSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handlePpSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setPpFormError(null)
-    setPpFormLoading(true)
-    try {
-      await apiFetch(`/api/hosts/${id}/packages`, {
-        method: "POST",
-        body: JSON.stringify({
-          package_name: ppName,
-          version: ppVersion || null,
-          state: ppState,
-          package_manager: ppManager,
-          priority: ppPriority,
-          comment: ppComment || null,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
-      setPpDialogOpen(false)
-    } catch (err) {
-      setPpFormError(err instanceof Error ? err.message : "Failed to create package override")
-    } finally {
-      setPpFormLoading(false)
-    }
+    ppSaveMutation.mutate({
+      package_name: ppName, version: ppVersion || null, state: ppState,
+      package_manager: ppManager, priority: ppPriority, comment: ppComment || null,
+    })
   }
 
   function handlePpDelete(packageName: string) {
@@ -306,20 +324,9 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         const override = hostPackageOverrides?.find(o => o.package_name === packageName)
-        if (!override) { setPpDeleteError("Override not found"); setConfirmState(null); return }
+        if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setPpDeletingId(override.id)
-        setPpDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/packages/${override.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
-        } catch (err) {
-          setPpDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setPpDeletingId(null)
-          setConfirmState(null)
-        }
+        try { await ppDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -333,41 +340,18 @@ export default function HostDetailPage() {
     setCjPriority(100)
     setCjComment("")
     setCjEnvVars([])
-    setCjFormError(null)
+    cjSaveMutation.reset()
     setCjDialogOpen(true)
   }
 
-  async function handleCjSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleCjSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setCjFormError(null)
-    setCjFormLoading(true)
     const env: Record<string, string> = {}
-    for (const v of cjEnvVars) {
-      const k = v.key.trim()
-      if (k) env[k] = v.value
-    }
-    try {
-      await apiFetch(`/api/hosts/${id}/cron-jobs`, {
-        method: "POST",
-        body: JSON.stringify({
-          name: cjName,
-          user: cjUser,
-          schedule: cjSchedule,
-          command: cjCommand,
-          state: cjState,
-          priority: cjPriority,
-          comment: cjComment || null,
-          environment: env,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
-      setCjDialogOpen(false)
-    } catch (err) {
-      setCjFormError(err instanceof Error ? err.message : "Failed to create cron job override")
-    } finally {
-      setCjFormLoading(false)
-    }
+    for (const v of cjEnvVars) { const k = v.key.trim(); if (k) env[k] = v.value }
+    cjSaveMutation.mutate({
+      name: cjName, user: cjUser, schedule: cjSchedule, command: cjCommand,
+      state: cjState, priority: cjPriority, comment: cjComment || null, environment: env,
+    })
   }
 
   function handleCjDelete(name: string, user: string) {
@@ -379,20 +363,9 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         const override = hostCronOverrides?.find(o => o.name === name && o.user === user)
-        if (!override) { setCjDeleteError("Override not found"); setConfirmState(null); return }
+        if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setCjDeletingId(override.id)
-        setCjDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/cron-jobs/${override.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
-        } catch (err) {
-          setCjDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setCjDeletingId(null)
-          setConfirmState(null)
-        }
+        try { await cjDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -402,10 +375,18 @@ export default function HostDetailPage() {
   const [lgGid, setLgGid] = useState("")
   const [lgState, setLgState] = useState<"present" | "absent">("present")
   const [lgPriority, setLgPriority] = useState(100)
-  const [lgFormError, setLgFormError] = useState<string | null>(null)
-  const [lgFormLoading, setLgFormLoading] = useState(false)
-  const [lgDeletingId, setLgDeletingId] = useState<number | null>(null)
-  const [lgDeleteError, setLgDeleteError] = useState<string | null>(null)
+  const lgSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/linux-groups`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-linux-groups", id], ["host-linux-group-overrides", id]],
+    onSuccess: () => setLgDialogOpen(false),
+  })
+
+  const lgDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/linux-groups/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-linux-groups", id], ["host-linux-group-overrides", id]],
+  })
 
   function openLuDialog() {
     setLuUsername("")
@@ -418,38 +399,20 @@ export default function HostDetailPage() {
     setLuAuthorizedKeys("")
     setLuSupplementaryGroups("")
     setLuPriority(100)
-    setLuFormError(null)
+    luSaveMutation.reset()
     setLuDialogOpen(true)
   }
 
-  async function handleLuSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleLuSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setLuFormError(null)
-    setLuFormLoading(true)
-    try {
-      await apiFetch(`/api/hosts/${id}/linux-users`, {
-        method: "POST",
-        body: JSON.stringify({
-          username: luUsername,
-          uid: luUid ? Number(luUid) : null,
-          shell: luShell,
-          home_dir: luHomeDir || null,
-          state: luState,
-          comment: luComment || null,
-          sudo_rule: luSudoRule || null,
-          authorized_keys: luAuthorizedKeys.split("\n").map((k) => k.trim()).filter(Boolean),
-          supplementary_groups: luSupplementaryGroups.split(",").map((g) => g.trim()).filter(Boolean),
-          priority: luPriority,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
-      setLuDialogOpen(false)
-    } catch (err) {
-      setLuFormError(err instanceof Error ? err.message : "Failed to create user override")
-    } finally {
-      setLuFormLoading(false)
-    }
+    luSaveMutation.mutate({
+      username: luUsername, uid: luUid ? Number(luUid) : null, shell: luShell,
+      home_dir: luHomeDir || null, state: luState, comment: luComment || null,
+      sudo_rule: luSudoRule || null,
+      authorized_keys: luAuthorizedKeys.split("\n").map((k) => k.trim()).filter(Boolean),
+      supplementary_groups: luSupplementaryGroups.split(",").map((g) => g.trim()).filter(Boolean),
+      priority: luPriority,
+    })
   }
 
   function handleLuDelete(username: string) {
@@ -461,20 +424,9 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         const override = hostLinuxUserOverrides?.find(o => o.username === username)
-        if (!override) { setLuDeleteError("Override not found"); setConfirmState(null); return }
+        if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setLuDeletingId(override.id)
-        setLuDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/linux-users/${override.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
-        } catch (err) {
-          setLuDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setLuDeletingId(null)
-          setConfirmState(null)
-        }
+        try { await luDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -484,32 +436,15 @@ export default function HostDetailPage() {
     setLgGid("")
     setLgState("present")
     setLgPriority(100)
-    setLgFormError(null)
+    lgSaveMutation.reset()
     setLgDialogOpen(true)
   }
 
-  async function handleLgSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleLgSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setLgFormError(null)
-    setLgFormLoading(true)
-    try {
-      await apiFetch(`/api/hosts/${id}/linux-groups`, {
-        method: "POST",
-        body: JSON.stringify({
-          groupname: lgGroupname,
-          gid: lgGid ? Number(lgGid) : null,
-          state: lgState,
-          priority: lgPriority,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
-      setLgDialogOpen(false)
-    } catch (err) {
-      setLgFormError(err instanceof Error ? err.message : "Failed to create group override")
-    } finally {
-      setLgFormLoading(false)
-    }
+    lgSaveMutation.mutate({
+      groupname: lgGroupname, gid: lgGid ? Number(lgGid) : null, state: lgState, priority: lgPriority,
+    })
   }
 
   function handleLgDelete(groupname: string) {
@@ -521,20 +456,9 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         const override = hostLinuxGroupOverrides?.find(o => o.groupname === groupname)
-        if (!override) { setLgDeleteError("Override not found"); setConfirmState(null); return }
+        if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setLgDeletingId(override.id)
-        setLgDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/linux-groups/${override.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
-        } catch (err) {
-          setLgDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setLgDeletingId(null)
-          setConfirmState(null)
-        }
+        try { await lgDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -545,33 +469,17 @@ export default function HostDetailPage() {
     setHostsAliases("")
     setHostsComment("")
     setHostsPriority(100)
-    setHostsFormError(null)
+    hostsSaveMutation.reset()
     setHostsDialogOpen(true)
   }
 
-  async function handleHostsSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleHostsSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setHostsFormError(null)
-    setHostsFormLoading(true)
-    try {
-      await apiFetch(`/api/hosts/${id}/hosts-entries`, {
-        method: "POST",
-        body: JSON.stringify({
-          ip_address: hostsIp,
-          hostname: hostsHostname,
-          aliases: hostsAliases.split(",").map((a) => a.trim()).filter(Boolean),
-          comment: hostsComment || null,
-          priority: hostsPriority,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
-      setHostsDialogOpen(false)
-    } catch (err) {
-      setHostsFormError(err instanceof Error ? err.message : "Failed to create entry")
-    } finally {
-      setHostsFormLoading(false)
-    }
+    hostsSaveMutation.mutate({
+      ip_address: hostsIp, hostname: hostsHostname,
+      aliases: hostsAliases.split(",").map((a) => a.trim()).filter(Boolean),
+      comment: hostsComment || null, priority: hostsPriority,
+    })
   }
 
   function handleHostsEntryDelete(entry: HostsEntry) {
@@ -583,18 +491,7 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setHostsDeletingId(entry.id)
-        setHostsDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
-        } catch (err) {
-          setHostsDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setHostsDeletingId(null)
-          setConfirmState(null)
-        }
+        try { await hostsDeleteMutation.mutateAsync(entry.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -622,10 +519,18 @@ export default function HostDetailPage() {
   const [svcEnabled, setSvcEnabled] = useState(true)
   const [svcPriority, setSvcPriority] = useState(100)
   const [svcComment, setSvcComment] = useState("")
-  const [svcFormError, setSvcFormError] = useState<string | null>(null)
-  const [svcFormLoading, setSvcFormLoading] = useState(false)
-  const [svcDeletingName, setSvcDeletingName] = useState<string | null>(null)
-  const [svcDeleteError, setSvcDeleteError] = useState<string | null>(null)
+  const svcSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/services`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-services", id], ["host-service-overrides", id]],
+    onSuccess: () => setSvcDialogOpen(false),
+  })
+
+  const svcDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/services/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-services", id], ["host-service-overrides", id]],
+  })
 
   // Live inventory state
   const [inventoryLoaded, setInventoryLoaded] = useState(false)
@@ -645,33 +550,16 @@ export default function HostDetailPage() {
     setSvcEnabled(true)
     setSvcPriority(100)
     setSvcComment("")
-    setSvcFormError(null)
+    svcSaveMutation.reset()
     setSvcDialogOpen(true)
   }
 
-  async function handleSvcSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSvcSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setSvcFormError(null)
-    setSvcFormLoading(true)
-    try {
-      await apiFetch(`/api/hosts/${id}/services`, {
-        method: "POST",
-        body: JSON.stringify({
-          service_name: svcName,
-          state: svcState,
-          enabled: svcEnabled,
-          priority: svcPriority,
-          comment: svcComment || null,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
-      setSvcDialogOpen(false)
-    } catch (err) {
-      setSvcFormError(err instanceof Error ? err.message : "Failed to create override")
-    } finally {
-      setSvcFormLoading(false)
-    }
+    svcSaveMutation.mutate({
+      service_name: svcName, state: svcState, enabled: svcEnabled,
+      priority: svcPriority, comment: svcComment || null,
+    })
   }
 
   function handleSvcDelete(serviceName: string) {
@@ -683,24 +571,9 @@ export default function HostDetailPage() {
       variant: "destructive",
       action: async () => {
         const override = hostOverrides?.find(o => o.service_name === serviceName)
-        if (!override) {
-          setSvcDeleteError("Override not found")
-          setConfirmState(null)
-          return
-        }
+        if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
-        setSvcDeletingName(serviceName)
-        setSvcDeleteError(null)
-        try {
-          await apiFetch(`/api/hosts/${id}/services/${override.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
-        } catch (err) {
-          setSvcDeleteError(err instanceof Error ? err.message : "Delete failed")
-        } finally {
-          setSvcDeletingName(null)
-          setConfirmState(null)
-        }
+        try { await svcDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -776,8 +649,9 @@ export default function HostDetailPage() {
       setEditSshPort(host.ssh_port)
       setEditSshKeyId(host.ssh_key_id)
       setEditGroups(host.group_ids ?? [])
-      setEditError(null)
+      editMutation.reset()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen, host])
 
   function toggleEditGroup(groupId: number) {
@@ -786,30 +660,12 @@ export default function HostDetailPage() {
     )
   }
 
-  async function handleEditSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleEditSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setEditError(null)
-    setEditLoading(true)
-
-    try {
-      await apiFetch(`/api/hosts/${id}`, {
-        method: "PUT",
-        body: JSON.stringify({
-          hostname: editHostname,
-          ip_address: editIp,
-          ssh_port: editSshPort,
-          ssh_key_id: editSshKeyId,
-          group_ids: editGroups,
-        }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["host", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-rules", id] })
-      setEditOpen(false)
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Failed to update host")
-    } finally {
-      setEditLoading(false)
-    }
+    editMutation.mutate({
+      hostname: editHostname, ip_address: editIp, ssh_port: editSshPort,
+      ssh_key_id: editSshKeyId, group_ids: editGroups,
+    })
   }
 
   return (
@@ -907,13 +763,13 @@ export default function HostDetailPage() {
                   </div>
                 )}
 
-                {editError && (
-                  <p className="text-sm text-red-400">{editError}</p>
+                {editMutation.error && (
+                  <p className="text-sm text-red-400">{editMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={editLoading}>
-                    {editLoading ? "Saving..." : "Save Changes"}
+                  <Button type="submit" disabled={editMutation.isPending}>
+                    {editMutation.isPending ? "Saving..." : "Save Changes"}
                   </Button>
                   <Button
                     type="button"
@@ -1107,8 +963,8 @@ export default function HostDetailPage() {
             <Button onClick={openSvcDialog}>Add Override</Button>
           </div>
 
-          {svcDeleteError && (
-            <div className="text-red-400 text-sm">{svcDeleteError}</div>
+          {svcDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{svcDeleteMutation.error.message}</div>
           )}
 
           {showServicesLoading && <TableSkeleton rows={3} columns={4} />}
@@ -1161,11 +1017,11 @@ export default function HostDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={svcDeletingName === svc.service_name}
+                            disabled={svcDeleteMutation.isPending}
                             onClick={() => handleSvcDelete(svc.service_name)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {svcDeletingName === svc.service_name ? "…" : "Delete"}
+                            {svcDeleteMutation.isPending ? "…" : "Delete"}
                           </Button>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
@@ -1243,13 +1099,13 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {svcFormError && (
-                  <p className="text-sm text-red-400">{svcFormError}</p>
+                {svcSaveMutation.error && (
+                  <p className="text-sm text-red-400">{svcSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={svcFormLoading}>
-                    {svcFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={svcSaveMutation.isPending}>
+                    {svcSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"
@@ -1439,8 +1295,8 @@ export default function HostDetailPage() {
             </div>
           </div>
 
-          {hostsDeleteError && (
-            <div className="text-red-400 text-sm">{hostsDeleteError}</div>
+          {hostsDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{hostsDeleteMutation.error.message}</div>
           )}
 
           {hostsPreviewError && (
@@ -1515,11 +1371,11 @@ export default function HostDetailPage() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                disabled={hostsDeletingId === override.id}
+                                 disabled={hostsDeleteMutation.isPending}
                                 onClick={() => handleHostsEntryDelete(override)}
                                 className="text-red-400 hover:text-red-300 hover:bg-red-950"
                               >
-                                {hostsDeletingId === override.id ? "…" : "Delete"}
+                                {hostsDeleteMutation.isPending ? "…" : "Delete"}
                               </Button>
                             ) : null
                           })()
@@ -1598,13 +1454,13 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {hostsFormError && (
-                  <p className="text-sm text-red-400">{hostsFormError}</p>
+                {hostsSaveMutation.error && (
+                  <p className="text-sm text-red-400">{hostsSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={hostsFormLoading}>
-                    {hostsFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={hostsSaveMutation.isPending}>
+                    {hostsSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"
@@ -1632,8 +1488,8 @@ export default function HostDetailPage() {
             <Button onClick={openLuDialog}>Add User Override</Button>
           </div>
 
-          {luDeleteError && (
-            <div className="text-red-400 text-sm">{luDeleteError}</div>
+          {luDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{luDeleteMutation.error.message}</div>
           )}
 
           {showLinuxUsersLoading && <TableSkeleton rows={3} columns={4} />}
@@ -1696,11 +1552,11 @@ export default function HostDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={luDeletingId != null}
+                            disabled={luDeleteMutation.isPending}
                             onClick={() => handleLuDelete(user.username)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {luDeletingId != null ? "…" : "Delete"}
+                            {luDeleteMutation.isPending ? "…" : "Delete"}
                           </Button>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
@@ -1725,8 +1581,8 @@ export default function HostDetailPage() {
             <Button onClick={openLgDialog}>Add Group Override</Button>
           </div>
 
-          {lgDeleteError && (
-            <div className="text-red-400 text-sm">{lgDeleteError}</div>
+          {lgDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{lgDeleteMutation.error.message}</div>
           )}
 
           {showLinuxGroupsLoading && <TableSkeleton rows={3} columns={4} />}
@@ -1773,11 +1629,11 @@ export default function HostDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={lgDeletingId != null}
+                            disabled={lgDeleteMutation.isPending}
                             onClick={() => handleLgDelete(group.groupname)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {lgDeletingId != null ? "…" : "Delete"}
+                            {lgDeleteMutation.isPending ? "…" : "Delete"}
                           </Button>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
@@ -1914,13 +1770,13 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {luFormError && (
-                  <p className="text-sm text-red-400">{luFormError}</p>
+                {luSaveMutation.error && (
+                  <p className="text-sm text-red-400">{luSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={luFormLoading}>
-                    {luFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={luSaveMutation.isPending}>
+                    {luSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"
@@ -1989,13 +1845,13 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {lgFormError && (
-                  <p className="text-sm text-red-400">{lgFormError}</p>
+                {lgSaveMutation.error && (
+                  <p className="text-sm text-red-400">{lgSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={lgFormLoading}>
-                    {lgFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={lgSaveMutation.isPending}>
+                    {lgSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"
@@ -2034,8 +1890,8 @@ export default function HostDetailPage() {
             </div>
           </div>
 
-          {cjDeleteError && (
-            <div className="text-red-400 text-sm">{cjDeleteError}</div>
+          {cjDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{cjDeleteMutation.error.message}</div>
           )}
 
           {showCronJobsLoading && <TableSkeleton rows={3} columns={4} />}
@@ -2097,11 +1953,11 @@ export default function HostDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={cjDeletingId != null}
+                            disabled={cjDeleteMutation.isPending}
                             onClick={() => handleCjDelete(job.name, job.user)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {cjDeletingId != null ? "..." : "Delete"}
+                            {cjDeleteMutation.isPending ? "..." : "Delete"}
                           </Button>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
@@ -2259,13 +2115,13 @@ export default function HostDetailPage() {
                   </div>
                 </div>
 
-                {cjFormError && (
-                  <p className="text-sm text-red-400">{cjFormError}</p>
+                {cjSaveMutation.error && (
+                  <p className="text-sm text-red-400">{cjSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={cjFormLoading}>
-                    {cjFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={cjSaveMutation.isPending}>
+                    {cjSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"
@@ -2293,8 +2149,8 @@ export default function HostDetailPage() {
             <Button onClick={openPpDialog}>Add Override</Button>
           </div>
 
-          {ppDeleteError && (
-            <div className="text-red-400 text-sm">{ppDeleteError}</div>
+          {ppDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{ppDeleteMutation.error.message}</div>
           )}
 
           {showPackagesLoading && <TableSkeleton rows={3} columns={4} />}
@@ -2349,11 +2205,11 @@ export default function HostDetailPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={ppDeletingId != null}
+                            disabled={ppDeleteMutation.isPending}
                             onClick={() => handlePpDelete(pkg.package_name)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {ppDeletingId != null ? "..." : "Delete"}
+                            {ppDeleteMutation.isPending ? "..." : "Delete"}
                           </Button>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
@@ -2448,13 +2304,13 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {ppFormError && (
-                  <p className="text-sm text-red-400">{ppFormError}</p>
+                {ppSaveMutation.error && (
+                  <p className="text-sm text-red-400">{ppSaveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={ppFormLoading}>
-                    {ppFormLoading ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={ppSaveMutation.isPending}>
+                    {ppSaveMutation.isPending ? "Saving..." : "Create Override"}
                   </Button>
                   <Button
                     type="button"

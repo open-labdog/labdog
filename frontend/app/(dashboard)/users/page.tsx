@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/lib/auth"
@@ -32,7 +33,6 @@ import type { AdminUser } from "@/lib/types"
 
 export default function UsersPage() {
   const { user: currentUser, loading: authLoading } = useAuth()
-  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
@@ -56,8 +56,8 @@ export default function UsersPage() {
   const [newPassword, setNewPassword] = useState("")
   const [confirmNewPassword, setConfirmNewPassword] = useState("")
 
-  const [formError, setFormError] = useState<string | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
+  // Client-side validation error (not API)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   const { data: users, isLoading, error } = useQuery<AdminUser[]>({
     queryKey: ["admin-users"],
@@ -69,6 +69,34 @@ export default function UsersPage() {
   const filteredUsers = users?.filter(u =>
     u.email.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
+
+  const createMutation = useApiMutation({
+    mutationFn: (data: { email: string; password: string; is_superuser: boolean }) =>
+      apiFetch("/api/admin/users", { method: "POST", body: JSON.stringify(data) }),
+    invalidateKeys: [["admin-users"]],
+    onSuccess: () => { setCreateDialogOpen(false); resetCreateForm() },
+  })
+
+  const editMutation = useApiMutation({
+    mutationFn: ({ userId, ...data }: { userId: number; email: string; is_active: boolean; is_superuser: boolean }) =>
+      apiFetch(`/api/admin/users/${userId}`, { method: "PATCH", body: JSON.stringify(data) }),
+    invalidateKeys: [["admin-users"]],
+    onSuccess: () => setEditDialogOpen(false),
+  })
+
+  const resetPasswordMutation = useApiMutation({
+    mutationFn: ({ userId, password }: { userId: number; password: string }) =>
+      apiFetch(`/api/admin/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
+    invalidateKeys: [["admin-users"]],
+    onSuccess: () => setResetDialogOpen(false),
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (userId: number) =>
+      apiFetch(`/api/admin/users/${userId}`, { method: "DELETE" }),
+    invalidateKeys: [["admin-users"]],
+    onSuccess: () => setDeleteDialogOpen(false),
+  })
 
   if (authLoading) {
     return <div className="text-slate-400 py-8 text-center">Loading...</div>
@@ -92,7 +120,8 @@ export default function UsersPage() {
     setPassword("")
     setConfirmPassword("")
     setIsSuperuser(false)
-    setFormError(null)
+    setValidationError(null)
+    createMutation.reset()
   }
 
   function openEditDialog(u: AdminUser) {
@@ -100,7 +129,7 @@ export default function UsersPage() {
     setEditEmail(u.email)
     setEditIsActive(u.is_active)
     setEditIsSuperuser(u.is_superuser)
-    setFormError(null)
+    editMutation.reset()
     setEditDialogOpen(true)
   }
 
@@ -108,95 +137,54 @@ export default function UsersPage() {
     setSelectedUser(u)
     setNewPassword("")
     setConfirmNewPassword("")
-    setFormError(null)
+    setValidationError(null)
+    resetPasswordMutation.reset()
     setResetDialogOpen(true)
   }
 
   function openDeleteDialog(u: AdminUser) {
     setSelectedUser(u)
-    setFormError(null)
+    deleteMutation.reset()
     setDeleteDialogOpen(true)
   }
 
-  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+  function handleCreate(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setFormError(null)
+    setValidationError(null)
     if (password !== confirmPassword) {
-      setFormError("Passwords do not match")
+      setValidationError("Passwords do not match")
       return
     }
-    setFormLoading(true)
-    try {
-      await apiFetch("/api/admin/users", {
-        method: "POST",
-        body: JSON.stringify({ email, password, is_superuser: isSuperuser }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      setCreateDialogOpen(false)
-      resetCreateForm()
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to create user")
-    } finally {
-      setFormLoading(false)
-    }
+    createMutation.mutate({ email, password, is_superuser: isSuperuser })
   }
 
-  async function handleEdit(e: React.FormEvent<HTMLFormElement>) {
+  function handleEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedUser) return
-    setFormError(null)
-    setFormLoading(true)
-    try {
-      await apiFetch(`/api/admin/users/${selectedUser.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ email: editEmail, is_active: editIsActive, is_superuser: editIsSuperuser }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      setEditDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to update user")
-    } finally {
-      setFormLoading(false)
-    }
+    editMutation.mutate({ userId: selectedUser.id, email: editEmail, is_active: editIsActive, is_superuser: editIsSuperuser })
   }
 
-  async function handleResetPassword(e: React.FormEvent<HTMLFormElement>) {
+  function handleResetPassword(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedUser) return
-    setFormError(null)
+    setValidationError(null)
     if (newPassword !== confirmNewPassword) {
-      setFormError("Passwords do not match")
+      setValidationError("Passwords do not match")
       return
     }
-    setFormLoading(true)
-    try {
-      await apiFetch(`/api/admin/users/${selectedUser.id}/reset-password`, {
-        method: "POST",
-        body: JSON.stringify({ password: newPassword }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      setResetDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to reset password")
-    } finally {
-      setFormLoading(false)
-    }
+    resetPasswordMutation.mutate({ userId: selectedUser.id, password: newPassword })
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!selectedUser) return
-    setFormError(null)
-    setFormLoading(true)
-    try {
-      await apiFetch(`/api/admin/users/${selectedUser.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["admin-users"] })
-      setDeleteDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to delete user")
-    } finally {
-      setFormLoading(false)
-    }
+    deleteMutation.mutate(selectedUser.id)
   }
+
+  const formError = validationError || createMutation.error?.message || null
+  const editFormError = editMutation.error?.message || null
+  const resetFormError = validationError || resetPasswordMutation.error?.message || null
+  const deleteFormError = deleteMutation.error?.message || null
+  const formLoading = createMutation.isPending || editMutation.isPending || resetPasswordMutation.isPending || deleteMutation.isPending
 
   return (
     <div className="space-y-6">
@@ -236,7 +224,7 @@ export default function UsersPage() {
               </div>
               {formError && <p className="text-sm text-red-400">{formError}</p>}
               <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={formLoading}>{formLoading ? "Creating..." : "Create User"}</Button>
+                <Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? "Creating..." : "Create User"}</Button>
                 <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
               </div>
             </form>
@@ -344,9 +332,9 @@ export default function UsersPage() {
               <input id="edit-superuser" type="checkbox" checked={editIsSuperuser} onChange={(e) => setEditIsSuperuser(e.target.checked)} className="rounded border-input" />
               <Label htmlFor="edit-superuser">Superuser</Label>
             </div>
-            {formError && <p className="text-sm text-red-400">{formError}</p>}
+            {editFormError && <p className="text-sm text-red-400">{editFormError}</p>}
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={formLoading}>{formLoading ? "Saving..." : "Save Changes"}</Button>
+              <Button type="submit" disabled={editMutation.isPending}>{editMutation.isPending ? "Saving..." : "Save Changes"}</Button>
               <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
             </div>
           </form>
@@ -368,9 +356,9 @@ export default function UsersPage() {
               <Label htmlFor="reset-confirm">Confirm Password</Label>
               <Input id="reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required />
             </div>
-            {formError && <p className="text-sm text-red-400">{formError}</p>}
+            {resetFormError && <p className="text-sm text-red-400">{resetFormError}</p>}
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={formLoading}>{formLoading ? "Resetting..." : "Reset Password"}</Button>
+              <Button type="submit" disabled={resetPasswordMutation.isPending}>{resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}</Button>
               <Button type="button" variant="outline" onClick={() => setResetDialogOpen(false)}>Cancel</Button>
             </div>
           </form>
@@ -386,10 +374,10 @@ export default function UsersPage() {
           <p className="text-sm text-slate-400 mt-2">
             Are you sure you want to delete <span className="text-white font-medium">{selectedUser?.email}</span>? This action cannot be undone.
           </p>
-          {formError && <p className="text-sm text-red-400 mt-2">{formError}</p>}
+          {deleteFormError && <p className="text-sm text-red-400 mt-2">{deleteFormError}</p>}
           <div className="flex gap-3 pt-4">
-            <Button variant="destructive" onClick={handleDelete} disabled={formLoading}>
-              {formLoading ? "Deleting..." : "Delete"}
+            <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
           </div>

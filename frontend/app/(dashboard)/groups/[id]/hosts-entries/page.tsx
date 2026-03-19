@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -26,8 +26,8 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { hostsEntrySchema, type HostsEntryInput } from "@/lib/schemas"
-import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { HostsEntry, HostGroup } from "@/lib/types"
@@ -35,12 +35,9 @@ import type { HostsEntry, HostGroup } from "@/lib/types"
 export default function GroupHostsEntriesPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEntry, setEditingEntry] = useState<HostsEntry | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -66,16 +63,33 @@ export default function GroupHostsEntriesPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
+  const saveMutation = useApiMutation({
+    mutationFn: ({ entryId, payload }: { entryId?: number; payload: Record<string, unknown> }) => {
+      if (entryId) {
+        return apiFetch(`/api/groups/${id}/hosts-entries/${entryId}`, { method: "PUT", body: JSON.stringify(payload) })
+      }
+      return apiFetch(`/api/groups/${id}/hosts-entries`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["hosts-entries", id]],
+    onSuccess: () => setDialogOpen(false),
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (entryId: number) =>
+      apiFetch(`/api/groups/${id}/hosts-entries/${entryId}`, { method: "DELETE" }),
+    invalidateKeys: [["hosts-entries", id]],
+  })
+
   function openCreateDialog() {
     setEditingEntry(null)
     form.reset(entryDefaults)
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
   function openEditDialog(entry: HostsEntry) {
     setEditingEntry(entry)
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
@@ -91,37 +105,15 @@ export default function GroupHostsEntriesPage() {
     }
   }, [dialogOpen, editingEntry, form])
 
-  const onSubmit = form.handleSubmit(async (data) => {
-    setFormError(null)
-
+  const onSubmit = form.handleSubmit((data) => {
     const payload = {
       ip_address: data.ip_address,
       hostname: data.hostname,
-      aliases: (data.aliases ?? "")
-        .split(",")
-        .map((a: string) => a.trim())
-        .filter(Boolean),
+      aliases: (data.aliases ?? "").split(",").map((a: string) => a.trim()).filter(Boolean),
       comment: data.comment || null,
       priority: data.priority,
     }
-
-    try {
-      if (editingEntry) {
-        await apiFetch(`/api/groups/${id}/hosts-entries/${editingEntry.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/hosts-entries`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["hosts-entries", id] })
-      setDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save hosts entry")
-    }
+    saveMutation.mutate({ entryId: editingEntry?.id, payload })
   })
 
   function handleDelete(entry: HostsEntry) {
@@ -131,16 +123,10 @@ export default function GroupHostsEntriesPage() {
       description: `Delete hosts entry "${entry.ip_address} ${entry.hostname}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setDeletingId(entry.id)
         try {
-          await apiFetch(`/api/groups/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["hosts-entries", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
+          await deleteMutation.mutateAsync(entry.id)
         } finally {
-          setDeletingId(null)
+          setConfirmState(null)
         }
       },
     })
@@ -206,11 +192,11 @@ export default function GroupHostsEntriesPage() {
                           <Button
                             size="sm"
                             variant="ghost"
-                            disabled={deletingId === entry.id}
+                            disabled={deleteMutation.isPending}
                             onClick={() => handleDelete(entry)}
                             className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            {deletingId === entry.id ? "…" : "Delete"}
+                            {deleteMutation.isPending ? "…" : "Delete"}
                           </Button>
                         </>
                       )}
@@ -283,13 +269,13 @@ export default function GroupHostsEntriesPage() {
               {form.formState.errors.priority?.message && <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>}
             </div>
 
-            {formError && (
-              <p className="text-sm text-red-400">{formError}</p>
+            {saveMutation.error && (
+              <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

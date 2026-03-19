@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
@@ -53,13 +53,9 @@ function RepoTypeBadge({ type }: { type: string }) {
 export default function GroupPackagesPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
 
   const [pkgDialogOpen, setPkgDialogOpen] = useState(false)
   const [pkgEditing, setPkgEditing] = useState<PackageRule | null>(null)
-  const [pkgDeletingId, setPkgDeletingId] = useState<number | null>(null)
-  const [pkgFormError, setPkgFormError] = useState<string | null>(null)
-  const [pkgFormLoading, setPkgFormLoading] = useState(false)
 
   const [pkgName, setPkgName] = useState("")
   const [pkgVersion, setPkgVersion] = useState("")
@@ -70,12 +66,9 @@ export default function GroupPackagesPage() {
 
   const [repoDialogOpen, setRepoDialogOpen] = useState(false)
   const [repoEditing, setRepoEditing] = useState<PackageRepository | null>(null)
-  const [repoDeletingId, setRepoDeletingId] = useState<number | null>(null)
-  const [repoFormError, setRepoFormError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
-  const [repoFormLoading, setRepoFormLoading] = useState(false)
 
   const [repoName, setRepoName] = useState("")
   const [repoUrl, setRepoUrl] = useState("")
@@ -99,6 +92,34 @@ export default function GroupPackagesPage() {
   })
   const showRepoLoading = useDelayedLoading(repoLoading)
 
+  const pkgSaveMutation = useApiMutation({
+    mutationFn: ({ pkgId, payload }: { pkgId?: number; payload: Record<string, unknown> }) => {
+      if (pkgId) return apiFetch(`/api/groups/${id}/packages/${pkgId}`, { method: "PUT", body: JSON.stringify(payload) })
+      return apiFetch(`/api/groups/${id}/packages`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["group-packages", id]],
+    onSuccess: () => setPkgDialogOpen(false),
+  })
+
+  const pkgDeleteMutation = useApiMutation({
+    mutationFn: (pkgId: number) => apiFetch(`/api/groups/${id}/packages/${pkgId}`, { method: "DELETE" }),
+    invalidateKeys: [["group-packages", id]],
+  })
+
+  const repoSaveMutation = useApiMutation({
+    mutationFn: ({ repoId, payload }: { repoId?: number; payload: Record<string, unknown> }) => {
+      if (repoId) return apiFetch(`/api/groups/${id}/package-repos/${repoId}`, { method: "PUT", body: JSON.stringify(payload) })
+      return apiFetch(`/api/groups/${id}/package-repos`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["group-package-repos", id]],
+    onSuccess: () => setRepoDialogOpen(false),
+  })
+
+  const repoDeleteMutation = useApiMutation({
+    mutationFn: (repoId: number) => apiFetch(`/api/groups/${id}/package-repos/${repoId}`, { method: "DELETE" }),
+    invalidateKeys: [["group-package-repos", id]],
+  })
+
   function openPkgCreateDialog() {
     setPkgEditing(null)
     setPkgName("")
@@ -107,7 +128,7 @@ export default function GroupPackagesPage() {
     setPkgManager("auto")
     setPkgPriority(0)
     setPkgComment("")
-    setPkgFormError(null)
+    pkgSaveMutation.reset()
     setPkgDialogOpen(true)
   }
 
@@ -119,43 +140,17 @@ export default function GroupPackagesPage() {
     setPkgManager(pkg.package_manager)
     setPkgPriority(pkg.priority)
     setPkgComment(pkg.comment ?? "")
-    setPkgFormError(null)
+    pkgSaveMutation.reset()
     setPkgDialogOpen(true)
   }
 
-  async function handlePkgSubmit(e: FormEvent<HTMLFormElement>) {
+  function handlePkgSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setPkgFormError(null)
-    setPkgFormLoading(true)
-
     const payload = {
-      package_name: pkgName,
-      version: pkgVersion || null,
-      state: pkgState,
-      package_manager: pkgManager,
-      priority: pkgPriority,
-      comment: pkgComment || null,
+      package_name: pkgName, version: pkgVersion || null, state: pkgState,
+      package_manager: pkgManager, priority: pkgPriority, comment: pkgComment || null,
     }
-
-    try {
-      if (pkgEditing) {
-        await apiFetch(`/api/groups/${id}/packages/${pkgEditing.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/packages`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["group-packages", id] })
-      setPkgDialogOpen(false)
-    } catch (err) {
-      setPkgFormError(err instanceof Error ? err.message : "Failed to save package rule")
-    } finally {
-      setPkgFormLoading(false)
-    }
+    pkgSaveMutation.mutate({ pkgId: pkgEditing?.id, payload })
   }
 
   function handlePkgDelete(pkg: PackageRule) {
@@ -165,17 +160,7 @@ export default function GroupPackagesPage() {
       description: `Delete package rule "${pkg.package_name}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setPkgDeletingId(pkg.id)
-        try {
-          await apiFetch(`/api/groups/${id}/packages/${pkg.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["group-packages", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
-        } finally {
-          setPkgDeletingId(null)
-        }
+        try { await pkgDeleteMutation.mutateAsync(pkg.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -189,7 +174,7 @@ export default function GroupPackagesPage() {
     setRepoComponents("")
     setRepoKeyUrl("")
     setRepoState("present")
-    setRepoFormError(null)
+    repoSaveMutation.reset()
     setRepoDialogOpen(true)
   }
 
@@ -202,44 +187,19 @@ export default function GroupPackagesPage() {
     setRepoComponents(repo.components ?? "")
     setRepoKeyUrl(repo.key_url ?? "")
     setRepoState(repo.state)
-    setRepoFormError(null)
+    repoSaveMutation.reset()
     setRepoDialogOpen(true)
   }
 
-  async function handleRepoSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleRepoSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setRepoFormError(null)
-    setRepoFormLoading(true)
-
     const payload = {
-      name: repoName,
-      url: repoUrl,
-      repo_type: repoType,
+      name: repoName, url: repoUrl, repo_type: repoType,
       distribution: repoType === "apt" ? (repoDistribution || null) : null,
       components: repoType === "apt" ? (repoComponents || null) : null,
-      key_url: repoKeyUrl || null,
-      state: repoState,
+      key_url: repoKeyUrl || null, state: repoState,
     }
-
-    try {
-      if (repoEditing) {
-        await apiFetch(`/api/groups/${id}/package-repos/${repoEditing.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/package-repos`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["group-package-repos", id] })
-      setRepoDialogOpen(false)
-    } catch (err) {
-      setRepoFormError(err instanceof Error ? err.message : "Failed to save repository")
-    } finally {
-      setRepoFormLoading(false)
-    }
+    repoSaveMutation.mutate({ repoId: repoEditing?.id, payload })
   }
 
   function handleRepoDelete(repo: PackageRepository) {
@@ -249,17 +209,7 @@ export default function GroupPackagesPage() {
       description: `Delete repository "${repo.name}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setRepoDeletingId(repo.id)
-        try {
-          await apiFetch(`/api/groups/${id}/package-repos/${repo.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["group-package-repos", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
-        } finally {
-          setRepoDeletingId(null)
-        }
+        try { await repoDeleteMutation.mutateAsync(repo.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -338,11 +288,11 @@ export default function GroupPackagesPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={pkgDeletingId === pkg.id}
+                          disabled={pkgDeleteMutation.isPending}
                           onClick={() => handlePkgDelete(pkg)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-950"
                         >
-                          {pkgDeletingId === pkg.id ? "..." : "Delete"}
+                          {pkgDeleteMutation.isPending ? "..." : "Delete"}
                         </Button>
                       </div>
                     </TableCell>
@@ -419,11 +369,11 @@ export default function GroupPackagesPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={repoDeletingId === repo.id}
+                          disabled={repoDeleteMutation.isPending}
                           onClick={() => handleRepoDelete(repo)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-950"
                         >
-                          {repoDeletingId === repo.id ? "..." : "Delete"}
+                          {repoDeleteMutation.isPending ? "..." : "Delete"}
                         </Button>
                       </div>
                     </TableCell>
@@ -523,13 +473,13 @@ export default function GroupPackagesPage() {
               />
             </div>
 
-            {pkgFormError && (
-              <p className="text-sm text-red-400">{pkgFormError}</p>
+            {pkgSaveMutation.error && (
+              <p className="text-sm text-red-400">{pkgSaveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={pkgFormLoading}>
-                {pkgFormLoading ? "Saving..." : pkgEditing ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={pkgSaveMutation.isPending}>
+                {pkgSaveMutation.isPending ? "Saving..." : pkgEditing ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"
@@ -650,13 +600,13 @@ export default function GroupPackagesPage() {
               </select>
             </div>
 
-            {repoFormError && (
-              <p className="text-sm text-red-400">{repoFormError}</p>
+            {repoSaveMutation.error && (
+              <p className="text-sm text-red-400">{repoSaveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={repoFormLoading}>
-                {repoFormLoading ? "Saving..." : repoEditing ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={repoSaveMutation.isPending}>
+                {repoSaveMutation.isPending ? "Saving..." : repoEditing ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import type { HostGroup, Host, GitRepository } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge, GitOpsStatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
@@ -27,7 +28,7 @@ import {
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { showError } from "@/lib/toast"
+
 import {
   Dialog,
   DialogContent,
@@ -45,8 +46,6 @@ export default function GroupDetailPage() {
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
   const [filePath, setFilePath] = useState("")
-  const [gitopsLoading, setGitopsLoading] = useState(false)
-  const [gitopsError, setGitopsError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -72,6 +71,18 @@ export default function GroupDetailPage() {
     queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
   })
 
+  const enableGitopsMutation = useApiMutation({
+    mutationFn: (data: { git_repository_id: number; file_path: string }) =>
+      apiFetch(`/api/groups/${id}/gitops/enable`, { method: "POST", body: JSON.stringify(data) }),
+    invalidateKeys: [["groups"]],
+    onSuccess: () => { setEnableDialogOpen(false); setSelectedRepoId(null); setFilePath("") },
+  })
+
+  const disableGitopsMutation = useApiMutation({
+    mutationFn: () => apiFetch(`/api/groups/${id}/gitops/disable`, { method: "POST" }),
+    invalidateKeys: [["groups"]],
+  })
+
   const group = groups?.find((g) => g.id === id)
 
   const groupHosts = hosts?.filter((h) => h.group_ids?.includes(id)) ?? []
@@ -89,25 +100,10 @@ export default function GroupDetailPage() {
     return `${days} day${days === 1 ? "" : "s"} ago`
   }
 
-  async function handleEnableGitOps(e: React.FormEvent<HTMLFormElement>) {
+  function handleEnableGitOps(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!selectedRepoId) return
-    setGitopsError(null)
-    setGitopsLoading(true)
-    try {
-      await apiFetch(`/api/groups/${id}/gitops/enable`, {
-        method: "POST",
-        body: JSON.stringify({ git_repository_id: selectedRepoId, file_path: filePath }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["groups"] })
-      setEnableDialogOpen(false)
-      setSelectedRepoId(null)
-      setFilePath("")
-    } catch (err) {
-      setGitopsError(err instanceof Error ? err.message : "Failed to enable GitOps")
-    } finally {
-      setGitopsLoading(false)
-    }
+    enableGitopsMutation.mutate({ git_repository_id: selectedRepoId, file_path: filePath })
   }
 
   function handleDisableGitOps() {
@@ -118,12 +114,9 @@ export default function GroupDetailPage() {
       action: async () => {
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
         try {
-          await apiFetch(`/api/groups/${id}/gitops/disable`, { method: "POST" })
-          await queryClient.invalidateQueries({ queryKey: ["groups"] })
+          await disableGitopsMutation.mutateAsync(undefined as never)
+        } finally {
           setConfirmState(null)
-        } catch {
-          setConfirmState(null)
-          showError("Failed to disable GitOps")
         }
       },
     })
@@ -348,12 +341,12 @@ export default function GroupDetailPage() {
                         required
                       />
                     </div>
-                    {gitopsError && (
-                      <p className="text-sm text-red-400">{gitopsError}</p>
+                    {enableGitopsMutation.error && (
+                      <p className="text-sm text-red-400">{enableGitopsMutation.error.message}</p>
                     )}
                     <div className="flex gap-3 pt-2">
-                      <Button type="submit" disabled={gitopsLoading}>
-                        {gitopsLoading ? "Enabling..." : "Enable"}
+                      <Button type="submit" disabled={enableGitopsMutation.isPending}>
+                        {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
                       </Button>
                       <Button type="button" variant="outline" onClick={() => setEnableDialogOpen(false)}>
                         Cancel
@@ -398,9 +391,9 @@ export default function GroupDetailPage() {
                   variant="destructive"
                   size="sm"
                   onClick={handleDisableGitOps}
-                  disabled={gitopsLoading}
+                  disabled={disableGitopsMutation.isPending}
                 >
-                  {gitopsLoading ? "Disabling..." : "Disable GitOps"}
+                  {disableGitopsMutation.isPending ? "Disabling..." : "Disable GitOps"}
                 </Button>
               </div>
             </div>

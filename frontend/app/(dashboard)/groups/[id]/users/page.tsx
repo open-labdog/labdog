@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
@@ -40,14 +40,9 @@ function UserStateBadge({ state }: { state: string }) {
 export default function GroupUsersPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
 
-  // Linux Users state
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<LinuxUser | null>(null)
-  const [userDeletingId, setUserDeletingId] = useState<number | null>(null)
-  const [userFormError, setUserFormError] = useState<string | null>(null)
-  const [userFormLoading, setUserFormLoading] = useState(false)
 
   // User form fields
   const [username, setUsername] = useState("")
@@ -68,9 +63,6 @@ export default function GroupUsersPage() {
   // Linux Groups state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<LinuxGroup | null>(null)
-  const [groupDeletingId, setGroupDeletingId] = useState<number | null>(null)
-  const [groupFormError, setGroupFormError] = useState<string | null>(null)
-  const [groupFormLoading, setGroupFormLoading] = useState(false)
 
   // Group form fields
   const [groupname, setGroupname] = useState("")
@@ -93,7 +85,33 @@ export default function GroupUsersPage() {
   })
   const showGroupsLoading = useDelayedLoading(groupsLoading)
 
-  // --- Linux Users CRUD ---
+  const userSaveMutation = useApiMutation({
+    mutationFn: ({ userId, payload }: { userId?: number; payload: Record<string, unknown> }) => {
+      if (userId) return apiFetch(`/api/groups/${id}/linux-users/${userId}`, { method: "PUT", body: JSON.stringify(payload) })
+      return apiFetch(`/api/groups/${id}/linux-users`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["linux-users", id]],
+    onSuccess: () => setUserDialogOpen(false),
+  })
+
+  const userDeleteMutation = useApiMutation({
+    mutationFn: (userId: number) => apiFetch(`/api/groups/${id}/linux-users/${userId}`, { method: "DELETE" }),
+    invalidateKeys: [["linux-users", id]],
+  })
+
+  const groupSaveMutation = useApiMutation({
+    mutationFn: ({ groupId, payload }: { groupId?: number; payload: Record<string, unknown> }) => {
+      if (groupId) return apiFetch(`/api/groups/${id}/linux-groups/${groupId}`, { method: "PUT", body: JSON.stringify(payload) })
+      return apiFetch(`/api/groups/${id}/linux-groups`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["linux-groups", id]],
+    onSuccess: () => setGroupDialogOpen(false),
+  })
+
+  const groupDeleteMutation = useApiMutation({
+    mutationFn: (groupId: number) => apiFetch(`/api/groups/${id}/linux-groups/${groupId}`, { method: "DELETE" }),
+    invalidateKeys: [["linux-groups", id]],
+  })
 
   function openCreateUserDialog() {
     setEditingUser(null)
@@ -107,7 +125,7 @@ export default function GroupUsersPage() {
     setAuthorizedKeys("")
     setSupplementaryGroups("")
     setUserPriority(100)
-    setUserFormError(null)
+    userSaveMutation.reset()
     setUserDialogOpen(true)
   }
 
@@ -123,53 +141,20 @@ export default function GroupUsersPage() {
     setAuthorizedKeys(user.authorized_keys.join("\n"))
     setSupplementaryGroups(user.supplementary_groups.join(", "))
     setUserPriority(user.priority)
-    setUserFormError(null)
+    userSaveMutation.reset()
     setUserDialogOpen(true)
   }
 
-  async function handleUserSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleUserSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setUserFormError(null)
-    setUserFormLoading(true)
-
     const payload = {
-      username,
-      uid: uid ? Number(uid) : null,
-      shell,
-      home_dir: homeDir || null,
-      state: userState,
-      comment: comment || null,
-      sudo_rule: sudoRule || null,
-      authorized_keys: authorizedKeys
-        .split("\n")
-        .map((k) => k.trim())
-        .filter(Boolean),
-      supplementary_groups: supplementaryGroups
-        .split(",")
-        .map((g) => g.trim())
-        .filter(Boolean),
+      username, uid: uid ? Number(uid) : null, shell, home_dir: homeDir || null,
+      state: userState, comment: comment || null, sudo_rule: sudoRule || null,
+      authorized_keys: authorizedKeys.split("\n").map((k) => k.trim()).filter(Boolean),
+      supplementary_groups: supplementaryGroups.split(",").map((g) => g.trim()).filter(Boolean),
       priority: userPriority,
     }
-
-    try {
-      if (editingUser) {
-        await apiFetch(`/api/groups/${id}/linux-users/${editingUser.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/linux-users`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["linux-users", id] })
-      setUserDialogOpen(false)
-    } catch (err) {
-      setUserFormError(err instanceof Error ? err.message : "Failed to save user")
-    } finally {
-      setUserFormLoading(false)
-    }
+    userSaveMutation.mutate({ userId: editingUser?.id, payload })
   }
 
   function handleUserDelete(user: LinuxUser) {
@@ -179,22 +164,10 @@ export default function GroupUsersPage() {
       description: `Delete Linux user "${user.username}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setUserDeletingId(user.id)
-        try {
-          await apiFetch(`/api/groups/${id}/linux-users/${user.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["linux-users", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
-        } finally {
-          setUserDeletingId(null)
-        }
+        try { await userDeleteMutation.mutateAsync(user.id) } finally { setConfirmState(null) }
       },
     })
   }
-
-  // --- Linux Groups CRUD ---
 
   function openCreateGroupDialog() {
     setEditingGroup(null)
@@ -202,7 +175,7 @@ export default function GroupUsersPage() {
     setGid("")
     setGroupState("present")
     setGroupPriority(100)
-    setGroupFormError(null)
+    groupSaveMutation.reset()
     setGroupDialogOpen(true)
   }
 
@@ -212,41 +185,14 @@ export default function GroupUsersPage() {
     setGid(group.gid != null ? String(group.gid) : "")
     setGroupState(group.state)
     setGroupPriority(group.priority)
-    setGroupFormError(null)
+    groupSaveMutation.reset()
     setGroupDialogOpen(true)
   }
 
-  async function handleGroupSubmit(e: FormEvent<HTMLFormElement>) {
+  function handleGroupSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setGroupFormError(null)
-    setGroupFormLoading(true)
-
-    const payload = {
-      groupname,
-      gid: gid ? Number(gid) : null,
-      state: groupState,
-      priority: groupPriority,
-    }
-
-    try {
-      if (editingGroup) {
-        await apiFetch(`/api/groups/${id}/linux-groups/${editingGroup.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/linux-groups`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["linux-groups", id] })
-      setGroupDialogOpen(false)
-    } catch (err) {
-      setGroupFormError(err instanceof Error ? err.message : "Failed to save group")
-    } finally {
-      setGroupFormLoading(false)
-    }
+    const payload = { groupname, gid: gid ? Number(gid) : null, state: groupState, priority: groupPriority }
+    groupSaveMutation.mutate({ groupId: editingGroup?.id, payload })
   }
 
   function handleGroupDelete(group: LinuxGroup) {
@@ -256,17 +202,7 @@ export default function GroupUsersPage() {
       description: `Delete Linux group "${group.groupname}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setGroupDeletingId(group.id)
-        try {
-          await apiFetch(`/api/groups/${id}/linux-groups/${group.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["linux-groups", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
-        } finally {
-          setGroupDeletingId(null)
-        }
+        try { await groupDeleteMutation.mutateAsync(group.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -351,11 +287,11 @@ export default function GroupUsersPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={userDeletingId === user.id}
+                          disabled={userDeleteMutation.isPending}
                           onClick={() => handleUserDelete(user)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-950"
                         >
-                          {userDeletingId === user.id ? "…" : "Delete"}
+                          {userDeleteMutation.isPending ? "…" : "Delete"}
                         </Button>
                       </div>
                     </TableCell>
@@ -422,11 +358,11 @@ export default function GroupUsersPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={groupDeletingId === group.id}
+                          disabled={groupDeleteMutation.isPending}
                           onClick={() => handleGroupDelete(group)}
                           className="text-red-400 hover:text-red-300 hover:bg-red-950"
                         >
-                          {groupDeletingId === group.id ? "…" : "Delete"}
+                          {groupDeleteMutation.isPending ? "…" : "Delete"}
                         </Button>
                       </div>
                     </TableCell>
@@ -563,13 +499,13 @@ export default function GroupUsersPage() {
               />
             </div>
 
-            {userFormError && (
-              <p className="text-sm text-red-400">{userFormError}</p>
+            {userSaveMutation.error && (
+              <p className="text-sm text-red-400">{userSaveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={userFormLoading}>
-                {userFormLoading ? "Saving..." : editingUser ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={userSaveMutation.isPending}>
+                {userSaveMutation.isPending ? "Saving..." : editingUser ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"
@@ -652,13 +588,13 @@ export default function GroupUsersPage() {
               />
             </div>
 
-            {groupFormError && (
-              <p className="text-sm text-red-400">{groupFormError}</p>
+            {groupSaveMutation.error && (
+              <p className="text-sm text-red-400">{groupSaveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={groupFormLoading}>
-                {groupFormLoading ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={groupSaveMutation.isPending}>
+                {groupSaveMutation.isPending ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

@@ -1,7 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
@@ -17,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { ruleSchema, type RuleInput } from "@/lib/schemas"
 import type { FirewallRule } from "@/lib/types"
 
@@ -52,9 +52,6 @@ function ruleToFormValues(rule: FirewallRule): RuleInput {
 }
 
 export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProps) {
-  const queryClient = useQueryClient()
-  const [error, setError] = useState<string | null>(null)
-
   const form = useForm<RuleInput>({
     resolver: zodResolver(ruleSchema),
     defaultValues: rule ? ruleToFormValues(rule) : defaultValues,
@@ -64,17 +61,26 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
   const protocol = form.watch("protocol")
   const showPorts = protocol !== "icmp" && protocol !== "any"
 
-  // Reset form when dialog opens or rule changes
+  const saveMutation = useApiMutation({
+    mutationFn: ({ ruleId, body }: { ruleId?: number; body: Record<string, unknown> }) => {
+      if (ruleId) {
+        return apiFetch(`/api/groups/${groupId}/rules/${ruleId}`, { method: "PUT", body: JSON.stringify(body) })
+      }
+      return apiFetch(`/api/groups/${groupId}/rules`, { method: "POST", body: JSON.stringify(body) })
+    },
+    invalidateKeys: [["rules", groupId]],
+    onSuccess: () => onOpenChange(false),
+  })
+
   useEffect(() => {
     if (open) {
       form.reset(rule ? ruleToFormValues(rule) : defaultValues)
-      setError(null)
+      saveMutation.reset()
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, rule, form])
 
-  const onSubmit = form.handleSubmit(async (data) => {
-    setError(null)
-
+  const onSubmit = form.handleSubmit((data) => {
     const body: Record<string, unknown> = {
       action: data.action,
       protocol: data.protocol,
@@ -85,27 +91,10 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
       port_end: showPorts ? data.port_end : null,
       comment: data.comment || null,
     }
-
-    try {
-      if (rule) {
-        await apiFetch(`/api/groups/${groupId}/rules/${rule.id}`, {
-          method: "PUT",
-          body: JSON.stringify(body),
-        })
-      } else {
-        await apiFetch(`/api/groups/${groupId}/rules`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["rules", groupId] })
-      onOpenChange(false)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save rule")
-    }
+    saveMutation.mutate({ ruleId: rule?.id, body })
   })
 
-  const { errors, isSubmitting } = form.formState
+  const { errors } = form.formState
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -245,8 +234,8 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
             />
           </div>
 
-          {error && (
-            <p className="text-red-400 text-sm">{error}</p>
+          {saveMutation.error && (
+            <p className="text-red-400 text-sm">{saveMutation.error.message}</p>
           )}
 
           <DialogFooter>
@@ -254,12 +243,12 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
+              disabled={saveMutation.isPending}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "Saving…" : rule ? "Save Changes" : "Add Rule"}
+            <Button type="submit" disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? "Saving…" : rule ? "Save Changes" : "Add Rule"}
             </Button>
           </DialogFooter>
         </form>

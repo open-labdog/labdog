@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { CardSkeleton } from "@/components/ui/skeleton"
 import type { HostGroup } from "@/lib/types"
@@ -150,53 +151,38 @@ export default function GroupSyncPage() {
   const id = params.id as string
 
   const [plan, setPlan] = useState<PlanResponse | null>(null)
-  const [previewing, setPreviewing] = useState(false)
-  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const [applying, setApplying] = useState(false)
-  const [applyError, setApplyError] = useState<string | null>(null)
 
   const [jobId, setJobId] = useState<string | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [pollError, setPollError] = useState<string | null>(null)
   const pollFailures = useRef(0)
 
-  const handlePreview = async () => {
-    setPreviewing(true)
-    setPreviewError(null)
+  const previewMutation = useApiMutation<PlanResponse>({
+    mutationFn: () => apiFetch<PlanResponse>(`/api/sync/groups/${id}/plan`, { method: "POST" }),
+    onSuccess: (data) => setPlan(data),
+  })
+
+  const syncMutation = useApiMutation<SyncResponse>({
+    mutationFn: () => apiFetch<SyncResponse>(`/api/sync/groups/${id}/sync`, { method: "POST" }),
+    onSuccess: (data) => setJobId(data.job_id),
+  })
+
+  const handlePreview = () => {
     setPlan(null)
     setJobId(null)
     setJobStatus(null)
     setPollError(null)
     pollFailures.current = 0
-    try {
-      const data = await apiFetch<PlanResponse>(`/api/sync/groups/${id}/plan`, {
-        method: "POST",
-      })
-      setPlan(data)
-    } catch (err) {
-      setPreviewError(err instanceof Error ? err.message : "Preview failed")
-    } finally {
-      setPreviewing(false)
-    }
+    previewMutation.mutate(undefined as never)
   }
 
-  const handleApplyConfirm = async () => {
+  const handleApplyConfirm = () => {
     setConfirmOpen(false)
-    setApplying(true)
-    setApplyError(null)
     setPollError(null)
     pollFailures.current = 0
-    try {
-      const data = await apiFetch<SyncResponse>(`/api/sync/groups/${id}/sync`, {
-        method: "POST",
-      })
-      setJobId(data.job_id)
-    } catch (err) {
-      setApplyError(err instanceof Error ? err.message : "Apply failed")
-      setApplying(false)
-    }
+    syncMutation.mutate(undefined as never)
   }
 
   const MAX_POLL_FAILURES = 5
@@ -207,13 +193,13 @@ export default function GroupSyncPage() {
       pollFailures.current = 0
       setJobStatus(data)
       if (data.status === "success" || data.status === "failed") {
-        setApplying(false)
+        syncMutation.reset()
       }
     } catch (err) {
       pollFailures.current += 1
       if (pollFailures.current >= MAX_POLL_FAILURES) {
         setPollError(err instanceof Error ? err.message : "Lost connection while polling job status")
-        setApplying(false)
+        syncMutation.reset()
       }
     }
   }, [])
@@ -250,29 +236,29 @@ export default function GroupSyncPage() {
         <div className="flex gap-3">
           <Button
             onClick={handlePreview}
-            disabled={previewing}
+            disabled={previewMutation.isPending}
             variant="outline"
           >
-            {previewing ? "Previewing…" : "Preview Changes"}
+            {previewMutation.isPending ? "Previewing…" : "Preview Changes"}
           </Button>
           <Button
             onClick={() => setConfirmOpen(true)}
-            disabled={!plan || applying}
+            disabled={!plan || syncMutation.isPending}
           >
-            {applying ? "Applying…" : "Apply Changes"}
+            {syncMutation.isPending ? "Applying…" : "Apply Changes"}
           </Button>
         </div>
       </div>
 
-      {previewError && (
+      {previewMutation.error && (
         <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
-          {previewError}
+          {previewMutation.error.message}
         </div>
       )}
 
-      {applyError && (
+      {syncMutation.error && (
         <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
-          {applyError}
+          {syncMutation.error.message}
         </div>
       )}
 
@@ -292,9 +278,9 @@ export default function GroupSyncPage() {
         </div>
       )}
 
-      {previewing && <CardSkeleton />}
+      {previewMutation.isPending && <CardSkeleton />}
 
-      {plan && !previewing && (
+      {plan && !previewMutation.isPending && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold text-white">Planned Changes</h2>
@@ -312,7 +298,7 @@ export default function GroupSyncPage() {
         </div>
       )}
 
-      {!plan && !previewing && (
+      {!plan && !previewMutation.isPending && (
         <div className="text-slate-400 py-12 text-center">
           Click <strong className="text-white">Preview Changes</strong> to see what will be applied.
         </div>
