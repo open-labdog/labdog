@@ -24,6 +24,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { GroupMultiSelect } from "@/components/group-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
@@ -605,12 +606,6 @@ export default function HostDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editOpen, host])
 
-  function toggleEditGroup(groupId: number) {
-    setEditGroups((prev) =>
-      prev.includes(groupId) ? prev.filter((g) => g !== groupId) : [...prev, groupId]
-    )
-  }
-
   function handleEditSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     editMutation.mutate({
@@ -693,25 +688,11 @@ export default function HostDetailPage() {
                 </div>
 
                 {groups && groups.length > 0 && (
-                  <div className="space-y-2">
-                    <Label>Groups</Label>
-                    <div className="space-y-2 rounded-lg border border-input p-3 dark:bg-input/10">
-                      {groups.map((group) => (
-                        <label key={group.id} className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editGroups.includes(group.id)}
-                            onChange={() => toggleEditGroup(group.id)}
-                            className="rounded border-input"
-                          />
-                          <span className="text-sm text-foreground">{group.name}</span>
-                          {group.description && (
-                            <span className="text-xs text-muted-foreground">— {group.description}</span>
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
+                  <GroupMultiSelect
+                    groups={groups}
+                    selected={editGroups}
+                    onChange={setEditGroups}
+                  />
                 )}
 
                 {editMutation.error && (

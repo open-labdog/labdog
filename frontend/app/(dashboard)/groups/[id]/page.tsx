@@ -169,7 +169,7 @@ export default function GroupDetailPage() {
             <p className="text-slate-400 text-sm mt-1">{group.description}</p>
           )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <Link
             href={`/groups/${id}/rules`}
             className={cn(buttonVariants({ variant: "outline" }))}
@@ -271,55 +271,6 @@ export default function GroupDetailPage() {
           )}
         </div>
       )}
-
-      {/* Quick actions */}
-      <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-        <h2 className="text-base font-semibold text-white mb-3">Quick Actions</h2>
-        <div className="flex gap-3 flex-wrap">
-          <Link
-            href={`/groups/${id}/rules`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View &amp; Edit Rules
-          </Link>
-          <Link
-            href={`/groups/${id}/services`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View &amp; Edit Services
-          </Link>
-          <Link
-            href={`/groups/${id}/hosts-entries`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View &amp; Edit Hosts File
-          </Link>
-          <Link
-            href={`/groups/${id}/users`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View &amp; Edit Users
-          </Link>
-          <Link
-            href={`/groups/${id}/cron-jobs`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            View &amp; Edit Cron Jobs
-          </Link>
-          <Link
-            href={`/groups/${id}/resolver`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            DNS Resolver
-          </Link>
-          <Link
-            href={`/groups/${id}/sync`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            Preview &amp; Apply Sync
-          </Link>
-        </div>
-      </div>
 
       {/* GitOps Settings */}
       {group && (

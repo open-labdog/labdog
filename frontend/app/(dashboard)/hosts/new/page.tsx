@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Tooltip } from "@/components/ui/tooltip"
+import { GroupMultiSelect } from "@/components/group-multi-select"
 import { apiFetch } from "@/lib/api"
 import { hostSchema, type HostInput } from "@/lib/schemas"
 import type { SSHKey, HostGroup } from "@/lib/types"
@@ -26,8 +27,6 @@ export default function NewHostPage() {
     mode: "onSubmit",
   })
 
-  const selectedGroups = form.watch("group_ids") ?? []
-
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
@@ -38,15 +37,8 @@ export default function NewHostPage() {
     queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
   })
 
-  function toggleGroup(id: number) {
-    const current = form.getValues("group_ids") ?? []
-    const strId = String(id)
-    if (current.includes(strId)) {
-      form.setValue("group_ids", current.filter((g) => g !== strId))
-    } else {
-      form.setValue("group_ids", [...current, strId])
-    }
-  }
+  const selectedGroupIds = (form.watch("group_ids") ?? []).map(Number)
+
 
   const onSubmit = form.handleSubmit(async (data) => {
     setError(null)
@@ -143,25 +135,11 @@ export default function NewHostPage() {
           </div>
 
           {groups && groups.length > 0 && (
-            <div className="space-y-2">
-              <Label>Groups</Label>
-              <div className="space-y-2 rounded-lg border border-input p-3 dark:bg-input/10">
-                {groups.map((group) => (
-                  <label key={group.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedGroups.includes(String(group.id))}
-                      onChange={() => toggleGroup(group.id)}
-                      className="rounded border-input"
-                    />
-                    <span className="text-sm text-foreground">{group.name}</span>
-                    {group.description && (
-                      <span className="text-xs text-muted-foreground">— {group.description}</span>
-                    )}
-                  </label>
-                ))}
-              </div>
-            </div>
+            <GroupMultiSelect
+              groups={groups}
+              selected={selectedGroupIds}
+              onChange={(ids) => form.setValue("group_ids", ids.map(String))}
+            />
           )}
 
           {error && (
