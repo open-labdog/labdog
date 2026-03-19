@@ -3,11 +3,13 @@
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { Tooltip } from "@/components/ui/tooltip"
 import {
   Dialog,
   DialogContent,
@@ -359,22 +361,27 @@ export default function GroupCronJobsPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="cj-schedule">Schedule (cron expression)</Label>
-              <Input
-                id="cj-schedule"
-                type="text"
-                placeholder="*/5 * * * *"
-                value={schedule}
-                onChange={(e) => setSchedule(e.target.value)}
-                required
-              />
-              {schedule.trim() && (
-                <p className="text-xs text-slate-400">
-                  {cronToHuman(schedule)}
-                </p>
-              )}
-            </div>
+             <div className="space-y-2">
+               <div className="flex items-center gap-1.5">
+                 <Label htmlFor="cj-schedule">Schedule (cron expression)</Label>
+                 <Tooltip content="Standard 5-field cron: minute hour day-of-month month day-of-week. E.g., '0 2 * * *' = 2am daily.">
+                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                 </Tooltip>
+               </div>
+               <Input
+                 id="cj-schedule"
+                 type="text"
+                 placeholder="*/5 * * * *"
+                 value={schedule}
+                 onChange={(e) => setSchedule(e.target.value)}
+                 required
+               />
+               {schedule.trim() && (
+                 <p className="text-xs text-slate-400">
+                   {cronToHuman(schedule)}
+                 </p>
+               )}
+             </div>
 
             <div className="space-y-2">
               <Label htmlFor="cj-command">Command</Label>

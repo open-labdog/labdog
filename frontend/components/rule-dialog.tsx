@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { InfoIcon } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -12,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
 import type { FirewallRule } from "@/lib/types"
 
@@ -181,45 +183,60 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
             </div>
           </div>
 
-          {/* Source / Dest */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="source_cidr" className="text-slate-300">Source CIDR</Label>
-              <Input
-                id="source_cidr"
-                placeholder="0.0.0.0/0"
-                value={form.source_cidr}
-                onChange={set("source_cidr")}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="destination_cidr" className="text-slate-300">Dest CIDR</Label>
-              <Input
-                id="destination_cidr"
-                placeholder="0.0.0.0/0"
-                value={form.destination_cidr}
-                onChange={set("destination_cidr")}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
-            </div>
-          </div>
+           {/* Source / Dest */}
+           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+               <div className="flex items-center gap-1.5">
+                 <Label htmlFor="source_cidr" className="text-slate-300">Source CIDR</Label>
+                 <Tooltip content="IP range in CIDR notation, e.g., 10.0.0.0/8 or 192.168.1.0/24">
+                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                 </Tooltip>
+               </div>
+               <Input
+                 id="source_cidr"
+                 placeholder="0.0.0.0/0"
+                 value={form.source_cidr}
+                 onChange={set("source_cidr")}
+                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+               />
+             </div>
+             <div className="space-y-1">
+               <div className="flex items-center gap-1.5">
+                 <Label htmlFor="destination_cidr" className="text-slate-300">Dest CIDR</Label>
+                 <Tooltip content="IP range in CIDR notation, e.g., 10.0.0.0/8 or 192.168.1.0/24">
+                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                 </Tooltip>
+               </div>
+               <Input
+                 id="destination_cidr"
+                 placeholder="0.0.0.0/0"
+                 value={form.destination_cidr}
+                 onChange={set("destination_cidr")}
+                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+               />
+             </div>
+           </div>
 
-          {/* Ports */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <Label htmlFor="port_start" className="text-slate-300">Port Start</Label>
-              <Input
-                id="port_start"
-                type="number"
-                min={1}
-                max={65535}
-                placeholder="e.g. 80"
-                value={form.port_start}
-                onChange={set("port_start")}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
-            </div>
+           {/* Ports */}
+           <div className="grid grid-cols-2 gap-4">
+             <div className="space-y-1">
+               <div className="flex items-center gap-1.5">
+                 <Label htmlFor="port_start" className="text-slate-300">Port Start</Label>
+                 <Tooltip content="Single port (e.g., 80) or start of range. Leave empty for all ports.">
+                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                 </Tooltip>
+               </div>
+               <Input
+                 id="port_start"
+                 type="number"
+                 min={1}
+                 max={65535}
+                 placeholder="e.g. 80"
+                 value={form.port_start}
+                 onChange={set("port_start")}
+                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+               />
+             </div>
             <div className="space-y-1">
               <Label htmlFor="port_end" className="text-slate-300">Port End <span className="text-slate-500">(optional)</span></Label>
               <Input
