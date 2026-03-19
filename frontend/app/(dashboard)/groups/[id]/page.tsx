@@ -26,6 +26,8 @@ import {
 } from "@/components/ui/table"
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { showError } from "@/lib/toast"
 import {
   Dialog,
   DialogContent,
@@ -45,6 +47,13 @@ export default function GroupDetailPage() {
   const [filePath, setFilePath] = useState("")
   const [gitopsLoading, setGitopsLoading] = useState(false)
   const [gitopsError, setGitopsError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean
+    title: string
+    description: string
+    action: () => void | Promise<void>
+    loading?: boolean
+  } | null>(null)
 
   const { data: groups, isLoading: groupsLoading } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -101,17 +110,23 @@ export default function GroupDetailPage() {
     }
   }
 
-  async function handleDisableGitOps() {
-    if (!confirm("Are you sure you want to disable GitOps for this group? Rules will remain but will no longer sync from Git.")) return
-    setGitopsLoading(true)
-    try {
-      await apiFetch(`/api/groups/${id}/gitops/disable`, { method: "POST" })
-      await queryClient.invalidateQueries({ queryKey: ["groups"] })
-    } catch {
-      alert("Failed to disable GitOps")
-    } finally {
-      setGitopsLoading(false)
-    }
+  function handleDisableGitOps() {
+    setConfirmState({
+      open: true,
+      title: "Disable GitOps",
+      description: "Rules will remain but will no longer sync from Git. This action cannot be undone.",
+      action: async () => {
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        try {
+          await apiFetch(`/api/groups/${id}/gitops/disable`, { method: "POST" })
+          await queryClient.invalidateQueries({ queryKey: ["groups"] })
+          setConfirmState(null)
+        } catch {
+          setConfirmState(null)
+          showError("Failed to disable GitOps")
+        }
+      },
+    })
   }
 
   if (showGroupLoading) {
@@ -453,6 +468,19 @@ export default function GroupDetailPage() {
           </div>
         )}
       </div>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Disable"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
     </div>
   )
 }

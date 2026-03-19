@@ -24,6 +24,8 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
@@ -90,6 +92,15 @@ export default function HostDetailPage() {
   const [editGroups, setEditGroups] = useState<number[]>([])
   const [editError, setEditError] = useState<string | null>(null)
   const [editLoading, setEditLoading] = useState(false)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean
+    title: string
+    description: string
+    action: () => void | Promise<void>
+    loading?: boolean
+    confirmLabel?: string
+    variant?: "default" | "destructive"
+  } | null>(null)
 
   const { data: host, isLoading: hostLoading, error: hostError } = useQuery<Host>({
     queryKey: ["host", id],
@@ -286,21 +297,31 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handlePpDelete(packageName: string) {
-    if (!confirm(`Delete host package override for "${packageName}"?`)) return
-    const override = hostPackageOverrides?.find(o => o.package_name === packageName)
-    if (!override) { setPpDeleteError("Override not found"); return }
-    setPpDeletingId(override.id)
-    setPpDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/packages/${override.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
-    } catch (err) {
-      setPpDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setPpDeletingId(null)
-    }
+  function handlePpDelete(packageName: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete Package Override",
+      description: `Delete host package override for "${packageName}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostPackageOverrides?.find(o => o.package_name === packageName)
+        if (!override) { setPpDeleteError("Override not found"); setConfirmState(null); return }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setPpDeletingId(override.id)
+        setPpDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/packages/${override.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-package-overrides", id] })
+        } catch (err) {
+          setPpDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setPpDeletingId(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   function openCjDialog() {
@@ -349,21 +370,31 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handleCjDelete(name: string, user: string) {
-    if (!confirm(`Delete host cron job override for "${name}" (user: ${user})?`)) return
-    const override = hostCronOverrides?.find(o => o.name === name && o.user === user)
-    if (!override) { setCjDeleteError("Override not found"); return }
-    setCjDeletingId(override.id)
-    setCjDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/cron-jobs/${override.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
-    } catch (err) {
-      setCjDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setCjDeletingId(null)
-    }
+  function handleCjDelete(name: string, user: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete Cron Job Override",
+      description: `Delete host cron job override for "${name}" (user: ${user})? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostCronOverrides?.find(o => o.name === name && o.user === user)
+        if (!override) { setCjDeleteError("Override not found"); setConfirmState(null); return }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setCjDeletingId(override.id)
+        setCjDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/cron-jobs/${override.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
+        } catch (err) {
+          setCjDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setCjDeletingId(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   const [lgDialogOpen, setLgDialogOpen] = useState(false)
@@ -421,21 +452,31 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handleLuDelete(username: string) {
-    if (!confirm(`Delete host user override for "${username}"?`)) return
-    const override = hostLinuxUserOverrides?.find(o => o.username === username)
-    if (!override) { setLuDeleteError("Override not found"); return }
-    setLuDeletingId(override.id)
-    setLuDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/linux-users/${override.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
-    } catch (err) {
-      setLuDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setLuDeletingId(null)
-    }
+  function handleLuDelete(username: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete User Override",
+      description: `Delete host user override for "${username}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostLinuxUserOverrides?.find(o => o.username === username)
+        if (!override) { setLuDeleteError("Override not found"); setConfirmState(null); return }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setLuDeletingId(override.id)
+        setLuDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/linux-users/${override.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-users", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-linux-user-overrides", id] })
+        } catch (err) {
+          setLuDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setLuDeletingId(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   function openLgDialog() {
@@ -471,21 +512,31 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handleLgDelete(groupname: string) {
-    if (!confirm(`Delete host group override for "${groupname}"?`)) return
-    const override = hostLinuxGroupOverrides?.find(o => o.groupname === groupname)
-    if (!override) { setLgDeleteError("Override not found"); return }
-    setLgDeletingId(override.id)
-    setLgDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/linux-groups/${override.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
-    } catch (err) {
-      setLgDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setLgDeletingId(null)
-    }
+  function handleLgDelete(groupname: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete Group Override",
+      description: `Delete host group override for "${groupname}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostLinuxGroupOverrides?.find(o => o.groupname === groupname)
+        if (!override) { setLgDeleteError("Override not found"); setConfirmState(null); return }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setLgDeletingId(override.id)
+        setLgDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/linux-groups/${override.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-linux-groups", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-linux-group-overrides", id] })
+        } catch (err) {
+          setLgDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setLgDeletingId(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   function openHostsDialog() {
@@ -523,19 +574,29 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handleHostsEntryDelete(entry: HostsEntry) {
-    if (!confirm(`Delete hosts entry "${entry.ip_address} ${entry.hostname}"?`)) return
-    setHostsDeletingId(entry.id)
-    setHostsDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
-    } catch (err) {
-      setHostsDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setHostsDeletingId(null)
-    }
+  function handleHostsEntryDelete(entry: HostsEntry) {
+    setConfirmState({
+      open: true,
+      title: "Delete Hosts Entry",
+      description: `Delete hosts entry "${entry.ip_address} ${entry.hostname}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setHostsDeletingId(entry.id)
+        setHostsDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-hosts-entries", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-hosts-overrides", id] })
+        } catch (err) {
+          setHostsDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setHostsDeletingId(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   async function fetchHostsPreview() {
@@ -613,24 +674,35 @@ export default function HostDetailPage() {
     }
   }
 
-  async function handleSvcDelete(serviceName: string) {
-    if (!confirm(`Delete host override for "${serviceName}"?`)) return
-    const override = hostOverrides?.find(o => o.service_name === serviceName)
-    if (!override) {
-      setSvcDeleteError("Override not found")
-      return
-    }
-    setSvcDeletingName(serviceName)
-    setSvcDeleteError(null)
-    try {
-      await apiFetch(`/api/hosts/${id}/services/${override.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
-    } catch (err) {
-      setSvcDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setSvcDeletingName(null)
-    }
+  function handleSvcDelete(serviceName: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete Service Override",
+      description: `Delete host override for "${serviceName}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostOverrides?.find(o => o.service_name === serviceName)
+        if (!override) {
+          setSvcDeleteError("Override not found")
+          setConfirmState(null)
+          return
+        }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        setSvcDeletingName(serviceName)
+        setSvcDeleteError(null)
+        try {
+          await apiFetch(`/api/hosts/${id}/services/${override.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
+        } catch (err) {
+          setSvcDeleteError(err instanceof Error ? err.message : "Delete failed")
+        } finally {
+          setSvcDeletingName(null)
+          setConfirmState(null)
+        }
+      },
+    })
   }
 
   async function loadInventory() {
@@ -676,9 +748,18 @@ export default function HostDetailPage() {
       setProtectedTarget({ service: service.unit, action })
       setProtectedConfirmOpen(true)
     } else {
-      if (confirm(`${action.charAt(0).toUpperCase() + action.slice(1)} ${service.unit}?`)) {
-        executeCommand(service.unit, action)
-      }
+      const actionLabel = action.charAt(0).toUpperCase() + action.slice(1)
+      setConfirmState({
+        open: true,
+        title: `${actionLabel} Service`,
+        description: `${actionLabel} ${service.unit}?`,
+        confirmLabel: actionLabel,
+        variant: action === "stop" || action === "restart" ? "destructive" : "default",
+        action: async () => {
+          setConfirmState(null)
+          await executeCommand(service.unit, action)
+        },
+      })
     }
   }
 
@@ -2387,6 +2468,19 @@ export default function HostDetailPage() {
             </DialogContent>
           </Dialog>
         </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel={confirmState.confirmLabel ?? "Confirm"}
+          variant={confirmState.variant ?? "destructive"}
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
       )}
     </div>
   )
