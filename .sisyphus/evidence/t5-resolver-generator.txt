@@ -1,0 +1,27 @@
+=== T5 Resolver Generator Evidence ===
+
+Import check: OK
+
+--- resolv_conf ---
+  hosts=all, become=True, gather_facts=False
+  tasks (1):
+    - Write /etc/resolv.conf
+  inventory: host=10.0.0.1, port=22, user=root
+
+--- systemd_resolved ---
+  hosts=all, become=True, gather_facts=False
+  tasks (2):
+    - Write /etc/systemd/resolved.conf
+    - Restart systemd-resolved
+  inventory: host=10.0.0.1, port=22, user=root
+
+--- networkmanager ---
+  hosts=all, become=True, gather_facts=False
+  tasks (2):
+    - Write NetworkManager DNS config
+    - Restart NetworkManager
+  inventory: host=10.0.0.1, port=22, user=root
+
+ValueError on invalid type: OK
+
+ALL CHECKS PASSED
