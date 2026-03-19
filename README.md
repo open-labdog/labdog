@@ -267,7 +267,14 @@ barricade/
 │   │   ├── schemas/         # Pydantic request/response schemas
 │   │   ├── services/        # Service management module
 │   │   ├── sync/            # Firewall plan/diff engine
-│   │   └── tasks/           # Celery tasks (sync + drift)
+│   │   ├── tasks/           # Celery tasks (sync + drift)
+│   │   ├── cron/            # Cron job management module
+│   │   ├── linux_users/     # Linux user management
+│   │   ├── packages/        # Package management module
+│   │   ├── resolver/        # DNS resolver module
+│   │   ├── ssh_terminal/    # Web shell (WebSocket SSH terminal)
+│   │   ├── discovery/       # Host network discovery
+│   │   └── gitops/          # GitOps integration
 │   ├── alembic/             # Database migrations
 │   ├── tests/               # pytest suite
 │   ├── Dockerfile
@@ -276,12 +283,16 @@ barricade/
 │   ├── app/                 # Next.js App Router pages
 │   ├── components/          # React components (shadcn/ui)
 │   ├── e2e/                 # Playwright E2E tests
+│   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
 │   └── package.json
+├── packaging/               # Linux package build system (deb/rpm/tarball)
+├── examples/                # Configuration examples
 ├── dev.sh                   # Dev environment management script
 ├── build.sh                 # Local Docker build script
 ├── docker-compose.yml       # Full stack
+├── .gitlab-ci.yml           # GitLab CI/CD pipelines
 └── .env.example
 ```
 
@@ -298,13 +309,23 @@ Barricade uses a modular extension architecture. Each module follows the same pa
 | Linux User Management | Shipped | System users, SSH keys, sudo rules |
 | Cron Jobs | Shipped | Cron job scheduling |
 | DNS Resolver | Shipped | resolv.conf / systemd-resolved config |
+| Web Shell | Shipped | Browser-based SSH terminal (xterm.js + WebSocket + asyncssh) |
 
 ## Known Limitations
 
-- **Firewall state parsing is stubbed**: `fetch_current_state()` returns `[]`. Plan/diff always shows "add all". Real parser implementation is planned.
+- **Drift detection edge cases**: Firewall parsers exist for nftables, firewalld, and ufw, but drift comparison may miss some complex rule configurations.
 - **No HTTPS in dev**: Cookie `secure=False` by default. Set `cookie_secure=True` for production with HTTPS.
 - **Single Ansible control node**: All sync operations run from the Barricade server. No distributed execution.
 
+## CI/CD
+
+Barricade uses GitLab CI for automated builds and releases. See `.gitlab-ci.yml` for pipeline configuration.
+
+- **Test**: Backend pytest + frontend build check on every push
+- **Build**: Docker images for backend and frontend pushed to GitLab Container Registry
+- **Package**: Tarball, .deb, and .rpm artifacts built on tagged releases
+- **Release**: GitLab release created with package download links
+
 ## License
 
-[Add license here]
+This project is proprietary software. All rights reserved.

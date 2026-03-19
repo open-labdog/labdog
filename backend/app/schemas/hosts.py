@@ -6,7 +6,7 @@ from app.models.host import FirewallBackend, SyncStatus
 
 
 class HostCreate(BaseModel):
-    hostname: str = ""
+    hostname: str
     ip_address: str
     ssh_port: int = 22
     ssh_user: str = "root"

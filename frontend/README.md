@@ -34,12 +34,13 @@ npx playwright test --ui     # interactive test runner
 | `/login` | Login page |
 | `/register` | Registration page |
 | `/dashboard` | Overview dashboard |
-| `/groups` | Host group management |
+| `/groups` | Host group management (supports category view toggle with collapsible sections) |
 | `/groups/[id]` | Group detail |
 | `/groups/[id]/rules` | Rule management per group |
 | `/groups/[id]/sync` | Sync with plan preview |
 | `/hosts` | Host management |
 | `/hosts/[id]` | Host detail and drift status |
+| `/hosts/[id]/terminal` | Full-page SSH terminal (web shell) |
 | `/ssh-keys` | SSH key management |
 | `/audit` | Audit log viewer |
 
