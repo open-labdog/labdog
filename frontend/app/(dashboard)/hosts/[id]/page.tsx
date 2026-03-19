@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,14 +26,10 @@ import {
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
-import type { Host, FirewallRule, SSHKey, HostGroup, EffectiveService, ServiceRule, EffectiveHostsEntry, HostsEntry, LiveService, ServiceCommandResult, EffectiveLinuxUser, EffectiveLinuxGroup, LinuxUser, LinuxGroup, EffectiveCronJob, CronJob, EffectivePackage, PackageRule } from "@/lib/types"
-
-interface EffectiveRule extends FirewallRule {
-  group_id: number
-}
+import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
+import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -84,7 +80,62 @@ export default function HostDetailPage() {
   const id = Number(params.id)
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages">("overview")
-  const [editOpen, setEditOpen] = useState(false)
+
+  const {
+    host: hostQuery, effectiveRules: effectiveRulesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
+    effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery,
+    effectiveHosts: effectiveHostsQuery, showHostsEntriesLoading, hostHostsOverrides: hostHostsOverridesQuery,
+    effectiveLinuxUsers: effectiveLinuxUsersQuery, showLinuxUsersLoading,
+    effectiveLinuxGroups: effectiveLinuxGroupsQuery, showLinuxGroupsLoading,
+    hostLinuxUserOverrides: hostLinuxUserOverridesQuery, hostLinuxGroupOverrides: hostLinuxGroupOverridesQuery,
+    effectiveCronJobs: effectiveCronJobsQuery, showCronJobsLoading, hostCronOverrides: hostCronOverridesQuery,
+    effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery,
+  } = useHostQueries(id, activeTab)
+
+  const host = hostQuery.data
+  const hostLoading = hostQuery.isLoading
+  const hostError = hostQuery.error
+  const effectiveRules = effectiveRulesQuery.data
+  const rulesLoading = effectiveRulesQuery.isLoading
+  const rulesError = effectiveRulesQuery.error
+  const sshKeys = sshKeysQuery.data
+  const groups = groupsQuery.data
+  const effectiveServices = effectiveServicesQuery.data
+  const servicesLoading = effectiveServicesQuery.isLoading
+  const servicesError = effectiveServicesQuery.error
+  const hostOverrides = hostOverridesQuery.data
+  const effectiveHosts = effectiveHostsQuery.data
+  const hostsEntriesLoading = effectiveHostsQuery.isLoading
+  const hostsEntriesError = effectiveHostsQuery.error
+  const hostHostsOverrides = hostHostsOverridesQuery.data
+  const effectiveLinuxUsers = effectiveLinuxUsersQuery.data
+  const linuxUsersLoading = effectiveLinuxUsersQuery.isLoading
+  const linuxUsersError = effectiveLinuxUsersQuery.error
+  const effectiveLinuxGroups = effectiveLinuxGroupsQuery.data
+  const linuxGroupsLoading = effectiveLinuxGroupsQuery.isLoading
+  const linuxGroupsError = effectiveLinuxGroupsQuery.error
+  const hostLinuxUserOverrides = hostLinuxUserOverridesQuery.data
+  const hostLinuxGroupOverrides = hostLinuxGroupOverridesQuery.data
+  const effectiveCronJobs = effectiveCronJobsQuery.data
+  const cronJobsLoading = effectiveCronJobsQuery.isLoading
+  const cronJobsError = effectiveCronJobsQuery.error
+  const hostCronOverrides = hostCronOverridesQuery.data
+  const effectivePackages = effectivePackagesQuery.data
+  const packagesLoading = effectivePackagesQuery.isLoading
+  const packagesError = effectivePackagesQuery.error
+  const hostPackageOverrides = hostPackageOverridesQuery.data
+
+  const {
+    editOpen, setEditOpen,
+    svcDialogOpen, setSvcDialogOpen,
+    hostsDialogOpen, setHostsDialogOpen,
+    luDialogOpen, setLuDialogOpen,
+    lgDialogOpen, setLgDialogOpen,
+    cjDialogOpen, setCjDialogOpen,
+    ppDialogOpen, setPpDialogOpen,
+    protectedConfirmOpen, setProtectedConfirmOpen,
+  } = useHostDialogs()
+
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -106,60 +157,12 @@ export default function HostDetailPage() {
     variant?: "default" | "destructive"
   } | null>(null)
 
-  const { data: host, isLoading: hostLoading, error: hostError } = useQuery<Host>({
-    queryKey: ["host", id],
-    queryFn: () => apiFetch<Host>(`/api/hosts/${id}`),
-    enabled: !!id,
-  })
 
-  const { data: effectiveRules, isLoading: rulesLoading, error: rulesError } = useQuery<EffectiveRule[]>({
-    queryKey: ["host-effective-rules", id],
-    queryFn: () => apiFetch<EffectiveRule[]>(`/api/hosts/${id}/effective-rules`),
-    enabled: !!id,
-  })
-  const showRulesLoading = useDelayedLoading(rulesLoading)
-
-  const { data: sshKeys } = useQuery<SSHKey[]>({
-    queryKey: ["ssh-keys"],
-    queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
-  })
-
-  const { data: groups } = useQuery<HostGroup[]>({
-    queryKey: ["groups"],
-    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-  })
-
-  const { data: effectiveServices, isLoading: servicesLoading, error: servicesError } = useQuery<EffectiveService[]>({
-    queryKey: ["host-effective-services", id],
-    queryFn: () => apiFetch<EffectiveService[]>(`/api/hosts/${id}/effective-services`),
-    enabled: !!id && activeTab === "services",
-  })
-  const showServicesLoading = useDelayedLoading(servicesLoading)
-
-  const { data: hostOverrides } = useQuery<ServiceRule[]>({
-    queryKey: ["host-service-overrides", id],
-    queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
-    enabled: !!id && activeTab === "services",
-  })
-
-  const { data: effectiveHosts, isLoading: hostsEntriesLoading, error: hostsEntriesError } = useQuery<EffectiveHostsEntry[]>({
-    queryKey: ["host-effective-hosts-entries", id],
-    queryFn: () => apiFetch<EffectiveHostsEntry[]>(`/api/hosts/${id}/effective-hosts-entries`),
-    enabled: !!id && activeTab === "hosts-file",
-  })
-  const showHostsEntriesLoading = useDelayedLoading(hostsEntriesLoading)
-
-  const { data: hostHostsOverrides } = useQuery<HostsEntry[]>({
-    queryKey: ["host-hosts-overrides", id],
-    queryFn: () => apiFetch<HostsEntry[]>(`/api/hosts/${id}/hosts-entries`),
-    enabled: !!id && activeTab === "hosts-file",
-  })
 
   const [hostsPreview, setHostsPreview] = useState<string | null>(null)
   const [hostsPreviewLoading, setHostsPreviewLoading] = useState(false)
   const [hostsPreviewError, setHostsPreviewError] = useState<string | null>(null)
 
-  const [hostsDialogOpen, setHostsDialogOpen] = useState(false)
   const [hostsIp, setHostsIp] = useState("")
   const [hostsHostname, setHostsHostname] = useState("")
   const [hostsAliases, setHostsAliases] = useState("")
@@ -178,33 +181,6 @@ export default function HostDetailPage() {
     invalidateKeys: [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
   })
 
-  const { data: effectiveLinuxUsers, isLoading: linuxUsersLoading, error: linuxUsersError } = useQuery<EffectiveLinuxUser[]>({
-    queryKey: ["host-effective-linux-users", id],
-    queryFn: () => apiFetch<EffectiveLinuxUser[]>(`/api/hosts/${id}/effective-users`),
-    enabled: !!id && activeTab === "users",
-  })
-  const showLinuxUsersLoading = useDelayedLoading(linuxUsersLoading)
-
-  const { data: effectiveLinuxGroups, isLoading: linuxGroupsLoading, error: linuxGroupsError } = useQuery<EffectiveLinuxGroup[]>({
-    queryKey: ["host-effective-linux-groups", id],
-    queryFn: () => apiFetch<EffectiveLinuxGroup[]>(`/api/hosts/${id}/effective-groups`),
-    enabled: !!id && activeTab === "users",
-  })
-  const showLinuxGroupsLoading = useDelayedLoading(linuxGroupsLoading)
-
-  const { data: hostLinuxUserOverrides } = useQuery<LinuxUser[]>({
-    queryKey: ["host-linux-user-overrides", id],
-    queryFn: () => apiFetch<LinuxUser[]>(`/api/hosts/${id}/linux-users`),
-    enabled: !!id && activeTab === "users",
-  })
-
-  const { data: hostLinuxGroupOverrides } = useQuery<LinuxGroup[]>({
-    queryKey: ["host-linux-group-overrides", id],
-    queryFn: () => apiFetch<LinuxGroup[]>(`/api/hosts/${id}/linux-groups`),
-    enabled: !!id && activeTab === "users",
-  })
-
-  const [luDialogOpen, setLuDialogOpen] = useState(false)
   const [luUsername, setLuUsername] = useState("")
   const [luUid, setLuUid] = useState("")
   const [luShell, setLuShell] = useState("/bin/bash")
@@ -228,20 +204,6 @@ export default function HostDetailPage() {
     invalidateKeys: [["host-effective-linux-users", id], ["host-linux-user-overrides", id]],
   })
 
-  const { data: effectiveCronJobs, isLoading: cronJobsLoading, error: cronJobsError } = useQuery<EffectiveCronJob[]>({
-    queryKey: ["host-effective-cron-jobs", id],
-    queryFn: () => apiFetch<EffectiveCronJob[]>(`/api/hosts/${id}/effective-cron-jobs`),
-    enabled: !!id && activeTab === "cron-jobs",
-  })
-  const showCronJobsLoading = useDelayedLoading(cronJobsLoading)
-
-  const { data: hostCronOverrides } = useQuery<CronJob[]>({
-    queryKey: ["host-cron-overrides", id],
-    queryFn: () => apiFetch<CronJob[]>(`/api/hosts/${id}/cron-jobs`),
-    enabled: !!id && activeTab === "cron-jobs",
-  })
-
-  const [cjDialogOpen, setCjDialogOpen] = useState(false)
   const [cjName, setCjName] = useState("")
   const [cjUser, setCjUser] = useState("root")
   const [cjSchedule, setCjSchedule] = useState("")
@@ -263,20 +225,6 @@ export default function HostDetailPage() {
     invalidateKeys: [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
   })
 
-  const { data: effectivePackages, isLoading: packagesLoading, error: packagesError } = useQuery<EffectivePackage[]>({
-    queryKey: ["host-effective-packages", id],
-    queryFn: () => apiFetch<EffectivePackage[]>(`/api/hosts/${id}/effective-packages`),
-    enabled: !!id && activeTab === "packages",
-  })
-  const showPackagesLoading = useDelayedLoading(packagesLoading)
-
-  const { data: hostPackageOverrides } = useQuery<PackageRule[]>({
-    queryKey: ["host-package-overrides", id],
-    queryFn: () => apiFetch<PackageRule[]>(`/api/hosts/${id}/packages`),
-    enabled: !!id && activeTab === "packages",
-  })
-
-  const [ppDialogOpen, setPpDialogOpen] = useState(false)
   const [ppName, setPpName] = useState("")
   const [ppVersion, setPpVersion] = useState("")
   const [ppState, setPpState] = useState<"present" | "absent" | "latest">("present")
@@ -370,7 +318,6 @@ export default function HostDetailPage() {
     })
   }
 
-  const [lgDialogOpen, setLgDialogOpen] = useState(false)
   const [lgGroupname, setLgGroupname] = useState("")
   const [lgGid, setLgGid] = useState("")
   const [lgState, setLgState] = useState<"present" | "absent">("present")
@@ -513,7 +460,6 @@ export default function HostDetailPage() {
     }
   }
 
-  const [svcDialogOpen, setSvcDialogOpen] = useState(false)
   const [svcName, setSvcName] = useState("")
   const [svcState, setSvcState] = useState<"running" | "stopped">("running")
   const [svcEnabled, setSvcEnabled] = useState(true)
@@ -541,7 +487,6 @@ export default function HostDetailPage() {
   const [pendingAction, setPendingAction] = useState<{ service: string; action: string } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
-  const [protectedConfirmOpen, setProtectedConfirmOpen] = useState(false)
   const [protectedTarget, setProtectedTarget] = useState<{ service: string; action: string } | null>(null)
 
   function openSvcDialog() {

@@ -1,0 +1,186 @@
+"use client"
+
+import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
+import { apiFetch } from "@/lib/api"
+import { useDelayedLoading } from "@/lib/utils"
+import type {
+  Host,
+  HostGroup,
+  SSHKey,
+  FirewallRule,
+  EffectiveService,
+  ServiceRule,
+  EffectiveHostsEntry,
+  HostsEntry,
+  EffectiveLinuxUser,
+  EffectiveLinuxGroup,
+  LinuxUser,
+  LinuxGroup,
+  EffectiveCronJob,
+  CronJob,
+  EffectivePackage,
+  PackageRule,
+} from "@/lib/types"
+
+interface EffectiveRule extends FirewallRule {
+  group_id: number
+}
+
+type ActiveTab = "overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages"
+
+export function useHostQueries(id: number, activeTab: ActiveTab) {
+  const host = useQuery<Host>({
+    queryKey: ["host", id],
+    queryFn: () => apiFetch<Host>(`/api/hosts/${id}`),
+    enabled: !!id,
+  })
+
+  const effectiveRules = useQuery<EffectiveRule[]>({
+    queryKey: ["host-effective-rules", id],
+    queryFn: () => apiFetch<EffectiveRule[]>(`/api/hosts/${id}/effective-rules`),
+    enabled: !!id,
+  })
+  const showRulesLoading = useDelayedLoading(effectiveRules.isLoading)
+
+  const sshKeys = useQuery<SSHKey[]>({
+    queryKey: ["ssh-keys"],
+    queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
+  })
+
+  const groups = useQuery<HostGroup[]>({
+    queryKey: ["groups"],
+    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
+  })
+
+  // Services tab
+  const effectiveServices = useQuery<EffectiveService[]>({
+    queryKey: ["host-effective-services", id],
+    queryFn: () => apiFetch<EffectiveService[]>(`/api/hosts/${id}/effective-services`),
+    enabled: !!id && activeTab === "services",
+  })
+  const showServicesLoading = useDelayedLoading(effectiveServices.isLoading)
+
+  const hostOverrides = useQuery<ServiceRule[]>({
+    queryKey: ["host-service-overrides", id],
+    queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
+    enabled: !!id && activeTab === "services",
+  })
+
+  // Hosts file tab
+  const effectiveHosts = useQuery<EffectiveHostsEntry[]>({
+    queryKey: ["host-effective-hosts-entries", id],
+    queryFn: () => apiFetch<EffectiveHostsEntry[]>(`/api/hosts/${id}/effective-hosts-entries`),
+    enabled: !!id && activeTab === "hosts-file",
+  })
+  const showHostsEntriesLoading = useDelayedLoading(effectiveHosts.isLoading)
+
+  const hostHostsOverrides = useQuery<HostsEntry[]>({
+    queryKey: ["host-hosts-overrides", id],
+    queryFn: () => apiFetch<HostsEntry[]>(`/api/hosts/${id}/hosts-entries`),
+    enabled: !!id && activeTab === "hosts-file",
+  })
+
+  // Users tab
+  const effectiveLinuxUsers = useQuery<EffectiveLinuxUser[]>({
+    queryKey: ["host-effective-linux-users", id],
+    queryFn: () => apiFetch<EffectiveLinuxUser[]>(`/api/hosts/${id}/effective-users`),
+    enabled: !!id && activeTab === "users",
+  })
+  const showLinuxUsersLoading = useDelayedLoading(effectiveLinuxUsers.isLoading)
+
+  const effectiveLinuxGroups = useQuery<EffectiveLinuxGroup[]>({
+    queryKey: ["host-effective-linux-groups", id],
+    queryFn: () => apiFetch<EffectiveLinuxGroup[]>(`/api/hosts/${id}/effective-groups`),
+    enabled: !!id && activeTab === "users",
+  })
+  const showLinuxGroupsLoading = useDelayedLoading(effectiveLinuxGroups.isLoading)
+
+  const hostLinuxUserOverrides = useQuery<LinuxUser[]>({
+    queryKey: ["host-linux-user-overrides", id],
+    queryFn: () => apiFetch<LinuxUser[]>(`/api/hosts/${id}/linux-users`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  const hostLinuxGroupOverrides = useQuery<LinuxGroup[]>({
+    queryKey: ["host-linux-group-overrides", id],
+    queryFn: () => apiFetch<LinuxGroup[]>(`/api/hosts/${id}/linux-groups`),
+    enabled: !!id && activeTab === "users",
+  })
+
+  // Cron jobs tab
+  const effectiveCronJobs = useQuery<EffectiveCronJob[]>({
+    queryKey: ["host-effective-cron-jobs", id],
+    queryFn: () => apiFetch<EffectiveCronJob[]>(`/api/hosts/${id}/effective-cron-jobs`),
+    enabled: !!id && activeTab === "cron-jobs",
+  })
+  const showCronJobsLoading = useDelayedLoading(effectiveCronJobs.isLoading)
+
+  const hostCronOverrides = useQuery<CronJob[]>({
+    queryKey: ["host-cron-overrides", id],
+    queryFn: () => apiFetch<CronJob[]>(`/api/hosts/${id}/cron-jobs`),
+    enabled: !!id && activeTab === "cron-jobs",
+  })
+
+  // Packages tab
+  const effectivePackages = useQuery<EffectivePackage[]>({
+    queryKey: ["host-effective-packages", id],
+    queryFn: () => apiFetch<EffectivePackage[]>(`/api/hosts/${id}/effective-packages`),
+    enabled: !!id && activeTab === "packages",
+  })
+  const showPackagesLoading = useDelayedLoading(effectivePackages.isLoading)
+
+  const hostPackageOverrides = useQuery<PackageRule[]>({
+    queryKey: ["host-package-overrides", id],
+    queryFn: () => apiFetch<PackageRule[]>(`/api/hosts/${id}/packages`),
+    enabled: !!id && activeTab === "packages",
+  })
+
+  return {
+    host,
+    effectiveRules,
+    showRulesLoading,
+    sshKeys,
+    groups,
+    effectiveServices,
+    showServicesLoading,
+    hostOverrides,
+    effectiveHosts,
+    showHostsEntriesLoading,
+    hostHostsOverrides,
+    effectiveLinuxUsers,
+    showLinuxUsersLoading,
+    effectiveLinuxGroups,
+    showLinuxGroupsLoading,
+    hostLinuxUserOverrides,
+    hostLinuxGroupOverrides,
+    effectiveCronJobs,
+    showCronJobsLoading,
+    hostCronOverrides,
+    effectivePackages,
+    showPackagesLoading,
+    hostPackageOverrides,
+  }
+}
+
+export function useHostDialogs() {
+  const [editOpen, setEditOpen] = useState(false)
+  const [svcDialogOpen, setSvcDialogOpen] = useState(false)
+  const [hostsDialogOpen, setHostsDialogOpen] = useState(false)
+  const [luDialogOpen, setLuDialogOpen] = useState(false)
+  const [lgDialogOpen, setLgDialogOpen] = useState(false)
+  const [cjDialogOpen, setCjDialogOpen] = useState(false)
+  const [ppDialogOpen, setPpDialogOpen] = useState(false)
+  const [protectedConfirmOpen, setProtectedConfirmOpen] = useState(false)
+
+  return {
+    editOpen, setEditOpen,
+    svcDialogOpen, setSvcDialogOpen,
+    hostsDialogOpen, setHostsDialogOpen,
+    luDialogOpen, setLuDialogOpen,
+    lgDialogOpen, setLgDialogOpen,
+    cjDialogOpen, setCjDialogOpen,
+    ppDialogOpen, setPpDialogOpen,
+    protectedConfirmOpen, setProtectedConfirmOpen,
+  }
+}
