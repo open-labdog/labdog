@@ -15,6 +15,7 @@ from app.hosts_mgmt.models import HostsEntry
 from app.cron.models import CronJob
 from app.user_mgmt.models import LinuxUser, LinuxGroup
 from app.packages.models import PackageRule, PackageRepository
+from app.resolver.models import ResolverConfig, ResolverType
 
 __all__ = [
     "Base",
@@ -43,4 +44,6 @@ __all__ = [
     "LinuxGroup",
     "PackageRule",
     "PackageRepository",
+    "ResolverConfig",
+    "ResolverType",
 ]
