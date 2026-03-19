@@ -1,0 +1,41 @@
+Task 3: Resolver Merge Engine + Config File Renderers
+======================================================
+
+Files created:
+- backend/app/resolver/merge.py — get_effective_resolver(host_id, db)
+- backend/app/resolver/renderer.py — render_resolv_conf, render_systemd_resolved, render_networkmanager_conf, render_config
+
+Import verification:
+$ cd backend && source .venv/bin/activate && python -c "from app.resolver.merge import get_effective_resolver; from app.resolver.renderer import render_resolv_conf, render_systemd_resolved, render_networkmanager_conf; print('OK')"
+OK
+
+Renderer output tests:
+=== resolv.conf ===
+# Managed by Barricade — do not edit manually
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+search example.com
+options ndots:5 rotate
+
+=== systemd-resolved ===
+# Managed by Barricade — do not edit manually
+[Resolve]
+DNS=8.8.8.8
+Domains=example.com
+DNSOverTLS=yes
+
+=== NetworkManager ===
+# Managed by Barricade — do not edit manually
+[global-dns-domain-*]
+servers=8.8.8.8,1.1.1.1
+options=search example.com
+
+=== render_config dispatch ===
+# Managed by Barricade — do not edit manually
+nameserver 8.8.8.8
+search test.local
+options ndots:3
+
+ALL TESTS PASSED
+
+LSP diagnostics: clean (only pre-existing sqlalchemy import warnings from Pyright venv config)
