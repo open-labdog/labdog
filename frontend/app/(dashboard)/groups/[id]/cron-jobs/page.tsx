@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
@@ -28,8 +28,8 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { cronJobSchema, type CronJobInput } from "@/lib/schemas"
-import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { CronJob, HostGroup } from "@/lib/types"
@@ -128,12 +128,9 @@ function envVarsToRecord(vars: EnvVar[]): Record<string, string> {
 export default function GroupCronJobsPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CronJob | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -170,6 +167,23 @@ export default function GroupCronJobsPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
+  const saveMutation = useApiMutation({
+    mutationFn: ({ jobId, payload }: { jobId?: number; payload: Record<string, unknown> }) => {
+      if (jobId) {
+        return apiFetch(`/api/groups/${id}/cron-jobs/${jobId}`, { method: "PUT", body: JSON.stringify(payload) })
+      }
+      return apiFetch(`/api/groups/${id}/cron-jobs`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["cron-jobs", id]],
+    onSuccess: () => setDialogOpen(false),
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (jobId: number) =>
+      apiFetch(`/api/groups/${id}/cron-jobs/${jobId}`, { method: "DELETE" }),
+    invalidateKeys: [["cron-jobs", id]],
+  })
+
   function parseSchedule(schedule: string) {
     const parts = schedule.trim().split(/\s+/)
     return {
@@ -185,14 +199,14 @@ export default function GroupCronJobsPage() {
     setEditing(null)
     form.reset(cronDefaults)
     setEnvVars([])
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
   function openEditDialog(job: CronJob) {
     setEditing(job)
     setEnvVars(envRecordToVars(job.environment ?? {}))
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
@@ -211,9 +225,7 @@ export default function GroupCronJobsPage() {
     }
   }, [dialogOpen, editing, form])
 
-  const onSubmit = form.handleSubmit(async (data) => {
-    setFormError(null)
-
+  const onSubmit = form.handleSubmit((data) => {
     const payload = {
       name: data.name,
       user: data.user,
@@ -224,24 +236,7 @@ export default function GroupCronJobsPage() {
       comment: data.comment || null,
       environment: envVarsToRecord(envVars),
     }
-
-    try {
-      if (editing) {
-        await apiFetch(`/api/groups/${id}/cron-jobs/${editing.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/cron-jobs`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["cron-jobs", id] })
-      setDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save cron job")
-    }
+    saveMutation.mutate({ jobId: editing?.id, payload })
   })
 
   function handleDelete(job: CronJob) {
@@ -251,16 +246,10 @@ export default function GroupCronJobsPage() {
       description: `Delete cron job "${job.name}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setDeletingId(job.id)
         try {
-          await apiFetch(`/api/groups/${id}/cron-jobs/${job.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["cron-jobs", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
+          await deleteMutation.mutateAsync(job.id)
         } finally {
-          setDeletingId(null)
+          setConfirmState(null)
         }
       },
     })
@@ -337,11 +326,11 @@ export default function GroupCronJobsPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={deletingId === job.id}
+                        disabled={deleteMutation.isPending}
                         onClick={() => handleDelete(job)}
                         className="text-red-400 hover:text-red-300 hover:bg-red-950"
                       >
-                        {deletingId === job.id ? "..." : "Delete"}
+                        {deleteMutation.isPending ? "..." : "Delete"}
                       </Button>
                     </div>
                   </TableCell>
@@ -471,13 +460,13 @@ export default function GroupCronJobsPage() {
               <EnvEditor vars={envVars} onChange={setEnvVars} />
             </div>
 
-            {formError && (
-              <p className="text-sm text-red-400">{formError}</p>
+            {saveMutation.error && (
+              <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Saving..." : editing ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editing ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

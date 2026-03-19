@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { SearchIcon, XIcon } from "lucide-react"
@@ -26,7 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { gitRepoSchema, type GitRepoInput } from "@/lib/schemas"
@@ -57,16 +57,12 @@ const defaultFormValues: GitRepoInput = {
 }
 
 export default function GitReposPage() {
-  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
   const [showWebhooks, setShowWebhooks] = useState(false)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
 
   const form = useForm<GitRepoInput>({
     resolver: zodResolver(gitRepoSchema),
@@ -92,10 +88,59 @@ export default function GitReposPage() {
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
 
+  const saveMutation = useApiMutation({
+    mutationFn: ({ editId, data }: { editId: number | null; data: GitRepoInput }) => {
+      if (editId) {
+        const body: GitRepoUpdate = {
+          name: data.name,
+          url: data.url,
+          branch: data.branch,
+          auth_type: data.auth_type,
+          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          webhook_secret: data.webhook_secret || null,
+        }
+        if (data.auth_type === "https_token" && data.https_token) {
+          body.https_token = data.https_token
+        }
+        return apiFetch(`/api/git-repos/${editId}`, { method: "PUT", body: JSON.stringify(body) })
+      } else {
+        const body: GitRepoCreate = {
+          name: data.name,
+          url: data.url,
+          branch: data.branch,
+          auth_type: data.auth_type,
+          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          webhook_secret: data.webhook_secret || null,
+        }
+        if (data.auth_type === "https_token" && data.https_token) {
+          body.https_token = data.https_token
+        }
+        return apiFetch("/api/git-repos", { method: "POST", body: JSON.stringify(body) })
+      }
+    },
+    invalidateKeys: [["git-repos"]],
+    onSuccess: (_data, variables) => {
+      if (variables.editId) {
+        setDialogOpen(false)
+        form.reset(defaultFormValues)
+        setEditingRepo(null)
+      } else {
+        setShowWebhooks(true)
+      }
+    },
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/git-repos/${id}`, { method: "DELETE" }),
+    invalidateKeys: [["git-repos"]],
+    onSuccess: () => setDeleteConfirmId(null),
+  })
+
   function openCreateDialog() {
     form.reset(defaultFormValues)
     setEditingRepo(null)
-    setFormError(null)
+    saveMutation.reset()
     setShowWebhooks(false)
     setDialogOpen(true)
   }
@@ -111,75 +156,17 @@ export default function GitReposPage() {
       https_token: "",
       webhook_secret: repo.webhook_secret || "",
     })
-    setFormError(null)
+    saveMutation.reset()
     setShowWebhooks(false)
     setDialogOpen(true)
   }
 
-  const onSubmit = form.handleSubmit(async (data) => {
-    setFormError(null)
-    setFormLoading(true)
-
-    try {
-      if (editingRepo) {
-        const body: GitRepoUpdate = {
-          name: data.name,
-          url: data.url,
-          branch: data.branch,
-          auth_type: data.auth_type,
-          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
-          webhook_secret: data.webhook_secret || null,
-        }
-        if (data.auth_type === "https_token" && data.https_token) {
-          body.https_token = data.https_token
-        }
-        await apiFetch(`/api/git-repos/${editingRepo.id}`, {
-          method: "PUT",
-          body: JSON.stringify(body),
-        })
-      } else {
-        const body: GitRepoCreate = {
-          name: data.name,
-          url: data.url,
-          branch: data.branch,
-          auth_type: data.auth_type,
-          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
-          webhook_secret: data.webhook_secret || null,
-        }
-        if (data.auth_type === "https_token" && data.https_token) {
-          body.https_token = data.https_token
-        }
-        await apiFetch("/api/git-repos", {
-          method: "POST",
-          body: JSON.stringify(body),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["git-repos"] })
-      if (editingRepo) {
-        setDialogOpen(false)
-        form.reset(defaultFormValues)
-        setEditingRepo(null)
-      } else {
-        setShowWebhooks(true)
-      }
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save repository")
-    } finally {
-      setFormLoading(false)
-    }
+  const onSubmit = form.handleSubmit((data) => {
+    saveMutation.mutate({ editId: editingRepo?.id ?? null, data })
   })
 
-  async function handleDelete(id: number) {
-    setDeletingId(id)
-    try {
-      await apiFetch(`/api/git-repos/${id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["git-repos"] })
-    } catch {
-      showError("Failed to delete repository")
-    } finally {
-      setDeletingId(null)
-      setDeleteConfirmId(null)
-    }
+  function handleDelete(id: number) {
+    deleteMutation.mutate(id)
   }
 
   function copyToClipboard(text: string) {
@@ -207,7 +194,7 @@ export default function GitReposPage() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open)
-          if (!open) { form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false); setFormError(null) }
+          if (!open) { form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false); saveMutation.reset() }
         }}>
           <DialogTrigger>
             <Button onClick={openCreateDialog}>Add Repository</Button>
@@ -250,38 +237,19 @@ export default function GitReposPage() {
               <form onSubmit={onSubmit} noValidate className="space-y-4 mt-2">
                 <div className="space-y-2">
                   <Label htmlFor="repo-name">Name</Label>
-                  <Input
-                    id="repo-name"
-                    type="text"
-                    placeholder="e.g. infra-config"
-                    {...form.register("name")}
-                  />
-                  {form.formState.errors.name && (
-                    <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
-                  )}
+                  <Input id="repo-name" type="text" placeholder="e.g. infra-config" {...form.register("name")} />
+                  {form.formState.errors.name && <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="repo-url">URL</Label>
-                  <Input
-                    id="repo-url"
-                    type="text"
-                    placeholder="git@github.com:org/repo.git"
-                    {...form.register("url")}
-                  />
-                  {form.formState.errors.url && (
-                    <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>
-                  )}
+                  <Input id="repo-url" type="text" placeholder="git@github.com:org/repo.git" {...form.register("url")} />
+                  {form.formState.errors.url && <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>}
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="repo-branch">Branch</Label>
-                  <Input
-                    id="repo-branch"
-                    type="text"
-                    placeholder="main"
-                    {...form.register("branch")}
-                  />
+                  <Input id="repo-branch" type="text" placeholder="main" {...form.register("branch")} />
                 </div>
 
                 <div className="space-y-2">
@@ -328,21 +296,16 @@ export default function GitReposPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
-                  <Input
-                    id="webhook-secret"
-                    type="text"
-                    placeholder="Optional webhook secret"
-                    {...form.register("webhook_secret")}
-                  />
+                  <Input id="webhook-secret" type="text" placeholder="Optional webhook secret" {...form.register("webhook_secret")} />
                 </div>
 
-                {formError && (
-                  <p className="text-sm text-red-400">{formError}</p>
+                {saveMutation.error && (
+                  <p className="text-sm text-red-400">{saveMutation.error.message}</p>
                 )}
 
                 <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={formLoading}>
-                    {formLoading ? "Saving..." : editingRepo ? "Update Repository" : "Add Repository"}
+                  <Button type="submit" disabled={saveMutation.isPending}>
+                    {saveMutation.isPending ? "Saving..." : editingRepo ? "Update Repository" : "Add Repository"}
                   </Button>
                   <Button
                     type="button"
@@ -361,44 +324,23 @@ export default function GitReposPage() {
       <div className="flex items-center gap-2">
         <div className="relative flex-1 max-w-sm">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search by name or URL..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
+          <Input placeholder="Search by name or URL..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 pr-8" />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-            >
+            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
               <XIcon className="w-4 h-4" />
             </button>
           )}
         </div>
-        {searchQuery && (
-          <span className="text-sm text-slate-400">
-            Showing {filteredRepos.length} of {repos?.length ?? 0} repos
-          </span>
-        )}
+        {searchQuery && <span className="text-sm text-slate-400">Showing {filteredRepos.length} of {repos?.length ?? 0} repos</span>}
       </div>
 
       {showLoading && <TableSkeleton rows={5} columns={3} />}
-
-      {error && (
-        <div className="text-red-400 py-8 text-center">Failed to load repositories</div>
-      )}
-
+      {error && <div className="text-red-400 py-8 text-center">Failed to load repositories</div>}
       {!isLoading && !error && filteredRepos.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
+        <div className="text-slate-400 py-8 text-center">No results matching &apos;{searchQuery}&apos;</div>
       )}
-
       {!isLoading && !error && repos?.length === 0 && !searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No git repositories yet. Add your first repository to get started.
-        </div>
+        <div className="text-slate-400 py-8 text-center">No git repositories yet. Add your first repository to get started.</div>
       )}
 
       {!isLoading && !error && filteredRepos.length > 0 && (
@@ -418,38 +360,26 @@ export default function GitReposPage() {
               {filteredRepos.map((repo) => (
                 <TableRow key={repo.id} className="border-slate-700">
                   <TableCell className="font-medium text-white">{repo.name}</TableCell>
-                  <TableCell className="font-mono text-sm text-slate-300 max-w-[250px] truncate">
-                    {repo.url}
-                  </TableCell>
+                  <TableCell className="font-mono text-sm text-slate-300 max-w-[250px] truncate">{repo.url}</TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="border-slate-600 text-slate-300">
-                      {repo.branch}
-                    </Badge>
+                    <Badge variant="outline" className="border-slate-600 text-slate-300">{repo.branch}</Badge>
                   </TableCell>
                   <TableCell>
                     <Badge className={repo.auth_type === "ssh_key" ? "bg-blue-600 text-white" : "bg-amber-600 text-white"}>
                       {repo.auth_type === "ssh_key" ? "SSH Key" : "HTTPS"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-slate-400">
-                    {relativeTime(repo.last_sync_at)}
-                  </TableCell>
+                  <TableCell className="text-slate-400">{relativeTime(repo.last_sync_at)}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => openEditDialog(repo)}
-                      >
-                        Edit
-                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(repo)}>Edit</Button>
                       <Button
                         variant="destructive"
                         size="sm"
                         onClick={() => setDeleteConfirmId(repo.id)}
-                        disabled={deletingId === repo.id}
+                        disabled={deleteMutation.isPending}
                       >
-                        {deletingId === repo.id ? "Deleting..." : "Delete"}
+                        {deleteMutation.isPending ? "Deleting..." : "Delete"}
                       </Button>
                     </div>
                   </TableCell>
@@ -473,16 +403,11 @@ export default function GitReposPage() {
             <Button
               variant="destructive"
               onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
-              disabled={deletingId !== null}
+              disabled={deleteMutation.isPending}
             >
-              {deletingId !== null ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirmId(null)}
-            >
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
@@ -28,19 +28,15 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
-import { showError } from "@/lib/toast"
+import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
 import type { SSHKey } from "@/lib/types"
 
 export default function SSHKeysPage() {
-  const queryClient = useQueryClient()
   const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -61,27 +57,32 @@ export default function SSHKeysPage() {
     k.name.toLowerCase().includes(searchQuery.toLowerCase())
   ) ?? []
 
-  const onUpload = form.handleSubmit(async (data) => {
-    setFormError(null)
-    setFormLoading(true)
-
-    try {
-      await apiFetch("/api/ssh-keys", {
+  const uploadMutation = useApiMutation({
+    mutationFn: (data: SshKeyInput) =>
+      apiFetch("/api/ssh-keys", {
         method: "POST",
         body: JSON.stringify({
           name: data.name,
           private_key: data.private_key,
           is_default: data.is_default ?? false,
         }),
-      })
-      await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
+      }),
+    invalidateKeys: [["ssh-keys"]],
+    onSuccess: () => {
       setDialogOpen(false)
       form.reset()
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to upload key")
-    } finally {
-      setFormLoading(false)
-    }
+    },
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (keyId: number) =>
+      apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" }),
+    invalidateKeys: [["ssh-keys"]],
+    successMessage: "SSH key deleted",
+  })
+
+  const onUpload = form.handleSubmit((data) => {
+    uploadMutation.mutate(data)
   })
 
   function handleDelete(keyId: number) {
@@ -91,16 +92,10 @@ export default function SSHKeysPage() {
       description: "Are you sure you want to delete this SSH key? This action cannot be undone.",
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setDeletingId(keyId)
         try {
-          await apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
-          setConfirmState(null)
-        } catch {
-          showError("Failed to delete SSH key")
-          setConfirmState(null)
+          await deleteMutation.mutateAsync(keyId)
         } finally {
-          setDeletingId(null)
+          setConfirmState(null)
         }
       },
     })
@@ -116,7 +111,7 @@ export default function SSHKeysPage() {
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open)
-          if (!open) { form.reset(); setFormError(null) }
+          if (!open) { form.reset(); uploadMutation.reset() }
         }}>
           <DialogTrigger>
             <Button>Upload Key</Button>
@@ -168,18 +163,18 @@ export default function SSHKeysPage() {
                 <Label htmlFor="is-default">Set as default key</Label>
               </div>
 
-              {formError && (
-                <p className="text-sm text-red-400">{formError}</p>
+              {uploadMutation.error && (
+                <p className="text-sm text-red-400">{uploadMutation.error.message}</p>
               )}
 
               <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={formLoading}>
-                  {formLoading ? "Uploading..." : "Upload Key"}
+                <Button type="submit" disabled={uploadMutation.isPending}>
+                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => { setDialogOpen(false); form.reset(); setFormError(null) }}
+                  onClick={() => { setDialogOpen(false); form.reset(); uploadMutation.reset() }}
                 >
                   Cancel
                 </Button>
@@ -262,9 +257,9 @@ export default function SSHKeysPage() {
                       variant="destructive"
                       size="sm"
                       onClick={() => handleDelete(key.id)}
-                      disabled={deletingId === key.id}
+                      disabled={deleteMutation.isPending}
                     >
-                      {deletingId === key.id ? "Deleting..." : "Delete"}
+                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
                     </Button>
                   </TableCell>
                 </TableRow>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -26,8 +26,8 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { useApiMutation } from "@/lib/mutations"
 import { serviceSchema, type ServiceInput } from "@/lib/schemas"
-import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { ServiceRule, HostGroup } from "@/lib/types"
@@ -51,12 +51,9 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
 export default function GroupServicesPage() {
   const params = useParams()
   const id = Number(params.id)
-  const queryClient = useQueryClient()
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingService, setEditingService] = useState<ServiceRule | null>(null)
-  const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -82,16 +79,33 @@ export default function GroupServicesPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
+  const saveMutation = useApiMutation({
+    mutationFn: ({ serviceId, payload }: { serviceId?: number; payload: Record<string, unknown> }) => {
+      if (serviceId) {
+        return apiFetch(`/api/groups/${id}/services/${serviceId}`, { method: "PUT", body: JSON.stringify(payload) })
+      }
+      return apiFetch(`/api/groups/${id}/services`, { method: "POST", body: JSON.stringify(payload) })
+    },
+    invalidateKeys: [["services", id]],
+    onSuccess: () => setDialogOpen(false),
+  })
+
+  const deleteMutation = useApiMutation({
+    mutationFn: (serviceId: number) =>
+      apiFetch(`/api/groups/${id}/services/${serviceId}`, { method: "DELETE" }),
+    invalidateKeys: [["services", id]],
+  })
+
   function openCreateDialog() {
     setEditingService(null)
     form.reset(serviceDefaults)
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
   function openEditDialog(service: ServiceRule) {
     setEditingService(service)
-    setFormError(null)
+    saveMutation.reset()
     setDialogOpen(true)
   }
 
@@ -107,31 +121,9 @@ export default function GroupServicesPage() {
     }
   }, [dialogOpen, editingService, form])
 
-  const onSubmit = form.handleSubmit(async (data) => {
-    setFormError(null)
-
-    const payload = {
-      ...data,
-      comment: data.comment || null,
-    }
-
-    try {
-      if (editingService) {
-        await apiFetch(`/api/groups/${id}/services/${editingService.id}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        })
-      } else {
-        await apiFetch(`/api/groups/${id}/services`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["services", id] })
-      setDialogOpen(false)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to save service")
-    }
+  const onSubmit = form.handleSubmit((data) => {
+    const payload = { ...data, comment: data.comment || null }
+    saveMutation.mutate({ serviceId: editingService?.id, payload })
   })
 
   function handleDelete(service: ServiceRule) {
@@ -141,16 +133,10 @@ export default function GroupServicesPage() {
       description: `Delete service rule "${service.service_name}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        setDeletingId(service.id)
         try {
-          await apiFetch(`/api/groups/${id}/services/${service.id}`, { method: "DELETE" })
-          await queryClient.invalidateQueries({ queryKey: ["services", id] })
-          setConfirmState(null)
-        } catch (err) {
-          showError(err instanceof Error ? err.message : "Delete failed")
-          setConfirmState(null)
+          await deleteMutation.mutateAsync(service.id)
         } finally {
-          setDeletingId(null)
+          setConfirmState(null)
         }
       },
     })
@@ -216,11 +202,11 @@ export default function GroupServicesPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={deletingId === service.id}
+                        disabled={deleteMutation.isPending}
                         onClick={() => handleDelete(service)}
                         className="text-red-400 hover:text-red-300 hover:bg-red-950"
                       >
-                        {deletingId === service.id ? "…" : "Delete"}
+                        {deleteMutation.isPending ? "…" : "Delete"}
                       </Button>
                     </div>
                   </TableCell>
@@ -292,13 +278,13 @@ export default function GroupServicesPage() {
               />
             </div>
 
-            {formError && (
-              <p className="text-sm text-red-400">{formError}</p>
+            {saveMutation.error && (
+              <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Saving..." : editingService ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editingService ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"
