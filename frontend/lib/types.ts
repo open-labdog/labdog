@@ -279,3 +279,20 @@ export interface EffectivePackage {
   source_id: number
   source_name: string
 }
+
+export interface ResolverConfig {
+  id: number
+  group_id: number | null
+  host_id: number | null
+  nameservers: string[]
+  search_domains: string[]
+  options: Record<string, number | string>
+  resolver_type: "resolv_conf" | "systemd_resolved" | "networkmanager"
+  dns_over_tls: boolean
+}
+
+export interface EffectiveResolverConfig extends ResolverConfig {
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}

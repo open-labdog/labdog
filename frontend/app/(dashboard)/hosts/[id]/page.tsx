@@ -26,7 +26,7 @@ import {
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
-import { TableSkeleton } from "@/components/ui/skeleton"
+import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
 import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult } from "@/lib/types"
@@ -79,7 +79,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -90,6 +90,7 @@ export default function HostDetailPage() {
     hostLinuxUserOverrides: hostLinuxUserOverridesQuery, hostLinuxGroupOverrides: hostLinuxGroupOverridesQuery,
     effectiveCronJobs: effectiveCronJobsQuery, showCronJobsLoading, hostCronOverrides: hostCronOverridesQuery,
     effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery,
+    effectiveResolver: effectiveResolverQuery, showResolverLoading, hostResolverOverride: hostResolverOverrideQuery,
   } = useHostQueries(id, activeTab)
 
   const host = hostQuery.data
@@ -124,6 +125,11 @@ export default function HostDetailPage() {
   const packagesLoading = effectivePackagesQuery.isLoading
   const packagesError = effectivePackagesQuery.error
   const hostPackageOverrides = hostPackageOverridesQuery.data
+  const effectiveResolver = effectiveResolverQuery.data
+  const resolverLoading = effectiveResolverQuery.isLoading
+  const resolverError = effectiveResolverQuery.error
+  const resolverIs404 = resolverError && "status" in resolverError && (resolverError as { status: number }).status === 404
+  const hostResolverOverride = hostResolverOverrideQuery.data
 
   const {
     editOpen, setEditOpen,
@@ -790,6 +796,16 @@ export default function HostDetailPage() {
           }`}
         >
           Packages
+        </button>
+        <button
+          onClick={() => setActiveTab("dns")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "dns"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          DNS
         </button>
       </div>
 
@@ -2268,6 +2284,103 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+        </div>
+      )}
+
+      {activeTab === "dns" && (
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Effective DNS Resolver</h2>
+            <p className="text-slate-400 text-sm mt-1">
+              DNS resolver configuration applied to this host.
+            </p>
+          </div>
+
+          {showResolverLoading && <CardSkeleton />}
+
+          {resolverIs404 && !resolverLoading && (
+            <div className="text-slate-400 py-6 text-center">
+              DNS is not managed for this host. Configure DNS at the group level to get started.
+            </div>
+          )}
+
+          {resolverError && !resolverIs404 && (
+            <div className="text-red-400 py-6 text-center">Failed to load DNS resolver</div>
+          )}
+
+          {!resolverLoading && !resolverError && effectiveResolver && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 space-y-4">
+              <div className="flex items-center gap-4 py-2 border-b border-slate-800">
+                <span className="text-slate-400 text-sm w-40 shrink-0">Source</span>
+                <Badge variant="outline" className="text-xs">
+                  {effectiveResolver.source === "group"
+                    ? `Group: ${effectiveResolver.source_name}`
+                    : "Host override"}
+                </Badge>
+              </div>
+
+              <div className="flex items-center gap-4 py-2 border-b border-slate-800">
+                <span className="text-slate-400 text-sm w-40 shrink-0">Resolver Type</span>
+                <span className="text-white text-sm">
+                  {effectiveResolver.resolver_type === "resolv_conf" && "resolv.conf"}
+                  {effectiveResolver.resolver_type === "systemd_resolved" && "systemd-resolved"}
+                  {effectiveResolver.resolver_type === "networkmanager" && "NetworkManager"}
+                </span>
+              </div>
+
+              <div className="flex items-start gap-4 py-2 border-b border-slate-800">
+                <span className="text-slate-400 text-sm w-40 shrink-0">Nameservers</span>
+                <div className="space-y-1">
+                  {effectiveResolver.nameservers.length > 0 ? effectiveResolver.nameservers.map((ns, idx) => (
+                    <div key={idx} className="font-mono text-sm text-slate-300">{ns}</div>
+                  )) : (
+                    <span className="text-slate-500 text-sm">None configured</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4 py-2 border-b border-slate-800">
+                <span className="text-slate-400 text-sm w-40 shrink-0">Search Domains</span>
+                <div className="space-y-1">
+                  {effectiveResolver.search_domains.length > 0 ? effectiveResolver.search_domains.map((sd, idx) => (
+                    <div key={idx} className="font-mono text-sm text-slate-300">{sd}</div>
+                  )) : (
+                    <span className="text-slate-500 text-sm">None configured</span>
+                  )}
+                </div>
+              </div>
+
+              {Object.keys(effectiveResolver.options).length > 0 && (
+                <div className="flex items-start gap-4 py-2 border-b border-slate-800">
+                  <span className="text-slate-400 text-sm w-40 shrink-0">Options</span>
+                  <div className="space-y-1">
+                    {Object.entries(effectiveResolver.options).map(([key, value]) => (
+                      <div key={key} className="font-mono text-sm text-slate-300">
+                        {key}: {String(value)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {effectiveResolver.resolver_type === "systemd_resolved" && (
+                <div className="flex items-center gap-4 py-2 border-b border-slate-800 last:border-0">
+                  <span className="text-slate-400 text-sm w-40 shrink-0">DNS-over-TLS</span>
+                  <Badge className={effectiveResolver.dns_over_tls ? "bg-green-700 text-white" : "bg-slate-600 text-white"}>
+                    {effectiveResolver.dns_over_tls ? "Enabled" : "Disabled"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!resolverLoading && !resolverError && effectiveResolver && (
+            <div className="text-xs text-slate-500">
+              {hostResolverOverride
+                ? "This host has a resolver override. Delete the override to inherit from the group."
+                : "Inherited from group configuration."}
+            </div>
+          )}
         </div>
       )}
 
