@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -38,12 +38,16 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { groupSchema, type GroupInput } from "@/lib/schemas"
 
 export default function GroupDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
   const [filePath, setFilePath] = useState("")
   const [confirmState, setConfirmState] = useState<{
@@ -53,6 +57,11 @@ export default function GroupDetailPage() {
     action: () => void | Promise<void>
     loading?: boolean
   } | null>(null)
+
+  const editForm = useForm<GroupInput>({
+    resolver: zodResolver(groupSchema),
+    mode: "onSubmit",
+  })
 
   const { data: groups, isLoading: groupsLoading } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -98,6 +107,36 @@ export default function GroupDetailPage() {
   const group = groups?.find((g) => g.id === id)
 
   const groupHosts = hosts?.filter((h) => h.group_ids?.includes(id)) ?? []
+
+  // Update form when group loads
+  useEffect(() => {
+    if (group && editDialogOpen) {
+      editForm.reset({
+        name: group.name,
+        description: group.description || "",
+        category: group.category || "",
+        priority: group.priority,
+      })
+    }
+  }, [group, editDialogOpen, editForm])
+
+  const editMutation = useApiMutation<HostGroup, GroupInput, HostGroup>({
+    mutationFn: (data) =>
+      apiFetch(`/api/groups/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    invalidateKeys: [["groups"]],
+    onSuccess: () => setEditDialogOpen(false),
+    successMessage: "Group updated",
+    optimisticUpdate: {
+      queryKey: ["groups"],
+      updater: (old, data) => old.map((g) =>
+        g.id === id ? { ...g, ...data } : g
+      ),
+    },
+  })
+
+  const handleEditSubmit = editForm.handleSubmit(async (data) => {
+    editMutation.mutate(data)
+  })
 
   function relativeTime(iso: string | null): string {
     if (!iso) return "Never"
@@ -156,18 +195,86 @@ export default function GroupDetailPage() {
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group" }]} />
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
-          {group?.gitops_enabled && (
-            <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
-          )}
-        </div>
-        {group?.description && (
-          <p className="text-slate-400 text-sm mt-1">{group.description}</p>
-        )}
-      </div>
+       {/* Header */}
+       <div>
+         <div className="flex items-center gap-3">
+           <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+           {group?.gitops_enabled && (
+             <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+           )}
+         </div>
+         {group?.description && (
+           <p className="text-slate-400 text-sm mt-1">{group.description}</p>
+         )}
+         <div className="mt-3">
+           <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+             <DialogTrigger>
+               <Button variant="outline" size="sm">Edit Group</Button>
+             </DialogTrigger>
+             <DialogContent>
+               <DialogHeader>
+                 <DialogTitle>Edit Group</DialogTitle>
+               </DialogHeader>
+               <form onSubmit={handleEditSubmit} className="space-y-4 mt-2">
+                 <div className="space-y-2">
+                   <Label htmlFor="edit-name">Name</Label>
+                   <Input
+                     id="edit-name"
+                     type="text"
+                     placeholder="e.g. production-servers"
+                     {...editForm.register("name")}
+                   />
+                   {editForm.formState.errors.name && (
+                     <p className="text-sm text-red-400">{editForm.formState.errors.name.message}</p>
+                   )}
+                 </div>
+                 <div className="space-y-2">
+                   <Label htmlFor="edit-description">Description</Label>
+                   <textarea
+                     id="edit-description"
+                     placeholder="Optional description..."
+                     {...editForm.register("description")}
+                     rows={3}
+                     className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
+                   />
+                 </div>
+                 <div className="space-y-2">
+                   <Label htmlFor="edit-category">Category</Label>
+                   <Input
+                     id="edit-category"
+                     type="text"
+                     placeholder="e.g. Production, Security, Networking"
+                     {...editForm.register("category")}
+                   />
+                 </div>
+                 <div className="space-y-2">
+                   <Label htmlFor="edit-priority">Priority</Label>
+                   <Input
+                     id="edit-priority"
+                     type="number"
+                     {...editForm.register("priority", { valueAsNumber: true })}
+                     min={0}
+                   />
+                   {editForm.formState.errors.priority && (
+                     <p className="text-sm text-red-400">{editForm.formState.errors.priority.message}</p>
+                   )}
+                 </div>
+                 {editMutation.error && (
+                   <p className="text-sm text-red-400">{editMutation.error.message}</p>
+                 )}
+                 <div className="flex gap-3 pt-2">
+                   <Button type="submit" disabled={editMutation.isPending}>
+                     {editMutation.isPending ? "Saving..." : "Save Changes"}
+                   </Button>
+                   <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                     Cancel
+                   </Button>
+                 </div>
+               </form>
+             </DialogContent>
+           </Dialog>
+         </div>
+       </div>
 
       {/* Group info card */}
       {group && (
@@ -280,9 +387,9 @@ export default function GroupDetailPage() {
                   Manage rules from a Git repository.
                 </p>
                 <Dialog open={enableDialogOpen} onOpenChange={setEnableDialogOpen}>
-                  <DialogTrigger render={<Button variant="outline" size="sm" />}>
-                    Enable
-                  </DialogTrigger>
+                   <DialogTrigger>
+                     <Button variant="outline" size="sm">Enable</Button>
+                   </DialogTrigger>
                   <DialogContent>
                     <DialogHeader>
                       <DialogTitle>Enable GitOps</DialogTitle>

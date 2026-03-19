@@ -20,7 +20,7 @@ export default function NewGroupPage() {
 
   const form = useForm<GroupInput>({
     resolver: zodResolver(groupSchema),
-    defaultValues: { name: "", description: "", priority: 100 },
+    defaultValues: { name: "", description: "", category: "", priority: 100 },
     mode: "onSubmit",
   })
 
@@ -34,6 +34,7 @@ export default function NewGroupPage() {
         body: JSON.stringify({
           name: data.name,
           description: data.description || null,
+          category: data.category || null,
           priority: data.priority,
         }),
       })
@@ -76,6 +77,16 @@ export default function NewGroupPage() {
               {...form.register("description")}
               rows={3}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring resize-none dark:bg-input/30"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="category">Category</Label>
+            <Input
+              id="category"
+              type="text"
+              placeholder="e.g. Production, Security, Networking"
+              {...form.register("category")}
             />
           </div>
 

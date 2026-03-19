@@ -15,6 +15,7 @@ const cidrOrEmpty = z.string().refine(
 export const groupSchema = z.object({
   name: z.string().min(1, "Name is required").max(100, "Name too long"),
   description: z.string().optional(),
+  category: z.string().max(100, "Category too long").optional(),
   priority: z.number().int().min(1, "Priority must be at least 1"),
 })
 export type GroupInput = z.infer<typeof groupSchema>
