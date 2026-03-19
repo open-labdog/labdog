@@ -48,11 +48,11 @@ Enable operators to view all systemd services on managed hosts and issue ad-hoc 
 - Host detail "Services" tab extended with inventory sub-section and action buttons
 
 ### Definition of Done
-- [ ] Inventory endpoint returns 50+ services from a running host
-- [ ] Ad-hoc command returns structured result with exit code
-- [ ] Protected service shows warning, non-protected shows simple confirm
-- [ ] All commands audit-logged
-- [ ] Frontend build passes
+- [x] Inventory endpoint returns 50+ services from a running host
+- [x] Ad-hoc command returns structured result with exit code
+- [x] Protected service shows warning, non-protected shows simple confirm
+- [x] All commands audit-logged
+- [x] Frontend build passes
 
 ### Must Have
 - All ad-hoc commands use `current_active_user` auth (matches existing service CRUD)
@@ -131,7 +131,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
 ## TODOs
 
-- [ ] 1. Schemas + Types
+- [x] 1. Schemas + Types
 
   **What to do**:
   - Create `backend/app/services/live_schemas.py` with:
@@ -185,7 +185,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
   **Commit**: YES — `feat(schemas): add service inventory and command schemas`
 
-- [ ] 2. SSH Inventory + Command Execution Functions
+- [x] 2. SSH Inventory + Command Execution Functions
 
   **What to do**:
   - Add to `backend/app/services/collector.py` (extend, don't replace):
@@ -238,7 +238,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
   **Commit**: YES — `feat(ssh): add live service inventory and command execution`
 
-- [ ] 3. API Endpoints + Router Registration + Audit Logging
+- [x] 3. API Endpoints + Router Registration + Audit Logging
 
   **What to do**:
   - Create `backend/app/api/service_live.py` with router `APIRouter(prefix="/services", tags=["service-live"])`:
@@ -301,7 +301,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
   **Commit**: YES — `feat(api): add service inventory and command endpoints`
 
-- [ ] 4. Frontend — Inventory Table + Action Buttons
+- [x] 4. Frontend — Inventory Table + Action Buttons
 
   **What to do**:
   - Add types to `frontend/lib/types.ts`:
@@ -380,7 +380,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
   **Commit**: YES — `feat(ui): add service inventory table and action controls`
 
-- [ ] 5. Test Suite
+- [x] 5. Test Suite
 
   **What to do**:
   - Create `backend/tests/test_service_commands.py` with:
@@ -427,7 +427,7 @@ Critical Path: T1/T2 → T3 → T4/T5 → F1
 
 ## Final Verification Wave
 
-- [ ] F1. **Code Quality + Compliance Review** — `unspecified-high`
+- [x] F1. **Code Quality + Compliance Review** — `unspecified-high`
   Read all new/modified files. Check: regex validation present, `shlex.quote()` used, timeout on SSH, audit logging on all commands, protected service flag returned, no forbidden subcommands accepted, frontend build passes, action buttons disabled during execution.
   Output: `APPROVE/REJECT with details`
 
@@ -456,8 +456,8 @@ cd backend && pytest tests/test_service_commands.py -v  # PASS
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] SSH command injection blocked
-- [ ] Protected services warned, not blocked
-- [ ] All commands audit-logged
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] SSH command injection blocked
+- [x] Protected services warned, not blocked
+- [x] All commands audit-logged

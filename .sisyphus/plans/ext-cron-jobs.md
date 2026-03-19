@@ -41,14 +41,14 @@
 ## Work Objectives
 
 ### Definition of Done
-- [ ] Group-level cron jobs: CRUD on `/api/groups/{id}/cron-jobs`
-- [ ] Host-level overrides: CRUD on `/api/hosts/{id}/cron-jobs`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-cron-jobs` merges group defaults + host overrides
-- [ ] Plan: `POST /api/cron/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/cron/hosts/{id}/sync` applies via Ansible
-- [ ] Drift: `POST /api/cron/hosts/{id}/drift-check` detects mismatches
-- [ ] Frontend: `/groups/{id}/cron-jobs` page + "Cron Jobs" tab on host detail
-- [ ] Tests: 10+ tests
+- [x] Group-level cron jobs: CRUD on `/api/groups/{id}/cron-jobs`
+- [x] Host-level overrides: CRUD on `/api/hosts/{id}/cron-jobs`
+- [x] Effective config: `GET /api/hosts/{id}/effective-cron-jobs` merges group defaults + host overrides
+- [x] Plan: `POST /api/cron/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/cron/hosts/{id}/sync` applies via Ansible
+- [x] Drift: `POST /api/cron/hosts/{id}/drift-check` detects mismatches
+- [x] Frontend: `/groups/{id}/cron-jobs` page + "Cron Jobs" tab on host detail
+- [x] Tests: 10+ tests
 
 ### Must Have
 - `CronJob` model: `name` (slug), `user` (default root), `schedule` (5-field cron), `command`, `environment` (JSONB dict), `state` (present/absent), `comment`, `priority`
@@ -99,7 +99,7 @@ Max Concurrent: 3
 
 ## TODOs
 
-- [ ] 1. CronJob Model + Alembic Migration
+- [x] 1. CronJob Model + Alembic Migration
 
   **What to do**:
   - Create `backend/app/cron/__init__.py` (empty)
@@ -132,7 +132,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(models): add CronJob model`
 
-- [ ] 2. Cron Schemas + Cron Expression Validator
+- [x] 2. Cron Schemas + Cron Expression Validator
 
   **What to do**:
   - Create `backend/app/cron/schemas.py`:
@@ -165,7 +165,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(cron): add schemas and cron expression validator`
 
-- [ ] 3. Cron Merge Engine
+- [x] 3. Cron Merge Engine
 
   **What to do**:
   - Create `backend/app/cron/merge.py`:
@@ -185,7 +185,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(cron): add merge engine`
 
-- [ ] 4. Cron CRUD API + Effective-Config
+- [x] 4. Cron CRUD API + Effective-Config
 
   **What to do**:
   - Create `backend/app/api/cron_jobs.py`:
@@ -205,7 +205,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(api): add cron job CRUD + effective-config endpoints`
 
-- [ ] 5. Ansible Cron Playbook Generator
+- [x] 5. Ansible Cron Playbook Generator
 
   **What to do**:
   - Create `backend/app/cron/generator.py`:
@@ -230,7 +230,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ansible): add cron job playbook generator`
 
-- [ ] 6. Cron Drift Collector + Parser
+- [x] 6. Cron Drift Collector + Parser
 
   **What to do**:
   - Create `backend/app/cron/collector.py`:
@@ -255,7 +255,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(cron): add drift collector and crontab parser`
 
-- [ ] 7. Cron Sync Celery Task + Sync API
+- [x] 7. Cron Sync Celery Task + Sync API
 
   **What to do**:
   - Create `backend/app/tasks/cron_sync.py`:
@@ -278,7 +278,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add cron sync Celery task + sync API`
 
-- [ ] 8. Cron Drift Detection Task + API
+- [x] 8. Cron Drift Detection Task + API
 
   **What to do**:
   - Create `backend/app/tasks/cron_drift.py`
@@ -296,7 +296,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(tasks): add cron drift detection + API`
 
-- [ ] 9. Frontend — Group Cron Page + Host Detail Tab
+- [x] 9. Frontend — Group Cron Page + Host Detail Tab
 
   **What to do**:
   - Create `frontend/app/(dashboard)/groups/[id]/cron-jobs/page.tsx`:
@@ -320,7 +320,7 @@ Max Concurrent: 3
 
   **Commit**: YES — `feat(ui): add cron job management pages`
 
-- [ ] 10. pytest Suite
+- [x] 10. pytest Suite
 
   **What to do**:
   - Create `backend/tests/test_cron.py`:
@@ -345,10 +345,10 @@ Max Concurrent: 3
 
 ## Final Verification Wave
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
-- [ ] F2. **Code Quality Review** — `unspecified-high`
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
-- [ ] F4. **Scope Fidelity Check** — `deep` — Verify: no @reboot, no /etc/cron.d/, no job monitoring, no output management.
+- [x] F1. **Plan Compliance Audit** — `oracle`
+- [x] F2. **Code Quality Review** — `unspecified-high`
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright`)
+- [x] F4. **Scope Fidelity Check** — `deep` — Verify: no @reboot, no /etc/cron.d/, no job monitoring, no output management.
 
 ---
 

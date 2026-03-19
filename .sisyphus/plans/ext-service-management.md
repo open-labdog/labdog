@@ -577,16 +577,16 @@ Max Concurrent: 3 (Waves 1-2)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify all Must Have items. Check deny-list enforced. Verify CHECK constraint. Verify host_module_status table. Verify SyncJob module_type backward-compat.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run pytest + ruff. Check no modifications to existing firewall code. Verify Alembic migration is reversible. No `as any`/`type: ignore`.
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
   Navigate to group services page, create service rule, navigate to host detail Services tab, verify effective config, trigger sync preview.
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   Verify no systemd unit file management. No service dependencies. No health checks. No Docker. No modifications to firewall files.
 
 ---
@@ -623,9 +623,9 @@ cd backend && alembic upgrade head && alembic downgrade -1
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] All tests pass
-- [ ] Frontend builds clean
-- [ ] Migration reversible
-- [ ] SyncJob backward-compatible (existing firewall jobs unaffected)
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] All tests pass
+- [x] Frontend builds clean
+- [x] Migration reversible
+- [x] SyncJob backward-compatible (existing firewall jobs unaffected)

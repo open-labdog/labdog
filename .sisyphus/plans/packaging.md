@@ -64,14 +64,14 @@ Create a complete `packaging/` directory that builds Barricade into distributabl
 - 1-line fix in `frontend/lib/api.ts` — Switch to relative API URLs
 
 ### Definition of Done
-- [ ] `make -C packaging tarball` produces installable tarball
-- [ ] `make -C packaging deb` produces valid .deb (dpkg-deb --info succeeds)
-- [ ] `make -C packaging rpm` produces valid .rpm (rpm -qip succeeds)
-- [ ] `packaging/build.sh` runs end-to-end and produces all 3 artifacts
-- [ ] Tarball contains `install.sh` and it installs successfully in a clean container
-- [ ] Package installs on Ubuntu 24.04 container without errors
-- [ ] Systemd units pass `systemd-analyze verify`
-- [ ] Config file preserved on upgrade (config|noreplace)
+- [x] `make -C packaging tarball` produces installable tarball
+- [x] `make -C packaging deb` produces valid .deb (dpkg-deb --info succeeds)
+- [x] `make -C packaging rpm` produces valid .rpm (rpm -qip succeeds)
+- [x] `packaging/build.sh` runs end-to-end and produces all 3 artifacts
+- [x] Tarball contains `install.sh` and it installs successfully in a clean container
+- [x] Package installs on Ubuntu 24.04 container without errors
+- [x] Systemd units pass `systemd-analyze verify`
+- [x] Config file preserved on upgrade (config|noreplace)
 
 ### Must Have
 - All 4 application processes managed via systemd
@@ -975,8 +975,8 @@ tar -tf dist/barricade-*.tar.gz | grep install.sh  # Expected: install.sh in tar
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] Package installs cleanly on Ubuntu 24.04
-- [ ] Systemd units pass verification
-- [ ] Config preserved on upgrade
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] Package installs cleanly on Ubuntu 24.04
+- [x] Systemd units pass verification
+- [x] Config preserved on upgrade

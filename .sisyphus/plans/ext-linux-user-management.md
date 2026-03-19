@@ -57,15 +57,15 @@ Add Linux user and group management as the second Barricade extension module. Ma
 Enable centralized Linux user/group management with authorized_keys deployment, sudo configuration, drift detection, and audit logging.
 
 ### Definition of Done
-- [ ] Group-level user/group rules: CRUD on `/api/groups/{id}/linux-users` and `/api/groups/{id}/linux-groups`
-- [ ] Host-level overrides: CRUD on `/api/hosts/{id}/linux-users` and `/api/hosts/{id}/linux-groups`
-- [ ] Effective config: `GET /api/hosts/{id}/effective-users` merges group defaults + host overrides
-- [ ] Plan: `POST /api/linux-users/hosts/{id}/plan` previews changes
-- [ ] Sync: `POST /api/linux-users/hosts/{id}/sync` applies via Ansible
-- [ ] Drift: `POST /api/linux-users/hosts/{id}/drift-check` detects mismatches
-- [ ] Audit: All user/group changes logged
-- [ ] Frontend: `/groups/{id}/users` page + Users tab on `/hosts/{id}`
-- [ ] Tests: 15+ tests covering CRUD, merge, drift, deny-list, sudo validation
+- [x] Group-level user/group rules: CRUD on `/api/groups/{id}/linux-users` and `/api/groups/{id}/linux-groups`
+- [x] Host-level overrides: CRUD on `/api/hosts/{id}/linux-users` and `/api/hosts/{id}/linux-groups`
+- [x] Effective config: `GET /api/hosts/{id}/effective-users` merges group defaults + host overrides
+- [x] Plan: `POST /api/linux-users/hosts/{id}/plan` previews changes
+- [x] Sync: `POST /api/linux-users/hosts/{id}/sync` applies via Ansible
+- [x] Drift: `POST /api/linux-users/hosts/{id}/drift-check` detects mismatches
+- [x] Audit: All user/group changes logged
+- [x] Frontend: `/groups/{id}/users` page + Users tab on `/hosts/{id}`
+- [x] Tests: 15+ tests covering CRUD, merge, drift, deny-list, sudo validation
 
 ### Must Have
 - `LinuxUser` model: `username`, `uid` (nullable), `shell`, `home_dir`, `state` (present/absent), `sudo_rule` (nullable), `authorized_keys` (JSONB array of public key strings), `groups` (JSONB array of supplementary group names)
@@ -156,7 +156,7 @@ Max Concurrent: 3 (Waves 1-2)
 
 ## TODOs
 
-- [ ] 1. LinuxUser + LinuxGroup Models + Alembic Migration
+- [x] 1. LinuxUser + LinuxGroup Models + Alembic Migration
 
   **What to do**:
   - Create `backend/app/user_mgmt/__init__.py` (empty)
@@ -200,7 +200,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(models): add LinuxUser and LinuxGroup models`
 
-- [ ] 2. User/Group Schemas + Deny-List + Sudo Validator
+- [x] 2. User/Group Schemas + Deny-List + Sudo Validator
 
   **What to do**:
   - Create `backend/app/user_mgmt/constants.py`:
@@ -232,7 +232,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(user_mgmt): add schemas, deny-lists, sudo validator`
 
-- [ ] 3. User Merge Engine
+- [x] 3. User Merge Engine
 
   **What to do**:
   - Create `backend/app/user_mgmt/merge.py`:
@@ -259,7 +259,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(user_mgmt): add merge engine with host-override support`
 
-- [ ] 4. User/Group CRUD API + Effective-Config Endpoints
+- [x] 4. User/Group CRUD API + Effective-Config Endpoints
 
   **What to do**:
   - Create `backend/app/api/linux_users.py` with router:
@@ -289,7 +289,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(api): add Linux user/group CRUD + effective-config endpoints`
 
-- [ ] 5. Ansible User Playbook Generator
+- [x] 5. Ansible User Playbook Generator
 
   **What to do**:
   - Create `backend/app/user_mgmt/generator.py`:
@@ -324,7 +324,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(ansible): add user/group playbook generator`
 
-- [ ] 6. User Drift Collector
+- [x] 6. User Drift Collector
 
   **What to do**:
   - Create `backend/app/user_mgmt/collector.py`:
@@ -359,7 +359,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(user_mgmt): add drift collector + diff engine`
 
-- [ ] 7. User Sync Celery Task + Sync API
+- [x] 7. User Sync Celery Task + Sync API
 
   **What to do**:
   - Create `backend/app/tasks/user_sync.py`:
@@ -388,7 +388,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(tasks): add user sync Celery task + sync API`
 
-- [ ] 8. User Drift Detection Task + API
+- [x] 8. User Drift Detection Task + API
 
   **What to do**:
   - Create `backend/app/tasks/user_drift.py`:
@@ -413,7 +413,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(tasks): add user drift detection task + API`
 
-- [ ] 9. Frontend — Group Users Page + Host Detail Users Tab
+- [x] 9. Frontend — Group Users Page + Host Detail Users Tab
 
   **What to do**:
   - Create `frontend/app/(dashboard)/groups/[id]/users/page.tsx`:
@@ -445,7 +445,7 @@ Max Concurrent: 3 (Waves 1-2)
 
   **Commit**: YES — `feat(ui): add Linux user management pages`
 
-- [ ] 10. User Management Test Suite
+- [x] 10. User Management Test Suite
 
   **What to do**:
   - Create `backend/tests/test_user_mgmt.py`:
@@ -478,16 +478,16 @@ Max Concurrent: 3 (Waves 1-2)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Verify all Must Have items. Check deny-lists. Verify sudo validation. Verify authorized_keys format validation. Check CHECK constraints.
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run pytest + ruff. Verify no modifications to firewall/service code. Migration reversible. No secrets in code.
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
+- [x] F3. **Real Manual QA** — `unspecified-high` (+ `playwright` skill)
   Create Linux user via group page, add authorized_keys, add sudo rule, verify effective config on host detail, trigger sync preview.
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   Verify no password management. No PAM. No SSH daemon config. No home templating. No modifications to firewall/service files.
 
 ---
@@ -519,10 +519,10 @@ cd backend && alembic upgrade head && alembic downgrade -1
 ```
 
 ### Final Checklist
-- [ ] All "Must Have" present
-- [ ] All "Must NOT Have" absent
-- [ ] All tests pass
-- [ ] Frontend builds clean
-- [ ] Migration reversible
-- [ ] No password/hash management anywhere
-- [ ] Sudo rules validated against injection
+- [x] All "Must Have" present
+- [x] All "Must NOT Have" absent
+- [x] All tests pass
+- [x] Frontend builds clean
+- [x] Migration reversible
+- [x] No password/hash management anywhere
+- [x] Sudo rules validated against injection

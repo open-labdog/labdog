@@ -82,15 +82,15 @@ Transform the Barricade frontend from a functional but raw UI into a polished, p
 - Extended Playwright E2E test coverage
 
 ### Definition of Done
-- [ ] Zero browser `confirm()`/`alert()` calls in codebase (`ast_grep_search` returns 0 matches)
-- [ ] All list pages have search/filter input
-- [ ] All pages show skeleton loading states (no "Loading..." text)
-- [ ] All pages have breadcrumb navigation
-- [ ] Mobile sidebar works at `md:` breakpoint (768px)
-- [ ] Command palette opens with Cmd/Ctrl+K
-- [ ] `bunx next build` passes with zero errors
-- [ ] All existing Playwright E2E tests pass
-- [ ] All new Playwright E2E tests pass
+- [x] Zero browser `confirm()`/`alert()` calls in codebase (`ast_grep_search` returns 0 matches)
+- [x] All list pages have search/filter input
+- [x] All pages show skeleton loading states (no "Loading..." text)
+- [x] All pages have breadcrumb navigation
+- [x] Mobile sidebar works at `md:` breakpoint (768px)
+- [x] Command palette opens with Cmd/Ctrl+K
+- [x] `bunx next build` passes with zero errors
+- [x] All existing Playwright E2E tests pass
+- [x] All new Playwright E2E tests pass
 
 ### Must Have
 - Custom ConfirmDialog replacing every browser `confirm()`/`alert()`
@@ -695,7 +695,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add responsive mobile sidebar`
   - Files: `frontend/components/app-shell.tsx`, `frontend/components/sidebar.tsx`
 
-- [ ] 10. Integrate Breadcrumbs Across All Pages
+- [x] 10. Integrate Breadcrumbs Across All Pages
 
   **What to do**:
   - Add `<Breadcrumb>` component to every dashboard page's header section
@@ -759,7 +759,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): add breadcrumbs to all dashboard pages`
   - Files: All `page.tsx` files under `frontend/app/(dashboard)/`
 
-- [ ] 11. Replace Loading Text with Skeleton States
+- [x] 11. Replace Loading Text with Skeleton States
 
   **What to do**:
   - In every dashboard page, replace `{isLoading && <div className="text-slate-400 py-8 text-center">Loading...</div>}` with the appropriate Skeleton component
@@ -816,7 +816,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): replace loading text with skeleton states`
   - Files: All `page.tsx` files under `frontend/app/(dashboard)/`, `frontend/lib/utils.ts`
 
-- [ ] 12. Replace Browser Dialogs — Sidebar + Auth-Adjacent
+- [x] 12. Replace Browser Dialogs — Sidebar + Auth-Adjacent
 
   **What to do**:
   - In `frontend/components/sidebar.tsx`:
@@ -863,7 +863,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): replace browser dialogs in sidebar`
   - Files: `frontend/components/sidebar.tsx`
 
-- [ ] 13. Replace Browser Dialogs — Groups + Hosts Detail Pages
+- [x] 13. Replace Browser Dialogs — Groups + Hosts Detail Pages
 
   **What to do**:
   - In `frontend/app/(dashboard)/groups/[id]/page.tsx`:
@@ -925,7 +925,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): replace browser dialogs in group and host pages`
   - Files: `frontend/app/(dashboard)/groups/[id]/page.tsx`, `frontend/app/(dashboard)/hosts/[id]/page.tsx`
 
-- [ ] 14. Replace Browser Dialogs — Module Pages
+- [x] 14. Replace Browser Dialogs — Module Pages
 
   **What to do**:
   - Replace all `confirm()`/`alert()` calls in the remaining dashboard pages:
@@ -1046,7 +1046,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add search/filter to all list pages`
   - Files: All list page.tsx files (groups, hosts, ssh-keys, users, git-repos, audit)
 
-- [ ] 16. Add Tooltips to Complex Form Fields
+- [x] 16. Add Tooltips to Complex Form Fields
 
   **What to do**:
   - Add Tooltip component to form fields that have non-obvious meaning or format requirements:
@@ -1096,7 +1096,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add tooltips to complex form fields`
   - Files: `frontend/components/rule-dialog.tsx`, various page.tsx files with forms
 
-- [ ] 17. Create Zod Validation Schemas
+- [x] 17. Create Zod Validation Schemas
 
   **What to do**:
   - Create `frontend/lib/schemas.ts` with Zod schemas for all form entities
@@ -1151,7 +1151,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add Zod validation schemas for all entities`
   - Files: `frontend/lib/schemas.ts`
 
-- [ ] 18. Migrate Simple Forms to React Hook Form + Zod
+- [x] 18. Migrate Simple Forms to React Hook Form + Zod
 
   **What to do**:
   - Migrate these simple CRUD forms from manual useState to React Hook Form + Zod:
@@ -1224,7 +1224,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): migrate simple forms to React Hook Form`
   - Files: groups/new, ssh-keys, git-repos, hosts/new, hosts/discover page.tsx files
 
-- [ ] 19. Migrate Complex Forms to React Hook Form + Zod
+- [x] 19. Migrate Complex Forms to React Hook Form + Zod
 
   **What to do**:
   - Migrate these complex multi-field forms:
@@ -1283,7 +1283,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): migrate complex forms to React Hook Form`
   - Files: rule-dialog.tsx, groups/[id]/page.tsx, hosts/[id]/page.tsx, services/page.tsx, hosts-entries/page.tsx, cron-jobs/page.tsx, users/page.tsx, sidebar.tsx
 
-- [ ] 20. Create useMutation Wrapper + Migrate Pages
+- [x] 20. Create useMutation Wrapper + Migrate Pages
 
   **What to do**:
   - Create `frontend/lib/mutations.ts` with a reusable mutation helper:
@@ -1345,7 +1345,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): migrate mutations to useMutation wrapper`
   - Files: `frontend/lib/mutations.ts`, all dashboard page.tsx files
 
-- [ ] 21. Add Optimistic Updates for Toggle + Delete Operations
+- [x] 21. Add Optimistic Updates for Toggle + Delete Operations
 
   **What to do**:
   - Add optimistic updates to the `useApiMutation` wrapper with an optional `optimisticUpdate` config:
@@ -1404,7 +1404,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add optimistic updates for toggle and delete operations`
   - Files: `frontend/lib/mutations.ts`, affected page.tsx files
 
-- [ ] 22. Add Bulk Actions to List Pages
+- [x] 22. Add Bulk Actions to List Pages
 
   **What to do**:
   - Add checkbox selection + bulk action toolbar to these list pages:
@@ -1469,7 +1469,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add bulk actions to list pages`
   - Files: groups/page.tsx, hosts/page.tsx, ssh-keys/page.tsx
 
-- [ ] 23. Extract hosts/[id] State into useHostDetail Hook
+- [x] 23. Extract hosts/[id] State into useHostDetail Hook
 
   **What to do**:
   - Create `frontend/hooks/use-host-detail.ts`
@@ -1528,7 +1528,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `refactor(frontend): extract hosts detail state into useHostDetail hook`
   - Files: `frontend/hooks/use-host-detail.ts`, `frontend/app/(dashboard)/hosts/[id]/page.tsx`
 
-- [ ] 24. Add Keyboard Shortcuts
+- [x] 24. Add Keyboard Shortcuts
 
   **What to do**:
   - Register global keyboard shortcuts in `frontend/components/app-shell.tsx`:
@@ -1577,7 +1577,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `feat(frontend): add keyboard shortcuts`
   - Files: `frontend/components/app-shell.tsx`
 
-- [ ] 25. Update FRONTEND.md Conventions
+- [x] 25. Update FRONTEND.md Conventions
 
   **What to do**:
   - Update `frontend/FRONTEND.md` to document all new conventions introduced in this plan:
@@ -1635,7 +1635,7 @@ Max Concurrent: 6 (Wave 1)
   - Message: `docs(frontend): update FRONTEND.md with new UX conventions`
   - Files: `frontend/FRONTEND.md`
 
-- [ ] 26. Extend Playwright E2E Test Suite
+- [x] 26. Extend Playwright E2E Test Suite
 
   **What to do**:
   - Create new E2E test files for key UX features:
@@ -1695,15 +1695,15 @@ Max Concurrent: 6 (Wave 1)
 
 > 4 review agents run in PARALLEL. ALL must APPROVE. Present consolidated results to user and get explicit "okay" before completing.
 
-- [ ] F1. **Plan Compliance Audit** — `oracle`
+- [x] F1. **Plan Compliance Audit** — `oracle`
   Read the plan end-to-end. For each "Must Have": verify implementation exists (read file, curl endpoint, run command). For each "Must NOT Have": search codebase for forbidden patterns — reject with file:line if found. Check evidence files exist in .sisyphus/evidence/. Compare deliverables against plan.
   Output: `Must Have [N/N] | Must NOT Have [N/N] | Tasks [N/N] | VERDICT: APPROVE/REJECT`
 
-- [ ] F2. **Code Quality Review** — `unspecified-high`
+- [x] F2. **Code Quality Review** — `unspecified-high`
   Run `bunx tsc --noEmit` + `bunx next build`. Review all changed files for: `as any`/`@ts-ignore`, empty catches, console.log in prod, commented-out code, unused imports. Check AI slop: excessive comments, over-abstraction, generic names (data/result/item/temp). Verify new components follow shadcn/ui base-ui patterns (NOT Radix).
   Output: `Build [PASS/FAIL] | TypeCheck [PASS/FAIL] | Files [N clean/N issues] | VERDICT`
 
-- [ ] F3. **Real Manual QA** — `unspecified-high` + `playwright` skill
+- [x] F3. **Real Manual QA** — `unspecified-high` + `playwright` skill
   Start from clean state. Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration: confirm dialog → toast appears, command palette navigates correctly, mobile sidebar works, search filters correctly, breadcrumbs reflect current page. Test edge cases: empty search, rapid dialog open/close, mobile + desktop transitions.
   Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
 
@@ -1756,14 +1756,14 @@ npx playwright test            # Expected: all tests pass (existing + new)
 ```
 
 ### Final Checklist
-- [ ] Zero browser `confirm()`/`alert()` calls remain
-- [ ] All list pages have functional search/filter
-- [ ] All pages show skeleton loading states
-- [ ] All pages have breadcrumb navigation
-- [ ] ConfirmDialog, Toast, Skeleton, Breadcrumb, Tooltip, CommandPalette components exist
-- [ ] Error boundaries catch and display errors gracefully
-- [ ] Mobile sidebar toggles correctly at 768px breakpoint
-- [ ] React Hook Form + Zod on all dashboard forms
-- [ ] useMutation wrapper used for all mutations
-- [ ] FRONTEND.md updated with new conventions
-- [ ] All tests pass
+- [x] Zero browser `confirm()`/`alert()` calls remain
+- [x] All list pages have functional search/filter
+- [x] All pages show skeleton loading states
+- [x] All pages have breadcrumb navigation
+- [x] ConfirmDialog, Toast, Skeleton, Breadcrumb, Tooltip, CommandPalette components exist
+- [x] Error boundaries catch and display errors gracefully
+- [x] Mobile sidebar toggles correctly at 768px breakpoint
+- [x] React Hook Form + Zod on all dashboard forms
+- [x] useMutation wrapper used for all mutations
+- [x] FRONTEND.md updated with new conventions
+- [x] All tests pass
