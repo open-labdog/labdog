@@ -23,7 +23,7 @@ export default function NewHostPage() {
 
   const form = useForm<HostInput>({
     resolver: zodResolver(hostSchema),
-    defaultValues: { hostname: "", ip_address: "", ssh_port: 22, ssh_key_id: "", group_ids: [] },
+    defaultValues: { hostname: "", ip_address: "", ssh_port: 22, ssh_user: "root", ssh_key_id: "", group_ids: [] },
     mode: "onSubmit",
   })
 
@@ -51,6 +51,7 @@ export default function NewHostPage() {
           hostname: data.hostname,
           ip_address: data.ip_address,
           ssh_port: data.ssh_port,
+          ssh_user: data.ssh_user,
           ssh_key_id: data.ssh_key_id ? Number(data.ssh_key_id) : null,
           group_ids: (data.group_ids ?? []).map(Number),
         }),
@@ -100,25 +101,43 @@ export default function NewHostPage() {
           </div>
 
            <div className="space-y-2">
-             <div className="flex items-center gap-1.5">
-               <Label htmlFor="ssh_port">SSH Port</Label>
-               <Tooltip content="Default is 22. Change if your server uses a non-standard SSH port.">
-                 <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-               </Tooltip>
-             </div>
-             <Input
-               id="ssh_port"
-               type="number"
-               {...form.register("ssh_port", { valueAsNumber: true })}
-               min={1}
-               max={65535}
-             />
-             {form.formState.errors.ssh_port && (
-               <p className="text-sm text-red-400">{form.formState.errors.ssh_port.message}</p>
-             )}
-           </div>
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="ssh_port">SSH Port</Label>
+                <Tooltip content="Default is 22. Change if your server uses a non-standard SSH port.">
+                  <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                </Tooltip>
+              </div>
+              <Input
+                id="ssh_port"
+                type="number"
+                {...form.register("ssh_port", { valueAsNumber: true })}
+                min={1}
+                max={65535}
+              />
+              {form.formState.errors.ssh_port && (
+                <p className="text-sm text-red-400">{form.formState.errors.ssh_port.message}</p>
+              )}
+            </div>
 
-          <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Label htmlFor="ssh_user">SSH User</Label>
+                <Tooltip content="SSH username for connecting to the host. Default is 'root'.">
+                  <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                </Tooltip>
+              </div>
+              <Input
+                id="ssh_user"
+                type="text"
+                placeholder="root"
+                {...form.register("ssh_user")}
+              />
+              {form.formState.errors.ssh_user && (
+                <p className="text-sm text-red-400">{form.formState.errors.ssh_user.message}</p>
+              )}
+            </div>
+
+           <div className="space-y-2">
             <Label htmlFor="ssh_key">SSH Key</Label>
             <select
               id="ssh_key"

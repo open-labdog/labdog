@@ -10,6 +10,7 @@ async def collect_user_states(
     ssh_port: int,
     private_key_pem: str,
     usernames: list[str],
+    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -20,7 +21,7 @@ async def collect_user_states(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:
@@ -114,6 +115,7 @@ async def collect_group_states(
     ssh_port: int,
     private_key_pem: str,
     groupnames: list[str],
+    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -124,7 +126,7 @@ async def collect_group_states(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:

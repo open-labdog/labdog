@@ -146,6 +146,7 @@ export default function HostDetailPage() {
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
+  const [editSshUser, setEditSshUser] = useState("root")
   const [editSshKeyId, setEditSshKeyId] = useState<number | null>(null)
   const [editGroups, setEditGroups] = useState<number[]>([])
   const editMutation = useApiMutation({
@@ -599,6 +600,7 @@ export default function HostDetailPage() {
       setEditHostname(host.hostname)
       setEditIp(host.ip_address)
       setEditSshPort(host.ssh_port)
+      setEditSshUser(host.ssh_user)
       setEditSshKeyId(host.ssh_key_id)
       setEditGroups(host.group_ids ?? [])
       editMutation.reset()
@@ -610,7 +612,7 @@ export default function HostDetailPage() {
     e.preventDefault()
     editMutation.mutate({
       hostname: editHostname, ip_address: editIp, ssh_port: editSshPort,
-      ssh_key_id: editSshKeyId, group_ids: editGroups,
+      ssh_user: editSshUser, ssh_key_id: editSshKeyId, group_ids: editGroups,
     })
   }
 
@@ -667,6 +669,17 @@ export default function HostDetailPage() {
                     required
                     min={1}
                     max={65535}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-ssh-user">SSH User</Label>
+                  <Input
+                    id="edit-ssh-user"
+                    type="text"
+                    value={editSshUser}
+                    onChange={(e) => setEditSshUser(e.target.value)}
+                    required
                   />
                 </div>
 

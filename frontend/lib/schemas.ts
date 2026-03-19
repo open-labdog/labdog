@@ -24,6 +24,7 @@ export const hostSchema = z.object({
   hostname: z.string().min(1, "Hostname is required"),
   ip_address: ipAddress,
   ssh_port: z.number().int().min(1).max(65535),
+  ssh_user: z.string().min(1, "SSH user is required").max(32),
   ssh_key_id: z.string().optional(),
   group_ids: z.array(z.string()).optional(),
 })

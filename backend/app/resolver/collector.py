@@ -19,6 +19,7 @@ async def collect_resolver_state(
     ssh_port: int,
     private_key_pem: str,
     resolver_type: str,
+    ssh_user: str = "root",
 ) -> Optional[dict]:
     """Return {"nameservers", "search_domains", "options"} or None if unmanaged."""
     private_key = asyncssh.import_private_key(private_key_pem)
@@ -27,7 +28,7 @@ async def collect_resolver_state(
         async with asyncssh.connect(
             host_ip,
             port=ssh_port,
-            username="root",
+            username=ssh_user,
             client_keys=[private_key],
             known_hosts=None,
         ) as conn:

@@ -11,6 +11,7 @@ async def collect_package_states(
     ssh_port: int,
     private_key_pem: str,
     package_names: list[str],
+    ssh_user: str = "root",
 ) -> list[dict]:
     """Return [{"name": str, "state": "present"|"absent", "version": str|None}]."""
     if not package_names:
@@ -25,7 +26,7 @@ async def collect_package_states(
             async with asyncssh.connect(
                 host_ip,
                 port=ssh_port,
-                username="root",
+                username=ssh_user,
                 client_keys=[private_key],
                 known_hosts=None,
             ) as conn:

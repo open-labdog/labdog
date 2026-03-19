@@ -48,6 +48,7 @@ class Host(Base):
     hostname: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     ip_address: Mapped[str] = mapped_column(String(50))
     ssh_port: Mapped[int] = mapped_column(Integer, default=22)
+    ssh_user: Mapped[str] = mapped_column(String(32), default="root")
     firewall_backend: Mapped[FirewallBackend] = mapped_column(
         Enum(FirewallBackend, name="firewallbackend"),
         default=FirewallBackend.unknown,
