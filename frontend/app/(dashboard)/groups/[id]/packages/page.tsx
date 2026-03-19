@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
@@ -56,7 +58,6 @@ export default function GroupPackagesPage() {
   const [pkgDialogOpen, setPkgDialogOpen] = useState(false)
   const [pkgEditing, setPkgEditing] = useState<PackageRule | null>(null)
   const [pkgDeletingId, setPkgDeletingId] = useState<number | null>(null)
-  const [pkgDeleteError, setPkgDeleteError] = useState<string | null>(null)
   const [pkgFormError, setPkgFormError] = useState<string | null>(null)
   const [pkgFormLoading, setPkgFormLoading] = useState(false)
 
@@ -70,8 +71,10 @@ export default function GroupPackagesPage() {
   const [repoDialogOpen, setRepoDialogOpen] = useState(false)
   const [repoEditing, setRepoEditing] = useState<PackageRepository | null>(null)
   const [repoDeletingId, setRepoDeletingId] = useState<number | null>(null)
-  const [repoDeleteError, setRepoDeleteError] = useState<string | null>(null)
   const [repoFormError, setRepoFormError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
   const [repoFormLoading, setRepoFormLoading] = useState(false)
 
   const [repoName, setRepoName] = useState("")
@@ -155,18 +158,26 @@ export default function GroupPackagesPage() {
     }
   }
 
-  async function handlePkgDelete(pkg: PackageRule) {
-    if (!confirm(`Delete package rule "${pkg.package_name}"?`)) return
-    setPkgDeletingId(pkg.id)
-    setPkgDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/packages/${pkg.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["group-packages", id] })
-    } catch (err) {
-      setPkgDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setPkgDeletingId(null)
-    }
+  function handlePkgDelete(pkg: PackageRule) {
+    setConfirmState({
+      open: true,
+      title: "Delete Package Rule",
+      description: `Delete package rule "${pkg.package_name}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setPkgDeletingId(pkg.id)
+        try {
+          await apiFetch(`/api/groups/${id}/packages/${pkg.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["group-packages", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setPkgDeletingId(null)
+        }
+      },
+    })
   }
 
   function openRepoCreateDialog() {
@@ -231,18 +242,26 @@ export default function GroupPackagesPage() {
     }
   }
 
-  async function handleRepoDelete(repo: PackageRepository) {
-    if (!confirm(`Delete repository "${repo.name}"?`)) return
-    setRepoDeletingId(repo.id)
-    setRepoDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/package-repos/${repo.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["group-package-repos", id] })
-    } catch (err) {
-      setRepoDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setRepoDeletingId(null)
-    }
+  function handleRepoDelete(repo: PackageRepository) {
+    setConfirmState({
+      open: true,
+      title: "Delete Repository",
+      description: `Delete repository "${repo.name}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setRepoDeletingId(repo.id)
+        try {
+          await apiFetch(`/api/groups/${id}/package-repos/${repo.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["group-package-repos", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setRepoDeletingId(null)
+        }
+      },
+    })
   }
 
   function truncateUrl(url: string, max = 50): string {
@@ -274,10 +293,6 @@ export default function GroupPackagesPage() {
 
         {pkgError && (
           <div className="text-red-400 py-8 text-center">Failed to load packages</div>
-        )}
-
-        {pkgDeleteError && (
-          <div className="text-red-400 text-sm">{pkgDeleteError}</div>
         )}
 
         {!pkgLoading && !pkgError && packages.length === 0 && (
@@ -355,10 +370,6 @@ export default function GroupPackagesPage() {
 
         {repoError && (
           <div className="text-red-400 py-8 text-center">Failed to load repositories</div>
-        )}
-
-        {repoDeleteError && (
-          <div className="text-red-400 text-sm">{repoDeleteError}</div>
         )}
 
         {!repoLoading && !repoError && repos.length === 0 && (
@@ -531,6 +542,19 @@ export default function GroupPackagesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
 
       {/* Repository Dialog */}
       <Dialog open={repoDialogOpen} onOpenChange={setRepoDialogOpen}>

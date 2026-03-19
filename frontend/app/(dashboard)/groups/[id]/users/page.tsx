@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
@@ -44,7 +46,6 @@ export default function GroupUsersPage() {
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<LinuxUser | null>(null)
   const [userDeletingId, setUserDeletingId] = useState<number | null>(null)
-  const [userDeleteError, setUserDeleteError] = useState<string | null>(null)
   const [userFormError, setUserFormError] = useState<string | null>(null)
   const [userFormLoading, setUserFormLoading] = useState(false)
 
@@ -60,11 +61,14 @@ export default function GroupUsersPage() {
   const [supplementaryGroups, setSupplementaryGroups] = useState("")
   const [userPriority, setUserPriority] = useState(100)
 
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
+
   // Linux Groups state
   const [groupDialogOpen, setGroupDialogOpen] = useState(false)
   const [editingGroup, setEditingGroup] = useState<LinuxGroup | null>(null)
   const [groupDeletingId, setGroupDeletingId] = useState<number | null>(null)
-  const [groupDeleteError, setGroupDeleteError] = useState<string | null>(null)
   const [groupFormError, setGroupFormError] = useState<string | null>(null)
   const [groupFormLoading, setGroupFormLoading] = useState(false)
 
@@ -168,18 +172,26 @@ export default function GroupUsersPage() {
     }
   }
 
-  async function handleUserDelete(user: LinuxUser) {
-    if (!confirm(`Delete Linux user "${user.username}"?`)) return
-    setUserDeletingId(user.id)
-    setUserDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/linux-users/${user.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["linux-users", id] })
-    } catch (err) {
-      setUserDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setUserDeletingId(null)
-    }
+  function handleUserDelete(user: LinuxUser) {
+    setConfirmState({
+      open: true,
+      title: "Delete Linux User",
+      description: `Delete Linux user "${user.username}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setUserDeletingId(user.id)
+        try {
+          await apiFetch(`/api/groups/${id}/linux-users/${user.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["linux-users", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setUserDeletingId(null)
+        }
+      },
+    })
   }
 
   // --- Linux Groups CRUD ---
@@ -237,18 +249,26 @@ export default function GroupUsersPage() {
     }
   }
 
-  async function handleGroupDelete(group: LinuxGroup) {
-    if (!confirm(`Delete Linux group "${group.groupname}"?`)) return
-    setGroupDeletingId(group.id)
-    setGroupDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/linux-groups/${group.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["linux-groups", id] })
-    } catch (err) {
-      setGroupDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setGroupDeletingId(null)
-    }
+  function handleGroupDelete(group: LinuxGroup) {
+    setConfirmState({
+      open: true,
+      title: "Delete Linux Group",
+      description: `Delete Linux group "${group.groupname}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setGroupDeletingId(group.id)
+        try {
+          await apiFetch(`/api/groups/${id}/linux-groups/${group.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["linux-groups", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setGroupDeletingId(null)
+        }
+      },
+    })
   }
 
   const { data: group } = useQuery<HostGroup>({
@@ -274,10 +294,6 @@ export default function GroupUsersPage() {
 
         {usersError && (
           <div className="text-red-400 py-8 text-center">Failed to load users</div>
-        )}
-
-        {userDeleteError && (
-          <div className="text-red-400 text-sm">{userDeleteError}</div>
         )}
 
         {!usersLoading && !usersError && linuxUsers && linuxUsers.length === 0 && (
@@ -365,10 +381,6 @@ export default function GroupUsersPage() {
 
         {groupsError && (
           <div className="text-red-400 py-8 text-center">Failed to load groups</div>
-        )}
-
-        {groupDeleteError && (
-          <div className="text-red-400 text-sm">{groupDeleteError}</div>
         )}
 
         {!groupsLoading && !groupsError && linuxGroups && linuxGroups.length === 0 && (
@@ -570,6 +582,19 @@ export default function GroupUsersPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
 
       {/* Add/Edit Group Dialog */}
       <Dialog open={groupDialogOpen} onOpenChange={setGroupDialogOpen}>

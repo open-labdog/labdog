@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { CronJob, HostGroup } from "@/lib/types"
@@ -126,8 +128,10 @@ export default function GroupCronJobsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CronJob | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
   const [formLoading, setFormLoading] = useState(false)
 
   const [name, setName] = useState("")
@@ -217,18 +221,26 @@ export default function GroupCronJobsPage() {
     }
   }
 
-  async function handleDelete(job: CronJob) {
-    if (!confirm(`Delete cron job "${job.name}"?`)) return
-    setDeletingId(job.id)
-    setDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/cron-jobs/${job.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["cron-jobs", id] })
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setDeletingId(null)
-    }
+  function handleDelete(job: CronJob) {
+    setConfirmState({
+      open: true,
+      title: "Delete Cron Job",
+      description: `Delete cron job "${job.name}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setDeletingId(job.id)
+        try {
+          await apiFetch(`/api/groups/${id}/cron-jobs/${job.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["cron-jobs", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setDeletingId(null)
+        }
+      },
+    })
   }
 
   function truncateCommand(cmd: string, max = 60): string {
@@ -250,10 +262,6 @@ export default function GroupCronJobsPage() {
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load cron jobs</div>
-      )}
-
-      {deleteError && (
-        <div className="text-red-400 text-sm">{deleteError}</div>
       )}
 
       {!isLoading && !error && cronJobs && cronJobs.length === 0 && (
@@ -442,6 +450,19 @@ export default function GroupCronJobsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
     </div>
   )
 }

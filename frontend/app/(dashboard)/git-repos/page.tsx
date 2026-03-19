@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { GitRepository, GitRepoCreate, GitRepoUpdate, SSHKey } from "@/lib/types"
@@ -161,7 +162,7 @@ export default function GitReposPage() {
       await apiFetch(`/api/git-repos/${id}`, { method: "DELETE" })
       await queryClient.invalidateQueries({ queryKey: ["git-repos"] })
     } catch {
-      alert("Failed to delete repository")
+      showError("Failed to delete repository")
     } finally {
       setDeletingId(null)
       setDeleteConfirmId(null)

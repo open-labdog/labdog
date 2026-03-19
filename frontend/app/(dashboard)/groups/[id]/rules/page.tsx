@@ -33,7 +33,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { RuleDialog } from "@/components/rule-dialog"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { FirewallRule, HostGroup } from "@/lib/types"
@@ -232,8 +234,10 @@ export default function GroupRulesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [reorderError, setReorderError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -323,18 +327,26 @@ export default function GroupRulesPage() {
     setDialogOpen(true)
   }
 
-  const handleDelete = async (rule: FirewallRule) => {
-    if (!confirm(`Delete rule #${rule.priority} (${rule.action} ${rule.protocol})?`)) return
-    setDeletingId(rule.id)
-    setDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/rules/${rule.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["rules", id] })
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setDeletingId(null)
-    }
+  const handleDelete = (rule: FirewallRule) => {
+    setConfirmState({
+      open: true,
+      title: "Delete Rule",
+      description: `Delete rule #${rule.priority} (${rule.action} ${rule.protocol})? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev: typeof confirmState) => prev ? { ...prev, loading: true } : null)
+        setDeletingId(rule.id)
+        try {
+          await apiFetch(`/api/groups/${id}/rules/${rule.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["rules", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setDeletingId(null)
+        }
+      },
+    })
   }
 
   return (
@@ -362,10 +374,6 @@ export default function GroupRulesPage() {
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load rules</div>
-      )}
-
-      {deleteError && (
-        <div className="text-red-400 text-sm">{deleteError}</div>
       )}
 
       {reorderError && (
@@ -437,6 +445,19 @@ export default function GroupRulesPage() {
         groupId={id}
         rule={editingRule}
       />
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
     </div>
   )
 }
