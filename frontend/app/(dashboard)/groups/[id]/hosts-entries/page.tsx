@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { HostsEntry, HostGroup } from "@/lib/types"
@@ -35,8 +37,10 @@ export default function GroupHostsEntriesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEntry, setEditingEntry] = useState<HostsEntry | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
   const [formLoading, setFormLoading] = useState(false)
 
   // Form fields
@@ -118,18 +122,26 @@ export default function GroupHostsEntriesPage() {
     }
   }
 
-  async function handleDelete(entry: HostsEntry) {
-    if (!confirm(`Delete hosts entry "${entry.ip_address} ${entry.hostname}"?`)) return
-    setDeletingId(entry.id)
-    setDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["hosts-entries", id] })
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setDeletingId(null)
-    }
+  function handleDelete(entry: HostsEntry) {
+    setConfirmState({
+      open: true,
+      title: "Delete Hosts Entry",
+      description: `Delete hosts entry "${entry.ip_address} ${entry.hostname}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setDeletingId(entry.id)
+        try {
+          await apiFetch(`/api/groups/${id}/hosts-entries/${entry.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["hosts-entries", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setDeletingId(null)
+        }
+      },
+    })
   }
 
   return (
@@ -147,10 +159,6 @@ export default function GroupHostsEntriesPage() {
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts entries</div>
-      )}
-
-      {deleteError && (
-        <div className="text-red-400 text-sm">{deleteError}</div>
       )}
 
       {!isLoading && !error && entries && entries.length === 0 && (
@@ -297,6 +305,19 @@ export default function GroupHostsEntriesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
     </div>
   )
 }

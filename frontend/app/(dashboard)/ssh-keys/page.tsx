@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { SSHKey } from "@/lib/types"
@@ -36,6 +38,9 @@ export default function SSHKeysPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formLoading, setFormLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
 
   const { data: sshKeys, isLoading, error } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -69,17 +74,26 @@ export default function SSHKeysPage() {
     }
   }
 
-  async function handleDelete(id: number) {
-    if (!confirm("Are you sure you want to delete this SSH key?")) return
-    setDeletingId(id)
-    try {
-      await apiFetch(`/api/ssh-keys/${id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
-    } catch {
-      alert("Failed to delete SSH key")
-    } finally {
-      setDeletingId(null)
-    }
+  function handleDelete(keyId: number) {
+    setConfirmState({
+      open: true,
+      title: "Delete SSH Key",
+      description: "Are you sure you want to delete this SSH key? This action cannot be undone.",
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setDeletingId(keyId)
+        try {
+          await apiFetch(`/api/ssh-keys/${keyId}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
+          setConfirmState(null)
+        } catch {
+          showError("Failed to delete SSH key")
+          setConfirmState(null)
+        } finally {
+          setDeletingId(null)
+        }
+      },
+    })
   }
 
   return (
@@ -208,6 +222,19 @@ export default function SSHKeysPage() {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
       )}
     </div>
   )

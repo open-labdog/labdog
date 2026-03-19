@@ -22,7 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { ServiceRule, HostGroup } from "@/lib/types"
@@ -51,8 +53,10 @@ export default function GroupServicesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingService, setEditingService] = useState<ServiceRule | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
+  } | null>(null)
   const [formLoading, setFormLoading] = useState(false)
 
   // Form fields
@@ -131,18 +135,26 @@ export default function GroupServicesPage() {
     }
   }
 
-  async function handleDelete(service: ServiceRule) {
-    if (!confirm(`Delete service rule "${service.service_name}"?`)) return
-    setDeletingId(service.id)
-    setDeleteError(null)
-    try {
-      await apiFetch(`/api/groups/${id}/services/${service.id}`, { method: "DELETE" })
-      await queryClient.invalidateQueries({ queryKey: ["services", id] })
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : "Delete failed")
-    } finally {
-      setDeletingId(null)
-    }
+  function handleDelete(service: ServiceRule) {
+    setConfirmState({
+      open: true,
+      title: "Delete Service Rule",
+      description: `Delete service rule "${service.service_name}"? This action cannot be undone.`,
+      action: async () => {
+        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
+        setDeletingId(service.id)
+        try {
+          await apiFetch(`/api/groups/${id}/services/${service.id}`, { method: "DELETE" })
+          await queryClient.invalidateQueries({ queryKey: ["services", id] })
+          setConfirmState(null)
+        } catch (err) {
+          showError(err instanceof Error ? err.message : "Delete failed")
+          setConfirmState(null)
+        } finally {
+          setDeletingId(null)
+        }
+      },
+    })
   }
 
   return (
@@ -160,10 +172,6 @@ export default function GroupServicesPage() {
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load services</div>
-      )}
-
-      {deleteError && (
-        <div className="text-red-400 text-sm">{deleteError}</div>
       )}
 
       {!isLoading && !error && services && services.length === 0 && (
@@ -309,6 +317,19 @@ export default function GroupServicesPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {confirmState && (
+        <ConfirmDialog
+          open={confirmState.open}
+          onOpenChange={(open) => !open && setConfirmState(null)}
+          title={confirmState.title}
+          description={confirmState.description}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={confirmState.loading}
+          onConfirm={confirmState.action}
+        />
+      )}
     </div>
   )
 }
