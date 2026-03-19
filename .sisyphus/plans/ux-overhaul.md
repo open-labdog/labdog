@@ -1707,7 +1707,7 @@ Max Concurrent: 6 (Wave 1)
   Start from clean state. Execute EVERY QA scenario from EVERY task — follow exact steps, capture evidence. Test cross-task integration: confirm dialog → toast appears, command palette navigates correctly, mobile sidebar works, search filters correctly, breadcrumbs reflect current page. Test edge cases: empty search, rapid dialog open/close, mobile + desktop transitions.
   Output: `Scenarios [N/N pass] | Integration [N/N] | Edge Cases [N tested] | VERDICT`
 
-- [ ] F4. **Scope Fidelity Check** — `deep`
+- [x] F4. **Scope Fidelity Check** — `deep`
   For each task: read "What to do", read actual diff. Verify 1:1 — everything in spec was built, nothing beyond spec was built. Check "Must NOT do" compliance: no backend changes, no auth page RHF, no server-side search, no cmdk actions, no animation library. Detect cross-task contamination. Flag unaccounted changes.
   Output: `Tasks [N/N compliant] | Contamination [CLEAN/N issues] | Unaccounted [CLEAN/N files] | VERDICT`
 

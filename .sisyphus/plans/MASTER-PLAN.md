@@ -37,7 +37,7 @@ All extensions support **group-level defaults + per-host overrides** with priori
 | 10 | **Host Discovery** | [`host-discovery.md`](host-discovery.md) | S | ✅ Shipped | Network CIDR scan for SSH hosts, bulk-add UI. |
 | 11 | **Web Shell** | [`web-shell.md`](web-shell.md) | M | 📋 Planned | Browser-based SSH terminal via xterm.js + WebSocket + asyncssh PTY. |
 | 12 | **Packaging** | [`packaging.md`](packaging.md) | L | 📋 Planned | Pre-built tarball, .deb, .rpm via nfpm. Systemd services. Embedded Node.js. FHS layout. install.sh for tarball installs. |
-| 13 | **UX Overhaul** | [`ux-overhaul.md`](ux-overhaul.md) | L | 📋 Planned | Comprehensive frontend UX improvements: ConfirmDialog, Sonner toasts, skeletons, breadcrumbs, cmdk command palette, mobile sidebar, RHF+Zod forms, useMutation migration, optimistic updates, bulk actions, search/filter. Frontend-only (no backend changes). |
+| 13 | **UX Overhaul** | [`ux-overhaul.md`](ux-overhaul.md) | L | ✅ Shipped | Comprehensive frontend UX improvements: ConfirmDialog, Sonner toasts, skeletons, breadcrumbs, cmdk command palette, mobile sidebar, RHF+Zod forms, useMutation migration, optimistic updates, bulk actions, search/filter. Frontend-only (no backend changes). |
 
 ### Execution Order
 Service Management (#1) was built first — it created `host_module_status` and `SyncJob.module_type` that all other modules reuse. /etc/hosts (#3), User Management (#8), GitOps Frontend (#9), and Host Discovery (#10) are also complete. Modules #1a, #2, #4–7, #11 can be built in any order.
