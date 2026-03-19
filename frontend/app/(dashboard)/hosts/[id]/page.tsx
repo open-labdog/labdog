@@ -2,6 +2,9 @@
 
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
+import Link from "next/link"
+import { TerminalIcon, X } from "lucide-react"
+import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -143,6 +146,7 @@ export default function HostDetailPage() {
     protectedConfirmOpen, setProtectedConfirmOpen,
   } = useHostDialogs()
 
+  const [terminalOpen, setTerminalOpen] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -628,6 +632,17 @@ export default function HostDetailPage() {
           <p className="text-slate-400 text-sm">Host details and effective firewall rules</p>
         </div>
         {host && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!host.ssh_key_id}
+              title={host.ssh_key_id ? "Open terminal" : "No SSH key assigned"}
+              onClick={() => setTerminalOpen(true)}
+            >
+              <TerminalIcon className="w-4 h-4 mr-1" />
+              Terminal
+            </Button>
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogTrigger>
               <Button variant="outline" size="sm">Edit</Button>
@@ -727,6 +742,7 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+          </div>
         )}
       </div>
 
@@ -2389,6 +2405,28 @@ export default function HostDetailPage() {
           loading={confirmState.loading}
           onConfirm={confirmState.action}
         />
+      )}
+
+      {terminalOpen && host && (
+        <div className="fixed inset-x-0 bottom-0 z-50 h-[50vh] border-t border-slate-700 bg-slate-950 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
+            <div className="flex items-center gap-2 text-sm text-slate-300">
+              <TerminalIcon className="w-4 h-4" />
+              <span>{host.hostname}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href={`/hosts/${id}/terminal`} className="text-xs text-slate-400 hover:text-white">
+                Open Full Page
+              </Link>
+              <button onClick={() => setTerminalOpen(false)} className="text-slate-400 hover:text-white">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 p-1">
+            <SshTerminal hostId={id} hostname={host.hostname} />
+          </div>
+        </div>
       )}
     </div>
   )
