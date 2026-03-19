@@ -63,6 +63,7 @@ export default function GroupPackagesPage() {
   const [pkgManager, setPkgManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
   const [pkgPriority, setPkgPriority] = useState(0)
   const [pkgComment, setPkgComment] = useState("")
+  const [pkgHold, setPkgHold] = useState(false)
 
   const [repoDialogOpen, setRepoDialogOpen] = useState(false)
   const [repoEditing, setRepoEditing] = useState<PackageRepository | null>(null)
@@ -128,6 +129,7 @@ export default function GroupPackagesPage() {
     setPkgManager("auto")
     setPkgPriority(0)
     setPkgComment("")
+    setPkgHold(false)
     pkgSaveMutation.reset()
     setPkgDialogOpen(true)
   }
@@ -140,6 +142,7 @@ export default function GroupPackagesPage() {
     setPkgManager(pkg.package_manager)
     setPkgPriority(pkg.priority)
     setPkgComment(pkg.comment ?? "")
+    setPkgHold(pkg.hold)
     pkgSaveMutation.reset()
     setPkgDialogOpen(true)
   }
@@ -148,7 +151,7 @@ export default function GroupPackagesPage() {
     e.preventDefault()
     const payload = {
       package_name: pkgName, version: pkgVersion || null, state: pkgState,
-      package_manager: pkgManager, priority: pkgPriority, comment: pkgComment || null,
+      package_manager: pkgManager, priority: pkgPriority, comment: pkgComment || null, hold: pkgHold,
     }
     pkgSaveMutation.mutate({ pkgId: pkgEditing?.id, payload })
   }
@@ -260,8 +263,9 @@ export default function GroupPackagesPage() {
                   <TableHead>Version</TableHead>
                   <TableHead>State</TableHead>
                   <TableHead>Package Manager</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
+                   <TableHead>Priority</TableHead>
+                   <TableHead>Hold</TableHead>
+                   <TableHead className="w-40">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -275,13 +279,20 @@ export default function GroupPackagesPage() {
                     <TableCell>
                       <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
                     </TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{pkg.priority}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openPkgEditDialog(pkg)}
+                     <TableCell className="font-mono text-slate-300 text-xs">{pkg.priority}</TableCell>
+                     <TableCell>
+                       {pkg.hold ? (
+                         <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
+                       ) : (
+                         <span className="text-slate-600">—</span>
+                       )}
+                     </TableCell>
+                     <TableCell>
+                       <div className="flex gap-1">
+                         <Button
+                           size="sm"
+                           variant="ghost"
+                           onClick={() => openPkgEditDialog(pkg)}
                         >
                           Edit
                         </Button>
@@ -471,6 +482,18 @@ export default function GroupPackagesPage() {
                 rows={2}
                 className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                id="pkg-hold"
+                type="checkbox"
+                checked={pkgHold}
+                onChange={(e) => setPkgHold(e.target.checked)}
+                className="rounded border-input"
+              />
+              <Label htmlFor="pkg-hold">Hold package</Label>
+              <span className="text-xs text-slate-500">Prevent automatic upgrades</span>
             </div>
 
             {pkgSaveMutation.error && (

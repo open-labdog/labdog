@@ -243,6 +243,7 @@ export default function HostDetailPage() {
   const [ppManager, setPpManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
   const [ppPriority, setPpPriority] = useState(0)
   const [ppComment, setPpComment] = useState("")
+  const [ppHold, setPpHold] = useState(false)
   const ppSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/packages`, { method: "POST", body: JSON.stringify(payload) }),
@@ -263,6 +264,7 @@ export default function HostDetailPage() {
     setPpManager("auto")
     setPpPriority(0)
     setPpComment("")
+    setPpHold(false)
     ppSaveMutation.reset()
     setPpDialogOpen(true)
   }
@@ -271,7 +273,7 @@ export default function HostDetailPage() {
     e.preventDefault()
     ppSaveMutation.mutate({
       package_name: ppName, version: ppVersion || null, state: ppState,
-      package_manager: ppManager, priority: ppPriority, comment: ppComment || null,
+      package_manager: ppManager, priority: ppPriority, comment: ppComment || null, hold: ppHold,
     })
   }
 
@@ -2141,12 +2143,13 @@ export default function HostDetailPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-700">
-                    <TableHead>Package Name</TableHead>
-                    <TableHead>Version</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Package Manager</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                     <TableHead>Package Name</TableHead>
+                     <TableHead>Version</TableHead>
+                     <TableHead>State</TableHead>
+                     <TableHead>Package Manager</TableHead>
+                     <TableHead>Hold</TableHead>
+                     <TableHead>Source</TableHead>
+                     <TableHead className="w-32">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2163,12 +2166,19 @@ export default function HostDetailPage() {
                           {pkg.state.charAt(0).toUpperCase() + pkg.state.slice(1)}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {pkg.source === "group" ? `Group: ${pkg.source_name}` : "Host override"}
+                       <TableCell>
+                         <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
+                       </TableCell>
+                       <TableCell>
+                         {pkg.hold ? (
+                           <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
+                         ) : (
+                           <span className="text-slate-600">—</span>
+                         )}
+                       </TableCell>
+                       <TableCell>
+                         <Badge variant="outline" className="text-xs">
+                           {pkg.source === "group" ? `Group: ${pkg.source_name}` : "Host override"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -2273,6 +2283,18 @@ export default function HostDetailPage() {
                     rows={2}
                     className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
                   />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="pp-hold"
+                    type="checkbox"
+                    checked={ppHold}
+                    onChange={(e) => setPpHold(e.target.checked)}
+                    className="rounded border-input"
+                  />
+                  <Label htmlFor="pp-hold">Hold package</Label>
+                  <span className="text-xs text-slate-500">Prevent automatic upgrades</span>
                 </div>
 
                 {ppSaveMutation.error && (
