@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon } from "lucide-react"
+import { SearchIcon, XIcon, LayoutListIcon, TableIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -30,6 +30,9 @@ export default function HostsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
+    typeof window !== "undefined" && localStorage.getItem("barricade-hosts-view") === "grouped" ? "grouped" : "flat"
+  )
   const queryClient = useQueryClient()
 
   const { data: hosts, isLoading, error } = useQuery<Host[]>({
@@ -47,6 +50,10 @@ export default function HostsPage() {
   }, [groups])
   const showLoading = useDelayedLoading(isLoading)
 
+  useEffect(() => {
+    localStorage.setItem("barricade-hosts-view", viewMode)
+  }, [viewMode])
+
   const filteredHosts = hosts?.filter(h => {
     const q = searchQuery.toLowerCase()
     const matchesSearch = h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
@@ -55,6 +62,29 @@ export default function HostsPage() {
       : h.group_ids.includes(filterGroup)
     return matchesSearch && matchesGroup
   }) ?? []
+
+  const groupedHosts = useMemo(() => {
+    const sections = new Map<string, { group: HostGroup | null; hosts: Host[] }>()
+    for (const host of filteredHosts) {
+      if (host.group_ids.length === 0) {
+        const key = "__ungrouped__"
+        if (!sections.has(key)) sections.set(key, { group: null, hosts: [] })
+        sections.get(key)!.hosts.push(host)
+      } else {
+        for (const gid of host.group_ids) {
+          const g = groupMap.get(gid)
+          const key = String(gid)
+          if (!sections.has(key)) sections.set(key, { group: g ?? null, hosts: [] })
+          sections.get(key)!.hosts.push(host)
+        }
+      }
+    }
+    return [...sections.entries()].sort(([a, av], [b, bv]) => {
+      if (a === "__ungrouped__") return 1
+      if (b === "__ungrouped__") return -1
+      return (bv.group?.priority ?? 0) - (av.group?.priority ?? 0)
+    })
+  }, [filteredHosts, groupMap])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -147,6 +177,13 @@ export default function HostsPage() {
           ))}
           <option value="ungrouped">Ungrouped</option>
         </select>
+        <button
+          onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
+          className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+        >
+          {viewMode === "flat" ? <LayoutListIcon className="w-4 h-4" /> : <TableIcon className="w-4 h-4" />}
+          {viewMode === "flat" ? "Group View" : "Flat View"}
+        </button>
         {(searchQuery || filterGroup !== null) && (
           <span className="text-sm text-slate-400">
             Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
@@ -197,69 +234,135 @@ export default function HostsPage() {
               </Button>
             </div>
           )}
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === filteredHosts.length && filteredHosts.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-600"
-                    />
-                  </TableHead>
-                  <TableHead>Hostname</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Groups</TableHead>
-                  <TableHead>Firewall</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredHosts.map((host) => (
-                  <TableRow key={host.id} className="border-slate-700">
-                    <TableCell>
+          {viewMode === "flat" ? (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead className="w-10">
                       <input
                         type="checkbox"
-                        checked={selected.has(host.id)}
-                        onChange={() => toggleSelect(host.id)}
+                        checked={selected.size === filteredHosts.length && filteredHosts.length > 0}
+                        onChange={toggleSelectAll}
                         className="rounded border-slate-600"
                       />
-                    </TableCell>
-                    <TableCell className="font-medium text-white">{host.hostname}</TableCell>
-                    <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
-                    <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {host.group_ids.length > 0 ? (
-                          host.group_ids.map(gid => {
-                            const g = groupMap.get(gid)
-                            return g ? (
-                              <Link key={gid} href={`/groups/${gid}`} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors">
-                                {g.name}
-                              </Link>
-                            ) : null
-                          })
-                        ) : (
-                          <span className="text-xs text-slate-500">&mdash;</span>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <FirewallBadge backend={host.firewall_backend} />
-                    </TableCell>
-                    <TableCell>
-                      <SyncStatusBadge status={host.sync_status} />
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                    </TableCell>
+                    </TableHead>
+                    <TableHead>Hostname</TableHead>
+                    <TableHead>IP Address</TableHead>
+                    <TableHead>Groups</TableHead>
+                    <TableHead>Firewall</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filteredHosts.map((host) => (
+                    <TableRow key={host.id} className="border-slate-700">
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(host.id)}
+                          onChange={() => toggleSelect(host.id)}
+                          className="rounded border-slate-600"
+                        />
+                      </TableCell>
+                      <TableCell className="font-medium text-white">{host.hostname}</TableCell>
+                      <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {host.group_ids.length > 0 ? (
+                            host.group_ids.map(gid => {
+                              const g = groupMap.get(gid)
+                              return g ? (
+                                <Link key={gid} href={`/groups/${gid}`} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors">
+                                  {g.name}
+                                </Link>
+                              ) : null
+                            })
+                          ) : (
+                            <span className="text-xs text-slate-500">&mdash;</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <FirewallBadge backend={host.firewall_backend} />
+                      </TableCell>
+                      <TableCell>
+                        <SyncStatusBadge status={host.sync_status} />
+                      </TableCell>
+                      <TableCell>
+                        <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {groupedHosts.map(([key, { group, hosts: sectionHosts }]) => (
+                <details key={key} open className="group">
+                  <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
+                    <span className="transition-transform group-open:rotate-90">▶</span>
+                    <span>{group?.name ?? "Ungrouped"}</span>
+                    <span className="text-slate-500 font-normal">({sectionHosts.length})</span>
+                    {group && (
+                      <span className="text-xs text-slate-600 font-normal">priority {group.priority}</span>
+                    )}
+                  </summary>
+                  <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-slate-700">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={sectionHosts.every(h => selected.has(h.id)) && sectionHosts.length > 0}
+                              onChange={() => {
+                                const allSelected = sectionHosts.every(h => selected.has(h.id))
+                                setSelected(prev => {
+                                  const next = new Set(prev)
+                                  sectionHosts.forEach(h => allSelected ? next.delete(h.id) : next.add(h.id))
+                                  return next
+                                })
+                              }}
+                              className="rounded border-slate-600"
+                            />
+                          </TableHead>
+                          <TableHead>Hostname</TableHead>
+                          <TableHead>IP Address</TableHead>
+                          <TableHead>Firewall</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {sectionHosts.map((host) => (
+                          <TableRow key={host.id} className="border-slate-700">
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={selected.has(host.id)}
+                                onChange={() => toggleSelect(host.id)}
+                                className="rounded border-slate-600"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium text-white">{host.hostname}</TableCell>
+                            <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
+                            <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
+                            <TableCell><SyncStatusBadge status={host.sync_status} /></TableCell>
+                            <TableCell>
+                              <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </details>
+              ))}
+            </div>
+          )}
         </>
       )}
 
