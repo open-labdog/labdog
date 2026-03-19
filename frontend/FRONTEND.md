@@ -241,12 +241,27 @@ Always wrapped in a styled container:
 
 ### Forms
 
+Use React Hook Form + Zod for all forms. See the [Form Validation](#form-validation) section for the full pattern.
+
 ```tsx
-<form onSubmit={handleSubmit} className="space-y-4">
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { itemSchema, type ItemInput } from "@/lib/schemas"
+
+const form = useForm<ItemInput>({
+  resolver: zodResolver(itemSchema),
+  defaultValues: { name: "", type: "a" },
+  mode: "onSubmit",
+})
+
+<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
   {/* Text input */}
   <div className="space-y-2">
     <Label htmlFor="name">Name</Label>
-    <Input id="name" value={val} onChange={(e) => setVal(e.target.value)} required />
+    <Input id="name" {...form.register("name")} />
+    {form.formState.errors.name && (
+      <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+    )}
   </div>
 
   {/* Native select (no shadcn Select component used) */}
@@ -254,8 +269,7 @@ Always wrapped in a styled container:
     <Label htmlFor="type">Type</Label>
     <select
       id="type"
-      value={type}
-      onChange={(e) => setType(e.target.value)}
+      {...form.register("type")}
       className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
     >
       <option value="a">Option A</option>
@@ -265,11 +279,11 @@ Always wrapped in a styled container:
 
   {/* Checkbox */}
   <div className="flex items-center gap-2">
-    <input id="flag" type="checkbox" checked={flag} onChange={(e) => setFlag(e.target.checked)} className="rounded border-input" />
+    <input id="flag" type="checkbox" {...form.register("flag")} className="rounded border-input" />
     <Label htmlFor="flag">Enable feature</Label>
   </div>
 
-  {/* Group checkboxes (e.g., host-to-group assignment) */}
+  {/* Group checkboxes (e.g., host-to-group assignment) — managed via useState, not RHF */}
   <div className="space-y-2">
     <Label>Groups</Label>
     <div className="space-y-2 rounded-lg border border-input p-3 dark:bg-input/10">
@@ -282,12 +296,9 @@ Always wrapped in a styled container:
     </div>
   </div>
 
-  {/* Error */}
-  {error && <p className="text-sm text-red-400">{error}</p>}
-
   {/* Buttons */}
   <div className="flex gap-3 pt-2">
-    <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save"}</Button>
+    <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Save"}</Button>
     <Button type="button" variant="outline" onClick={close}>Cancel</Button>
   </div>
 </form>
@@ -360,7 +371,24 @@ const { data, isLoading, error } = useQuery<Type[]>({
   refetchInterval: 10000,                         // Optional: polling (dashboard only)
 })
 
-// Mutation pattern (inside handlers, not useMutation)
+// Mutation pattern — use useApiMutation from @/lib/mutations
+import { useApiMutation } from "@/lib/mutations"
+
+const createMutation = useApiMutation({
+  mutationFn: (data: ItemInput) => apiFetch("/api/...", { method: "POST", body: JSON.stringify(data) }),
+  invalidateKeys: [["resource-name"]],
+  successMessage: "Item created",
+  onSuccess: () => {
+    setDialogOpen(false)
+    form.reset()
+  },
+})
+
+// Usage: createMutation.mutate(formData)
+// Loading: createMutation.isPending
+// Error: createMutation.error
+
+// Legacy inline pattern (still valid for complex flows with multiple side effects)
 const queryClient = useQueryClient()
 
 async function handleCreate(e: React.FormEvent) {
@@ -440,13 +468,195 @@ if (!user?.is_superuser) {
 
 ---
 
+## Toast Notifications
+
+Use `showSuccess`, `showError`, `showInfo` from `@/lib/toast` (wraps Sonner).
+
+- **When to use**: Only on mutations (create, update, delete). Never on reads or navigation.
+- **Success**: Auto-dismisses after 3 seconds
+- **Error**: Persists until manually dismissed
+- **Position**: Bottom-right
+
+```tsx
+import { showSuccess, showError } from "@/lib/toast"
+showSuccess("SSH key deleted")
+showError("Failed to delete: " + error.message)
+```
+
+---
+
+## Loading States
+
+Use `TableSkeleton` and `CardSkeleton` from `@/components/ui/skeleton`. Use `useDelayedLoading` from `@/lib/utils` to prevent flicker on fast loads (200ms delay).
+
+```tsx
+import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
+import { useDelayedLoading } from "@/lib/utils"
+
+const showLoading = useDelayedLoading(isLoading)
+{showLoading && <TableSkeleton rows={5} columns={4} />}
+```
+
+---
+
+## Confirmation Dialogs
+
+Use `ConfirmDialog` from `@/components/ui/confirm-dialog` instead of `window.confirm()`.
+
+- **Destructive actions** (delete, disable): `variant="destructive"` (red button)
+- **Default actions**: `variant="default"` (primary button)
+
+```tsx
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+
+const [confirmState, setConfirmState] = useState<{
+  open: boolean; title: string; description: string; action: () => void; loading?: boolean
+} | null>(null)
+
+// Trigger:
+setConfirmState({ open: true, title: "Delete Key", description: "Cannot be undone.", action: handleDelete })
+
+// Render:
+{confirmState && (
+  <ConfirmDialog
+    open={confirmState.open}
+    onOpenChange={(open) => !open && setConfirmState(null)}
+    title={confirmState.title}
+    description={confirmState.description}
+    variant="destructive"
+    loading={confirmState.loading}
+    onConfirm={confirmState.action}
+  />
+)}
+```
+
+---
+
+## Form Validation
+
+Use React Hook Form + Zod. Schemas are in `@/lib/schemas`.
+
+- **Validation timing**: `mode: "onSubmit"` (errors show only after submit attempt)
+- **Error display**: Inline below each field in `text-sm text-red-400`
+- **Edit forms**: `form.reset(existingData)` when dialog opens
+
+```tsx
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { groupSchema, type GroupInput } from "@/lib/schemas"
+
+const form = useForm<GroupInput>({
+  resolver: zodResolver(groupSchema),
+  defaultValues: { name: "", priority: 1 },
+  mode: "onSubmit",
+})
+
+// Register field:
+<Input {...form.register("name")} />
+{form.formState.errors.name && (
+  <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+)}
+
+// Submit:
+const onSubmit = form.handleSubmit(async (data) => { ... })
+<form onSubmit={onSubmit}>
+```
+
+---
+
+## Error Boundaries
+
+`app/(dashboard)/error.tsx` catches errors in dashboard pages. Shows AlertTriangle icon, error message, "Try Again" and "Go to Dashboard" buttons.
+
+`app/global-error.tsx` catches root-level errors. Uses inline styles (no Tailwind dependency).
+
+---
+
+## Breadcrumbs
+
+Use `Breadcrumb` from `@/components/ui/breadcrumb`. Place above the page `<h1>`.
+
+```tsx
+import { Breadcrumb } from "@/components/ui/breadcrumb"
+<Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group.name }]} />
+```
+
+Maximum depth: 3 levels. Last item has no `href` (current page).
+
+---
+
+## Tooltips
+
+Use `Tooltip` from `@/components/ui/tooltip` for non-obvious form fields. Trigger: `InfoIcon` next to label.
+
+```tsx
+import { Tooltip } from "@/components/ui/tooltip"
+import { InfoIcon } from "lucide-react"
+
+<div className="flex items-center gap-1.5">
+  <Label htmlFor="cidr">Source CIDR</Label>
+  <Tooltip content="IP range in CIDR notation, e.g., 10.0.0.0/8">
+    <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+  </Tooltip>
+</div>
+```
+
+Cap: ~15 tooltips total. Only for complex/non-obvious fields.
+
+---
+
+## Command Palette
+
+`CommandPalette` in `app-shell.tsx`. Opens with Cmd/Ctrl+K. Navigation-only — quick-jump to pages. No mutations, no entity search.
+
+---
+
+## Keyboard Shortcuts
+
+- `Cmd/Ctrl+K` — open command palette
+- `Escape` — close any open dialog or command palette (handled natively by base-ui)
+
+No other shortcuts.
+
+---
+
+## Mobile Responsive
+
+Sidebar collapses at `md:` breakpoint (768px). Below 768px: hamburger button in top bar opens sidebar as slide-over sheet. CSS `transition-transform` only (no Framer Motion).
+
+---
+
+## Bulk Actions
+
+Checkbox + "Delete Selected" toolbar on groups, hosts, ssh-keys list pages. Sequential single-item API calls (no batch endpoint). Partial failure toast: "Deleted {success} of {total}. {failed} failed."
+
+---
+
+## Mutations
+
+Use `useApiMutation` from `@/lib/mutations` instead of ad-hoc try/catch.
+
+```tsx
+import { useApiMutation } from "@/lib/mutations"
+
+const deleteMutation = useApiMutation({
+  mutationFn: (id: string) => apiFetch(`/api/ssh-keys/${id}`, { method: "DELETE" }),
+  invalidateKeys: [["ssh-keys"]],
+  successMessage: "SSH key deleted",
+})
+
+// Usage: deleteMutation.mutate(id)
+// Loading: deleteMutation.isPending
+```
+
+Optimistic updates available via `optimisticUpdate` option (for simple delete/toggle only).
+
+---
+
 ## Things NOT Used (Intentionally)
 
 | What | Why |
 |------|-----|
-| Toast notifications | Not implemented. Errors show inline in dialogs/forms. |
-| Loading skeletons | Text indicators used instead ("Loading..."). |
-| `useMutation` | Mutations done via inline async handlers with try/catch. |
 | shadcn Select | Native `<select>` elements used everywhere. |
 | `DialogTrigger asChild` | Not supported by base-ui. Wrap children directly. |
 | Dark/light toggle | Dark mode only, hardcoded `className="dark"` on `<html>`. |
