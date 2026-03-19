@@ -196,8 +196,8 @@ export default function GitReposPage() {
           setDialogOpen(open)
           if (!open) { form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false); saveMutation.reset() }
         }}>
-          <DialogTrigger>
-            <Button onClick={openCreateDialog}>Add Repository</Button>
+          <DialogTrigger render={<Button />} onClick={openCreateDialog}>
+            Add Repository
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>

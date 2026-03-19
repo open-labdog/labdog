@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, LayoutListIcon, TableIcon } from "lucide-react"
+import { SearchIcon, XIcon, LayoutListIcon, TableIcon, ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -33,7 +33,23 @@ export default function HostsPage() {
   const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
     typeof window !== "undefined" && localStorage.getItem("barricade-hosts-view") === "grouped" ? "grouped" : "flat"
   )
+  const [groupDropdownOpen, setGroupDropdownOpen] = useState(false)
+  const [groupSearch, setGroupSearch] = useState("")
+  const groupDropdownRef = useRef<HTMLDivElement>(null)
   const queryClient = useQueryClient()
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (groupDropdownRef.current && !groupDropdownRef.current.contains(e.target as Node)) {
+        setGroupDropdownOpen(false)
+        setGroupSearch("")
+      }
+    }
+    if (groupDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside)
+      return () => document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [groupDropdownOpen])
 
   const { data: hosts, isLoading, error } = useQuery<Host[]>({
     queryKey: ["hosts"],
@@ -163,20 +179,59 @@ export default function HostsPage() {
             </button>
           )}
         </div>
-        <select
-          value={filterGroup === null ? "" : String(filterGroup)}
-          onChange={(e) => {
-            const v = e.target.value
-            setFilterGroup(v === "" ? null : v === "ungrouped" ? "ungrouped" : Number(v))
-          }}
-          className="h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300"
-        >
-          <option value="">All Groups</option>
-          {groups?.sort((a, b) => a.name.localeCompare(b.name)).map(g => (
-            <option key={g.id} value={g.id}>{g.name}</option>
-          ))}
-          <option value="ungrouped">Ungrouped</option>
-        </select>
+        <div className="relative" ref={groupDropdownRef}>
+          <button
+            onClick={() => { setGroupDropdownOpen(!groupDropdownOpen); setGroupSearch("") }}
+            className="flex items-center gap-1.5 h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
+          >
+            {filterGroup === null ? "All Groups" : filterGroup === "ungrouped" ? "Ungrouped" : groupMap.get(filterGroup as number)?.name ?? "Unknown"}
+            <ChevronDownIcon className="w-4 h-4" />
+          </button>
+          {groupDropdownOpen && (
+            <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-md border border-slate-700 bg-slate-900 shadow-lg">
+              <div className="p-2 border-b border-slate-700">
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Search groups..."
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  className="w-full rounded-md border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-sm text-slate-200 placeholder:text-slate-500 outline-none focus:border-slate-500"
+                />
+              </div>
+              <div className="max-h-60 overflow-y-auto py-1">
+                {(!groupSearch || "all groups".includes(groupSearch.toLowerCase())) && (
+                  <button
+                    onClick={() => { setFilterGroup(null); setGroupDropdownOpen(false); setGroupSearch("") }}
+                    className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 transition-colors", filterGroup === null ? "text-white bg-slate-800" : "text-slate-300")}
+                  >
+                    All Groups
+                  </button>
+                )}
+                {groups
+                  ?.filter(g => !groupSearch || g.name.toLowerCase().includes(groupSearch.toLowerCase()))
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map(g => (
+                    <button
+                      key={g.id}
+                      onClick={() => { setFilterGroup(g.id); setGroupDropdownOpen(false); setGroupSearch("") }}
+                      className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 transition-colors", filterGroup === g.id ? "text-white bg-slate-800" : "text-slate-300")}
+                    >
+                      {g.name}
+                    </button>
+                  ))}
+                {(!groupSearch || "ungrouped".includes(groupSearch.toLowerCase())) && (
+                  <button
+                    onClick={() => { setFilterGroup("ungrouped"); setGroupDropdownOpen(false); setGroupSearch("") }}
+                    className={cn("w-full text-left px-3 py-1.5 text-sm hover:bg-slate-800 transition-colors", filterGroup === "ungrouped" ? "text-white bg-slate-800" : "text-slate-300")}
+                  >
+                    Ungrouped
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         <button
           onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
           className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
