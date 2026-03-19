@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import type { HostsEntry } from "@/lib/types"
+import type { HostsEntry, HostGroup } from "@/lib/types"
 
 export default function GroupHostsEntriesPage() {
   const params = useParams()
@@ -42,6 +43,12 @@ export default function GroupHostsEntriesPage() {
   const [aliases, setAliases] = useState("")
   const [comment, setComment] = useState("")
   const [priority, setPriority] = useState(100)
+
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
 
   const { data: entries, isLoading, error } = useQuery<HostsEntry[]>({
     queryKey: ["hosts-entries", id],
@@ -124,6 +131,7 @@ export default function GroupHostsEntriesPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Hosts Entries" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Hosts File Entries</h1>

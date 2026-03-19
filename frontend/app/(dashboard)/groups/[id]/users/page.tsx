@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import type { LinuxUser, LinuxGroup } from "@/lib/types"
+import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
 
 function UserStateBadge({ state }: { state: string }) {
   return (
@@ -246,8 +247,15 @@ export default function GroupUsersPage() {
     }
   }
 
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
   return (
     <div className="space-y-8">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />
       {/* Linux Users Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

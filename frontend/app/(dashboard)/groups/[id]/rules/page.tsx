@@ -4,6 +4,7 @@ import { useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Lock, GitBranch, GripVertical, ChevronUp, ChevronDown } from "lucide-react"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   DndContext,
   closestCenter,
@@ -335,6 +336,7 @@ export default function GroupRulesPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Rules" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Firewall Rules</h1>

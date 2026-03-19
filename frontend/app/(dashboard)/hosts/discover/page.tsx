@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Table,
   TableBody,
@@ -180,6 +181,7 @@ export default function DiscoverHostsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discover" }]} />
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-white">Discover Hosts</h1>

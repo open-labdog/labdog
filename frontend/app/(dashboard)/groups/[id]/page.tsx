@@ -9,6 +9,7 @@ import type { HostGroup, Host, GitRepository } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge, GitOpsStatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Card,
   CardContent,
@@ -127,19 +128,10 @@ export default function GroupDetailPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group" }]} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Link
-              href="/groups"
-              className="text-slate-400 hover:text-white text-sm transition-colors"
-            >
-              Groups
-            </Link>
-            <span className="text-slate-600">/</span>
-            <span className="text-white text-sm">{group?.name}</span>
-          </div>
           <div className="flex items-center gap-3">
             <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
             {group?.gitops_enabled && (

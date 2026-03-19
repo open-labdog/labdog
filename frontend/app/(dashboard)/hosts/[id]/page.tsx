@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -723,6 +724,7 @@ export default function HostDetailPage() {
 
   return (
     <div className="space-y-8">
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: host?.hostname ?? "Host" }]} />
       {/* Host Info */}
       <div className="flex items-center justify-between">
         <div>

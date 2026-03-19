@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import type { PackageRule, PackageRepository } from "@/lib/types"
+import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
 
 function StateBadge({ state }: { state: string }) {
   const colors: Record<string, string> = {
@@ -246,8 +247,15 @@ export default function GroupPackagesPage() {
 
   const selectClass = "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
 
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
   return (
     <div className="space-y-8">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Packages" }]} />
       {/* Package Rules Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

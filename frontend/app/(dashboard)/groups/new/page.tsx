@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { apiFetch } from "@/lib/api"
 
 export default function NewGroupPage() {
@@ -39,6 +40,7 @@ export default function NewGroupPage() {
 
   return (
     <div className="max-w-lg space-y-6">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: "New Group" }]} />
       <div>
         <h1 className="text-2xl font-bold text-white">New Group</h1>
         <p className="text-slate-400 text-sm mt-1">Create a new host group</p>

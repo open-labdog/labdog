@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -80,6 +81,7 @@ export default function SSHKeysPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "SSH Keys" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">SSH Keys</h1>

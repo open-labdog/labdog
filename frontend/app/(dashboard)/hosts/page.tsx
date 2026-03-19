@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { buttonVariants } from "@/components/ui/button"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn } from "@/lib/utils"
 import {
   Table,
@@ -24,6 +25,7 @@ export default function HostsPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Hosts" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Hosts</h1>

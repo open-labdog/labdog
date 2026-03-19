@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
@@ -22,7 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
-import type { CronJob } from "@/lib/types"
+import type { CronJob, HostGroup } from "@/lib/types"
 
 function cronToHuman(schedule: string): string {
   const s = schedule.trim()
@@ -136,6 +137,12 @@ export default function GroupCronJobsPage() {
   const [comment, setComment] = useState("")
   const [envVars, setEnvVars] = useState<EnvVar[]>([])
 
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
   const { data: cronJobs, isLoading, error } = useQuery<CronJob[]>({
     queryKey: ["cron-jobs", id],
     queryFn: () => apiFetch<CronJob[]>(`/api/groups/${id}/cron-jobs`),
@@ -227,6 +234,7 @@ export default function GroupCronJobsPage() {
 
   return (
     <div className="space-y-4">
+      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Cron Jobs" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Cron Jobs</h1>
