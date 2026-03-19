@@ -26,6 +26,8 @@ celery_app.conf.update(
         "app.tasks.cron_sync.*": {"queue": "long_running"},
         "app.tasks.package_sync.*": {"queue": "long_running"},
         "app.tasks.package_drift.*": {"queue": "long_running"},
+        "app.tasks.resolver_sync.*": {"queue": "long_running"},
+        "app.tasks.resolver_drift.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
     },
