@@ -1,7 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon } from "lucide-react"
 import {
   Dialog,
@@ -15,6 +17,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tooltip } from "@/components/ui/tooltip"
 import { apiFetch } from "@/lib/api"
+import { ruleSchema, type RuleInput } from "@/lib/schemas"
 import type { FirewallRule } from "@/lib/types"
 
 interface RuleDialogProps {
@@ -24,87 +27,63 @@ interface RuleDialogProps {
   rule?: FirewallRule | null
 }
 
-type FormData = {
-  action: string
-  protocol: string
-  direction: string
-  source_cidr: string
-  destination_cidr: string
-  port_start: string
-  port_end: string
-  comment: string
-}
-
-const defaultForm: FormData = {
+const defaultValues: RuleInput = {
   action: "allow",
   protocol: "tcp",
   direction: "input",
   source_cidr: "",
   destination_cidr: "",
-  port_start: "",
-  port_end: "",
+  port_start: null,
+  port_end: null,
   comment: "",
+}
+
+function ruleToFormValues(rule: FirewallRule): RuleInput {
+  return {
+    action: rule.action as RuleInput["action"],
+    protocol: rule.protocol as RuleInput["protocol"],
+    direction: rule.direction as RuleInput["direction"],
+    source_cidr: rule.source_cidr ?? "",
+    destination_cidr: rule.destination_cidr ?? "",
+    port_start: rule.port_start ?? null,
+    port_end: rule.port_end ?? null,
+    comment: rule.comment ?? "",
+  }
 }
 
 export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProps) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState<FormData>(() =>
-    rule
-      ? {
-          action: rule.action,
-          protocol: rule.protocol,
-          direction: rule.direction,
-          source_cidr: rule.source_cidr ?? "",
-          destination_cidr: rule.destination_cidr ?? "",
-          port_start: rule.port_start != null ? String(rule.port_start) : "",
-          port_end: rule.port_end != null ? String(rule.port_end) : "",
-          comment: rule.comment ?? "",
-        }
-      : defaultForm
-  )
   const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
 
-  // Reset form when dialog opens/closes or rule changes
-  const handleOpenChange = (val: boolean) => {
-    if (val) {
-      setForm(
-        rule
-          ? {
-              action: rule.action,
-              protocol: rule.protocol,
-              direction: rule.direction,
-              source_cidr: rule.source_cidr ?? "",
-              destination_cidr: rule.destination_cidr ?? "",
-              port_start: rule.port_start != null ? String(rule.port_start) : "",
-              port_end: rule.port_end != null ? String(rule.port_end) : "",
-              comment: rule.comment ?? "",
-            }
-          : defaultForm
-      )
+  const form = useForm<RuleInput>({
+    resolver: zodResolver(ruleSchema),
+    defaultValues: rule ? ruleToFormValues(rule) : defaultValues,
+    mode: "onSubmit",
+  })
+
+  const protocol = form.watch("protocol")
+  const showPorts = protocol !== "icmp" && protocol !== "any"
+
+  // Reset form when dialog opens or rule changes
+  useEffect(() => {
+    if (open) {
+      form.reset(rule ? ruleToFormValues(rule) : defaultValues)
       setError(null)
     }
-    onOpenChange(val)
-  }
+  }, [open, rule, form])
 
-  const set = (field: keyof FormData) => (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => setForm((f) => ({ ...f, [field]: e.target.value }))
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const onSubmit = form.handleSubmit(async (data) => {
     setError(null)
-    setSubmitting(true)
 
     const body: Record<string, unknown> = {
-      action: form.action,
-      protocol: form.protocol,
-      direction: form.direction,
-      source_cidr: form.source_cidr || null,
-      destination_cidr: form.destination_cidr || null,
-      port_start: form.port_start ? parseInt(form.port_start, 10) : null,
-      port_end: form.port_end ? parseInt(form.port_end, 10) : null,
-      comment: form.comment || null,
+      action: data.action,
+      protocol: data.protocol,
+      direction: data.direction,
+      source_cidr: data.source_cidr || null,
+      destination_cidr: data.destination_cidr || null,
+      port_start: showPorts ? data.port_start : null,
+      port_end: showPorts ? data.port_end : null,
+      comment: data.comment || null,
     }
 
     try {
@@ -123,33 +102,33 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
       onOpenChange(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save rule")
-    } finally {
-      setSubmitting(false)
     }
-  }
+  })
+
+  const { errors, isSubmitting } = form.formState
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
         <DialogHeader>
           <DialogTitle>{rule ? "Edit Rule" : "Add Rule"}</DialogTitle>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4">
           <div className="grid grid-cols-3 gap-4">
             {/* Action */}
             <div className="space-y-1">
               <Label htmlFor="action" className="text-slate-300">Action</Label>
               <select
                 id="action"
-                value={form.action}
-                onChange={set("action")}
+                {...form.register("action")}
                 className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 <option value="allow">Allow</option>
                 <option value="deny">Deny</option>
                 <option value="reject">Reject</option>
               </select>
+              {errors.action?.message && <p className="text-sm text-red-400">{errors.action.message}</p>}
             </div>
 
             {/* Protocol */}
@@ -157,8 +136,7 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
               <Label htmlFor="protocol" className="text-slate-300">Protocol</Label>
               <select
                 id="protocol"
-                value={form.protocol}
-                onChange={set("protocol")}
+                {...form.register("protocol")}
                 className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 <option value="tcp">TCP</option>
@@ -166,6 +144,7 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
                 <option value="icmp">ICMP</option>
                 <option value="any">Any</option>
               </select>
+              {errors.protocol?.message && <p className="text-sm text-red-400">{errors.protocol.message}</p>}
             </div>
 
             {/* Direction */}
@@ -173,13 +152,13 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
               <Label htmlFor="direction" className="text-slate-300">Direction</Label>
               <select
                 id="direction"
-                value={form.direction}
-                onChange={set("direction")}
+                {...form.register("direction")}
                 className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-slate-500"
               >
                 <option value="input">Input</option>
                 <option value="output">Output</option>
               </select>
+              {errors.direction?.message && <p className="text-sm text-red-400">{errors.direction.message}</p>}
             </div>
           </div>
 
@@ -195,10 +174,10 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
                <Input
                  id="source_cidr"
                  placeholder="0.0.0.0/0"
-                 value={form.source_cidr}
-                 onChange={set("source_cidr")}
+                 {...form.register("source_cidr")}
                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
                />
+               {errors.source_cidr?.message && <p className="text-sm text-red-400">{errors.source_cidr.message}</p>}
              </div>
              <div className="space-y-1">
                <div className="flex items-center gap-1.5">
@@ -210,47 +189,49 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
                <Input
                  id="destination_cidr"
                  placeholder="0.0.0.0/0"
-                 value={form.destination_cidr}
-                 onChange={set("destination_cidr")}
+                 {...form.register("destination_cidr")}
                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
                />
+               {errors.destination_cidr?.message && <p className="text-sm text-red-400">{errors.destination_cidr.message}</p>}
              </div>
            </div>
 
-           {/* Ports */}
-           <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1">
-               <div className="flex items-center gap-1.5">
-                 <Label htmlFor="port_start" className="text-slate-300">Port Start</Label>
-                 <Tooltip content="Single port (e.g., 80) or start of range. Leave empty for all ports.">
-                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                 </Tooltip>
+           {/* Ports - only shown for tcp/udp */}
+           {showPorts && (
+             <div className="grid grid-cols-2 gap-4">
+               <div className="space-y-1">
+                 <div className="flex items-center gap-1.5">
+                   <Label htmlFor="port_start" className="text-slate-300">Port Start</Label>
+                   <Tooltip content="Single port (e.g., 80) or start of range. Leave empty for all ports.">
+                     <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
+                   </Tooltip>
+                 </div>
+                 <Input
+                   id="port_start"
+                   type="number"
+                   min={1}
+                   max={65535}
+                   placeholder="e.g. 80"
+                   {...form.register("port_start", { setValueAs: (v: string) => v === "" ? null : parseInt(v, 10) })}
+                   className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                 />
+                 {errors.port_start?.message && <p className="text-sm text-red-400">{errors.port_start.message}</p>}
                </div>
-               <Input
-                 id="port_start"
-                 type="number"
-                 min={1}
-                 max={65535}
-                 placeholder="e.g. 80"
-                 value={form.port_start}
-                 onChange={set("port_start")}
-                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-               />
-             </div>
-            <div className="space-y-1">
-              <Label htmlFor="port_end" className="text-slate-300">Port End <span className="text-slate-500">(optional)</span></Label>
-              <Input
-                id="port_end"
-                type="number"
-                min={1}
-                max={65535}
-                placeholder="e.g. 443"
-                value={form.port_end}
-                onChange={set("port_end")}
-                className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-              />
+              <div className="space-y-1">
+                <Label htmlFor="port_end" className="text-slate-300">Port End <span className="text-slate-500">(optional)</span></Label>
+                <Input
+                  id="port_end"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  placeholder="e.g. 443"
+                  {...form.register("port_end", { setValueAs: (v: string) => v === "" ? null : parseInt(v, 10) })}
+                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+                />
+                {errors.port_end?.message && <p className="text-sm text-red-400">{errors.port_end.message}</p>}
+              </div>
             </div>
-          </div>
+           )}
 
           {/* Comment */}
           <div className="space-y-1">
@@ -259,8 +240,7 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
               id="comment"
               rows={2}
               placeholder="Optional description"
-              value={form.comment}
-              onChange={set("comment")}
+              {...form.register("comment")}
               className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-500 resize-none"
             />
           </div>
@@ -274,12 +254,12 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              disabled={submitting}
+              disabled={isSubmitting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Saving…" : rule ? "Save Changes" : "Add Rule"}
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Saving…" : rule ? "Save Changes" : "Add Rule"}
             </Button>
           </DialogFooter>
         </form>

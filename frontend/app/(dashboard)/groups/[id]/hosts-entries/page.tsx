@@ -1,8 +1,10 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
+import { hostsEntrySchema, type HostsEntryInput } from "@/lib/schemas"
 import { showError } from "@/lib/toast"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -41,14 +44,14 @@ export default function GroupHostsEntriesPage() {
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
 
-  // Form fields
-  const [ipAddress, setIpAddress] = useState("")
-  const [hostname, setHostname] = useState("")
-  const [aliases, setAliases] = useState("")
-  const [comment, setComment] = useState("")
-  const [priority, setPriority] = useState(100)
+  const entryDefaults: HostsEntryInput = { ip_address: "", hostname: "", aliases: "", comment: "", priority: 100 }
+
+  const form = useForm<HostsEntryInput>({
+    resolver: zodResolver(hostsEntrySchema),
+    defaultValues: entryDefaults,
+    mode: "onSubmit",
+  })
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
@@ -65,40 +68,41 @@ export default function GroupHostsEntriesPage() {
 
   function openCreateDialog() {
     setEditingEntry(null)
-    setIpAddress("")
-    setHostname("")
-    setAliases("")
-    setComment("")
-    setPriority(100)
+    form.reset(entryDefaults)
     setFormError(null)
     setDialogOpen(true)
   }
 
   function openEditDialog(entry: HostsEntry) {
     setEditingEntry(entry)
-    setIpAddress(entry.ip_address)
-    setHostname(entry.hostname)
-    setAliases(entry.aliases.join(", "))
-    setComment(entry.comment ?? "")
-    setPriority(entry.priority)
     setFormError(null)
     setDialogOpen(true)
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
+  useEffect(() => {
+    if (dialogOpen && editingEntry) {
+      form.reset({
+        ip_address: editingEntry.ip_address,
+        hostname: editingEntry.hostname,
+        aliases: editingEntry.aliases.join(", "),
+        comment: editingEntry.comment ?? "",
+        priority: editingEntry.priority,
+      })
+    }
+  }, [dialogOpen, editingEntry, form])
+
+  const onSubmit = form.handleSubmit(async (data) => {
     setFormError(null)
-    setFormLoading(true)
 
     const payload = {
-      ip_address: ipAddress,
-      hostname,
-      aliases: aliases
+      ip_address: data.ip_address,
+      hostname: data.hostname,
+      aliases: (data.aliases ?? "")
         .split(",")
-        .map((a) => a.trim())
+        .map((a: string) => a.trim())
         .filter(Boolean),
-      comment: comment || null,
-      priority,
+      comment: data.comment || null,
+      priority: data.priority,
     }
 
     try {
@@ -117,10 +121,8 @@ export default function GroupHostsEntriesPage() {
       setDialogOpen(false)
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to save hosts entry")
-    } finally {
-      setFormLoading(false)
     }
-  }
+  })
 
   function handleDelete(entry: HostsEntry) {
     setConfirmState({
@@ -227,17 +229,16 @@ export default function GroupHostsEntriesPage() {
           <DialogHeader>
             <DialogTitle>{editingEntry ? "Edit Hosts Entry" : "Add Hosts Entry"}</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <form onSubmit={onSubmit} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label htmlFor="entry-ip">IP Address</Label>
               <Input
                 id="entry-ip"
                 type="text"
                 placeholder="e.g. 192.168.1.10"
-                value={ipAddress}
-                onChange={(e) => setIpAddress(e.target.value)}
-                required
+                {...form.register("ip_address")}
               />
+              {form.formState.errors.ip_address?.message && <p className="text-sm text-red-400">{form.formState.errors.ip_address.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -246,10 +247,9 @@ export default function GroupHostsEntriesPage() {
                 id="entry-hostname"
                 type="text"
                 placeholder="e.g. myserver.local"
-                value={hostname}
-                onChange={(e) => setHostname(e.target.value)}
-                required
+                {...form.register("hostname")}
               />
+              {form.formState.errors.hostname?.message && <p className="text-sm text-red-400">{form.formState.errors.hostname.message}</p>}
             </div>
 
             <div className="space-y-2">
@@ -258,8 +258,7 @@ export default function GroupHostsEntriesPage() {
                 id="entry-aliases"
                 type="text"
                 placeholder="e.g. myserver, ms"
-                value={aliases}
-                onChange={(e) => setAliases(e.target.value)}
+                {...form.register("aliases")}
               />
             </div>
 
@@ -269,8 +268,7 @@ export default function GroupHostsEntriesPage() {
                 id="entry-comment"
                 type="text"
                 placeholder="Optional comment"
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
+                {...form.register("comment")}
               />
             </div>
 
@@ -279,11 +277,10 @@ export default function GroupHostsEntriesPage() {
               <Input
                 id="entry-priority"
                 type="number"
-                value={priority}
-                onChange={(e) => setPriority(Number(e.target.value))}
-                required
                 min={0}
+                {...form.register("priority", { valueAsNumber: true })}
               />
+              {form.formState.errors.priority?.message && <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>}
             </div>
 
             {formError && (
@@ -291,8 +288,8 @@ export default function GroupHostsEntriesPage() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={formLoading}>
-                {formLoading ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
               </Button>
               <Button
                 type="button"

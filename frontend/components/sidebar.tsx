@@ -3,9 +3,12 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
 import { API_BASE } from "@/lib/api"
+import { passwordChangeSchema, type PasswordChangeInput } from "@/lib/schemas"
 import { showSuccess, showError } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import {
@@ -22,9 +25,12 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
   const { user, logout } = useAuth()
 
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
-  const [newPassword, setNewPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [passwordLoading, setPasswordLoading] = useState(false)
+
+  const form = useForm<PasswordChangeInput>({
+    resolver: zodResolver(passwordChangeSchema),
+    defaultValues: { new_password: "", confirm_password: "" },
+    mode: "onSubmit",
+  })
 
   const navItems = [
     { href: "/dashboard", label: "Dashboard" },
@@ -36,36 +42,25 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     { href: "/audit", label: "Audit Log" },
   ]
 
-  async function handlePasswordChange(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-
-    if (newPassword !== confirmPassword) {
-      showError("Passwords do not match")
-      return
-    }
-
-    setPasswordLoading(true)
+  const onPasswordSubmit = form.handleSubmit(async (data) => {
     try {
       const res = await fetch(`${API_BASE}/api/users/me`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ password: newPassword }),
+        body: JSON.stringify({ password: data.new_password }),
       })
       if (!res.ok) {
-        const data = await res.json().catch(() => null)
-        throw new Error(data?.detail || "Failed to update password")
+        const err = await res.json().catch(() => null)
+        throw new Error(err?.detail || "Failed to update password")
       }
-      showSuccess("Password updated successfully")
-      setNewPassword("")
-      setConfirmPassword("")
+      form.reset()
       setPasswordDialogOpen(false)
+      showSuccess("Password updated successfully")
     } catch (err) {
       showError(err instanceof Error ? err.message : "Failed to update password")
-    } finally {
-      setPasswordLoading(false)
     }
-  }
+  })
 
   return (
     <aside className="w-64 border-r border-slate-700 bg-slate-950 p-6 flex flex-col h-full">
@@ -96,8 +91,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         <div className="text-sm text-slate-300 truncate">{user?.email}</div>
         <div className="flex gap-2 mt-2">
            <Button size="sm" variant="outline" onClick={() => {
-            setNewPassword("")
-            setConfirmPassword("")
+            form.reset()
             setPasswordDialogOpen(true)
           }}>
             Change Password
@@ -110,27 +104,26 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
 
       <Dialog open={passwordDialogOpen} onOpenChange={(open) => {
         setPasswordDialogOpen(open)
-        if (!open) {
-          setNewPassword("")
-          setConfirmPassword("")
-        }
+        if (!open) form.reset()
       }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Password</DialogTitle>
           </DialogHeader>
-          <form onSubmit={handlePasswordChange} className="space-y-4 mt-2">
+          <form onSubmit={onPasswordSubmit} className="space-y-4 mt-2">
             <div className="space-y-2">
               <Label htmlFor="new-password">New Password</Label>
-              <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+              <Input id="new-password" type="password" {...form.register("new_password")} />
+              {form.formState.errors.new_password?.message && <p className="text-sm text-red-400">{form.formState.errors.new_password.message}</p>}
             </div>
              <div className="space-y-2">
                <Label htmlFor="confirm-password">Confirm New Password</Label>
-               <Input id="confirm-password" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
+               <Input id="confirm-password" type="password" {...form.register("confirm_password")} />
+               {form.formState.errors.confirm_password?.message && <p className="text-sm text-red-400">{form.formState.errors.confirm_password.message}</p>}
              </div>
              <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={passwordLoading}>
-                {passwordLoading ? "Updating..." : "Update Password"}
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
               </Button>
               <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)}>
                 Cancel
