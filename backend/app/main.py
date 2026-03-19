@@ -33,6 +33,7 @@ from app.api.packages import router as packages_router
 from app.api.package_sync import router as package_sync_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
+from app.api.ssh_terminal import router as ssh_terminal_router
 
 
 def create_app() -> FastAPI:
@@ -91,8 +92,8 @@ def create_app() -> FastAPI:
     app.include_router(package_sync_router, prefix="/api")
     app.include_router(resolver_router, prefix="/api")
     app.include_router(resolver_sync_router, prefix="/api")
+    app.include_router(ssh_terminal_router)
 
-    # Webhooks at /webhooks/ (NOT under /api prefix)
     app.include_router(webhooks_router)
 
     @app.get("/health")
