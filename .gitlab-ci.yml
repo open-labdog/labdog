@@ -146,6 +146,7 @@ build-packages:
   image: ubuntu:22.04
   variables:
     NFPM_VERSION: "2.41.1"
+    DEBIAN_FRONTEND: noninteractive
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq software-properties-common curl tar gzip dpkg-dev rpm
