@@ -4,8 +4,8 @@ set -e
 case "$1" in
     remove|upgrade|deconfigure)
         if command -v systemctl > /dev/null 2>&1; then
-            systemctl stop barricade.target 2>/dev/null || true
-            systemctl disable barricade.target 2>/dev/null || true
+            systemctl stop barricade.service 2>/dev/null || true
+            systemctl disable barricade.service 2>/dev/null || true
         fi
         ;;
 esac

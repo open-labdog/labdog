@@ -180,6 +180,16 @@ These are static analysis issues that do not affect runtime behavior. Documented
 
 ---
 
+## Found During Single Service Consolidation (2026-03-20)
+
+- [x] **BUG-27** `backend/app/api/services.py:71` — `'str' object has no attribute 'value'` in service create
+  `ServiceRuleCreate` schema passes `state` as a string (e.g. `"running"`) but the API handler at line 71 calls `rule.state.value` expecting a `ServiceState` enum instance. Before `db.flush()`, `rule.state` is still the raw string from `model_dump()`, so `.value` crashes with `AttributeError`. Affected all 8 audit log calls across group and host CRUD endpoints.
+  **Fix applied**: Replaced `rule.state.value` with `str(rule.state)` at all 8 call sites. Works for both string and enum values since `ServiceState(str, Enum)`.
+  **Tests affected**: `test_services.py::test_create_group_service`, `test_services.py::test_effective_services` — now pass.
+  **Discovered by**: Running test suite during single-service consolidation
+
+---
+
 ## Fixed
 
 All 12 original bugs fixed on 2026-03-17.

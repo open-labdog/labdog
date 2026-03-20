@@ -34,7 +34,7 @@ async def start_scan(
     """Start a network discovery scan. Returns job_id for polling."""
     # Validate CIDR
     try:
-        network = validate_cidr(body.cidr, settings.DISCOVERY_MIN_PREFIX)
+        network = validate_cidr(body.cidr, settings.discovery.min_prefix)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
@@ -114,11 +114,11 @@ async def add_discovered_hosts(
     import socket as _socket
 
     # Validate request size
-    if len(body.ips) > settings.DISCOVERY_MAX_BULK_ADD:
+    if len(body.ips) > settings.discovery.max_bulk_add:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Too many hosts. Maximum is {settings.DISCOVERY_MAX_BULK_ADD}, "
+                f"Too many hosts. Maximum is {settings.discovery.max_bulk_add}, "
                 f"got {len(body.ips)}."
             )
         )

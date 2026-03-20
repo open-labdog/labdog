@@ -178,7 +178,7 @@ def _register_resolver_drift_schedule():
 
     from app.config import settings
 
-    interval = schedule(run_every=settings.DRIFT_CHECK_INTERVAL_MINUTES * 60)
+    interval = schedule(run_every=settings.drift.check_interval_minutes * 60)
     entry = RedBeatSchedulerEntry(
         name="check-resolver-drift-periodic",
         task="app.tasks.resolver_drift.check_all_resolver_drift",

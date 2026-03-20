@@ -21,14 +21,14 @@ Commands:
   status      Show running dev processes
   logs        Tail all dev logs
   infra       Start only postgres + redis (docker)
-  backend     Start only backend (uvicorn + celery)
+  backend     Start only backend (barricade + celery)
   frontend    Start only frontend (next dev)
   migrate     Run alembic upgrade head
   migrate-down  Roll back one migration (alembic downgrade -1)
   migrate-new <msg>  Generate a new migration (alembic revision --autogenerate)
 
 Infrastructure (postgres, redis) runs via docker compose.
-Backend (uvicorn, celery worker, celery beat) and frontend (next dev) run as local processes.
+Backend (barricade, celery worker, celery beat) and frontend (next dev) run as local processes.
 EOF
   exit 1
 }
@@ -76,11 +76,11 @@ start_backend() {
   log "Running migrations..."
   (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" upgrade head)
 
-  # Uvicorn
-  log "Starting uvicorn..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/uvicorn" app.main:app --host 0.0.0.0 --port 8000 --reload \
-    >"${logdir}/uvicorn.log" 2>&1) &
-  echo $! > "${PIDFILE_DIR}/uvicorn.pid"
+  # Barricade (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
+  log "Starting barricade..."
+  (cd "${SCRIPT_DIR}/backend" && "${VENV}/python" -m app --reload --no-celery --skip-migrate \
+    >"${logdir}/barricade.log" 2>&1) &
+  echo $! > "${PIDFILE_DIR}/barricade.pid"
 
   # Celery worker
   log "Starting celery worker..."
@@ -96,7 +96,7 @@ start_backend() {
     >"${logdir}/celery-beat.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-beat.pid"
 
-  log "Backend running — uvicorn at http://localhost:8000"
+  log "Backend running — barricade at http://localhost:8000"
 }
 
 kill_pattern() {
@@ -116,10 +116,10 @@ kill_pattern() {
 }
 
 stop_backend() {
-  kill_pattern "uvicorn app.main:app" "uvicorn"
+  kill_pattern "python -m app" "barricade"
   kill_pattern "celery -A app.tasks worker" "celery-worker"
   kill_pattern "celery -A app.tasks beat" "celery-beat"
-  rm -f "${PIDFILE_DIR}"/{uvicorn,celery-worker,celery-beat}.pid 2>/dev/null
+  rm -f "${PIDFILE_DIR}"/{barricade,celery-worker,celery-beat}.pid 2>/dev/null
 }
 
 #--- Frontend ---
@@ -202,10 +202,10 @@ show_status() {
   done
 
   if port_listening 8000; then
-    printf "  %-20s %s\n" "uvicorn" "running (:8000)"
+    printf "  %-20s %s\n" "barricade" "running (:8000)"
     running=$((running + 1))
   else
-    printf "  %-20s %s\n" "uvicorn" "stopped"
+    printf "  %-20s %s\n" "barricade" "stopped"
   fi
 
   if pgrep -f "celery -A app.tasks worker" &>/dev/null; then

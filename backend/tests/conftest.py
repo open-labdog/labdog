@@ -28,10 +28,10 @@ def pg_url():
         )
         from app.config import settings
         from app.crypto.key_management import generate_master_key
-        settings.DATABASE_URL = async_url
-        settings.ENCRYPTION_KEY = generate_master_key()
+        settings.database.url = async_url
+        settings.security.encryption_key = generate_master_key()
         env = os.environ.copy()
-        env["DATABASE_URL"] = async_url
+        env["BARRICADE_DATABASE__URL"] = async_url
         alembic_path = str(Path(sys.executable).parent / "alembic")
         result = subprocess.run(
             [alembic_path, "upgrade", "head"],

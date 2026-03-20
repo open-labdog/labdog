@@ -1,3 +1,6 @@
+# Frontend build-only image (static export)
+# For production, use the root Dockerfile which builds frontend + backend together.
+# This file is useful for CI or standalone frontend builds.
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
@@ -5,15 +8,12 @@ RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
+# Output: /app/out/
 
-FROM node:20-alpine AS runner
+# Serve with a lightweight static server (for standalone testing)
+FROM node:20-alpine
+RUN npm install -g serve
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
-COPY --from=builder /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-USER nextjs
+COPY --from=builder /app/out ./out
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["serve", "out", "-l", "3000", "-s"]

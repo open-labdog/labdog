@@ -41,6 +41,7 @@ All extensions support **group-level defaults + per-host overrides** with priori
 | 14 | **Group Hosts View** | [`group-hosts-view.md`](group-hosts-view.md) | S | ✅ Shipped | Group badges column, group filter dropdown, flat/grouped view toggle with collapsible sections. Frontend-only. |
 | 15 | **Group Categories** | _Inline implementation_ | S | ✅ Shipped | Category field on HostGroup. Groups page category view toggle with collapsible sections. |
 | 16 | **GitLab CI/CD** | _Inline implementation_ | S | ✅ Shipped | Container build + package build pipelines. Test, build, package, release stages. |
+| 17 | **Single Service** | [`single-service.md`](single-service.md) | M | ✅ Shipped | Consolidate 5 systemd services into 1. Static frontend export, embedded Celery subprocess, startup migrations. Eliminates Node.js dependency. TOML config replaces .env. Rate limiting, security headers, TLS support. |
 
 ### Execution Order
 Service Management (#1) was built first — it created `host_module_status` and `SyncJob.module_type` that all other modules reuse. /etc/hosts (#3), User Management (#8), GitOps Frontend (#9), and Host Discovery (#10) are also complete. Modules #1a, #2, #4–7, #11 can be built in any order.

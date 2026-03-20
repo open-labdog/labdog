@@ -68,7 +68,7 @@ async def create_group_service(
         entity_type="service_rule",
         entity_id=rule.id,
         user_id=user.id,
-        after_state={"service_name": rule.service_name, "state": rule.state.value},
+        after_state={"service_name": rule.service_name, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -96,7 +96,7 @@ async def update_group_service(
     if not rule:
         raise HTTPException(status_code=404, detail="Service rule not found")
 
-    before = {"service_name": rule.service_name, "state": rule.state.value}
+    before = {"service_name": rule.service_name, "state": str(rule.state)}
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(rule, field, value)
@@ -110,7 +110,7 @@ async def update_group_service(
         entity_id=rule.id,
         user_id=user.id,
         before_state=before,
-        after_state={"service_name": rule.service_name, "state": rule.state.value},
+        after_state={"service_name": rule.service_name, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -134,7 +134,7 @@ async def delete_group_service(
     if not rule:
         raise HTTPException(status_code=404, detail="Service rule not found")
 
-    before = {"service_name": rule.service_name, "state": rule.state.value}
+    before = {"service_name": rule.service_name, "state": str(rule.state)}
     rule_id_for_log = rule.id
 
     await db.delete(rule)
@@ -199,7 +199,7 @@ async def create_host_service(
         entity_type="service_rule",
         entity_id=rule.id,
         user_id=user.id,
-        after_state={"service_name": rule.service_name, "state": rule.state.value},
+        after_state={"service_name": rule.service_name, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -227,7 +227,7 @@ async def update_host_service(
     if not rule:
         raise HTTPException(status_code=404, detail="Service rule not found")
 
-    before = {"service_name": rule.service_name, "state": rule.state.value}
+    before = {"service_name": rule.service_name, "state": str(rule.state)}
 
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(rule, field, value)
@@ -241,7 +241,7 @@ async def update_host_service(
         entity_id=rule.id,
         user_id=user.id,
         before_state=before,
-        after_state={"service_name": rule.service_name, "state": rule.state.value},
+        after_state={"service_name": rule.service_name, "state": str(rule.state)},
     )
     await db.commit()
     await db.refresh(rule)
@@ -265,7 +265,7 @@ async def delete_host_service(
     if not rule:
         raise HTTPException(status_code=404, detail="Service rule not found")
 
-    before = {"service_name": rule.service_name, "state": rule.state.value}
+    before = {"service_name": rule.service_name, "state": str(rule.state)}
     rule_id_for_log = rule.id
 
     await db.delete(rule)

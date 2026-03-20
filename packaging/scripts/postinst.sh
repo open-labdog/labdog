@@ -22,23 +22,17 @@ case "$1" in
             echo "Barricade installed successfully."
             echo ""
             echo "Next steps:"
-            echo "  1. Edit /etc/barricade/barricade.env with your configuration"
-            echo "     (update SECRET_KEY, ENCRYPTION_KEY, DATABASE_URL, BARRICADE_SERVER_IP)"
-            echo "  2. Enable and start all services:"
-            echo "     systemctl enable --now barricade.target"
+            echo "  1. Edit /etc/barricade/barricade.toml with your configuration"
+            echo "     (update [security] secret_key, encryption_key, [database] url, barricade_server_ip)"
+            echo "  2. Enable and start the service:"
+            echo "     systemctl enable --now barricade.service"
             echo "  3. Check status:"
-            echo "     systemctl status barricade.target"
+            echo "     systemctl status barricade.service"
             echo ""
         else
-            if grep -q '^DATABASE_URL=' /etc/barricade/barricade.env 2>/dev/null; then
-                echo "Running database migrations..."
-                systemctl start barricade-migrate.service 2>/dev/null || true
+            if systemctl is-active --quiet barricade.service 2>/dev/null; then
+                systemctl restart barricade.service 2>/dev/null || true
             fi
-            for svc in barricade-api barricade-worker barricade-beat barricade-frontend; do
-                if systemctl is-active --quiet "$svc.service" 2>/dev/null; then
-                    systemctl restart "$svc.service" 2>/dev/null || true
-                fi
-            done
         fi
         ;;
 esac

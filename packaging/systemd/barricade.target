@@ -1,8 +1,0 @@
-[Unit]
-Description=Barricade Application
-Documentation=https://github.com/barricade/barricade
-After=network-online.target
-Wants=network-online.target
-
-[Install]
-WantedBy=multi-user.target

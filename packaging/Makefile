@@ -1,5 +1,5 @@
 # Barricade packaging Makefile
-# Build orchestration for venv, frontend, node, tarball, deb, rpm
+# Build orchestration for venv, frontend, tarball, deb, rpm
 
 SHELL := /bin/bash
 
@@ -7,25 +7,20 @@ SHELL := /bin/bash
 VERSION      ?= $(shell grep '^version' ../backend/pyproject.toml 2>/dev/null | head -1 | sed 's/.*= *"\(.*\)"/\1/' || echo "0.1.0")
 ARCH         ?= amd64
 PYTHON       ?= python3.12
-NODE_VERSION ?= 20.18.1
 DESTDIR      ?= $(CURDIR)/staging
 PREFIX       ?= /usr/lib/barricade
 DIST         ?= $(CURDIR)/dist
 
-NODE_DIST_URL := https://nodejs.org/dist/v$(NODE_VERSION)/node-v$(NODE_VERSION)-linux-x64.tar.xz
-NODE_CACHE    := $(CURDIR)/.cache/node-v$(NODE_VERSION)-linux-x64.tar.xz
-
 # --- Phony targets ---
-.PHONY: help build build-venv build-frontend download-node clean deb rpm tarball all
+.PHONY: help build build-venv build-frontend clean deb rpm tarball all
 
 # --- Default ---
 help:
 	@echo "Barricade packaging targets:"
 	@echo ""
-	@echo "  build           Build all components (venv + frontend + node)"
+	@echo "  build           Build all components (venv + frontend)"
 	@echo "  build-venv      Create Python venv with production dependencies"
-	@echo "  build-frontend  Build Next.js standalone output"
-	@echo "  download-node   Download and strip Node.js binary"
+	@echo "  build-frontend  Build Next.js static export"
 	@echo "  deb             Build .deb package (requires nfpm)"
 	@echo "  rpm             Build .rpm package (requires nfpm)"
 	@echo "  tarball         Build installable tarball"
@@ -34,10 +29,10 @@ help:
 	@echo ""
 	@echo "Variables:"
 	@echo "  VERSION=$(VERSION)  ARCH=$(ARCH)  PYTHON=$(PYTHON)"
-	@echo "  NODE_VERSION=$(NODE_VERSION)  DESTDIR=$(DESTDIR)  PREFIX=$(PREFIX)"
+	@echo "  DESTDIR=$(DESTDIR)  PREFIX=$(PREFIX)"
 
 # --- Aggregate ---
-build: build-venv build-frontend download-node
+build: build-venv build-frontend
 
 # --- build-venv ---
 build-venv:
@@ -66,34 +61,12 @@ build-venv:
 
 # --- build-frontend ---
 build-frontend:
-	@echo "[build-frontend] Building Next.js standalone..."
+	@echo "[build-frontend] Building Next.js static export..."
 	cd ../frontend && npm ci --silent
 	cd ../frontend && npm run build
 	@mkdir -p $(DESTDIR)$(PREFIX)/frontend
-	cp -r ../frontend/.next/standalone/. $(DESTDIR)$(PREFIX)/frontend/
-	cp -r ../frontend/public $(DESTDIR)$(PREFIX)/frontend/public
-	mkdir -p $(DESTDIR)$(PREFIX)/frontend/.next/static
-	cp -r ../frontend/.next/static/. $(DESTDIR)$(PREFIX)/frontend/.next/static/
-	@echo "✓ frontend built at $(DESTDIR)$(PREFIX)/frontend"
-
-# --- download-node ---
-download-node:
-	@echo "[download-node] Downloading Node.js v$(NODE_VERSION)..."
-	@mkdir -p $(CURDIR)/.cache $(DESTDIR)$(PREFIX)/node/bin
-	@if [ ! -f $(NODE_CACHE) ]; then \
-		curl -fsSL --progress-bar -o $(NODE_CACHE) $(NODE_DIST_URL); \
-	else \
-		echo "[download-node] Using cached $(NODE_CACHE)"; \
-	fi
-	@echo "[download-node] Extracting node binary..."
-	tar -xJf $(NODE_CACHE) --strip-components=2 -C $(DESTDIR)$(PREFIX)/node/bin \
-		node-v$(NODE_VERSION)-linux-x64/bin/node
-	@if command -v strip >/dev/null 2>&1; then \
-		strip $(DESTDIR)$(PREFIX)/node/bin/node; \
-		echo "[download-node] Stripped debug symbols"; \
-	fi
-	@$(DESTDIR)$(PREFIX)/node/bin/node --version
-	@echo "✓ node binary at $(DESTDIR)$(PREFIX)/node/bin/node"
+	cp -r ../frontend/out $(DESTDIR)$(PREFIX)/frontend/out
+	@echo "✓ frontend built at $(DESTDIR)$(PREFIX)/frontend/out"
 
 # --- clean ---
 clean:

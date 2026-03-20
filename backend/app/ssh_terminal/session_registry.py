@@ -101,10 +101,13 @@ class SessionRegistry:
                 pass
 
 
-# Singleton instance — import this from other modules
-registry = SessionRegistry()
+# Singleton instance — uses settings from config
+def _create_registry() -> SessionRegistry:
+    from app.config import settings
+    return SessionRegistry(
+        max_per_user=settings.ssh.max_sessions_per_user,
+        max_total=settings.ssh.max_total_sessions,
+    )
 
 
-def init_registry(max_per_user: int, max_total: int) -> None:
-    global registry
-    registry = SessionRegistry(max_per_user=max_per_user, max_total=max_total)
+registry = _create_registry()

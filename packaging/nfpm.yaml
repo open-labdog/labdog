@@ -13,7 +13,7 @@ description: |
 homepage: https://github.com/barricade/barricade
 license: MIT
 
-# Runtime deps (Python deps bundled in venv; Node.js binary embedded)
+# Runtime deps (Python deps bundled in venv)
 depends:
   - python3 (>= 3.12)
 
@@ -22,7 +22,7 @@ recommends:
   - redis-tools
 
 contents:
-  # ── Application code (venv + backend + frontend + node) ────────────────
+  # ── Application code (venv + backend + frontend) ──────────────────────
   - src: staging/usr/lib/barricade/
     dst: /usr/lib/barricade/
     type: tree
@@ -32,8 +32,8 @@ contents:
       mode: "0755"
 
   # ── Config file (config|noreplace — preserved on upgrade) ─────────────
-  - src: etc/barricade.env
-    dst: /etc/barricade/barricade.env
+  - src: etc/barricade.toml
+    dst: /etc/barricade/barricade.toml
     type: config|noreplace
     file_info:
       mode: "0640"
@@ -41,18 +41,8 @@ contents:
       group: barricade
 
   # ── Systemd units ──────────────────────────────────────────────────────
-  - src: systemd/barricade.target
-    dst: /usr/lib/systemd/system/barricade.target
-  - src: systemd/barricade-migrate.service
-    dst: /usr/lib/systemd/system/barricade-migrate.service
-  - src: systemd/barricade-api.service
-    dst: /usr/lib/systemd/system/barricade-api.service
-  - src: systemd/barricade-worker.service
-    dst: /usr/lib/systemd/system/barricade-worker.service
-  - src: systemd/barricade-beat.service
-    dst: /usr/lib/systemd/system/barricade-beat.service
-  - src: systemd/barricade-frontend.service
-    dst: /usr/lib/systemd/system/barricade-frontend.service
+  - src: systemd/barricade.service
+    dst: /usr/lib/systemd/system/barricade.service
 
   # ── tmpfiles.d ─────────────────────────────────────────────────────────
   - src: tmpfiles.d/barricade.conf

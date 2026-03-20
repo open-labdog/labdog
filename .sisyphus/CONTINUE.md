@@ -13,8 +13,8 @@ Centralized Linux firewall management via Ansible. Define firewall rules in a we
 | Area | What | Key Files |
 |------|------|-----------|
 | **Backend scaffold** | FastAPI + SQLAlchemy async + Alembic migrations | `backend/app/main.py`, `backend/alembic/` |
-| **Frontend scaffold** | Next.js 16 + shadcn/ui + TanStack Query + dark theme | `frontend/app/`, `frontend/components/` |
-| **Infrastructure** | Docker Compose (7 services: postgres, redis, backend, frontend, celery worker/beat, migrate) | `docker-compose.yml` |
+| **Frontend scaffold** | Next.js 16 (static export) + shadcn/ui + TanStack Query + dark theme, served by FastAPI | `frontend/app/`, `frontend/components/` |
+| **Infrastructure** | Docker Compose (3 services: postgres, redis, backend). Single `python -m app` process runs API + Celery + migrations. | `docker-compose.yml` |
 | **Database** | 9 SQLAlchemy models + Alembic migrations | `backend/app/models/` |
 | **Auth** | JWT via fastapi-users, httpOnly cookie (`barricade_auth`), first-user auto-promotes to superuser, registration gated (closed after first user) | `backend/app/auth/users.py`, `backend/app/api/auth_setup.py` |
 | **User management** | Admin CRUD API with last-superuser guard, superuser-only `/users` page, sidebar logout + password change | `backend/app/api/admin_users.py`, `frontend/app/(dashboard)/users/page.tsx` |
@@ -83,8 +83,8 @@ Centralized Linux firewall management via Ansible. Define firewall rules in a we
 
 See [`.sisyphus/plans/MASTER-PLAN.md`](plans/MASTER-PLAN.md) for the full extension roadmap, current status of each module, and work tracking protocol.
 
-**Shipped extensions**: Service Management (#1), /etc/hosts (#3)
-**Planned extensions**: Service Live Control (#1a), Linux User Management (#2), Package Management (#4), Cron Jobs (#5), DNS Resolver (#6), TLS Certificates (#7)
+**Shipped extensions**: All 16 modules shipped. See MASTER-PLAN.md for details.
+**Latest**: Single Service consolidation (#17) — TOML config, static frontend export, single systemd service, no Node.js dependency.
 
 ---
 
@@ -102,22 +102,30 @@ When working on any plan or bug:
 
 | Component | Technology | Port |
 |-----------|-----------|------|
-| Frontend | Next.js 16 + shadcn/ui + TanStack Query | 3000 |
+| Frontend | Next.js 16 (static export) + shadcn/ui + TanStack Query | served from :8000 |
 | Backend | FastAPI + SQLAlchemy (async) + asyncpg | 8000 |
 | Database | PostgreSQL 16 | 5432 |
-| Task queue | Celery + Redis + RedBeat scheduler | — |
+| Task queue | Celery + Redis + RedBeat (embedded subprocess) | — |
 | Config mgmt | Ansible (ansible-runner) | — |
 | State collection | asyncssh | — |
+| Config format | TOML (`barricade.toml`) | — |
+
+Single process: `python -m app` runs migrations, starts Celery worker+beat subprocess, serves API + static frontend.
 
 ## Quick Start
 
 ```bash
-cp .env.example .env
-# Generate ENCRYPTION_KEY + SECRET_KEY (see README.md)
+# Edit barricade.toml (generate secret_key + encryption_key with: openssl rand -base64 32)
 docker compose up -d
-# Frontend: http://localhost:3000
-# API: http://localhost:8000
+# UI + API: http://localhost:8000
 # First user to register automatically becomes superuser
+```
+
+For local development (without Docker for the app):
+```bash
+./dev.sh start
+# Frontend (hot-reload): http://localhost:3000
+# Backend API: http://localhost:8000
 ```
 
 ## Running Tests

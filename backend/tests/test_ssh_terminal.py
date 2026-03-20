@@ -13,7 +13,7 @@ from app.ssh_terminal.session_registry import SessionRegistry, SessionInfo
 def _make_token(user_id: int) -> str:
     return jwt.encode(
         {"sub": str(user_id), "aud": ["fastapi-users:auth"]},
-        settings.SECRET_KEY,
+        settings.security.secret_key,
         algorithm="HS256",
     )
 

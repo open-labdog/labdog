@@ -60,7 +60,7 @@ class TestFullWorkflow:
             import os
 
             env = os.environ.copy()
-            env["DATABASE_URL"] = async_url
+            env["BARRICADE_DATABASE__URL"] = async_url
 
             result = subprocess.run(
                 ["alembic", "upgrade", "head"],
@@ -74,8 +74,8 @@ class TestFullWorkflow:
             # Patch app settings to use test DB
             from app.config import settings
 
-            original_db_url = settings.DATABASE_URL
-            settings.DATABASE_URL = async_url
+            original_db_url = settings.database.url
+            settings.database.url = async_url
 
             # Rebuild the DB engine with the test URL
             import app.db as db_module
@@ -102,7 +102,7 @@ class TestFullWorkflow:
                 yield
 
             # Restore
-            settings.DATABASE_URL = original_db_url
+            settings.database.url = original_db_url
             db_module.engine = original_engine
             db_module.AsyncSessionLocal = original_session_local
             await test_engine.dispose()
