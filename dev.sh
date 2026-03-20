@@ -130,7 +130,7 @@ start_frontend() {
   mkdir -p "${logdir}"
 
   log "Starting next dev..."
-  (cd "${SCRIPT_DIR}/frontend" && npm run dev \
+  (cd "${SCRIPT_DIR}/frontend" && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev \
     >"${logdir}/frontend.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/frontend.pid"
 
