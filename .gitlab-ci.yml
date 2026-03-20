@@ -48,8 +48,8 @@ backend-test:
   script:
     - cd backend
     - pip install uv
-    - uv pip install --system '.[test]'
-    - pytest tests/ -v
+    - uv pip install --system '.[dev]'
+    - python -m pytest tests/ -v
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH
