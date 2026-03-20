@@ -41,11 +41,7 @@ build-venv:
 	$(PYTHON) -m venv $(DESTDIR)$(PREFIX)/venv
 	$(DESTDIR)$(PREFIX)/venv/bin/pip install --upgrade pip --quiet
 	@echo "[build-venv] Installing backend dependencies..."
-	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir ../backend/
-	@echo "[build-venv] Installed packages:"
-	@$(DESTDIR)$(PREFIX)/venv/bin/pip list
-	@echo "[build-venv] venv/bin contents:"
-	@ls $(DESTDIR)$(PREFIX)/venv/bin/
+	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir --quiet ../backend/
 	@echo "[build-venv] Fixing shebangs..."
 	@find $(DESTDIR)$(PREFIX)/venv/bin -maxdepth 1 -type f | while read f; do \
 		head -c2 "$$f" | grep -q '^#!' && sed -i "1s|$(DESTDIR)||g" "$$f" || true; \
