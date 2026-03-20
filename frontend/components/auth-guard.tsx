@@ -1,32 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '@/lib/auth'
 
 const PUBLIC_PATHS = ['/login', '/register']
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const [checked, setChecked] = useState(false)
+  const { user, loading } = useAuth()
 
   useEffect(() => {
-    const hasAuth = document.cookie.split(';').some(c => c.trim().startsWith('barricade_auth='))
+    if (loading) return
+
     const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
 
-    if (!hasAuth && !isPublic) {
+    if (!user && !isPublic) {
       window.location.replace('/login')
-      return
     }
 
-    if (hasAuth && isPublic) {
+    if (user && isPublic) {
       window.location.replace('/dashboard')
-      return
     }
+  }, [user, loading, pathname])
 
-    setChecked(true)
-  }, [pathname])
-
-  if (!checked) return null
+  if (loading) return null
 
   return <>{children}</>
 }
