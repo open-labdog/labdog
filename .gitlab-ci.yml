@@ -121,59 +121,95 @@ build-frontend-image:
 build-packages:
   stage: package
   image: ubuntu:22.04
+  variables:
+    NFPM_VERSION: "2.41.1"
   before_script:
     - apt-get update -qq
-    - >-
-      apt-get install -y -qq
-      software-properties-common curl tar gzip
-      dpkg-dev rpm
+    - apt-get install -y -qq software-properties-common curl tar gzip dpkg-dev rpm
     - add-apt-repository -y ppa:deadsnakes/ppa
     - apt-get update -qq
-    - apt-get install -y -qq python3.12 python3.12-venv python3-pip
+    - apt-get install -y -qq python3.12 python3.12-venv python3.12-dev
     - curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
     - apt-get install -y -qq nodejs
     - >-
-      curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.41.1/nfpm_2.41.1_linux_amd64.tar.gz
+      curl -sfL
+      https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_linux_amd64.tar.gz
       | tar -xz -C /usr/local/bin nfpm
     - chmod +x /usr/local/bin/nfpm
   script:
-    - cd packaging
-    - >-
-      VERSION=${CI_COMMIT_TAG:-$(grep '^version' ../backend/pyproject.toml
-      | head -1 | sed 's/.*= *"\(.*\)"/\1/')}
+    - VERSION=${CI_COMMIT_TAG#v}
     - echo "Building version $VERSION"
+    - cd packaging
     - chmod +x build.sh
-    - ./build.sh --version=$VERSION --target=all
+    - ./build.sh --version="$VERSION" --target=all
+    - cd dist
+    - sha256sum barricade-* barricade_* > SHA256SUMS
+    - cat SHA256SUMS
   artifacts:
     paths:
       - packaging/dist/
-    expire_in: 30 days
+    expire_in: 7 days
   rules:
-    - if: $CI_COMMIT_TAG
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+
+upload-packages:
+  stage: release
+  image: curlimages/curl:latest
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - VERSION=${CI_COMMIT_TAG#v}
+    - REGISTRY="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/barricade/${VERSION}"
+    - |
+      for f in packaging/dist/barricade-* packaging/dist/barricade_* packaging/dist/SHA256SUMS; do
+        [ -f "$f" ] || continue
+        filename=$(basename "$f")
+        echo "Uploading $filename ..."
+        curl --fail --silent --show-error \
+          --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+          --upload-file "$f" \
+          "${REGISTRY}/${filename}"
+      done
+  needs:
+    - job: build-packages
+      artifacts: true
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
 
 
 create-release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
+  variables:
+    GIT_STRATEGY: none
   script:
     - echo "Creating release for $CI_COMMIT_TAG"
   release:
     tag_name: $CI_COMMIT_TAG
     name: "Barricade $CI_COMMIT_TAG"
-    description: "Release $CI_COMMIT_TAG"
+    description: |
+      ## Barricade $CI_COMMIT_TAG
+
+      ### Installation
+
+      Download the package for your distribution below, or use the tarball for manual installation.
+      See the [install guide](README.md) for full instructions.
     assets:
       links:
-        - name: "barricade-${CI_COMMIT_TAG}-linux-amd64.tar.gz"
-          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/file/packaging/dist/barricade-${CI_COMMIT_TAG}-linux-amd64.tar.gz"
+        - name: "barricade-${CI_COMMIT_TAG#v}-linux-amd64.tar.gz"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/barricade/${CI_COMMIT_TAG#v}/barricade-${CI_COMMIT_TAG#v}-linux-amd64.tar.gz"
           link_type: package
-        - name: "barricade_${CI_COMMIT_TAG}_amd64.deb"
-          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/file/packaging/dist/barricade_${CI_COMMIT_TAG}_amd64.deb"
+        - name: "barricade_${CI_COMMIT_TAG#v}_amd64.deb"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/barricade/${CI_COMMIT_TAG#v}/barricade_${CI_COMMIT_TAG#v}_amd64.deb"
           link_type: package
-        - name: "barricade-${CI_COMMIT_TAG}-1.x86_64.rpm"
-          url: "${CI_PROJECT_URL}/-/jobs/${CI_JOB_ID}/artifacts/file/packaging/dist/barricade-${CI_COMMIT_TAG}-1.x86_64.rpm"
+        - name: "barricade-${CI_COMMIT_TAG#v}-1.x86_64.rpm"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/barricade/${CI_COMMIT_TAG#v}/barricade-${CI_COMMIT_TAG#v}-1.x86_64.rpm"
           link_type: package
+        - name: "SHA256SUMS"
+          url: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/barricade/${CI_COMMIT_TAG#v}/SHA256SUMS"
+          link_type: other
   needs:
-    - job: build-packages
-      artifacts: true
+    - job: upload-packages
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/

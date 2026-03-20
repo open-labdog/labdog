@@ -86,6 +86,92 @@ When you sync, Barricade computes the full effective configuration and pushes it
 | Task Queue | Celery + Redis (RedBeat scheduler) | -- |
 | Config Management | Ansible (ansible-runner) | -- |
 
+## Installation
+
+### From Package (Recommended)
+
+Pre-built packages are available on the [Releases](../../releases) page for each tagged version.
+
+**Debian / Ubuntu (.deb)**
+
+```bash
+VERSION=0.0.1
+curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade_${VERSION}_amd64.deb
+sudo apt install ./barricade_${VERSION}_amd64.deb
+```
+
+**RHEL / Fedora / Rocky (.rpm)**
+
+```bash
+VERSION=0.0.1
+curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade-${VERSION}-1.x86_64.rpm
+sudo dnf install ./barricade-${VERSION}-1.x86_64.rpm
+```
+
+After package install, skip to [Post-install configuration](#post-install-configuration).
+
+### From Tarball
+
+```bash
+VERSION=0.0.1
+curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade-${VERSION}-linux-amd64.tar.gz
+tar -xzf barricade-${VERSION}-linux-amd64.tar.gz
+cd barricade-${VERSION}-linux-amd64
+sudo ./install.sh
+```
+
+### Verifying Downloads
+
+```bash
+curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/SHA256SUMS
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+### Post-install Configuration
+
+All three install methods place the default config at `/etc/barricade/barricade.toml`. Edit it before starting the service:
+
+```bash
+sudo nano /etc/barricade/barricade.toml
+```
+
+**Required fields:**
+
+| Setting | Description | How to generate |
+|---------|-------------|-----------------|
+| `[security] secret_key` | JWT signing key | `openssl rand -base64 32` |
+| `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes, base64) | `openssl rand -base64 32` |
+| `[security] barricade_server_ip` | This server's IP (used in SSH lockout prevention rule) | `ip route get 1 \| awk '{print $7; exit}'` |
+| `[database] url` | PostgreSQL async connection string | — |
+
+```toml
+[security]
+secret_key    = "<output of: openssl rand -base64 32>"
+encryption_key = "<output of: openssl rand -base64 32>"
+barricade_server_ip = "192.168.1.10"   # this server's IP
+
+[database]
+url = "postgresql+asyncpg://barricade:password@localhost:5432/barricade"
+```
+
+**Prerequisites** (not bundled):
+
+- PostgreSQL 14+
+- Redis 6+
+
+**Start the service:**
+
+```bash
+sudo systemctl enable --now barricade.service
+sudo systemctl status barricade.service
+# Logs:
+sudo journalctl -u barricade -f
+```
+
+Barricade listens on `http://127.0.0.1:8000` by default. Put it behind a reverse proxy (nginx, Caddy) for HTTPS.
+
+---
+
 ## Quick Start (Docker)
 
 ### Prerequisites
