@@ -36,6 +36,13 @@ build: build-venv build-frontend
 
 # --- build-venv ---
 build-venv:
+	@if [ -x $(DESTDIR)$(PREFIX)/venv/bin/ansible-playbook ]; then \
+		echo "[build-venv] venv already built — skipping"; \
+	else \
+		$(MAKE) _build-venv; \
+	fi
+
+_build-venv:
 	@echo "[build-venv] Creating Python venv..."
 	@mkdir -p $(DESTDIR)$(PREFIX)
 	$(PYTHON) -m venv $(DESTDIR)$(PREFIX)/venv
