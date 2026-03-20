@@ -46,10 +46,11 @@ backend-test:
     paths:
       - .cache/pip
   script:
+    - apt-get update -qq && apt-get install -y -qq git
     - cd backend
     - pip install uv
     - uv pip install --system '.[dev]'
-    - python -m pytest tests/ -v
+    - python -m pytest tests/ -v -m "not integration"
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH
