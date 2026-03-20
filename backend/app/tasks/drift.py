@@ -40,7 +40,7 @@ def _register_beat_schedule():
     from celery.schedules import schedule
     from app.config import settings
 
-    interval = schedule(run_every=settings.DRIFT_CHECK_INTERVAL_MINUTES * 60)
+    interval = schedule(run_every=settings.drift.check_interval_minutes * 60)
     entry = RedBeatSchedulerEntry(
         name="check-drift-periodic",
         task="app.tasks.drift.check_all_drift",

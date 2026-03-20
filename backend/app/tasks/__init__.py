@@ -3,8 +3,8 @@ from app.config import settings
 
 celery_app = Celery(
     "barricade",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
+    broker=settings.redis.url,
+    backend=settings.redis.url,
 )
 
 celery_app.conf.update(

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { AuthContext, User } from '@/lib/auth'
 import { API_BASE } from '@/lib/api'
+import { AuthGuard } from '@/components/auth-guard'
 
 const queryClient = new QueryClient()
 
@@ -56,9 +57,11 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <AuthGuard>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </AuthGuard>
       </QueryClientProvider>
     </ThemeProvider>
   )

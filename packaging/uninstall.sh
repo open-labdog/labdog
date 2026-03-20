@@ -38,9 +38,9 @@ fi
 
 # --- Stop and disable services ---
 if command -v systemctl >/dev/null 2>&1; then
-    log "Stopping barricade services..."
-    systemctl stop barricade.target 2>/dev/null || true
-    systemctl disable barricade.target 2>/dev/null || true
+    log "Stopping barricade service..."
+    systemctl stop barricade.service 2>/dev/null || true
+    systemctl disable barricade.service 2>/dev/null || true
 fi
 
 # --- Detect systemd unit path ---
@@ -54,12 +54,7 @@ fi
 
 # --- Remove unit files ---
 log "Removing systemd unit files..."
-rm -f "$SYSTEMD_DIR"/barricade-api.service \
-      "$SYSTEMD_DIR"/barricade-beat.service \
-      "$SYSTEMD_DIR"/barricade-frontend.service \
-      "$SYSTEMD_DIR"/barricade-migrate.service \
-      "$SYSTEMD_DIR"/barricade-worker.service \
-      "$SYSTEMD_DIR"/barricade.target
+rm -f "$SYSTEMD_DIR"/barricade.service
 
 # --- Remove tmpfiles config ---
 log "Removing tmpfiles.d configuration..."
@@ -95,7 +90,7 @@ log "Uninstall complete."
 echo ""
 echo "Removed:"
 echo "  /usr/lib/barricade          (application)"
-echo "  $SYSTEMD_DIR/barricade-*    (systemd units)"
+echo "  $SYSTEMD_DIR/barricade.service (systemd unit)"
 echo "  /usr/lib/tmpfiles.d/barricade.conf"
 echo "  /run/barricade              (runtime)"
 

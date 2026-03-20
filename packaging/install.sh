@@ -40,11 +40,14 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # --- Verify tarball structure ---
-for required_dir in usr/lib/barricade etc systemd tmpfiles.d; do
+for required_dir in usr/lib/barricade systemd tmpfiles.d; do
     if [ ! -d "$SCRIPT_DIR/$required_dir" ]; then
         die "Expected directory '$required_dir' not found in $SCRIPT_DIR — are you running from the extracted tarball?"
     fi
 done
+if [ ! -f "$SCRIPT_DIR/etc/barricade.toml" ]; then
+    die "Expected file 'etc/barricade.toml' not found in $SCRIPT_DIR — are you running from the extracted tarball?"
+fi
 
 # --- Create system user ---
 log "Creating barricade system user..."
@@ -66,14 +69,14 @@ log "Installing application to /usr/lib/barricade..."
 cp -r "$SCRIPT_DIR/usr/lib/barricade" /usr/lib/
 
 # --- Install configuration (preserve existing) ---
-if [ -f /etc/barricade/barricade.env ]; then
-    log "Existing /etc/barricade/barricade.env found — preserving (not overwritten)"
+if [ -f /etc/barricade/barricade.toml ]; then
+    log "Existing /etc/barricade/barricade.toml found — preserving (not overwritten)"
 else
     log "Installing default configuration to /etc/barricade..."
     mkdir -p /etc/barricade
-    cp "$SCRIPT_DIR/etc/barricade.env" /etc/barricade/
-    chmod 640 /etc/barricade/barricade.env
-    chown root:barricade /etc/barricade/barricade.env
+    cp "$SCRIPT_DIR/etc/barricade.toml" /etc/barricade/
+    chmod 640 /etc/barricade/barricade.toml
+    chown root:barricade /etc/barricade/barricade.toml
 fi
 
 # --- Detect systemd unit path ---
@@ -86,9 +89,8 @@ else
     mkdir -p "$SYSTEMD_DIR"
 fi
 
-log "Installing systemd units to $SYSTEMD_DIR..."
-cp "$SCRIPT_DIR"/systemd/*.service "$SYSTEMD_DIR/"
-cp "$SCRIPT_DIR"/systemd/*.target "$SYSTEMD_DIR/"
+log "Installing systemd unit to $SYSTEMD_DIR..."
+cp "$SCRIPT_DIR"/systemd/barricade.service "$SYSTEMD_DIR/"
 
 # --- Install tmpfiles.d ---
 log "Installing tmpfiles.d configuration..."
@@ -123,19 +125,16 @@ cat <<'EOF'
 Barricade installed to /usr/lib/barricade
 
 Next steps:
-  1. Edit /etc/barricade/barricade.env with your settings:
-       - SECRET_KEY and ENCRYPTION_KEY: generate with: openssl rand -base64 32
-       - DATABASE_URL: your PostgreSQL connection string
-       - BARRICADE_SERVER_IP: this server's IP address
+  1. Edit /etc/barricade/barricade.toml with your settings:
+       - [security] secret_key and encryption_key: generate with: openssl rand -base64 32
+       - [database] url: your PostgreSQL connection string
+       - [security] barricade_server_ip: this server's IP address
 
-  2. Ensure PostgreSQL and Redis are running, then run migrations:
-       systemctl start barricade-migrate.service
+  2. Enable and start the service:
+       systemctl enable --now barricade.service
 
-  3. Enable and start all services:
-       systemctl enable --now barricade.target
-
-  4. Check status:
-       systemctl status barricade.target
-       journalctl -u barricade-api -f
+  3. Check status:
+       systemctl status barricade.service
+       journalctl -u barricade -f
 
 EOF

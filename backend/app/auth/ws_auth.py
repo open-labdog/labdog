@@ -21,7 +21,7 @@ async def get_ws_user(websocket: WebSocket, db: AsyncSession) -> User:
     try:
         payload = jwt.decode(
             token,
-            settings.SECRET_KEY,
+            settings.security.secret_key,
             algorithms=[_ALGORITHM],
             audience=_AUDIENCE,
         )

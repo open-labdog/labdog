@@ -14,7 +14,7 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
     from app.discovery.scanner import check_port, validate_cidr
 
     # Validate and enumerate hosts
-    network = validate_cidr(cidr, settings.DISCOVERY_MIN_PREFIX)
+    network = validate_cidr(cidr, settings.discovery.min_prefix)
     all_hosts = [str(ip) for ip in network.hosts()]
     # Subtract already-known hosts
     exclude_set = set(exclude_ips)
@@ -23,7 +23,7 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
 
     # Scan in batches, reporting progress every ~50 hosts
     async def _scan_with_progress():
-        semaphore = asyncio.Semaphore(settings.DISCOVERY_MAX_CONCURRENT)
+        semaphore = asyncio.Semaphore(settings.discovery.max_concurrent)
 
         found = []
         completed = 0

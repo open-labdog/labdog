@@ -8,7 +8,7 @@ from app.config import settings
 
 def get_master_key() -> bytes:
     """Load master key from ENCRYPTION_KEY env var. Must be 32 bytes base64-encoded."""
-    raw = settings.ENCRYPTION_KEY
+    raw = settings.security.encryption_key
     try:
         key = base64.b64decode(raw)
     except Exception as e:

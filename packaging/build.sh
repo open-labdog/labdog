@@ -38,7 +38,6 @@ Examples:
 Prerequisites:
   python3.12   apt: python3.12 / dnf: python3.12
   npm          apt: nodejs / dnf: nodejs
-  curl         apt: curl / dnf: curl
   tar          apt: tar / dnf: tar
   nfpm         https://nfpm.goreleaser.com/install/ (for deb/rpm only)
 
@@ -80,7 +79,6 @@ check_prereq() {
 
 check_prereq python3.12  "apt: sudo apt install python3.12  |  dnf: sudo dnf install python3.12"
 check_prereq npm         "apt: sudo apt install nodejs     |  dnf: sudo dnf install nodejs"
-check_prereq curl        "apt: sudo apt install curl       |  dnf: sudo dnf install curl"
 check_prereq tar         "apt: sudo apt install tar        |  dnf: sudo dnf install tar"
 
 # nfpm only required for deb/rpm

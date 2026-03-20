@@ -27,33 +27,17 @@ services:
       retries: 5
     restart: unless-stopped
 
-  migrate:
+  barricade:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
-    command: ["alembic", "upgrade", "head"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-32-bytes-base64-encoded}
-      BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-32-bytes-base64-encoded}
-      BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
+      BARRICADE_CONFIG: /etc/barricade/barricade.toml
+      # Override localhost URLs to use Docker service hostnames
+      BARRICADE_DATABASE__URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
+      BARRICADE_REDIS__URL: redis://redis:6379/0
+    volumes:
+      - ./barricade.toml:/etc/barricade/barricade.toml:ro
     ports:
       - "8000:8000"
     depends_on:
@@ -61,54 +45,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: unless-stopped
-
-  celery-worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: ["celery", "-A", "app.tasks", "worker", "--max-tasks-per-child=100", "-Q", "default,long_running", "--loglevel=info"]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-32-bytes-base64-encoded}
-      BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  celery-beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: ["celery", "-A", "app.tasks", "beat", "--scheduler", "redbeat.RedBeatScheduler", "--loglevel=info"]
-    environment:
-      DATABASE_URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-change-me-32-bytes-base64-encoded}
-      BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-    depends_on:
-      - backend
     restart: unless-stopped
 
 volumes:

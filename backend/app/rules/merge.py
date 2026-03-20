@@ -33,7 +33,7 @@ def merge_group_rules(
         Ordered list of FirewallRuleSpec (SSH lockout first, then merged rules)
     """
     if server_ip is None:
-        server_ip = settings.BARRICADE_SERVER_IP
+        server_ip = settings.security.barricade_server_ip
 
     # Sort groups by priority descending (highest priority first)
     sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
