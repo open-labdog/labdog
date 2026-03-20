@@ -17,17 +17,13 @@ def pg_url():
     import subprocess
     import sys
 
-    from testcontainers.postgres import PostgresContainer
+    from app.config import settings
+    from app.crypto.key_management import generate_master_key
 
-    with PostgresContainer("postgres:16-alpine") as pg:
-        sync_url = pg.get_connection_url()
-        async_url = (
-            sync_url
-            .replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-            .replace("postgresql://", "postgresql+asyncpg://")
-        )
-        from app.config import settings
-        from app.crypto.key_management import generate_master_key
+    ci_url = os.environ.get("DATABASE_URL")
+    if ci_url:
+        # CI: use the provided postgres service directly
+        async_url = ci_url
         settings.database.url = async_url
         settings.security.encryption_key = generate_master_key()
         env = os.environ.copy()
@@ -40,6 +36,29 @@ def pg_url():
         )
         assert result.returncode == 0, f"Alembic failed: {result.stderr}"
         yield async_url
+    else:
+        # Local dev: spin up a throwaway postgres via testcontainers
+        from testcontainers.postgres import PostgresContainer
+
+        with PostgresContainer("postgres:16-alpine") as pg:
+            sync_url = pg.get_connection_url()
+            async_url = (
+                sync_url
+                .replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+                .replace("postgresql://", "postgresql+asyncpg://")
+            )
+            settings.database.url = async_url
+            settings.security.encryption_key = generate_master_key()
+            env = os.environ.copy()
+            env["BARRICADE_DATABASE__URL"] = async_url
+            alembic_path = str(Path(sys.executable).parent / "alembic")
+            result = subprocess.run(
+                [alembic_path, "upgrade", "head"],
+                capture_output=True, text=True, env=env,
+                cwd=str(Path(__file__).parent.parent),
+            )
+            assert result.returncode == 0, f"Alembic failed: {result.stderr}"
+            yield async_url
 
 
 @pytest.fixture(scope="session")
