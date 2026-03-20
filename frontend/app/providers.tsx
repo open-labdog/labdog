@@ -57,11 +57,11 @@ export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <QueryClientProvider client={queryClient}>
-        <AuthGuard>
-          <AuthProvider>
+        <AuthProvider>
+          <AuthGuard>
             {children}
-          </AuthProvider>
-        </AuthGuard>
+          </AuthGuard>
+        </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
   )
