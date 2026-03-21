@@ -29,14 +29,14 @@ contents:
     file_info:
       owner: root
       group: root
-      mode: "0755"
+      mode: 0755
 
   # ── Config file (config|noreplace — preserved on upgrade) ─────────────
   - src: etc/barricade.toml
     dst: /etc/barricade/barricade.toml
     type: config|noreplace
     file_info:
-      mode: "0640"
+      mode: 0640
       owner: root
       group: barricade
 
@@ -54,25 +54,25 @@ contents:
     file_info:
       owner: root
       group: root
-      mode: "0755"
+      mode: 0755
   - dst: /etc/barricade/
     type: dir
     file_info:
       owner: root
       group: barricade
-      mode: "0750"
+      mode: 0750
   - dst: /var/lib/barricade/
     type: dir
     file_info:
       owner: barricade
       group: barricade
-      mode: "0750"
+      mode: 0750
   - dst: /var/log/barricade/
     type: dir
     file_info:
       owner: barricade
       group: barricade
-      mode: "0750"
+      mode: 0750
 
 scripts:
   preinstall:  scripts/preinst.sh
