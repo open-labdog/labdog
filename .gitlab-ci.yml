@@ -221,7 +221,7 @@ create-release:
       Download the package for your distribution below, or use the tarball for manual installation.
       See the [install guide](README.md) for full instructions." \
         --assets-link "{\"name\":\"barricade-${VERSION}-linux-amd64.tar.gz\",\"url\":\"${REGISTRY}/barricade-${VERSION}-linux-amd64.tar.gz\",\"link_type\":\"package\"}" \
-        --assets-link "{\"name\":\"barricade_${VERSION}_amd64.deb\",\"url\":\"${REGISTRY}/barricade_${VERSION}_amd64.deb\",\"link_type\":\"package\"}" \
+        --assets-link "{\"name\":\"barricade_${VERSION}-1_amd64.deb\",\"url\":\"${REGISTRY}/barricade_${VERSION}-1_amd64.deb\",\"link_type\":\"package\"}" \
         --assets-link "{\"name\":\"barricade-${VERSION}-1.x86_64.rpm\",\"url\":\"${REGISTRY}/barricade-${VERSION}-1.x86_64.rpm\",\"link_type\":\"package\"}" \
         --assets-link "{\"name\":\"SHA256SUMS\",\"url\":\"${REGISTRY}/SHA256SUMS\",\"link_type\":\"other\"}"
   needs:
