@@ -190,7 +190,7 @@ upload-packages:
         [ -f "$f" ] || continue
         filename=$(basename "$f")
         echo "Uploading $filename ..."
-        curl --fail --silent --show-error \
+        curl --fail --silent --show-error --insecure \
           --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
           --upload-file "$f" \
           "${REGISTRY}/${filename}"
