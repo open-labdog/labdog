@@ -12,7 +12,7 @@ PREFIX       ?= /usr/lib/barricade
 DIST         ?= $(CURDIR)/dist
 
 # --- Phony targets ---
-.PHONY: help build build-venv build-frontend clean deb rpm tarball all
+.PHONY: help build build-venv _build-venv build-frontend _build-frontend clean deb rpm tarball all
 
 # --- Default ---
 help:
@@ -68,6 +68,13 @@ _build-venv:
 
 # --- build-frontend ---
 build-frontend:
+	@if [ -d $(DESTDIR)$(PREFIX)/frontend/out ]; then \
+		echo "[build-frontend] frontend already built — skipping"; \
+	else \
+		$(MAKE) _build-frontend; \
+	fi
+
+_build-frontend:
 	@echo "[build-frontend] Building Next.js static export..."
 	cd ../frontend && npm ci --silent
 	cd ../frontend && npm run build

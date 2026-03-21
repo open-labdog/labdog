@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "barricade-backend"
-version = "0.0.11"
+version = "0.0.13"
 description = "FastAPI backend for Barricade - Ansible-based Linux firewall manager"
 requires-python = ">=3.12"
 dependencies = [

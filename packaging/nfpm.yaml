@@ -49,12 +49,6 @@ contents:
     dst: /usr/lib/tmpfiles.d/barricade.conf
 
   # ── Owned directories ──────────────────────────────────────────────────
-  - dst: /usr/lib/barricade/
-    type: dir
-    file_info:
-      owner: root
-      group: root
-      mode: 0755
   - dst: /etc/barricade/
     type: dir
     file_info:
