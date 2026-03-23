@@ -41,11 +41,22 @@ import { Label } from "@/components/ui/label"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { groupSchema, type GroupInput } from "@/lib/schemas"
+import GroupRulesPage from "./rules/client-page"
+import GroupServicesPage from "./services/client-page"
+import GroupHostsEntriesPage from "./hosts-entries/client-page"
+import GroupUsersPage from "./users/client-page"
+import GroupCronJobsPage from "./cron-jobs/client-page"
+import GroupPackagesPage from "./packages/client-page"
+import GroupResolverPage from "./resolver/client-page"
+import GroupSyncPage from "./sync/client-page"
+
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns" | "sync"
 
 export default function GroupDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
+  const [activeTab, setActiveTab] = useState<Tab>("overview")
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
@@ -340,12 +351,12 @@ export default function GroupDetailPage() {
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold text-white">Sync Status — {group?.name}</h2>
-                <Link
-                  href={`/groups/${id}/sync`}
-                  className={cn(buttonVariants({ size: "sm" }))}
+                <Button
+                  size="sm"
+                  onClick={() => setActiveTab("sync")}
                 >
                   Sync
-                </Link>
+                </Button>
               </div>
               {total > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
@@ -479,112 +490,106 @@ export default function GroupDetailPage() {
         )}
       </div>
 
-      {/* Navigation */}
-      <div className="flex gap-3 flex-wrap">
-        <Link
-          href={`/groups/${id}/rules`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Rules
-        </Link>
-        <Link
-          href={`/groups/${id}/services`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Services
-        </Link>
-        <Link
-          href={`/groups/${id}/hosts-entries`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Hosts File
-        </Link>
-        <Link
-          href={`/groups/${id}/users`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Users
-        </Link>
-        <Link
-          href={`/groups/${id}/cron-jobs`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Cron Jobs
-        </Link>
-        <Link
-          href={`/groups/${id}/packages`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Packages
-        </Link>
-        <Link
-          href={`/groups/${id}/resolver`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          DNS Resolver
-        </Link>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-slate-700 flex-wrap">
+        {([
+          ["overview", "Overview"],
+          ["rules", "Rules"],
+          ["services", "Services"],
+          ["hosts-file", "Hosts File"],
+          ["users", "Users"],
+          ["cron-jobs", "Cron Jobs"],
+          ["packages", "Packages"],
+          ["dns", "DNS Resolver"],
+          ["sync", "Sync"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === key
+                ? "text-white border-b-2 border-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Hosts section */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-3">Hosts</h2>
-        <p className="text-slate-400 text-sm mb-4">
-          All hosts that may be affected by this group&apos;s rules.
-        </p>
+      {activeTab === "overview" && (
+        <>
+          {/* Hosts section */}
+          <div>
+            <h2 className="text-lg font-semibold text-white mb-3">Hosts</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              All hosts that may be affected by this group&apos;s rules.
+            </p>
 
-        {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
+            {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
 
-        {!hostsLoading && groupHosts.length === 0 && (
-          <div className="text-slate-400 py-4 text-center">
-            No hosts configured.{" "}
-            <Link href="/hosts/new" className="underline hover:text-white">
-              Add a host
-            </Link>
+            {!hostsLoading && groupHosts.length === 0 && (
+              <div className="text-slate-400 py-4 text-center">
+                No hosts configured.{" "}
+                <Link href="/hosts/new" className="underline hover:text-white">
+                  Add a host
+                </Link>
+              </div>
+            )}
+
+            {!hostsLoading && groupHosts.length > 0 && (
+              <div className="rounded-lg border border-slate-700 bg-slate-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead>Hostname</TableHead>
+                      <TableHead>IP Address</TableHead>
+                      <TableHead>Firewall</TableHead>
+                      <TableHead>Sync Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {groupHosts.map((host) => (
+                      <TableRow key={host.id} className="border-slate-700">
+                        <TableCell className="font-medium text-white">
+                          {host.hostname}
+                        </TableCell>
+                        <TableCell className="font-mono text-slate-300 text-xs">
+                          {host.ip_address}
+                        </TableCell>
+                        <TableCell>
+                          <FirewallBadge backend={host.firewall_backend} />
+                        </TableCell>
+                        <TableCell>
+                          <SyncStatusBadge status={host.sync_status} />
+                        </TableCell>
+                        <TableCell>
+                          <Link
+                            href={`/hosts/${host.id}`}
+                            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                          >
+                            View
+                          </Link>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
-        )}
+        </>
+      )}
 
-        {!hostsLoading && groupHosts.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Hostname</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Firewall</TableHead>
-                  <TableHead>Sync Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groupHosts.map((host) => (
-                  <TableRow key={host.id} className="border-slate-700">
-                    <TableCell className="font-medium text-white">
-                      {host.hostname}
-                    </TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">
-                      {host.ip_address}
-                    </TableCell>
-                    <TableCell>
-                      <FirewallBadge backend={host.firewall_backend} />
-                    </TableCell>
-                    <TableCell>
-                      <SyncStatusBadge status={host.sync_status} />
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/hosts/${host.id}`}
-                        className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-                      >
-                        View
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
+      {activeTab === "rules" && <GroupRulesPage embedded />}
+      {activeTab === "services" && <GroupServicesPage embedded />}
+      {activeTab === "hosts-file" && <GroupHostsEntriesPage embedded />}
+      {activeTab === "users" && <GroupUsersPage embedded />}
+      {activeTab === "cron-jobs" && <GroupCronJobsPage embedded />}
+      {activeTab === "packages" && <GroupPackagesPage embedded />}
+      {activeTab === "dns" && <GroupResolverPage embedded />}
+      {activeTab === "sync" && <GroupSyncPage embedded />}
 
       {confirmState && (
         <ConfirmDialog

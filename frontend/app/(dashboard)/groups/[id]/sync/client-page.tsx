@@ -146,7 +146,7 @@ function HostDiffCard({ host }: { host: HostDiff }) {
   )
 }
 
-export default function GroupSyncPage() {
+export default function GroupSyncPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = params.id as string
 
@@ -227,7 +227,7 @@ export default function GroupSyncPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Sync Group</h1>

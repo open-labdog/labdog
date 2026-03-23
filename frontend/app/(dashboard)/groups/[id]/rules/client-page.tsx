@@ -226,7 +226,7 @@ function SortableRow({
   )
 }
 
-export default function GroupRulesPage() {
+export default function GroupRulesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -344,7 +344,7 @@ export default function GroupRulesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Rules" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Rules" }]} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Firewall Rules</h1>
