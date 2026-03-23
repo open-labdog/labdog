@@ -48,7 +48,7 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
   )
 }
 
-export default function GroupServicesPage() {
+export default function GroupServicesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -144,7 +144,7 @@ export default function GroupServicesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Services" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Services" }]} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Service Rules</h1>

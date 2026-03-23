@@ -22,7 +22,7 @@ const RESOLVER_TYPE_LABELS: Record<string, string> = {
 
 const OPTION_KEYS = ["ndots", "timeout", "attempts", "rotate", "edns0"] as const
 
-export default function GroupResolverPage() {
+export default function GroupResolverPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -194,7 +194,7 @@ export default function GroupResolverPage() {
   if (showLoading) {
     return (
       <div className="space-y-6">
-        <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />
+        {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />}
         <CardSkeleton />
       </div>
     )
@@ -203,7 +203,7 @@ export default function GroupResolverPage() {
   if ((is404 || (!hasConfig && !resolverQuery.isLoading)) && !formReady) {
     return (
       <div className="space-y-6">
-        <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />
+        {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-white">DNS Resolver</h1>
         </div>
@@ -217,7 +217,7 @@ export default function GroupResolverPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "DNS Resolver" }]} />}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-white">DNS Resolver</h1>
         <div className="flex gap-2">

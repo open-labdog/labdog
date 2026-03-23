@@ -50,7 +50,7 @@ function RepoTypeBadge({ type }: { type: string }) {
   )
 }
 
-export default function GroupPackagesPage() {
+export default function GroupPackagesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -231,7 +231,7 @@ export default function GroupPackagesPage() {
 
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Packages" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Packages" }]} />}
       {/* Package Rules Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

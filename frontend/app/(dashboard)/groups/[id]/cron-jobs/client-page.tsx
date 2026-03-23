@@ -125,7 +125,7 @@ function envVarsToRecord(vars: EnvVar[]): Record<string, string> {
   return record
 }
 
-export default function GroupCronJobsPage() {
+export default function GroupCronJobsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -261,7 +261,7 @@ export default function GroupCronJobsPage() {
 
   return (
     <div className="space-y-4">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Cron Jobs" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Cron Jobs" }]} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Cron Jobs</h1>

@@ -37,7 +37,7 @@ function UserStateBadge({ state }: { state: string }) {
   )
 }
 
-export default function GroupUsersPage() {
+export default function GroupUsersPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -215,7 +215,7 @@ export default function GroupUsersPage() {
 
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />}
       {/* Linux Users Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">

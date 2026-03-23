@@ -10,7 +10,7 @@ port = 8000
 # static_dir = ""  # Path to frontend static export (empty = auto-detect)
 
 [database]
-url = "postgresql+asyncpg://barricade:barricade@localhost:5432/barricade"
+url = "postgresql+asyncpg://barricade:barricade_test_pw@localhost:5432/barricade"
 
 [redis]
 url = "redis://localhost:6379/0"
