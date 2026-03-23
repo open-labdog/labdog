@@ -43,6 +43,9 @@ class RedisConfig(BaseModel):
     url: str = "redis://localhost:6379/0"
 
 
+_INSECURE_DEFAULTS = {"change-me-in-production", "change-me-32-bytes-base64-encoded"}
+
+
 class SecurityConfig(BaseModel):
     secret_key: str = "change-me-in-production"
     encryption_key: str = "change-me-32-bytes-base64-encoded"
@@ -162,11 +165,31 @@ def _load_toml(path: Path | None) -> dict:
         return tomllib.load(f)
 
 
+def _validate_required(s: Settings) -> None:
+    """Raise on insecure or missing required settings at startup."""
+    errors: list[str] = []
+    if s.security.secret_key in _INSECURE_DEFAULTS:
+        errors.append(
+            "security.secret_key is not set. "
+            "Set BARRICADE_SECURITY__SECRET_KEY or [security] secret_key in barricade.toml."
+        )
+    if s.security.encryption_key in _INSECURE_DEFAULTS:
+        errors.append(
+            "security.encryption_key is not set. "
+            "Generate one with: python -m app.crypto.key_management "
+            "and set BARRICADE_SECURITY__ENCRYPTION_KEY or [security] encryption_key in barricade.toml."
+        )
+    if errors:
+        raise SystemExit("FATAL: Barricade cannot start:\n  - " + "\n  - ".join(errors))
+
+
 def load_settings() -> Settings:
     """Build a Settings instance from the TOML file + env overrides."""
     path = _find_config_path()
     data = _load_toml(path)
-    return Settings(**data)
+    s = Settings(**data)
+    _validate_required(s)
+    return s
 
 
 settings = load_settings()

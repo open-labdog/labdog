@@ -16,8 +16,8 @@ url = "postgresql+asyncpg://barricade:barricade_test_pw@localhost:5432/barricade
 url = "redis://localhost:6379/0"
 
 [security]
-secret_key = "dev-only-change-me-in-production"
-encryption_key = "dev-only-change-me-32-bytes-base64"
+secret_key = "change-me-in-production"
+encryption_key = "change-me-32-bytes-base64-encoded"
 barricade_server_ip = "127.0.0.1"
 allowed_origins = ["http://localhost:3000"]
 cookie_secure = false
