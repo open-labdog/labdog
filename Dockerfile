@@ -36,7 +36,7 @@ COPY --chown=barricade:barricade backend/alembic/ alembic/
 COPY --chown=barricade:barricade backend/alembic.ini alembic.ini
 
 # Frontend static files
-COPY --from=frontend-builder --chown=barricade:barricade /app/out/ /app/frontend/out/
+COPY --from=frontend-builder --chown=barricade:barricade /app/out/ /usr/lib/barricade/frontend/out/
 
 USER barricade
 EXPOSE 8000
