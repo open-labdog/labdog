@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TAG="barricade-local"
+TAG="latest"
 IMAGE="barricade"
 
 echo "=== Barricade Local Build ==="

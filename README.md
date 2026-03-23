@@ -96,8 +96,8 @@ Pre-built packages are available on the [Releases](../../releases) page for each
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade_${VERSION}_amd64.deb
-sudo apt install ./barricade_${VERSION}_amd64.deb
+curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade_${VERSION}-1_amd64.deb
+sudo apt install ./barricade_${VERSION}-1_amd64.deb
 ```
 
 **RHEL / Fedora / Rocky (.rpm)**
@@ -169,6 +169,34 @@ sudo journalctl -u barricade -f
 ```
 
 Barricade listens on `http://127.0.0.1:8000` by default. Put it behind a reverse proxy (nginx, Caddy) for HTTPS.
+
+### Uninstalling
+
+**Debian / Ubuntu**
+
+```bash
+# Remove (keeps config, data, and logs)
+sudo apt remove barricade
+
+# Remove everything including config, data, logs, and system user
+sudo apt purge barricade
+```
+
+**RHEL / Fedora / Rocky**
+
+```bash
+sudo dnf remove barricade
+# Config, data, and logs under /etc/barricade, /var/lib/barricade,
+# /var/log/barricade are preserved. Remove manually if no longer needed.
+```
+
+**Tarball install**
+
+```bash
+cd barricade-<version>-linux-amd64
+sudo ./uninstall.sh          # keeps config/data/logs
+sudo ./uninstall.sh --purge  # removes everything
+```
 
 ---
 

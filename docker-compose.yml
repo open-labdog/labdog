@@ -28,9 +28,7 @@ services:
     restart: unless-stopped
 
   barricade:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: barricade:latest
     environment:
       BARRICADE_CONFIG: /etc/barricade/barricade.toml
       # Override localhost URLs to use Docker service hostnames
@@ -40,6 +38,7 @@ services:
       - ./barricade.toml:/etc/barricade/barricade.toml:ro
     ports:
       - "8000:8000"
+      - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
