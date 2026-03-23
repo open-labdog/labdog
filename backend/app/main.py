@@ -302,6 +302,11 @@ def create_app() -> FastAPI:
             file_path = static_dir / full_path
             if full_path and file_path.is_file():
                 return FileResponse(file_path)
+            # Support trailingSlash: true exports (e.g. /login/ → login/index.html)
+            if full_path and file_path.is_dir():
+                dir_index = file_path / "index.html"
+                if dir_index.is_file():
+                    return FileResponse(dir_index)
             return FileResponse(index_html)
     else:
         logger.warning(
