@@ -307,10 +307,28 @@ def create_app() -> FastAPI:
                 dir_index = file_path / "index.html"
                 if dir_index.is_file():
                     return FileResponse(dir_index)
-            # Support dynamic routes: /hosts/123/ → hosts/[placeholder]/index.html
-            dynamic = _resolve_dynamic_route(static_dir, full_path)
-            if dynamic:
-                return FileResponse(dynamic)
+            # Support dynamic routes: /hosts/123/ → hosts/placeholder/index.html
+            result = _resolve_dynamic_route(static_dir, full_path)
+            if result:
+                resolved_file, dynamic_value = result
+                if dynamic_value:
+                    # Rewrite the RSC flight data so the baked-in route
+                    # params match the actual URL instead of "placeholder".
+                    content = resolved_file.read_text(encoding="utf-8")
+                    # HTML has escaped quotes (\"), .txt has plain quotes
+                    content = content.replace(
+                        '\\"placeholder\\"', f'\\"{dynamic_value}\\"'
+                    )
+                    content = content.replace(
+                        '"placeholder"', f'"{dynamic_value}"'
+                    )
+                    media_type = (
+                        "text/html"
+                        if resolved_file.suffix == ".html"
+                        else "text/plain"
+                    )
+                    return Response(content=content, media_type=media_type)
+                return FileResponse(resolved_file)
             return FileResponse(index_html)
     else:
         logger.warning(
@@ -320,27 +338,38 @@ def create_app() -> FastAPI:
     return app
 
 
-def _resolve_dynamic_route(static_dir: Path, full_path: str) -> Path | None:
-    """Resolve a Next.js dynamic route by substituting missing path segments with
-    the generateStaticParams placeholder directory.
+def _resolve_dynamic_route(
+    static_dir: Path, full_path: str
+) -> tuple[Path, str | None] | None:
+    """Resolve a Next.js dynamic route by substituting missing path segments
+    with the generateStaticParams placeholder directory.
 
-    E.g. hosts/123/ → hosts/placeholder/index.html
+    Returns ``(resolved_file, dynamic_value)`` where *dynamic_value* is the
+    original URL segment that was substituted (e.g. ``"1"`` for
+    ``/groups/1/``), or ``None`` when no substitution was needed.
     """
     parts = Path(full_path).parts
+    if not parts:
+        return None
     current = static_dir
+    dynamic_value: str | None = None
     for part in parts:
         candidate = current / part
         if candidate.is_dir():
             current = candidate
+        elif candidate.is_file():
+            return (candidate, dynamic_value)
         else:
-            # Dynamic segment: use the "placeholder" directory (generateStaticParams convention)
             placeholder = current / "placeholder"
-            if placeholder.is_dir() and (placeholder / "index.html").is_file():
+            if placeholder.is_dir():
+                dynamic_value = part
                 current = placeholder
             else:
                 return None
     index = current / "index.html"
-    return index if index.is_file() else None
+    if index.is_file():
+        return (index, dynamic_value)
+    return None
 
 
 def _resolve_static_dir() -> Path | None:
