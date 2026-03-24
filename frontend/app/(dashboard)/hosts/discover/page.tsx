@@ -25,6 +25,7 @@ import type { SSHKey, HostGroup } from "@/lib/types"
 interface DiscoveredHost {
   ip: string
   hostname: string | null
+  ssh_status: "open" | "refused"
 }
 
 interface ScanStatus {
@@ -81,7 +82,7 @@ export default function DiscoverHostsPage() {
   })
 
   useEffect(() => {
-    if (!scanStatus || phase !== "scanning") return
+    if (!jobId || !scanStatus || phase !== "scanning") return
     if (scanStatus.status === "done") {
       setPhase("done")
     } else if (scanStatus.status === "error") {
@@ -89,7 +90,7 @@ export default function DiscoverHostsPage() {
       setPhase("idle")
       setJobId(null)
     }
-  }, [scanStatus, phase])
+  }, [jobId, scanStatus, phase])
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -106,6 +107,7 @@ export default function DiscoverHostsPage() {
     setAddResult(null)
     setAddError(null)
     setSelectedHosts(new Set())
+    setJobId(null)
     setPhase("scanning")
     try {
       const status = await apiFetch<ScanStatus>("/api/discovery/scan", {
@@ -288,9 +290,15 @@ export default function DiscoverHostsPage() {
                   <TableCell className="font-mono text-slate-300">{host.ip}</TableCell>
                   <TableCell className="text-white">{host.hostname ?? "—"}</TableCell>
                   <TableCell>
-                    <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-400 ring-1 ring-blue-500/20">
-                      New
-                    </span>
+                    {host.ssh_status === "open" ? (
+                      <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400 ring-1 ring-green-500/20">
+                        SSH Open
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
+                        SSH Refused
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

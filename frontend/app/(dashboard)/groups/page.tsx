@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, LayoutListIcon, TableIcon } from "lucide-react"
+import { SearchIcon, XIcon, LayoutListIcon, TableIcon, PencilIcon, CheckIcon, Trash2Icon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -32,6 +32,8 @@ export default function GroupsPage() {
   const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
     typeof window !== "undefined" && localStorage.getItem("barricade-groups-view") === "grouped" ? "grouped" : "flat"
   )
+  const [editingCategory, setEditingCategory] = useState<string | null>(null)
+  const [editCategoryValue, setEditCategoryValue] = useState("")
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -103,6 +105,55 @@ export default function GroupsPage() {
       showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
     }
     setBulkConfirmOpen(false)
+  }
+
+  function startEditingCategory(category: string) {
+    setEditingCategory(category)
+    setEditCategoryValue(category === "__uncategorized__" ? "" : category)
+  }
+
+  async function handleRenameCategory(oldCategory: string) {
+    const newCategory = editCategoryValue.trim() || null
+    const oldValue = oldCategory === "__uncategorized__" ? null : oldCategory
+    if (newCategory === oldValue) {
+      setEditingCategory(null)
+      return
+    }
+    const categoryGroups = groups?.filter(g => (g.category || "__uncategorized__") === oldCategory) ?? []
+    try {
+      await Promise.all(
+        categoryGroups.map(g =>
+          apiFetch(`/api/groups/${g.id}`, {
+            method: "PUT",
+            json: { category: newCategory },
+          })
+        )
+      )
+      await queryClient.invalidateQueries({ queryKey: ["groups"] })
+      showSuccess(newCategory ? `Category renamed to "${newCategory}"` : "Category cleared")
+    } catch {
+      showError("Failed to rename category")
+    }
+    setEditingCategory(null)
+  }
+
+  async function handleDeleteCategory(category: string) {
+    if (category === "__uncategorized__") return
+    const categoryGroups = groups?.filter(g => g.category === category) ?? []
+    try {
+      await Promise.all(
+        categoryGroups.map(g =>
+          apiFetch(`/api/groups/${g.id}`, {
+            method: "PUT",
+            json: { category: null },
+          })
+        )
+      )
+      await queryClient.invalidateQueries({ queryKey: ["groups"] })
+      showSuccess(`Category "${category}" removed`)
+    } catch {
+      showError("Failed to remove category")
+    }
   }
 
   return (
@@ -248,8 +299,58 @@ export default function GroupsPage() {
                 <details key={category} open className="group">
                   <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
                     <span className="transition-transform group-open:rotate-90">▶</span>
-                    <span>{category === "__uncategorized__" ? "Uncategorized" : category}</span>
-                    <span className="text-slate-500 font-normal">({categoryGroups.length})</span>
+                    {editingCategory === category ? (
+                      <span className="flex items-center gap-1.5" onClick={e => e.preventDefault()}>
+                        <Input
+                          autoFocus
+                          value={editCategoryValue}
+                          onChange={e => setEditCategoryValue(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") handleRenameCategory(category)
+                            if (e.key === "Escape") setEditingCategory(null)
+                          }}
+                          placeholder="Category name (empty to clear)"
+                          className="h-7 w-48 text-sm"
+                        />
+                        <button
+                          onClick={() => handleRenameCategory(category)}
+                          className="p-1 rounded hover:bg-slate-700 text-green-400 hover:text-green-300"
+                          title="Save"
+                        >
+                          <CheckIcon className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setEditingCategory(null)}
+                          className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
+                          title="Cancel"
+                        >
+                          <XIcon className="w-3.5 h-3.5" />
+                        </button>
+                      </span>
+                    ) : (
+                      <>
+                        <span>{category === "__uncategorized__" ? "Uncategorized" : category}</span>
+                        <span className="text-slate-500 font-normal">({categoryGroups.length})</span>
+                        <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1" onClick={e => e.preventDefault()}>
+                          <button
+                            onClick={() => startEditingCategory(category)}
+                            className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-white"
+                            title="Rename category"
+                          >
+                            <PencilIcon className="w-3.5 h-3.5" />
+                          </button>
+                          {category !== "__uncategorized__" && (
+                            <button
+                              onClick={() => handleDeleteCategory(category)}
+                              className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-red-400"
+                              title="Remove category (moves groups to Uncategorized)"
+                            >
+                              <Trash2Icon className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </span>
+                      </>
+                    )}
                   </summary>
                   <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
                     <Table>

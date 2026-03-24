@@ -1,3 +1,4 @@
+import asyncssh
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert as sa_insert
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.users import current_superuser
 from app.config import settings
+from app.crypto.encryption import decrypt_ssh_key
+from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.discovery.scanner import validate_cidr
 from app.models.host import Host, HostGroupMembership
@@ -85,7 +88,7 @@ async def get_scan_status(
     elif state == "SUCCESS":
         data = result.result or {}
         hosts_found = [
-            DiscoveredHost(ip=h["ip"], hostname=h.get("hostname"))
+            DiscoveredHost(ip=h["ip"], hostname=h.get("hostname"), ssh_status=h.get("ssh_status", "open"))
             for h in data.get("hosts_found", [])
         ]
         return ScanStatus(
@@ -123,10 +126,16 @@ async def add_discovered_hosts(
             )
         )
 
-    # Validate SSH key exists
+    # Validate SSH key exists and load it for hostname detection
     key_result = await db.execute(select(SSHKey).where(SSHKey.id == body.ssh_key_id))
-    if not key_result.scalar_one_or_none():
+    ssh_key = key_result.scalar_one_or_none()
+    if not ssh_key:
         raise HTTPException(status_code=404, detail="SSH key not found")
+
+    # Prepare SSH key for hostname lookups
+    master_key = get_master_key()
+    private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
+    imported_key = asyncssh.import_private_key(private_pem)
 
     # Validate all group_ids exist
     for gid in body.group_ids:
@@ -146,11 +155,30 @@ async def add_discovered_hosts(
             skipped += 1
             continue
 
-        # Attempt reverse DNS for hostname
+        # Attempt reverse DNS for hostname, fall back to SSH
+        hostname = None
         try:
             fqdn = _socket.getfqdn(ip)
-            hostname = ip if fqdn == ip else fqdn
+            if fqdn != ip:
+                hostname = fqdn
         except Exception:
+            pass
+
+        if not hostname:
+            try:
+                async with asyncssh.connect(
+                    ip,
+                    port=body.ssh_port,
+                    username="root",
+                    client_keys=[imported_key],
+                    known_hosts=None,
+                ) as conn:
+                    result = await conn.run("hostname", check=True)
+                    hostname = result.stdout.strip()
+            except Exception:
+                pass
+
+        if not hostname:
             hostname = ip
 
         # Ensure hostname uniqueness

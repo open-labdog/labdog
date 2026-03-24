@@ -87,19 +87,19 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-slate-700 pt-4">
-        <div className="text-sm text-slate-300 truncate">{user?.email}</div>
-        <div className="flex gap-2 mt-2">
-           <Button size="sm" variant="outline" onClick={() => {
-            form.reset()
-            setPasswordDialogOpen(true)
-          }}>
+      <div className="mt-auto border-t border-slate-700 pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-slate-300 truncate">{user?.email}</div>
+          <button
+            onClick={() => { form.reset(); setPasswordDialogOpen(true) }}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+          >
             Change Password
-          </Button>
-          <Button size="sm" variant="ghost" onClick={logout}>
-            Log Out
-          </Button>
+          </button>
         </div>
+        <Button size="sm" variant="destructive" className="w-full" onClick={logout}>
+          Log Out
+        </Button>
       </div>
 
       <Dialog open={passwordDialogOpen} onOpenChange={(open) => {

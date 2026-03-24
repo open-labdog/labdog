@@ -12,6 +12,7 @@ class ScanRequest(BaseModel):
 class DiscoveredHost(BaseModel):
     ip: str
     hostname: str | None = None  # reverse DNS result, None if lookup failed
+    ssh_status: str = "open"  # "open" or "refused"
 
 
 class ScanStatus(BaseModel):
