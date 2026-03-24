@@ -94,6 +94,7 @@ def main() -> None:
         "log_level": settings.logging.level,
         "workers": args.workers,
         "reload": args.reload,
+        "ws": "wsproto",
     }
 
     # TLS — only if both cert and key are provided

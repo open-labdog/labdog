@@ -42,22 +42,34 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             host_id=host_id,
         )
         if not can_register:
-            await websocket.close(code=4429, reason="Session limit exceeded")
+            try:
+                await websocket.close(code=4429, reason="Session limit exceeded")
+            except Exception:
+                pass
             return
 
         try:
             conn, process = await open_ssh_shell(host_id, db)
         except HostNotFoundError:
             await registry.deregister(session_id)
-            await websocket.close(code=4404, reason="Host not found")
+            try:
+                await websocket.close(code=4404, reason="Host not found")
+            except Exception:
+                pass
             return
         except NoSSHKeyError:
             await registry.deregister(session_id)
-            await websocket.close(code=4400, reason="Host has no SSH key")
+            try:
+                await websocket.close(code=4400, reason="Host has no SSH key")
+            except Exception:
+                pass
             return
         except SSHConnectionError as e:
             await registry.deregister(session_id)
-            await websocket.close(code=4502, reason=str(e)[:120])
+            try:
+                await websocket.close(code=4502, reason=str(e)[:120])
+            except Exception:
+                pass
             return
 
         host_result = await db.execute(select(Host).where(Host.id == host_id))

@@ -56,28 +56,34 @@ async def create_host(
 ):
     hostname = body.hostname
 
+    # Resolve SSH user from key (if provided), falling back to body.ssh_user
+    ssh_user = body.ssh_user
+    ssh_key = None
+    if body.ssh_key_id:
+        key_result = await db.execute(
+            select(SSHKey).where(SSHKey.id == body.ssh_key_id)
+        )
+        ssh_key = key_result.scalar_one_or_none()
+        if ssh_key:
+            ssh_user = ssh_key.ssh_user
+
     # If hostname is empty, try to fetch it from the host via SSH
-    if not hostname and body.ssh_key_id:
+    if not hostname and ssh_key:
         try:
-            key_result = await db.execute(
-                select(SSHKey).where(SSHKey.id == body.ssh_key_id)
+            master_key = get_master_key()
+            private_pem = decrypt_ssh_key(
+                ssh_key.encrypted_private_key, master_key
             )
-            ssh_key = key_result.scalar_one_or_none()
-            if ssh_key:
-                master_key = get_master_key()
-                private_pem = decrypt_ssh_key(
-                    ssh_key.encrypted_private_key, master_key
-                )
-                imported_key = asyncssh.import_private_key(private_pem)
-                async with asyncssh.connect(
-                    body.ip_address,
-                    port=body.ssh_port,
-                    username=body.ssh_user,
-                    client_keys=[imported_key],
-                    known_hosts=None,
-                ) as conn:
-                    result = await conn.run("hostname", check=True)
-                    hostname = result.stdout.strip()
+            imported_key = asyncssh.import_private_key(private_pem)
+            async with asyncssh.connect(
+                body.ip_address,
+                port=body.ssh_port,
+                username=ssh_user,
+                client_keys=[imported_key],
+                known_hosts=None,
+            ) as conn:
+                result = await conn.run("hostname", check=True)
+                hostname = result.stdout.strip()
         except Exception:
             raise HTTPException(
                 status_code=422,
@@ -94,6 +100,7 @@ async def create_host(
         hostname=hostname,
         ip_address=body.ip_address,
         ssh_port=body.ssh_port,
+        ssh_user=ssh_user,
         ssh_key_id=body.ssh_key_id,
     )
     db.add(host)
