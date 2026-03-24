@@ -93,7 +93,7 @@ export default function HostDetailPage() {
     effectiveLinuxGroups: effectiveLinuxGroupsQuery, showLinuxGroupsLoading,
     hostLinuxUserOverrides: hostLinuxUserOverridesQuery, hostLinuxGroupOverrides: hostLinuxGroupOverridesQuery,
     effectiveCronJobs: effectiveCronJobsQuery, showCronJobsLoading, hostCronOverrides: hostCronOverridesQuery,
-    effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery,
+    effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery, effectiveRepos: effectiveReposQuery,
     effectiveResolver: effectiveResolverQuery, showResolverLoading, hostResolverOverride: hostResolverOverrideQuery,
   } = useHostQueries(id, activeTab)
 
@@ -129,6 +129,7 @@ export default function HostDetailPage() {
   const packagesLoading = effectivePackagesQuery.isLoading
   const packagesError = effectivePackagesQuery.error
   const hostPackageOverrides = hostPackageOverridesQuery.data
+  const effectiveRepos = effectiveReposQuery.data
   const effectiveResolver = effectiveResolverQuery.data
   const resolverLoading = effectiveResolverQuery.isLoading
   const resolverError = effectiveResolverQuery.error
@@ -2195,6 +2196,70 @@ export default function HostDetailPage() {
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
                         )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {/* Effective Repositories */}
+          <div>
+            <h2 className="text-lg font-semibold text-white">Effective Repositories</h2>
+            <p className="text-slate-400 text-sm mt-1">
+              Package repositories applied from groups. Manage these in group settings.
+            </p>
+          </div>
+
+          {effectiveReposQuery.isLoading && <TableSkeleton rows={2} columns={4} />}
+
+          {effectiveReposQuery.error && (
+            <div className="text-red-400 py-6 text-center">Failed to load repositories</div>
+          )}
+
+          {!effectiveReposQuery.isLoading && !effectiveReposQuery.error && effectiveRepos && effectiveRepos.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No repositories configured. Add repositories at the group level.
+            </div>
+          )}
+
+          {!effectiveReposQuery.isLoading && !effectiveReposQuery.error && effectiveRepos && effectiveRepos.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Name</TableHead>
+                    <TableHead>URL</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Distribution</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Source</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveRepos.map((repo) => (
+                    <TableRow key={repo.id} className="border-slate-700">
+                      <TableCell className="font-medium text-white">{repo.name}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs max-w-xs truncate">{repo.url}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs font-mono">{repo.repo_type}</Badge>
+                      </TableCell>
+                      <TableCell className="text-slate-400 text-sm">
+                        {repo.distribution ?? <span className="text-slate-600">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={repo.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                          {repo.state.charAt(0).toUpperCase() + repo.state.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          href={`/groups/${repo.group_id}`}
+                          className="text-xs text-blue-400 hover:text-blue-300 underline"
+                        >
+                          Group {groups?.find(g => g.id === repo.group_id)?.name ?? repo.group_id}
+                        </Link>
                       </TableCell>
                     </TableRow>
                   ))}

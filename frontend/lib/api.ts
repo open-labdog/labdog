@@ -1,16 +1,27 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""
 
+export class ApiError extends Error {
+  status: number
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
-  options?: RequestInit
+  options?: RequestInit & { json?: unknown }
 ): Promise<T> {
+  const { json, ...fetchOptions } = options ?? {}
   const res = await fetch(`${API_BASE}${path}`, {
-    ...options,
+    ...fetchOptions,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...options?.headers,
+      ...fetchOptions?.headers,
     },
+    ...(json !== undefined ? { body: JSON.stringify(json) } : {}),
   })
   if (!res.ok) {
     let detail = `API error ${res.status}`
@@ -26,7 +37,7 @@ export async function apiFetch<T>(
         detail = body.detail
       }
     } catch {}
-    throw new Error(detail)
+    throw new ApiError(detail, res.status)
   }
   if (res.status === 204) return undefined as T
   return res.json()

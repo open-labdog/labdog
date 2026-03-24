@@ -21,6 +21,7 @@ import type {
   CronJob,
   EffectivePackage,
   PackageRule,
+  PackageRepository,
   EffectiveResolverConfig,
   ResolverConfig,
 } from "@/lib/types"
@@ -138,6 +139,12 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id && activeTab === "packages",
   })
 
+  const effectiveRepos = useQuery<PackageRepository[]>({
+    queryKey: ["host-effective-repos", id],
+    queryFn: () => apiFetch<PackageRepository[]>(`/api/hosts/${id}/effective-repos`),
+    enabled: !!id && activeTab === "packages",
+  })
+
   const effectiveResolver = useQuery<EffectiveResolverConfig>({
     queryKey: ["host-effective-resolver", id],
     queryFn: () => apiFetch<EffectiveResolverConfig>(`/api/hosts/${id}/effective-resolver`),
@@ -183,6 +190,7 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     effectivePackages,
     showPackagesLoading,
     hostPackageOverrides,
+    effectiveRepos,
     effectiveResolver,
     showResolverLoading,
     hostResolverOverride,

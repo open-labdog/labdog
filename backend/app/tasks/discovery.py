@@ -43,17 +43,17 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
                 )
         return found
 
-    open_ips = asyncio.run(_scan_with_progress())
+    reachable = asyncio.run(_scan_with_progress())
 
     # Attempt reverse DNS for each discovered IP
     hosts_found = []
-    for ip in open_ips:
+    for ip, port_status in reachable:
         try:
             fqdn = socket.getfqdn(ip)
             hostname = None if fqdn == ip else fqdn
         except Exception:
             hostname = None
-        hosts_found.append({"ip": ip, "hostname": hostname})
+        hosts_found.append({"ip": ip, "hostname": hostname, "ssh_status": port_status})
 
     return {
         "hosts_found": hosts_found,
