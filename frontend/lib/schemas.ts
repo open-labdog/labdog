@@ -68,6 +68,7 @@ export type HostsEntryInput = z.infer<typeof hostsEntrySchema>
 export const sshKeySchema = z.object({
   name: z.string().min(1, "Name is required"),
   private_key: z.string().min(1, "Private key is required"),
+  ssh_user: z.string().min(1, "SSH user is required").max(32),
   is_default: z.boolean(),
 })
 export type SshKeyInput = z.infer<typeof sshKeySchema>

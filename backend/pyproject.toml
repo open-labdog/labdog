@@ -23,6 +23,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "gitpython>=3.1",
     "asyncssh>=2.17",
+    "wsproto>=1.2",
 ]
 
 [project.optional-dependencies]

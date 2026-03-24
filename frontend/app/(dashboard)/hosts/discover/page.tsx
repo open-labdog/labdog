@@ -37,9 +37,15 @@ interface ScanStatus {
   error?: string
 }
 
+interface FailedHost {
+  ip: string
+  error: string
+}
+
 interface AddResult {
   added: number
   skipped: number
+  failed: FailedHost[]
 }
 
 const cidrSchema = z.object({
@@ -356,18 +362,42 @@ export default function DiscoverHostsPage() {
       )}
 
       {addResult && (
-        <div className="rounded-lg border border-green-800 bg-green-950/30 px-4 py-4 space-y-2">
-          <p className="text-green-400 text-sm font-medium">
-            {addResult.added} host{addResult.added !== 1 ? "s" : ""} added
-            {addResult.skipped > 0 && (
-              <span className="text-slate-400 font-normal">
-                {" "}({addResult.skipped} skipped)
-              </span>
-            )}
-          </p>
-          <Link href="/hosts" className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2">
-            View all hosts →
-          </Link>
+        <div className="space-y-3">
+          {addResult.added > 0 && (
+            <div className="rounded-lg border border-green-800 bg-green-950/30 px-4 py-4 space-y-2">
+              <p className="text-green-400 text-sm font-medium">
+                {addResult.added} host{addResult.added !== 1 ? "s" : ""} added
+                {addResult.skipped > 0 && (
+                  <span className="text-slate-400 font-normal">
+                    {" "}({addResult.skipped} already existed)
+                  </span>
+                )}
+              </p>
+              <Link href="/hosts" className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                View all hosts →
+              </Link>
+            </div>
+          )}
+          {addResult.failed.length > 0 && (
+            <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-4 space-y-2">
+              <p className="text-red-400 text-sm font-medium">
+                {addResult.failed.length} host{addResult.failed.length !== 1 ? "s" : ""} failed SSH verification
+              </p>
+              <ul className="space-y-1">
+                {addResult.failed.map((f) => (
+                  <li key={f.ip} className="text-sm text-slate-400">
+                    <span className="font-mono text-slate-300">{f.ip}</span>
+                    {" — "}{f.error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {addResult.added === 0 && addResult.failed.length === 0 && addResult.skipped > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-4">
+              <p className="text-slate-400 text-sm">All {addResult.skipped} hosts already existed.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

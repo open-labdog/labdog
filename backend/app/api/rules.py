@@ -147,28 +147,19 @@ async def get_effective_rules(
 
     if not group_ids:
         # Return just the SSH lockout rule even if no groups
-        ssh_rule = FirewallRuleSpec(
-            action="allow",
-            protocol="tcp",
-            direction="input",
-            source_cidr=None,  # Will be set by merge_group_rules
-            port_start=22,
-            comment="Barricade server SSH access — auto-injected, do not remove",
-            is_system=True,
-            priority=999999,
-        )
+        merged_specs = merge_group_rules([])
         return [EffectiveRuleResponse(
-            action=ssh_rule.action,
-            protocol=ssh_rule.protocol,
-            direction=ssh_rule.direction,
-            source_cidr=ssh_rule.source_cidr,
-            destination_cidr=ssh_rule.destination_cidr,
-            port_start=ssh_rule.port_start,
-            port_end=ssh_rule.port_end,
-            comment=ssh_rule.comment,
-            priority=ssh_rule.priority,
-            is_system=ssh_rule.is_system,
-        )]
+            action=r.action,
+            protocol=r.protocol,
+            direction=r.direction,
+            source_cidr=r.source_cidr,
+            destination_cidr=r.destination_cidr,
+            port_start=r.port_start,
+            port_end=r.port_end,
+            comment=r.comment,
+            priority=r.priority,
+            is_system=r.is_system,
+        ) for r in merged_specs]
 
     # Build groups_data with FirewallRuleSpec objects (same pattern as sync.py)
     groups_data = []

@@ -22,7 +22,7 @@ export interface Host {
 }
 export interface SSHKey {
   id: number; name: string; public_key: string | null
-  is_default: boolean; created_at: string
+  ssh_user: string; is_default: boolean; created_at: string
 }
 
 export interface GitRepository {

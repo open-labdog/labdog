@@ -45,11 +45,17 @@ export default function SSHKeysPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState<SSHKey | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editSshUser, setEditSshUser] = useState("")
+  const [editIsDefault, setEditIsDefault] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const form = useForm<SshKeyInput>({
     resolver: zodResolver(sshKeySchema),
-    defaultValues: { name: "", private_key: "", is_default: false },
+    defaultValues: { name: "", private_key: "", ssh_user: "root", is_default: false },
     mode: "onSubmit",
   })
 
@@ -70,6 +76,7 @@ export default function SSHKeysPage() {
         body: JSON.stringify({
           name: data.name,
           private_key: data.private_key,
+          ssh_user: data.ssh_user,
           is_default: data.is_default ?? false,
         }),
       }),
@@ -154,6 +161,37 @@ export default function SSHKeysPage() {
     setBulkConfirmOpen(false)
   }
 
+  function openEdit(key: SSHKey) {
+    setEditingKey(key)
+    setEditName(key.name)
+    setEditSshUser(key.ssh_user)
+    setEditIsDefault(key.is_default)
+    setEditError(null)
+  }
+
+  async function handleEditSave() {
+    if (!editingKey) return
+    setEditSaving(true)
+    setEditError(null)
+    try {
+      await apiFetch(`/api/ssh-keys/${editingKey.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: editName !== editingKey.name ? editName : undefined,
+          ssh_user: editSshUser !== editingKey.ssh_user ? editSshUser : undefined,
+          is_default: editIsDefault !== editingKey.is_default ? editIsDefault : undefined,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
+      showSuccess("SSH key updated")
+      setEditingKey(null)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update")
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "SSH Keys" }]} />
@@ -205,6 +243,20 @@ export default function SSHKeysPage() {
                    <p className="text-sm text-red-400">{form.formState.errors.private_key.message}</p>
                  )}
                </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ssh-user">SSH User</Label>
+                <Input
+                  id="ssh-user"
+                  type="text"
+                  placeholder="root"
+                  {...form.register("ssh_user")}
+                  className="font-mono"
+                />
+                {form.formState.errors.ssh_user && (
+                  <p className="text-sm text-red-400">{form.formState.errors.ssh_user.message}</p>
+                )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <input
@@ -315,6 +367,7 @@ export default function SSHKeysPage() {
                     />
                   </TableHead>
                   <TableHead>Name</TableHead>
+                  <TableHead>SSH User</TableHead>
                   <TableHead>Default</TableHead>
                   <TableHead>Created At</TableHead>
                   <TableHead>Actions</TableHead>
@@ -332,6 +385,7 @@ export default function SSHKeysPage() {
                       />
                     </TableCell>
                     <TableCell className="font-medium text-white">{key.name}</TableCell>
+                    <TableCell className="font-mono text-slate-300 text-sm">{key.ssh_user}</TableCell>
                     <TableCell>
                       {key.is_default ? (
                         <Badge className="bg-green-600 text-white">Default</Badge>
@@ -343,14 +397,23 @@ export default function SSHKeysPage() {
                       {new Date(key.created_at).toLocaleDateString()}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(key.id)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                      </Button>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(key)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleDelete(key.id)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          {deleteMutation.isPending ? "..." : "Delete"}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -383,6 +446,35 @@ export default function SSHKeysPage() {
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
       />
+
+      <Dialog open={!!editingKey} onOpenChange={(open) => { if (!open) setEditingKey(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit SSH Key</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-ssh-user">SSH User</Label>
+              <Input id="edit-ssh-user" value={editSshUser} onChange={(e) => setEditSshUser(e.target.value)} className="font-mono" />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="edit-default" type="checkbox" checked={editIsDefault} onChange={(e) => setEditIsDefault(e.target.checked)} className="rounded border-input" />
+              <Label htmlFor="edit-default">Set as default key</Label>
+            </div>
+            {editError && <p className="text-sm text-red-400">{editError}</p>}
+            <div className="flex gap-3 pt-2">
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? "Saving..." : "Save"}
+              </Button>
+              <Button variant="outline" onClick={() => setEditingKey(null)}>Cancel</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
