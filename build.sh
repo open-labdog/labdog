@@ -21,11 +21,13 @@ docker build \
   --file Dockerfile \
   .
 
-# Prune build cache and dangling images
-echo ""
-echo "--- Cleaning up ---"
-docker builder prune -f 2>/dev/null || true
-docker image prune -f 2>/dev/null || true
+# Prune build cache and dangling images (only when --clean is passed)
+if [[ "${1:-}" == "--clean" ]]; then
+  echo ""
+  echo "--- Cleaning up ---"
+  docker builder prune -f 2>/dev/null || true
+  docker image prune -f 2>/dev/null || true
+fi
 
 echo ""
 echo "=== Done ==="
