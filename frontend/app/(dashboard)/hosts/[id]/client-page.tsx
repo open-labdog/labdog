@@ -3,7 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, RefreshCwIcon, X } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, PlayIcon, X } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -80,6 +80,44 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function ModuleStateView({ moduleType, state }: { moduleType: string; state: unknown }) {
+  if (moduleType === "firewall" && Array.isArray(state)) {
+    const rules = state as Array<{ action: string; protocol: string; direction: string; source_cidr?: string; destination_cidr?: string; port_start?: number; port_end?: number; comment?: string }>
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow className="border-slate-700">
+            <TableHead>Action</TableHead>
+            <TableHead>Protocol</TableHead>
+            <TableHead>Direction</TableHead>
+            <TableHead>Source</TableHead>
+            <TableHead>Dest</TableHead>
+            <TableHead>Port(s)</TableHead>
+            <TableHead>Comment</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rules.map((r, i) => (
+            <TableRow key={i} className="border-slate-700">
+              <TableCell>
+                <Badge className={r.action === "allow" ? "bg-green-600 text-white" : r.action === "deny" ? "bg-red-600 text-white" : "bg-amber-600 text-white"}>
+                  {r.action}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-slate-300 uppercase text-xs">{r.protocol}</TableCell>
+              <TableCell className="text-slate-300 capitalize text-xs">{r.direction}</TableCell>
+              <TableCell className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</TableCell>
+              <TableCell className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</TableCell>
+              <TableCell className="font-mono text-slate-300 text-xs">
+                {r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}
+              </TableCell>
+              <TableCell className="text-slate-400 text-xs truncate max-w-[140px]">{r.comment ?? "—"}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    )
+  }
+
   if (moduleType === "service" && Array.isArray(state)) {
     const services = state as Array<{ unit?: string; service_name?: string; active_state: string; sub_state?: string; description?: string; enabled?: boolean }>
     return (
@@ -319,7 +357,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -386,6 +424,7 @@ export default function HostDetailPage() {
 
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
+  const [syncing, setSyncing] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -885,24 +924,52 @@ export default function HostDetailPage() {
               Terminal
             </Button>
             {activeTab === "overview" && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={collecting || !host.ssh_key_id}
-                title={host.ssh_key_id ? "Collect current state for all modules" : "No SSH key assigned"}
-                onClick={async () => {
-                  setCollecting(true)
-                  try {
-                    await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
-                    await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={collecting || !host.ssh_key_id}
+                  title={host.ssh_key_id ? "Collect current state for all modules" : "No SSH key assigned"}
+                  onClick={async () => {
+                    setCollecting(true)
+                    try {
+                      await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
+                      await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+                      await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                    } catch { /* ignore */ }
+                    setCollecting(false)
+                  }}
+                >
+                  <RefreshCwIcon className={`w-4 h-4 mr-1 ${collecting ? "animate-spin" : ""}`} />
+                  {collecting ? "Collecting..." : "Collect All"}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={syncing || !host.ssh_key_id}
+                  title={host.ssh_key_id ? "Sync all modules to this host" : "No SSH key assigned"}
+                  onClick={async () => {
+                    setSyncing(true)
+                    const endpoints = [
+                      `/api/sync/hosts/${id}/sync`,
+                      `/api/services/hosts/${id}/sync`,
+                      `/api/hosts-mgmt/hosts/${id}/sync`,
+                      `/api/linux-users/hosts/${id}/sync`,
+                      `/api/cron/hosts/${id}/sync`,
+                      `/api/packages/hosts/${id}/sync`,
+                      `/api/resolver/hosts/${id}/sync`,
+                    ]
+                    for (const ep of endpoints) {
+                      try { await apiFetch(ep, { method: "POST" }) } catch { /* skip modules with no config */ }
+                    }
                     await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setCollecting(false)
-                }}
-              >
-                <RefreshCwIcon className={`w-4 h-4 mr-1 ${collecting ? "animate-spin" : ""}`} />
-                {collecting ? "Collecting..." : "Collect All"}
-              </Button>
+                    await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+                    setSyncing(false)
+                  }}
+                >
+                  <PlayIcon className={`w-4 h-4 mr-1`} />
+                  {syncing ? "Syncing..." : "Sync All"}
+                </Button>
+              </>
             )}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogTrigger render={<Button variant="outline" size="sm" />}>
@@ -1019,6 +1086,16 @@ export default function HostDetailPage() {
           Overview
         </button>
         <button
+          onClick={() => setActiveTab("rules")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "rules"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Rules
+        </button>
+        <button
           onClick={() => setActiveTab("services")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "services"
@@ -1123,67 +1200,72 @@ export default function HostDetailPage() {
               </InfoRow>
             </div>
           )}
+        </>
+      )}
 
+      {activeTab === "rules" && (
+        <div className="space-y-6">
           <div>
-            <h2 className="text-lg font-semibold text-white mb-3">Effective Rules</h2>
-            <p className="text-slate-400 text-sm mb-4">
+            <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+            <p className="text-slate-400 text-sm mt-1">
               Combined rules applied to this host from all assigned groups, in priority order.
             </p>
-
-            {showRulesLoading && <TableSkeleton rows={3} columns={4} />}
-
-            {rulesError && (
-              <div className="text-red-400 py-6 text-center">Failed to load effective rules</div>
-            )}
-
-            {!rulesLoading && !rulesError && effectiveRules && effectiveRules.length === 0 && (
-              <div className="text-slate-400 py-6 text-center">
-                No effective rules. Assign this host to a group with rules.
-              </div>
-            )}
-
-            {!rulesLoading && !rulesError && effectiveRules && effectiveRules.length > 0 && (
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead className="w-16">Priority</TableHead>
-                      <TableHead>Action</TableHead>
-                      <TableHead>Protocol</TableHead>
-                      <TableHead>Direction</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Dest</TableHead>
-                      <TableHead>Port(s)</TableHead>
-                      <TableHead>Group</TableHead>
-                      <TableHead>Comment</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {effectiveRules.map((rule) => (
-                      <TableRow key={`${rule.id}-${rule.group_id}`} className="border-slate-700">
-                        <TableCell className="font-mono text-slate-300 text-xs">{rule.priority}</TableCell>
-                        <TableCell>
-                          <ActionBadge action={rule.action} />
-                        </TableCell>
-                        <TableCell className="text-slate-300 uppercase text-xs">{rule.protocol}</TableCell>
-                        <TableCell className="text-slate-300 capitalize text-xs">{rule.direction}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{rule.source_cidr ?? "any"}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{rule.destination_cidr ?? "any"}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs font-mono">
-                            #{rule.group_id}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
           </div>
-        </>
+
+          {showRulesLoading && <TableSkeleton rows={3} columns={4} />}
+
+          {rulesError && (
+            <div className="text-red-400 py-6 text-center">Failed to load effective rules</div>
+          )}
+
+          {!rulesLoading && !rulesError && effectiveRules && effectiveRules.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No effective rules. Assign this host to a group with rules.
+            </div>
+          )}
+
+          {!rulesLoading && !rulesError && effectiveRules && effectiveRules.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead className="w-16">Priority</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead>Protocol</TableHead>
+                    <TableHead>Direction</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead>Dest</TableHead>
+                    <TableHead>Port(s)</TableHead>
+                    <TableHead>Group</TableHead>
+                    <TableHead>Comment</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveRules.map((rule) => (
+                    <TableRow key={`${rule.id}-${rule.group_id}`} className="border-slate-700">
+                      <TableCell className="font-mono text-slate-300 text-xs">{rule.priority}</TableCell>
+                      <TableCell>
+                        <ActionBadge action={rule.action} />
+                      </TableCell>
+                      <TableCell className="text-slate-300 uppercase text-xs">{rule.protocol}</TableCell>
+                      <TableCell className="text-slate-300 capitalize text-xs">{rule.direction}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{rule.source_cidr ?? "any"}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{rule.destination_cidr ?? "any"}</TableCell>
+                      <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs font-mono">
+                          #{rule.group_id}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+          <CurrentStateSection moduleType="firewall" modules={currentStateQuery.data} hostId={id} />
+        </div>
       )}
 
       {activeTab === "services" && (

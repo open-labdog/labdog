@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, LayoutListIcon, TableIcon, PencilIcon, CheckIcon, Trash2Icon } from "lucide-react"
+import { SearchIcon, XIcon, LayoutListIcon, TableIcon, PencilIcon, CheckIcon, Trash2Icon, PlayIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -29,6 +29,7 @@ export default function GroupsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [syncingGroup, setSyncingGroup] = useState<number | null>(null)
   const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
     typeof window !== "undefined" && localStorage.getItem("barricade-groups-view") === "grouped" ? "grouped" : "flat"
   )
@@ -154,6 +155,26 @@ export default function GroupsPage() {
     } catch {
       showError("Failed to remove category")
     }
+  }
+
+  async function handleSyncGroup(groupId: number) {
+    setSyncingGroup(groupId)
+    const endpoints = [
+      `/api/sync/groups/${groupId}/sync`,
+      `/api/services/groups/${groupId}/sync`,
+      `/api/hosts-mgmt/groups/${groupId}/sync`,
+      `/api/linux-users/groups/${groupId}/sync`,
+      `/api/cron/groups/${groupId}/sync`,
+      `/api/packages/groups/${groupId}/sync`,
+      `/api/resolver/groups/${groupId}/sync`,
+    ]
+    let success = 0
+    for (const ep of endpoints) {
+      try { await apiFetch(ep, { method: "POST" }); success++ } catch { /* skip modules with no config */ }
+    }
+    setSyncingGroup(null)
+    if (success > 0) showSuccess("Sync triggered for all hosts in group")
+    else showError("No modules to sync")
   }
 
   return (
@@ -286,7 +307,18 @@ export default function GroupsPage() {
                       </TableCell>
                       <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
                       <TableCell>
-                        <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={syncingGroup === group.id}
+                            onClick={() => handleSyncGroup(group.id)}
+                          >
+                            <PlayIcon className="w-3.5 h-3.5 mr-1" />
+                            {syncingGroup === group.id ? "..." : "Sync"}
+                          </Button>
+                          <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -400,7 +432,18 @@ export default function GroupsPage() {
                             </TableCell>
                             <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
                             <TableCell>
-                              <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={syncingGroup === group.id}
+                                  onClick={() => handleSyncGroup(group.id)}
+                                >
+                                  <PlayIcon className="w-3.5 h-3.5 mr-1" />
+                                  {syncingGroup === group.id ? "..." : "Sync"}
+                                </Button>
+                                <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
