@@ -307,6 +307,10 @@ def create_app() -> FastAPI:
                 dir_index = file_path / "index.html"
                 if dir_index.is_file():
                     return FileResponse(dir_index)
+            # Support dynamic routes: /hosts/123/ → hosts/[placeholder]/index.html
+            dynamic = _resolve_dynamic_route(static_dir, full_path)
+            if dynamic:
+                return FileResponse(dynamic)
             return FileResponse(index_html)
     else:
         logger.warning(
@@ -314,6 +318,29 @@ def create_app() -> FastAPI:
         )
 
     return app
+
+
+def _resolve_dynamic_route(static_dir: Path, full_path: str) -> Path | None:
+    """Resolve a Next.js dynamic route by substituting missing path segments with
+    the generateStaticParams placeholder directory.
+
+    E.g. hosts/123/ → hosts/placeholder/index.html
+    """
+    parts = Path(full_path).parts
+    current = static_dir
+    for part in parts:
+        candidate = current / part
+        if candidate.is_dir():
+            current = candidate
+        else:
+            # Dynamic segment: use the "placeholder" directory (generateStaticParams convention)
+            placeholder = current / "placeholder"
+            if placeholder.is_dir() and (placeholder / "index.html").is_file():
+                current = placeholder
+            else:
+                return None
+    index = current / "index.html"
+    return index if index.is_file() else None
 
 
 def _resolve_static_dir() -> Path | None:

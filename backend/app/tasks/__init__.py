@@ -35,4 +35,21 @@ celery_app.conf.update(
 )
 
 # Auto-discover tasks
-celery_app.autodiscover_tasks(["app.tasks"])
+celery_app.conf.include = [
+    "app.tasks.discovery",
+    "app.tasks.gitops",
+    "app.tasks.sync",
+    "app.tasks.drift",
+    "app.tasks.service_sync",
+    "app.tasks.service_drift",
+    "app.tasks.hosts_sync",
+    "app.tasks.hosts_drift",
+    "app.tasks.user_sync",
+    "app.tasks.user_drift",
+    "app.tasks.cron_sync",
+    "app.tasks.cron_drift",
+    "app.tasks.package_sync",
+    "app.tasks.package_drift",
+    "app.tasks.resolver_sync",
+    "app.tasks.resolver_drift",
+]
