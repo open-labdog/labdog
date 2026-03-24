@@ -31,7 +31,7 @@ interface EffectiveRule extends FirewallRule {
   group_id: number
 }
 
-type ActiveTab = "overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
+type ActiveTab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
   const host = useQuery<Host>({

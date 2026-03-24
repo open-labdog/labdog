@@ -18,19 +18,25 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 
-interface RuleDiff {
-  rule: string
-  status: "add" | "remove" | "unchanged"
+interface RuleDiffItem {
+  action: string
+  protocol: string
+  direction: string
+  source_cidr: string | null
+  destination_cidr: string | null
+  port_start: number | null
+  port_end: number | null
+  comment: string | null
+  is_system: boolean
 }
 
 interface HostDiff {
   host_id: number
   hostname: string
-  diffs: RuleDiff[]
-}
-
-interface PlanResponse {
-  hosts: HostDiff[]
+  has_changes: boolean
+  rules_to_add: RuleDiffItem[]
+  rules_to_remove: RuleDiffItem[]
+  rules_unchanged: RuleDiffItem[]
 }
 
 interface SyncResponse {
@@ -85,32 +91,37 @@ function StatusIcon({ status }: { status: JobStatus["status"] }) {
   )
 }
 
-function DiffLine({ diff }: { diff: RuleDiff }) {
-  if (diff.status === "add") {
+function formatRule(r: RuleDiffItem): string {
+  const port = r.port_start
+    ? r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`
+    : "any"
+  return `${r.action} ${r.protocol} ${r.direction} ${r.source_cidr ?? "any"} → ${r.destination_cidr ?? "any"} port=${port}${r.comment ? ` (${r.comment})` : ""}`
+}
+
+function DiffLine({ rule, status }: { rule: RuleDiffItem; status: "add" | "remove" | "unchanged" }) {
+  if (status === "add") {
     return (
       <div className="font-mono text-xs text-green-400 bg-green-950/30 px-3 py-0.5 rounded">
-        + {diff.rule}
+        + {formatRule(rule)}
       </div>
     )
   }
-  if (diff.status === "remove") {
+  if (status === "remove") {
     return (
       <div className="font-mono text-xs text-red-400 bg-red-950/30 px-3 py-0.5 rounded">
-        - {diff.rule}
+        - {formatRule(rule)}
       </div>
     )
   }
   return (
     <div className="font-mono text-xs text-slate-500 px-3 py-0.5">
-      &nbsp;&nbsp;{diff.rule}
+      &nbsp;&nbsp;{formatRule(rule)}
     </div>
   )
 }
 
 function HostDiffCard({ host }: { host: HostDiff }) {
   const [expanded, setExpanded] = useState(true)
-  const addCount = host.diffs.filter((d) => d.status === "add").length
-  const removeCount = host.diffs.filter((d) => d.status === "remove").length
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
@@ -120,8 +131,9 @@ function HostDiffCard({ host }: { host: HostDiff }) {
       >
         <div className="flex items-center gap-3">
           <span className="font-medium text-white">{host.hostname}</span>
-          <span className="text-xs text-green-400">+{addCount}</span>
-          <span className="text-xs text-red-400">-{removeCount}</span>
+          {host.rules_to_add.length > 0 && <span className="text-xs text-green-400">+{host.rules_to_add.length}</span>}
+          {host.rules_to_remove.length > 0 && <span className="text-xs text-red-400">-{host.rules_to_remove.length}</span>}
+          {!host.has_changes && <span className="text-xs text-slate-500">no changes</span>}
         </div>
         <svg
           className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
@@ -135,10 +147,14 @@ function HostDiffCard({ host }: { host: HostDiff }) {
       </button>
       {expanded && (
         <div className="border-t border-slate-700 p-3 space-y-0.5 max-h-64 overflow-y-auto">
-          {host.diffs.length === 0 ? (
-            <div className="text-slate-500 text-xs px-3 py-2">No changes</div>
+          {!host.has_changes && host.rules_unchanged.length === 0 ? (
+            <div className="text-slate-500 text-xs px-3 py-2">No rules configured</div>
           ) : (
-            host.diffs.map((diff, i) => <DiffLine key={i} diff={diff} />)
+            <>
+              {host.rules_to_add.map((r, i) => <DiffLine key={`a${i}`} rule={r} status="add" />)}
+              {host.rules_to_remove.map((r, i) => <DiffLine key={`r${i}`} rule={r} status="remove" />)}
+              {host.rules_unchanged.map((r, i) => <DiffLine key={`u${i}`} rule={r} status="unchanged" />)}
+            </>
           )}
         </div>
       )}
@@ -150,7 +166,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
   const params = useParams()
   const id = params.id as string
 
-  const [plan, setPlan] = useState<PlanResponse | null>(null)
+  const [plan, setPlan] = useState<HostDiff[] | null>(null)
 
   const [confirmOpen, setConfirmOpen] = useState(false)
 
@@ -159,8 +175,8 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
   const [pollError, setPollError] = useState<string | null>(null)
   const pollFailures = useRef(0)
 
-  const previewMutation = useApiMutation<PlanResponse>({
-    mutationFn: () => apiFetch<PlanResponse>(`/api/sync/groups/${id}/plan`, { method: "POST" }),
+  const previewMutation = useApiMutation<HostDiff[]>({
+    mutationFn: () => apiFetch<HostDiff[]>(`/api/sync/groups/${id}/plan`, { method: "POST" }),
     onSuccess: (data) => setPlan(data),
   })
 
@@ -215,9 +231,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
     return () => clearInterval(interval)
   }, [jobId, jobStatus?.status, pollError, pollJob])
 
-  const hasChanges = plan && plan.hosts?.some(
-    (h) => h.diffs.some((d) => d.status !== "unchanged")
-  )
+  const hasChanges = plan && plan.some((h) => h.has_changes)
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
@@ -288,10 +302,10 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
               <span className="text-sm text-green-400">All hosts in sync</span>
             )}
           </div>
-          {plan.hosts.length === 0 ? (
+          {plan.length === 0 ? (
             <div className="text-slate-400 py-8 text-center">No hosts in this group</div>
           ) : (
-            plan.hosts.map((host) => (
+            plan.map((host) => (
               <HostDiffCard key={host.host_id} host={host} />
             ))
           )}

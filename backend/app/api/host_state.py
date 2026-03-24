@@ -244,6 +244,13 @@ def _build_collectors(
             ssh_user=host.ssh_user,
         )
 
+    async def _collect_firewall():
+        from app.sync.collector import collect_current_rules
+        from dataclasses import asdict
+        rules = await collect_current_rules(host.id, db)
+        return [asdict(r) for r in rules]
+
+    collectors["firewall"] = _collect_firewall
     collectors["service"] = _collect_services
     collectors["hosts_file"] = _collect_hosts_file
     collectors["linux_user"] = _collect_users
