@@ -10,16 +10,18 @@ def check_all_user_drift():
 
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
+    import asyncssh
     from app.user_mgmt.collector import collect_user_states, collect_group_states
     from app.user_mgmt.diff import diff_users, diff_groups
     from app.user_mgmt.merge import get_effective_users, get_effective_groups
+    from app.ssh_utils import get_source_ip
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             result = await db.execute(
                 select(HostModuleStatus).where(
                     HostModuleStatus.module_type == "linux_user",
@@ -82,6 +84,16 @@ def check_all_user_drift():
                         "drifted" if users_drifted or groups_drifted else "in_sync"
                     )
                     hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.collected_state = {"users": actual_users, "groups": actual_groups}
+                    hms.collected_at = datetime.now(timezone.utc)
+
+                    if not host.barricade_source_ip:
+                        try:
+                            imported_key = asyncssh.import_private_key(private_key_pem)
+                            async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                host.barricade_source_ip = await get_source_ip(probe)
+                        except Exception:
+                            pass
                 except Exception:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

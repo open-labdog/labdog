@@ -68,6 +68,7 @@ async def create_host(
             ssh_user = ssh_key.ssh_user
 
     # If hostname is empty, try to fetch it from the host via SSH
+    source_ip = None
     if not hostname and ssh_key:
         try:
             master_key = get_master_key()
@@ -84,6 +85,8 @@ async def create_host(
             ) as conn:
                 result = await conn.run("hostname", check=True)
                 hostname = result.stdout.strip()
+                from app.ssh_utils import get_source_ip
+                source_ip = await get_source_ip(conn)
         except Exception:
             raise HTTPException(
                 status_code=422,
@@ -102,6 +105,7 @@ async def create_host(
         ssh_port=body.ssh_port,
         ssh_user=ssh_user,
         ssh_key_id=body.ssh_key_id,
+        barricade_source_ip=source_ip,
     )
     db.add(host)
     await db.flush()  # get host.id

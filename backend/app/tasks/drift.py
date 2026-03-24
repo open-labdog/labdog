@@ -5,14 +5,22 @@ from app.tasks import celery_app
 def check_all_drift():
     """Periodic task: check drift for all hosts with drift_check_enabled=True."""
     import asyncio
+    import asyncssh
+    from dataclasses import asdict
     from sqlalchemy import select
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.models.host import Host
+    from app.models.host_module_status import HostModuleStatus
+    from app.models.ssh_key import SSHKey
+    from app.crypto.encryption import decrypt_ssh_key
+    from app.crypto.key_management import get_master_key
     from app.drift.detector import check_drift
+    from app.sync.diff import fetch_current_state
+    from app.ssh_utils import get_source_ip
     from datetime import datetime, timezone
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             result = await db.execute(select(Host).where(Host.drift_check_enabled == True))
             hosts = result.scalars().all()
             for host in hosts:
@@ -20,9 +28,42 @@ def check_all_drift():
                     from app.api.drift import _get_desired_rules_for_host
 
                     desired = await _get_desired_rules_for_host(host.id, db)
+                    current = await fetch_current_state(host.id, db)
                     drift_result = await check_drift(host.id, desired, db)
                     host.sync_status = drift_result.status
                     host.last_drift_check_at = datetime.now(timezone.utc)
+
+                    hms = (
+                        await db.execute(
+                            select(HostModuleStatus).where(
+                                HostModuleStatus.host_id == host.id,
+                                HostModuleStatus.module_type == "firewall",
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if hms is None:
+                        hms = HostModuleStatus(
+                            host_id=host.id, module_type="firewall"
+                        )
+                        db.add(hms)
+                    hms.collected_state = [asdict(r) for r in current]
+                    hms.collected_at = datetime.now(timezone.utc)
+
+                    if not host.barricade_source_ip and host.ssh_key_id:
+                        try:
+                            key_result = await db.execute(
+                                select(SSHKey).where(SSHKey.id == host.ssh_key_id)
+                            )
+                            ssh_key = key_result.scalar_one_or_none()
+                            if ssh_key:
+                                private_key_pem = decrypt_ssh_key(
+                                    ssh_key.encrypted_private_key, get_master_key()
+                                )
+                                imported_key = asyncssh.import_private_key(private_key_pem)
+                                async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                    host.barricade_source_ip = await get_source_ip(probe)
+                        except Exception:
+                            pass
                 except Exception:
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.error

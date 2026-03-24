@@ -27,7 +27,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         # Import DB dependencies inside task (not at module level)
         import asyncio
         from sqlalchemy import select
-        from app.db import AsyncSessionLocal
+        from app.db import task_session
         from app.models.sync_job import SyncJob
         from app.models.host import Host, HostGroupMembership
         from app.models.host_group import HostGroup
@@ -41,7 +41,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         from app.rules.converter import firewall_rules_to_specs
 
         async def _run():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 # Update job status to running
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
@@ -117,7 +117,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
         # Update job status
         async def _update_status():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
@@ -152,11 +152,11 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         # Update job as failed
         import asyncio
         from sqlalchemy import select
-        from app.db import AsyncSessionLocal
+        from app.db import task_session
         from app.models.sync_job import SyncJob
 
         async def _mark_failed():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one_or_none()
                 if job:

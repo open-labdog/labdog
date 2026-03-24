@@ -24,6 +24,7 @@ import type {
   PackageRepository,
   EffectiveResolverConfig,
   ResolverConfig,
+  ModuleCurrentState,
 } from "@/lib/types"
 
 interface EffectiveRule extends FirewallRule {
@@ -166,6 +167,12 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     },
   })
 
+  const currentState = useQuery<ModuleCurrentState[]>({
+    queryKey: ["host-current-state", id],
+    queryFn: () => apiFetch<ModuleCurrentState[]>(`/api/hosts/${id}/current-state`),
+    enabled: !!id,
+  })
+
   return {
     host,
     effectiveRules,
@@ -194,6 +201,7 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     effectiveResolver,
     showResolverLoading,
     hostResolverOverride,
+    currentState,
   }
 }
 

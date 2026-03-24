@@ -33,7 +33,7 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
         from sqlalchemy import select
 
         from app.crypto import decrypt_ssh_key, get_master_key
-        from app.db import AsyncSessionLocal
+        from app.db import task_session
         from app.models.host import Host
         from app.models.host_module_status import HostModuleStatus
         from app.models.ssh_key import SSHKey
@@ -42,7 +42,7 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
         from app.services.generator import generate_service_playbook
 
         async def _run():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 # Update job status to running
                 job_result = await db.execute(
                     select(SyncJob).where(SyncJob.id == job_id)
@@ -111,7 +111,7 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
 
         # Update job status and HostModuleStatus
         async def _update_status():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 job_result = await db.execute(
                     select(SyncJob).where(SyncJob.id == job_id)
                 )
@@ -165,12 +165,12 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
 
         from sqlalchemy import select
 
-        from app.db import AsyncSessionLocal
+        from app.db import task_session
         from app.models.host_module_status import HostModuleStatus
         from app.models.sync_job import SyncJob
 
         async def _mark_failed():
-            async with AsyncSessionLocal() as db:
+            async with task_session() as db:
                 job_result = await db.execute(
                     select(SyncJob).where(SyncJob.id == job_id)
                 )

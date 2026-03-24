@@ -19,6 +19,7 @@ def _make_ssh_lockout_rule(server_ip: str) -> FirewallRuleSpec:
 def merge_group_rules(
     groups: list[dict],  # [{"id": int, "priority": int, "rules": list[FirewallRuleSpec]}]
     server_ip: str | None = None,
+    host_source_ip: str | None = None,
 ) -> list[FirewallRuleSpec]:
     """
     Merge rules from multiple groups using priority-based conflict resolution.
@@ -28,11 +29,14 @@ def merge_group_rules(
     Args:
         groups: List of dicts with id, priority, and rules list
         server_ip: Barricade server IP for SSH lockout rule (defaults to settings)
+        host_source_ip: Per-host detected source IP (takes precedence over server_ip)
 
     Returns:
         Ordered list of FirewallRuleSpec (SSH lockout first, then merged rules)
     """
-    if server_ip is None:
+    if host_source_ip:
+        server_ip = host_source_ip
+    elif server_ip is None:
         server_ip = settings.security.barricade_server_ip
 
     # Sort groups by priority descending (highest priority first)

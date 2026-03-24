@@ -23,7 +23,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
 
     from sqlalchemy import select
 
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.gitops.git_service import cleanup_repo, clone_repo, read_file_at_sha
     from app.gitops.importer import import_group_from_yaml
     from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
@@ -33,7 +33,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
     repo_dir: Path | None = None
 
     try:
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             result = await db.execute(
                 select(GitRepository).where(GitRepository.id == repo_id)
             )

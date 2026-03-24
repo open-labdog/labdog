@@ -19,6 +19,7 @@ from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api.git_repos import router as git_repos_router
 from app.api.groups import router as groups_router
+from app.api.host_state import router as host_state_router
 from app.api.hosts import router as hosts_router
 from app.api.hosts_drift import router as hosts_drift_router
 from app.api.hosts_entries import router as hosts_entries_router
@@ -258,6 +259,7 @@ def create_app() -> FastAPI:
 
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
+    app.include_router(host_state_router, prefix="/api")
     app.include_router(ssh_keys_router, prefix="/api")
     app.include_router(rules_router, prefix="/api")
     app.include_router(sync_router, prefix="/api")
