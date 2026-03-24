@@ -15,10 +15,19 @@ export interface HostGroup {
 export interface Host {
   id: number; hostname: string; ip_address: string; ssh_port: number; ssh_user: string
   firewall_backend: FirewallBackend; sync_status: SyncStatus
+  barricade_source_ip: string | null
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
   group_ids: number[]
   created_at: string; updated_at: string
+}
+
+export interface ModuleCurrentState {
+  module_type: string
+  sync_status: string
+  collected_state: unknown
+  collected_at: string | null
+  drift_check_enabled: boolean
 }
 export interface SSHKey {
   id: number; name: string; public_key: string | null

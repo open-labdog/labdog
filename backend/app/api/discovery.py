@@ -160,6 +160,7 @@ async def add_discovered_hosts(
 
         # SSH verification is mandatory — we must be able to connect
         hostname = None
+        source_ip = None
         try:
             async with asyncssh.connect(
                 ip,
@@ -170,6 +171,8 @@ async def add_discovered_hosts(
             ) as conn:
                 result = await conn.run("hostname", check=True)
                 hostname = result.stdout.strip()
+                from app.ssh_utils import get_source_ip
+                source_ip = await get_source_ip(conn)
         except Exception as e:
             error_msg = str(e)
             if "Permission denied" in error_msg or "Auth" in error_msg:
@@ -211,6 +214,7 @@ async def add_discovered_hosts(
             ssh_port=body.ssh_port,
             ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
+            barricade_source_ip=source_ip,
         )
         db.add(host)
         await db.flush()  # get host.id

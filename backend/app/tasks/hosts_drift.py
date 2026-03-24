@@ -11,16 +11,18 @@ def check_all_hosts_drift():
 
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
+    import asyncssh
     from app.hosts_mgmt.collector import collect_hosts_file
     from app.hosts_mgmt.diff import compute_hosts_diff
     from app.hosts_mgmt.merge import get_effective_hosts_entries
+    from app.ssh_utils import get_source_ip
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             # Get hosts with hosts_file drift enabled
             result = await db.execute(
                 select(HostModuleStatus).where(
@@ -61,6 +63,16 @@ def check_all_hosts_drift():
                         "in_sync" if not diff.has_changes else "out_of_sync"
                     )
                     hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.collected_state = [{"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases} for e in current]
+                    hms.collected_at = datetime.now(timezone.utc)
+
+                    if not host.barricade_source_ip:
+                        try:
+                            imported_key = asyncssh.import_private_key(private_key_pem)
+                            async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                host.barricade_source_ip = await get_source_ip(probe)
+                        except Exception:
+                            pass
                 except Exception:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

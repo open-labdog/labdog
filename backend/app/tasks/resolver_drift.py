@@ -15,16 +15,18 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
+    import asyncssh
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
+    from app.ssh_utils import get_source_ip
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             host = (
                 await db.execute(select(Host).where(Host.id == host_id))
             ).scalar_one()
@@ -74,6 +76,17 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 
             hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
             hms.last_drift_check_at = datetime.now(timezone.utc)
+            hms.collected_state = actual
+            hms.collected_at = datetime.now(timezone.utc)
+
+            if not host.barricade_source_ip:
+                try:
+                    imported_key = asyncssh.import_private_key(private_key_pem)
+                    async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                        host.barricade_source_ip = await get_source_ip(probe)
+                except Exception:
+                    pass
+
             await db.commit()
 
             return {
@@ -102,16 +115,18 @@ def check_all_resolver_drift():
 
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.db import AsyncSessionLocal
+    from app.db import task_session
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
+    import asyncssh
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
+    from app.ssh_utils import get_source_ip
 
     async def _run():
-        async with AsyncSessionLocal() as db:
+        async with task_session() as db:
             result = await db.execute(
                 select(HostModuleStatus).where(
                     HostModuleStatus.module_type == "resolver",
@@ -160,6 +175,16 @@ def check_all_resolver_drift():
                         "in_sync" if not diff.has_changes else "out_of_sync"
                     )
                     hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.collected_state = actual
+                    hms.collected_at = datetime.now(timezone.utc)
+
+                    if not host.barricade_source_ip:
+                        try:
+                            imported_key = asyncssh.import_private_key(private_key_pem)
+                            async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                host.barricade_source_ip = await get_source_ip(probe)
+                        except Exception:
+                            pass
                 except Exception:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

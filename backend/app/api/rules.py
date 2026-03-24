@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
-from app.models.host import HostGroupMembership
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.auth.users import current_active_user
@@ -139,6 +139,11 @@ async def get_effective_rules(
     db: AsyncSession = Depends(get_db),
 ):
     """Get merged ruleset for a host (all groups, priority-merged, with SSH lockout rule)."""
+    # Load host to get per-host source IP
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    host_source_ip = host.barricade_source_ip if host else None
+
     # Get all groups for this host
     memberships_all = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
@@ -147,7 +152,7 @@ async def get_effective_rules(
 
     if not group_ids:
         # Return just the SSH lockout rule even if no groups
-        merged_specs = merge_group_rules([])
+        merged_specs = merge_group_rules([], host_source_ip=host_source_ip)
         return [EffectiveRuleResponse(
             action=r.action,
             protocol=r.protocol,
@@ -171,7 +176,7 @@ async def get_effective_rules(
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
     # Call merge_group_rules to get merged rules WITH SSH lockout rule
-    merged_specs = merge_group_rules(groups_data)
+    merged_specs = merge_group_rules(groups_data, host_source_ip=host_source_ip)
 
     # Convert FirewallRuleSpec objects to EffectiveRuleResponse
     return [

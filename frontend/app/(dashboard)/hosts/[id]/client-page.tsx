@@ -3,7 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, X } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, X } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -79,6 +79,242 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
+function ModuleStateView({ moduleType, state }: { moduleType: string; state: unknown }) {
+  if (moduleType === "service" && Array.isArray(state)) {
+    const services = state as Array<{ unit?: string; service_name?: string; active_state: string; sub_state?: string; description?: string; enabled?: boolean }>
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow className="border-slate-700">
+            <TableHead>Service</TableHead>
+            <TableHead>State</TableHead>
+            <TableHead>Description</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {services.map((s, i) => (
+            <TableRow key={i} className="border-slate-700">
+              <TableCell className="font-mono text-white text-sm">{s.unit ?? s.service_name}</TableCell>
+              <TableCell>
+                <Badge className={s.active_state === "active" || s.active_state === "running" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : "bg-slate-600 text-white"}>
+                  {s.sub_state ?? s.active_state}
+                </Badge>
+              </TableCell>
+              <TableCell className="text-slate-400 text-sm truncate max-w-xs">{s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : "—")}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    )
+  }
+
+  if (moduleType === "hosts_file" && Array.isArray(state)) {
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow className="border-slate-700">
+            <TableHead>IP Address</TableHead>
+            <TableHead>Hostname</TableHead>
+            <TableHead>Aliases</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(state as Array<{ ip_address: string; hostname: string; aliases: string[] }>).map((e, i) => (
+            <TableRow key={i} className="border-slate-700">
+              <TableCell className="font-mono text-slate-300 text-sm">{e.ip_address}</TableCell>
+              <TableCell className="text-white">{e.hostname}</TableCell>
+              <TableCell className="text-slate-400 text-sm">{e.aliases?.join(", ") || "—"}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    )
+  }
+
+  if (moduleType === "linux_user" && typeof state === "object" && state !== null) {
+    const { users, groups } = state as { users: Array<Record<string, unknown>>; groups: Array<Record<string, unknown>> }
+    return (
+      <div className="space-y-4">
+        <div>
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Users ({users?.length ?? 0})</h4>
+          <div className="font-mono text-xs text-slate-400 space-y-0.5">
+            {users?.map((u, i) => (
+              <div key={i}>{String(u.username ?? u.name)} (uid={String(u.uid ?? "?")})</div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Groups ({groups?.length ?? 0})</h4>
+          <div className="font-mono text-xs text-slate-400 space-y-0.5">
+            {groups?.map((g, i) => (
+              <div key={i}>{String(g.groupname ?? g.name)} (gid={String(g.gid ?? "?")})</div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  if (moduleType === "package" && typeof state === "object" && state !== null) {
+    // New format: {packages: [...], repos: [...]}
+    // Legacy format: [...] (array of packages only)
+    const isNewFormat = !Array.isArray(state) && "packages" in (state as Record<string, unknown>)
+    const packages = isNewFormat
+      ? ((state as { packages: Array<{ name: string; version?: string; state?: string }> }).packages ?? [])
+      : (Array.isArray(state) ? state as Array<{ name: string; version?: string; state?: string }> : [])
+    const repos = isNewFormat
+      ? ((state as { repos: Array<{ name: string; type: string; url: string; enabled?: boolean }> }).repos ?? [])
+      : []
+
+    return (
+      <div className="space-y-5">
+        <div>
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Packages ({packages.length})</h4>
+          {packages.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-slate-700">
+                  <TableHead>Package</TableHead>
+                  <TableHead>Version</TableHead>
+                  <TableHead>State</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {packages.map((p, i) => (
+                  <TableRow key={i} className="border-slate-700">
+                    <TableCell className="font-mono text-white text-sm">{p.name}</TableCell>
+                    <TableCell className="font-mono text-slate-300 text-xs">{p.version ?? "—"}</TableCell>
+                    <TableCell className="text-slate-400">{p.state ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-slate-500 text-sm">No managed packages configured.</p>
+          )}
+        </div>
+        <div>
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Repositories ({repos.length})</h4>
+          {repos.length > 0 ? (
+            <Table>
+              <TableHeader>
+                <TableRow className="border-slate-700">
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>URL</TableHead>
+                  <TableHead>Enabled</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {repos.map((r, i) => (
+                  <TableRow key={i} className="border-slate-700">
+                    <TableCell className="text-white text-sm">{r.name}</TableCell>
+                    <TableCell><Badge variant="outline" className="text-xs font-mono">{r.type}</Badge></TableCell>
+                    <TableCell className="font-mono text-slate-300 text-xs max-w-xs truncate">{r.url}</TableCell>
+                    <TableCell className="text-slate-400">{r.enabled !== false ? "Yes" : "No"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <p className="text-slate-500 text-sm">No repositories detected.</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  if (moduleType === "resolver" && typeof state === "object" && state !== null) {
+    const r = state as { nameservers?: string[]; search_domains?: string[]; options?: Record<string, unknown> }
+    return (
+      <div className="space-y-2 text-sm">
+        <div><span className="text-slate-400">Nameservers:</span> <span className="font-mono text-white">{r.nameservers?.join(", ") || "none"}</span></div>
+        <div><span className="text-slate-400">Search domains:</span> <span className="font-mono text-white">{r.search_domains?.join(", ") || "none"}</span></div>
+        {r.options && Object.keys(r.options).length > 0 && (
+          <div><span className="text-slate-400">Options:</span> <span className="font-mono text-white">{Object.entries(r.options).map(([k, v]) => `${k}=${v}`).join(", ")}</span></div>
+        )}
+      </div>
+    )
+  }
+
+  if (moduleType === "cron" && Array.isArray(state)) {
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow className="border-slate-700">
+            <TableHead>Name/Command</TableHead>
+            <TableHead>Schedule</TableHead>
+            <TableHead>User</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {(state as Array<Record<string, unknown>>).map((c, i) => (
+            <TableRow key={i} className="border-slate-700">
+              <TableCell className="font-mono text-white text-sm">{String(c.name ?? c.command ?? "—")}</TableCell>
+              <TableCell className="font-mono text-slate-300 text-xs">
+                {[c.minute, c.hour, c.day, c.month, c.weekday].filter(Boolean).join(" ") || "—"}
+              </TableCell>
+              <TableCell className="text-slate-400">{String(c.user ?? "—")}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    )
+  }
+
+  // Fallback: render as JSON
+  return (
+    <pre className="text-xs font-mono text-slate-400 overflow-x-auto max-h-96">
+      {JSON.stringify(state, null, 2)}
+    </pre>
+  )
+}
+
+function CurrentStateSection({ moduleType, modules, hostId }: {
+  moduleType: string
+  modules: import("@/lib/types").ModuleCurrentState[] | undefined
+  hostId: number
+}) {
+  const [collecting, setCollecting] = useState(false)
+  const queryClient = useQueryClient()
+  const mod = modules?.find(m => m.module_type === moduleType)
+
+  const handleCollect = async () => {
+    setCollecting(true)
+    try {
+      await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
+      await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
+    } catch { /* ignore */ }
+    setCollecting(false)
+  }
+
+  return (
+    <div className="mt-6 border-t border-slate-700 pt-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <h3 className="text-md font-semibold text-white">Current State</h3>
+          {mod?.collected_at && (
+            <span className="text-xs text-slate-500">
+              collected {new Date(mod.collected_at).toLocaleString()}
+            </span>
+          )}
+        </div>
+        <Button variant="outline" size="sm" disabled={collecting} onClick={handleCollect}>
+          <RefreshCwIcon className={`w-3.5 h-3.5 mr-1 ${collecting ? "animate-spin" : ""}`} />
+          {collecting ? "Collecting..." : "Collect"}
+        </Button>
+      </div>
+      {!mod || mod.collected_state == null ? (
+        <p className="text-slate-500 text-sm">Not yet collected.</p>
+      ) : (
+        <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
+          <ModuleStateView moduleType={moduleType} state={mod.collected_state} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
@@ -95,6 +331,7 @@ export default function HostDetailPage() {
     effectiveCronJobs: effectiveCronJobsQuery, showCronJobsLoading, hostCronOverrides: hostCronOverridesQuery,
     effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery, effectiveRepos: effectiveReposQuery,
     effectiveResolver: effectiveResolverQuery, showResolverLoading, hostResolverOverride: hostResolverOverrideQuery,
+    currentState: currentStateQuery,
   } = useHostQueries(id, activeTab)
 
   const host = hostQuery.data
@@ -148,6 +385,7 @@ export default function HostDetailPage() {
   } = useHostDialogs()
 
   const [terminalOpen, setTerminalOpen] = useState(false)
+  const [collecting, setCollecting] = useState(false)
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -646,6 +884,26 @@ export default function HostDetailPage() {
               <TerminalIcon className="w-4 h-4 mr-1" />
               Terminal
             </Button>
+            {activeTab === "overview" && (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={collecting || !host.ssh_key_id}
+                title={host.ssh_key_id ? "Collect current state for all modules" : "No SSH key assigned"}
+                onClick={async () => {
+                  setCollecting(true)
+                  try {
+                    await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
+                    await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setCollecting(false)
+                }}
+              >
+                <RefreshCwIcon className={`w-4 h-4 mr-1 ${collecting ? "animate-spin" : ""}`} />
+                {collecting ? "Collecting..." : "Collect All"}
+              </Button>
+            )}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
             <DialogTrigger render={<Button variant="outline" size="sm" />}>
               Edit
@@ -836,6 +1094,9 @@ export default function HostDetailPage() {
               </InfoRow>
               <InfoRow label="SSH Port">
                 <span className="font-mono">{host.ssh_port}</span>
+              </InfoRow>
+              <InfoRow label="Barricade Source IP">
+                <span className="font-mono">{host.barricade_source_ip ?? "Not yet detected"}</span>
               </InfoRow>
               <InfoRow label="Firewall Backend">
                 <FirewallBadge backend={host.firewall_backend} />
@@ -1447,6 +1708,7 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+          <CurrentStateSection moduleType="hosts_file" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
 
@@ -1838,6 +2100,7 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+          <CurrentStateSection moduleType="linux_user" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
 
@@ -2108,6 +2371,7 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+          <CurrentStateSection moduleType="cron" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
 
@@ -2381,6 +2645,7 @@ export default function HostDetailPage() {
               </form>
             </DialogContent>
           </Dialog>
+          <CurrentStateSection moduleType="package" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
 
@@ -2478,6 +2743,7 @@ export default function HostDetailPage() {
                 : "Inherited from group configuration."}
             </div>
           )}
+          <CurrentStateSection moduleType="resolver" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
 

@@ -103,3 +103,119 @@ def _parse_rpm_output(
         return "present", output.strip()
     except Exception:
         return "present", None
+
+
+async def collect_repo_sources(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+    ssh_user: str = "root",
+) -> list[dict]:
+    """Collect configured package repository sources from a remote host.
+
+    Returns list of {"name": str, "type": "apt"|"yum", "url": str,
+    "distribution": str|None, "components": str|None, "enabled": bool}.
+    """
+    try:
+        private_key = asyncssh.import_private_key(private_key_pem)
+
+        async def _run() -> list[dict]:
+            async with asyncssh.connect(
+                host_ip,
+                port=ssh_port,
+                username=ssh_user,
+                client_keys=[private_key],
+                known_hosts=None,
+            ) as conn:
+                repos: list[dict] = []
+
+                # Try APT
+                apt_result = await conn.run(
+                    "cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list 2>/dev/null || true",
+                    check=False,
+                )
+                if apt_result.stdout.strip():
+                    repos.extend(_parse_apt_sources(apt_result.stdout))
+
+                # Try YUM/DNF
+                if not repos:
+                    yum_result = await conn.run(
+                        "cat /etc/yum.repos.d/*.repo 2>/dev/null || true",
+                        check=False,
+                    )
+                    if yum_result.stdout.strip():
+                        repos.extend(_parse_yum_repos(yum_result.stdout))
+
+                return repos
+
+        return await asyncio.wait_for(_run(), timeout=15.0)
+    except Exception:
+        return []
+
+
+def _parse_apt_sources(output: str) -> list[dict]:
+    """Parse APT sources.list format into repo dicts."""
+    repos = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Format: deb [options] URL distribution [component ...]
+        # or:    deb-src [options] URL distribution [component ...]
+        parts = line.split()
+        if not parts or parts[0] not in ("deb", "deb-src"):
+            continue
+        idx = 1
+        # Skip [options] like [arch=amd64 signed-by=...]
+        if idx < len(parts) and parts[idx].startswith("["):
+            while idx < len(parts) and "]" not in parts[idx]:
+                idx += 1
+            idx += 1
+        if idx >= len(parts):
+            continue
+        url = parts[idx]
+        distribution = parts[idx + 1] if idx + 1 < len(parts) else None
+        components = " ".join(parts[idx + 2:]) if idx + 2 < len(parts) else None
+        repos.append({
+            "name": distribution or url.split("/")[-1] or url,
+            "type": "apt",
+            "url": url,
+            "distribution": distribution,
+            "components": components,
+            "enabled": True,
+        })
+    return repos
+
+
+def _parse_yum_repos(output: str) -> list[dict]:
+    """Parse YUM .repo INI format into repo dicts."""
+    repos = []
+    current: dict | None = None
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            if current and current.get("url"):
+                repos.append(current)
+            current = {
+                "name": line[1:-1],
+                "type": "yum",
+                "url": "",
+                "distribution": None,
+                "components": None,
+                "enabled": True,
+            }
+        elif current and "=" in line:
+            key, _, value = line.partition("=")
+            key = key.strip().lower()
+            value = value.strip()
+            if key == "baseurl":
+                current["url"] = value
+            elif key == "name" and current["name"] == current.get("_id", current["name"]):
+                current["name"] = value
+            elif key == "enabled":
+                current["enabled"] = value != "0"
+    if current and current.get("url"):
+        repos.append(current)
+    return repos

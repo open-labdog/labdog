@@ -1,4 +1,5 @@
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -28,5 +29,11 @@ class HostModuleStatus(Base):
         DateTime(timezone=True), nullable=True
     )
     last_drift_check_at: Mapped[DateTime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    collected_state: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True
+    )
+    collected_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
