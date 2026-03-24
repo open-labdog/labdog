@@ -247,7 +247,11 @@ def _build_collectors(
     async def _collect_firewall():
         from app.sync.collector import collect_current_rules
         from dataclasses import asdict
-        rules = await collect_current_rules(host.id, db)
+        rules = await collect_current_rules(
+            host.ip_address, host.ssh_port, private_pem,
+            host.firewall_backend.value if hasattr(host.firewall_backend, "value") else str(host.firewall_backend),
+            ssh_user=host.ssh_user,
+        )
         return [asdict(r) for r in rules]
 
     collectors["firewall"] = _collect_firewall
