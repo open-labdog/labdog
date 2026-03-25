@@ -30,6 +30,7 @@ class ModuleState(BaseModel):
     collected_state: dict | list | None = None
     collected_at: datetime | None = None
     drift_check_enabled: bool = False
+    error_message: str | None = None
 
 
 @router.get("/{host_id}/current-state", response_model=list[ModuleState])
@@ -50,6 +51,7 @@ async def get_current_state(
             collected_state=hms.collected_state,
             collected_at=hms.collected_at,
             drift_check_enabled=hms.drift_check_enabled,
+            error_message=hms.error_message,
         )
         for hms in statuses
     ]
@@ -109,11 +111,19 @@ async def collect_state(
             state = await collect_fn()
             hms.collected_state = state
             hms.collected_at = now
+            hms.error_message = None
+        except (OSError, asyncssh.Error) as e:
+            logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
+            hms.collected_state = None
+            hms.collected_at = now
+            hms.sync_status = "unknown"
+            hms.error_message = f"Host unreachable: {e}"
         except Exception as e:
             logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
             hms.collected_state = None
             hms.collected_at = now
             hms.sync_status = "error"
+            hms.error_message = str(e)
 
         results.append(ModuleState(
             module_type=hms.module_type,
@@ -121,6 +131,7 @@ async def collect_state(
             collected_state=hms.collected_state,
             collected_at=hms.collected_at,
             drift_check_enabled=hms.drift_check_enabled,
+            error_message=hms.error_message,
         ))
 
     await db.commit()
