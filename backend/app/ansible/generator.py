@@ -8,9 +8,46 @@ from app.rules.renderers.ufw import render_ufw_rules
 def generate_nftables_playbook(
     host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
 ) -> str:
-    """Generate playbook that writes nftables.conf and reloads."""
+    """Generate playbook that writes nftables.conf and reloads with safe rollback.
+
+    Strategy (deadman's switch):
+    1. Backup current ruleset to /tmp
+    2. Schedule an automatic revert in 60 seconds (deadman's switch)
+    3. Write and validate new config
+    4. Apply atomically with nft -f
+    5. If we're still connected (SSH survived), cancel the revert
+    6. Enable nftables service on boot
+
+    If applying the new rules kills SSH, the scheduled revert fires
+    after 60 seconds and restores the previous ruleset automatically.
+    """
     nft_config = render_nftables_config(rules)
     tasks = [
+        {
+            "name": "Backup current nftables ruleset",
+            "ansible.builtin.shell": "/usr/sbin/nft list ruleset > /tmp/nftables-backup.conf 2>/dev/null || touch /tmp/nftables-backup.conf",
+        },
+        {
+            "name": "Schedule automatic revert in 60 seconds (deadman switch)",
+            "ansible.builtin.shell": (
+                "nohup bash -c '"
+                "sleep 60 && "
+                "/usr/sbin/nft flush ruleset && "
+                "/usr/sbin/nft -f /tmp/nftables-backup.conf && "
+                "cp /tmp/nftables-backup.conf.orig /etc/nftables.conf 2>/dev/null"
+                "' > /tmp/nftables-revert.log 2>&1 & "
+                "echo $! > /tmp/nftables-revert.pid"
+            ),
+        },
+        {
+            "name": "Backup original config file",
+            "ansible.builtin.copy": {
+                "src": "/etc/nftables.conf",
+                "dest": "/tmp/nftables-backup.conf.orig",
+                "remote_src": True,
+            },
+            "ignore_errors": True,
+        },
         {
             "name": "Write nftables configuration",
             "ansible.builtin.copy": {
@@ -23,17 +60,41 @@ def generate_nftables_playbook(
             },
         },
         {
-            "name": "Reload nftables service",
+            "name": "Apply nftables rules atomically",
+            "ansible.builtin.command": "/usr/sbin/nft -f /etc/nftables.conf",
+        },
+        {
+            "name": "Cancel automatic revert (SSH still works)",
+            "ansible.builtin.shell": (
+                "if [ -f /tmp/nftables-revert.pid ]; then "
+                "kill $(cat /tmp/nftables-revert.pid) 2>/dev/null; "
+                "rm -f /tmp/nftables-revert.pid; "
+                "fi"
+            ),
+        },
+        {
+            "name": "Enable nftables service on boot",
             "ansible.builtin.service": {
                 "name": "nftables",
-                "state": "reloaded",
                 "enabled": True,
             },
+        },
+        {
+            "name": "Clean up backup files",
+            "ansible.builtin.file": {
+                "path": "{{ item }}",
+                "state": "absent",
+            },
+            "loop": [
+                "/tmp/nftables-backup.conf",
+                "/tmp/nftables-backup.conf.orig",
+                "/tmp/nftables-revert.log",
+            ],
         },
     ]
     playbook = [
         {
-            "name": "Apply nftables firewall rules",
+            "name": "Apply nftables firewall rules (safe mode)",
             "hosts": "target",
             "become": True,
             "gather_facts": False,
