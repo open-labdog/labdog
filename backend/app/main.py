@@ -11,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.admin_users import router as admin_users_router
+from app.api.settings import router as settings_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
 from app.api.cron_jobs import router as cron_jobs_router
@@ -268,6 +269,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
     app.include_router(admin_users_router, prefix="/api")
+    app.include_router(settings_router, prefix="/api")
     app.include_router(services_router, prefix="/api")
     app.include_router(service_drift_router, prefix="/api")
     app.include_router(service_sync_router, prefix="/api")

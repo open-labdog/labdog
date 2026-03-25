@@ -3,6 +3,10 @@
 # ============================================================
 # This file is used by dev.sh and local development.
 # For production, see packaging/etc/barricade.toml
+#
+# Operational settings (drift interval, SSH timeout, Ansible timeout,
+# discovery tuning, log level, audit retention) are managed via the
+# Settings page in the UI and stored in the database.
 
 [server]
 host = "0.0.0.0"
@@ -30,20 +34,12 @@ session_lifetime_seconds = 86400
 enabled = false
 
 [logging]
-level = "debug"
 format = "text"
-audit_retention_days = 90
 
 [ssh]
 max_sessions_per_user = 5
 max_total_sessions = 50
-idle_timeout_seconds = 1800
 
 [discovery]
 min_prefix = 20
-scan_timeout = 1.0
-max_concurrent = 100
 max_bulk_add = 50
-
-[drift]
-check_interval_minutes = 30

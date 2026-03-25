@@ -28,6 +28,7 @@ _EXTERNAL_MODELS = {
     "PackageRepository": "app.packages.models",
     "ResolverConfig": "app.resolver.models",
     "ResolverType": "app.resolver.models",
+    "AppSetting": "app.models.app_setting",
 }
 
 

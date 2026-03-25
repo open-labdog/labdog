@@ -139,7 +139,9 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         nonlocal disconnect_reason
         while True:
             await asyncio.sleep(60)
-            idle = registry.get_idle_sessions(settings.ssh.idle_timeout_seconds)
+            from app.settings_service import get_setting_sync_typed
+            idle_timeout = int(get_setting_sync_typed("ssh.idle_timeout_seconds"))
+            idle = registry.get_idle_sessions(idle_timeout)
             if session_id in idle:
                 disconnect_reason = "idle_timeout"
                 try:

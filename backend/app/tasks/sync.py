@@ -120,10 +120,12 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
             return {"status": "failed", "error": "Unsupported firewall backend"}
 
         # Run ansible-runner (synchronous in Celery worker)
+        from app.settings_service import get_setting_sync_typed
+        playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         runner = ansible_runner.run(
             private_data_dir=private_data_dir,
             playbook="playbook.yml",
-            timeout=300,
+            timeout=playbook_timeout,
         )
 
         # Update job status
