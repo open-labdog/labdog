@@ -40,6 +40,10 @@ format = "text"
 max_sessions_per_user = 5
 max_total_sessions = 50
 
+[celery]
+concurrency = 4          # Number of worker processes
+max_tasks_per_child = 100 # Recycle worker after N tasks (prevents memory leaks)
+
 [discovery]
 min_prefix = 20
 max_bulk_add = 50

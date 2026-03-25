@@ -42,10 +42,6 @@ const CATEGORIES: Record<string, { label: string; keys: string[] }> = {
     label: "Logging",
     keys: ["logging.level", "logging.audit_retention_days"],
   },
-  celery: {
-    label: "Worker",
-    keys: ["celery.concurrency"],
-  },
 }
 
 export default function SettingsPage() {

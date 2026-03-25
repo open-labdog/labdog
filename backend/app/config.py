@@ -89,6 +89,11 @@ class DiscoveryConfig(BaseModel):
     max_bulk_add: int = 50
 
 
+class CeleryConfig(BaseModel):
+    concurrency: int = 4
+    max_tasks_per_child: int = 100
+
+
 class DriftConfig(BaseModel):
     check_interval_minutes: int = 30
 
@@ -107,6 +112,7 @@ class Settings(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     ssh: SSHConfig = SSHConfig()
     discovery: DiscoveryConfig = DiscoveryConfig()
+    celery: CeleryConfig = CeleryConfig()
     drift: DriftConfig = DriftConfig()
 
     @model_validator(mode="before")
