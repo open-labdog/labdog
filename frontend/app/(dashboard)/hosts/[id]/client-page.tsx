@@ -1270,21 +1270,21 @@ export default function HostDetailPage() {
                 <FirewallBadge backend={host.firewall_backend} />
               </InfoRow>
               <InfoRow label="Sync Status">
-                <SyncStatusBadge status={host.sync_status} />
+                <div className="flex items-center gap-3">
+                  <SyncStatusBadge status={host.sync_status} />
+                  {(() => {
+                    const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
+                    if (!errors.length) return null
+                    const uniqueMessages = [...new Set(errors.map(m => m.error_message!))]
+                    return (
+                      <span className="text-red-400 text-sm">{uniqueMessages.length === 1
+                        ? uniqueMessages[0]
+                        : uniqueMessages.map((msg, i) => <span key={i} className="block">{msg}</span>)
+                      }</span>
+                    )
+                  })()}
+                </div>
               </InfoRow>
-              {(() => {
-                const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
-                if (!errors.length) return null
-                const uniqueMessages = [...new Set(errors.map(m => m.error_message!))]
-                return (
-                  <InfoRow label="">
-                    <span className="text-red-400 text-sm">{uniqueMessages.length === 1
-                      ? uniqueMessages[0]
-                      : uniqueMessages.map((msg, i) => <span key={i} className="block">{msg}</span>)
-                    }</span>
-                  </InfoRow>
-                )
-              })()}
               <InfoRow label="Last Sync">
                 {host.last_sync_at
                   ? new Date(host.last_sync_at).toLocaleString()
