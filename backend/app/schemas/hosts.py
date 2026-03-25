@@ -22,6 +22,7 @@ class HostUpdate(BaseModel):
     ssh_key_id: int | None = None
     firewall_backend: FirewallBackend | None = None
     group_ids: list[int] | None = None
+    drift_check_enabled: bool | None = None
 
 
 class HostResponse(BaseModel):

@@ -313,6 +313,17 @@ function ModuleStateView({ moduleType, state }: { moduleType: string; state: unk
   )
 }
 
+// Map module_type to the full drift-settings API path (without host_id)
+const DRIFT_SETTINGS_PATH: Record<string, string> = {
+  firewall: "/api/drift/hosts/{id}/settings",
+  service: "/api/services/hosts/{id}/drift-settings",
+  hosts_file: "/api/hosts-mgmt/hosts/{id}/drift-settings",
+  linux_user: "/api/linux-users/hosts/{id}/drift-settings",
+  cron: "/api/cron/hosts/{id}/drift-settings",
+  package: "/api/packages/hosts/{id}/drift-settings",
+  resolver: "/api/resolver/hosts/{id}/drift-settings",
+}
+
 function CurrentStateSection({ moduleType, modules, hostId }: {
   moduleType: string
   modules: import("@/lib/types").ModuleCurrentState[] | undefined
@@ -331,6 +342,20 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
     setCollecting(false)
   }
 
+  const handleToggleDrift = async () => {
+    const pathTemplate = DRIFT_SETTINGS_PATH[moduleType]
+    if (!pathTemplate) return
+    const path = pathTemplate.replace("{id}", String(hostId))
+    try {
+      await apiFetch(path, {
+        method: "PUT",
+        body: JSON.stringify({ drift_check_enabled: !mod?.drift_check_enabled }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
+      await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
+    } catch { /* ignore */ }
+  }
+
   return (
     <div className="mt-6 border-t border-slate-700 pt-6">
       <div className="flex items-center justify-between mb-3">
@@ -342,10 +367,22 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
             </span>
           )}
         </div>
-        <Button variant="outline" size="sm" disabled={collecting} onClick={handleCollect}>
-          <RefreshCwIcon className={`w-3.5 h-3.5 mr-1 ${collecting ? "animate-spin" : ""}`} />
-          {collecting ? "Collecting..." : "Collect"}
-        </Button>
+        <div className="flex items-center gap-2">
+          {DRIFT_SETTINGS_PATH[moduleType] && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleToggleDrift}
+              className={mod?.drift_check_enabled ? "text-green-400 hover:text-green-300" : "text-slate-500 hover:text-white"}
+            >
+              {mod?.drift_check_enabled ? "Drift: On" : "Drift: Off"}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" disabled={collecting} onClick={handleCollect}>
+            <RefreshCwIcon className={`w-3.5 h-3.5 mr-1 ${collecting ? "animate-spin" : ""}`} />
+            {collecting ? "Collecting..." : "Collect"}
+          </Button>
+        </div>
       </div>
       {!mod || mod.collected_state == null ? (
         <p className="text-slate-500 text-sm">Not yet collected.</p>
@@ -1291,11 +1328,27 @@ export default function HostDetailPage() {
                   : "Never"}
               </InfoRow>
               <InfoRow label="Drift Check">
-                {host.drift_check_enabled ? (
-                  <Badge className="bg-green-700 text-white">Enabled</Badge>
-                ) : (
-                  <Badge variant="outline">Disabled</Badge>
-                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={host.drift_check_enabled
+                    ? "text-green-400 hover:text-green-300 h-auto py-0.5 px-2"
+                    : "text-slate-400 hover:text-white h-auto py-0.5 px-2"
+                  }
+                  onClick={async () => {
+                    await apiFetch(`/api/hosts/${id}`, {
+                      method: "PUT",
+                      body: JSON.stringify({ drift_check_enabled: !host.drift_check_enabled }),
+                    })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  }}
+                >
+                  {host.drift_check_enabled ? (
+                    <Badge className="bg-green-700 text-white cursor-pointer">Enabled</Badge>
+                  ) : (
+                    <Badge variant="outline" className="cursor-pointer">Disabled</Badge>
+                  )}
+                </Button>
               </InfoRow>
             </div>
           )}
