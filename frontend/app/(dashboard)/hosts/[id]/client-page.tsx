@@ -1272,6 +1272,16 @@ export default function HostDetailPage() {
               <InfoRow label="Sync Status">
                 <SyncStatusBadge status={host.sync_status} />
               </InfoRow>
+              {currentStateQuery.data?.some(m => m.error_message) && (
+                <div className="col-span-full rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3">
+                  <p className="text-xs font-medium text-red-400 mb-1">Module Errors</p>
+                  {currentStateQuery.data.filter(m => m.error_message).map(m => (
+                    <p key={m.module_type} className="text-xs text-red-300">
+                      <span className="text-slate-400">{m.module_type}:</span> {m.error_message}
+                    </p>
+                  ))}
+                </div>
+              )}
               <InfoRow label="Last Sync">
                 {host.last_sync_at
                   ? new Date(host.last_sync_at).toLocaleString()
