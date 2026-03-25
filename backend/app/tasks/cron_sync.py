@@ -57,6 +57,8 @@ def cron_sync_task(self, job_id: int, host_id: int) -> dict:
 
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
+                    if not private_key_text.endswith("\n"):
+                        f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
                 effective_cron_jobs = await get_effective_cron_jobs(host_id, db)
@@ -78,7 +80,7 @@ def cron_sync_task(self, job_id: int, host_id: int) -> dict:
                         "hosts": {
                             host.ip_address: {
                                 "ansible_port": host.ssh_port,
-                                "ansible_user": "root",
+                                "ansible_user": ssh_key.ssh_user,
                                 "ansible_ssh_private_key_file": ssh_key_path,
                                 "ansible_ssh_common_args": "-o StrictHostKeyChecking=no",
                             }

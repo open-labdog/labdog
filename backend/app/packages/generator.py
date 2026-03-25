@@ -7,6 +7,7 @@ def generate_package_playbook(
     repos: list[dict],
     ssh_key_path: str,
     ssh_port: int = 22,
+    ssh_user: str = "root",
 ) -> dict:
     """
     Generate an Ansible playbook dict for package and repository management.
@@ -152,7 +153,7 @@ def generate_package_playbook(
         }
     ]
 
-    inventory = generate_inventory(host_ip, ssh_port, ssh_key_path)
+    inventory = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
 
     return {"playbook": playbook, "inventory": inventory}
 

@@ -58,6 +58,8 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
 
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
+                    if not private_key_text.endswith("\n"):
+                        f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
                 effective = await get_effective_resolver(host_id, db)
@@ -71,6 +73,7 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
                     rendered,
                     ssh_key_path,
                     host.ssh_port,
+                    ssh_user=ssh_key.ssh_user,
                 )
 
                 os.makedirs(f"{private_data_dir}/project", exist_ok=True)

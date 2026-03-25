@@ -84,14 +84,14 @@ async def collect_state(
     try:
         imported_key = asyncssh.import_private_key(private_pem)
         async with asyncssh.connect(
-            host.ip_address, port=host.ssh_port, username=host.ssh_user,
+            host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user,
             client_keys=[imported_key], known_hosts=None,
         ) as probe:
             host.barricade_source_ip = await get_source_ip(probe)
     except Exception:
         pass
 
-    all_collectors = _build_collectors(host, private_pem, db)
+    all_collectors = _build_collectors(host, private_pem, ssh_key.ssh_user, db)
 
     if module:
         if module not in all_collectors:
@@ -128,7 +128,7 @@ async def collect_state(
 
 
 def _build_collectors(
-    host: Host, private_pem: str, db: AsyncSession
+    host: Host, private_pem: str, ssh_user: str, db: AsyncSession
 ) -> dict:
     """Build a dict of module_type -> async collect function."""
     collectors = {}
@@ -137,14 +137,14 @@ def _build_collectors(
         from app.services.collector import list_all_services
         return await list_all_services(
             host.ip_address, host.ssh_port, private_pem,
-            ssh_user=host.ssh_user,
+            ssh_user=ssh_user,
         )
 
     async def _collect_hosts_file():
         from app.hosts_mgmt.collector import collect_hosts_file
         current = await collect_hosts_file(
             host.ip_address, host.ssh_port, private_pem,
-            ssh_user=host.ssh_user,
+            ssh_user=ssh_user,
         )
         return [
             {"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases}
@@ -155,7 +155,7 @@ def _build_collectors(
         import asyncssh as _asyncssh
         private_key = _asyncssh.import_private_key(private_pem)
         async with _asyncssh.connect(
-            host.ip_address, port=host.ssh_port, username=host.ssh_user,
+            host.ip_address, port=host.ssh_port, username=ssh_user,
             client_keys=[private_key], known_hosts=None,
         ) as conn:
             # Collect all real users (uid >= 1000 or uid 0) and groups
@@ -188,7 +188,7 @@ def _build_collectors(
         import asyncssh as _asyncssh
         private_key = _asyncssh.import_private_key(private_pem)
         async with _asyncssh.connect(
-            host.ip_address, port=host.ssh_port, username=host.ssh_user,
+            host.ip_address, port=host.ssh_port, username=ssh_user,
             client_keys=[private_key], known_hosts=None,
         ) as conn:
             # List all user crontabs
@@ -224,11 +224,11 @@ def _build_collectors(
         names = [p.package_name for p in desired]
         packages = await collect_package_states(
             host.ip_address, host.ssh_port, private_pem, names,
-            ssh_user=host.ssh_user,
+            ssh_user=ssh_user,
         ) if names else []
         repos = await collect_repo_sources(
             host.ip_address, host.ssh_port, private_pem,
-            ssh_user=host.ssh_user,
+            ssh_user=ssh_user,
         )
         return {"packages": packages, "repos": repos}
 
@@ -236,21 +236,33 @@ def _build_collectors(
         from app.resolver.collector import collect_resolver_state
         from app.resolver.merge import get_effective_resolver
         effective = await get_effective_resolver(host.id, db)
-        if not effective:
-            return None
+        resolver_type = effective.resolver_type if effective else "resolv_conf"
         return await collect_resolver_state(
             host.ip_address, host.ssh_port, private_pem,
-            resolver_type=effective.resolver_type,
-            ssh_user=host.ssh_user,
+            resolver_type=resolver_type,
+            ssh_user=ssh_user,
         )
 
     async def _collect_firewall():
         from app.sync.collector import collect_current_rules
         from dataclasses import asdict
+        backend = (
+            host.firewall_backend.value if hasattr(host.firewall_backend, "value")
+            else str(host.firewall_backend)
+        )
+        if backend == "unknown":
+            # Auto-detect firewall backend
+            detected = await _detect_firewall_backend(
+                host.ip_address, host.ssh_port, private_pem, ssh_user
+            )
+            if detected:
+                backend = detected
+                host.firewall_backend = detected
+            else:
+                return {"error": "No supported firewall detected (nftables, firewalld, ufw)"}
         rules = await collect_current_rules(
-            host.ip_address, host.ssh_port, private_pem,
-            host.firewall_backend.value if hasattr(host.firewall_backend, "value") else str(host.firewall_backend),
-            ssh_user=host.ssh_user,
+            host.ip_address, host.ssh_port, private_pem, backend,
+            ssh_user=ssh_user,
         )
         return [asdict(r) for r in rules]
 
@@ -262,6 +274,33 @@ def _build_collectors(
     collectors["package"] = _collect_packages
     collectors["resolver"] = _collect_resolver
     return collectors
+
+
+async def _detect_firewall_backend(
+    host_ip: str, ssh_port: int, private_pem: str, ssh_user: str
+) -> str | None:
+    """Auto-detect firewall backend by probing for known tools."""
+    try:
+        key = asyncssh.import_private_key(private_pem)
+        async with asyncssh.connect(
+            host_ip, port=ssh_port, username=ssh_user,
+            client_keys=[key], known_hosts=None,
+        ) as conn:
+            # Check for nftables (nft may be in /usr/sbin which isn't always in PATH)
+            r = await conn.run("command -v nft || test -x /usr/sbin/nft", check=False)
+            if r.exit_status == 0:
+                return "nftables"
+            # Check for firewalld
+            r = await conn.run("command -v firewall-cmd || test -x /usr/sbin/firewall-cmd", check=False)
+            if r.exit_status == 0:
+                return "firewalld"
+            # Check for ufw
+            r = await conn.run("command -v ufw || test -x /usr/sbin/ufw", check=False)
+            if r.exit_status == 0:
+                return "ufw"
+    except Exception:
+        pass
+    return None
 
 
 async def _get_or_create_hms(

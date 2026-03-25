@@ -71,6 +71,8 @@ def run_hosts_sync(self, job_id: int, host_id: int) -> dict:
                 # Write key to tmpfs
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
+                    if not private_key_text.endswith("\n"):
+                        f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
                 # Get effective hosts entries and render file content
@@ -79,7 +81,8 @@ def run_hosts_sync(self, job_id: int, host_id: int) -> dict:
 
                 # Generate playbook and inventory
                 playbook_yaml, inventory_json = generate_hosts_file_playbook(
-                    host.ip_address, host.ssh_port, rendered_content, ssh_key_path
+                    host.ip_address, host.ssh_port, rendered_content, ssh_key_path,
+                    ssh_user=ssh_key.ssh_user,
                 )
 
                 # Write to private_data_dir

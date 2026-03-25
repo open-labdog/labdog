@@ -4,7 +4,8 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.models import Base  # noqa: F401 — side-effect: registers all models with metadata
+from app.models import Base, import_all_models  # noqa: F401
+import_all_models()  # Register all external models on Base.metadata
 from app.config import settings
 
 config = context.config

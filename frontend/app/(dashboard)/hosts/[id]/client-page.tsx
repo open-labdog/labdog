@@ -3,7 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, RefreshCwIcon, PlayIcon, X } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, PlayIcon, X, ShieldIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -80,6 +80,11 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 function ModuleStateView({ moduleType, state }: { moduleType: string; state: unknown }) {
+  // Handle error objects from collectors
+  if (state && typeof state === "object" && "error" in (state as Record<string, unknown>)) {
+    return <p className="text-amber-400 text-sm">{String((state as Record<string, unknown>).error)}</p>
+  }
+
   if (moduleType === "firewall" && Array.isArray(state)) {
     const rules = state as Array<{ action: string; protocol: string; direction: string; source_cidr?: string; destination_cidr?: string; port_start?: number; port_end?: number; comment?: string }>
     return (
@@ -349,6 +354,87 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
           <ModuleStateView moduleType={moduleType} state={mod.collected_state} />
         </div>
       )}
+    </div>
+  )
+}
+
+function InstallFirewallSection({ hostId, queryClient }: { hostId: number; queryClient: ReturnType<typeof useQueryClient> }) {
+  const [installing, setInstalling] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+
+  const handleInstall = async () => {
+    setInstalling(true)
+    setStatus("Adding nftables package...")
+    try {
+      // 1. Add nftables as a host package override
+      await apiFetch(`/api/hosts/${hostId}/packages`, {
+        method: "POST",
+        body: JSON.stringify({
+          package_name: "nftables",
+          state: "present",
+          package_manager: "auto",
+          comment: "Installed by Barricade for firewall management",
+        }),
+      })
+    } catch (e: unknown) {
+      // 409 = already exists, continue
+      if (!(e && typeof e === "object" && "status" in e && (e as { status: number }).status === 409)) {
+        setStatus("Failed to add package")
+        setInstalling(false)
+        return
+      }
+    }
+
+    // 2. Trigger package sync and wait for completion
+    setStatus("Installing nftables via package sync...")
+    try {
+      const syncResult = await apiFetch<{ id: number }>(`/api/packages/hosts/${hostId}/sync`, { method: "POST" })
+      // Poll sync job status until done
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        try {
+          const job = await apiFetch<{ status: string }>(`/api/packages/jobs/${syncResult.id}`)
+          if (job.status === "success" || job.status === "failed") break
+        } catch { break }
+      }
+    } catch {
+      setStatus("Failed to sync packages")
+      setInstalling(false)
+      return
+    }
+
+    // 3. Re-collect firewall state to detect the new backend
+    setStatus("Detecting firewall backend...")
+    try {
+      await apiFetch(`/api/hosts/${hostId}/collect-state?module=firewall`, { method: "POST" })
+    } catch { /* ignore */ }
+
+    await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
+    await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
+    await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", hostId] })
+    setStatus(null)
+    setInstalling(false)
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-amber-400">No Firewall Detected</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            This host has no supported firewall (nftables, firewalld, or ufw). Install nftables to enable firewall management.
+          </p>
+          {status && <p className="text-xs text-slate-300 mt-2">{status}</p>}
+        </div>
+        <Button
+          size="sm"
+          disabled={installing}
+          onClick={handleInstall}
+        >
+          <ShieldIcon className={`w-4 h-4 mr-1 ${installing ? "animate-pulse" : ""}`} />
+          {installing ? "Installing..." : "Install nftables"}
+        </Button>
+      </div>
     </div>
   )
 }
@@ -1263,6 +1349,9 @@ export default function HostDetailPage() {
                 </TableBody>
               </Table>
             </div>
+          )}
+          {host?.firewall_backend === "unknown" && (
+            <InstallFirewallSection hostId={id} queryClient={queryClient} />
           )}
           <CurrentStateSection moduleType="firewall" modules={currentStateQuery.data} hostId={id} />
         </div>

@@ -19,7 +19,7 @@ def generate_nftables_playbook(
                 "owner": "root",
                 "group": "root",
                 "mode": "0644",
-                "validate": "nft -c -f %s",
+                "validate": "/usr/sbin/nft -c -f %s",
             },
         },
         {

@@ -62,6 +62,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 # Write key to tmpfs
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
+                    if not private_key_text.endswith("\n"):
+                        f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
                 # Get merged rules for this host
@@ -90,10 +92,16 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     if hasattr(host.firewall_backend, "value")
                     else host.firewall_backend
                 )
+                if backend == "unknown":
+                    job.status = "failed"
+                    job.completed_at = datetime.now(timezone.utc)
+                    job.error_message = "Cannot sync firewall: backend not detected. Run 'Collect State' first."
+                    await db.commit()
+                    return None, None, None
                 playbook_yaml = generate_playbook(
                     backend, host.ip_address, merged_rules, ssh_key_path
                 )
-                inventory_json = generate_inventory(host.ip_address, host.ssh_port, ssh_key_path)
+                inventory_json = generate_inventory(host.ip_address, host.ssh_port, ssh_key_path, ssh_user=ssh_key.ssh_user)
 
                 # Write to private_data_dir
                 os.makedirs(f"{private_data_dir}/project", exist_ok=True)
@@ -106,7 +114,10 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
                 return host, job, db
 
-        host, job, db = asyncio.run(_run())
+        result = asyncio.run(_run())
+        host, job, db = result
+        if host is None:
+            return {"status": "failed", "error": "Unsupported firewall backend"}
 
         # Run ansible-runner (synchronous in Celery worker)
         runner = ansible_runner.run(

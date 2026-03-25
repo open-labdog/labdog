@@ -24,6 +24,8 @@ RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
 FROM python:3.12-slim
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
+
 RUN useradd -m -u 1000 barricade
 
 # Python packages from builder
