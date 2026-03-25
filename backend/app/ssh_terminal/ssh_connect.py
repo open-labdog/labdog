@@ -73,7 +73,7 @@ async def open_ssh_shell(
         conn = await asyncssh.connect(
             host.ip_address,
             port=host.ssh_port,
-            username=host.ssh_user,
+            username=ssh_key.ssh_user,
             client_keys=[imported_key],
             known_hosts=None,
         )

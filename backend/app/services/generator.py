@@ -7,6 +7,7 @@ def generate_service_playbook(
     ssh_port: int,
     services: list[dict],  # list of {"service_name": str, "state": str, "enabled": bool}
     ssh_key_path: str,
+    ssh_user: str = "root",
 ) -> tuple[str, str]:
     """
     Generate Ansible playbook and inventory for service management.
@@ -47,6 +48,6 @@ def generate_service_playbook(
     ]
     
     playbook_yaml = yaml.dump(playbook, default_flow_style=False, sort_keys=False)
-    inventory_json = generate_inventory(host_ip, ssh_port, ssh_key_path)
+    inventory_json = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
     
     return playbook_yaml, inventory_json

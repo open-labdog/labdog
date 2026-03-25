@@ -8,8 +8,8 @@ from app.sync.parsers.ufw import parse_ufw_rules
 
 # Commands per firewall backend
 _COMMANDS = {
-    "nftables": "nft -j list ruleset",
-    "firewalld": "firewall-cmd --list-all",
+    "nftables": "sudo /usr/sbin/nft -j list ruleset",
+    "firewalld": "sudo /usr/sbin/firewall-cmd --list-all",
     "ufw": "cat /etc/ufw/user.rules",
 }
 

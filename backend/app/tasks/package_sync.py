@@ -57,6 +57,8 @@ def run_package_sync(self, job_id: int, host_id: int) -> dict:
 
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
+                    if not private_key_text.endswith("\n"):
+                        f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
                 effective_packages = await get_effective_packages(host_id, db)
@@ -66,7 +68,8 @@ def run_package_sync(self, job_id: int, host_id: int) -> dict:
                 repos = [r.model_dump() for r in effective_repos]
 
                 result = generate_package_playbook(
-                    host.ip_address, packages, repos, ssh_key_path, host.ssh_port
+                    host.ip_address, packages, repos, ssh_key_path, host.ssh_port,
+                    ssh_user=ssh_key.ssh_user,
                 )
 
                 os.makedirs(f"{private_data_dir}/project", exist_ok=True)
@@ -75,8 +78,8 @@ def run_package_sync(self, job_id: int, host_id: int) -> dict:
                 with open(f"{private_data_dir}/project/playbook.yml", "w") as f:
                     yaml.dump(result["playbook"], f, default_flow_style=False)
 
-                with open(f"{private_data_dir}/inventory/hosts.yml", "w") as f:
-                    yaml.dump(result["inventory"], f, default_flow_style=False)
+                with open(f"{private_data_dir}/inventory/hosts", "w") as f:
+                    f.write(result["inventory"])
 
                 return host, job, db
 

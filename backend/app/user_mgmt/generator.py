@@ -138,11 +138,18 @@ def generate_user_playbook(
     Task order: groups -> users -> authorized_keys -> sudoers.
     Returns a single play dict (caller wraps in a list for ansible-runner).
     """
+    # Split groups into present/absent — absent groups must come AFTER
+    # absent users, since a user's primary group cannot be removed while
+    # the user still exists.
+    groups_present = [g for g in groups if _get(g, "state", "present") != "absent"]
+    groups_absent = [g for g in groups if _get(g, "state", "present") == "absent"]
+
     tasks: list[dict] = []
-    tasks.extend(_group_tasks(groups))
+    tasks.extend(_group_tasks(groups_present))
     tasks.extend(_user_tasks(users))
     tasks.extend(_authorized_key_tasks(users))
     tasks.extend(_sudoers_tasks(users))
+    tasks.extend(_group_tasks(groups_absent))
 
     return {
         "name": "Barricade Linux User Management",

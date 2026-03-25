@@ -60,7 +60,7 @@ def check_all_drift():
                                     ssh_key.encrypted_private_key, get_master_key()
                                 )
                                 imported_key = asyncssh.import_private_key(private_key_pem)
-                                async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=host.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
                                     host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
