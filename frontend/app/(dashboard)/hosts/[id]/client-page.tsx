@@ -1900,171 +1900,160 @@ export default function HostDetailPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Effective Linux Users</h2>
+              <h2 className="text-lg font-semibold text-white">Effective Linux Users & Groups</h2>
               <p className="text-slate-400 text-sm mt-1">
-                Users applied to this host from groups and host-level overrides.
+                Users and groups applied to this host from groups and host-level overrides.
               </p>
             </div>
-            <Button onClick={openLuDialog}>Add User Override</Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={openLuDialog}>Add User Override</Button>
+              <Button variant="outline" onClick={openLgDialog}>Add Group Override</Button>
+            </div>
           </div>
 
-          {luDeleteMutation.error && (
-            <div className="text-red-400 text-sm">{luDeleteMutation.error.message}</div>
+          {(luDeleteMutation.error || lgDeleteMutation.error) && (
+            <div className="text-red-400 text-sm">{luDeleteMutation.error?.message || lgDeleteMutation.error?.message}</div>
           )}
 
-          {showLinuxUsersLoading && <TableSkeleton rows={3} columns={4} />}
-
-          {linuxUsersError && (
-            <div className="text-red-400 py-6 text-center">Failed to load users</div>
-          )}
-
-          {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No Linux users configured. Add a host override or assign users to a group.
-            </div>
-          )}
-
-          {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Username</TableHead>
-                    <TableHead>UID</TableHead>
-                    <TableHead>Shell</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Keys</TableHead>
-                    <TableHead>Sudo</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveLinuxUsers.map((user) => (
-                    <TableRow key={`${user.source}-${user.source_id}-${user.username}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{user.username}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{user.shell}</TableCell>
-                      <TableCell>
-                        <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                          {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {user.sudo_rule ? (
-                          <Badge className="bg-amber-600 text-white">Yes</Badge>
-                        ) : (
-                          <span className="text-slate-600 text-xs">No</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {user.source === "group" ? `Group: ${user.source_name}` : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {user.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={luDeleteMutation.isPending}
-                            onClick={() => handleLuDelete(user.username)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {luDeleteMutation.isPending ? "…" : "Delete"}
-                          </Button>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        )}
-                      </TableCell>
+          {/* Users sub-section */}
+          <div>
+            <h3 className="text-sm font-medium text-slate-300 mb-2">
+              Users ({effectiveLinuxUsers?.length ?? 0})
+            </h3>
+            {showLinuxUsersLoading && <TableSkeleton rows={3} columns={4} />}
+            {linuxUsersError && (
+              <div className="text-red-400 py-4 text-center text-sm">Failed to load users</div>
+            )}
+            {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length === 0 && (
+              <p className="text-slate-500 text-sm">No users configured.</p>
+            )}
+            {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length > 0 && (
+              <div className="rounded-lg border border-slate-700 bg-slate-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead>Username</TableHead>
+                      <TableHead>UID</TableHead>
+                      <TableHead>Shell</TableHead>
+                      <TableHead>State</TableHead>
+                      <TableHead>Keys</TableHead>
+                      <TableHead>Sudo</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead className="w-32">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          <hr className="border-slate-700" />
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-white">Effective Linux Groups</h2>
-              <p className="text-slate-400 text-sm mt-1">
-                System groups applied to this host.
-              </p>
-            </div>
-            <Button onClick={openLgDialog}>Add Group Override</Button>
+                  </TableHeader>
+                  <TableBody>
+                    {effectiveLinuxUsers.map((user) => (
+                      <TableRow key={`${user.source}-${user.source_id}-${user.username}`} className="border-slate-700">
+                        <TableCell className="font-mono text-white text-sm">{user.username}</TableCell>
+                        <TableCell className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</TableCell>
+                        <TableCell className="font-mono text-slate-300 text-xs">{user.shell}</TableCell>
+                        <TableCell>
+                          <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                            {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {user.sudo_rule ? (
+                            <Badge className="bg-amber-600 text-white">Yes</Badge>
+                          ) : (
+                            <span className="text-slate-600 text-xs">No</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {user.source === "group" ? `Group: ${user.source_name}` : "Host override"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {user.source === "host" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={luDeleteMutation.isPending}
+                              onClick={() => handleLuDelete(user.username)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {luDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          ) : (
+                            <span className="text-slate-600 text-xs">Read-only</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
 
-          {lgDeleteMutation.error && (
-            <div className="text-red-400 text-sm">{lgDeleteMutation.error.message}</div>
-          )}
-
-          {showLinuxGroupsLoading && <TableSkeleton rows={3} columns={4} />}
-
-          {linuxGroupsError && (
-            <div className="text-red-400 py-6 text-center">Failed to load groups</div>
-          )}
-
-          {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No Linux groups configured. Add a host override or assign groups to a group.
-            </div>
-          )}
-
-          {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Group Name</TableHead>
-                    <TableHead>GID</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveLinuxGroups.map((group) => (
-                    <TableRow key={`${group.source}-${group.source_id}-${group.groupname}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{group.groupname}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</TableCell>
-                      <TableCell>
-                        <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                          {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {group.source === "group" ? `Group: ${group.source_name}` : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {group.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={lgDeleteMutation.isPending}
-                            onClick={() => handleLgDelete(group.groupname)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {lgDeleteMutation.isPending ? "…" : "Delete"}
-                          </Button>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        )}
-                      </TableCell>
+          {/* Groups sub-section */}
+          <div>
+            <h3 className="text-sm font-medium text-slate-300 mb-2">
+              Groups ({effectiveLinuxGroups?.length ?? 0})
+            </h3>
+            {showLinuxGroupsLoading && <TableSkeleton rows={3} columns={4} />}
+            {linuxGroupsError && (
+              <div className="text-red-400 py-4 text-center text-sm">Failed to load groups</div>
+            )}
+            {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length === 0 && (
+              <p className="text-slate-500 text-sm">No groups configured.</p>
+            )}
+            {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length > 0 && (
+              <div className="rounded-lg border border-slate-700 bg-slate-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead>Group Name</TableHead>
+                      <TableHead>GID</TableHead>
+                      <TableHead>State</TableHead>
+                      <TableHead>Source</TableHead>
+                      <TableHead className="w-32">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+                  </TableHeader>
+                  <TableBody>
+                    {effectiveLinuxGroups.map((group) => (
+                      <TableRow key={`${group.source}-${group.source_id}-${group.groupname}`} className="border-slate-700">
+                        <TableCell className="font-mono text-white text-sm">{group.groupname}</TableCell>
+                        <TableCell className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</TableCell>
+                        <TableCell>
+                          <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                            {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {group.source === "group" ? `Group: ${group.source_name}` : "Host override"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {group.source === "host" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={lgDeleteMutation.isPending}
+                              onClick={() => handleLgDelete(group.groupname)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {lgDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          ) : (
+                            <span className="text-slate-600 text-xs">Read-only</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
 
           <Dialog open={luDialogOpen} onOpenChange={setLuDialogOpen}>
             <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
