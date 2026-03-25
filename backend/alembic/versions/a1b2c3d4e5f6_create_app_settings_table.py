@@ -42,6 +42,7 @@ def upgrade() -> None:
         {"key": "ssh.idle_timeout_seconds", "value": "1800", "value_type": "int", "description": "SSH terminal idle timeout before auto-disconnect (seconds)"},
         {"key": "logging.audit_retention_days", "value": "90", "value_type": "int", "description": "Days to retain audit log entries"},
         {"key": "logging.level", "value": "info", "value_type": "string", "description": "Application log level"},
+        {"key": "celery.concurrency", "value": "4", "value_type": "int", "description": "Number of Celery worker processes (requires restart)"},
     ])
 
 

@@ -47,6 +47,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "choices": ["debug", "info", "warning", "error", "critical"],
         "description": "Application log level",
     },
+    "celery.concurrency": {
+        "type": "int", "default": 4, "min": 1, "max": 32,
+        "description": "Number of Celery worker processes (requires restart)",
+    },
 }
 
 # In-process cache: {key: (value, timestamp)}

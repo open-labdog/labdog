@@ -21,42 +21,17 @@ import {
 
 interface AuditEntry {
   id: number
-  timestamp: string
-  user: string
+  created_at: string
+  user_id: number | null
   action: "create" | "update" | "delete" | string
   entity_type: string
-  entity_id: number | string
-  details: string | null
+  entity_id: number | string | null
+  before_state: Record<string, unknown> | null
+  after_state: Record<string, unknown> | null
+  ip_address: string | null
 }
 
 const STUB_DATA: AuditEntry[] = [
-  {
-    id: 1,
-    timestamp: new Date(Date.now() - 60000).toISOString(),
-    user: "admin@example.com",
-    action: "create",
-    entity_type: "group",
-    entity_id: 1,
-    details: "Created group 'web-servers'",
-  },
-  {
-    id: 2,
-    timestamp: new Date(Date.now() - 120000).toISOString(),
-    user: "admin@example.com",
-    action: "update",
-    entity_type: "rule",
-    entity_id: 5,
-    details: "Updated rule priority from 10 to 20",
-  },
-  {
-    id: 3,
-    timestamp: new Date(Date.now() - 300000).toISOString(),
-    user: "ops@example.com",
-    action: "delete",
-    entity_type: "host",
-    entity_id: 3,
-    details: "Removed host 'old-server-01'",
-  },
 ]
 
 const ACTION_COLORS: Record<string, string> = {
@@ -107,8 +82,8 @@ export default function AuditPage() {
       return (
         e.action.toLowerCase().includes(q) ||
         e.entity_type.toLowerCase().includes(q) ||
-        (e.details?.toLowerCase().includes(q) ?? false) ||
-        e.user.toLowerCase().includes(q)
+        (e.ip_address?.toLowerCase().includes(q) ?? false) ||
+        String(e.entity_id ?? "").includes(q)
       )
     }
     return true
@@ -206,26 +181,26 @@ export default function AuditPage() {
                   <TableHead>User</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>Entity</TableHead>
-                  <TableHead>Details</TableHead>
+                  <TableHead>IP Address</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginated.map((entry) => (
                   <TableRow key={entry.id} className="border-slate-700">
                     <TableCell className="font-mono text-slate-300 text-xs whitespace-nowrap">
-                      {new Date(entry.timestamp).toLocaleString()}
+                      {new Date(entry.created_at).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-slate-300 text-sm">
-                      {entry.user}
+                      {entry.user_id ? `User #${entry.user_id}` : "System"}
                     </TableCell>
                     <TableCell>
                       <ActionBadge action={entry.action} />
                     </TableCell>
                     <TableCell className="text-slate-300 text-sm capitalize">
-                      {entry.entity_type.replace("_", " ")} #{entry.entity_id}
+                      {entry.entity_type.replace("_", " ")}{entry.entity_id ? ` #${entry.entity_id}` : ""}
                     </TableCell>
                     <TableCell className="text-slate-400 text-xs max-w-xs truncate">
-                      {entry.details ?? "—"}
+                      {entry.ip_address ?? "—"}
                     </TableCell>
                   </TableRow>
                 ))}
