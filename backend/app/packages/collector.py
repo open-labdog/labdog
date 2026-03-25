@@ -5,6 +5,8 @@ from typing import Optional
 
 import asyncssh
 
+from app.ssh_utils import ssh_connect
+
 
 async def collect_package_states(
     host_ip: str,
@@ -23,12 +25,11 @@ async def collect_package_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 dpkg_check = await conn.run("which dpkg 2>/dev/null", check=False)
                 rpm_check = await conn.run("which rpm 2>/dev/null", check=False)
@@ -120,12 +121,11 @@ async def collect_repo_sources(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 repos: list[dict] = []
 

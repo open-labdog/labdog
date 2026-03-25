@@ -6,6 +6,8 @@ from typing import Optional
 
 import asyncssh
 
+from app.ssh_utils import ssh_connect
+
 
 def _stdout(result: asyncssh.SSHCompletedProcess) -> str:
     out = result.stdout
@@ -25,12 +27,11 @@ async def collect_resolver_state(
     private_key = asyncssh.import_private_key(private_key_pem)
 
     async def _run() -> Optional[dict]:
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             if resolver_type == "resolv_conf":
                 result = await conn.run(

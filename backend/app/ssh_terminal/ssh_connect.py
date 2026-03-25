@@ -2,6 +2,8 @@
 
 import asyncssh
 from sqlalchemy import select
+
+from app.ssh_utils import ssh_connect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto.key_management import get_master_key
@@ -70,12 +72,11 @@ async def open_ssh_shell(
 
     # Connect to remote host and open PTY shell
     try:
-        conn = await asyncssh.connect(
+        conn = await ssh_connect(
             host.ip_address,
             port=host.ssh_port,
             username=ssh_key.ssh_user,
             client_keys=[imported_key],
-            known_hosts=None,
         )
         process = await conn.create_process(
             term_type="xterm-256color",

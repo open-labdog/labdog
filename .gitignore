@@ -53,3 +53,6 @@ tmp/
 
 # Packaging build cache
 packaging/.cache/
+
+# Playwright MCP
+.playwright-mcp/

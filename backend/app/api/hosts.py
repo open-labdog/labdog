@@ -1,5 +1,6 @@
 import asyncssh
 from fastapi import APIRouter, Depends, HTTPException
+from app.ssh_utils import ssh_connect
 from pydantic import BaseModel
 from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -76,12 +77,11 @@ async def create_host(
                 ssh_key.encrypted_private_key, master_key
             )
             imported_key = asyncssh.import_private_key(private_pem)
-            async with asyncssh.connect(
+            async with ssh_connect(
                 body.ip_address,
                 port=body.ssh_port,
                 username=ssh_user,
                 client_keys=[imported_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run("hostname", check=True)
                 hostname = result.stdout.strip()

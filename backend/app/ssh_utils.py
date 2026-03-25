@@ -2,6 +2,29 @@
 
 import asyncssh
 
+# Default SSH connect timeout in seconds.  Prevents drift checks and
+# collectors from hanging for minutes when a host is unreachable.
+SSH_CONNECT_TIMEOUT = 10
+
+
+def ssh_connect(
+    host: str,
+    port: int = 22,
+    username: str = "root",
+    client_keys: list | None = None,
+    known_hosts: object = None,
+    connect_timeout: int = SSH_CONNECT_TIMEOUT,
+) -> asyncssh.SSHClientConnection:
+    """Wrapper around asyncssh.connect with a default connect timeout."""
+    return asyncssh.connect(
+        host,
+        port=port,
+        username=username,
+        client_keys=client_keys,
+        known_hosts=known_hosts,
+        login_timeout=connect_timeout,
+    )
+
 
 async def get_source_ip(conn: asyncssh.SSHClientConnection) -> str | None:
     """Determine what IP the remote host sees us connecting from.

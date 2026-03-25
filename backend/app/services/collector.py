@@ -6,6 +6,8 @@ import shlex
 import asyncssh
 from dataclasses import dataclass
 
+from app.ssh_utils import ssh_connect
+
 
 @dataclass
 class ServiceCurrentState:
@@ -33,12 +35,11 @@ async def collect_service_states(
 
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             for name in service_names:
                 try:
@@ -110,12 +111,11 @@ async def list_all_services(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run(
                     "systemctl list-units --type=service --all --no-pager --plain",
@@ -180,12 +180,11 @@ async def execute_service_command(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> dict:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run(cmd, check=False)
                 return {
