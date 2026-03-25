@@ -32,15 +32,32 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     mode: "onSubmit",
   })
 
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/groups", label: "Groups" },
-    { href: "/hosts", label: "Hosts" },
-    { href: "/ssh-keys", label: "SSH Keys" },
-    ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
-    { href: "/git-repos", label: "Git Repos" },
-    { href: "/audit", label: "Audit Log" },
-    ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
+  const navGroups: { label?: string; items: { href: string; label: string }[] }[] = [
+    {
+      items: [{ href: "/dashboard", label: "Dashboard" }],
+    },
+    {
+      label: "HOSTS",
+      items: [
+        { href: "/hosts", label: "Hosts" },
+        { href: "/groups", label: "Groups" },
+      ],
+    },
+    {
+      label: "CONFIG",
+      items: [
+        { href: "/ssh-keys", label: "SSH Keys" },
+        { href: "/git-repos", label: "Git Repos" },
+      ],
+    },
+    {
+      label: "ADMIN",
+      items: [
+        ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
+        { href: "/audit", label: "Audit Log" },
+        ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
+      ],
+    },
   ]
 
   const onPasswordSubmit = form.handleSubmit(async (data) => {
@@ -70,21 +87,32 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         <p className="text-sm text-slate-400">Firewall Management</p>
       </div>
 
-      <nav className="space-y-2">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigation}
-            className={cn(
-              "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
-              (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
-                ? "bg-slate-800 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+      <nav className="space-y-4">
+        {navGroups.map((group, gi) => (
+          <div key={gi}>
+            {group.label && (
+              <p className="px-4 mb-1 text-[10px] font-semibold tracking-widest text-slate-500 uppercase">
+                {group.label}
+              </p>
             )}
-          >
-            {item.label}
-          </Link>
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigation}
+                  className={cn(
+                    "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                    (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
