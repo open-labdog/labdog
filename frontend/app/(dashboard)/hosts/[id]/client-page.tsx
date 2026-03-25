@@ -347,13 +347,8 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
           {collecting ? "Collecting..." : "Collect"}
         </Button>
       </div>
-      {mod?.error_message && (
-        <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 mb-3">
-          <p className="text-red-400 text-sm">{mod.error_message}</p>
-        </div>
-      )}
       {!mod || mod.collected_state == null ? (
-        !mod?.error_message && <p className="text-slate-500 text-sm">Not yet collected.</p>
+        <p className="text-slate-500 text-sm">Not yet collected.</p>
       ) : (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
           <ModuleStateView moduleType={moduleType} state={mod.collected_state} />
@@ -1248,6 +1243,19 @@ export default function HostDetailPage() {
         </button>
       </div>
 
+      {(() => {
+        const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
+        if (!errors.length) return null
+        const uniqueMessages = [...new Set(errors.map(m => m.error_message!))]
+        return (
+          <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
+            <span className="text-red-400 text-sm">
+              {uniqueMessages.join("; ")}
+            </span>
+          </div>
+        )
+      })()}
+
       {activeTab === "overview" && (
         <>
           {hostError && (
@@ -1270,20 +1278,7 @@ export default function HostDetailPage() {
                 <FirewallBadge backend={host.firewall_backend} />
               </InfoRow>
               <InfoRow label="Sync Status">
-                <div className="flex items-center gap-3">
-                  <SyncStatusBadge status={host.sync_status} />
-                  {(() => {
-                    const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
-                    if (!errors.length) return null
-                    const uniqueMessages = [...new Set(errors.map(m => m.error_message!))]
-                    return (
-                      <span className="text-red-400 text-sm">{uniqueMessages.length === 1
-                        ? uniqueMessages[0]
-                        : uniqueMessages.map((msg, i) => <span key={i} className="block">{msg}</span>)
-                      }</span>
-                    )
-                  })()}
-                </div>
+                <SyncStatusBadge status={host.sync_status} />
               </InfoRow>
               <InfoRow label="Last Sync">
                 {host.last_sync_at
