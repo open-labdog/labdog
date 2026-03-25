@@ -64,7 +64,7 @@ def check_all_drift():
                                     host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
-                except (OSError, asyncssh.Error):
+                except (OSError, asyncssh.Error, TimeoutError):
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.unknown
                     host.last_drift_check_at = datetime.now(timezone.utc)

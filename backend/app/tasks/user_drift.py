@@ -95,10 +95,10 @@ def check_all_user_drift():
                                 host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
-                except (OSError, asyncssh.Error) as e:
+                except (OSError, asyncssh.Error, TimeoutError) as e:
                     hms.sync_status = "unknown"
                     hms.last_drift_check_at = datetime.now(timezone.utc)
-                    hms.error_message = f"Host unreachable: {e}"
+                    hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
                 except Exception as e:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

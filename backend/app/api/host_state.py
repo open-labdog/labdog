@@ -1,5 +1,6 @@
 """API endpoints for reading and refreshing collected host state."""
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -112,12 +113,13 @@ async def collect_state(
             hms.collected_state = state
             hms.collected_at = now
             hms.error_message = None
-        except (OSError, asyncssh.Error) as e:
-            logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
+        except (OSError, asyncssh.Error, asyncio.TimeoutError) as e:
+            msg = str(e) or "connection timed out"
+            logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, msg)
             hms.collected_state = None
             hms.collected_at = now
             hms.sync_status = "unknown"
-            hms.error_message = f"Host unreachable: {e}"
+            hms.error_message = f"Host unreachable: {msg}"
         except Exception as e:
             logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
             hms.collected_state = None
