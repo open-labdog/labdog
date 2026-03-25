@@ -79,6 +79,7 @@ def check_all_cron_drift():
                     hms.last_drift_check_at = datetime.now(timezone.utc)
                     hms.collected_state = actual
                     hms.collected_at = datetime.now(timezone.utc)
+                    hms.error_message = None
 
                     if not host.barricade_source_ip:
                         try:
@@ -87,12 +88,14 @@ def check_all_cron_drift():
                                 host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
-                except (OSError, asyncssh.Error):
+                except (OSError, asyncssh.Error) as e:
                     hms.sync_status = "unknown"
                     hms.last_drift_check_at = datetime.now(timezone.utc)
-                except Exception:
+                    hms.error_message = f"Host unreachable: {e}"
+                except Exception as e:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.error_message = str(e)
 
             await db.commit()
             return len(statuses)

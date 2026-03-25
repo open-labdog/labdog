@@ -347,8 +347,13 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
           {collecting ? "Collecting..." : "Collect"}
         </Button>
       </div>
+      {mod?.error_message && (
+        <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 mb-3">
+          <p className="text-red-400 text-sm">{mod.error_message}</p>
+        </div>
+      )}
       {!mod || mod.collected_state == null ? (
-        <p className="text-slate-500 text-sm">Not yet collected.</p>
+        !mod?.error_message && <p className="text-slate-500 text-sm">Not yet collected.</p>
       ) : (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
           <ModuleStateView moduleType={moduleType} state={mod.collected_state} />

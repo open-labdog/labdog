@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -36,4 +36,7 @@ class HostModuleStatus(Base):
     )
     collected_at: Mapped[DateTime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(
+        Text, nullable=True
     )

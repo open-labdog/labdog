@@ -28,6 +28,7 @@ export interface ModuleCurrentState {
   collected_state: unknown
   collected_at: string | null
   drift_check_enabled: boolean
+  error_message: string | null
 }
 export interface SSHKey {
   id: number; name: string; public_key: string | null
