@@ -2,6 +2,7 @@
 
 import asyncssh
 from app.rules.model import FirewallRuleSpec
+from app.ssh_utils import ssh_connect
 from app.sync.parsers.nftables import parse_nftables_json
 from app.sync.parsers.firewalld import parse_firewalld_output
 from app.sync.parsers.ufw import parse_ufw_rules
@@ -50,13 +51,11 @@ async def collect_current_rules(
     parser = _PARSERS[firewall_backend]
 
     key = asyncssh.import_private_key(private_key_pem)
-    async with asyncssh.connect(
+    async with ssh_connect(
         host_ip,
         port=ssh_port,
         username=ssh_user,
         client_keys=[key],
-        # Accept unknown host keys on first connect, reject changed keys
-        known_hosts=None,
     ) as conn:
         result = await conn.run(command, check=True)
         return parser(result.stdout)

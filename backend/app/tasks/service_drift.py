@@ -19,7 +19,7 @@ def check_all_service_drift():
     from app.services.collector import collect_service_states
     from app.services.diff import compute_service_diff
     from app.services.merge import get_effective_services
-    from app.ssh_utils import get_source_ip
+    from app.ssh_utils import get_source_ip, ssh_connect
 
     async def _run():
         async with task_session() as db:
@@ -70,10 +70,13 @@ def check_all_service_drift():
                     if not host.barricade_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                            async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
                                 host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
+                except (OSError, asyncssh.Error):
+                    hms.sync_status = "unknown"
+                    hms.last_drift_check_at = datetime.now(timezone.utc)
                 except Exception:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

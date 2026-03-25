@@ -5,6 +5,8 @@ import re
 
 import asyncssh
 
+from app.ssh_utils import ssh_connect
+
 _ANSIBLE_MARKER_RE = re.compile(r"^#Ansible:\s+(.+)$")
 
 
@@ -28,12 +30,11 @@ async def collect_cron_jobs(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 for user in users:
                     try:

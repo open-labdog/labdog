@@ -17,7 +17,7 @@ from app.models.host import Host
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
-from app.ssh_utils import get_source_ip
+from app.ssh_utils import get_source_ip, ssh_connect
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,9 @@ async def collect_state(
     # Capture source IP via a quick SSH probe
     try:
         imported_key = asyncssh.import_private_key(private_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user,
-            client_keys=[imported_key], known_hosts=None,
+            client_keys=[imported_key],
         ) as probe:
             host.barricade_source_ip = await get_source_ip(probe)
     except Exception:
@@ -154,9 +154,9 @@ def _build_collectors(
     async def _collect_users():
         import asyncssh as _asyncssh
         private_key = _asyncssh.import_private_key(private_pem)
-        async with _asyncssh.connect(
+        async with ssh_connect(
             host.ip_address, port=host.ssh_port, username=ssh_user,
-            client_keys=[private_key], known_hosts=None,
+            client_keys=[private_key],
         ) as conn:
             # Collect all real users (uid >= 1000 or uid 0) and groups
             user_result = await conn.run(
@@ -187,9 +187,9 @@ def _build_collectors(
     async def _collect_cron():
         import asyncssh as _asyncssh
         private_key = _asyncssh.import_private_key(private_pem)
-        async with _asyncssh.connect(
+        async with ssh_connect(
             host.ip_address, port=host.ssh_port, username=ssh_user,
-            client_keys=[private_key], known_hosts=None,
+            client_keys=[private_key],
         ) as conn:
             # List all user crontabs
             jobs = []
@@ -282,9 +282,9 @@ async def _detect_firewall_backend(
     """Auto-detect firewall backend by probing for known tools."""
     try:
         key = asyncssh.import_private_key(private_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip, port=ssh_port, username=ssh_user,
-            client_keys=[key], known_hosts=None,
+            client_keys=[key],
         ) as conn:
             # Check for nftables (nft may be in /usr/sbin which isn't always in PATH)
             r = await conn.run("command -v nft || test -x /usr/sbin/nft", check=False)

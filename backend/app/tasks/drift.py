@@ -16,7 +16,7 @@ def check_all_drift():
     from app.crypto.key_management import get_master_key
     from app.drift.detector import check_drift
     from app.sync.diff import fetch_current_state
-    from app.ssh_utils import get_source_ip
+    from app.ssh_utils import get_source_ip, ssh_connect
     from datetime import datetime, timezone
 
     async def _run():
@@ -60,10 +60,14 @@ def check_all_drift():
                                     ssh_key.encrypted_private_key, get_master_key()
                                 )
                                 imported_key = asyncssh.import_private_key(private_key_pem)
-                                async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                                async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
                                     host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
+                except (OSError, asyncssh.Error):
+                    from app.models.host import SyncStatus
+                    host.sync_status = SyncStatus.unknown
+                    host.last_drift_check_at = datetime.now(timezone.utc)
                 except Exception:
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.error

@@ -1,5 +1,6 @@
 import asyncssh
 from celery.result import AsyncResult
+from app.ssh_utils import ssh_connect
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert as sa_insert
 from sqlalchemy import select
@@ -162,12 +163,11 @@ async def add_discovered_hosts(
         hostname = None
         source_ip = None
         try:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 ip,
                 port=body.ssh_port,
                 username=ssh_user,
                 client_keys=[imported_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run("hostname", check=True)
                 hostname = result.stdout.strip()

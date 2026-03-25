@@ -1,6 +1,8 @@
 import asyncssh
 from dataclasses import dataclass
 
+from app.ssh_utils import ssh_connect
+
 
 @dataclass
 class ParsedHostsEntry:
@@ -23,12 +25,11 @@ async def collect_hosts_file(
     results = []
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             result = await conn.run("cat /etc/hosts", check=True)
             content = result.stdout

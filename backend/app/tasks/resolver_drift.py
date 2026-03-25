@@ -23,7 +23,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
-    from app.ssh_utils import get_source_ip
+    from app.ssh_utils import get_source_ip, ssh_connect
 
     async def _run():
         async with task_session() as db:
@@ -82,7 +82,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
             if not host.barricade_source_ip:
                 try:
                     imported_key = asyncssh.import_private_key(private_key_pem)
-                    async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                    async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
                         host.barricade_source_ip = await get_source_ip(probe)
                 except Exception:
                     pass
@@ -123,7 +123,7 @@ def check_all_resolver_drift():
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
-    from app.ssh_utils import get_source_ip
+    from app.ssh_utils import get_source_ip, ssh_connect
 
     async def _run():
         async with task_session() as db:
@@ -181,10 +181,13 @@ def check_all_resolver_drift():
                     if not host.barricade_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with asyncssh.connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key], known_hosts=None) as probe:
+                            async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
                                 host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
+                except (OSError, asyncssh.Error):
+                    hms.sync_status = "unknown"
+                    hms.last_drift_check_at = datetime.now(timezone.utc)
                 except Exception:
                     hms.sync_status = "error"
                     hms.last_drift_check_at = datetime.now(timezone.utc)
