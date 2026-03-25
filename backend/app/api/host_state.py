@@ -83,17 +83,6 @@ async def collect_state(
 
     private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
-    # Capture source IP via a quick SSH probe
-    try:
-        imported_key = asyncssh.import_private_key(private_pem)
-        async with ssh_connect(
-            host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user,
-            client_keys=[imported_key],
-        ) as probe:
-            host.barricade_source_ip = await get_source_ip(probe)
-    except Exception:
-        pass
-
     all_collectors = _build_collectors(host, private_pem, ssh_key.ssh_user, db)
 
     if module:
@@ -106,6 +95,35 @@ async def collect_state(
     now = datetime.now(timezone.utc)
     results: list[ModuleState] = []
 
+    # Connectivity check: probe SSH before running any collectors.
+    # If the host is unreachable, mark ALL modules and return immediately.
+    try:
+        imported_key = asyncssh.import_private_key(private_pem)
+        async with ssh_connect(
+            host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user,
+            client_keys=[imported_key],
+        ) as probe:
+            host.barricade_source_ip = await get_source_ip(probe)
+    except (OSError, asyncssh.Error, asyncio.TimeoutError) as e:
+        msg = str(e) or "connection timed out"
+        logger.warning("Host %d unreachable, skipping all collectors: %s", host_id, msg)
+        error_msg = f"Host unreachable: {msg}"
+        for module_type in collectors:
+            hms = await _get_or_create_hms(db, host_id, module_type)
+            hms.collected_at = now
+            hms.sync_status = "unknown"
+            hms.error_message = error_msg
+            results.append(ModuleState(
+                module_type=hms.module_type,
+                sync_status=hms.sync_status,
+                collected_state=hms.collected_state,
+                collected_at=hms.collected_at,
+                drift_check_enabled=hms.drift_check_enabled,
+                error_message=hms.error_message,
+            ))
+        await db.commit()
+        return results
+
     for module_type, collect_fn in collectors.items():
         hms = await _get_or_create_hms(db, host_id, module_type)
         try:
@@ -113,13 +131,6 @@ async def collect_state(
             hms.collected_state = state
             hms.collected_at = now
             hms.error_message = None
-        except (OSError, asyncssh.Error, asyncio.TimeoutError) as e:
-            msg = str(e) or "connection timed out"
-            logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, msg)
-            hms.collected_state = None
-            hms.collected_at = now
-            hms.sync_status = "unknown"
-            hms.error_message = f"Host unreachable: {msg}"
         except Exception as e:
             logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
             hms.collected_state = None
