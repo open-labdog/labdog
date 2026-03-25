@@ -4,9 +4,18 @@ import asyncio
 
 import asyncssh
 
-# Default SSH connect timeout in seconds.  Prevents drift checks and
-# collectors from hanging for minutes when a host is unreachable.
+# Default SSH connect timeout in seconds.  Overridden at runtime by
+# the "ssh.connect_timeout" app setting stored in the database.
 SSH_CONNECT_TIMEOUT = 10
+
+
+def _get_connect_timeout() -> int:
+    """Read SSH connect timeout from DB settings, with fallback."""
+    try:
+        from app.settings_service import get_setting_sync_typed
+        return int(get_setting_sync_typed("ssh.connect_timeout"))
+    except Exception:
+        return SSH_CONNECT_TIMEOUT
 
 
 class _SSHConnectContext:
@@ -56,7 +65,7 @@ def ssh_connect(
     username: str = "root",
     client_keys: list | None = None,
     known_hosts: object = None,
-    connect_timeout: int = SSH_CONNECT_TIMEOUT,
+    connect_timeout: int | None = None,
 ) -> _SSHConnectContext:
     """Connect via SSH with a TCP + login timeout.
 
@@ -65,6 +74,8 @@ def ssh_connect(
     or:
         conn = await ssh_connect(...)
     """
+    if connect_timeout is None:
+        connect_timeout = _get_connect_timeout()
     return _SSHConnectContext(host, port, username, client_keys, known_hosts, connect_timeout)
 
 

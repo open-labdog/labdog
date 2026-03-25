@@ -40,6 +40,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
     { href: "/git-repos", label: "Git Repos" },
     { href: "/audit", label: "Audit Log" },
+    ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
   ]
 
   const onPasswordSubmit = form.handleSubmit(async (data) => {
