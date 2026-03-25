@@ -23,9 +23,6 @@ class CeleryManager:
 
     def start(self) -> None:
         """Spawn the Celery worker+beat subprocess."""
-        from app.settings_service import get_setting_sync_typed
-        concurrency = int(get_setting_sync_typed("celery.concurrency"))
-        log_level = str(get_setting_sync_typed("logging.level"))
         cmd = [
             sys.executable,
             "-m",
@@ -36,11 +33,11 @@ class CeleryManager:
             "--beat",
             "--scheduler",
             "redbeat.RedBeatScheduler",
-            "--max-tasks-per-child=100",
-            f"--concurrency={concurrency}",
+            f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",
+            f"--concurrency={settings.celery.concurrency}",
             "-Q",
             "default,long_running",
-            f"--loglevel={log_level}",
+            f"--loglevel={settings.logging.level}",
         ]
         logger.info("Starting Celery worker+beat: %s", " ".join(cmd))
         self._process = subprocess.Popen(
