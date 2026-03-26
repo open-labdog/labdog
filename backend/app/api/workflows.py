@@ -1,6 +1,10 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 from starlette.responses import Response
 
 from app.db import get_db
@@ -190,13 +194,13 @@ async def trigger_workflow_run(
 
     # Dispatch Celery task
     try:
-        from app.celery_app import celery_app
+        from app.tasks import celery_app
         celery_app.send_task(
             "app.tasks.workflow_orchestrator.run_group_workflow",
             args=[workflow.id, run.id],
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to dispatch workflow task: %s", exc)
 
     return WorkflowTriggerResponse(run_id=run.id, message="Workflow run started")
 

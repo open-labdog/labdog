@@ -262,7 +262,8 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
             continue
 
         try:
-            await client.delete_snapshot(pve_node, vmid, snap_name)
+            upid = await client.delete_snapshot(pve_node, vmid, snap_name)
+            await client.wait_for_task(pve_node, upid)
             logger.info(
                 "Deleted orphaned snapshot %r vmid=%d pve_node=%r",
                 snap_name,

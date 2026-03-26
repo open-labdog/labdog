@@ -412,7 +412,7 @@ async def _step_update(
     Returns:
         Step result dict.
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         None,
         run_system_update,
