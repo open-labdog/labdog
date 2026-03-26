@@ -12,6 +12,7 @@ from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.admin_users import router as admin_users_router
 from app.api.proxmox_nodes import router as proxmox_nodes_router
+from app.api.proxmox_discovery import router as proxmox_discovery_router
 from app.api.settings import router as settings_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
@@ -289,6 +290,7 @@ def create_app() -> FastAPI:
     app.include_router(resolver_router, prefix="/api")
     app.include_router(resolver_sync_router, prefix="/api")
     app.include_router(proxmox_nodes_router, prefix="/api")
+    app.include_router(proxmox_discovery_router, prefix="/api")
     app.include_router(workflows_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 

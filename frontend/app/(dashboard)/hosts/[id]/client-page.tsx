@@ -5,7 +5,7 @@ import { useParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, PlayIcon, X, ShieldIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -33,7 +33,7 @@ import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE } from "@/lib/api"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult } from "@/lib/types"
+import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -472,6 +472,99 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
           {installing ? "Installing..." : "Install nftables"}
         </Button>
       </div>
+    </div>
+  )
+}
+
+function ProxmoxVMSection({
+  hostId,
+  queryClient,
+}: {
+  hostId: number
+  queryClient: ReturnType<typeof useQueryClient>
+}) {
+  const {
+    data: mapping,
+    isLoading,
+    error,
+  } = useQuery<VMMapping | null>({
+    queryKey: ["host-vm-mapping", hostId],
+    queryFn: async () => {
+      const res = await fetch(`/api/proxmox/hosts/${hostId}/vm-mapping`, {
+        credentials: "include",
+      })
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`Failed to fetch VM mapping: ${res.status}`)
+      return res.json() as Promise<VMMapping>
+    },
+    retry: false,
+  })
+
+  const discoverMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/proxmox/hosts/${hostId}/discover`, {
+        method: "POST",
+        credentials: "include",
+      })
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`Discovery failed: ${res.status}`)
+      return res.json() as Promise<VMMapping>
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["host-vm-mapping", hostId] })
+    },
+  })
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-0">
+      <div className="flex items-center justify-between pb-3 mb-1 border-b border-slate-800">
+        <h3 className="text-sm font-semibold text-slate-200">Proxmox VM</h3>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={discoverMutation.isPending || isLoading}
+          onClick={() => discoverMutation.mutate()}
+          className="h-7 text-xs"
+        >
+          <RefreshCwIcon className={`w-3 h-3 mr-1 ${discoverMutation.isPending ? "animate-spin" : ""}`} />
+          {discoverMutation.isPending ? "Scanning..." : "Discover"}
+        </Button>
+      </div>
+
+      {isLoading && (
+        <div className="py-3 text-slate-400 text-sm">Loading...</div>
+      )}
+
+      {!isLoading && error && (
+        <div className="py-3 text-red-400 text-sm">Failed to load VM mapping</div>
+      )}
+
+      {discoverMutation.error && (
+        <div className="py-2 text-amber-400 text-xs">{(discoverMutation.error as Error).message}</div>
+      )}
+
+      {!isLoading && !error && mapping === null && !discoverMutation.isPending && (
+        <div className="py-3 text-slate-400 text-sm">
+          No VM mapping found. Click Discover to scan Proxmox nodes for this host.
+        </div>
+      )}
+
+      {!isLoading && !error && mapping && (
+        <>
+          <InfoRow label="VM Name">
+            <span className="font-mono">{mapping.vm_name}</span>
+          </InfoRow>
+          <InfoRow label="VMID">
+            <span className="font-mono">{mapping.vmid}</span>
+          </InfoRow>
+          <InfoRow label="PVE Node">
+            <span className="font-mono">{mapping.pve_node_name}</span>
+          </InfoRow>
+          <InfoRow label="Discovered">
+            {new Date(mapping.discovered_at).toLocaleString()}
+          </InfoRow>
+        </>
+      )}
     </div>
   )
 }
@@ -1350,6 +1443,7 @@ export default function HostDetailPage() {
               </InfoRow>
             </div>
           )}
+          {host && <ProxmoxVMSection hostId={id} queryClient={queryClient} />}
         </>
       )}
 

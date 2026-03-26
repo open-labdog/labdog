@@ -35,3 +35,15 @@ class ProxmoxTestResponse(BaseModel):
     success: bool
     message: str
     version: str | None = None
+
+
+class VMMappingResponse(BaseModel):
+    id: int
+    host_id: int
+    proxmox_node_id: int
+    pve_node_name: str
+    vmid: int
+    vm_name: str
+    discovered_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
