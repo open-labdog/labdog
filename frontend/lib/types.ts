@@ -328,3 +328,43 @@ export interface EffectiveResolverConfig extends ResolverConfig {
   source_id: number
   source_name: string
 }
+
+export interface UpdateWorkflow {
+  id: number
+  group_id: number
+  batch_size: number
+  schedule_cron: string | null
+  pre_update_snapshot: boolean
+  auto_rollback: boolean
+  verification_prompt: string | null
+  auto_reboot: boolean
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowRun {
+  id: number
+  workflow_id: number
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  triggered_by: number | null
+  created_at: string
+}
+
+export interface WorkflowHostRun {
+  id: number
+  host_id: number
+  hostname: string
+  step: string
+  status: string
+  snapshot_name: string | null
+  error_message: string | null
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface WorkflowRunDetail extends WorkflowRun {
+  host_runs: WorkflowHostRun[]
+}

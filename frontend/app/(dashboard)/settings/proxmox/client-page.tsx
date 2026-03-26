@@ -51,6 +51,7 @@ export default function ProxmoxSettingsPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formSaving, setFormSaving] = useState(false)
   const [testingId, setTestingId] = useState<number | null>(null)
+  const [cleaningUp, setCleaningUp] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -155,6 +156,21 @@ export default function ProxmoxSettingsPage() {
     })
   }
 
+  async function handleCleanupSnapshots() {
+    setCleaningUp(true)
+    try {
+      const result = await apiFetch<{ cleaned: number; message: string }>(
+        "/api/proxmox/cleanup-snapshots",
+        { method: "POST" }
+      )
+      showSuccess(result.message ?? `Cleaned up ${result.cleaned} orphaned snapshot(s)`)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Cleanup failed")
+    } finally {
+      setCleaningUp(false)
+    }
+  }
+
   async function handleTestConnection(node: ProxmoxNode) {
     setTestingId(node.id)
     try {
@@ -185,7 +201,16 @@ export default function ProxmoxSettingsPage() {
             Configure Proxmox VE API connections for VM management.
           </p>
         </div>
-        <Button onClick={openCreate}>Add Node</Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleCleanupSnapshots}
+            disabled={cleaningUp}
+          >
+            {cleaningUp ? "Cleaning..." : "Cleanup Orphaned Snapshots"}
+          </Button>
+          <Button onClick={openCreate}>Add Node</Button>
+        </div>
       </div>
 
       {showLoading && <TableSkeleton rows={3} columns={5} />}
