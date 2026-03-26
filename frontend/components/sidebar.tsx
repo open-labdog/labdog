@@ -56,6 +56,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
         { href: "/audit", label: "Audit Log" },
         ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
+        ...(user?.is_superuser ? [{ href: "/settings/proxmox", label: "Proxmox" }] : []),
       ],
     },
   ]

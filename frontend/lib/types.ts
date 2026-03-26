@@ -69,6 +69,16 @@ export interface GitRepoUpdate {
   webhook_secret?: string | null
 }
 
+export interface ProxmoxNode {
+  id: number
+  name: string
+  api_url: string
+  token_id: string
+  verify_ssl: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface GitOpsStatusResponse {
   gitops_enabled: boolean
   git_repository_id: number | null
