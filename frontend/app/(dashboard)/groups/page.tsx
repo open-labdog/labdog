@@ -265,7 +265,7 @@ export default function GroupsPage() {
           )}
           {viewMode === "flat" ? (
             <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
+              <Table className="table-fixed">
                 <TableHeader>
                   <TableRow className="border-slate-700">
                     <TableHead className="w-10">
@@ -276,12 +276,12 @@ export default function GroupsPage() {
                         className="rounded border-slate-600"
                       />
                     </TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>GitOps</TableHead>
+                    <TableHead className="w-[22%]">Name</TableHead>
+                    <TableHead className="w-[14%]">Category</TableHead>
+                    <TableHead className="w-24">Priority</TableHead>
+                    <TableHead className="w-24">GitOps</TableHead>
                     <TableHead>Description</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -295,11 +295,13 @@ export default function GroupsPage() {
                           className="rounded border-slate-600"
                         />
                       </TableCell>
-                      <TableCell className="font-medium">
+                      <TableCell className="font-medium truncate">
                         <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
                       </TableCell>
-                      <TableCell className="text-slate-400">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
-                      <TableCell>{group.priority}</TableCell>
+                      <TableCell className="text-slate-400 truncate">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
+                      <TableCell className="tabular-nums">
+                        {group.priority >= 2147483647 ? <span className="text-slate-500">—</span> : group.priority}
+                      </TableCell>
                       <TableCell>
                         {group.gitops_enabled && group.gitops_status ? (
                           <GitOpsStatusBadge status={group.gitops_status} />
@@ -307,7 +309,7 @@ export default function GroupsPage() {
                           <span className="text-slate-500">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
+                      <TableCell className="text-slate-400 truncate">{group.description ?? "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button
@@ -405,11 +407,11 @@ export default function GroupsPage() {
                               className="rounded border-slate-600"
                             />
                           </TableHead>
-                          <TableHead className="w-[20%]">Name</TableHead>
-                          <TableHead className="w-[12%]">Priority</TableHead>
-                          <TableHead className="w-[12%]">GitOps</TableHead>
+                          <TableHead className="w-[25%]">Name</TableHead>
+                          <TableHead className="w-24">Priority</TableHead>
+                          <TableHead className="w-24">GitOps</TableHead>
                           <TableHead>Description</TableHead>
-                          <TableHead className="w-[12%]">Actions</TableHead>
+                          <TableHead className="w-40">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -423,10 +425,12 @@ export default function GroupsPage() {
                                 className="rounded border-slate-600"
                               />
                             </TableCell>
-                            <TableCell className="font-medium">
+                            <TableCell className="font-medium truncate">
                               <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
                             </TableCell>
-                            <TableCell>{group.priority}</TableCell>
+                            <TableCell className="tabular-nums">
+                              {group.priority >= 2147483647 ? <span className="text-slate-500">—</span> : group.priority}
+                            </TableCell>
                             <TableCell>
                               {group.gitops_enabled && group.gitops_status ? (
                                 <GitOpsStatusBadge status={group.gitops_status} />
@@ -434,7 +438,7 @@ export default function GroupsPage() {
                                 <span className="text-slate-500">—</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-slate-400">{group.description ?? "—"}</TableCell>
+                            <TableCell className="text-slate-400 truncate">{group.description ?? "—"}</TableCell>
                             <TableCell>
                               <div className="flex gap-1">
                                 <Button
