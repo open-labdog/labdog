@@ -3,8 +3,6 @@
 Each WorkflowHostRun is processed independently by this task.  The
 orchestrator (workflow_orchestrator.py) dispatches one instance of this
 task per host inside a batch, waits for the whole batch, then moves on.
-
-Step implementations are placeholder stubs; real logic will be wired in T13.
 """
 
 import asyncio
@@ -14,6 +12,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.tasks import celery_app
+from app.workflows.steps.preflight import run_preflight
+from app.workflows.steps.snapshot import create_snapshot
+from app.workflows.steps.update import run_system_update
+from app.workflows.steps.reboot import check_and_reboot
+from app.workflows.steps.verify import run_verification
+from app.workflows.steps.cleanup import delete_snapshot
+from app.workflows.steps.rollback import rollback_to_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -338,7 +343,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Placeholder step functions (wired to real implementations in T13)
+# Step adapter functions
 # ---------------------------------------------------------------------------
 
 
@@ -363,7 +368,10 @@ async def _step_preflight(
     Returns:
         Step result dict.
     """
-    return {"status": "placeholder", "step": "preflight"}
+    result = await run_preflight(host, vm_mapping, ssh_key_path, proxmox_client, db)
+    if not result.get("success"):
+        raise Exception(f"Preflight failed: {result}")
+    return result
 
 
 async def _step_snapshot(
@@ -381,9 +389,10 @@ async def _step_snapshot(
         run_id: Parent WorkflowRun ID (used to derive snapshot name).
 
     Returns:
-        The snapshot name that was created, or None on placeholder.
+        The snapshot name that was created.
     """
-    return None  # placeholder: returns snapshot_name or None
+    snapshot_name = await create_snapshot(proxmox_client, pve_node, vmid, run_id)
+    return snapshot_name
 
 
 async def _step_update(
@@ -392,6 +401,10 @@ async def _step_update(
 ) -> dict[str, Any]:
     """Run the package update on the host via SSH.
 
+    ``run_system_update`` is synchronous (uses ansible-runner) so it is
+    executed in the default thread-pool executor to avoid blocking the
+    event loop.
+
     Args:
         host: Host ORM object.
         ssh_key_path: Path to the decrypted SSH private key on tmpfs.
@@ -399,7 +412,18 @@ async def _step_update(
     Returns:
         Step result dict.
     """
-    return {"status": "placeholder", "step": "update"}
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        run_system_update,
+        host.ip_address,
+        host.ssh_port or 22,
+        host.ssh_user or "root",
+        ssh_key_path,
+    )
+    if not result.get("success"):
+        raise Exception(f"Update failed: {result.get('stdout', '')}")
+    return result
 
 
 async def _step_reboot(
@@ -415,7 +439,15 @@ async def _step_reboot(
     Returns:
         Step result dict.
     """
-    return {"status": "placeholder", "step": "reboot"}
+    result = await check_and_reboot(
+        host.ip_address,
+        host.ssh_port or 22,
+        host.ssh_user or "root",
+        ssh_key_path,
+    )
+    if not result.get("success"):
+        raise Exception(f"Reboot failed: {result.get('error', '')}")
+    return result
 
 
 async def _step_verify(
@@ -436,7 +468,22 @@ async def _step_verify(
     Returns:
         Step result dict including a ``passed`` boolean.
     """
-    return {"status": "placeholder", "step": "verify", "passed": True}
+    from app.services.merge import get_effective_services
+    from app.packages.merge import get_effective_packages
+
+    effective_services = await get_effective_services(host.id, db)
+    effective_packages = await get_effective_packages(host.id, db)
+    result = await run_verification(
+        host,
+        ssh_key_path,
+        effective_services,
+        effective_packages,
+        workflow.verification_prompt,
+        db,
+    )
+    if not result.get("passed"):
+        raise Exception(f"Verification failed: {result}")
+    return result
 
 
 async def _step_cleanup(
@@ -456,7 +503,8 @@ async def _step_cleanup(
     Returns:
         Step result dict.
     """
-    return {"status": "placeholder", "step": "cleanup"}
+    result = await delete_snapshot(proxmox_client, pve_node, vmid, snapshot_name)
+    return result
 
 
 async def _step_rollback(
@@ -482,4 +530,13 @@ async def _step_rollback(
     Returns:
         Step result dict.
     """
-    return {"status": "placeholder", "step": "rollback"}
+    result = await rollback_to_snapshot(
+        proxmox_client,
+        pve_node,
+        vmid,
+        snapshot_name,
+        host,
+        ssh_key_path,
+        db,
+    )
+    return result
