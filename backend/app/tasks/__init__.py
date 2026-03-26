@@ -30,6 +30,7 @@ celery_app.conf.update(
         "app.tasks.resolver_drift.*": {"queue": "long_running"},
         "app.tasks.workflow_orchestrator.*": {"queue": "long_running"},
         "app.tasks.workflow_host.*": {"queue": "long_running"},
+        "app.tasks.workflow_schedule.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
     },
@@ -56,4 +57,5 @@ celery_app.conf.include = [
     "app.tasks.resolver_drift",
     "app.tasks.workflow_orchestrator",
     "app.tasks.workflow_host",
+    "app.tasks.workflow_schedule",
 ]

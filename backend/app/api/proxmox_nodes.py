@@ -15,6 +15,7 @@ from app.proxmox.schemas import (
 from app.proxmox.client import ProxmoxClient, ProxmoxError
 from app.crypto import encrypt_ssh_key, decrypt_ssh_key, get_master_key
 from app.audit.logger import log_action
+from app.workflows.snapshot_cleanup import cleanup_orphaned_snapshots
 
 router = APIRouter(prefix="/proxmox/nodes", tags=["proxmox"])
 
@@ -203,3 +204,20 @@ async def test_proxmox_node(
             success=False,
             message=f"Unexpected error: {exc}",
         )
+
+
+@router.post("/cleanup-snapshots")
+async def trigger_snapshot_cleanup(
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Scan all Proxmox nodes for orphaned barricade snapshots and delete them.
+
+    A snapshot is considered orphaned when it matches the ``barricade-*`` naming
+    convention, is not referenced by any active (pending/running) workflow host
+    run, and is older than the ``workflow.snapshot_max_age_hours`` setting.
+
+    Returns:
+        A dict with ``deleted`` (int) and ``errors`` (list of str).
+    """
+    return await cleanup_orphaned_snapshots(db)
