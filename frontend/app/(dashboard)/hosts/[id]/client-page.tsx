@@ -642,7 +642,6 @@ export default function HostDetailPage() {
   const [ppVersion, setPpVersion] = useState("")
   const [ppState, setPpState] = useState<"present" | "absent" | "latest">("present")
   const [ppManager, setPpManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
-  const [ppPriority, setPpPriority] = useState(0)
   const [ppComment, setPpComment] = useState("")
   const [ppHold, setPpHold] = useState(false)
   const ppSaveMutation = useApiMutation({
@@ -663,7 +662,6 @@ export default function HostDetailPage() {
     setPpVersion("")
     setPpState("present")
     setPpManager("auto")
-    setPpPriority(0)
     setPpComment("")
     setPpHold(false)
     ppSaveMutation.reset()
@@ -674,7 +672,7 @@ export default function HostDetailPage() {
     e.preventDefault()
     ppSaveMutation.mutate({
       package_name: ppName, version: ppVersion || null, state: ppState,
-      package_manager: ppManager, priority: ppPriority, comment: ppComment || null, hold: ppHold,
+      package_manager: ppManager, comment: ppComment || null, hold: ppHold,
     })
   }
 
@@ -2814,18 +2812,6 @@ export default function HostDetailPage() {
                     <option value="dnf">dnf</option>
                     <option value="yum">yum</option>
                   </select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pp-priority">Priority</Label>
-                  <Input
-                    id="pp-priority"
-                    type="number"
-                    value={ppPriority}
-                    onChange={(e) => setPpPriority(Number(e.target.value))}
-                    required
-                    min={0}
-                  />
                 </div>
 
                 <div className="space-y-2">

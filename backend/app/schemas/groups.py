@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 
@@ -6,14 +6,14 @@ class GroupCreate(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
-    priority: int
+    priority: int = Field(ge=0, le=2_147_483_647)
 
 
 class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     category: str | None = None
-    priority: int | None = None
+    priority: int | None = Field(default=None, ge=0, le=2_147_483_647)
 
 
 class GroupResponse(BaseModel):

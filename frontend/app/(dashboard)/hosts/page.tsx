@@ -368,10 +368,18 @@ export default function HostsPage() {
                     )}
                   </summary>
                   <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
-                    <Table>
+                    <Table className="table-fixed">
+                      <colgroup>
+                        <col className="w-10" />
+                        <col />
+                        <col />
+                        <col />
+                        <col />
+                        <col className="w-20" />
+                      </colgroup>
                       <TableHeader>
                         <TableRow className="border-slate-700">
-                          <TableHead className="w-10">
+                          <TableHead>
                             <input
                               type="checkbox"
                               checked={sectionHosts.every(h => selected.has(h.id)) && sectionHosts.length > 0}
