@@ -44,6 +44,13 @@ async def upsert_group_workflow(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate cron expression before touching the DB
+    if body.schedule_cron is not None:
+        from croniter import croniter
+
+        if not croniter.is_valid(body.schedule_cron):
+            raise HTTPException(status_code=422, detail="Invalid cron expression")
+
     workflow = await db.scalar(
         select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
     )

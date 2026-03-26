@@ -47,6 +47,14 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "choices": ["debug", "info", "warning", "error", "critical"],
         "description": "Application log level",
     },
+    "workflow.schedule_check_interval_seconds": {
+        "type": "int", "default": 60, "min": 10, "max": 300,
+        "description": "How often to check for scheduled workflows (seconds)",
+    },
+    "workflow.snapshot_max_age_hours": {
+        "type": "int", "default": 24, "min": 1, "max": 168,
+        "description": "Max age in hours before orphaned snapshots are cleaned up",
+    },
 }
 
 # In-process cache: {key: (value, timestamp)}
