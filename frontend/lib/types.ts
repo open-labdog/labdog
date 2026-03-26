@@ -79,6 +79,16 @@ export interface ProxmoxNode {
   updated_at: string
 }
 
+export interface VMMapping {
+  id: number
+  host_id: number
+  proxmox_node_id: number
+  pve_node_name: string
+  vmid: number
+  vm_name: string
+  discovered_at: string
+}
+
 export interface GitOpsStatusResponse {
   gitops_enabled: boolean
   git_repository_id: number | null
