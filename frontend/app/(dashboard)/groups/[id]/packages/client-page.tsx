@@ -61,7 +61,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
   const [pkgVersion, setPkgVersion] = useState("")
   const [pkgState, setPkgState] = useState<"present" | "absent" | "latest">("present")
   const [pkgManager, setPkgManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
-  const [pkgPriority, setPkgPriority] = useState(0)
   const [pkgComment, setPkgComment] = useState("")
   const [pkgHold, setPkgHold] = useState(false)
 
@@ -127,7 +126,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
     setPkgVersion("")
     setPkgState("present")
     setPkgManager("auto")
-    setPkgPriority(0)
     setPkgComment("")
     setPkgHold(false)
     pkgSaveMutation.reset()
@@ -140,7 +138,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
     setPkgVersion(pkg.version ?? "")
     setPkgState(pkg.state)
     setPkgManager(pkg.package_manager)
-    setPkgPriority(pkg.priority)
     setPkgComment(pkg.comment ?? "")
     setPkgHold(pkg.hold)
     pkgSaveMutation.reset()
@@ -151,7 +148,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
     e.preventDefault()
     const payload = {
       package_name: pkgName, version: pkgVersion || null, state: pkgState,
-      package_manager: pkgManager, priority: pkgPriority, comment: pkgComment || null, hold: pkgHold,
+      package_manager: pkgManager, comment: pkgComment || null, hold: pkgHold,
     }
     pkgSaveMutation.mutate({ pkgId: pkgEditing?.id, payload })
   }
@@ -263,7 +260,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                   <TableHead>Version</TableHead>
                   <TableHead>State</TableHead>
                   <TableHead>Package Manager</TableHead>
-                   <TableHead>Priority</TableHead>
                    <TableHead>Hold</TableHead>
                    <TableHead className="w-40">Actions</TableHead>
                 </TableRow>
@@ -279,7 +275,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                     <TableCell>
                       <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
                     </TableCell>
-                     <TableCell className="font-mono text-slate-300 text-xs">{pkg.priority}</TableCell>
                      <TableCell>
                        {pkg.hold ? (
                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
@@ -458,18 +453,6 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 <option value="dnf">dnf</option>
                 <option value="yum">yum</option>
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="pkg-priority">Priority</Label>
-              <Input
-                id="pkg-priority"
-                type="number"
-                value={pkgPriority}
-                onChange={(e) => setPkgPriority(Number(e.target.value))}
-                required
-                min={0}
-              />
             </div>
 
             <div className="space-y-2">

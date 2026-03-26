@@ -387,7 +387,7 @@ export default function GroupsPage() {
                     )}
                   </summary>
                   <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
-                    <Table>
+                    <Table className="table-fixed">
                       <TableHeader>
                         <TableRow className="border-slate-700">
                           <TableHead className="w-10">
@@ -405,11 +405,11 @@ export default function GroupsPage() {
                               className="rounded border-slate-600"
                             />
                           </TableHead>
-                          <TableHead>Name</TableHead>
-                          <TableHead>Priority</TableHead>
-                          <TableHead>GitOps</TableHead>
+                          <TableHead className="w-[20%]">Name</TableHead>
+                          <TableHead className="w-[12%]">Priority</TableHead>
+                          <TableHead className="w-[12%]">GitOps</TableHead>
                           <TableHead>Description</TableHead>
-                          <TableHead>Actions</TableHead>
+                          <TableHead className="w-[12%]">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
