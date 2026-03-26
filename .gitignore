@@ -43,10 +43,6 @@ Thumbs.db
 artifacts/
 tmp/
 
-# Sisyphus execution evidence
-.sisyphus/evidence/
-.sisyphus/boulder.json
-
 # Dev script runtime
 .dev-logs/
 .dev-pids/
