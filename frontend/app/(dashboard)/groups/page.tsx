@@ -295,7 +295,9 @@ export default function GroupsPage() {
                           className="rounded border-slate-600"
                         />
                       </TableCell>
-                      <TableCell className="font-medium text-white">{group.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
+                      </TableCell>
                       <TableCell className="text-slate-400">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
                       <TableCell>{group.priority}</TableCell>
                       <TableCell>
@@ -421,7 +423,9 @@ export default function GroupsPage() {
                                 className="rounded border-slate-600"
                               />
                             </TableCell>
-                            <TableCell className="font-medium text-white">{group.name}</TableCell>
+                            <TableCell className="font-medium">
+                              <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
+                            </TableCell>
                             <TableCell>{group.priority}</TableCell>
                             <TableCell>
                               {group.gitops_enabled && group.gitops_status ? (

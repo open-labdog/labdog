@@ -552,8 +552,8 @@ export default function GroupDetailPage() {
                   <TableBody>
                     {groupHosts.map((host) => (
                       <TableRow key={host.id} className="border-slate-700">
-                        <TableCell className="font-medium text-white">
-                          {host.hostname}
+                        <TableCell className="font-medium">
+                          <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
                         </TableCell>
                         <TableCell className="font-mono text-slate-300 text-xs">
                           {host.ip_address}

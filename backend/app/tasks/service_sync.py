@@ -101,9 +101,9 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
                 with open(f"{private_data_dir}/inventory/hosts", "w") as f:
                     f.write(inventory_json)
 
-                return host, job, db
+                return host, job, db, services
 
-        host, job, db = asyncio.run(_run())
+        host, job, db, desired_state = asyncio.run(_run())
 
         # Run ansible-runner (synchronous in Celery worker)
         from app.settings_service import get_setting_sync_typed
@@ -150,6 +150,10 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
                     "in_sync" if runner.status == "successful" else "error"
                 )
                 hms.last_sync_at = datetime.now(timezone.utc)
+                if runner.status == "successful" and desired_state:
+                    hms.collected_state = desired_state
+                    hms.collected_at = datetime.now(timezone.utc)
+                    hms.error_message = None
 
                 await db.commit()
 

@@ -13,7 +13,7 @@ from app.auth.users import current_active_user
 from app.rules.model import FirewallRuleSpec
 from app.rules.merge import merge_group_rules
 from app.rules.converter import firewall_rules_to_specs
-from app.sync.diff import compute_diff, fetch_current_state
+from app.sync.diff import SSHFetchError, compute_diff, fetch_current_state
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -37,6 +37,7 @@ class HostDiff(BaseModel):
     rules_to_add: list[RuleDiffItem]
     rules_to_remove: list[RuleDiffItem]
     rules_unchanged: list[RuleDiffItem]
+    error: str | None = None
 
 
 def _spec_to_diff_item(spec: FirewallRuleSpec) -> RuleDiffItem:
@@ -53,7 +54,9 @@ def _spec_to_diff_item(spec: FirewallRuleSpec) -> RuleDiffItem:
     )
 
 
-async def _get_desired_rules(host_id: int, db: AsyncSession) -> list[FirewallRuleSpec]:
+async def _get_desired_rules(
+    host_id: int, db: AsyncSession, host_source_ip: str | None = None,
+) -> list[FirewallRuleSpec]:
     """Get merged desired rules for a host from DB."""
     memberships = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
@@ -70,7 +73,7 @@ async def _get_desired_rules(host_id: int, db: AsyncSession) -> list[FirewallRul
         rules = firewall_rules_to_specs(rules_result.scalars().all())
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
-    return merge_group_rules(groups_data)
+    return merge_group_rules(groups_data, host_source_ip=host_source_ip)
 
 
 @router.post("/hosts/{host_id}/plan", response_model=HostDiff)
@@ -85,8 +88,13 @@ async def plan_host(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    desired = await _get_desired_rules(host_id, db)
-    current = await fetch_current_state(host_id, db)
+    desired = await _get_desired_rules(host_id, db, host_source_ip=host.barricade_source_ip)
+    try:
+        current = await fetch_current_state(host_id, db)
+    except SSHFetchError as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Cannot reach host {exc.hostname}: {exc.detail}"
+        ) from exc
     diff = compute_diff(current, desired)
 
     return HostDiff(
@@ -115,8 +123,22 @@ async def plan_group(
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
-        desired = await _get_desired_rules(hid, db)
-        current = await fetch_current_state(hid, db)
+        desired = await _get_desired_rules(hid, db, host_source_ip=host.barricade_source_ip)
+        try:
+            current = await fetch_current_state(hid, db)
+        except SSHFetchError as exc:
+            results.append(
+                HostDiff(
+                    host_id=hid,
+                    hostname=host.hostname,
+                    has_changes=False,
+                    rules_to_add=[],
+                    rules_to_remove=[],
+                    rules_unchanged=[],
+                    error=f"Cannot reach host: {exc.detail}",
+                )
+            )
+            continue
         diff = compute_diff(current, desired)
         results.append(
             HostDiff(

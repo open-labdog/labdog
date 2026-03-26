@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { Host, HostGroup, SyncStatus } from "@/lib/types"
@@ -154,8 +155,8 @@ export default function DashboardPage() {
             <TableBody>
               {hosts.map((host) => (
                 <TableRow key={host.id} className="border-slate-700">
-                  <TableCell className="font-medium text-white">
-                    {host.hostname}
+                  <TableCell className="font-medium">
+                    <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
                   </TableCell>
                   <TableCell className="font-mono text-slate-300 text-xs">
                     {host.ip_address}

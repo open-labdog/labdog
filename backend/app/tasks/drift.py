@@ -15,7 +15,7 @@ def check_all_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.drift.detector import check_drift
-    from app.sync.diff import fetch_current_state
+    from app.sync.diff import SSHFetchError, fetch_current_state
     from app.ssh_utils import get_source_ip, ssh_connect
     from datetime import datetime, timezone
 
@@ -27,7 +27,7 @@ def check_all_drift():
                 try:
                     from app.api.drift import _get_desired_rules_for_host
 
-                    desired = await _get_desired_rules_for_host(host.id, db)
+                    desired = await _get_desired_rules_for_host(host.id, db, host_source_ip=host.barricade_source_ip)
                     current = await fetch_current_state(host.id, db)
                     drift_result = await check_drift(host.id, desired, db)
                     host.sync_status = drift_result.status
@@ -64,7 +64,7 @@ def check_all_drift():
                                     host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
-                except (OSError, asyncssh.Error, TimeoutError):
+                except (OSError, asyncssh.Error, TimeoutError, SSHFetchError):
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.unknown
                     host.last_drift_check_at = datetime.now(timezone.utc)

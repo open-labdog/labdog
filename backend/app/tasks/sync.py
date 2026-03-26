@@ -84,7 +84,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     rules = firewall_rules_to_specs(rules_result.scalars().all())
                     groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
 
-                merged_rules = merge_group_rules(groups_data)
+                merged_rules = merge_group_rules(groups_data, host_source_ip=host.barricade_source_ip)
 
                 # Generate playbook and inventory
                 backend = (
@@ -97,7 +97,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     job.completed_at = datetime.now(timezone.utc)
                     job.error_message = "Cannot sync firewall: backend not detected. Run 'Collect State' first."
                     await db.commit()
-                    return None, None, None
+                    return None, None, None, None
                 playbook_yaml = generate_playbook(
                     backend, host.ip_address, merged_rules, ssh_key_path
                 )
@@ -112,10 +112,10 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 with open(f"{private_data_dir}/inventory/hosts", "w") as f:
                     f.write(inventory_json)
 
-                return host, job, db
+                return host, job, db, merged_rules
 
         result = asyncio.run(_run())
-        host, job, db = result
+        host, job, db, merged_rules = result
         if host is None:
             return {"status": "failed", "error": "Unsupported firewall backend"}
 
@@ -131,6 +131,9 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         # Update job status
         async def _update_status():
             async with task_session() as db:
+                from dataclasses import asdict
+                from app.models.host_module_status import HostModuleStatus
+
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
@@ -147,6 +150,24 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 from app.models.host import SyncStatus
                 host.sync_status = SyncStatus.in_sync if runner.status == "successful" else SyncStatus.error
                 host.last_sync_at = datetime.now(timezone.utc)
+
+                # Save the applied rules as collected state
+                if runner.status == "successful" and merged_rules:
+                    now = datetime.now(timezone.utc)
+                    hms_result = await db.execute(
+                        select(HostModuleStatus).where(
+                            HostModuleStatus.host_id == host_id,
+                            HostModuleStatus.module_type == "firewall",
+                        )
+                    )
+                    hms = hms_result.scalar_one_or_none()
+                    if hms is None:
+                        hms = HostModuleStatus(host_id=host_id, module_type="firewall")
+                        db.add(hms)
+                    hms.collected_state = [asdict(r) for r in merged_rules]
+                    hms.collected_at = now
+                    hms.sync_status = "in_sync"
+                    hms.error_message = None
 
                 await db.commit()
 

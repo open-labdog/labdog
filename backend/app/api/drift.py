@@ -31,7 +31,9 @@ class DriftSettingsUpdate(BaseModel):
     drift_check_enabled: bool
 
 
-async def _get_desired_rules_for_host(host_id: int, db: AsyncSession) -> list[FirewallRuleSpec]:
+async def _get_desired_rules_for_host(
+    host_id: int, db: AsyncSession, host_source_ip: str | None = None,
+) -> list[FirewallRuleSpec]:
     memberships = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
@@ -45,7 +47,7 @@ async def _get_desired_rules_for_host(host_id: int, db: AsyncSession) -> list[Fi
         r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = firewall_rules_to_specs(r.scalars().all())
         groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
-    return merge_group_rules(groups_data)
+    return merge_group_rules(groups_data, host_source_ip=host_source_ip)
 
 
 @router.post("/hosts/{host_id}/check", response_model=DriftResponse)
@@ -58,7 +60,7 @@ async def check_host_drift(
     host = host_result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-    desired = await _get_desired_rules_for_host(host_id, db)
+    desired = await _get_desired_rules_for_host(host_id, db, host_source_ip=host.barricade_source_ip)
     result = await check_drift(host_id, desired, db)
     host.sync_status = result.status
     host.last_drift_check_at = datetime.now(timezone.utc)
@@ -88,7 +90,7 @@ async def check_group_drift(
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
-        desired = await _get_desired_rules_for_host(hid, db)
+        desired = await _get_desired_rules_for_host(hid, db, host_source_ip=host.barricade_source_ip)
         result = await check_drift(hid, desired, db)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(timezone.utc)
