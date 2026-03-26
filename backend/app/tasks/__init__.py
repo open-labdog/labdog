@@ -55,4 +55,5 @@ celery_app.conf.include = [
     "app.tasks.resolver_sync",
     "app.tasks.resolver_drift",
     "app.tasks.workflow_orchestrator",
+    "app.tasks.workflow_host",
 ]
