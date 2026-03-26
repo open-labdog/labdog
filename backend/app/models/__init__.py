@@ -29,6 +29,10 @@ _EXTERNAL_MODELS = {
     "ResolverConfig": "app.resolver.models",
     "ResolverType": "app.resolver.models",
     "AppSetting": "app.models.app_setting",
+    "ProxmoxNode": "app.proxmox.models",
+    "UpdateWorkflow": "app.workflows.models",
+    "WorkflowRun": "app.workflows.models",
+    "WorkflowHostRun": "app.workflows.models",
 }
 
 
@@ -85,4 +89,8 @@ __all__ = [
     "PackageRepository",
     "ResolverConfig",
     "ResolverType",
+    "ProxmoxNode",
+    "UpdateWorkflow",
+    "WorkflowRun",
+    "WorkflowHostRun",
 ]

@@ -1,0 +1,281 @@
+"""Async Proxmox API client using httpx.
+
+All I/O is performed with httpx.AsyncClient. Secrets are never logged.
+"""
+
+import asyncio
+from typing import Any
+
+import httpx
+
+
+class ProxmoxError(Exception):
+    """Raised when a Proxmox API request fails.
+
+    Attributes:
+        message: Human-readable error description.
+        status_code: HTTP status code, if available.
+    """
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+
+    def __str__(self) -> str:
+        return self.message
+
+
+class ProxmoxClient:
+    """Async client for the Proxmox VE REST API.
+
+    Usage::
+
+        async with ProxmoxClient(url, token_id, token_secret) as client:
+            nodes = await client.list_nodes()
+
+    Args:
+        api_url: Base URL of the Proxmox API, e.g. ``https://pve:8006``.
+        token_id: API token identifier in ``user@realm!tokenname`` form.
+        token_secret: Secret UUID for the API token.
+        verify_ssl: Whether to verify TLS certificates (default ``True``).
+    """
+
+    def __init__(
+        self,
+        api_url: str,
+        token_id: str,
+        token_secret: str,
+        verify_ssl: bool = True,
+    ) -> None:
+        self.api_url = api_url.rstrip("/")
+        self.token_id = token_id
+        self.token_secret = token_secret
+        self.verify_ssl = verify_ssl
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get_client(self) -> httpx.AsyncClient:
+        """Return a configured :class:`httpx.AsyncClient`.
+
+        The Authorization header uses the Proxmox API token scheme.
+        ``token_secret`` is embedded in the header value and never logged.
+        """
+        headers = {
+            "Authorization": f"PVEAPIToken={self.token_id}={self.token_secret}",
+        }
+        return httpx.AsyncClient(headers=headers, verify=self.verify_ssl)
+
+    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        """Execute an HTTP request and return the ``data`` field of the response.
+
+        Args:
+            method: HTTP method (``GET``, ``POST``, ``DELETE``, …).
+            path: API path, e.g. ``/api2/json/nodes``.
+            **kwargs: Additional keyword arguments forwarded to
+                :meth:`httpx.AsyncClient.request`.
+
+        Returns:
+            The value of ``response.json()["data"]``.
+
+        Raises:
+            ProxmoxError: If the response status code is not 2xx.
+        """
+        url = f"{self.api_url}{path}"
+        async with self._get_client() as client:
+            response = await client.request(method, url, **kwargs)
+
+        if not response.is_success:
+            raise ProxmoxError(response.text, response.status_code)
+
+        return response.json()["data"]
+
+    # ------------------------------------------------------------------
+    # Context manager
+    # ------------------------------------------------------------------
+
+    async def __aenter__(self) -> "ProxmoxClient":
+        return self
+
+    async def __aexit__(self, *args: Any) -> None:
+        pass
+
+    # ------------------------------------------------------------------
+    # Public API methods
+    # ------------------------------------------------------------------
+
+    async def test_connection(self) -> dict:
+        """Return Proxmox version information.
+
+        GET /api2/json/version
+        """
+        return await self._request("GET", "/api2/json/version")
+
+    async def list_nodes(self) -> list[dict]:
+        """List all nodes in the cluster.
+
+        GET /api2/json/nodes
+        """
+        return await self._request("GET", "/api2/json/nodes")
+
+    async def list_vms(self, pve_node: str) -> list[dict]:
+        """List all QEMU VMs on a node.
+
+        Args:
+            pve_node: Proxmox node name.
+
+        GET /api2/json/nodes/{pve_node}/qemu
+        """
+        return await self._request("GET", f"/api2/json/nodes/{pve_node}/qemu")
+
+    async def get_vm_agent_interfaces(self, pve_node: str, vmid: int) -> list[dict]:
+        """Return network interfaces reported by the QEMU guest agent.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+
+        GET /api2/json/nodes/{pve_node}/qemu/{vmid}/agent/network-get-interfaces
+
+        Raises:
+            ProxmoxError: If the agent is not running (status 500) or any
+                other API error occurs.
+        """
+        try:
+            return await self._request(
+                "GET",
+                f"/api2/json/nodes/{pve_node}/qemu/{vmid}/agent/network-get-interfaces",
+            )
+        except ProxmoxError as exc:
+            if exc.status_code == 500:
+                raise ProxmoxError(f"Agent not responding on vmid {vmid}", 500) from exc
+            raise
+
+    async def create_snapshot(
+        self,
+        pve_node: str,
+        vmid: int,
+        name: str,
+        description: str = "",
+    ) -> str:
+        """Create a VM snapshot and return the task UPID.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+            name: Snapshot name.
+            description: Optional human-readable description.
+
+        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot
+        """
+        return await self._request(
+            "POST",
+            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot",
+            json={"snapname": name, "description": description},
+        )
+
+    async def delete_snapshot(self, pve_node: str, vmid: int, name: str) -> str:
+        """Delete a VM snapshot and return the task UPID.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+            name: Snapshot name to delete.
+
+        DELETE /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}
+        """
+        return await self._request(
+            "DELETE",
+            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}",
+        )
+
+    async def rollback_snapshot(self, pve_node: str, vmid: int, name: str) -> str:
+        """Roll a VM back to a snapshot and return the task UPID.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+            name: Snapshot name to roll back to.
+
+        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}/rollback
+        """
+        return await self._request(
+            "POST",
+            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}/rollback",
+        )
+
+    async def get_task_status(self, pve_node: str, upid: str) -> dict:
+        """Return the current status of a Proxmox task.
+
+        Args:
+            pve_node: Proxmox node name.
+            upid: Unique task identifier string.
+
+        GET /api2/json/nodes/{pve_node}/tasks/{upid}/status
+        """
+        return await self._request(
+            "GET",
+            f"/api2/json/nodes/{pve_node}/tasks/{upid}/status",
+        )
+
+    async def wait_for_task(
+        self,
+        pve_node: str,
+        upid: str,
+        timeout: int = 120,
+        poll_interval: int = 2,
+    ) -> None:
+        """Poll a task until it stops or the timeout is reached.
+
+        Args:
+            pve_node: Proxmox node name.
+            upid: Unique task identifier string.
+            timeout: Maximum seconds to wait before raising.
+            poll_interval: Seconds between status polls.
+
+        Raises:
+            ProxmoxError: If the task exits with a non-OK status or the
+                timeout is exceeded.
+        """
+        elapsed = 0
+        while elapsed < timeout:
+            data = await self.get_task_status(pve_node, upid)
+            if data.get("status") == "stopped":
+                exitstatus = data.get("exitstatus", "")
+                if exitstatus != "OK":
+                    raise ProxmoxError(f"Task failed: {exitstatus}")
+                return
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+        raise ProxmoxError(f"Task timed out after {timeout}s")
+
+    async def get_vm_status(self, pve_node: str, vmid: int) -> dict:
+        """Return the current runtime status of a VM.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+
+        GET /api2/json/nodes/{pve_node}/qemu/{vmid}/status/current
+        """
+        return await self._request(
+            "GET",
+            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/status/current",
+        )
+
+    async def start_vm(self, pve_node: str, vmid: int) -> str:
+        """Start a VM and return the task UPID.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: VM identifier.
+
+        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/status/start
+        """
+        return await self._request(
+            "POST",
+            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/status/start",
+        )
