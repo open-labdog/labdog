@@ -67,6 +67,15 @@ async def create_proxmox_node(
     return node
 
 
+@router.post("/cleanup-snapshots")
+async def trigger_snapshot_cleanup(
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Scan all Proxmox nodes for orphaned barricade snapshots and delete them."""
+    return await cleanup_orphaned_snapshots(db)
+
+
 @router.get("/{node_id}", response_model=ProxmoxNodeResponse)
 async def get_proxmox_node(
     node_id: int,
@@ -206,18 +215,3 @@ async def test_proxmox_node(
         )
 
 
-@router.post("/cleanup-snapshots")
-async def trigger_snapshot_cleanup(
-    _: User = Depends(current_superuser),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """Scan all Proxmox nodes for orphaned barricade snapshots and delete them.
-
-    A snapshot is considered orphaned when it matches the ``barricade-*`` naming
-    convention, is not referenced by any active (pending/running) workflow host
-    run, and is older than the ``workflow.snapshot_max_age_hours`` setting.
-
-    Returns:
-        A dict with ``deleted`` (int) and ``errors`` (list of str).
-    """
-    return await cleanup_orphaned_snapshots(db)

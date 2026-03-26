@@ -159,11 +159,11 @@ export default function ProxmoxSettingsPage() {
   async function handleCleanupSnapshots() {
     setCleaningUp(true)
     try {
-      const result = await apiFetch<{ cleaned: number; message: string }>(
-        "/api/proxmox/cleanup-snapshots",
+      const result = await apiFetch<{ deleted: number; errors: string[] }>(
+        "/proxmox/nodes/cleanup-snapshots",
         { method: "POST" }
       )
-      showSuccess(result.message ?? `Cleaned up ${result.cleaned} orphaned snapshot(s)`)
+      showSuccess(`Cleaned up ${result.deleted} orphaned snapshot(s)`)
     } catch (err) {
       showError(err instanceof Error ? err.message : "Cleanup failed")
     } finally {

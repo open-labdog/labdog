@@ -114,6 +114,7 @@ async def run_preflight(
         finally:
             try:
                 ssh_conn.close()
+                await ssh_conn.wait_closed()
             except Exception:
                 pass
 
