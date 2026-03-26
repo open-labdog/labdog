@@ -28,6 +28,8 @@ celery_app.conf.update(
         "app.tasks.package_drift.*": {"queue": "long_running"},
         "app.tasks.resolver_sync.*": {"queue": "long_running"},
         "app.tasks.resolver_drift.*": {"queue": "long_running"},
+        "app.tasks.workflow_orchestrator.*": {"queue": "long_running"},
+        "app.tasks.workflow_host.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
     },
@@ -52,4 +54,5 @@ celery_app.conf.include = [
     "app.tasks.package_drift",
     "app.tasks.resolver_sync",
     "app.tasks.resolver_drift",
+    "app.tasks.workflow_orchestrator",
 ]
