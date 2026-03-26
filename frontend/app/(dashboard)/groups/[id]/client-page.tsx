@@ -49,8 +49,9 @@ import GroupCronJobsPage from "./cron-jobs/client-page"
 import GroupPackagesPage from "./packages/client-page"
 import GroupResolverPage from "./resolver/client-page"
 import GroupSyncPage from "./sync/client-page"
+import WorkflowConfigPage from "./workflow/client-page"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns" | "sync"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns" | "sync" | "workflow"
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -503,6 +504,7 @@ export default function GroupDetailPage() {
           ["packages", "Packages"],
           ["dns", "DNS Resolver"],
           ["sync", "Sync"],
+          ["workflow", "Updates"],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -591,6 +593,7 @@ export default function GroupDetailPage() {
       {activeTab === "packages" && <GroupPackagesPage embedded />}
       {activeTab === "dns" && <GroupResolverPage embedded />}
       {activeTab === "sync" && <GroupSyncPage embedded />}
+      {activeTab === "workflow" && <WorkflowConfigPage embedded />}
 
       {confirmState && (
         <ConfirmDialog
