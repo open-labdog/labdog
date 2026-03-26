@@ -29,8 +29,12 @@ def _rule_to_nft(rule: FirewallRuleSpec) -> str:
     action_map = {"allow": "accept", "deny": "drop", "reject": "reject"}
     action = action_map.get(rule.action, "drop")
     parts.append(action)
-    comment = f' comment "{rule.comment}"' if rule.comment else ""
-    return " ".join(parts) + comment
+    if rule.comment:
+        comment_text = f"Barricade: {rule.comment}"
+    else:
+        comment_text = "Managed by Barricade"
+    parts.append(f'comment "{comment_text}"')
+    return " ".join(parts)
 
 
 def render_nftables_config(rules: list[FirewallRuleSpec]) -> str:

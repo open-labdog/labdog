@@ -1,5 +1,19 @@
+import asyncio
+import logging
 from dataclasses import dataclass, field
 from app.rules.model import FirewallRuleSpec
+
+logger = logging.getLogger(__name__)
+
+
+class SSHFetchError(Exception):
+    """Raised when SSH connection to a host fails during rule collection."""
+
+    def __init__(self, hostname: str, ip_address: str, detail: str):
+        self.hostname = hostname
+        self.ip_address = ip_address
+        self.detail = detail
+        super().__init__(f"SSH to {hostname} ({ip_address}) failed: {detail}")
 
 
 @dataclass
@@ -87,9 +101,19 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
     master_key = get_master_key()
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
-    return await collect_current_rules(
-        host_ip=host.ip_address,
-        ssh_port=host.ssh_port,
-        private_key_pem=private_key_pem,
-        firewall_backend=backend,
-    )
+    try:
+        return await collect_current_rules(
+            host_ip=host.ip_address,
+            ssh_port=host.ssh_port,
+            private_key_pem=private_key_pem,
+            firewall_backend=backend,
+            ssh_user=ssh_key.ssh_user,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to fetch current state from host %s (%s): %s",
+            host.hostname,
+            host.ip_address,
+            exc,
+        )
+        raise SSHFetchError(host.hostname, host.ip_address, str(exc)) from exc

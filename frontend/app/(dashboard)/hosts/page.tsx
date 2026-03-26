@@ -321,7 +321,9 @@ export default function HostsPage() {
                           className="rounded border-slate-600"
                         />
                       </TableCell>
-                      <TableCell className="font-medium text-white">{host.hostname}</TableCell>
+                      <TableCell className="font-medium">
+                        <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
+                      </TableCell>
                       <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -402,7 +404,9 @@ export default function HostsPage() {
                                 className="rounded border-slate-600"
                               />
                             </TableCell>
-                            <TableCell className="font-medium text-white">{host.hostname}</TableCell>
+                            <TableCell className="font-medium">
+                              <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
+                            </TableCell>
                             <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
                             <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
                             <TableCell><SyncStatusBadge status={host.sync_status} /></TableCell>

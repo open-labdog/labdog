@@ -90,9 +90,9 @@ def cron_sync_task(self, job_id: int, host_id: int) -> dict:
                 with open(f"{private_data_dir}/inventory/hosts.yml", "w") as f:
                     yaml.dump(inventory, f, default_flow_style=False)
 
-                return host, job, db
+                return host, job, db, cron_jobs
 
-        host, job, db = asyncio.run(_run())
+        host, job, db, desired_state = asyncio.run(_run())
 
         from app.settings_service import get_setting_sync_typed
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
@@ -136,6 +136,10 @@ def cron_sync_task(self, job_id: int, host_id: int) -> dict:
                     "in_sync" if runner.status == "successful" else "error"
                 )
                 hms.last_sync_at = datetime.now(timezone.utc)
+                if runner.status == "successful" and desired_state:
+                    hms.collected_state = desired_state
+                    hms.collected_at = datetime.now(timezone.utc)
+                    hms.error_message = None
 
                 await db.commit()
 

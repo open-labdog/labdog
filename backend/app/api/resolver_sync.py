@@ -161,6 +161,10 @@ async def trigger_group_resolver_sync(
     from app.tasks.resolver_sync import run_resolver_sync
 
     for hid in host_ids:
+        effective = await get_effective_resolver(hid, db)
+        if not effective:
+            continue
+
         running = await db.execute(
             select(SyncJob).where(
                 SyncJob.host_id == hid,
