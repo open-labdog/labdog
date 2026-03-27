@@ -37,10 +37,11 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       items: [{ href: "/dashboard", label: "Dashboard" }],
     },
     {
-      label: "HOSTS",
+      label: "MANAGE",
       items: [
         { href: "/hosts", label: "Hosts" },
         { href: "/groups", label: "Groups" },
+        { href: "/schedules", label: "Schedules" },
       ],
     },
     {
@@ -48,6 +49,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       items: [
         { href: "/ssh-keys", label: "SSH Keys" },
         { href: "/git-repos", label: "Git Repos" },
+        { href: "/hypervisors", label: "Hypervisors" },
       ],
     },
     {
@@ -56,7 +58,6 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
         { href: "/audit", label: "Audit Log" },
         ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
-        ...(user?.is_superuser ? [{ href: "/settings/proxmox", label: "Proxmox" }] : []),
       ],
     },
   ]

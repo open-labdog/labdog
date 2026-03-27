@@ -44,7 +44,7 @@ const emptyForm: NodeFormState = {
   verify_ssl: true,
 }
 
-export default function ProxmoxSettingsPage() {
+export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean } = {}) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingNode, setEditingNode] = useState<ProxmoxNode | null>(null)
   const [form, setForm] = useState<NodeFormState>(emptyForm)
@@ -192,15 +192,17 @@ export default function ProxmoxSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Settings", href: "/settings" }, { label: "Proxmox" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Settings", href: "/settings" }, { label: "Proxmox" }]} />}
 
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Proxmox Nodes</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Configure Proxmox VE API connections for VM management.
-          </p>
-        </div>
+        {!embedded && (
+          <div>
+            <h1 className="text-2xl font-bold text-white">Proxmox Nodes</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Configure Proxmox VE API connections for VM management.
+            </p>
+          </div>
+        )}
         <div className="flex gap-2">
           <Button
             variant="outline"

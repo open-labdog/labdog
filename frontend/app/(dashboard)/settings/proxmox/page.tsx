@@ -1,5 +1,5 @@
-import ProxmoxSettingsPage from "./client-page"
+import { redirect } from "next/navigation"
 
 export default function Page() {
-  return <ProxmoxSettingsPage />
+  redirect("/hypervisors")
 }
