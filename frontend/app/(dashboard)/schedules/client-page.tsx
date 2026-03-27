@@ -80,24 +80,24 @@ export default function SchedulesPage() {
 
       {!isLoading && workflows && workflows.length > 0 && (
         <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow className="border-slate-700">
-                <TableHead>Group</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead>Snapshots</TableHead>
-                <TableHead>Auto Rollback</TableHead>
-                <TableHead className="w-40">Actions</TableHead>
+                <TableHead className="w-[20%]">Group</TableHead>
+                <TableHead className="w-[30%]">Schedule</TableHead>
+                <TableHead className="w-24">Enabled</TableHead>
+                <TableHead className="w-24">Snapshots</TableHead>
+                <TableHead className="w-28">Rollback</TableHead>
+                <TableHead className="w-28">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {workflows.map(({ group, workflow }) => (
                 <TableRow key={workflow.id} className="border-slate-700">
-                  <TableCell>
+                  <TableCell className="text-white font-medium">
                     <Link
                       href={`/groups/${group.id}`}
-                      className="text-white font-medium hover:underline"
+                      className="hover:underline"
                     >
                       {group.name}
                     </Link>
@@ -105,12 +105,12 @@ export default function SchedulesPage() {
                   <TableCell>
                     {workflow.schedule_cron ? (
                       <div>
-                        <span className="font-mono text-slate-300 text-xs">
+                        <span className="font-mono text-white text-sm">
                           {workflow.schedule_cron}
                         </span>
                         {cronToHuman(workflow.schedule_cron) !==
                           workflow.schedule_cron && (
-                          <div className="text-slate-500 text-xs mt-0.5">
+                          <div className="text-slate-400 text-xs mt-0.5">
                             {cronToHuman(workflow.schedule_cron)}
                           </div>
                         )}

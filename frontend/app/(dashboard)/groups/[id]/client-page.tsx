@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -57,7 +57,9 @@ export default function GroupDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<Tab>("overview")
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get("tab") as Tab) || "overview"
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
