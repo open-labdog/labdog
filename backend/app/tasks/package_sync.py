@@ -1,9 +1,45 @@
 import os
+import re
 import shutil
 import tempfile
 from datetime import datetime, timezone
 
 from app.tasks import celery_app
+
+
+def _parse_package_errors(ansible_output: str) -> dict[str, str]:
+    """Extract per-package errors from Ansible output.
+
+    Looks for task names like "Ensure present: nft" followed by
+    fatal lines with error messages.
+
+    Returns a dict mapping package_name -> error_message.
+    """
+    errors: dict[str, str] = {}
+    lines = ansible_output.splitlines()
+    current_package = None
+    for line in lines:
+        # Match task headers like:
+        # "TASK [Ensure present: nft]", "TASK [Remove package: ufw]",
+        # "TASK [Ensure latest: curl]", "TASK [Install package: nft version 1.0]"
+        task_match = re.search(
+            r"TASK \[(?:Ensure (?:present|latest)|Remove package|Install package): (.+?)\]",
+            line,
+        )
+        if task_match:
+            pkg = task_match.group(1).strip()
+            # "Install package: nft version 1.0" -> "nft"
+            current_package = re.sub(r"\s+version\s+.*", "", pkg)
+            continue
+        # Match fatal error with msg
+        if current_package and "fatal:" in line:
+            msg_match = re.search(r'"msg":\s*"(.+?)"', line)
+            if msg_match:
+                errors[current_package] = msg_match.group(1)
+            else:
+                errors[current_package] = "Task failed"
+            current_package = None
+    return errors
 
 
 @celery_app.task(
@@ -132,6 +168,17 @@ def run_package_sync(self, job_id: int, host_id: int) -> dict:
                     hms.collected_state = desired_state
                     hms.collected_at = datetime.now(timezone.utc)
                     hms.error_message = None
+                else:
+                    # Parse per-package errors from Ansible output
+                    ansible_out = job.ansible_output or ""
+                    pkg_errors = _parse_package_errors(ansible_out)
+                    if pkg_errors:
+                        parts = [
+                            f"{name}: {msg}" for name, msg in pkg_errors.items()
+                        ]
+                        hms.error_message = "; ".join(parts)
+                    else:
+                        hms.error_message = job.error_message
 
                 await db.commit()
 

@@ -229,6 +229,37 @@ async def list_workflow_runs(
     return result.scalars().all()
 
 
+@router.get("/hosts/{host_id}/latest-workflow-run", response_model=WorkflowHostRunResponse)
+async def get_host_latest_workflow_run(
+    host_id: int,
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the most recent workflow host run for a host."""
+    result = await db.execute(
+        select(WorkflowHostRun, Host.hostname)
+        .join(Host, WorkflowHostRun.host_id == Host.id)
+        .where(WorkflowHostRun.host_id == host_id)
+        .order_by(WorkflowHostRun.id.desc())
+        .limit(1)
+    )
+    row = result.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="No workflow runs found for this host")
+    hr, hostname = row
+    return WorkflowHostRunResponse(
+        id=hr.id,
+        host_id=hr.host_id,
+        hostname=hostname,
+        step=str(hr.step.value) if hasattr(hr.step, "value") else str(hr.step),
+        status=str(hr.status.value) if hasattr(hr.status, "value") else str(hr.status),
+        snapshot_name=hr.snapshot_name,
+        error_message=hr.error_message,
+        started_at=hr.started_at,
+        completed_at=hr.completed_at,
+    )
+
+
 @router.get("/workflow-runs/{run_id}", response_model=WorkflowRunDetailResponse)
 async def get_workflow_run_detail(
     run_id: int,

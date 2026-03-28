@@ -130,6 +130,16 @@ class ProxmoxClient:
         """
         return await self._request("GET", f"/api2/json/nodes/{pve_node}/qemu")
 
+    async def list_containers(self, pve_node: str) -> list[dict]:
+        """List all LXC containers on a node.
+
+        Args:
+            pve_node: Proxmox node name.
+
+        GET /api2/json/nodes/{pve_node}/lxc
+        """
+        return await self._request("GET", f"/api2/json/nodes/{pve_node}/lxc")
+
     async def get_vm_agent_interfaces(self, pve_node: str, vmid: int) -> list[dict]:
         """Return network interfaces reported by the QEMU guest agent.
 
@@ -139,19 +149,43 @@ class ProxmoxClient:
 
         GET /api2/json/nodes/{pve_node}/qemu/{vmid}/agent/network-get-interfaces
 
+        The Proxmox API wraps the result in ``{"data": {"result": [...]}}``.
+        This method unwraps the ``result`` key if present.
+
         Raises:
             ProxmoxError: If the agent is not running (status 500) or any
                 other API error occurs.
         """
         try:
-            return await self._request(
+            data = await self._request(
                 "GET",
                 f"/api2/json/nodes/{pve_node}/qemu/{vmid}/agent/network-get-interfaces",
             )
+            # Proxmox wraps guest-agent responses in {"result": [...]}
+            if isinstance(data, dict) and "result" in data:
+                return data["result"]
+            return data
         except ProxmoxError as exc:
             if exc.status_code == 500:
                 raise ProxmoxError(f"Agent not responding on vmid {vmid}", 500) from exc
             raise
+
+    async def get_container_interfaces(self, pve_node: str, vmid: int) -> list[dict]:
+        """Return network interfaces for an LXC container.
+
+        Args:
+            pve_node: Proxmox node name.
+            vmid: Container identifier.
+
+        GET /api2/json/nodes/{pve_node}/lxc/{vmid}/interfaces
+
+        Raises:
+            ProxmoxError: If the container is stopped or the API fails.
+        """
+        return await self._request(
+            "GET",
+            f"/api2/json/nodes/{pve_node}/lxc/{vmid}/interfaces",
+        )
 
     async def create_snapshot(
         self,

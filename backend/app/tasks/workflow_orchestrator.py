@@ -87,27 +87,10 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
                 await db.commit()
                 return
 
-            # Optionally refresh VM mappings before processing
-            if workflow.pre_update_snapshot:
-                try:
-                    from app.proxmox.discovery import discover_vm_by_ip  # type: ignore[import]
-
-                    for host in hosts:
-                        try:
-                            await discover_vm_by_ip(host.ip_address, db)
-                        except Exception as exc:
-                            logger.warning(
-                                "workflow_orchestrator: discovery failed for host %d (%s): %s",
-                                host.id,
-                                host.ip_address,
-                                exc,
-                            )
-                except ImportError:
-                    logger.debug(
-                        "workflow_orchestrator: proxmox discovery not available, skipping"
-                    )
-
             # Create WorkflowHostRun records (status=pending, step=preflight)
+            # VM mappings are loaded from DB by the host executor — no
+            # re-discovery needed here.  Users trigger discovery explicitly
+            # via the Proxmox discovery API.
             for host in hosts:
                 host_run = WorkflowHostRun(
                     run_id=run_id,
@@ -163,7 +146,9 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             try:
                 # Wait up to 1 hour for the entire batch; propagate=False so
                 # individual host failures do not raise here.
-                result.get(timeout=3600, propagate=False)
+                # Use join() instead of get() to avoid the Celery
+                # "never call result.get() within a task" deadlock risk.
+                result.join(timeout=3600, propagate=False)
             except Exception as exc:
                 # Timeout or backend error — log and continue with next batch.
                 logger.warning(

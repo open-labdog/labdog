@@ -569,6 +569,59 @@ function ProxmoxVMSection({
   )
 }
 
+function WorkflowStatusSection({ hostId }: { hostId: number }) {
+  const { data: lastRun, isLoading } = useQuery<import("@/lib/types").WorkflowHostRun | null>({
+    queryKey: ["host-latest-workflow-run", hostId],
+    queryFn: async () => {
+      const res = await fetch(`/api/hosts/${hostId}/latest-workflow-run`, {
+        credentials: "include",
+      })
+      if (res.status === 404) return null
+      if (!res.ok) throw new Error(`${res.status}`)
+      return res.json()
+    },
+    retry: false,
+  })
+
+  if (isLoading || lastRun === undefined) return null
+  if (lastRun === null) return null
+
+  const isFailed = lastRun.status === "failed"
+
+  return (
+    <div className={`rounded-lg border p-4 space-y-0 ${isFailed ? "border-red-700/50 bg-red-950/20" : "border-slate-700 bg-slate-900"}`}>
+      <div className="pb-3 mb-1 border-b border-slate-800">
+        <h3 className="text-sm font-semibold text-slate-200">Last Workflow Run</h3>
+      </div>
+      <InfoRow label="Step">
+        <Badge className={isFailed ? "bg-red-700 text-white" : "bg-green-700 text-white"}>
+          {lastRun.step.charAt(0).toUpperCase() + lastRun.step.slice(1)}
+        </Badge>
+      </InfoRow>
+      <InfoRow label="Status">
+        <Badge className={
+          lastRun.status === "success" ? "bg-green-600 text-white"
+            : lastRun.status === "failed" ? "bg-red-600 text-white"
+            : lastRun.status === "running" ? "bg-blue-600 text-white"
+            : "bg-slate-600 text-white"
+        }>
+          {lastRun.status.charAt(0).toUpperCase() + lastRun.status.slice(1)}
+        </Badge>
+      </InfoRow>
+      {lastRun.completed_at && (
+        <InfoRow label="Completed">
+          {new Date(lastRun.completed_at).toLocaleString()}
+        </InfoRow>
+      )}
+      {lastRun.error_message && (
+        <div className="pt-2">
+          <div className="text-red-400 text-sm">{lastRun.error_message}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
@@ -1444,6 +1497,7 @@ export default function HostDetailPage() {
             </div>
           )}
           {host && <ProxmoxVMSection hostId={id} queryClient={queryClient} />}
+          {host && <WorkflowStatusSection hostId={id} />}
         </>
       )}
 
@@ -2693,7 +2747,19 @@ export default function HostDetailPage() {
         </div>
       )}
 
-      {activeTab === "packages" && (
+      {activeTab === "packages" && (() => {
+        // Parse per-package errors from module error_message (format: "pkg1: msg1; pkg2: msg2")
+        const packageModule = currentStateQuery.data?.find(m => m.module_type === "package")
+        const packageErrors: Record<string, string> = {}
+        if (packageModule?.error_message) {
+          for (const part of packageModule.error_message.split("; ")) {
+            const colonIdx = part.indexOf(": ")
+            if (colonIdx > 0) {
+              packageErrors[part.slice(0, colonIdx)] = part.slice(colonIdx + 2)
+            }
+          }
+        }
+        return (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -2737,8 +2803,13 @@ export default function HostDetailPage() {
                 </TableHeader>
                 <TableBody>
                   {effectivePackages.map((pkg) => (
-                    <TableRow key={`${pkg.source}-${pkg.source_id}-${pkg.package_name}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{pkg.package_name}</TableCell>
+                    <TableRow key={`${pkg.source}-${pkg.source_id}-${pkg.package_name}`} className={`border-slate-700 ${packageErrors[pkg.package_name] ? "bg-red-950/20" : ""}`}>
+                      <TableCell className="font-mono text-sm">
+                        <span className={packageErrors[pkg.package_name] ? "text-red-400" : "text-white"}>{pkg.package_name}</span>
+                        {packageErrors[pkg.package_name] && (
+                          <div className="text-red-400 text-xs mt-1 font-sans">{packageErrors[pkg.package_name]}</div>
+                        )}
+                      </TableCell>
                       <TableCell className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</TableCell>
                       <TableCell>
                         <Badge className={
@@ -2953,7 +3024,8 @@ export default function HostDetailPage() {
           </Dialog>
           <CurrentStateSection moduleType="package" modules={currentStateQuery.data} hostId={id} />
         </div>
-      )}
+        )
+      })()}
 
       {activeTab === "dns" && (
         <div className="space-y-6">
