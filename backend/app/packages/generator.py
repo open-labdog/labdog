@@ -29,7 +29,7 @@ def generate_package_playbook(
                         "state": "absent",
                         "update_cache": True,
                     },
-                    "when": "ansible_os_family == 'Debian'",
+                    "when": "ansible_facts['os_family'] == 'Debian'",
                 })
             else:
                 tasks.append({
@@ -38,7 +38,7 @@ def generate_package_playbook(
                         "name": repo["name"],
                         "state": "absent",
                     },
-                    "when": "ansible_os_family == 'RedHat'",
+                    "when": "ansible_facts['os_family'] == 'RedHat'",
                 })
         else:
             if repo.get("repo_type") == "apt":
@@ -49,7 +49,7 @@ def generate_package_playbook(
                         "state": "present",
                         "update_cache": True,
                     },
-                    "when": "ansible_os_family == 'Debian'",
+                    "when": "ansible_facts['os_family'] == 'Debian'",
                 })
             else:
                 yum_repo_config: dict = {
@@ -64,7 +64,7 @@ def generate_package_playbook(
                 tasks.append({
                     "name": f"Add yum repository: {repo['name']}",
                     "ansible.builtin.yum_repository": yum_repo_config,
-                    "when": "ansible_os_family == 'RedHat'",
+                    "when": "ansible_facts['os_family'] == 'RedHat'",
                 })
 
     # STEP 2: Package tasks (after repos are configured)
@@ -118,13 +118,13 @@ def generate_package_playbook(
         tasks.append({
             "name": f"Hold packages: {', '.join(hold_pkgs)}",
             "ansible.builtin.command": f"apt-mark hold {' '.join(hold_pkgs)}",
-            "when": "ansible_os_family == 'Debian'",
+            "when": "ansible_facts['os_family'] == 'Debian'",
             "changed_when": True,
         })
         tasks.append({
             "name": f"Hold packages (dnf): {', '.join(hold_pkgs)}",
             "ansible.builtin.command": f"dnf versionlock add {' '.join(hold_pkgs)}",
-            "when": "ansible_os_family == 'RedHat'",
+            "when": "ansible_facts['os_family'] == 'RedHat'",
             "changed_when": True,
         })
 
@@ -132,13 +132,13 @@ def generate_package_playbook(
         tasks.append({
             "name": f"Unhold packages: {', '.join(unhold_pkgs)}",
             "ansible.builtin.command": f"apt-mark unhold {' '.join(unhold_pkgs)}",
-            "when": "ansible_os_family == 'Debian'",
+            "when": "ansible_facts['os_family'] == 'Debian'",
             "changed_when": False,
         })
         tasks.append({
             "name": f"Unhold packages (dnf): {', '.join(unhold_pkgs)}",
             "ansible.builtin.command": f"dnf versionlock delete {' '.join(unhold_pkgs)}",
-            "when": "ansible_os_family == 'RedHat'",
+            "when": "ansible_facts['os_family'] == 'RedHat'",
             "failed_when": False,
             "changed_when": False,
         })

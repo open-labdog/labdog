@@ -278,9 +278,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         step_enum.value,
                         exc,
                     )
-                    host_run.error_message = (
-                        f"Step {step_enum.value} failed: {exc}"
-                    )
+                    host_run.error_message = str(exc)
                     host_run.status = WorkflowHostStatus.failed
                     final_status = WorkflowHostStatus.failed
                     host_run.step_output = step_output
@@ -370,7 +368,18 @@ async def _step_preflight(
     """
     result = await run_preflight(host, vm_mapping, ssh_key_path, proxmox_client, db)
     if not result.get("success"):
-        raise Exception(f"Preflight failed: {result}")
+        checks = result.get("checks", {})
+        reasons = []
+        if not checks.get("ssh"):
+            reasons.append("SSH unreachable")
+        disk_gb = checks.get("disk_gb", 0)
+        if disk_gb < 2.0:
+            reasons.append(f"Insufficient disk space: {disk_gb:.2f} GB available (minimum 2 GB)")
+        if not checks.get("vm_found"):
+            reasons.append("VM mapping not found in Proxmox")
+        if not checks.get("agent_ok"):
+            reasons.append("QEMU guest agent not responding")
+        raise Exception("; ".join(reasons) if reasons else "Preflight checks failed")
     return result
 
 

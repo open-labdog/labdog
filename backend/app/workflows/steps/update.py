@@ -61,14 +61,14 @@ def run_system_update(
                             "update_cache": True,
                             "cache_valid_time": 0,
                         },
-                        "when": "ansible_os_family == 'Debian'",
+                        "when": "ansible_facts['os_family'] == 'Debian'",
                     },
                     {
                         "name": "Upgrade packages",
                         "ansible.builtin.apt": {
                             "upgrade": "yes",
                         },
-                        "when": "ansible_os_family == 'Debian'",
+                        "when": "ansible_facts['os_family'] == 'Debian'",
                     },
                     {
                         "name": "Autoremove unused packages",
@@ -76,7 +76,7 @@ def run_system_update(
                             "autoremove": True,
                             "purge": False,
                         },
-                        "when": "ansible_os_family == 'Debian'",
+                        "when": "ansible_facts['os_family'] == 'Debian'",
                     },
                     {
                         "name": "Update all packages (RHEL)",
@@ -84,7 +84,7 @@ def run_system_update(
                             "name": "*",
                             "state": "latest",
                         },
-                        "when": "ansible_os_family == 'RedHat'",
+                        "when": "ansible_facts['os_family'] == 'RedHat'",
                     },
                 ],
             }

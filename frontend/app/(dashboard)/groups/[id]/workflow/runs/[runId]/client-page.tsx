@@ -193,9 +193,9 @@ export default function WorkflowRunDetailPage() {
                         <TableCell className="font-mono text-slate-400 text-xs">
                           {hr.snapshot_name ?? "—"}
                         </TableCell>
-                        <TableCell className="text-red-400 text-xs max-w-[240px]">
+                        <TableCell className="text-red-400 text-xs max-w-[400px]">
                           {hr.error_message ? (
-                            <span title={hr.error_message} className="truncate block">
+                            <span title={hr.error_message}>
                               {hr.error_message}
                             </span>
                           ) : (
