@@ -1,13 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
+from app.models.host import HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.git_repository import GitRepository, GitOpsStatus
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
 from app.schemas.groups import GroupCreate, GroupUpdate, GroupResponse
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
+
+
+class BulkAddHostsRequest(BaseModel):
+    host_ids: list[int]
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -93,6 +99,38 @@ async def delete_group(
         raise HTTPException(status_code=404, detail="Group not found")
     await db.delete(group)
     await db.commit()
+
+
+@router.post("/{group_id}/hosts", status_code=200)
+async def add_hosts_to_group(
+    group_id: int,
+    body: BulkAddHostsRequest,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add multiple hosts to this group (skips hosts already in the group)."""
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    # Find which hosts are already members
+    existing = await db.execute(
+        select(HostGroupMembership.c.host_id).where(
+            HostGroupMembership.c.group_id == group_id,
+            HostGroupMembership.c.host_id.in_(body.host_ids),
+        )
+    )
+    already_member = {r[0] for r in existing.all()}
+    to_add = [hid for hid in body.host_ids if hid not in already_member]
+
+    if to_add:
+        await db.execute(
+            insert(HostGroupMembership),
+            [{"host_id": hid, "group_id": group_id} for hid in to_add],
+        )
+        await db.commit()
+
+    return {"added": len(to_add), "already_member": len(already_member)}
 
 
 @router.post("/{group_id}/gitops/enable", response_model=GitOpsStatusResponse)

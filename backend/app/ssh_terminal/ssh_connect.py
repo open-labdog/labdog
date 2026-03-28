@@ -81,6 +81,7 @@ async def open_ssh_shell(
         process = await conn.create_process(
             term_type="xterm-256color",
             term_size=(initial_cols, initial_rows),
+            encoding=None,
         )
     except (asyncssh.Error, OSError) as e:
         raise SSHConnectionError(f"Failed to connect to {host.hostname}: {e}")

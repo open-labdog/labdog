@@ -1,8 +1,7 @@
 import yaml
 from app.rules.model import FirewallRuleSpec
 from app.rules.renderers.nftables import render_nftables_config
-from app.rules.renderers.firewalld import render_firewalld_tasks
-from app.rules.renderers.ufw import render_ufw_rules
+from app.rules.renderers.iptables import render_iptables_rules
 
 
 def generate_nftables_playbook(
@@ -104,70 +103,125 @@ def generate_nftables_playbook(
     return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
 
 
-def generate_firewalld_playbook(
+def generate_iptables_playbook(
     host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
 ) -> str:
-    """Generate playbook with per-rule firewalld tasks."""
-    fw_tasks = render_firewalld_tasks(rules)
+    """Generate playbook that writes iptables rules and applies with safe rollback.
+
+    Strategy (deadman's switch):
+    1. Backup current ruleset via iptables-save
+    2. Schedule an automatic revert in 60 seconds (deadman's switch)
+    3. Write new IPv4 and IPv6 rules files
+    4. Apply with iptables-restore / ip6tables-restore
+    5. If we're still connected (SSH survived), cancel the revert
+    6. Install iptables-persistent for boot persistence
+    7. Save rules for persistence
+
+    If applying the new rules kills SSH, the scheduled revert fires
+    after 60 seconds and restores the previous ruleset automatically.
+    """
+    ipv4_content, ipv6_content = render_iptables_rules(rules)
     tasks = [
         {
-            "name": "Gather current firewalld state",
-            "ansible.posix.firewalld_info": {"active_zones": True},
-            "register": "fw_before",
+            "name": "Backup current iptables ruleset",
+            "ansible.builtin.shell": "iptables-save > /tmp/iptables-backup.rules 2>/dev/null || touch /tmp/iptables-backup.rules",
         },
-    ]
-    for i, fw_params in enumerate(fw_tasks):
-        tasks.append(
-            {
-                "name": f"Apply firewall rule {i + 1}",
-                "ansible.posix.firewalld": fw_params,
-            }
-        )
-    playbook = [
         {
-            "name": "Apply firewalld firewall rules",
-            "hosts": "target",
-            "become": True,
-            "gather_facts": False,
-            "tasks": tasks,
-        }
-    ]
-    return yaml.dump(playbook, default_flow_style=False, sort_keys=False)
-
-
-def generate_ufw_playbook(host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str) -> str:
-    """Generate playbook that writes UFW rules files and reloads."""
-    user_rules, user6_rules = render_ufw_rules(rules)
-    tasks = [
+            "name": "Backup current ip6tables ruleset",
+            "ansible.builtin.shell": "ip6tables-save > /tmp/ip6tables-backup.rules 2>/dev/null || touch /tmp/ip6tables-backup.rules",
+        },
         {
-            "name": "Write UFW user rules (IPv4)",
+            "name": "Schedule automatic revert in 60 seconds (deadman switch)",
+            "ansible.builtin.shell": (
+                "nohup bash -c '"
+                "sleep 60 && "
+                "iptables-restore < /tmp/iptables-backup.rules && "
+                "ip6tables-restore < /tmp/ip6tables-backup.rules"
+                "' > /tmp/iptables-revert.log 2>&1 & "
+                "echo $! > /tmp/iptables-revert.pid"
+            ),
+        },
+        {
+            "name": "Write iptables rules (IPv4)",
             "ansible.builtin.copy": {
-                "content": user_rules,
-                "dest": "/etc/ufw/user.rules",
+                "content": ipv4_content,
+                "dest": "/etc/iptables.rules",
                 "owner": "root",
                 "group": "root",
-                "mode": "0640",
+                "mode": "0644",
             },
         },
         {
-            "name": "Write UFW user6 rules (IPv6)",
+            "name": "Write ip6tables rules (IPv6)",
             "ansible.builtin.copy": {
-                "content": user6_rules,
-                "dest": "/etc/ufw/user6.rules",
+                "content": ipv6_content,
+                "dest": "/etc/ip6tables.rules",
                 "owner": "root",
                 "group": "root",
-                "mode": "0640",
+                "mode": "0644",
             },
         },
         {
-            "name": "Reload UFW",
-            "ansible.builtin.command": "ufw reload",
-            "changed_when": True,
+            "name": "Apply iptables rules (IPv4)",
+            "ansible.builtin.shell": "iptables-restore < /etc/iptables.rules",
+        },
+        {
+            "name": "Apply ip6tables rules (IPv6)",
+            "ansible.builtin.shell": "ip6tables-restore < /etc/ip6tables.rules",
+        },
+        {
+            "name": "Cancel automatic revert (SSH still works)",
+            "ansible.builtin.shell": (
+                "if [ -f /tmp/iptables-revert.pid ]; then "
+                "kill $(cat /tmp/iptables-revert.pid) 2>/dev/null; "
+                "rm -f /tmp/iptables-revert.pid; "
+                "fi"
+            ),
+        },
+        {
+            "name": "Install iptables-persistent for boot persistence",
+            "ansible.builtin.package": {
+                "name": "iptables-persistent",
+                "state": "present",
+            },
+            "ignore_errors": True,
+        },
+        {
+            "name": "Install netfilter-persistent for boot persistence (fallback)",
+            "ansible.builtin.package": {
+                "name": "netfilter-persistent",
+                "state": "present",
+            },
+            "ignore_errors": True,
+        },
+        {
+            "name": "Save iptables rules for persistence",
+            "ansible.builtin.shell": (
+                "if command -v netfilter-persistent >/dev/null 2>&1; then "
+                "netfilter-persistent save; "
+                "else "
+                "cp /etc/iptables.rules /etc/iptables/rules.v4 2>/dev/null; "
+                "cp /etc/ip6tables.rules /etc/iptables/rules.v6 2>/dev/null; "
+                "fi"
+            ),
+            "ignore_errors": True,
+        },
+        {
+            "name": "Clean up backup files",
+            "ansible.builtin.file": {
+                "path": "{{ item }}",
+                "state": "absent",
+            },
+            "loop": [
+                "/tmp/iptables-backup.rules",
+                "/tmp/ip6tables-backup.rules",
+                "/tmp/iptables-revert.log",
+            ],
         },
     ]
     playbook = [
         {
-            "name": "Apply UFW firewall rules",
+            "name": "Apply iptables firewall rules (safe mode)",
             "hosts": "target",
             "become": True,
             "gather_facts": False,
@@ -183,8 +237,7 @@ def generate_playbook(
     """Dispatch to backend-specific generator."""
     generators = {
         "nftables": generate_nftables_playbook,
-        "firewalld": generate_firewalld_playbook,
-        "ufw": generate_ufw_playbook,
+        "iptables": generate_iptables_playbook,
     }
     gen = generators.get(backend)
     if not gen:

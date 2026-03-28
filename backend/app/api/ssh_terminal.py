@@ -105,9 +105,9 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             while not process.stdout.at_eof():
                 data = await process.stdout.read(65536)
                 if data:
-                    await websocket.send_bytes(data.encode() if isinstance(data, str) else data)
+                    await websocket.send_bytes(data)
         except Exception:
-            pass
+            logger.exception("ssh_to_ws error for session %s", session_id)
 
     async def ws_to_ssh():
         nonlocal disconnect_reason
@@ -118,6 +118,7 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
                     break
                 if "bytes" in message and message["bytes"]:
                     process.stdin.write(message["bytes"])
+                    await process.stdin.drain()
                     await registry.touch(session_id)
                 elif "text" in message and message["text"]:
                     try:
@@ -133,6 +134,7 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         except WebSocketDisconnect:
             disconnect_reason = "client_disconnect"
         except Exception:
+            logger.exception("ws_to_ssh error for session %s", session_id)
             disconnect_reason = "error"
 
     async def idle_checker():

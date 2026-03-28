@@ -1,4 +1,4 @@
-export type FirewallBackend = "nftables" | "firewalld" | "ufw" | "unknown"
+export type FirewallBackend = "nftables" | "iptables" | "unknown"
 export type SyncStatus = "pending" | "in_sync" | "out_of_sync" | "unknown" | "error"
 export type GitOpsStatus = "disconnected" | "synced" | "error" | "importing"
 

@@ -15,7 +15,7 @@ def _is_infrastructure_rule(exprs: list[dict]) -> bool:
             if isinstance(left, dict):
                 if left.get("ct", {}).get("key") == "state":
                     return True
-                if left.get("meta", {}).get("key") == "iifname":
+                if left.get("meta", {}).get("key") in ("iif", "iifname"):
                     return True
     return False
 
@@ -84,7 +84,7 @@ def parse_nftables_json(json_str: str) -> list[FirewallRuleSpec]:
         port_end: int | None = None
         source_cidr: str | None = None
         dest_cidr: str | None = None
-        comment: str | None = None
+        comment: str | None = rule.get("comment")  # nftables >= 1.0 puts comment at rule level
 
         for expr in exprs:
             for nft_action, canonical in _ACTION_MAP.items():
