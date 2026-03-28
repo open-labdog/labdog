@@ -1,12 +1,12 @@
-"""Parse /etc/ufw/user.rules (iptables-save format) into FirewallRuleSpec list."""
+"""Parse iptables-save output into FirewallRuleSpec list."""
 
 import re
 
 from app.rules.model import FirewallRuleSpec
 
 _CHAIN_DIRECTION = {
-    "ufw-user-input": "input",
-    "ufw-user-output": "output",
+    "INPUT": "input",
+    "OUTPUT": "output",
 }
 
 _ACTION_MAP = {"ACCEPT": "allow", "DROP": "deny", "REJECT": "reject"}
@@ -40,8 +40,17 @@ def _parse_port_spec(port_str: str) -> tuple[int, int | None]:
     return int(port_str), None
 
 
-def parse_ufw_rules(content: str) -> list[FirewallRuleSpec]:
-    """Parse ``/etc/ufw/user.rules`` iptables-save format into canonical rule specs."""
+def _is_infrastructure_rule(flags_str: str) -> bool:
+    """Return True for conntrack and loopback rules that should be skipped."""
+    if "-m state --state" in flags_str:
+        return True
+    if "-i lo" in flags_str:
+        return True
+    return False
+
+
+def parse_iptables_save(content: str) -> list[FirewallRuleSpec]:
+    """Parse ``iptables-save`` output into canonical rule specs."""
     rules: list[FirewallRuleSpec] = []
 
     for line in content.splitlines():
@@ -54,11 +63,22 @@ def parse_ufw_rules(content: str) -> list[FirewallRuleSpec]:
             continue
 
         chain = m.group("chain")
+
+        # Skip FORWARD chain rules
+        if chain == "FORWARD":
+            continue
+
         direction = _CHAIN_DIRECTION.get(chain)
         if direction is None:
             continue
 
-        flags = _parse_rule_flags(m.group("flags"))
+        flags_str = m.group("flags")
+
+        # Skip infrastructure rules (conntrack, loopback)
+        if _is_infrastructure_rule(flags_str):
+            continue
+
+        flags = _parse_rule_flags(flags_str)
 
         action_str = flags.get("-j")
         if action_str is None:

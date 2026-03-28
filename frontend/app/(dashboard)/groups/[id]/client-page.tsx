@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useParams, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -62,6 +62,9 @@ export default function GroupDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [addHostsOpen, setAddHostsOpen] = useState(false)
+  const [addHostsSearch, setAddHostsSearch] = useState("")
+  const [addHostsSelected, setAddHostsSelected] = useState<Set<number>>(new Set())
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
   const [filePath, setFilePath] = useState("")
   const [confirmState, setConfirmState] = useState<{
@@ -121,6 +124,44 @@ export default function GroupDetailPage() {
   const group = groups?.find((g) => g.id === id)
 
   const groupHosts = hosts?.filter((h) => h.group_ids?.includes(id)) ?? []
+
+  const availableHosts = useMemo(() => {
+    const notInGroup = hosts?.filter((h) => !h.group_ids?.includes(id)) ?? []
+    const q = addHostsSearch.toLowerCase()
+    if (!q) return notInGroup
+    return notInGroup.filter(
+      (h) => h.hostname.toLowerCase().includes(q) || h.ip_address.includes(q)
+    )
+  }, [hosts, id, addHostsSearch])
+
+  const addHostsMutation = useApiMutation<unknown, { host_ids: number[] }, Host>({
+    mutationFn: (data) =>
+      apiFetch(`/api/groups/${id}/hosts`, { method: "POST", body: JSON.stringify(data) }),
+    invalidateKeys: [["hosts"]],
+    onSuccess: () => {
+      setAddHostsOpen(false)
+      setAddHostsSelected(new Set())
+      setAddHostsSearch("")
+    },
+    successMessage: "Hosts added to group",
+  })
+
+  function toggleAddHost(hostId: number) {
+    setAddHostsSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(hostId)) next.delete(hostId)
+      else next.add(hostId)
+      return next
+    })
+  }
+
+  function toggleAddAllHosts() {
+    if (addHostsSelected.size === availableHosts.length && availableHosts.length > 0) {
+      setAddHostsSelected(new Set())
+    } else {
+      setAddHostsSelected(new Set(availableHosts.map((h) => h.id)))
+    }
+  }
 
   // Update form when group loads
   useEffect(() => {
@@ -526,19 +567,23 @@ export default function GroupDetailPage() {
         <>
           {/* Hosts section */}
           <div>
-            <h2 className="text-lg font-semibold text-white mb-3">Hosts</h2>
-            <p className="text-slate-400 text-sm mb-4">
-              All hosts that may be affected by this group&apos;s rules.
-            </p>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Hosts</h2>
+                <p className="text-slate-400 text-sm mt-1">
+                  All hosts that may be affected by this group&apos;s rules.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => { setAddHostsOpen(true); setAddHostsSelected(new Set()); setAddHostsSearch("") }}>
+                Add Hosts
+              </Button>
+            </div>
 
             {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
 
             {!hostsLoading && groupHosts.length === 0 && (
               <div className="text-slate-400 py-4 text-center">
-                No hosts configured.{" "}
-                <Link href="/hosts/new" className="underline hover:text-white">
-                  Add a host
-                </Link>
+                No hosts in this group.
               </div>
             )}
 
@@ -584,6 +629,81 @@ export default function GroupDetailPage() {
               </div>
             )}
           </div>
+
+          {/* Add Hosts Dialog */}
+          <Dialog open={addHostsOpen} onOpenChange={setAddHostsOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Hosts to {group?.name}</DialogTitle>
+              </DialogHeader>
+              <div className="mt-2 space-y-3">
+                <Input
+                  placeholder="Search by hostname or IP..."
+                  value={addHostsSearch}
+                  onChange={(e) => setAddHostsSearch(e.target.value)}
+                />
+
+                {availableHosts.length === 0 ? (
+                  <p className="text-slate-400 text-sm py-4 text-center">
+                    {addHostsSearch ? "No matching hosts found." : "All hosts are already in this group."}
+                  </p>
+                ) : (
+                  <div className="rounded-lg border border-slate-700 max-h-[360px] overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-slate-700">
+                          <TableHead className="w-10">
+                            <input
+                              type="checkbox"
+                              checked={addHostsSelected.size === availableHosts.length && availableHosts.length > 0}
+                              onChange={toggleAddAllHosts}
+                              className="rounded border-slate-600"
+                            />
+                          </TableHead>
+                          <TableHead>Hostname</TableHead>
+                          <TableHead>IP Address</TableHead>
+                          <TableHead>Firewall</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {availableHosts.map((host) => (
+                          <TableRow
+                            key={host.id}
+                            className="border-slate-700 cursor-pointer hover:bg-slate-800"
+                            onClick={() => toggleAddHost(host.id)}
+                          >
+                            <TableCell>
+                              <input
+                                type="checkbox"
+                                checked={addHostsSelected.has(host.id)}
+                                onChange={(e) => e.stopPropagation()}
+                                className="rounded border-slate-600"
+                              />
+                            </TableCell>
+                            <TableCell className="font-medium text-white">{host.hostname}</TableCell>
+                            <TableCell className="font-mono text-slate-300 text-xs">{host.ip_address}</TableCell>
+                            <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-slate-400 text-sm">
+                    {addHostsSelected.size} host{addHostsSelected.size !== 1 ? "s" : ""} selected
+                  </span>
+                  <Button
+                    disabled={addHostsSelected.size === 0 || addHostsMutation.isPending}
+                    onClick={() => addHostsMutation.mutate({ host_ids: Array.from(addHostsSelected) })}
+                  >
+                    {addHostsMutation.isPending ? "Adding..." : "Add to Group"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </>
       )}
 

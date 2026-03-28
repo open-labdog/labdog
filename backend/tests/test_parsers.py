@@ -3,8 +3,7 @@ import json
 import pytest
 
 from app.sync.parsers.nftables import parse_nftables_json
-from app.sync.parsers.firewalld import parse_firewalld_output
-from app.sync.parsers.ufw import parse_ufw_rules
+from app.sync.parsers.iptables import parse_iptables_save
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +66,19 @@ _NFT_INFRA = json.dumps(
                     ],
                 }
             },
-            # loopback — should be skipped
+            # loopback (iif — interface index, used by nftables >= 1.0) — should be skipped
+            {
+                "rule": {
+                    "family": "inet",
+                    "table": "filter",
+                    "chain": "input",
+                    "expr": [
+                        {"match": {"left": {"meta": {"key": "iif"}}, "right": "lo"}},
+                        {"accept": None},
+                    ],
+                }
+            },
+            # loopback (iifname — interface name, older nftables) — should be skipped
             {
                 "rule": {
                     "family": "inet",
@@ -189,6 +200,66 @@ class TestNftablesParser:
         rules = parse_nftables_json(data)
         assert rules == []
 
+    def test_parse_nftables_rule_level_comment(self):
+        """nftables >= 1.0 puts comments at the rule level, not in expressions."""
+        data = json.dumps(
+            {
+                "nftables": [
+                    {"chain": {"family": "inet", "table": "filter", "name": "input", "hook": "input"}},
+                    {
+                        "rule": {
+                            "family": "inet",
+                            "table": "filter",
+                            "chain": "input",
+                            "comment": "Barricade: SSH lockout rule",
+                            "expr": [
+                                {
+                                    "match": {
+                                        "left": {"payload": {"protocol": "tcp", "field": "dport"}},
+                                        "right": 22,
+                                    }
+                                },
+                                {"accept": None},
+                            ],
+                        }
+                    },
+                ]
+            }
+        )
+        rules = parse_nftables_json(data)
+        assert len(rules) == 1
+        assert rules[0].comment == "Barricade: SSH lockout rule"
+
+    def test_parse_nftables_expr_level_comment(self):
+        """Older nftables puts comments as expressions — ensure fallback works."""
+        data = json.dumps(
+            {
+                "nftables": [
+                    {"chain": {"family": "inet", "table": "filter", "name": "input", "hook": "input"}},
+                    {
+                        "rule": {
+                            "family": "inet",
+                            "table": "filter",
+                            "chain": "input",
+                            "expr": [
+                                {
+                                    "match": {
+                                        "left": {"payload": {"protocol": "tcp", "field": "dport"}},
+                                        "right": 443,
+                                    }
+                                },
+                                {"accept": None},
+                                {"comment": "Allow HTTPS"},
+                            ],
+                        }
+                    },
+                ]
+            }
+        )
+        rules = parse_nftables_json(data)
+        assert len(rules) == 1
+        assert rules[0].comment == "Allow HTTPS"
+
     def test_parse_nftables_output_chain(self):
         data = json.dumps(
             {
@@ -227,125 +298,73 @@ class TestNftablesParser:
 
 
 # ---------------------------------------------------------------------------
-# firewalld
+# iptables
 # ---------------------------------------------------------------------------
 
-_FIREWALLD_BASIC = """\
-public (active)
-  target: default
-  services: ssh
-  ports: 80/tcp 443/tcp
-  rich rules:
-    rule family="ipv4" source address="10.0.0.0/8" port port="3306" protocol="tcp" accept
-    rule family="ipv4" drop
-"""
-
-_FIREWALLD_EMPTY = ""
-
-
-class TestFirewalldParser:
-    def test_parse_firewalld_ports_line(self):
-        rules = parse_firewalld_output(_FIREWALLD_BASIC)
-        port_rules = [r for r in rules if r.port_start in (80, 443)]
-        assert len(port_rules) == 2
-        ports = {r.port_start for r in port_rules}
-        assert ports == {80, 443}
-        for r in port_rules:
-            assert r.action == "allow"
-            assert r.protocol == "tcp"
-            assert r.direction == "input"
-
-    def test_parse_firewalld_rich_rule(self):
-        rules = parse_firewalld_output(_FIREWALLD_BASIC)
-        rich = [r for r in rules if r.source_cidr == "10.0.0.0/8"]
-        assert len(rich) == 1
-        r = rich[0]
-        assert r.action == "allow"
-        assert r.protocol == "tcp"
-        assert r.port_start == 3306
-
-    def test_parse_firewalld_empty_output(self):
-        rules = parse_firewalld_output(_FIREWALLD_EMPTY)
-        assert rules == []
-
-    def test_parse_firewalld_drop_rich_rule(self):
-        rules = parse_firewalld_output(_FIREWALLD_BASIC)
-        drop_rules = [r for r in rules if r.action == "deny"]
-        assert len(drop_rules) == 1
-
-    def test_parse_firewalld_port_range(self):
-        output = "  ports: 3306-3310/tcp\n"
-        rules = parse_firewalld_output(output)
-        assert len(rules) == 1
-        assert rules[0].port_start == 3306
-        assert rules[0].port_end == 3310
-
-    def test_parse_firewalld_no_ports_line(self):
-        output = "public (active)\n  target: default\n  services: ssh\n"
-        rules = parse_firewalld_output(output)
-        assert rules == []
-
-
-# ---------------------------------------------------------------------------
-# UFW
-# ---------------------------------------------------------------------------
-
-_UFW_BASIC = """\
+_IPTABLES_BASIC = """\
 *filter
-:ufw-user-input - [0:0]
-:ufw-user-output - [0:0]
--A ufw-user-input -p tcp --dport 22 -j ACCEPT
--A ufw-user-input -p tcp --dport 80:443 -s 10.0.0.0/8 -j ACCEPT
--A ufw-user-input -j DROP
+:INPUT DROP [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A INPUT -i lo -j ACCEPT
+-A INPUT -p tcp --dport 22 -j ACCEPT
+-A INPUT -p tcp --dport 80:443 -s 10.0.0.0/8 -j ACCEPT
+-A INPUT -j DROP
 COMMIT
 """
 
 
-class TestUfwParser:
-    def test_parse_ufw_basic_rules(self):
-        rules = parse_ufw_rules(_UFW_BASIC)
+class TestIptablesParser:
+    def test_parse_iptables_basic_rules(self):
+        rules = parse_iptables_save(_IPTABLES_BASIC)
         assert len(rules) == 3
         ssh = next(r for r in rules if r.port_start == 22)
         assert ssh.action == "allow"
         assert ssh.protocol == "tcp"
         assert ssh.direction == "input"
 
-    def test_parse_ufw_port_range(self):
-        rules = parse_ufw_rules(_UFW_BASIC)
+    def test_parse_iptables_skips_infrastructure(self):
+        rules = parse_iptables_save(_IPTABLES_BASIC)
+        # conntrack and loopback rules should be skipped
+        for r in rules:
+            assert r.protocol != "any" or r.port_start is not None or r.action == "deny"
+
+    def test_parse_iptables_port_range(self):
+        rules = parse_iptables_save(_IPTABLES_BASIC)
         range_rule = next(r for r in rules if r.port_start == 80)
         assert range_rule.port_end == 443
         assert range_rule.source_cidr == "10.0.0.0/8"
         assert range_rule.action == "allow"
 
-    def test_parse_ufw_skips_non_user_chains(self):
+    def test_parse_iptables_skips_forward_chain(self):
         content = """\
 *filter
 -A INPUT -p tcp --dport 22 -j ACCEPT
--A FORWARD -j DROP
--A ufw-user-input -p tcp --dport 8080 -j ACCEPT
+-A FORWARD -p tcp --dport 80 -j ACCEPT
+-A OUTPUT -p tcp --dport 443 -j ACCEPT
 COMMIT
 """
-        rules = parse_ufw_rules(content)
-        # Only ufw-user-input chain should be parsed
-        assert len(rules) == 1
-        assert rules[0].port_start == 8080
+        rules = parse_iptables_save(content)
+        assert len(rules) == 2
+        assert all(r.direction in ("input", "output") for r in rules)
 
-    def test_parse_ufw_drop_rule(self):
-        rules = parse_ufw_rules(_UFW_BASIC)
+    def test_parse_iptables_drop_rule(self):
+        rules = parse_iptables_save(_IPTABLES_BASIC)
         drop_rules = [r for r in rules if r.action == "deny"]
         assert len(drop_rules) == 1
 
-    def test_parse_ufw_empty_content(self):
-        rules = parse_ufw_rules("")
+    def test_parse_iptables_empty_content(self):
+        rules = parse_iptables_save("")
         assert rules == []
 
-    def test_parse_ufw_output_chain(self):
+    def test_parse_iptables_output_chain(self):
         content = """\
 *filter
--A ufw-user-output -p tcp --dport 443 -j ACCEPT
+-A OUTPUT -p tcp --dport 8080 -j ACCEPT
 COMMIT
 """
-        rules = parse_ufw_rules(content)
+        rules = parse_iptables_save(content)
         assert len(rules) == 1
         assert rules[0].direction == "output"
-        assert rules[0].port_start == 443
+        assert rules[0].port_start == 8080

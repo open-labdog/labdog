@@ -274,16 +274,20 @@ def _build_collectors(
             host.firewall_backend.value if hasattr(host.firewall_backend, "value")
             else str(host.firewall_backend)
         )
+        info_messages: list[str] = []
         if backend == "unknown":
             # Auto-detect firewall backend
-            detected = await _detect_firewall_backend(
-                host.ip_address, host.ssh_port, private_pem, ssh_user
+            detected, info_messages = await _detect_firewall_backend(
+                host.ip_address, host.ssh_port, private_pem, ssh_user,
+                host_id=host.id, db=db,
             )
             if detected:
                 backend = detected
                 host.firewall_backend = detected
             else:
-                return {"error": "No supported firewall detected (nftables, firewalld, ufw)"}
+                return {"error": "No supported firewall detected (nftables or iptables)"}
+        for msg in info_messages:
+            logger.info("Host %d: %s", host.id, msg)
         rules = await collect_current_rules(
             host.ip_address, host.ssh_port, private_pem, backend,
             ssh_user=ssh_user,
@@ -301,9 +305,21 @@ def _build_collectors(
 
 
 async def _detect_firewall_backend(
-    host_ip: str, ssh_port: int, private_pem: str, ssh_user: str
-) -> str | None:
-    """Auto-detect firewall backend by probing for known tools."""
+    host_ip: str, ssh_port: int, private_pem: str, ssh_user: str,
+    host_id: int, db: AsyncSession,
+) -> tuple[str | None, list[str]]:
+    """Auto-detect firewall backend by probing for known tools.
+
+    Returns (backend, info_messages) where info_messages are user-facing
+    notices about wrapper firewalls (firewalld/ufw) that have been marked
+    for disabling.
+    """
+    from app.packages.models import PackageRule, PackageState
+    from app.services.models import ServiceRule, ServiceState
+
+    backend: str | None = None
+    messages: list[str] = []
+
     try:
         key = asyncssh.import_private_key(private_pem)
         async with ssh_connect(
@@ -313,18 +329,99 @@ async def _detect_firewall_backend(
             # Check for nftables (nft may be in /usr/sbin which isn't always in PATH)
             r = await conn.run("command -v nft || test -x /usr/sbin/nft", check=False)
             if r.exit_status == 0:
-                return "nftables"
-            # Check for firewalld
+                backend = "nftables"
+
+            # Check for iptables
+            if backend is None:
+                r = await conn.run("command -v iptables || test -x /usr/sbin/iptables", check=False)
+                if r.exit_status == 0:
+                    backend = "iptables"
+
+            # Check for firewalld wrapper
             r = await conn.run("command -v firewall-cmd || test -x /usr/sbin/firewall-cmd", check=False)
             if r.exit_status == 0:
-                return "firewalld"
-            # Check for ufw
+                if backend is None:
+                    # firewalld uses nft under the hood
+                    backend = "nftables"
+                messages.append(
+                    "firewalld detected but Barricade manages nftables directly. "
+                    "firewalld has been marked for disabling."
+                )
+                # Auto-add package rule to remove firewalld
+                existing_pkg = await db.execute(
+                    select(PackageRule).where(
+                        PackageRule.host_id == host_id,
+                        PackageRule.package_name == "firewalld",
+                    )
+                )
+                if not existing_pkg.scalar_one_or_none():
+                    db.add(PackageRule(
+                        host_id=host_id,
+                        package_name="firewalld",
+                        state=PackageState.absent,
+                        comment="Auto-disabled by Barricade: manages nftables directly",
+                    ))
+                # Auto-add service rule to stop firewalld
+                existing_svc = await db.execute(
+                    select(ServiceRule).where(
+                        ServiceRule.host_id == host_id,
+                        ServiceRule.service_name == "firewalld",
+                    )
+                )
+                if not existing_svc.scalar_one_or_none():
+                    db.add(ServiceRule(
+                        host_id=host_id,
+                        service_name="firewalld",
+                        state=ServiceState.stopped,
+                        enabled=False,
+                        comment="Auto-disabled by Barricade: manages nftables directly",
+                    ))
+
+            # Check for ufw wrapper
             r = await conn.run("command -v ufw || test -x /usr/sbin/ufw", check=False)
             if r.exit_status == 0:
-                return "ufw"
+                messages.append(
+                    "ufw detected but Barricade manages iptables directly. "
+                    "ufw has been marked for disabling."
+                )
+                if backend is None:
+                    backend = "iptables"
+                # Auto-add package rule to remove ufw
+                existing_pkg = await db.execute(
+                    select(PackageRule).where(
+                        PackageRule.host_id == host_id,
+                        PackageRule.package_name == "ufw",
+                    )
+                )
+                if not existing_pkg.scalar_one_or_none():
+                    db.add(PackageRule(
+                        host_id=host_id,
+                        package_name="ufw",
+                        state=PackageState.absent,
+                        comment="Auto-disabled by Barricade: manages iptables directly",
+                    ))
+                # Auto-add service rule to stop ufw
+                existing_svc = await db.execute(
+                    select(ServiceRule).where(
+                        ServiceRule.host_id == host_id,
+                        ServiceRule.service_name == "ufw",
+                    )
+                )
+                if not existing_svc.scalar_one_or_none():
+                    db.add(ServiceRule(
+                        host_id=host_id,
+                        service_name="ufw",
+                        state=ServiceState.stopped,
+                        enabled=False,
+                        comment="Auto-disabled by Barricade: manages iptables directly",
+                    ))
+
+            if messages:
+                await db.flush()
+
     except Exception:
         pass
-    return None
+    return backend, messages
 
 
 async def _get_or_create_hms(

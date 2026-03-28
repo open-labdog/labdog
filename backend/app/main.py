@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.admin_users import router as admin_users_router
@@ -147,33 +146,66 @@ def _build_login_limiter():
 # Security headers middleware
 # ---------------------------------------------------------------------------
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response: Response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=()"
-        )
-        if settings.tls.force_https or settings.security.cookie_secure:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains"
-            )
-        return response
+class SecurityHeadersMiddleware:
+    """Pure ASGI middleware that adds security headers to HTTP responses.
+
+    Uses the raw ASGI interface instead of BaseHTTPMiddleware to avoid
+    breaking WebSocket connections (BaseHTTPMiddleware wraps responses
+    in a way that prevents WebSocket upgrade handshakes).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = dict(message.get("headers", []))
+                extra = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    (b"x-xss-protection", b"1; mode=block"),
+                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=()"),
+                ]
+                if settings.tls.force_https or settings.security.cookie_secure:
+                    extra.append((
+                        b"strict-transport-security",
+                        b"max-age=63072000; includeSubDomains",
+                    ))
+                message = {
+                    **message,
+                    "headers": list(message.get("headers", [])) + extra,
+                }
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 # ---------------------------------------------------------------------------
 # HTTPS redirect middleware
 # ---------------------------------------------------------------------------
 
-class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.scheme == "http":
-            url = request.url.replace(scheme="https")
-            return RedirectResponse(url=str(url), status_code=301)
-        return await call_next(request)
+class HTTPSRedirectMiddleware:
+    """Pure ASGI middleware for HTTPS redirect that skips WebSocket connections."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            from starlette.datastructures import URL
+            url = URL(scope=scope)
+            if url.scheme == "http":
+                redirect_url = url.replace(scheme="https")
+                response = RedirectResponse(url=str(redirect_url), status_code=301)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 # ---------------------------------------------------------------------------
@@ -211,26 +243,52 @@ def create_app() -> FastAPI:
             storage_uri=settings.redis.url,
         )
         app.state.limiter = limiter
-        app.add_middleware(SlowAPIMiddleware)
+
+        # Wrap SlowAPIMiddleware so it skips WebSocket connections
+        # (SlowAPIMiddleware extends BaseHTTPMiddleware which breaks WS)
+        class _WSafeSlowAPI:
+            def __init__(self, app):
+                self._ws_app = app
+                self._http_app = SlowAPIMiddleware(app)
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    await self._ws_app(scope, receive, send)
+                else:
+                    await self._http_app(scope, receive, send)
+
+        app.add_middleware(_WSafeSlowAPI)
 
         # Stricter limit on auth endpoints (login, register)
+        # Uses pure ASGI middleware to avoid BaseHTTPMiddleware breaking WS
         _login_limiter = _build_login_limiter()
 
-        @app.middleware("http")
-        async def login_rate_limit(request: Request, call_next):
-            if request.method == "POST" and request.url.path in (
-                "/api/auth/jwt/login",
-                "/api/auth/register",
-            ):
-                client_ip = _get_client_ip(request)
-                if not _login_limiter.test(client_ip):
-                    return Response(
-                        content='{"detail":"Too many login attempts. Try again later."}',
-                        status_code=429,
-                        media_type="application/json",
-                    )
-                _login_limiter.hit(client_ip)
-            return await call_next(request)
+        class _LoginRateLimitMiddleware:
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
+                request = Request(scope, receive)
+                if request.method == "POST" and request.url.path in (
+                    "/api/auth/jwt/login",
+                    "/api/auth/register",
+                ):
+                    client_ip = _get_client_ip(request)
+                    if not _login_limiter.test(client_ip):
+                        response = Response(
+                            content='{"detail":"Too many login attempts. Try again later."}',
+                            status_code=429,
+                            media_type="application/json",
+                        )
+                        await response(scope, receive, send)
+                        return
+                    _login_limiter.hit(client_ip)
+                await self.app(scope, receive, send)
+
+        app.add_middleware(_LoginRateLimitMiddleware)
 
         @app.exception_handler(RateLimitExceeded)
         async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
@@ -306,7 +364,7 @@ def create_app() -> FastAPI:
         logger.info("Serving frontend static files from %s", static_dir)
         index_html = static_dir / "index.html"
 
-        @app.get("/{full_path:path}", include_in_schema=False)
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa_fallback(full_path: str):
             """Serve static files; fall back to index.html for SPA routes."""
             file_path = static_dir / full_path

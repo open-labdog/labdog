@@ -151,9 +151,29 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 host.sync_status = SyncStatus.in_sync if runner.status == "successful" else SyncStatus.error
                 host.last_sync_at = datetime.now(timezone.utc)
 
-                # Save the applied rules as collected state
-                if runner.status == "successful" and merged_rules:
+                # Collect actual state from host so it matches what collect-state returns
+                if runner.status == "successful":
+                    from app.sync.collector import collect_current_rules
+
                     now = datetime.now(timezone.utc)
+                    backend_str = (
+                        host.firewall_backend.value
+                        if hasattr(host.firewall_backend, "value")
+                        else str(host.firewall_backend)
+                    )
+                    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+                    ssh_key = key_result.scalar_one()
+                    private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+
+                    try:
+                        collected = await collect_current_rules(
+                            host.ip_address, host.ssh_port, private_pem,
+                            backend_str, ssh_user=ssh_key.ssh_user,
+                        )
+                        collected_state = [asdict(r) for r in collected]
+                    except Exception:
+                        collected_state = None
+
                     hms_result = await db.execute(
                         select(HostModuleStatus).where(
                             HostModuleStatus.host_id == host_id,
@@ -164,7 +184,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     if hms is None:
                         hms = HostModuleStatus(host_id=host_id, module_type="firewall")
                         db.add(hms)
-                    hms.collected_state = [asdict(r) for r in merged_rules]
+                    if collected_state is not None:
+                        hms.collected_state = collected_state
                     hms.collected_at = now
                     hms.sync_status = "in_sync"
                     hms.error_message = None

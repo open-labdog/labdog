@@ -28,12 +28,13 @@ services:
     restart: unless-stopped
 
   barricade:
+    container_name: barricade
     image: barricade:latest
     environment:
       BARRICADE_DATABASE__URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
       BARRICADE_REDIS__URL: redis://redis:6379/0
-      BARRICADE_SECURITY__SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set}
-      BARRICADE_SECURITY__ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY must be set}
+      BARRICADE_SECURITY__SECRET_KEY: "JqQ0wEPKk/u5DFmUuAeBCjAlK9ML2eG/KYNL32VGvkc="
+      BARRICADE_SECURITY__ENCRYPTION_KEY: "JqQ0wEPKk/u5DFmUuAeBCjAlK9ML2eG/KYNL32VGvkc="
       BARRICADE_SECURITY__BARRICADE_SERVER_IP: ${BARRICADE_SERVER_IP:-127.0.0.1}
     ports:
       - "8000:8000"

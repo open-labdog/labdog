@@ -9,8 +9,7 @@ from app.models.base import Base
 
 class FirewallBackend(str, enum.Enum):
     nftables = "nftables"
-    firewalld = "firewalld"
-    ufw = "ufw"
+    iptables = "iptables"
     unknown = "unknown"
 
 

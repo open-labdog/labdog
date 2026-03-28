@@ -4,20 +4,17 @@ import asyncssh
 from app.rules.model import FirewallRuleSpec
 from app.ssh_utils import ssh_connect
 from app.sync.parsers.nftables import parse_nftables_json
-from app.sync.parsers.firewalld import parse_firewalld_output
-from app.sync.parsers.ufw import parse_ufw_rules
+from app.sync.parsers.iptables import parse_iptables_save
 
 # Commands per firewall backend
 _COMMANDS = {
     "nftables": "sudo /usr/sbin/nft -j list ruleset",
-    "firewalld": "sudo /usr/sbin/firewall-cmd --list-all",
-    "ufw": "cat /etc/ufw/user.rules",
+    "iptables": "sudo iptables-save",
 }
 
 _PARSERS = {
     "nftables": parse_nftables_json,
-    "firewalld": parse_firewalld_output,
-    "ufw": parse_ufw_rules,
+    "iptables": parse_iptables_save,
 }
 
 
@@ -34,7 +31,7 @@ async def collect_current_rules(
         host_ip: Target host IP address
         ssh_port: SSH port
         private_key_pem: Decrypted PEM-encoded private key
-        firewall_backend: One of "nftables", "firewalld", "ufw"
+        firewall_backend: One of "nftables", "iptables"
         ssh_user: SSH username (default: root)
 
     Returns:

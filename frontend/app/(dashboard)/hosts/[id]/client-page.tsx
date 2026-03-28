@@ -459,7 +459,7 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
         <div>
           <h3 className="text-sm font-semibold text-amber-400">No Firewall Detected</h3>
           <p className="text-xs text-slate-400 mt-1">
-            This host has no supported firewall (nftables, firewalld, or ufw). Install nftables to enable firewall management.
+            This host has no supported firewall. Install nftables to enable firewall management.
           </p>
           {status && <p className="text-xs text-slate-300 mt-2">{status}</p>}
         </div>
