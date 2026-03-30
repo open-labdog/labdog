@@ -626,7 +626,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -706,6 +706,27 @@ export default function HostDetailPage() {
     invalidateKeys: [["host", id], ["host-effective-rules", id]],
     onSuccess: () => setEditOpen(false),
   })
+  const [addGroupOpen, setAddGroupOpen] = useState(false)
+  const [addGroupSearch, setAddGroupSearch] = useState("")
+  const [addGroupSelected, setAddGroupSelected] = useState<Set<number>>(new Set())
+  const [removeGroupConfirm, setRemoveGroupConfirm] = useState<number | null>(null)
+  const groupMembershipMutation = useApiMutation({
+    mutationFn: (data: { group_ids: number[] }) =>
+      apiFetch(`/api/hosts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+    invalidateKeys: [
+      ["host", id],
+      ["host-effective-rules", id],
+      ["host-effective-services", id],
+      ["host-effective-hosts-entries", id],
+      ["host-effective-linux-users", id],
+      ["host-effective-linux-groups", id],
+      ["host-effective-cron-jobs", id],
+      ["host-effective-packages", id],
+      ["host-effective-repos", id],
+      ["host-effective-resolver", id],
+    ],
+  })
+
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -1353,6 +1374,16 @@ export default function HostDetailPage() {
           Overview
         </button>
         <button
+          onClick={() => setActiveTab("groups")}
+          className={`px-4 py-2 text-sm font-medium transition-colors ${
+            activeTab === "groups"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Groups
+        </button>
+        <button
           onClick={() => setActiveTab("rules")}
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             activeTab === "rules"
@@ -1499,6 +1530,196 @@ export default function HostDetailPage() {
           {host && <ProxmoxVMSection hostId={id} queryClient={queryClient} />}
           {host && <WorkflowStatusSection hostId={id} />}
         </>
+      )}
+
+      {activeTab === "groups" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Group Memberships</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Groups this host belongs to. Rules, services, and other configurations are inherited from these groups.
+              </p>
+            </div>
+            <Button size="sm" onClick={() => { setAddGroupOpen(true); setAddGroupSelected(new Set()); setAddGroupSearch("") }}>
+              Add to Group
+            </Button>
+          </div>
+
+          {host && groups && (() => {
+            const memberGroups = groups.filter(g => (host.group_ids ?? []).includes(g.id))
+              .sort((a, b) => a.priority - b.priority)
+            return memberGroups.length === 0 ? (
+              <div className="text-center py-12 text-slate-400">
+                This host is not a member of any groups.
+              </div>
+            ) : (
+              <div className="rounded-lg border border-slate-700 bg-slate-900">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-slate-700">
+                      <TableHead>Name</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {memberGroups.map(g => (
+                      <TableRow key={g.id} className="border-slate-700">
+                        <TableCell>
+                          <Link href={`/groups/${g.id}`} className="text-blue-400 hover:underline">
+                            {g.name}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
+                        <TableCell className="text-slate-300">{g.priority}</TableCell>
+                        <TableCell className="text-slate-400">{g.description ?? "\u2014"}</TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-400 hover:text-red-300"
+                            onClick={() => setRemoveGroupConfirm(g.id)}
+                          >
+                            Remove
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )
+          })()}
+
+          {/* Add to Group Dialog */}
+          <Dialog open={addGroupOpen} onOpenChange={setAddGroupOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add to Group</DialogTitle>
+              </DialogHeader>
+              <div className="mt-2 space-y-3">
+                <Input
+                  placeholder="Search by name or category..."
+                  value={addGroupSearch}
+                  onChange={(e) => setAddGroupSearch(e.target.value)}
+                />
+
+                {(() => {
+                  const currentIds = host?.group_ids ?? []
+                  const available = (groups ?? []).filter(g => !currentIds.includes(g.id))
+                  const q = addGroupSearch.toLowerCase()
+                  const filtered = q
+                    ? available.filter(g => g.name.toLowerCase().includes(q) || (g.category ?? "").toLowerCase().includes(q))
+                    : available
+
+                  return filtered.length === 0 ? (
+                    <p className="text-slate-400 text-sm py-4 text-center">
+                      {addGroupSearch ? "No matching groups found." : "This host already belongs to all groups."}
+                    </p>
+                  ) : (
+                    <div className="rounded-lg border border-slate-700 max-h-[360px] overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="border-slate-700">
+                            <TableHead className="w-10">
+                              <input
+                                type="checkbox"
+                                checked={addGroupSelected.size === filtered.length && filtered.length > 0}
+                                onChange={() => {
+                                  if (addGroupSelected.size === filtered.length && filtered.length > 0) {
+                                    setAddGroupSelected(new Set())
+                                  } else {
+                                    setAddGroupSelected(new Set(filtered.map(g => g.id)))
+                                  }
+                                }}
+                                className="rounded border-slate-600"
+                              />
+                            </TableHead>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Priority</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filtered.map((g) => (
+                            <TableRow
+                              key={g.id}
+                              className="border-slate-700 cursor-pointer hover:bg-slate-800"
+                              onClick={() => {
+                                setAddGroupSelected(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(g.id)) next.delete(g.id)
+                                  else next.add(g.id)
+                                  return next
+                                })
+                              }}
+                            >
+                              <TableCell>
+                                <input
+                                  type="checkbox"
+                                  checked={addGroupSelected.has(g.id)}
+                                  onChange={(e) => e.stopPropagation()}
+                                  className="rounded border-slate-600"
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium text-white">{g.name}</TableCell>
+                              <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
+                              <TableCell className="text-slate-300">{g.priority}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )
+                })()}
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-slate-400 text-sm">
+                    {addGroupSelected.size} group{addGroupSelected.size !== 1 ? "s" : ""} selected
+                  </span>
+                  <Button
+                    disabled={addGroupSelected.size === 0 || groupMembershipMutation.isPending}
+                    onClick={() => {
+                      const currentIds = host?.group_ids ?? []
+                      groupMembershipMutation.mutate(
+                        { group_ids: [...currentIds, ...Array.from(addGroupSelected)] },
+                        {
+                          onSuccess: () => {
+                            setAddGroupOpen(false)
+                            setAddGroupSelected(new Set())
+                            setAddGroupSearch("")
+                          },
+                        }
+                      )
+                    }}
+                  >
+                    {groupMembershipMutation.isPending ? "Adding..." : "Add to Group"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          <ConfirmDialog
+            open={removeGroupConfirm !== null}
+            onOpenChange={(open) => { if (!open) setRemoveGroupConfirm(null) }}
+            title="Remove from Group"
+            description={`Remove this host from "${groups?.find(g => g.id === removeGroupConfirm)?.name ?? ""}"? The host will no longer inherit rules and configurations from this group.`}
+            confirmLabel="Remove"
+            variant="destructive"
+            loading={groupMembershipMutation.isPending}
+            onConfirm={() => {
+              const currentIds = host?.group_ids ?? []
+              groupMembershipMutation.mutate(
+                { group_ids: currentIds.filter(gid => gid !== removeGroupConfirm) },
+                { onSuccess: () => setRemoveGroupConfirm(null) }
+              )
+            }}
+          />
+        </div>
       )}
 
       {activeTab === "rules" && (
