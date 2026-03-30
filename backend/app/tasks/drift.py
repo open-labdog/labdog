@@ -24,6 +24,9 @@ def check_all_drift():
             result = await db.execute(select(Host).where(Host.drift_check_enabled == True))
             hosts = result.scalars().all()
             for host in hosts:
+                backend = host.firewall_backend.value if hasattr(host.firewall_backend, "value") else host.firewall_backend
+                if backend == "unknown":
+                    continue
                 try:
                     from app.api.drift import _get_desired_rules_for_host
 
@@ -64,15 +67,17 @@ def check_all_drift():
                                     host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
+                    await db.commit()
                 except (OSError, asyncssh.Error, TimeoutError, SSHFetchError):
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.unknown
                     host.last_drift_check_at = datetime.now(timezone.utc)
+                    await db.commit()
                 except Exception:
                     from app.models.host import SyncStatus
                     host.sync_status = SyncStatus.error
                     host.last_drift_check_at = datetime.now(timezone.utc)
-            await db.commit()
+                    await db.commit()
             return len(hosts)
 
     count = asyncio.run(_run())

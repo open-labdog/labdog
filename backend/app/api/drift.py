@@ -60,6 +60,21 @@ async def check_host_drift(
     host = host_result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
+    backend = host.firewall_backend.value if hasattr(host.firewall_backend, "value") else host.firewall_backend
+    if backend == "unknown":
+        from app.models.host import SyncStatus
+        host.sync_status = SyncStatus.unknown
+        host.last_drift_check_at = datetime.now(timezone.utc)
+        await db.commit()
+        return DriftResponse(
+            host_id=host_id,
+            status="unknown",
+            has_changes=False,
+            add_count=0,
+            remove_count=0,
+            error_message="Firewall backend not detected",
+            checked_at=datetime.now(timezone.utc).isoformat(),
+        )
     desired = await _get_desired_rules_for_host(host_id, db, host_source_ip=host.barricade_source_ip)
     result = await check_drift(host_id, desired, db)
     host.sync_status = result.status
@@ -87,13 +102,33 @@ async def check_group_drift(
     )
     host_ids = [r[0] for r in memberships.all()]
     results = []
+    from app.models.host import SyncStatus
+
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
+        backend = host.firewall_backend.value if hasattr(host.firewall_backend, "value") else host.firewall_backend
+        if backend == "unknown":
+            host.sync_status = SyncStatus.unknown
+            host.last_drift_check_at = datetime.now(timezone.utc)
+            await db.commit()
+            results.append(
+                DriftResponse(
+                    host_id=hid,
+                    status="unknown",
+                    has_changes=False,
+                    add_count=0,
+                    remove_count=0,
+                    error_message="Firewall backend not detected",
+                    checked_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+            continue
         desired = await _get_desired_rules_for_host(hid, db, host_source_ip=host.barricade_source_ip)
         result = await check_drift(hid, desired, db)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(timezone.utc)
+        await db.commit()
         results.append(
             DriftResponse(
                 host_id=hid,
@@ -105,7 +140,6 @@ async def check_group_drift(
                 checked_at=result.checked_at.isoformat(),
             )
         )
-    await db.commit()
     return results
 
 

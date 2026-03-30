@@ -116,6 +116,20 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
                         f"Ansible runner status: {runner.status}, rc: {runner.rc}"
                     )
 
+                # Update host-level sync status
+                from app.models.host import SyncStatus
+
+                host_result = await db.execute(
+                    select(Host).where(Host.id == host_id)
+                )
+                host_obj = host_result.scalar_one()
+                host_obj.sync_status = (
+                    SyncStatus.in_sync
+                    if runner.status == "successful"
+                    else SyncStatus.error
+                )
+                host_obj.last_sync_at = datetime.now(timezone.utc)
+
                 status_result = await db.execute(
                     select(HostModuleStatus).where(
                         HostModuleStatus.host_id == host_id,
