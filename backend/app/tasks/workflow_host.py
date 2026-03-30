@@ -272,7 +272,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         step_output[step_enum.value] = result
 
                 except Exception as exc:
-                    logger.exception(
+                    logger.error(
                         "workflow_host: host_run %d — step %s failed: %s",
                         host_run_id,
                         step_enum.value,

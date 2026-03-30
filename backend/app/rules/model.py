@@ -1,5 +1,27 @@
+import ipaddress
 from dataclasses import dataclass
 from typing import Optional
+
+
+def _normalize_cidr(cidr: Optional[str]) -> Optional[str]:
+    """Normalize CIDR to a consistent format.
+
+    Bare IPs get a host prefix (e.g. '10.0.0.1' -> '10.0.0.1/32').
+    """
+    if cidr is None:
+        return None
+    try:
+        net = ipaddress.ip_network(cidr, strict=False)
+        return str(net)
+    except ValueError:
+        return cidr
+
+
+def _normalize_port_end(port_start: Optional[int], port_end: Optional[int]) -> Optional[int]:
+    """Normalize port_end: treat port_end == port_start as None (single port)."""
+    if port_end is not None and port_end == port_start:
+        return None
+    return port_end
 
 
 @dataclass
@@ -32,8 +54,9 @@ class FirewallRuleSpec:
             self.action == other.action
             and self.protocol == other.protocol
             and self.direction == other.direction
-            and self.source_cidr == other.source_cidr
-            and self.destination_cidr == other.destination_cidr
+            and _normalize_cidr(self.source_cidr) == _normalize_cidr(other.source_cidr)
+            and _normalize_cidr(self.destination_cidr) == _normalize_cidr(other.destination_cidr)
             and self.port_start == other.port_start
-            and self.port_end == other.port_end
+            and _normalize_port_end(self.port_start, self.port_end)
+            == _normalize_port_end(other.port_start, other.port_end)
         )
