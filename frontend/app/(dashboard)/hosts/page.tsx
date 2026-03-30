@@ -87,7 +87,8 @@ export default function HostsPage() {
         if (!sections.has(key)) sections.set(key, { group: null, hosts: [] })
         sections.get(key)!.hosts.push(host)
       } else {
-        for (const gid of host.group_ids) {
+        const gids = typeof filterGroup === "number" ? [filterGroup] : host.group_ids
+        for (const gid of gids) {
           const g = groupMap.get(gid)
           const key = String(gid)
           if (!sections.has(key)) sections.set(key, { group: g ?? null, hosts: [] })
