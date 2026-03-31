@@ -68,6 +68,7 @@ async def run_verification(
     load_avg: float = 0.0
     disk_pct: int = 0
     journal_errors: str = ""
+    unmanaged_services: list[str] = []
     ai_result: dict[str, Any] | None = None
 
     # ------------------------------------------------------------------
@@ -228,6 +229,26 @@ async def run_verification(
             logger.warning("verify: journal check failed on %s: %s", host.ip_address, exc)
             journal_errors = f"journal read error: {exc}"
 
+        # ------------------------------------------------------------------
+        # Unmanaged service detection
+        # ------------------------------------------------------------------
+        try:
+            active_result = await conn.run(
+                "systemctl list-units --type=service --state=active --no-pager --plain --no-legend",
+                check=False,
+            )
+            managed_names = {
+                s.service_name for s in effective_services
+            }
+            for line in (active_result.stdout or "").splitlines():
+                parts = line.strip().split(maxsplit=4)
+                if len(parts) >= 1:
+                    unit = parts[0].removesuffix(".service")
+                    if unit not in managed_names:
+                        unmanaged_services.append(unit)
+        except Exception as exc:
+            logger.warning("verify: unmanaged service scan failed on %s: %s", host.ip_address, exc)
+
     finally:
         try:
             conn.close()
@@ -248,21 +269,27 @@ async def run_verification(
         "load": load_avg,
         "disk_pct": disk_pct,
         "journal_errors": journal_errors,
+        "unmanaged_services": unmanaged_services,
     }
 
     # ------------------------------------------------------------------
-    # AI verification (only when hard checks pass and prompt is provided)
+    # AI verification (when hard checks pass and prompt or journal errors exist)
     # ------------------------------------------------------------------
-    if hard_passed and verification_prompt:
+    should_run_ai = hard_passed and (verification_prompt or journal_errors)
+    if should_run_ai:
         from app.workflows.steps.ai_verify import run_ai_verification
 
+        prompt = verification_prompt or (
+            "Analyze the following system journal errors and determine if any "
+            "indicate a critical issue that needs attention."
+        )
         system_state: dict[str, Any] = {
             "host_hostname": getattr(host, "hostname", host.ip_address),
             "host_ip": host.ip_address,
             "hard_checks": hard_checks,
         }
         try:
-            ai_result = run_ai_verification(system_state, verification_prompt)
+            ai_result = run_ai_verification(system_state, prompt)
         except Exception as exc:
             logger.warning("verify: AI verification raised an exception: %s", exc)
             ai_result = {"passed": True, "output": f"AI verification error (treated as pass): {exc}"}
