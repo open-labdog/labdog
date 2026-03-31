@@ -3,7 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, RefreshCwIcon, PlayIcon, X, ShieldIcon } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, PlayIcon, X, ShieldIcon, ChevronDownIcon, ChevronRightIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -483,6 +483,8 @@ function ProxmoxVMSection({
   hostId: number
   queryClient: ReturnType<typeof useQueryClient>
 }) {
+  const [expanded, setExpanded] = useState(false)
+
   const {
     data: mapping,
     isLoading,
@@ -499,6 +501,10 @@ function ProxmoxVMSection({
     },
     retry: false,
   })
+
+  useEffect(() => {
+    if (mapping) setExpanded(true)
+  }, [mapping])
 
   const discoverMutation = useMutation({
     mutationFn: async () => {
@@ -517,13 +523,25 @@ function ProxmoxVMSection({
 
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-0">
-      <div className="flex items-center justify-between pb-3 mb-1 border-b border-slate-800">
-        <h3 className="text-sm font-semibold text-slate-200">Proxmox VM</h3>
+      <div
+        className="flex items-center justify-between pb-3 mb-1 border-b border-slate-800 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="flex items-center gap-2">
+          {expanded ? <ChevronDownIcon className="w-4 h-4 text-slate-400" /> : <ChevronRightIcon className="w-4 h-4 text-slate-400" />}
+          <h3 className="text-sm font-semibold text-slate-200">Proxmox VM</h3>
+          {!expanded && mapping && (
+            <span className="text-slate-400 text-xs ml-1">{mapping.vm_name} (VMID {mapping.vmid})</span>
+          )}
+          {!expanded && !isLoading && !mapping && (
+            <span className="text-slate-500 text-xs ml-1">No mapping</span>
+          )}
+        </div>
         <Button
           size="sm"
           variant="outline"
           disabled={discoverMutation.isPending || isLoading}
-          onClick={() => discoverMutation.mutate()}
+          onClick={(e) => { e.stopPropagation(); discoverMutation.mutate() }}
           className="h-7 text-xs"
         >
           <RefreshCwIcon className={`w-3 h-3 mr-1 ${discoverMutation.isPending ? "animate-spin" : ""}`} />
@@ -531,40 +549,102 @@ function ProxmoxVMSection({
         </Button>
       </div>
 
-      {isLoading && (
-        <div className="py-3 text-slate-400 text-sm">Loading...</div>
-      )}
-
-      {!isLoading && error && (
-        <div className="py-3 text-red-400 text-sm">Failed to load VM mapping</div>
-      )}
-
-      {discoverMutation.error && (
-        <div className="py-2 text-amber-400 text-xs">{(discoverMutation.error as Error).message}</div>
-      )}
-
-      {!isLoading && !error && mapping === null && !discoverMutation.isPending && (
-        <div className="py-3 text-slate-400 text-sm">
-          No VM mapping found. Click Discover to scan Proxmox nodes for this host.
-        </div>
-      )}
-
-      {!isLoading && !error && mapping && (
+      {expanded && (
         <>
-          <InfoRow label="VM Name">
-            <span className="font-mono">{mapping.vm_name}</span>
-          </InfoRow>
-          <InfoRow label="VMID">
-            <span className="font-mono">{mapping.vmid}</span>
-          </InfoRow>
-          <InfoRow label="PVE Node">
-            <span className="font-mono">{mapping.pve_node_name}</span>
-          </InfoRow>
-          <InfoRow label="Discovered">
-            {new Date(mapping.discovered_at).toLocaleString()}
-          </InfoRow>
+          {isLoading && (
+            <div className="py-3 text-slate-400 text-sm">Loading...</div>
+          )}
+
+          {!isLoading && error && (
+            <div className="py-3 text-red-400 text-sm">Failed to load VM mapping</div>
+          )}
+
+          {discoverMutation.error && (
+            <div className="py-2 text-amber-400 text-xs">{(discoverMutation.error as Error).message}</div>
+          )}
+
+          {!isLoading && !error && mapping === null && !discoverMutation.isPending && (
+            <div className="py-3 text-slate-400 text-sm">
+              No VM mapping found. Click Discover to scan Proxmox nodes for this host.
+            </div>
+          )}
+
+          {!isLoading && !error && mapping && (
+            <>
+              <InfoRow label="VM Name">
+                <span className="font-mono">{mapping.vm_name}</span>
+              </InfoRow>
+              <InfoRow label="VMID">
+                <span className="font-mono">{mapping.vmid}</span>
+              </InfoRow>
+              <InfoRow label="PVE Node">
+                <span className="font-mono">{mapping.pve_node_name}</span>
+              </InfoRow>
+              <InfoRow label="Discovered">
+                {new Date(mapping.discovered_at).toLocaleString()}
+              </InfoRow>
+            </>
+          )}
         </>
       )}
+    </div>
+  )
+}
+
+function SyncStatusMessage({
+  host,
+  modules,
+}: {
+  host: import("@/lib/types").Host
+  modules: import("@/lib/types").ModuleCurrentState[] | undefined
+}) {
+  const outOfSync = modules?.filter(m => m.sync_status === "out_of_sync") ?? []
+  const errored = modules?.filter(m => m.error_message) ?? []
+
+  if (host.sync_status === "in_sync") {
+    return (
+      <div className="rounded-lg border border-green-700/50 bg-green-950/20 px-4 py-3 flex items-center gap-2">
+        <span className="text-green-400 text-sm">All modules are in sync with the desired configuration.</span>
+      </div>
+    )
+  }
+
+  if (host.sync_status === "out_of_sync") {
+    const names = outOfSync.map(m => m.module_type).join(", ")
+    return (
+      <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3">
+        <span className="text-amber-400 text-sm">
+          Configuration drift detected. {outOfSync.length} module(s) out of sync{names ? `: ${names}` : ""}.
+        </span>
+      </div>
+    )
+  }
+
+  if (host.sync_status === "error") {
+    const msgs = errored.map(m => `${m.module_type}: ${m.error_message}`).join("; ")
+    return (
+      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3">
+        <span className="text-red-400 text-sm">
+          Sync check encountered errors.{msgs ? ` ${msgs}` : ""}
+        </span>
+      </div>
+    )
+  }
+
+  if (host.sync_status === "pending") {
+    return (
+      <div className="rounded-lg border border-blue-700/50 bg-blue-950/20 px-4 py-3">
+        <span className="text-blue-400 text-sm">A sync operation is currently in progress.</span>
+      </div>
+    )
+  }
+
+  // unknown
+  return (
+    <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
+      <span className="text-slate-400 text-sm">
+        Sync status has not been checked yet. Run a drift check or collect state to determine status.
+      </span>
     </div>
   )
 }
@@ -694,6 +774,30 @@ export default function HostDetailPage() {
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
   const [syncing, setSyncing] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [moduleSyncing, setModuleSyncing] = useState(false)
+
+  const tabQueryKeys: Record<string, string[][]> = {
+    overview: [["host", String(id)], ["host-current-state", String(id)]],
+    groups: [["host", String(id)], ["groups"]],
+    rules: [["host-effective-rules", String(id)], ["host-current-state", String(id)]],
+    services: [["host-effective-services", String(id)], ["host-service-overrides", String(id)]],
+    "hosts-file": [["host-effective-hosts-entries", String(id)], ["host-hosts-overrides", String(id)]],
+    users: [["host-effective-linux-users", String(id)], ["host-effective-linux-groups", String(id)]],
+    "cron-jobs": [["host-effective-cron-jobs", String(id)], ["host-cron-overrides", String(id)]],
+    packages: [["host-effective-packages", String(id)], ["host-package-overrides", String(id)], ["host-effective-repos", String(id)]],
+    dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
+  }
+
+  const moduleSyncEndpoints: Record<string, string> = {
+    rules: `/api/sync/hosts/${id}/sync`,
+    services: `/api/services/hosts/${id}/sync`,
+    "hosts-file": `/api/hosts-mgmt/hosts/${id}/sync`,
+    users: `/api/linux-users/hosts/${id}/sync`,
+    "cron-jobs": `/api/cron/hosts/${id}/sync`,
+    packages: `/api/packages/hosts/${id}/sync`,
+    dns: `/api/resolver/hosts/${id}/sync`,
+  }
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -1069,6 +1173,57 @@ export default function HostDetailPage() {
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
   const [protectedTarget, setProtectedTarget] = useState<{ service: string; action: string } | null>(null)
 
+  // Service discovery modal state
+  const [discoveryOpen, setDiscoveryOpen] = useState(false)
+  const [discoveryLoading, setDiscoveryLoading] = useState(false)
+  const [discoveryServices, setDiscoveryServices] = useState<LiveService[]>([])
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
+  const [discoveryFilter, setDiscoveryFilter] = useState("")
+  const [discoverySelected, setDiscoverySelected] = useState<Set<string>>(new Set())
+  const [discoveryHideManaged, setDiscoveryHideManaged] = useState(true)
+  const [discoveryAdding, setDiscoveryAdding] = useState(false)
+
+  async function openDiscovery() {
+    setDiscoveryOpen(true)
+    setDiscoveryLoading(true)
+    setDiscoveryError(null)
+    setDiscoverySelected(new Set())
+    setDiscoveryFilter("")
+    try {
+      const data = await apiFetch<LiveService[]>(`/api/services/hosts/${id}/inventory`)
+      setDiscoveryServices(data)
+    } catch (e) {
+      setDiscoveryError(e instanceof Error ? e.message : "Failed to load services")
+    }
+    setDiscoveryLoading(false)
+  }
+
+  async function addDiscoveredServices() {
+    setDiscoveryAdding(true)
+    try {
+      for (const unit of discoverySelected) {
+        const svc = discoveryServices.find(s => s.unit === unit)
+        const isActive = svc?.active_state === "active"
+        await apiFetch(`/api/hosts/${id}/services`, {
+          method: "POST",
+          body: JSON.stringify({
+            service_name: unit,
+            state: isActive ? "running" : "stopped",
+            enabled: isActive,
+            priority: 100,
+            comment: "Added via service discovery",
+          }),
+        })
+      }
+      await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
+      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
+      setDiscoveryOpen(false)
+    } catch (e) {
+      setDiscoveryError(e instanceof Error ? e.message : "Failed to add services")
+    }
+    setDiscoveryAdding(false)
+  }
+
   function openSvcDialog() {
     setSvcName("")
     setSvcState("running")
@@ -1210,6 +1365,25 @@ export default function HostDetailPage() {
             >
               <TerminalIcon className="w-4 h-4 mr-1" />
               Terminal
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={refreshing || !host.ssh_key_id}
+              title={host.ssh_key_id ? "Refresh data for current tab" : "No SSH key assigned"}
+              onClick={async () => {
+                setRefreshing(true)
+                try {
+                  await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
+                  for (const key of tabQueryKeys[activeTab] ?? []) {
+                    await queryClient.invalidateQueries({ queryKey: key })
+                  }
+                } catch { /* ignore */ }
+                setRefreshing(false)
+              }}
+            >
+              <RefreshCwIcon className={`w-4 h-4 mr-1 ${refreshing ? "animate-spin" : ""}`} />
+              Refresh
             </Button>
             {activeTab === "overview" && (
               <>
@@ -1528,6 +1702,7 @@ export default function HostDetailPage() {
             </div>
           )}
           {host && <ProxmoxVMSection hostId={id} queryClient={queryClient} />}
+          {host && <SyncStatusMessage host={host} modules={currentStateQuery.data} />}
           {host && <WorkflowStatusSection hostId={id} />}
         </>
       )}
@@ -1724,11 +1899,30 @@ export default function HostDetailPage() {
 
       {activeTab === "rules" && (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
-            <p className="text-slate-400 text-sm mt-1">
-              Combined rules applied to this host from all assigned groups, in priority order.
-            </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Combined rules applied to this host from all assigned groups, in priority order.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={moduleSyncing || !host?.ssh_key_id}
+              onClick={async () => {
+                setModuleSyncing(true)
+                try {
+                  await apiFetch(moduleSyncEndpoints["rules"], { method: "POST" })
+                  for (const key of tabQueryKeys["rules"]) await queryClient.invalidateQueries({ queryKey: key })
+                  await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                } catch { /* ignore */ }
+                setModuleSyncing(false)
+              }}
+            >
+              <PlayIcon className="w-4 h-4 mr-1" />
+              {moduleSyncing ? "Syncing..." : "Sync Rules"}
+            </Button>
           </div>
 
           {showRulesLoading && <TableSkeleton rows={3} columns={4} />}
@@ -1799,7 +1993,29 @@ export default function HostDetailPage() {
                 Services applied to this host from groups and host-level overrides.
               </p>
             </div>
-            <Button onClick={openSvcDialog}>Add Override</Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["services"], { method: "POST" })
+                    for (const key of tabQueryKeys["services"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <PlayIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync Services"}
+              </Button>
+              <Button variant="outline" size="sm" disabled={!host?.ssh_key_id} onClick={openDiscovery}>
+                Discover Services
+              </Button>
+              <Button onClick={openSvcDialog}>Add Override</Button>
+            </div>
           </div>
 
           {svcDeleteMutation.error && (
@@ -2110,6 +2326,145 @@ export default function HostDetailPage() {
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* Service Discovery Dialog */}
+          <Dialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
+            <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Discover Services</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 mt-2 flex-1 overflow-hidden flex flex-col">
+                {discoveryLoading && (
+                  <div className="py-8 text-slate-400 text-sm text-center">Loading services from host via SSH...</div>
+                )}
+
+                {discoveryError && (
+                  <div className="text-red-400 text-sm">{discoveryError}</div>
+                )}
+
+                {!discoveryLoading && discoveryServices.length > 0 && (() => {
+                  const q = discoveryFilter.toLowerCase()
+                  const filtered = discoveryServices
+                    .filter(s => !discoveryHideManaged || !s.is_managed)
+                    .filter(s => !q || s.unit.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+                  return (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          placeholder="Filter services..."
+                          value={discoveryFilter}
+                          onChange={(e) => setDiscoveryFilter(e.target.value)}
+                          className="max-w-xs"
+                        />
+                        <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={discoveryHideManaged}
+                            onChange={(e) => setDiscoveryHideManaged(e.target.checked)}
+                            className="rounded border-slate-600"
+                          />
+                          Hide managed
+                        </label>
+                        <span className="text-slate-500 text-xs ml-auto">
+                          {filtered.length} services, {discoverySelected.size} selected
+                        </span>
+                      </div>
+                      <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="border-slate-700">
+                              <TableHead className="w-10">
+                                <input
+                                  type="checkbox"
+                                  checked={filtered.filter(s => !s.is_managed && !s.is_protected).length > 0 && filtered.filter(s => !s.is_managed && !s.is_protected).every(s => discoverySelected.has(s.unit))}
+                                  onChange={() => {
+                                    const eligible = filtered.filter(s => !s.is_managed && !s.is_protected)
+                                    if (eligible.every(s => discoverySelected.has(s.unit))) {
+                                      setDiscoverySelected(new Set())
+                                    } else {
+                                      setDiscoverySelected(new Set(eligible.map(s => s.unit)))
+                                    }
+                                  }}
+                                  className="rounded border-slate-600"
+                                />
+                              </TableHead>
+                              <TableHead>Service</TableHead>
+                              <TableHead>State</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead>Status</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {filtered.map((svc) => (
+                              <TableRow
+                                key={svc.unit}
+                                className={`border-slate-700 ${svc.is_managed || svc.is_protected ? "opacity-50" : "cursor-pointer hover:bg-slate-800"}`}
+                                onClick={() => {
+                                  if (svc.is_managed || svc.is_protected) return
+                                  setDiscoverySelected(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(svc.unit)) next.delete(svc.unit)
+                                    else next.add(svc.unit)
+                                    return next
+                                  })
+                                }}
+                              >
+                                <TableCell>
+                                  <input
+                                    type="checkbox"
+                                    checked={discoverySelected.has(svc.unit)}
+                                    disabled={svc.is_managed || svc.is_protected}
+                                    onChange={(e) => e.stopPropagation()}
+                                    className="rounded border-slate-600"
+                                  />
+                                </TableCell>
+                                <TableCell className="font-mono text-white text-sm">{svc.unit}</TableCell>
+                                <TableCell>
+                                  <Badge className={
+                                    svc.active_state === "active" ? "bg-green-600 text-white"
+                                      : svc.active_state === "failed" ? "bg-red-600 text-white"
+                                      : "bg-slate-600 text-white"
+                                  }>
+                                    {svc.active_state}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-slate-400 text-xs max-w-[250px] truncate">{svc.description}</TableCell>
+                                <TableCell>
+                                  {svc.is_managed && <Badge variant="outline" className="text-xs">Managed</Badge>}
+                                  {svc.is_protected && <Badge variant="outline" className="text-xs text-amber-400 border-amber-600">Protected</Badge>}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </>
+                  )
+                })()}
+
+                {!discoveryLoading && discoveryServices.length === 0 && !discoveryError && (
+                  <div className="text-slate-400 py-8 text-center">No services found on this host.</div>
+                )}
+
+                <div className="flex items-center justify-between pt-2 border-t border-slate-700">
+                  <span className="text-slate-400 text-sm">
+                    {discoverySelected.size > 0
+                      ? `${discoverySelected.size} service(s) will be added as host overrides (state matched to current)`
+                      : "Select unmanaged services to add"}
+                  </span>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => setDiscoveryOpen(false)}>Cancel</Button>
+                    <Button
+                      disabled={discoverySelected.size === 0 || discoveryAdding}
+                      onClick={addDiscoveredServices}
+                    >
+                      {discoveryAdding ? "Adding..." : `Add ${discoverySelected.size} Service(s)`}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 
@@ -2123,6 +2478,23 @@ export default function HostDetailPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["hosts-file"], { method: "POST" })
+                    for (const key of tabQueryKeys["hosts-file"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <PlayIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync"}
+              </Button>
               <Button
                 variant="outline"
                 onClick={fetchHostsPreview}
@@ -2326,6 +2698,23 @@ export default function HostDetailPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["users"], { method: "POST" })
+                    for (const key of tabQueryKeys["users"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <PlayIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync"}
+              </Button>
               <Button variant="outline" onClick={openLuDialog}>Add User Override</Button>
               <Button variant="outline" onClick={openLgDialog}>Add Group Override</Button>
             </div>
@@ -2709,12 +3098,20 @@ export default function HostDetailPage() {
             <div className="flex gap-2">
               <Button
                 variant="outline"
-                onClick={() => {
-                  queryClient.invalidateQueries({ queryKey: ["host-effective-cron-jobs", id] })
-                  queryClient.invalidateQueries({ queryKey: ["host-cron-overrides", id] })
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["cron-jobs"], { method: "POST" })
+                    for (const key of tabQueryKeys["cron-jobs"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
                 }}
               >
-                Refresh
+                <PlayIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync"}
               </Button>
               <Button onClick={openCjDialog}>Add Override</Button>
             </div>
@@ -2989,7 +3386,26 @@ export default function HostDetailPage() {
                 Packages applied to this host from groups and host-level overrides.
               </p>
             </div>
-            <Button onClick={openPpDialog}>Add Override</Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["packages"], { method: "POST" })
+                    for (const key of tabQueryKeys["packages"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <PlayIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync"}
+              </Button>
+              <Button onClick={openPpDialog}>Add Override</Button>
+            </div>
           </div>
 
           {ppDeleteMutation.error && (
@@ -3250,11 +3666,30 @@ export default function HostDetailPage() {
 
       {activeTab === "dns" && (
         <div className="space-y-6">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Effective DNS Resolver</h2>
-            <p className="text-slate-400 text-sm mt-1">
-              DNS resolver configuration applied to this host.
-            </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Effective DNS Resolver</h2>
+              <p className="text-slate-400 text-sm mt-1">
+                DNS resolver configuration applied to this host.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={moduleSyncing || !host?.ssh_key_id}
+              onClick={async () => {
+                setModuleSyncing(true)
+                try {
+                  await apiFetch(moduleSyncEndpoints["dns"], { method: "POST" })
+                  for (const key of tabQueryKeys["dns"]) await queryClient.invalidateQueries({ queryKey: key })
+                  await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                } catch { /* ignore */ }
+                setModuleSyncing(false)
+              }}
+            >
+              <PlayIcon className="w-4 h-4 mr-1" />
+              {moduleSyncing ? "Syncing..." : "Sync DNS"}
+            </Button>
           </div>
 
           {showResolverLoading && <CardSkeleton />}
