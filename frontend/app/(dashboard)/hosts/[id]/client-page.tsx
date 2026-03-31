@@ -601,7 +601,7 @@ function SyncStatusMessage({
   const outOfSync = modules?.filter(m => m.sync_status === "out_of_sync") ?? []
   const errored = modules?.filter(m => m.error_message) ?? []
 
-  if (host.sync_status === "in_sync") {
+  if (host.sync_status === "in_sync" || (host.sync_status === "out_of_sync" && outOfSync.length === 0)) {
     return (
       <div className="rounded-lg border border-green-700/50 bg-green-950/20 px-4 py-3 flex items-center gap-2">
         <span className="text-green-400 text-sm">All modules are in sync with the desired configuration.</span>
@@ -614,7 +614,7 @@ function SyncStatusMessage({
     return (
       <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3">
         <span className="text-amber-400 text-sm">
-          Configuration drift detected. {outOfSync.length} module(s) out of sync{names ? `: ${names}` : ""}.
+          Configuration drift detected. {outOfSync.length} module(s) out of sync: {names}.
         </span>
       </div>
     )
@@ -1369,16 +1369,14 @@ export default function HostDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              disabled={refreshing || !host.ssh_key_id}
-              title={host.ssh_key_id ? "Refresh data for current tab" : "No SSH key assigned"}
+              disabled={refreshing}
+              title="Refresh data for current tab"
               onClick={async () => {
                 setRefreshing(true)
-                try {
-                  await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
-                  for (const key of tabQueryKeys[activeTab] ?? []) {
-                    await queryClient.invalidateQueries({ queryKey: key })
-                  }
-                } catch { /* ignore */ }
+                for (const key of tabQueryKeys[activeTab] ?? []) {
+                  await queryClient.invalidateQueries({ queryKey: key })
+                }
+                await queryClient.invalidateQueries({ queryKey: ["host", String(id)] })
                 setRefreshing(false)
               }}
             >
@@ -1664,7 +1662,13 @@ export default function HostDetailPage() {
                 <FirewallBadge backend={host.firewall_backend} />
               </InfoRow>
               <InfoRow label="Sync Status">
-                <SyncStatusBadge status={host.sync_status} />
+                <SyncStatusBadge status={
+                  host.sync_status === "out_of_sync" &&
+                  currentStateQuery.data &&
+                  currentStateQuery.data.filter(m => m.sync_status === "out_of_sync").length === 0
+                    ? "in_sync"
+                    : host.sync_status
+                } />
               </InfoRow>
               <InfoRow label="Last Sync">
                 {host.last_sync_at
