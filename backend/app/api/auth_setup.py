@@ -3,7 +3,7 @@ from sqlalchemy import func, select
 
 from app.auth.schemas import UserCreate, UserRead
 from app.auth.users import get_user_manager, UserManager
-from app.db import AsyncSessionLocal
+from app.db import AsyncSessionLocal, get_db
 from app.models.user import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])

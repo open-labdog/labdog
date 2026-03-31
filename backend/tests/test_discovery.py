@@ -135,10 +135,16 @@ class TestDiscoveryAPI:
 
     async def test_bulk_add_creates_hosts(self, superuser_client, db):
         key = await create_ssh_key(db)
-        resp = await superuser_client.post(
-            "/api/discovery/add-hosts",
-            json={"ips": ["10.77.77.1", "10.77.77.2"], "ssh_key_id": key.id},
-        )
+        mock_conn = AsyncMock()
+        mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        with patch("app.api.discovery.ssh_connect", return_value=mock_conn), \
+             patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")):
+            resp = await superuser_client.post(
+                "/api/discovery/add-hosts",
+                json={"ips": ["10.77.77.1", "10.77.77.2"], "ssh_key_id": key.id},
+            )
         assert resp.status_code == 201
         data = resp.json()
         assert data["added"] == 2
@@ -147,17 +153,23 @@ class TestDiscoveryAPI:
 
     async def test_bulk_add_skips_existing_ip(self, superuser_client, db):
         key = await create_ssh_key(db)
-        # First add
-        resp1 = await superuser_client.post(
-            "/api/discovery/add-hosts",
-            json={"ips": ["10.77.78.1"], "ssh_key_id": key.id},
-        )
-        assert resp1.status_code == 201
-        # Add again — should skip
-        resp2 = await superuser_client.post(
-            "/api/discovery/add-hosts",
-            json={"ips": ["10.77.78.1"], "ssh_key_id": key.id},
-        )
+        mock_conn = AsyncMock()
+        mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        with patch("app.api.discovery.ssh_connect", return_value=mock_conn), \
+             patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")):
+            # First add
+            resp1 = await superuser_client.post(
+                "/api/discovery/add-hosts",
+                json={"ips": ["10.77.78.1"], "ssh_key_id": key.id},
+            )
+            assert resp1.status_code == 201
+            # Add again — should skip
+            resp2 = await superuser_client.post(
+                "/api/discovery/add-hosts",
+                json={"ips": ["10.77.78.1"], "ssh_key_id": key.id},
+            )
         assert resp2.status_code == 201
         assert resp2.json()["added"] == 0
         assert resp2.json()["skipped"] == 1

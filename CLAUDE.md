@@ -1,3 +1,107 @@
+# Barricade Development Guide
+
+## Project Overview
+
+Barricade is a centralized Linux configuration management tool with a FastAPI backend and Next.js frontend. It manages firewall rules, services, packages, users, cron jobs, DNS resolver config, and /etc/hosts via Ansible playbooks synced over SSH.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12+, FastAPI, SQLAlchemy (async), asyncpg |
+| Frontend | Next.js 16 (App Router), shadcn/ui (base-ui), TanStack Query |
+| Database | PostgreSQL 16 |
+| Task Queue | Celery + Redis (RedBeat scheduler) |
+| Config Mgmt | Ansible (ansible-runner) |
+| SSH | asyncssh (terminal + host connections) |
+| Testing | pytest + testcontainers (backend), Playwright (frontend E2E) |
+
+## Development Setup
+
+```bash
+./dev.sh start       # Start everything (infra + backend + frontend)
+./dev.sh stop        # Stop everything
+./dev.sh migrate     # Run alembic upgrade head
+```
+
+Manual:
+```bash
+cd backend && source .venv/bin/activate && pip install -e ".[dev]"
+cd frontend && npm install
+```
+
+## Running Tests
+
+### Backend (327 tests)
+```bash
+cd backend
+source .venv/bin/activate
+pytest tests/ --ignore=tests/integration -v    # unit/module tests
+pytest tests/integration/ -v -m integration     # integration tests
+```
+
+Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`BARRICADE_SECURITY__SECRET_KEY`, `BARRICADE_SECURITY__ENCRYPTION_KEY`) before app modules are imported.
+
+**Test session architecture**: Each test gets a database session wrapped in a savepoint that rolls back after the test. The `get_db` dependency is overridden to return this test session. Any `session.commit()` in application code translates to savepoint release/create (not actual commit) via `join_transaction_mode="create_savepoint"`.
+
+**Important**: The `auth_setup.py` register endpoint uses `AsyncSessionLocal()` directly (not `get_db`) for its user count check. This is intentional — it avoids asyncpg "another operation in progress" errors when sharing a session with `user_manager.create()`. Tests that need to test registration must mock `AsyncSessionLocal` in `app.api.auth_setup`.
+
+### Frontend E2E
+```bash
+cd frontend
+npx playwright test          # requires full stack running
+npx playwright test --ui     # interactive mode
+```
+
+## Configuration
+
+Settings are loaded from `barricade.toml` (project root for dev, `/etc/barricade/barricade.toml` for production). Environment variables override TOML settings using `BARRICADE_` prefix with `__` separators (e.g., `BARRICADE_SECURITY__SECRET_KEY`).
+
+**Required secrets** (validated at startup — insecure defaults are rejected):
+- `security.secret_key` — JWT signing key
+- `security.encryption_key` — AES-256-GCM key for SSH key encryption
+
+## Architecture Patterns
+
+### Module pattern
+Each configuration module follows: **model → schemas → merge engine → API → Ansible generator → drift detector → Celery tasks → frontend UI**.
+
+### Firewall backends
+Only `nftables` and `iptables` are supported. The `FirewallBackend` enum in `app/models/host.py` defines: `nftables`, `iptables`, `unknown`.
+
+### Priority-based merge
+Groups have priorities (higher number wins). When a host belongs to multiple groups, configurations merge with higher-priority groups winning conflicts. Host-level overrides always win.
+
+### Sync flow
+1. **Plan**: Compute desired state from merged groups, fetch current state via SSH, diff
+2. **Sync**: Generate and execute Ansible playbook to apply changes
+3. **Drift check**: Compare current host state against desired state
+
+### Discovery flow
+Network scanning is async via Celery tasks. Bulk-add requires SSH verification — each host must be reachable before being added.
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `backend/app/config.py` | Settings loading from TOML + env overrides |
+| `backend/app/main.py` | FastAPI app setup, middleware, route registration |
+| `backend/app/db.py` | SQLAlchemy async engine and session factory |
+| `backend/tests/conftest.py` | Test fixtures, factory helpers, DB session setup |
+| `frontend/lib/api.ts` | API client (`apiFetch`) |
+| `frontend/lib/auth.ts` | Auth context (`useAuth()`) |
+| `frontend/FRONTEND.md` | Frontend design and pattern reference |
+
+## CI/CD
+
+GitLab CI pipeline (`.gitlab-ci.yml`):
+- **test**: Backend pytest + frontend build check (on `dev` branch)
+- **build**: Docker image (on `main` branch or tags)
+- **package**: .deb, .rpm, .tar.gz (on version tags)
+- **release**: GitLab release with package assets (on version tags)
+
+---
+
 # Draw.io Diagram Generation
 
 When the user requests any visual diagram, use draw.io to create it.
