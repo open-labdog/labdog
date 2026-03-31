@@ -9,10 +9,25 @@ Tests cover:
 """
 
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi_users.password import PasswordHelper
+
+from app.models.user import User as UserModel
 
 pytestmark = pytest.mark.integration
+
+
+def _mock_session_with_count(count_value):
+    """Create a mock AsyncSessionLocal context that returns the given user count."""
+    mock_result = MagicMock()
+    mock_result.scalar_one.return_value = count_value
+    mock_session = AsyncMock()
+    mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    return mock_session
 
 
 class TestAuth:
@@ -23,27 +38,37 @@ class TestAuth:
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
         password = "TestPass1!"
 
-        resp = await client.post(
-            "/api/auth/register",
-            json={"email": email, "password": password},
-        )
+        # Mock the separate session used for user count check (returns 0 users)
+        with patch(
+            "app.api.auth_setup.AsyncSessionLocal",
+            return_value=_mock_session_with_count(0),
+        ):
+            resp = await client.post(
+                "/api/auth/register",
+                json={"email": email, "password": password},
+            )
 
         assert resp.status_code == 201
         data = resp.json()
         assert data["email"] == email
         assert "id" in data
 
-    async def test_login_sets_cookie(self, client):
+    async def test_login_sets_cookie(self, client, db):
         """Test that login sets the barricade_auth cookie."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
         password = "TestPass1!"
 
-        # Register user
-        resp = await client.post(
-            "/api/auth/register",
-            json={"email": email, "password": password},
+        # Create user directly in DB
+        ph = PasswordHelper()
+        user = UserModel(
+            email=email,
+            hashed_password=ph.hash(password),
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
         )
-        assert resp.status_code == 201
+        db.add(user)
+        await db.flush()
 
         # Login with form data (FastAPI-Users requirement)
         resp = await client.post(
@@ -65,17 +90,22 @@ class TestAuth:
         assert "id" in data
         assert data["is_superuser"] is True
 
-    async def test_login_wrong_password(self, client):
+    async def test_login_wrong_password(self, client, db):
         """Test login fails with incorrect password."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
         password = "TestPass1!"
 
-        # Register user
-        resp = await client.post(
-            "/api/auth/register",
-            json={"email": email, "password": password},
+        # Create user directly in DB
+        ph = PasswordHelper()
+        user = UserModel(
+            email=email,
+            hashed_password=ph.hash(password),
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
         )
-        assert resp.status_code == 201
+        db.add(user)
+        await db.flush()
 
         # Attempt login with wrong password
         resp = await client.post(

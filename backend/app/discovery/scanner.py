@@ -34,8 +34,8 @@ async def check_port(
             # Port was open; service reset connection immediately (treat as open)
             return (host, "open")
         except ConnectionRefusedError:
-            # Host is alive but port is closed
-            return (host, "refused")
+            # Host is alive but port is closed — exclude from discovery results
+            return None
         except (TimeoutError, OSError):
             return None
 

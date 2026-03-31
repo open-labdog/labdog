@@ -4,9 +4,17 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 
 ## Features
 
-- **Firewall management**: nftables, firewalld, ufw — same rules, any backend
+- **Firewall management**: nftables and iptables — same rules, either backend
 - **Service management**: Declare systemd service states (running/stopped), sync via Ansible, detect drift
 - **/etc/hosts management**: Manage host file entries with full-file rendering, system entry protection, and file preview
+- **Package management**: Declare package states (installed/absent) via apt/dnf/yum (auto-detected)
+- **Linux user management**: System users, SSH authorized_keys, sudo rules, and group membership
+- **Cron job management**: Declarative cron scheduling with diff-based sync
+- **DNS resolver management**: Configure resolv.conf, systemd-resolved, or NetworkManager DNS settings
+- **Host discovery**: Scan network ranges for SSH-reachable hosts, bulk-add with SSH verification
+- **Proxmox integration**: Discover and manage VMs/containers from Proxmox VE hypervisors
+- **GitOps**: Import configuration from Git repositories with webhook-driven sync
+- **Web shell**: Browser-based SSH terminal via xterm.js + WebSocket + asyncssh
 - **Plan-before-apply**: Preview exact changes before syncing to remote hosts
 - **SSH lockout prevention**: Auto-injected system rule ensures SSH access is never accidentally blocked
 - **Drift detection**: Periodic and manual checks for out-of-sync hosts across all modules
@@ -58,8 +66,7 @@ When you sync, Barricade computes the full effective configuration and pushes it
 | Module | Strategy | What happens on sync | Manual edits on host? |
 |--------|----------|---------------------|-----------------------|
 | **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
-| **Firewall (ufw)** | Full replacement | Writes complete `/etc/ufw/user.rules` + `user6.rules`, reloads | Overwritten |
-| **Firewall (firewalld)** | Per-rule tasks | Adds/removes individual `firewalld` rules | Preserved (unmanaged rules are left alone) |
+| **Firewall (iptables)** | Full replacement | Writes complete iptables rules via `iptables-restore`, validates, persists | Overwritten |
 | **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
 | **Services** | Per-service tasks | Sets `state` (started/stopped) and `enabled` (true/false) per service individually | Preserved (unmanaged services are left alone) |
 | **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
@@ -67,7 +74,7 @@ When you sync, Barricade computes the full effective configuration and pushes it
 | **Cron jobs** | Per-job tasks | Creates/removes individual cron entries via `crontab` (identified by job name) | Preserved (unmanaged cron jobs are left alone) |
 | **DNS resolver** | Full replacement | Writes complete resolver config (`/etc/resolv.conf`, `systemd-resolved`, or NetworkManager), restarts service | Overwritten |
 
-**Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/ufw, /etc/hosts, DNS resolver) use **full replacement** — Barricade owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs, firewall/firewalld) are **selectively managed** — only the items you define in Barricade are touched; everything else on the host is left alone.
+**Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/iptables, /etc/hosts, DNS resolver) use **full replacement** — Barricade owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs) are **selectively managed** — only the items you define in Barricade are touched; everything else on the host is left alone.
 
 ### Automatic Safety Rules
 
@@ -298,11 +305,15 @@ celery -A app.tasks beat --scheduler redbeat.RedBeatScheduler --loglevel=info
 
 ### Backend
 
+Tests use testcontainers to spin up a throwaway PostgreSQL instance automatically.
+
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v
-pytest tests/integration/ -v -m integration     # requires Docker
+pytest tests/ --ignore=tests/integration -v          # 327 unit/module tests
+pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
 ```
+
+The test suite covers: audit, auth, cron, crypto, diff, discovery, drift, gitops (converter, importer, lockdown, pipeline, serializer, webhooks), groups, hosts, merge, packages, parsers, renderers, resolver, rules, service commands, services, SSH terminal, sync, and user management.
 
 ### Frontend E2E (Playwright)
 
@@ -310,16 +321,20 @@ pytest tests/integration/ -v -m integration     # requires Docker
 cd frontend
 npx playwright install --with-deps
 npx playwright test          # requires running Docker stack
+npx playwright test --ui     # interactive test runner
 ```
+
+16 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
 ### Auth
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/auth/register` | Register new user |
-| `POST` | `/auth/jwt/login` | Login (sets httpOnly cookie) |
-| `POST` | `/auth/jwt/logout` | Logout |
+| `GET` | `/api/auth/setup-status` | Check if initial setup is needed |
+| `POST` | `/api/auth/register` | Register first user (closed after first user) |
+| `POST` | `/api/auth/jwt/login` | Login (sets httpOnly cookie) |
+| `POST` | `/api/auth/jwt/logout` | Logout |
 | `GET` | `/users/me` | Current user info |
 
 ### Infrastructure
@@ -340,6 +355,7 @@ npx playwright test          # requires running Docker stack
 | `POST` | `/api/sync/hosts/{id}/sync` | Apply firewall changes via Ansible |
 | `GET` | `/api/sync/jobs/{id}` | Check sync job status |
 | `POST` | `/api/drift/hosts/{id}/check` | Check firewall drift |
+| `POST` | `/api/drift/groups/{id}/check` | Check drift for all hosts in group |
 
 ### Service Management
 | Method | Path | Description |
@@ -363,6 +379,56 @@ npx playwright test          # requires running Docker stack
 | `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/drift-check` | Check hosts file drift |
 
+### Package Management
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/packages` | Manage packages per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/packages` | Host-level package overrides |
+| `GET` | `/api/hosts/{id}/effective-packages` | Merged effective packages |
+| `POST` | `/api/packages/hosts/{id}/sync` | Sync packages via Ansible |
+
+### Linux User Management
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/users` | Manage Linux users per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/users` | Host-level user overrides |
+| `GET` | `/api/hosts/{id}/effective-users` | Merged effective users |
+| `POST` | `/api/user-mgmt/hosts/{id}/sync` | Sync users via Ansible |
+
+### Cron Jobs
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/cron-jobs` | Manage cron jobs per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/cron-jobs` | Host-level cron overrides |
+| `GET` | `/api/hosts/{id}/effective-cron-jobs` | Merged effective cron jobs |
+| `POST` | `/api/cron/hosts/{id}/sync` | Sync cron jobs via Ansible |
+
+### DNS Resolver
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/groups/{id}/resolver` | Manage resolver config per group |
+| `GET/POST/PUT/DELETE` | `/api/hosts/{id}/resolver` | Host-level resolver override |
+| `GET` | `/api/hosts/{id}/effective-resolver` | Merged effective resolver |
+| `POST` | `/api/resolver/hosts/{id}/sync` | Sync resolver via Ansible |
+
+### Host Discovery
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/discovery/scan` | Start network scan (returns job_id) |
+| `GET` | `/api/discovery/scan/{job_id}` | Poll scan job status |
+| `POST` | `/api/discovery/add-hosts` | Bulk-add discovered hosts |
+
+### SSH Terminal
+| Method | Path | Description |
+|--------|------|-------------|
+| `WS` | `/api/ssh-terminal/ws/{host_id}` | WebSocket SSH terminal session |
+
+### GitOps
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST/PUT/DELETE` | `/api/git-repos` | Manage Git repository connections |
+| `POST` | `/api/webhooks/git/{repo_id}` | Webhook endpoint for Git push events |
+
 ## Project Structure
 
 ```
@@ -373,34 +439,39 @@ barricade/
 │   │   ├── ansible/         # Playbook + inventory generators
 │   │   ├── audit/           # Audit logging
 │   │   ├── auth/            # JWT auth (cookie-based)
+│   │   ├── cron/            # Cron job management module
 │   │   ├── crypto/          # AES-256-GCM encryption
+│   │   ├── discovery/       # Host network discovery
 │   │   ├── drift/           # Firewall drift detection
+│   │   ├── gitops/          # GitOps integration
 │   │   ├── hosts_mgmt/      # /etc/hosts management module
 │   │   ├── models/          # SQLAlchemy models
+│   │   ├── packages/        # Package management module
+│   │   ├── proxmox/         # Proxmox VE hypervisor integration
+│   │   ├── resolver/        # DNS resolver module
 │   │   ├── rules/           # Firewall rule validation, renderers, merge
 │   │   ├── schemas/         # Pydantic request/response schemas
 │   │   ├── services/        # Service management module
+│   │   ├── ssh_terminal/    # Web shell (WebSocket SSH terminal)
 │   │   ├── sync/            # Firewall plan/diff engine
 │   │   ├── tasks/           # Celery tasks (sync + drift)
-│   │   ├── cron/            # Cron job management module
-│   │   ├── linux_users/     # Linux user management
-│   │   ├── packages/        # Package management module
-│   │   ├── resolver/        # DNS resolver module
-│   │   ├── ssh_terminal/    # Web shell (WebSocket SSH terminal)
-│   │   ├── discovery/       # Host network discovery
-│   │   └── gitops/          # GitOps integration
+│   │   ├── user_mgmt/       # Linux user/group management
+│   │   └── workflows/       # Proxmox workflow execution
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite
+│   ├── tests/               # pytest suite (327 tests)
+│   │   ├── integration/     # Integration tests (require full stack)
+│   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
 │   └── pyproject.toml
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
 │   ├── components/          # React components (shadcn/ui)
-│   ├── e2e/                 # Playwright E2E tests
+│   ├── e2e/                 # Playwright E2E tests (16 spec files)
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
 │   └── package.json
+├── barricade-lint/           # CLI tool for YAML rule validation
 ├── packaging/               # Linux package build system (deb/rpm/tarball)
 ├── examples/                # Configuration examples
 ├── dev.sh                   # Dev environment management script
@@ -416,7 +487,7 @@ Barricade uses a modular extension architecture. Each module follows the same pa
 
 | Module | Status | Description |
 |--------|--------|-------------|
-| Firewall Rules | Shipped | nftables/firewalld/ufw rule management |
+| Firewall Rules | Shipped | nftables/iptables rule management |
 | Service Management | Shipped | systemd service state management |
 | /etc/hosts | Shipped | Host file entry management |
 | Package Management | Shipped | apt/dnf/yum package management |
@@ -424,10 +495,13 @@ Barricade uses a modular extension architecture. Each module follows the same pa
 | Cron Jobs | Shipped | Cron job scheduling |
 | DNS Resolver | Shipped | resolv.conf / systemd-resolved config |
 | Web Shell | Shipped | Browser-based SSH terminal (xterm.js + WebSocket + asyncssh) |
+| Host Discovery | Shipped | Network scanning + SSH-verified bulk host import |
+| Proxmox Integration | Shipped | VM/container discovery from Proxmox VE hypervisors |
+| GitOps | Shipped | Git-based configuration import with webhook sync |
 
 ## Known Limitations
 
-- **Drift detection edge cases**: Firewall parsers exist for nftables, firewalld, and ufw, but drift comparison may miss some complex rule configurations.
+- **Drift detection edge cases**: Firewall parsers exist for nftables and iptables, but drift comparison may miss some complex rule configurations.
 - **No HTTPS in dev**: Cookie `secure=False` by default. Set `cookie_secure=True` for production with HTTPS.
 - **Single Ansible control node**: All sync operations run from the Barricade server. No distributed execution.
 

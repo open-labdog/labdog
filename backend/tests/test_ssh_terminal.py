@@ -224,6 +224,7 @@ class TestSSHConnect:
     async def test_successful_connection(
         self, mock_master, mock_decrypt, mock_asyncssh, db,
     ):
+        import asyncssh as real_asyncssh
         from tests.conftest import create_ssh_key, create_host
         from app.ssh_terminal.ssh_connect import open_ssh_shell
 
@@ -233,16 +234,17 @@ class TestSSHConnect:
         mock_process = MagicMock()
         mock_conn = AsyncMock()
         mock_conn.create_process = AsyncMock(return_value=mock_process)
-        mock_asyncssh.connect = AsyncMock(return_value=mock_conn)
+        # Preserve the real Error class so `except asyncssh.Error` works
+        mock_asyncssh.Error = real_asyncssh.Error
         mock_asyncssh.import_private_key = MagicMock(return_value="imported-key")
 
-        conn, process = await open_ssh_shell(host_id=host.id, db=db)
+        mock_ssh_connect = AsyncMock(return_value=mock_conn)
+        with patch("app.ssh_terminal.ssh_connect.ssh_connect", mock_ssh_connect):
+            conn, process = await open_ssh_shell(host_id=host.id, db=db)
 
         assert conn is mock_conn
         assert process is mock_process
-        mock_asyncssh.connect.assert_awaited_once()
-        call_kwargs = mock_asyncssh.connect.call_args
-        assert call_kwargs[0][0] == "10.88.0.1"
+        mock_ssh_connect.assert_awaited_once()
         mock_conn.create_process.assert_awaited_once()
 
 

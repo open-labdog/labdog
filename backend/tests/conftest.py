@@ -11,6 +11,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 
+def pytest_configure(config):
+    """Set test-safe security values before any app modules are imported."""
+    import os
+    os.environ.setdefault("BARRICADE_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
+    os.environ.setdefault(
+        "BARRICADE_SECURITY__ENCRYPTION_KEY", "dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz"
+    )
+
+
 @pytest.fixture(scope="session")
 def pg_url():
     import os
