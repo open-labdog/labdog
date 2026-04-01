@@ -17,6 +17,7 @@ class ServiceInventoryItem(BaseModel):
     description: str
     is_managed: bool
     is_protected: bool
+    is_system: bool
 
 
 class ServiceCommandRequest(BaseModel):

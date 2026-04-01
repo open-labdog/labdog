@@ -11,7 +11,7 @@ from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.crypto import decrypt_ssh_key, get_master_key
 from app.services.collector import list_all_services, execute_service_command
-from app.services.constants import PROTECTED_SERVICES
+from app.services.constants import PROTECTED_SERVICES, is_system_service
 from app.services.live_schemas import (
     ServiceCommandRequest,
     ServiceCommandResponse,
@@ -45,7 +45,7 @@ async def get_service_inventory(
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
     # Fetch inventory via SSH
-    raw_services = await list_all_services(host.ip_address, host.ssh_port, private_key_pem)
+    raw_services = await list_all_services(host.ip_address, host.ssh_port, private_key_pem, ssh_user=host.ssh_user)
 
     # Get managed service names for this host
     effective = await get_effective_services(host_id, db)
@@ -61,6 +61,7 @@ async def get_service_inventory(
             description=svc["description"],
             is_managed=svc["unit"] in managed_names,
             is_protected=svc["unit"] in PROTECTED_SERVICES,
+            is_system=is_system_service(svc["unit"]),
         )
         for svc in raw_services
     ]
@@ -97,6 +98,7 @@ async def run_service_command(
         private_key_pem,
         body.service_name,
         body.action,
+        ssh_user=host.ssh_user,
     )
 
     # Audit log

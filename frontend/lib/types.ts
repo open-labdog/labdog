@@ -180,6 +180,7 @@ export interface LiveService {
   description: string
   is_managed: boolean
   is_protected: boolean
+  is_system: boolean
 }
 
 export interface ServiceCommandResult {
