@@ -32,7 +32,7 @@ cd frontend && npm install
 
 ## Running Tests
 
-### Backend (327 tests)
+### Backend (326 tests)
 ```bash
 cd backend
 source .venv/bin/activate

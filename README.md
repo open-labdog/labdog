@@ -5,7 +5,7 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 ## Features
 
 - **Firewall management**: nftables and iptables — same rules, either backend
-- **Service management**: Declare systemd service states (running/stopped), sync via Ansible, detect drift
+- **Service management**: Declare systemd service states (running/stopped, enabled/disabled), manage unit files (full deploy or drop-in overrides via `systemctl edit`), sync via Ansible, detect drift, orphan cleanup
 - **/etc/hosts management**: Manage host file entries with full-file rendering, system entry protection, and file preview
 - **Package management**: Declare package states (installed/absent) via apt/dnf/yum (auto-detected)
 - **Linux user management**: System users, SSH authorized_keys, sudo rules, and group membership
@@ -68,7 +68,7 @@ When you sync, Barricade computes the full effective configuration and pushes it
 | **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
 | **Firewall (iptables)** | Full replacement | Writes complete iptables rules via `iptables-restore`, validates, persists | Overwritten |
 | **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
-| **Services** | Per-service tasks | Sets `state` (started/stopped) and `enabled` (true/false) per service individually | Preserved (unmanaged services are left alone) |
+| **Services** | Per-service tasks | Deploys unit files (full or override) if configured, sets `state` (started/stopped) and `enabled` (true/false), cleans up orphaned Barricade-managed files | Preserved (unmanaged services are left alone) |
 | **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
 | **Linux users** | Per-user tasks | Creates/removes users, sets authorized_keys (`exclusive=true`), writes `/etc/sudoers.d/{user}` | Preserved (unmanaged users are left alone) |
 | **Cron jobs** | Per-job tasks | Creates/removes individual cron entries via `crontab` (identified by job name) | Preserved (unmanaged cron jobs are left alone) |
@@ -309,7 +309,7 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v          # 327 unit/module tests
+pytest tests/ --ignore=tests/integration -v          # 326 unit/module tests
 pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
 ```
 
@@ -367,6 +367,7 @@ npx playwright test --ui     # interactive test runner
 | `POST` | `/api/services/hosts/{id}/sync` | Sync services via Ansible |
 | `POST` | `/api/services/hosts/{id}/drift-check` | Check service drift |
 | `PUT` | `/api/services/hosts/{id}/drift-settings` | Toggle service drift detection |
+| `GET` | `/api/services/hosts/{id}/unit-file/{service_name}` | Fetch current unit file content from host via SSH |
 
 ### /etc/hosts Management
 | Method | Path | Description |
@@ -458,7 +459,7 @@ barricade/
 │   │   ├── user_mgmt/       # Linux user/group management
 │   │   └── workflows/       # Proxmox workflow execution
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite (327 tests)
+│   ├── tests/               # pytest suite (326 tests)
 │   │   ├── integration/     # Integration tests (require full stack)
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
