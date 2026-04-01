@@ -14,6 +14,8 @@ class ServiceDiffItem:
     actual_state: str
     actual_enabled: bool
     reason: str  # "state_mismatch", "enabled_mismatch", "both_mismatch", "error"
+    desired_unit_content: str | None = None
+    actual_unit_content: str | None = None
 
 
 @dataclass
@@ -35,6 +37,7 @@ def _normalize_state(state: str) -> str:
 def compute_service_diff(
     current: list,  # list[ServiceCurrentState]
     desired: list,  # list[EffectiveServiceResponse]
+    unit_file_contents: dict[str, str | None] | None = None,
 ) -> ServiceDiff:
     """
     Compare current service states against desired config.
@@ -68,14 +71,29 @@ def compute_service_diff(
         state_mismatch = desired_state != actual_state
         enabled_mismatch = desired_enabled != actual_enabled
 
-        if state_mismatch or enabled_mismatch:
-            if state_mismatch and enabled_mismatch:
-                reason = "both_mismatch"
-            elif state_mismatch:
-                reason = "state_mismatch"
-            else:
-                reason = "enabled_mismatch"
+        reasons: list[str] = []
+        if state_mismatch and enabled_mismatch:
+            reasons.append("both_mismatch")
+        elif state_mismatch:
+            reasons.append("state_mismatch")
+        elif enabled_mismatch:
+            reasons.append("enabled_mismatch")
 
+        desired_unit_content: str | None = None
+        actual_unit_content: str | None = None
+        desired_unit = getattr(desired_svc, "unit_content", None)
+        if desired_unit is not None and unit_file_contents is not None:
+            actual_unit_content = unit_file_contents.get(name)
+            deploy_mode = getattr(desired_svc, "deploy_mode", "full")
+            if deploy_mode == "full":
+                expected = "# Managed by Barricade\n" + desired_unit
+            else:
+                expected = desired_unit
+            if actual_unit_content != expected:
+                reasons.append("unit_content_mismatch")
+                desired_unit_content = expected
+
+        if reasons:
             diff.services_to_update.append(
                 ServiceDiffItem(
                     service_name=name,
@@ -83,7 +101,9 @@ def compute_service_diff(
                     desired_enabled=desired_enabled,
                     actual_state=actual_state,
                     actual_enabled=actual_enabled,
-                    reason=reason,
+                    reason="_and_".join(reasons),
+                    desired_unit_content=desired_unit_content,
+                    actual_unit_content=actual_unit_content,
                 )
             )
         else:

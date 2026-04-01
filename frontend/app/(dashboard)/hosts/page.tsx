@@ -152,7 +152,7 @@ export default function HostsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Hosts</h1>
-          <p className="text-slate-400 text-sm mt-1">Manage firewall hosts</p>
+          <p className="text-slate-400 text-sm mt-1">Manage hosts, configurations, and sync status</p>
         </div>
         <div className="flex gap-2">
           <Link href="/hosts/discover" className={cn(buttonVariants({ variant: "outline" }))}>
@@ -172,22 +172,25 @@ export default function HostsPage() {
             className="pl-9 pr-8"
           />
           {searchQuery && (
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+              className="absolute right-3 top-1/2 -translate-y-1/2"
+              aria-label="Clear search"
             >
               <XIcon className="w-4 h-4" />
-            </button>
+            </Button>
           )}
         </div>
         <div className="relative" ref={groupDropdownRef}>
-          <button
+          <Button
+            variant="outline"
             onClick={() => { setGroupDropdownOpen(!groupDropdownOpen); setGroupSearch("") }}
-            className="flex items-center gap-1.5 h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
           >
             {filterGroup === null ? "All Groups" : filterGroup === "ungrouped" ? "Ungrouped" : groupMap.get(filterGroup as number)?.name ?? "Unknown"}
             <ChevronDownIcon className="w-4 h-4" />
-          </button>
+          </Button>
           {groupDropdownOpen && (
             <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-md border border-slate-700 bg-slate-900 shadow-lg">
               <div className="p-2 border-b border-slate-700">
@@ -233,13 +236,13 @@ export default function HostsPage() {
             </div>
           )}
         </div>
-        <button
+        <Button
+          variant="outline"
           onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
-          className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
         >
           {viewMode === "flat" ? <LayoutListIcon className="w-4 h-4" /> : <TableIcon className="w-4 h-4" />}
           {viewMode === "flat" ? "Group View" : "Flat View"}
-        </button>
+        </Button>
         {(searchQuery || filterGroup !== null) && (
           <span className="text-sm text-slate-400">
             Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
@@ -301,6 +304,7 @@ export default function HostsPage() {
                         checked={selected.size === filteredHosts.length && filteredHosts.length > 0}
                         onChange={toggleSelectAll}
                         className="rounded border-slate-600"
+                        aria-label="Select all hosts"
                       />
                     </TableHead>
                     <TableHead>Hostname</TableHead>
@@ -308,7 +312,6 @@ export default function HostsPage() {
                     <TableHead>Groups</TableHead>
                     <TableHead>Firewall</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -320,6 +323,7 @@ export default function HostsPage() {
                           checked={selected.has(host.id)}
                           onChange={() => toggleSelect(host.id)}
                           className="rounded border-slate-600"
+                          aria-label={`Select ${host.hostname}`}
                         />
                       </TableCell>
                       <TableCell className="font-medium">
@@ -348,9 +352,6 @@ export default function HostsPage() {
                       <TableCell>
                         <SyncStatusBadge status={host.sync_status} />
                       </TableCell>
-                      <TableCell>
-                        <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -376,7 +377,6 @@ export default function HostsPage() {
                         <col />
                         <col />
                         <col />
-                        <col className="w-20" />
                       </colgroup>
                       <TableHeader>
                         <TableRow className="border-slate-700">
@@ -393,13 +393,13 @@ export default function HostsPage() {
                                 })
                               }}
                               className="rounded border-slate-600"
+                              aria-label={`Select all in ${group?.name ?? "Ungrouped"}`}
                             />
                           </TableHead>
                           <TableHead>Hostname</TableHead>
                           <TableHead>IP Address</TableHead>
                           <TableHead>Firewall</TableHead>
                           <TableHead>Status</TableHead>
-                          <TableHead>Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -411,6 +411,7 @@ export default function HostsPage() {
                                 checked={selected.has(host.id)}
                                 onChange={() => toggleSelect(host.id)}
                                 className="rounded border-slate-600"
+                                aria-label={`Select ${host.hostname}`}
                               />
                             </TableCell>
                             <TableCell className="font-medium">
@@ -419,9 +420,6 @@ export default function HostsPage() {
                             <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
                             <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
                             <TableCell><SyncStatusBadge status={host.sync_status} /></TableCell>
-                            <TableCell>
-                              <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

@@ -6,7 +6,7 @@ export function SyncStatusBadge({ status }: { status: SyncStatus }) {
     in_sync: { label: "In Sync", className: "bg-green-600 text-white" },
     out_of_sync: { label: "Out of Sync", className: "bg-amber-600 text-white" },
     pending: { label: "Pending", className: "bg-blue-600 text-white" },
-    unknown: { label: "Unknown", className: "" },
+    unknown: { label: "Unknown", className: "bg-slate-600 text-slate-300" },
     error: { label: "Error", className: "bg-red-600 text-white" },
   }
   const c = config[status] ?? config.unknown

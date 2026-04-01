@@ -82,6 +82,8 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
                         "service_name": s.service_name,
                         "state": s.state,
                         "enabled": s.enabled,
+                        "unit_content": getattr(s, "unit_content", None),
+                        "deploy_mode": getattr(s, "deploy_mode", None),
                     }
                     for s in effective
                 ]

@@ -251,17 +251,19 @@ export default function GroupDetailPage() {
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group" }]} />
        {/* Header */}
-       <div>
-         <div className="flex items-center gap-3">
-           <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
-           {group?.gitops_enabled && (
-             <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+       <div className="flex items-center justify-between">
+         <div>
+           <div className="flex items-center gap-3">
+             <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+             {group?.gitops_enabled && (
+               <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+             )}
+           </div>
+           {group?.description && (
+             <p className="text-slate-400 text-sm mt-1">{group.description}</p>
            )}
          </div>
-         {group?.description && (
-           <p className="text-slate-400 text-sm mt-1">{group.description}</p>
-         )}
-         <div className="mt-3">
+         <div className="flex items-center gap-2">
            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
              <DialogTrigger render={<Button variant="outline" size="sm" />}>
                Edit Group
@@ -372,7 +374,7 @@ export default function GroupDetailPage() {
                 <div className="flex flex-col gap-2">
                   <GitOpsStatusBadge status={group.gitops_status} />
                   {group.gitops_file_path && (
-                    <div className="text-xs text-slate-500 font-mono truncate" title={group.gitops_file_path}>
+                    <div className="text-xs text-slate-400 font-mono truncate" title={group.gitops_file_path}>
                       {group.gitops_file_path}
                     </div>
                   )}
@@ -406,23 +408,23 @@ export default function GroupDetailPage() {
               {total > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                   <div>
-                    <div className="text-xs text-slate-500">Hosts</div>
+                    <div className="text-xs text-slate-400">Hosts</div>
                     <div className="text-xl font-bold text-white">{total}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">In Sync</div>
+                    <div className="text-xs text-slate-400">In Sync</div>
                     <div className="text-xl font-bold text-green-400">{synced}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Out of Sync</div>
+                    <div className="text-xs text-slate-400">Out of Sync</div>
                     <div className="text-xl font-bold text-amber-400">{outOfSync}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Error</div>
+                    <div className="text-xs text-slate-400">Error</div>
                     <div className="text-xl font-bold text-red-400">{errored}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Unknown</div>
+                    <div className="text-xs text-slate-400">Unknown</div>
                     <div className="text-xl font-bold text-slate-400">{unknown}</div>
                   </div>
                 </div>
@@ -496,21 +498,21 @@ export default function GroupDetailPage() {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Status</div>
+                    <div className="text-xs text-slate-400 mb-1">Status</div>
                     <GitOpsStatusBadge status={group.gitops_status!} />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Repository</div>
+                    <div className="text-xs text-slate-400 mb-1">Repository</div>
                     <div className="text-sm text-slate-300 truncate">
                       {gitRepos?.find((r) => r.id === group.git_repository_id)?.name ?? "Unknown"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">File Path</div>
+                    <div className="text-xs text-slate-400 mb-1">File Path</div>
                     <div className="text-sm text-slate-300 font-mono truncate">{group.gitops_file_path ?? "—"}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Last Import</div>
+                    <div className="text-xs text-slate-400 mb-1">Last Import</div>
                     <div className="text-sm text-slate-300">{relativeTime(group.gitops_last_import_at)}</div>
                   </div>
                 </div>
@@ -536,7 +538,7 @@ export default function GroupDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-700 flex-wrap">
+      <div role="tablist" className="flex gap-1 border-b border-slate-700 flex-wrap">
         {([
           ["overview", "Overview"],
           ["rules", "Rules"],
@@ -551,6 +553,8 @@ export default function GroupDetailPage() {
         ] as const).map(([key, label]) => (
           <button
             key={key}
+            role="tab"
+            aria-selected={activeTab === key}
             onClick={() => setActiveTab(key)}
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               activeTab === key
@@ -658,6 +662,7 @@ export default function GroupDetailPage() {
                               checked={addHostsSelected.size === availableHosts.length && availableHosts.length > 0}
                               onChange={toggleAddAllHosts}
                               className="rounded border-slate-600"
+                              aria-label="Select all hosts"
                             />
                           </TableHead>
                           <TableHead>Hostname</TableHead>
@@ -678,6 +683,7 @@ export default function GroupDetailPage() {
                                 checked={addHostsSelected.has(host.id)}
                                 onChange={(e) => e.stopPropagation()}
                                 className="rounded border-slate-600"
+                                aria-label={`Select ${host.hostname}`}
                               />
                             </TableCell>
                             <TableCell className="font-medium text-white">{host.hostname}</TableCell>

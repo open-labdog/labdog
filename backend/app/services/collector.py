@@ -209,3 +209,39 @@ async def execute_service_command(
             "stdout": "",
             "stderr": str(e),
         }
+
+
+async def collect_unit_file_content(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+    service_name: str,
+    deploy_mode: str,
+    ssh_user: str = "root",
+) -> str | None:
+    quoted = shlex.quote(service_name)
+    if deploy_mode == "override":
+        cmd = f"cat /etc/systemd/system/{quoted}.service.d/barricade.conf"
+    else:
+        cmd = f"cat /etc/systemd/system/{quoted}.service"
+
+    try:
+        private_key = asyncssh.import_private_key(private_key_pem)
+
+        async def _run() -> str | None:
+            async with ssh_connect(
+                host_ip,
+                port=ssh_port,
+                username=ssh_user,
+                client_keys=[private_key],
+            ) as conn:
+                result = await conn.run(cmd, check=False)
+                if result.exit_status != 0:
+                    return None
+                return result.stdout or ""
+
+        return await asyncio.wait_for(_run(), timeout=30.0)
+    except asyncio.TimeoutError:
+        return None
+    except Exception:
+        return None
