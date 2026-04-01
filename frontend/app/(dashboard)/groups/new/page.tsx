@@ -114,15 +114,15 @@ export default function NewGroupPage() {
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create Group"}
-            </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => router.push("/groups")}
             >
               Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Creating..." : "Create Group"}
             </Button>
           </div>
         </form>

@@ -13,6 +13,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -273,10 +274,7 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
               <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -284,7 +282,10 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

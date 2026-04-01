@@ -15,6 +15,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -360,10 +361,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
 
             {formError && <p className="text-sm text-red-400">{formError}</p>}
 
-            <div className="flex gap-3 pt-2">
-              <Button onClick={handleSave} disabled={formSaving}>
-                {formSaving ? "Saving..." : editingNode ? "Save Changes" : "Add Node"}
-              </Button>
+            <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => {
@@ -373,7 +371,10 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
               >
                 Cancel
               </Button>
-            </div>
+              <Button onClick={handleSave} disabled={formSaving}>
+                {formSaving ? "Saving..." : editingNode ? "Save Changes" : "Add Node"}
+              </Button>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

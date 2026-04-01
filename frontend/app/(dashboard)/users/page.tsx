@@ -12,6 +12,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -227,10 +228,10 @@ export default function UsersPage() {
                 <Label htmlFor="create-superuser">Superuser</Label>
               </div>
               {formError && <p className="text-sm text-red-400">{formError}</p>}
-              <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? "Creating..." : "Create User"}</Button>
+              <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-              </div>
+                <Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? "Creating..." : "Create User"}</Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -337,10 +338,10 @@ export default function UsersPage() {
               <Label htmlFor="edit-superuser">Superuser</Label>
             </div>
             {editFormError && <p className="text-sm text-red-400">{editFormError}</p>}
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={editMutation.isPending}>{editMutation.isPending ? "Saving..." : "Save Changes"}</Button>
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-            </div>
+              <Button type="submit" disabled={editMutation.isPending}>{editMutation.isPending ? "Saving..." : "Save Changes"}</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -361,10 +362,10 @@ export default function UsersPage() {
               <Input id="reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required />
             </div>
             {resetFormError && <p className="text-sm text-red-400">{resetFormError}</p>}
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={resetPasswordMutation.isPending}>{resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}</Button>
+            <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setResetDialogOpen(false)}>Cancel</Button>
-            </div>
+              <Button type="submit" disabled={resetPasswordMutation.isPending}>{resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}</Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -379,12 +380,12 @@ export default function UsersPage() {
             Are you sure you want to delete <span className="text-white font-medium">{selectedUser?.email}</span>? This action cannot be undone.
           </p>
           {deleteFormError && <p className="text-sm text-red-400 mt-2">{deleteFormError}</p>}
-          <div className="flex gap-3 pt-4">
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
             <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

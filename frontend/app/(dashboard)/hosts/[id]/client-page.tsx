@@ -15,6 +15,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -1529,10 +1530,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{editMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={editMutation.isPending}>
-                    {editMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -1540,7 +1538,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={editMutation.isPending}>
+                    {editMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -2206,10 +2207,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{svcSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={svcSaveMutation.isPending}>
-                    {svcSaveMutation.isPending ? "Saving..." : "Save"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -2217,7 +2215,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={svcSaveMutation.isPending}>
+                    {svcSaveMutation.isPending ? "Saving..." : "Save"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -2625,10 +2626,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{hostsSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={hostsSaveMutation.isPending}>
-                    {hostsSaveMutation.isPending ? "Saving..." : "Create Override"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -2636,7 +2634,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={hostsSaveMutation.isPending}>
+                    {hostsSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -2948,10 +2949,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{luSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={luSaveMutation.isPending}>
-                    {luSaveMutation.isPending ? "Saving..." : "Create Override"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -2959,7 +2957,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={luSaveMutation.isPending}>
+                    {luSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -3023,10 +3024,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{lgSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={lgSaveMutation.isPending}>
-                    {lgSaveMutation.isPending ? "Saving..." : "Create Override"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -3034,7 +3032,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={lgSaveMutation.isPending}>
+                    {lgSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -3302,10 +3303,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{cjSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={cjSaveMutation.isPending}>
-                    {cjSaveMutation.isPending ? "Saving..." : "Create Override"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -3313,7 +3311,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={cjSaveMutation.isPending}>
+                    {cjSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
@@ -3600,10 +3601,7 @@ export default function HostDetailPage() {
                   <p className="text-sm text-red-400">{ppSaveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={ppSaveMutation.isPending}>
-                    {ppSaveMutation.isPending ? "Saving..." : "Create Override"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -3611,7 +3609,10 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={ppSaveMutation.isPending}>
+                    {ppSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  </Button>
+                </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
