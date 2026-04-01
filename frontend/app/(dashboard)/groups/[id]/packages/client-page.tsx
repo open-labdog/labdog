@@ -11,6 +11,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -483,10 +484,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
               <p className="text-sm text-red-400">{pkgSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={pkgSaveMutation.isPending}>
-                {pkgSaveMutation.isPending ? "Saving..." : pkgEditing ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -494,7 +492,10 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={pkgSaveMutation.isPending}>
+                {pkgSaveMutation.isPending ? "Saving..." : pkgEditing ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -610,10 +611,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
               <p className="text-sm text-red-400">{repoSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={repoSaveMutation.isPending}>
-                {repoSaveMutation.isPending ? "Saving..." : repoEditing ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -621,7 +619,10 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={repoSaveMutation.isPending}>
+                {repoSaveMutation.isPending ? "Saving..." : repoEditing ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DialogFooter } from "@/components/ui/dialog"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -388,10 +389,7 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
             <p className="text-sm text-red-400">{formError}</p>
           )}
 
-          <div className="flex gap-3 pt-2">
-            <Button onClick={handleSave} disabled={formSaving}>
-              {formSaving ? "Saving..." : "Save"}
-            </Button>
+          <DialogFooter>
             <Button
               variant="outline"
               className="text-red-400 hover:text-red-300 hover:bg-red-950 border-red-900"
@@ -400,7 +398,10 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
             >
               Delete Workflow
             </Button>
-          </div>
+            <Button onClick={handleSave} disabled={formSaving}>
+              {formSaving ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
         </div>
       )}
 

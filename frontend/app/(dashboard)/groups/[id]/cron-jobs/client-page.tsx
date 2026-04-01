@@ -15,6 +15,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -449,10 +450,7 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving..." : editing ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -460,7 +458,10 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editing ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

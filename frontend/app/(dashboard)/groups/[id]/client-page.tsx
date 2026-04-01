@@ -32,6 +32,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -320,14 +321,14 @@ export default function GroupDetailPage() {
                  {editMutation.error && (
                    <p className="text-sm text-red-400">{editMutation.error.message}</p>
                  )}
-                 <div className="flex gap-3 pt-2">
-                   <Button type="submit" disabled={editMutation.isPending}>
-                     {editMutation.isPending ? "Saving..." : "Save Changes"}
-                   </Button>
+                 <DialogFooter>
                    <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
                      Cancel
                    </Button>
-                 </div>
+                   <Button type="submit" disabled={editMutation.isPending}>
+                     {editMutation.isPending ? "Saving..." : "Save Changes"}
+                   </Button>
+                 </DialogFooter>
                </form>
              </DialogContent>
            </Dialog>
@@ -482,14 +483,14 @@ export default function GroupDetailPage() {
                       {enableGitopsMutation.error && (
                         <p className="text-sm text-red-400">{enableGitopsMutation.error.message}</p>
                       )}
-                      <div className="flex gap-3 pt-2">
-                        <Button type="submit" disabled={enableGitopsMutation.isPending}>
-                          {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
-                        </Button>
+                      <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => setEnableDialogOpen(false)}>
                           Cancel
                         </Button>
-                      </div>
+                        <Button type="submit" disabled={enableGitopsMutation.isPending}>
+                          {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
+                        </Button>
+                      </DialogFooter>
                     </form>
                   </DialogContent>
                 </Dialog>

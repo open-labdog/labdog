@@ -14,6 +14,7 @@ import { Tooltip } from "@/components/ui/tooltip"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -272,10 +273,7 @@ export default function SSHKeysPage() {
                 <p className="text-sm text-red-400">{uploadMutation.error.message}</p>
               )}
 
-              <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={uploadMutation.isPending}>
-                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
-                </Button>
+              <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
@@ -283,7 +281,10 @@ export default function SSHKeysPage() {
                 >
                   Cancel
                 </Button>
-              </div>
+                <Button type="submit" disabled={uploadMutation.isPending}>
+                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
+                </Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
@@ -466,12 +467,12 @@ export default function SSHKeysPage() {
               <Label htmlFor="edit-default">Set as default key</Label>
             </div>
             {editError && <p className="text-sm text-red-400">{editError}</p>}
-            <div className="flex gap-3 pt-2">
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingKey(null)}>Cancel</Button>
               <Button onClick={handleEditSave} disabled={editSaving}>
                 {editSaving ? "Saving..." : "Save"}
               </Button>
-              <Button variant="outline" onClick={() => setEditingKey(null)}>Cancel</Button>
-            </div>
+            </DialogFooter>
           </div>
         </DialogContent>
       </Dialog>

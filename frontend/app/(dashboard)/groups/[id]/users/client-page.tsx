@@ -11,6 +11,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -503,10 +504,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
               <p className="text-sm text-red-400">{userSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={userSaveMutation.isPending}>
-                {userSaveMutation.isPending ? "Saving..." : editingUser ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -514,7 +512,10 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={userSaveMutation.isPending}>
+                {userSaveMutation.isPending ? "Saving..." : editingUser ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -592,10 +593,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
               <p className="text-sm text-red-400">{groupSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={groupSaveMutation.isPending}>
-                {groupSaveMutation.isPending ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -603,7 +601,10 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={groupSaveMutation.isPending}>
+                {groupSaveMutation.isPending ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

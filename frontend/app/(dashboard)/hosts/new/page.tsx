@@ -171,15 +171,15 @@ export default function NewHostPage() {
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add Host"}
-            </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => router.push("/hosts")}
             >
               Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Adding..." : "Add Host"}
             </Button>
           </div>
         </form>

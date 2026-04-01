@@ -13,6 +13,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -303,10 +304,7 @@ export default function GitReposPage() {
                   <p className="text-sm text-red-400">{saveMutation.error.message}</p>
                 )}
 
-                <div className="flex gap-3 pt-2">
-                  <Button type="submit" disabled={saveMutation.isPending}>
-                    {saveMutation.isPending ? "Saving..." : editingRepo ? "Update Repository" : "Add Repository"}
-                  </Button>
+                <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
@@ -314,7 +312,10 @@ export default function GitReposPage() {
                   >
                     Cancel
                   </Button>
-                </div>
+                  <Button type="submit" disabled={saveMutation.isPending}>
+                    {saveMutation.isPending ? "Saving..." : editingRepo ? "Update Repository" : "Add Repository"}
+                  </Button>
+                </DialogFooter>
               </form>
             )}
           </DialogContent>
@@ -399,7 +400,8 @@ export default function GitReposPage() {
             Are you sure you want to delete this repository? This action cannot be undone.
             Any groups using this repository for GitOps will be disconnected.
           </p>
-          <div className="flex gap-3 pt-4">
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
             <Button
               variant="destructive"
               onClick={() => deleteConfirmId && handleDelete(deleteConfirmId)}
@@ -407,8 +409,7 @@ export default function GitReposPage() {
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
             </Button>
-            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
