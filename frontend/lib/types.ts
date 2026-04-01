@@ -134,6 +134,8 @@ export interface ServiceRule {
   comment: string | null
   group_id: number | null
   host_id: number | null
+  unit_content?: string | null
+  deploy_mode: "full" | "override"
   created_at: string
   updated_at: string
 }
@@ -145,6 +147,8 @@ export interface EffectiveService {
   source: "group" | "host"
   source_id: number
   source_name: string
+  unit_content?: string | null
+  deploy_mode: "full" | "override"
 }
 
 export interface HostsEntry {

@@ -21,6 +21,11 @@ class ServiceState(str, enum.Enum):
     stopped = "stopped"
 
 
+class DeployMode(str, enum.Enum):
+    full = "full"
+    override = "override"
+
+
 class ServiceRule(Base):
     __tablename__ = "service_rules"
     __table_args__ = (
@@ -46,6 +51,12 @@ class ServiceRule(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    unit_content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deploy_mode: Mapped[DeployMode] = mapped_column(
+        SAEnum(DeployMode, name="deploymode"),
+        nullable=False,
+        default=DeployMode.override,
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

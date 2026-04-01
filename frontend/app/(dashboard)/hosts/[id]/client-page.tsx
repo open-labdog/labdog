@@ -3,13 +3,14 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, RefreshCwIcon, PlayIcon, X, ShieldIcon, ChevronDownIcon, ChevronRightIcon } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
@@ -72,7 +73,7 @@ function cronToHuman(schedule: string): string {
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[12rem_1fr] items-center gap-4 py-2 border-b border-slate-800 last:border-0">
+    <div className="grid grid-cols-1 sm:grid-cols-[12rem_1fr] items-center gap-x-4 gap-y-1 py-2 border-b border-slate-800 last:border-0">
       <span className="text-slate-400 text-sm">{label}</span>
       <span className="text-white text-sm">{children}</span>
     </div>
@@ -104,9 +105,7 @@ function ModuleStateView({ moduleType, state }: { moduleType: string; state: unk
           {rules.map((r, i) => (
             <TableRow key={i} className="border-slate-700">
               <TableCell>
-                <Badge className={r.action === "allow" ? "bg-green-600 text-white" : r.action === "deny" ? "bg-red-600 text-white" : "bg-amber-600 text-white"}>
-                  {r.action}
-                </Badge>
+                <ActionBadge action={r.action} />
               </TableCell>
               <TableCell className="text-slate-300 uppercase text-xs">{r.protocol}</TableCell>
               <TableCell className="text-slate-300 capitalize text-xs">{r.direction}</TableCell>
@@ -360,9 +359,9 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
     <div className="mt-6 border-t border-slate-700 pt-6">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <h3 className="text-md font-semibold text-white">Current State</h3>
+          <h3 className="text-base font-semibold text-white">Current State</h3>
           {mod?.collected_at && (
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-slate-400">
               collected {new Date(mod.collected_at).toLocaleString()}
             </span>
           )}
@@ -375,7 +374,7 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
               onClick={handleToggleDrift}
               className={mod?.drift_check_enabled ? "text-green-400 hover:text-green-300" : "text-slate-500 hover:text-white"}
             >
-              {mod?.drift_check_enabled ? "Drift: On" : "Drift: Off"}
+              {mod?.drift_check_enabled ? "Disable Drift Check" : "Enable Drift Check"}
             </Button>
           )}
           <Button variant="outline" size="sm" disabled={collecting} onClick={handleCollect}>
@@ -385,7 +384,7 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
         </div>
       </div>
       {!mod || mod.collected_state == null ? (
-        <p className="text-slate-500 text-sm">Not yet collected.</p>
+        <p className="text-slate-400 text-sm">Not yet collected.</p>
       ) : (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
           <ModuleStateView moduleType={moduleType} state={mod.collected_state} />
@@ -534,7 +533,7 @@ function ProxmoxVMSection({
             <span className="text-slate-400 text-xs ml-1">{mapping.vm_name} (VMID {mapping.vmid})</span>
           )}
           {!expanded && !isLoading && !mapping && (
-            <span className="text-slate-500 text-xs ml-1">No mapping</span>
+            <span className="text-slate-400 text-xs ml-1">No mapping</span>
           )}
         </div>
         <Button
@@ -542,7 +541,6 @@ function ProxmoxVMSection({
           variant="outline"
           disabled={discoverMutation.isPending || isLoading}
           onClick={(e) => { e.stopPropagation(); discoverMutation.mutate() }}
-          className="h-7 text-xs"
         >
           <RefreshCwIcon className={`w-3 h-3 mr-1 ${discoverMutation.isPending ? "animate-spin" : ""}`} />
           {discoverMutation.isPending ? "Scanning..." : "Discover"}
@@ -552,7 +550,10 @@ function ProxmoxVMSection({
       {expanded && (
         <>
           {isLoading && (
-            <div className="py-3 text-slate-400 text-sm">Loading...</div>
+            <div className="py-3 text-slate-400 text-sm flex items-center gap-2">
+              <Loader2Icon className="w-4 h-4 animate-spin" />
+              Loading...
+            </div>
           )}
 
           {!isLoading && error && (
@@ -604,6 +605,7 @@ function SyncStatusMessage({
   if (host.sync_status === "in_sync" || (host.sync_status === "out_of_sync" && outOfSync.length === 0)) {
     return (
       <div className="rounded-lg border border-green-700/50 bg-green-950/20 px-4 py-3 flex items-center gap-2">
+        <CheckCircleIcon className="w-4 h-4 text-green-400 shrink-0" />
         <span className="text-green-400 text-sm">All modules are in sync with the desired configuration.</span>
       </div>
     )
@@ -612,7 +614,8 @@ function SyncStatusMessage({
   if (host.sync_status === "out_of_sync") {
     const names = outOfSync.map(m => m.module_type).join(", ")
     return (
-      <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3">
+      <div className="rounded-lg border border-amber-700/50 bg-amber-950/20 px-4 py-3 flex items-center gap-2">
+        <AlertTriangleIcon className="w-4 h-4 text-amber-400 shrink-0" />
         <span className="text-amber-400 text-sm">
           Configuration drift detected. {outOfSync.length} module(s) out of sync: {names}.
         </span>
@@ -623,7 +626,8 @@ function SyncStatusMessage({
   if (host.sync_status === "error") {
     const msgs = errored.map(m => `${m.module_type}: ${m.error_message}`).join("; ")
     return (
-      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3">
+      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
+        <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
         <span className="text-red-400 text-sm">
           Sync check encountered errors.{msgs ? ` ${msgs}` : ""}
         </span>
@@ -633,7 +637,8 @@ function SyncStatusMessage({
 
   if (host.sync_status === "pending") {
     return (
-      <div className="rounded-lg border border-blue-700/50 bg-blue-950/20 px-4 py-3">
+      <div className="rounded-lg border border-blue-700/50 bg-blue-950/20 px-4 py-3 flex items-center gap-2">
+        <Loader2Icon className="w-4 h-4 text-blue-400 shrink-0 animate-spin" />
         <span className="text-blue-400 text-sm">A sync operation is currently in progress.</span>
       </div>
     )
@@ -641,7 +646,8 @@ function SyncStatusMessage({
 
   // unknown
   return (
-    <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3">
+    <div className="rounded-lg border border-slate-700/50 bg-slate-900/50 px-4 py-3 flex items-center gap-2">
+      <HelpCircleIcon className="w-4 h-4 text-slate-400 shrink-0" />
       <span className="text-slate-400 text-sm">
         Sync status has not been checked yet. Run a drift check or collect state to determine status.
       </span>
@@ -1145,13 +1151,19 @@ export default function HostDetailPage() {
   }
 
   const [svcName, setSvcName] = useState("")
-  const [svcState, setSvcState] = useState<"running" | "stopped">("running")
-  const [svcEnabled, setSvcEnabled] = useState(true)
-  const [svcPriority, setSvcPriority] = useState(100)
-  const [svcComment, setSvcComment] = useState("")
+  const [svcEditorMode, setSvcEditorMode] = useState<"add" | "edit">("add")
+  const [svcEditRuleId, setSvcEditRuleId] = useState<number | null>(null)
+  const [svcDeployMode, setSvcDeployMode] = useState<"full" | "override">("override")
+  const [svcUnitContent, setSvcUnitContent] = useState("")
+  const [svcOriginalUnit, setSvcOriginalUnit] = useState<string | null>(null)
+  const [svcOriginalLoading, setSvcOriginalLoading] = useState(false)
   const svcSaveMutation = useApiMutation({
-    mutationFn: (payload: Record<string, unknown>) =>
-      apiFetch(`/api/hosts/${id}/services`, { method: "POST", body: JSON.stringify(payload) }),
+    mutationFn: (payload: Record<string, unknown>) => {
+      if (svcEditorMode === "edit" && svcEditRuleId !== null) {
+        return apiFetch(`/api/hosts/${id}/services/${svcEditRuleId}`, { method: "PUT", body: JSON.stringify(payload) })
+      }
+      return apiFetch(`/api/hosts/${id}/services`, { method: "POST", body: JSON.stringify(payload) })
+    },
     invalidateKeys: [["host-effective-services", id], ["host-service-overrides", id]],
     onSuccess: () => setSvcDialogOpen(false),
   })
@@ -1174,74 +1186,72 @@ export default function HostDetailPage() {
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
   const [protectedTarget, setProtectedTarget] = useState<{ service: string; action: string } | null>(null)
 
-  // Service discovery modal state
-  const [discoveryOpen, setDiscoveryOpen] = useState(false)
-  const [discoveryLoading, setDiscoveryLoading] = useState(false)
-  const [discoveryServices, setDiscoveryServices] = useState<LiveService[]>([])
-  const [discoveryError, setDiscoveryError] = useState<string | null>(null)
-  const [discoveryFilter, setDiscoveryFilter] = useState("")
-  const [discoverySelected, setDiscoverySelected] = useState<Set<string>>(new Set())
-  const [discoveryHideManaged, setDiscoveryHideManaged] = useState(true)
-  const [discoveryHideSystem, setDiscoveryHideSystem] = useState(true)
-  const [discoveryAdding, setDiscoveryAdding] = useState(false)
-
-  async function openDiscovery() {
-    setDiscoveryOpen(true)
-    setDiscoveryLoading(true)
-    setDiscoveryError(null)
-    setDiscoverySelected(new Set())
-    setDiscoveryFilter("")
-    try {
-      const data = await apiFetch<LiveService[]>(`/api/services/hosts/${id}/inventory`)
-      setDiscoveryServices(data)
-    } catch (e) {
-      setDiscoveryError(e instanceof Error ? e.message : "Failed to load services")
-    }
-    setDiscoveryLoading(false)
-  }
-
-  async function addDiscoveredServices() {
-    setDiscoveryAdding(true)
-    try {
-      for (const unit of discoverySelected) {
-        const svc = discoveryServices.find(s => s.unit === unit)
-        const isActive = svc?.active_state === "active"
-        await apiFetch(`/api/hosts/${id}/services`, {
-          method: "POST",
-          body: JSON.stringify({
-            service_name: unit,
-            state: isActive ? "running" : "stopped",
-            enabled: isActive,
-            priority: 100,
-            comment: "Added via service discovery",
-          }),
-        })
-      }
-      await queryClient.invalidateQueries({ queryKey: ["host-effective-services", id] })
-      await queryClient.invalidateQueries({ queryKey: ["host-service-overrides", id] })
-      setDiscoveryOpen(false)
-    } catch (e) {
-      setDiscoveryError(e instanceof Error ? e.message : "Failed to add services")
-    }
-    setDiscoveryAdding(false)
-  }
+  const [inventoryHideManaged, setInventoryHideManaged] = useState(true)
 
   function openSvcDialog() {
     setSvcName("")
-    setSvcState("running")
-    setSvcEnabled(true)
-    setSvcPriority(100)
-    setSvcComment("")
+    setSvcEditorMode("add")
+    setSvcEditRuleId(null)
+    setSvcDeployMode("override")
+    setSvcUnitContent("")
+    setSvcOriginalUnit(null)
     svcSaveMutation.reset()
     setSvcDialogOpen(true)
   }
 
+  async function openSvcEdit(svc: LiveService) {
+    const serviceName = svc.unit.replace(/\.service$/, "")
+    setSvcName(serviceName)
+    setSvcOriginalUnit(null)
+    setSvcOriginalLoading(true)
+    svcSaveMutation.reset()
+
+    if (svc.is_managed) {
+      setSvcEditorMode("edit")
+      const matchingEffective = effectiveServices?.find(
+        (es) => es.service_name === svc.unit || es.service_name === serviceName
+      )
+      const matchingOverride = hostOverrides?.find(
+        (o) => o.service_name === svc.unit || o.service_name === serviceName
+      )
+      setSvcEditRuleId(matchingOverride?.id ?? null)
+      setSvcDeployMode(matchingEffective?.deploy_mode ?? "override")
+      setSvcUnitContent(matchingEffective?.unit_content ?? "")
+    } else {
+      setSvcEditorMode("add")
+      setSvcEditRuleId(null)
+      setSvcDeployMode("override")
+      setSvcUnitContent("")
+    }
+
+    setSvcDialogOpen(true)
+
+    try {
+      const res = await apiFetch<{ content: string }>(`/api/services/hosts/${id}/unit-file/${svc.unit}`)
+      setSvcOriginalUnit(res.content)
+    } catch {
+      setSvcOriginalUnit(null)
+    } finally {
+      setSvcOriginalLoading(false)
+    }
+  }
+
   function handleSvcSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    svcSaveMutation.mutate({
-      service_name: svcName, state: svcState, enabled: svcEnabled,
-      priority: svcPriority, comment: svcComment || null,
-    })
+    if (svcEditorMode === "edit") {
+      svcSaveMutation.mutate({
+        unit_content: svcUnitContent || null,
+        deploy_mode: svcDeployMode,
+      })
+    } else {
+      svcSaveMutation.mutate({
+        service_name: svcName,
+        deploy_mode: svcDeployMode,
+        unit_content: svcUnitContent || null,
+        state: "stopped",
+        enabled: false,
+      })
+    }
   }
 
   function handleSvcDelete(serviceName: string) {
@@ -1321,6 +1331,7 @@ export default function HostDetailPage() {
   const filteredInventory = inventory.filter(
     (svc) =>
       (!inventoryHideSystem || !svc.is_system) &&
+      (!inventoryHideManaged || !svc.is_managed) &&
       (svc.unit.toLowerCase().includes(inventoryFilter.toLowerCase()) ||
       svc.description.toLowerCase().includes(inventoryFilter.toLowerCase()))
   )
@@ -1347,7 +1358,7 @@ export default function HostDetailPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: host?.hostname ?? "Host" }]} />
       {/* Host Info */}
       <div className="flex items-center justify-between">
@@ -1355,7 +1366,7 @@ export default function HostDetailPage() {
           <h1 className="text-2xl font-bold text-white mb-1">
             {hostLoading ? "Loading…" : host?.hostname ?? `Host #${id}`}
           </h1>
-          <p className="text-slate-400 text-sm">Host details and effective firewall rules</p>
+          <p className="text-slate-400 text-sm">Host details and configuration management</p>
         </div>
         {host && (
           <div className="flex items-center gap-2">
@@ -1429,7 +1440,7 @@ export default function HostDetailPage() {
                     setSyncing(false)
                   }}
                 >
-                  <PlayIcon className={`w-4 h-4 mr-1`} />
+                  <ArrowUpFromLineIcon className={`w-4 h-4 mr-1`} />
                   {syncing ? "Syncing..." : "Sync All"}
                 </Button>
               </>
@@ -1537,10 +1548,12 @@ export default function HostDetailPage() {
         )}
       </div>
 
-      <div className="flex gap-1 border-b border-slate-700">
+      <div role="tablist" className="flex gap-1 border-b border-slate-700 overflow-x-auto">
         <button
+          role="tab"
+          aria-selected={activeTab === "overview"}
           onClick={() => setActiveTab("overview")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "overview"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1549,8 +1562,10 @@ export default function HostDetailPage() {
           Overview
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "groups"}
           onClick={() => setActiveTab("groups")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "groups"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1559,8 +1574,10 @@ export default function HostDetailPage() {
           Groups
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "rules"}
           onClick={() => setActiveTab("rules")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "rules"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1569,8 +1586,10 @@ export default function HostDetailPage() {
           Rules
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "services"}
           onClick={() => setActiveTab("services")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "services"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1579,8 +1598,10 @@ export default function HostDetailPage() {
           Services
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "hosts-file"}
           onClick={() => setActiveTab("hosts-file")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "hosts-file"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1589,8 +1610,10 @@ export default function HostDetailPage() {
           Hosts File
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "users"}
           onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "users"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1599,8 +1622,10 @@ export default function HostDetailPage() {
           Users
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "cron-jobs"}
           onClick={() => setActiveTab("cron-jobs")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "cron-jobs"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1609,8 +1634,10 @@ export default function HostDetailPage() {
           Cron Jobs
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "packages"}
           onClick={() => setActiveTab("packages")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "packages"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1619,8 +1646,10 @@ export default function HostDetailPage() {
           Packages
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "dns"}
           onClick={() => setActiveTab("dns")}
-          className={`px-4 py-2 text-sm font-medium transition-colors ${
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
             activeTab === "dns"
               ? "text-white border-b-2 border-white"
               : "text-slate-400 hover:text-white"
@@ -1927,7 +1956,7 @@ export default function HostDetailPage() {
                 setModuleSyncing(false)
               }}
             >
-              <PlayIcon className="w-4 h-4 mr-1" />
+              <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
               {moduleSyncing ? "Syncing..." : "Sync Rules"}
             </Button>
           </div>
@@ -1974,7 +2003,7 @@ export default function HostDetailPage() {
                       <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs font-mono">
-                          #{rule.group_id}
+                          {groups?.find(g => g.id === rule.group_id)?.name ?? `#${rule.group_id}`}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
@@ -2015,13 +2044,10 @@ export default function HostDetailPage() {
                   setModuleSyncing(false)
                 }}
               >
-                <PlayIcon className="w-4 h-4 mr-1" />
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
                 {moduleSyncing ? "Syncing..." : "Sync Services"}
               </Button>
-              <Button variant="outline" size="sm" disabled={!host?.ssh_key_id} onClick={openDiscovery}>
-                Discover Services
-              </Button>
-              <Button onClick={openSvcDialog}>Add Override</Button>
+              <Button onClick={openSvcDialog}>Add Service</Button>
             </div>
           </div>
 
@@ -2097,9 +2123,9 @@ export default function HostDetailPage() {
           )}
 
           <Dialog open={svcDialogOpen} onOpenChange={setSvcDialogOpen}>
-            <DialogContent className="sm:max-w-md">
+            <DialogContent className="sm:max-w-2xl">
               <DialogHeader>
-                <DialogTitle>Add Service Override</DialogTitle>
+                <DialogTitle>{svcEditorMode === "edit" ? "Edit Service" : "Add Service"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSvcSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -2110,54 +2136,69 @@ export default function HostDetailPage() {
                     placeholder="e.g. nginx, sshd, docker"
                     value={svcName}
                     onChange={(e) => setSvcName(e.target.value)}
+                    disabled={svcEditorMode === "edit"}
                     required
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="svc-state">State</Label>
-                  <select
-                    id="svc-state"
-                    value={svcState}
-                    onChange={(e) => setSvcState(e.target.value as "running" | "stopped")}
-                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
-                  >
-                    <option value="running">Running</option>
-                    <option value="stopped">Stopped</option>
-                  </select>
-                </div>
+                {svcEditorMode === "add" ? (
+                  <div className="space-y-2">
+                    <Label>Deploy Mode</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={svcDeployMode === "override" ? "default" : "outline"}
+                        onClick={() => setSvcDeployMode("override")}
+                      >
+                        Override existing
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={svcDeployMode === "full" ? "default" : "outline"}
+                        onClick={() => setSvcDeployMode("full")}
+                      >
+                        New Service (full file)
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Label>Deploy Mode</Label>
+                    <p className="text-sm text-slate-400">
+                      {svcDeployMode === "full" ? "New Service (full file)" : "Override existing"}
+                    </p>
+                  </div>
+                )}
 
-                <div className="flex items-center gap-2">
-                  <input
-                    id="svc-enabled"
-                    type="checkbox"
-                    checked={svcEnabled}
-                    onChange={(e) => setSvcEnabled(e.target.checked)}
-                    className="rounded border-input"
-                  />
-                  <Label htmlFor="svc-enabled">Enabled</Label>
-                </div>
+                {svcOriginalUnit !== null && (
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm text-slate-400 hover:text-slate-300 select-none">
+                      Original unit file {svcOriginalLoading ? "(loading...)" : ""}
+                    </summary>
+                    <pre className="mt-2 rounded-md border border-slate-700 bg-slate-950 p-3 text-xs font-mono text-slate-300 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre">
+                      {svcOriginalUnit}
+                    </pre>
+                  </details>
+                )}
+                {svcOriginalLoading && svcOriginalUnit === null && (
+                  <p className="text-xs text-slate-500">Loading original unit file...</p>
+                )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="svc-priority">Priority</Label>
-                  <Input
-                    id="svc-priority"
-                    type="number"
-                    value={svcPriority}
-                    onChange={(e) => setSvcPriority(Number(e.target.value))}
-                    required
-                    min={0}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="svc-comment">Comment</Label>
-                  <Input
-                    id="svc-comment"
-                    type="text"
-                    placeholder="Optional comment"
-                    value={svcComment}
-                    onChange={(e) => setSvcComment(e.target.value)}
+                  <Label htmlFor="svc-unit-content">Unit file content</Label>
+                  <Textarea
+                    id="svc-unit-content"
+                    rows={20}
+                    className="font-mono text-sm resize-y"
+                    placeholder={
+                      svcDeployMode === "full"
+                        ? "[Unit]\nDescription=My Service\n\n[Service]\nExecStart=/usr/bin/myapp\nRestart=always\n\n[Install]\nWantedBy=multi-user.target"
+                        : "[Service]\nMemoryLimit=512M"
+                    }
+                    value={svcUnitContent}
+                    onChange={(e) => setSvcUnitContent(e.target.value)}
                   />
                 </div>
 
@@ -2167,7 +2208,7 @@ export default function HostDetailPage() {
 
                 <div className="flex gap-3 pt-2">
                   <Button type="submit" disabled={svcSaveMutation.isPending}>
-                    {svcSaveMutation.isPending ? "Saving..." : "Create Override"}
+                    {svcSaveMutation.isPending ? "Saving..." : "Save"}
                   </Button>
                   <Button
                     type="button"
@@ -2243,6 +2284,15 @@ export default function HostDetailPage() {
                   />
                   Hide system services
                 </label>
+                <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={inventoryHideManaged}
+                    onChange={(e) => setInventoryHideManaged(e.target.checked)}
+                    className="rounded border-slate-600"
+                  />
+                  Hide managed
+                </label>
               </div>
 
               <div className="rounded-lg border border-slate-700 bg-slate-900">
@@ -2254,7 +2304,7 @@ export default function HostDetailPage() {
                       <TableHead>Sub State</TableHead>
                       <TableHead>Load State</TableHead>
                       <TableHead>Description</TableHead>
-                      <TableHead className="w-48">Actions</TableHead>
+                      <TableHead className="w-64">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2285,7 +2335,7 @@ export default function HostDetailPage() {
                         <TableCell className="text-slate-300 text-xs">{svc.load_state}</TableCell>
                         <TableCell className="text-slate-400 text-xs max-w-[200px] truncate">{svc.description}</TableCell>
                         <TableCell>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1 flex-wrap">
                             {(["start", "stop", "restart"] as const).map((action) => (
                               <Button
                                 key={action}
@@ -2300,6 +2350,32 @@ export default function HostDetailPage() {
                                   : action.charAt(0).toUpperCase() + action.slice(1)}
                               </Button>
                             ))}
+                            {!svc.is_protected && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => openSvcEdit(svc)}
+                                className="text-xs text-blue-400 hover:text-blue-300"
+                              >
+                                Edit
+                              </Button>
+                            )}
+                            {svc.is_managed && !svc.is_protected && (() => {
+                              const matchingOverride = hostOverrides?.find(
+                                (o) => o.service_name === svc.unit || o.service_name === svc.unit.replace(/\.service$/, "")
+                              )
+                              return matchingOverride ? (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={svcDeleteMutation.isPending}
+                                  onClick={() => handleSvcDelete(svc.unit)}
+                                  className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950"
+                                >
+                                  {svcDeleteMutation.isPending ? "..." : "Remove"}
+                                </Button>
+                              ) : null
+                            })()}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -2345,154 +2421,6 @@ export default function HostDetailPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Service Discovery Dialog */}
-          <Dialog open={discoveryOpen} onOpenChange={setDiscoveryOpen}>
-            <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
-              <DialogHeader>
-                <DialogTitle>Discover Services</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 mt-2 flex-1 overflow-hidden flex flex-col">
-                {discoveryLoading && (
-                  <div className="py-8 text-slate-400 text-sm text-center">Loading services from host via SSH...</div>
-                )}
-
-                {discoveryError && (
-                  <div className="text-red-400 text-sm">{discoveryError}</div>
-                )}
-
-                {!discoveryLoading && discoveryServices.length > 0 && (() => {
-                  const q = discoveryFilter.toLowerCase()
-                  const filtered = discoveryServices
-                    .filter(s => !discoveryHideManaged || !s.is_managed)
-                    .filter(s => !discoveryHideSystem || !s.is_system)
-                    .filter(s => !q || s.unit.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
-                  return (
-                    <>
-                      <div className="flex items-center gap-3">
-                        <Input
-                          placeholder="Filter services..."
-                          value={discoveryFilter}
-                          onChange={(e) => setDiscoveryFilter(e.target.value)}
-                          className="max-w-xs"
-                        />
-                        <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={discoveryHideManaged}
-                            onChange={(e) => setDiscoveryHideManaged(e.target.checked)}
-                            className="rounded border-slate-600"
-                          />
-                          Hide managed
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
-                          <input
-                            type="checkbox"
-                            checked={discoveryHideSystem}
-                            onChange={(e) => setDiscoveryHideSystem(e.target.checked)}
-                            className="rounded border-slate-600"
-                          />
-                          Hide system
-                        </label>
-                        <span className="text-slate-500 text-xs ml-auto">
-                          {filtered.length} services, {discoverySelected.size} selected
-                        </span>
-                      </div>
-                      <div className="flex-1 overflow-y-auto rounded-lg border border-slate-700">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="border-slate-700">
-                              <TableHead className="w-10">
-                                <input
-                                  type="checkbox"
-                                  checked={filtered.filter(s => !s.is_managed && !s.is_protected).length > 0 && filtered.filter(s => !s.is_managed && !s.is_protected).every(s => discoverySelected.has(s.unit))}
-                                  onChange={() => {
-                                    const eligible = filtered.filter(s => !s.is_managed && !s.is_protected)
-                                    if (eligible.every(s => discoverySelected.has(s.unit))) {
-                                      setDiscoverySelected(new Set())
-                                    } else {
-                                      setDiscoverySelected(new Set(eligible.map(s => s.unit)))
-                                    }
-                                  }}
-                                  className="rounded border-slate-600"
-                                />
-                              </TableHead>
-                              <TableHead>Service</TableHead>
-                              <TableHead>State</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead>Status</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {filtered.map((svc) => (
-                              <TableRow
-                                key={svc.unit}
-                                className={`border-slate-700 ${svc.is_managed || svc.is_protected ? "opacity-50" : "cursor-pointer hover:bg-slate-800"}`}
-                                onClick={() => {
-                                  if (svc.is_managed || svc.is_protected) return
-                                  setDiscoverySelected(prev => {
-                                    const next = new Set(prev)
-                                    if (next.has(svc.unit)) next.delete(svc.unit)
-                                    else next.add(svc.unit)
-                                    return next
-                                  })
-                                }}
-                              >
-                                <TableCell>
-                                  <input
-                                    type="checkbox"
-                                    checked={discoverySelected.has(svc.unit)}
-                                    disabled={svc.is_managed || svc.is_protected}
-                                    onChange={(e) => e.stopPropagation()}
-                                    className="rounded border-slate-600"
-                                  />
-                                </TableCell>
-                                <TableCell className="font-mono text-white text-sm">{svc.unit}</TableCell>
-                                <TableCell>
-                                  <Badge className={
-                                    svc.active_state === "active" ? "bg-green-600 text-white"
-                                      : svc.active_state === "failed" ? "bg-red-600 text-white"
-                                      : "bg-slate-600 text-white"
-                                  }>
-                                    {svc.active_state}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-slate-400 text-xs max-w-[250px] truncate">{svc.description}</TableCell>
-                                <TableCell>
-                                  {svc.is_managed && <Badge variant="outline" className="text-xs">Managed</Badge>}
-                                  {svc.is_protected && <Badge variant="outline" className="text-xs text-amber-400 border-amber-600">Protected</Badge>}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </>
-                  )
-                })()}
-
-                {!discoveryLoading && discoveryServices.length === 0 && !discoveryError && (
-                  <div className="text-slate-400 py-8 text-center">No services found on this host.</div>
-                )}
-
-                <div className="flex items-center justify-between pt-2 border-t border-slate-700">
-                  <span className="text-slate-400 text-sm">
-                    {discoverySelected.size > 0
-                      ? `${discoverySelected.size} service(s) will be added as host overrides (state matched to current)`
-                      : "Select unmanaged services to add"}
-                  </span>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setDiscoveryOpen(false)}>Cancel</Button>
-                    <Button
-                      disabled={discoverySelected.size === 0 || discoveryAdding}
-                      onClick={addDiscoveredServices}
-                    >
-                      {discoveryAdding ? "Adding..." : `Add ${discoverySelected.size} Service(s)`}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
         </div>
       )}
 
@@ -2520,7 +2448,7 @@ export default function HostDetailPage() {
                   setModuleSyncing(false)
                 }}
               >
-                <PlayIcon className="w-4 h-4 mr-1" />
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
                 {moduleSyncing ? "Syncing..." : "Sync"}
               </Button>
               <Button
@@ -2740,7 +2668,7 @@ export default function HostDetailPage() {
                   setModuleSyncing(false)
                 }}
               >
-                <PlayIcon className="w-4 h-4 mr-1" />
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
                 {moduleSyncing ? "Syncing..." : "Sync"}
               </Button>
               <Button variant="outline" onClick={openLuDialog}>Add User Override</Button>
@@ -3138,7 +3066,7 @@ export default function HostDetailPage() {
                   setModuleSyncing(false)
                 }}
               >
-                <PlayIcon className="w-4 h-4 mr-1" />
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
                 {moduleSyncing ? "Syncing..." : "Sync"}
               </Button>
               <Button onClick={openCjDialog}>Add Override</Button>
@@ -3429,7 +3357,7 @@ export default function HostDetailPage() {
                   setModuleSyncing(false)
                 }}
               >
-                <PlayIcon className="w-4 h-4 mr-1" />
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
                 {moduleSyncing ? "Syncing..." : "Sync"}
               </Button>
               <Button onClick={openPpDialog}>Add Override</Button>
@@ -3715,7 +3643,7 @@ export default function HostDetailPage() {
                 setModuleSyncing(false)
               }}
             >
-              <PlayIcon className="w-4 h-4 mr-1" />
+              <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
               {moduleSyncing ? "Syncing..." : "Sync DNS"}
             </Button>
           </div>

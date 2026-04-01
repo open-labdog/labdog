@@ -11,6 +11,8 @@ class ServiceRuleCreate(BaseModel):
     enabled: bool = True
     priority: int = 0
     comment: Optional[str] = None
+    unit_content: Optional[str] = None
+    deploy_mode: Literal["full", "override"] = "override"
 
     @field_validator("service_name")
     @classmethod
@@ -33,6 +35,8 @@ class ServiceRuleUpdate(BaseModel):
     enabled: Optional[bool] = None
     priority: Optional[int] = None
     comment: Optional[str] = None
+    unit_content: Optional[str] = None
+    deploy_mode: Optional[Literal["full", "override"]] = None
 
     @field_validator("service_name")
     @classmethod
@@ -58,6 +62,8 @@ class ServiceRuleResponse(BaseModel):
     enabled: bool
     priority: int
     comment: Optional[str]
+    unit_content: Optional[str]
+    deploy_mode: str
     group_id: Optional[int]
     host_id: Optional[int]
     created_at: datetime
@@ -69,6 +75,8 @@ class EffectiveServiceResponse(BaseModel):
     service_name: str
     state: str
     enabled: bool
+    unit_content: Optional[str]
+    deploy_mode: str
     source: Literal["group", "host"]
     source_id: int
     source_name: str

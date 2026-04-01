@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -121,12 +122,14 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       <div className="mt-auto border-t border-slate-700 pt-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-300 truncate">{user?.email}</div>
-          <button
+          <Button
+            variant="ghost"
+            size="xs"
             onClick={() => { form.reset(); setPasswordDialogOpen(true) }}
-            className="text-xs text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+            className="shrink-0"
           >
             Change Password
-          </button>
+          </Button>
         </div>
         <Button size="sm" variant="destructive" className="w-full" onClick={logout}>
           Log Out
@@ -152,14 +155,14 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
                <Input id="confirm-password" type="password" {...form.register("confirm_password")} />
                {form.formState.errors.confirm_password?.message && <p className="text-sm text-red-400">{form.formState.errors.confirm_password.message}</p>}
              </div>
-             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
-              </Button>
+             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)}>
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
