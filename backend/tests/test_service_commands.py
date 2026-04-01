@@ -87,9 +87,11 @@ class TestCommandSchemas:
             description="A high performance web server",
             is_managed=True,
             is_protected=False,
+            is_system=False,
         )
         assert item.unit == "nginx"
         assert item.is_managed is True
+        assert item.is_system is False
 
 
 class TestSSHFunctions:

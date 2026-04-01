@@ -1168,6 +1168,7 @@ export default function HostDetailPage() {
   const [inventory, setInventory] = useState<LiveService[]>([])
   const [inventoryError, setInventoryError] = useState<string | null>(null)
   const [inventoryFilter, setInventoryFilter] = useState("")
+  const [inventoryHideSystem, setInventoryHideSystem] = useState(true)
   const [pendingAction, setPendingAction] = useState<{ service: string; action: string } | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionResult, setActionResult] = useState<{ success: boolean; message: string } | null>(null)
@@ -1181,6 +1182,7 @@ export default function HostDetailPage() {
   const [discoveryFilter, setDiscoveryFilter] = useState("")
   const [discoverySelected, setDiscoverySelected] = useState<Set<string>>(new Set())
   const [discoveryHideManaged, setDiscoveryHideManaged] = useState(true)
+  const [discoveryHideSystem, setDiscoveryHideSystem] = useState(true)
   const [discoveryAdding, setDiscoveryAdding] = useState(false)
 
   async function openDiscovery() {
@@ -1318,8 +1320,9 @@ export default function HostDetailPage() {
 
   const filteredInventory = inventory.filter(
     (svc) =>
-      svc.unit.toLowerCase().includes(inventoryFilter.toLowerCase()) ||
-      svc.description.toLowerCase().includes(inventoryFilter.toLowerCase())
+      (!inventoryHideSystem || !svc.is_system) &&
+      (svc.unit.toLowerCase().includes(inventoryFilter.toLowerCase()) ||
+      svc.description.toLowerCase().includes(inventoryFilter.toLowerCase()))
   )
 
   useEffect(() => {
@@ -2224,12 +2227,23 @@ export default function HostDetailPage() {
 
           {inventoryLoaded && inventory.length > 0 && (
             <>
-              <Input
-                placeholder="Filter services..."
-                value={inventoryFilter}
-                onChange={(e) => setInventoryFilter(e.target.value)}
-                className="max-w-sm"
-              />
+              <div className="flex items-center gap-3">
+                <Input
+                  placeholder="Filter services..."
+                  value={inventoryFilter}
+                  onChange={(e) => setInventoryFilter(e.target.value)}
+                  className="max-w-sm"
+                />
+                <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={inventoryHideSystem}
+                    onChange={(e) => setInventoryHideSystem(e.target.checked)}
+                    className="rounded border-slate-600"
+                  />
+                  Hide system services
+                </label>
+              </div>
 
               <div className="rounded-lg border border-slate-700 bg-slate-900">
                 <Table>
@@ -2350,6 +2364,7 @@ export default function HostDetailPage() {
                   const q = discoveryFilter.toLowerCase()
                   const filtered = discoveryServices
                     .filter(s => !discoveryHideManaged || !s.is_managed)
+                    .filter(s => !discoveryHideSystem || !s.is_system)
                     .filter(s => !q || s.unit.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
                   return (
                     <>
@@ -2368,6 +2383,15 @@ export default function HostDetailPage() {
                             className="rounded border-slate-600"
                           />
                           Hide managed
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-400 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            checked={discoveryHideSystem}
+                            onChange={(e) => setDiscoveryHideSystem(e.target.checked)}
+                            className="rounded border-slate-600"
+                          />
+                          Hide system
                         </label>
                         <span className="text-slate-500 text-xs ml-auto">
                           {filtered.length} services, {discoverySelected.size} selected
