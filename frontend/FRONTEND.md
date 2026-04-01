@@ -70,7 +70,7 @@ Dark mode only (`<html className="dark">`). The palette is monochromatic slate w
 | Primary (headings, names) | `text-white` |
 | Secondary (descriptions, metadata) | `text-slate-400` |
 | Table values | `text-slate-300` |
-| Disabled / muted | `text-slate-500` |
+| Disabled / muted | `text-slate-400` (use `text-slate-500` only for decorative elements, not readable text at text-xs/text-sm sizes) |
 | Error messages | `text-red-400` |
 | Success messages | `text-green-400` |
 
@@ -221,14 +221,14 @@ Always wrapped in a styled container:
         <Input id="field" value={value} onChange={(e) => setValue(e.target.value)} required />
       </div>
       {formError && <p className="text-sm text-red-400">{formError}</p>}
-      <div className="flex gap-3 pt-2">
-        <Button type="submit" disabled={formLoading}>
-          {formLoading ? "Creating..." : "Create"}
-        </Button>
+      <DialogFooter>
         <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
           Cancel
         </Button>
-      </div>
+        <Button type="submit" disabled={formLoading}>
+          {formLoading ? "Creating..." : "Create"}
+        </Button>
+      </DialogFooter>
     </form>
   </DialogContent>
 </Dialog>
@@ -238,6 +238,8 @@ Always wrapped in a styled container:
   <DialogContent>...</DialogContent>
 </Dialog>
 ```
+
+**Button order convention**: Cancel (outline/ghost) on the left, primary action on the right. Use `<DialogFooter>` which handles responsive layout (stacks vertically on mobile with `flex-col-reverse`, side-by-side on desktop with `sm:flex-row sm:justify-end`).
 
 ### Forms
 
@@ -297,10 +299,10 @@ const form = useForm<ItemInput>({
   </div>
 
   {/* Buttons */}
-  <div className="flex gap-3 pt-2">
-    <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Save"}</Button>
+  <DialogFooter>
     <Button type="button" variant="outline" onClick={close}>Cancel</Button>
-  </div>
+    <Button type="submit" disabled={mutation.isPending}>{mutation.isPending ? "Saving..." : "Save"}</Button>
+  </DialogFooter>
 </form>
 ```
 
@@ -657,7 +659,7 @@ Optimistic updates available via `optimisticUpdate` option (for simple delete/to
 
 | What | Why |
 |------|-----|
-| shadcn Select | Native `<select>` elements used everywhere. |
+| shadcn Select | Native `<select>` elements used currently. Migration to styled Select component planned. |
 | `DialogTrigger asChild` | Not supported by base-ui. Wrap children directly. |
 | Dark/light toggle | Dark mode only, hardcoded `className="dark"` on `<html>`. |
 | Framer Motion | No animation library. CSS transitions only. |
