@@ -28,11 +28,11 @@ def check_all_drift():
                 if backend == "unknown":
                     continue
                 try:
-                    from app.api.drift import _get_desired_rules_for_host
+                    from app.api.drift import _get_desired_state_for_host
 
-                    desired = await _get_desired_rules_for_host(host.id, db, host_source_ip=host.barricade_source_ip)
+                    desired, desired_policies = await _get_desired_state_for_host(host.id, db, host_source_ip=host.barricade_source_ip)
                     current = await fetch_current_state(host.id, db)
-                    drift_result = await check_drift(host.id, desired, db)
+                    drift_result = await check_drift(host.id, desired, db, desired_policies=desired_policies)
                     host.sync_status = drift_result.status
                     host.last_drift_check_at = datetime.now(timezone.utc)
 

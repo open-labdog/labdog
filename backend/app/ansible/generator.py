@@ -1,11 +1,12 @@
 import yaml
-from app.rules.model import FirewallRuleSpec
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.renderers.nftables import render_nftables_config
 from app.rules.renderers.iptables import render_iptables_rules
 
 
 def generate_nftables_playbook(
-    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    policies: ChainPolicies | None = None,
 ) -> str:
     """Generate playbook that writes nftables.conf and reloads with safe rollback.
 
@@ -20,7 +21,7 @@ def generate_nftables_playbook(
     If applying the new rules kills SSH, the scheduled revert fires
     after 60 seconds and restores the previous ruleset automatically.
     """
-    nft_config = render_nftables_config(rules)
+    nft_config = render_nftables_config(rules, policies=policies)
     tasks = [
         {
             "name": "Backup current nftables ruleset",
@@ -104,7 +105,8 @@ def generate_nftables_playbook(
 
 
 def generate_iptables_playbook(
-    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    policies: ChainPolicies | None = None,
 ) -> str:
     """Generate playbook that writes iptables rules and applies with safe rollback.
 
@@ -120,7 +122,7 @@ def generate_iptables_playbook(
     If applying the new rules kills SSH, the scheduled revert fires
     after 60 seconds and restores the previous ruleset automatically.
     """
-    ipv4_content, ipv6_content = render_iptables_rules(rules)
+    ipv4_content, ipv6_content = render_iptables_rules(rules, policies=policies)
     tasks = [
         {
             "name": "Backup current iptables ruleset",
@@ -232,7 +234,8 @@ def generate_iptables_playbook(
 
 
 def generate_playbook(
-    backend: str, host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str
+    backend: str, host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    policies: ChainPolicies | None = None,
 ) -> str:
     """Dispatch to backend-specific generator."""
     generators = {
@@ -242,4 +245,4 @@ def generate_playbook(
     gen = generators.get(backend)
     if not gen:
         raise ValueError(f"Unsupported firewall backend: {backend}")
-    return gen(host_ip, rules, ssh_key_path)
+    return gen(host_ip, rules, ssh_key_path, policies=policies)

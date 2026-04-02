@@ -10,8 +10,8 @@ from app.models.firewall_rule import FirewallRule
 from app.models.user import User
 from app.auth.users import current_active_user
 from app.drift.detector import check_drift
-from app.rules.model import FirewallRuleSpec
-from app.rules.merge import merge_group_rules
+from app.rules.model import ChainPolicies, FirewallRuleSpec
+from app.rules.merge import merge_group_rules, merge_group_policies
 from app.rules.converter import firewall_rules_to_specs
 
 router = APIRouter(prefix="/drift", tags=["drift"])
@@ -23,6 +23,7 @@ class DriftResponse(BaseModel):
     has_changes: bool
     add_count: int
     remove_count: int
+    policy_changes: dict[str, list[str]] = {}
     error_message: str | None = None
     checked_at: str
 
@@ -31,23 +32,45 @@ class DriftSettingsUpdate(BaseModel):
     drift_check_enabled: bool
 
 
-async def _get_desired_rules_for_host(
+def _drift_result_to_response(host_id: int, result) -> DriftResponse:
+    policy_changes = {}
+    if result.diff and result.diff.policy_changes:
+        policy_changes = {k: list(v) for k, v in result.diff.policy_changes.items()}
+    return DriftResponse(
+        host_id=host_id,
+        status=result.status,
+        has_changes=result.diff.has_changes if result.diff else False,
+        add_count=len(result.diff.rules_to_add) if result.diff else 0,
+        remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
+        policy_changes=policy_changes,
+        error_message=result.error_message,
+        checked_at=result.checked_at.isoformat(),
+    )
+
+
+async def _get_desired_state_for_host(
     host_id: int, db: AsyncSession, host_source_ip: str | None = None,
-) -> list[FirewallRuleSpec]:
+) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
+    """Return (merged_rules, merged_policies) for a host."""
     memberships = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     group_ids = [r[0] for r in memberships.all()]
     if not group_ids:
-        return []
+        return [], ChainPolicies()
     groups_data = []
     for gid in group_ids:
         g = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = g.scalar_one()
         r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = firewall_rules_to_specs(r.scalars().all())
-        groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
-    return merge_group_rules(groups_data, host_source_ip=host_source_ip)
+        groups_data.append({
+            "id": gid, "priority": group.priority, "rules": rules,
+            "input_policy": group.input_policy, "output_policy": group.output_policy,
+        })
+    merged_rules = merge_group_rules(groups_data, host_source_ip=host_source_ip)
+    merged_policies = merge_group_policies(groups_data)
+    return merged_rules, merged_policies
 
 
 @router.post("/hosts/{host_id}/check", response_model=DriftResponse)
@@ -75,20 +98,12 @@ async def check_host_drift(
             error_message="Firewall backend not detected",
             checked_at=datetime.now(timezone.utc).isoformat(),
         )
-    desired = await _get_desired_rules_for_host(host_id, db, host_source_ip=host.barricade_source_ip)
-    result = await check_drift(host_id, desired, db)
+    desired, policies = await _get_desired_state_for_host(host_id, db, host_source_ip=host.barricade_source_ip)
+    result = await check_drift(host_id, desired, db, desired_policies=policies)
     host.sync_status = result.status
     host.last_drift_check_at = datetime.now(timezone.utc)
     await db.commit()
-    return DriftResponse(
-        host_id=host_id,
-        status=result.status,
-        has_changes=result.diff.has_changes if result.diff else False,
-        add_count=len(result.diff.rules_to_add) if result.diff else 0,
-        remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
-        error_message=result.error_message,
-        checked_at=result.checked_at.isoformat(),
-    )
+    return _drift_result_to_response(host_id, result)
 
 
 @router.post("/groups/{group_id}/check", response_model=list[DriftResponse])
@@ -124,22 +139,12 @@ async def check_group_drift(
                 )
             )
             continue
-        desired = await _get_desired_rules_for_host(hid, db, host_source_ip=host.barricade_source_ip)
-        result = await check_drift(hid, desired, db)
+        desired, policies = await _get_desired_state_for_host(hid, db, host_source_ip=host.barricade_source_ip)
+        result = await check_drift(hid, desired, db, desired_policies=policies)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(timezone.utc)
         await db.commit()
-        results.append(
-            DriftResponse(
-                host_id=hid,
-                status=result.status,
-                has_changes=result.diff.has_changes if result.diff else False,
-                add_count=len(result.diff.rules_to_add) if result.diff else 0,
-                remove_count=len(result.diff.rules_to_remove) if result.diff else 0,
-                error_message=result.error_message,
-                checked_at=result.checked_at.isoformat(),
-            )
-        )
+        results.append(_drift_result_to_response(hid, result))
     return results
 
 

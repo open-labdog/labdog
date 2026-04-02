@@ -2,7 +2,7 @@
 
 import json
 
-from app.rules.model import FirewallRuleSpec
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 _ACTION_MAP = {"accept": "allow", "drop": "deny", "reject": "reject"}
 
@@ -140,3 +140,27 @@ def parse_nftables_json(json_str: str) -> list[FirewallRuleSpec]:
         )
 
     return rules
+
+
+def parse_nftables_policies(json_str: str) -> ChainPolicies:
+    """Extract chain default policies from ``nft -j list ruleset`` JSON."""
+    data = json.loads(json_str)
+    nftables = data.get("nftables", [])
+
+    input_policy = "drop"
+    output_policy = "accept"
+
+    for item in nftables:
+        if "chain" not in item:
+            continue
+        c = item["chain"]
+        if c.get("family") != "inet" or c.get("table") != "filter":
+            continue
+        hook = c.get("hook", "")
+        policy = c.get("policy", "")
+        if hook == "input" and policy:
+            input_policy = policy
+        elif hook == "output" and policy:
+            output_policy = policy
+
+    return ChainPolicies(input=input_policy, output=output_policy)

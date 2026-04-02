@@ -1,4 +1,4 @@
-from app.rules.model import FirewallRuleSpec
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.config import settings
 
 
@@ -61,3 +61,28 @@ def merge_group_rules(
     # Prepend SSH lockout rule (always first)
     ssh_rule = _make_ssh_lockout_rule(server_ip)
     return [ssh_rule] + merged
+
+
+def merge_group_policies(groups: list[dict]) -> ChainPolicies:
+    """Merge chain default policies from multiple groups using priority.
+
+    For each chain, the highest-priority group that defines a non-None
+    value wins.  If no group defines a policy, system defaults apply
+    (input=drop, output=accept).
+    """
+    sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
+    input_policy: str | None = None
+    output_policy: str | None = None
+
+    for group in sorted_groups:
+        if input_policy is None and group.get("input_policy"):
+            input_policy = group["input_policy"]
+        if output_policy is None and group.get("output_policy"):
+            output_policy = group["output_policy"]
+        if input_policy and output_policy:
+            break
+
+    return ChainPolicies(
+        input=input_policy or "drop",
+        output=output_policy or "accept",
+    )

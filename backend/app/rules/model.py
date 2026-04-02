@@ -60,3 +60,11 @@ class FirewallRuleSpec:
             and _normalize_port_end(self.port_start, self.port_end)
             == _normalize_port_end(other.port_start, other.port_end)
         )
+
+
+@dataclass
+class ChainPolicies:
+    """Chain default policies — backend-agnostic."""
+
+    input: str = "drop"     # "accept" | "drop"
+    output: str = "accept"  # "accept" | "drop"
