@@ -9,6 +9,7 @@ import type {
   HostGroup,
   SSHKey,
   FirewallRule,
+  ChainPolicies,
   EffectiveService,
   ServiceRule,
   EffectiveHostsEntry,
@@ -46,6 +47,12 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id,
   })
   const showRulesLoading = useDelayedLoading(effectiveRules.isLoading)
+
+  const effectivePolicies = useQuery<ChainPolicies>({
+    queryKey: ["host-effective-policies", id],
+    queryFn: () => apiFetch<ChainPolicies>(`/api/hosts/${id}/effective-policies`),
+    enabled: !!id && activeTab === "rules",
+  })
 
   const sshKeys = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -176,6 +183,7 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
   return {
     host,
     effectiveRules,
+    effectivePolicies,
     showRulesLoading,
     sshKeys,
     groups,

@@ -82,9 +82,15 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                         select(FirewallRule).where(FirewallRule.group_id == gid)
                     )
                     rules = firewall_rules_to_specs(rules_result.scalars().all())
-                    groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
+                    groups_data.append({
+                        "id": gid, "priority": group.priority, "rules": rules,
+                        "input_policy": group.input_policy, "output_policy": group.output_policy,
+                    })
 
                 merged_rules = merge_group_rules(groups_data, host_source_ip=host.barricade_source_ip)
+
+                from app.rules.merge import merge_group_policies
+                merged_policies = merge_group_policies(groups_data)
 
                 # Generate playbook and inventory
                 backend = (
@@ -99,7 +105,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     await db.commit()
                     return None, None, None, None
                 playbook_yaml = generate_playbook(
-                    backend, host.ip_address, merged_rules, ssh_key_path
+                    backend, host.ip_address, merged_rules, ssh_key_path,
+                    policies=merged_policies,
                 )
                 inventory_json = generate_inventory(host.ip_address, host.ssh_port, ssh_key_path, ssh_user=ssh_key.ssh_user)
 

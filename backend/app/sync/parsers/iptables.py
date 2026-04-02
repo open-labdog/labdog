@@ -2,7 +2,7 @@
 
 import re
 
-from app.rules.model import FirewallRuleSpec
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 _CHAIN_DIRECTION = {
     "INPUT": "input",
@@ -110,3 +110,25 @@ def parse_iptables_save(content: str) -> list[FirewallRuleSpec]:
         )
 
     return rules
+
+
+_POLICY_RE = re.compile(r"^:(?P<chain>\S+)\s+(?P<policy>\S+)\s+\[")
+
+
+def parse_iptables_policies(content: str) -> ChainPolicies:
+    """Extract chain default policies from ``iptables-save`` output."""
+    input_policy = "drop"
+    output_policy = "accept"
+
+    for line in content.splitlines():
+        m = _POLICY_RE.match(line.strip())
+        if not m:
+            continue
+        chain = m.group("chain")
+        policy = m.group("policy").lower()
+        if chain == "INPUT":
+            input_policy = policy
+        elif chain == "OUTPUT":
+            output_policy = policy
+
+    return ChainPolicies(input=input_policy, output=output_policy)

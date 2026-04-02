@@ -7,9 +7,10 @@ from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.auth.users import current_active_user
-from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse
+from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse, ChainPoliciesResponse
+from app.schemas.groups import GroupPoliciesUpdate
 from app.rules.model import FirewallRuleSpec
-from app.rules.merge import merge_group_rules
+from app.rules.merge import merge_group_rules, merge_group_policies
 from app.rules.converter import firewall_rules_to_specs
 
 router = APIRouter(tags=["rules"])
@@ -173,7 +174,10 @@ async def get_effective_rules(
         group = group_result.scalar_one()
         rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = firewall_rules_to_specs(rules_result.scalars().all())
-        groups_data.append({"id": gid, "priority": group.priority, "rules": rules})
+        groups_data.append({
+            "id": gid, "priority": group.priority, "rules": rules,
+            "input_policy": group.input_policy, "output_policy": group.output_policy,
+        })
 
     # Call merge_group_rules to get merged rules WITH SSH lockout rule
     merged_specs = merge_group_rules(groups_data, host_source_ip=host_source_ip)
@@ -194,3 +198,68 @@ async def get_effective_rules(
         )
         for spec in merged_specs
     ]
+
+
+@router.get("/groups/{group_id}/policies", response_model=ChainPoliciesResponse)
+async def get_group_policies(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    group = result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return ChainPoliciesResponse(
+        input=group.input_policy or "drop",
+        output=group.output_policy or "accept",
+    )
+
+
+@router.put("/groups/{group_id}/policies", response_model=ChainPoliciesResponse)
+async def update_group_policies(
+    group_id: int,
+    body: GroupPoliciesUpdate,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _check_gitops_lock(group_id, db)
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    group = result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="Group not found")
+    group.input_policy = body.input_policy
+    group.output_policy = body.output_policy
+    await db.commit()
+    await db.refresh(group)
+    return ChainPoliciesResponse(
+        input=group.input_policy or "drop",
+        output=group.output_policy or "accept",
+    )
+
+
+@router.get("/hosts/{host_id}/effective-policies", response_model=ChainPoliciesResponse)
+async def get_effective_policies(
+    host_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get merged chain policies for a host (all groups, priority-merged)."""
+    memberships = await db.execute(
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
+    )
+    group_ids = [r[0] for r in memberships.all()]
+    if not group_ids:
+        return ChainPoliciesResponse(input="drop", output="accept")
+
+    groups_data = []
+    for gid in group_ids:
+        group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
+        group = group_result.scalar_one()
+        groups_data.append({
+            "id": gid, "priority": group.priority, "rules": [],
+            "input_policy": group.input_policy, "output_policy": group.output_policy,
+        })
+
+    policies = merge_group_policies(groups_data)
+    return ChainPoliciesResponse(input=policies.input, output=policies.output)

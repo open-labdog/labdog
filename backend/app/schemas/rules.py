@@ -103,3 +103,8 @@ class EffectiveRuleResponse(BaseModel):
     comment: Optional[str]
     priority: int
     is_system: bool
+
+
+class ChainPoliciesResponse(BaseModel):
+    input: str   # "accept" | "drop"
+    output: str  # "accept" | "drop"

@@ -38,7 +38,8 @@ import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import type { FirewallRule, HostGroup } from "@/lib/types"
+import { Label } from "@/components/ui/label"
+import type { FirewallRule, HostGroup, ChainPolicies } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -276,6 +277,26 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
     invalidateKeys: [["rules", id]],
   })
 
+  const { data: policies } = useQuery<ChainPolicies>({
+    queryKey: ["policies", id],
+    queryFn: () => apiFetch<ChainPolicies>(`/api/groups/${id}/policies`),
+    enabled: !!id,
+  })
+
+  const policyMutation = useApiMutation({
+    mutationFn: (body: { input_policy: string | null; output_policy: string | null }) =>
+      apiFetch(`/api/groups/${id}/policies`, { method: "PUT", body: JSON.stringify(body) }),
+    invalidateKeys: [["policies", id], ["group", id]],
+  })
+
+  function handlePolicyChange(chain: "input" | "output", value: string) {
+    const policyValue = value === "" ? null : value
+    policyMutation.mutate({
+      input_policy: chain === "input" ? policyValue : (group?.input_policy ?? null),
+      output_policy: chain === "output" ? policyValue : (group?.output_policy ?? null),
+    })
+  }
+
   function handleReorder(newOrder: FirewallRule[]) {
     const ruleIds = newOrder.filter((r) => !r.is_system).map((r) => r.id)
     reorderMutation.mutate(ruleIds)
@@ -362,6 +383,50 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
           </div>
         </div>
       )}
+
+      {/* Chain Default Policies */}
+      <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
+        <h2 className="text-sm font-medium text-slate-300 mb-3">Chain Default Policies</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label htmlFor="input-policy" className="text-slate-400 text-xs">INPUT</Label>
+            <select
+              id="input-policy"
+              value={group?.input_policy ?? ""}
+              onChange={(e) => handlePolicyChange("input", e.target.value)}
+              disabled={gitopsEnabled || policyMutation.isPending}
+              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50"
+            >
+              <option value="">Default (drop)</option>
+              <option value="drop">drop</option>
+              <option value="accept">accept</option>
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="output-policy" className="text-slate-400 text-xs">OUTPUT</Label>
+            <select
+              id="output-policy"
+              value={group?.output_policy ?? ""}
+              onChange={(e) => handlePolicyChange("output", e.target.value)}
+              disabled={gitopsEnabled || policyMutation.isPending}
+              className="w-full rounded-md border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-slate-500 disabled:opacity-50"
+            >
+              <option value="">Default (accept)</option>
+              <option value="accept">accept</option>
+              <option value="drop">drop</option>
+            </select>
+          </div>
+        </div>
+        {(group?.input_policy === "accept") && (
+          <p className="text-amber-400 text-xs mt-2">Warning: INPUT policy set to ACCEPT. All inbound traffic will be allowed by default.</p>
+        )}
+        {(group?.output_policy === "drop") && (
+          <p className="text-amber-400 text-xs mt-2">Warning: OUTPUT policy set to DROP. All outbound traffic will be blocked by default.</p>
+        )}
+        {policyMutation.error && (
+          <p className="text-red-400 text-xs mt-2">{policyMutation.error.message}</p>
+        )}
+      </div>
 
       {showLoading && <TableSkeleton rows={5} columns={5} />}
 

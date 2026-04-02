@@ -4,6 +4,7 @@ export type GitOpsStatus = "disconnected" | "synced" | "error" | "importing"
 
 export interface HostGroup {
   id: number; name: string; description: string | null; category: string | null; priority: number
+  input_policy: string | null; output_policy: string | null
   created_at: string; updated_at: string
   gitops_enabled: boolean
   gitops_status: GitOpsStatus | null
@@ -11,6 +12,11 @@ export interface HostGroup {
   gitops_last_import_at: string | null
   gitops_file_path: string | null
   git_repository_id: number | null
+}
+
+export interface ChainPolicies {
+  input: "accept" | "drop"
+  output: "accept" | "drop"
 }
 export interface Host {
   id: number; hostname: string; ip_address: string; ssh_port: number; ssh_user: string

@@ -106,7 +106,11 @@ def yaml_rules_to_specs(rules: list[FirewallRuleYAML]) -> list[FirewallRuleSpec]
 
 
 def specs_to_yaml(
-    specs: list[FirewallRuleSpec], group_name: str, priority: int = 0
+    specs: list[FirewallRuleSpec],
+    group_name: str,
+    priority: int = 0,
+    input_policy: str | None = None,
+    output_policy: str | None = None,
 ) -> str:
     """Convert FirewallRuleSpec list back to YAML string (for export/debugging)."""
     rules: list[dict[str, Any]] = []
@@ -131,9 +135,15 @@ def specs_to_yaml(
             rule["system"] = True
         rules.append(rule)
 
+    firewall: dict[str, Any] = {"rules": rules}
+    if input_policy:
+        firewall["input_policy"] = input_policy
+    if output_policy:
+        firewall["output_policy"] = output_policy
+
     data: dict[str, Any] = {
         "group": group_name,
         "priority": priority,
-        "firewall": {"rules": rules},
+        "firewall": firewall,
     }
     return f"# Managed by Barricade\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"

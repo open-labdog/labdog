@@ -716,7 +716,7 @@ export default function HostDetailPage() {
   const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
 
   const {
-    host: hostQuery, effectiveRules: effectiveRulesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
+    host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
     effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery,
     effectiveHosts: effectiveHostsQuery, showHostsEntriesLoading, hostHostsOverrides: hostHostsOverridesQuery,
     effectiveLinuxUsers: effectiveLinuxUsersQuery, showLinuxUsersLoading,
@@ -734,6 +734,7 @@ export default function HostDetailPage() {
   const effectiveRules = effectiveRulesQuery.data
   const rulesLoading = effectiveRulesQuery.isLoading
   const rulesError = effectiveRulesQuery.error
+  const effectivePolicies = effectivePoliciesQuery.data
   const sshKeys = sshKeysQuery.data
   const groups = groupsQuery.data
   const effectiveServices = effectiveServicesQuery.data
@@ -1961,6 +1962,14 @@ export default function HostDetailPage() {
               {moduleSyncing ? "Syncing..." : "Sync Rules"}
             </Button>
           </div>
+
+          {effectivePolicies && (
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-slate-400">Chain Policies:</span>
+              <span className="text-slate-300">INPUT: <span className={effectivePolicies.input === "accept" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>{effectivePolicies.input}</span></span>
+              <span className="text-slate-300">OUTPUT: <span className={effectivePolicies.output === "drop" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>{effectivePolicies.output}</span></span>
+            </div>
+          )}
 
           {showRulesLoading && <TableSkeleton rows={3} columns={4} />}
 
