@@ -2089,7 +2089,7 @@ export default function HostDetailPage() {
                       <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs font-mono">
-                          {rule.source === "system" ? "System" : rule.source === "host" ? "Host override" : `Group: ${rule.group_name ?? "—"}`}
+                          {rule.source === "system" ? "System" : rule.source === "host" ? "Host override" : rule.group_name ?? "—"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
@@ -2771,7 +2771,7 @@ export default function HostDetailPage() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                 disabled={hostsDeleteMutation.isPending}
+                                disabled={hostsDeleteMutation.isPending}
                                 onClick={() => handleHostsEntryDelete(override)}
                                 className="text-red-400 hover:text-red-300 hover:bg-red-950"
                               >

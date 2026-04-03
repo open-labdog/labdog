@@ -70,8 +70,8 @@ def merge_group_rules(
             seen_signatures.add(sig)
             merged.append(rule)
 
-    # Sort merged rules by priority within each group
-    merged.sort(key=lambda r: r.priority, reverse=True)
+    # Sort by group priority first (higher = first), then rule priority within group
+    merged.sort(key=lambda r: (r.group_priority or 0, r.priority), reverse=True)
 
     # Prepend SSH lockout rule (always first)
     ssh_rule = _make_ssh_lockout_rule(server_ip)
