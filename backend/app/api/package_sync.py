@@ -283,6 +283,9 @@ async def check_package_drift(
 
         hms.sync_status = "drifted" if pkg_diff.has_drift else "in_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return PackageDriftCheckResponse(
@@ -300,6 +303,9 @@ async def check_package_drift(
     except Exception as e:
         hms.sync_status = "error"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return PackageDriftCheckResponse(

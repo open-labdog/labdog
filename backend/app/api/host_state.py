@@ -26,6 +26,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/hosts", tags=["host-state"])
 
 
+async def refresh_host_sync_status(host: Host, db: AsyncSession) -> None:
+    """Recalculate host.sync_status from its module statuses."""
+    result = await db.execute(
+        select(HostModuleStatus.sync_status).where(
+            HostModuleStatus.host_id == host.id
+        )
+    )
+    statuses = {row[0] for row in result.all()}
+    if "error" in statuses:
+        host.sync_status = SyncStatus.error
+    elif "out_of_sync" in statuses or "drifted" in statuses:
+        host.sync_status = SyncStatus.out_of_sync
+    elif statuses:
+        host.sync_status = SyncStatus.in_sync
+
+
 class ModuleState(BaseModel):
     module_type: str
     sync_status: str
@@ -167,13 +183,7 @@ async def collect_state(
         ))
 
     # Set host sync_status from module results
-    statuses = {r.sync_status for r in results}
-    if "error" in statuses:
-        host.sync_status = SyncStatus.error
-    elif "out_of_sync" in statuses or "drifted" in statuses:
-        host.sync_status = SyncStatus.out_of_sync
-    else:
-        host.sync_status = SyncStatus.in_sync
+    await refresh_host_sync_status(host, db)
 
     await db.commit()
     return results
@@ -313,8 +323,9 @@ async def _drift_linux_user(host_id: int, hms: HostModuleStatus, db: AsyncSessio
         [g.model_dump() if hasattr(g, "model_dump") else g for g in desired_groups],
         actual_groups,
     )
-    has_drift = user_diff.has_changes or group_diff.has_changes
-    hms.sync_status = "in_sync" if not has_drift else "out_of_sync"
+    users_drifted = bool(user_diff.users_to_add or user_diff.users_to_remove or user_diff.users_to_update)
+    groups_drifted = bool(group_diff.groups_to_add or group_diff.groups_to_remove or group_diff.groups_to_update)
+    hms.sync_status = "in_sync" if not (users_drifted or groups_drifted) else "out_of_sync"
     hms.error_message = None
 
 
@@ -327,7 +338,8 @@ async def _drift_cron(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> 
     actual = hms.collected_state  # list of cron job dicts
 
     diff = diff_cron_jobs(desired_dicts, actual)
-    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    drifted = bool(diff.jobs_to_add or diff.jobs_to_remove or diff.jobs_to_update)
+    hms.sync_status = "in_sync" if not drifted else "out_of_sync"
     hms.error_message = None
 
 

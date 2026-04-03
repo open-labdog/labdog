@@ -616,7 +616,7 @@ function SyncStatusMessage({
     )
   }
 
-  if (host.sync_status === "in_sync" || (host.sync_status === "out_of_sync" && outOfSync.length === 0)) {
+  if (host.sync_status === "in_sync") {
     return (
       <div className="rounded-lg border border-green-700/50 bg-green-950/20 px-4 py-3 flex items-center gap-2">
         <CheckCircleIcon className="w-4 h-4 text-green-400 shrink-0" />
@@ -1752,13 +1752,7 @@ export default function HostDetailPage() {
                 <FirewallBadge backend={host.firewall_backend} />
               </InfoRow>
               <InfoRow label="Sync Status">
-                <SyncStatusBadge status={
-                  host.sync_status === "out_of_sync" &&
-                  currentStateQuery.data &&
-                  currentStateQuery.data.filter(m => m.sync_status === "out_of_sync").length === 0
-                    ? "in_sync"
-                    : host.sync_status
-                } />
+                <SyncStatusBadge status={host.sync_status} />
               </InfoRow>
               <InfoRow label="Last Sync">
                 {host.last_sync_at

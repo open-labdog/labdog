@@ -79,6 +79,9 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
             hms.collected_state = actual
             hms.collected_at = datetime.now(timezone.utc)
 
+            from app.api.host_state import refresh_host_sync_status
+            await refresh_host_sync_status(host, db)
+
             if not host.barricade_source_ip:
                 try:
                     imported_key = asyncssh.import_private_key(private_key_pem)

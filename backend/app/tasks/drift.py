@@ -33,7 +33,6 @@ def check_all_drift():
                     desired, desired_policies = await _get_desired_state_for_host(host.id, db, host_source_ip=host.barricade_source_ip)
                     current_fw_state = await fetch_current_firewall_state(host.id, db)
                     drift_result = await check_drift(host.id, desired, db, desired_policies=desired_policies, current_state=current_fw_state)
-                    host.sync_status = drift_result.status
                     host.last_drift_check_at = datetime.now(timezone.utc)
 
                     hms = (
@@ -49,8 +48,12 @@ def check_all_drift():
                             host_id=host.id, module_type="firewall"
                         )
                         db.add(hms)
+                    hms.sync_status = drift_result.status.value
                     hms.collected_state = [asdict(r) for r in current_fw_state.rules]
                     hms.collected_at = datetime.now(timezone.utc)
+
+                    from app.api.host_state import refresh_host_sync_status
+                    await refresh_host_sync_status(host, db)
 
                     if not host.barricade_source_ip and host.ssh_key_id:
                         try:

@@ -171,7 +171,7 @@ class SecurityHeadersMiddleware:
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     (b"x-xss-protection", b"1; mode=block"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=()"),
-                    (b"content-security-policy", b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"),
+                    (b"content-security-policy", b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"),
                 ]
                 if settings.tls.force_https or settings.security.cookie_secure:
                     extra.append((

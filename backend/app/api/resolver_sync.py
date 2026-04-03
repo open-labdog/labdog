@@ -257,6 +257,9 @@ async def check_resolver_drift(
     from datetime import datetime, timezone
 
     hms.last_drift_check_at = datetime.now(timezone.utc)
+
+    from app.api.host_state import refresh_host_sync_status
+    await refresh_host_sync_status(host, db)
     await db.commit()
 
     return {

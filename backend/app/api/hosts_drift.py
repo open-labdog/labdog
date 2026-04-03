@@ -9,7 +9,7 @@ from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
-from app.models.host import Host
+from app.models.host import Host, SyncStatus
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
@@ -98,6 +98,9 @@ async def check_hosts_drift(
 
         hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return HostsDriftResponse(
