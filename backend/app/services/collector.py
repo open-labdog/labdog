@@ -44,7 +44,7 @@ async def collect_service_states(
             for name in service_names:
                 try:
                     # Check active state
-                    active_result = await conn.run(f"systemctl is-active {name}", check=False)
+                    active_result = await conn.run(f"systemctl is-active {shlex.quote(name)}", check=False)
                     active_stdout = active_result.stdout.strip()
                     exit_code = active_result.exit_status
 
@@ -62,7 +62,7 @@ async def collect_service_states(
                     active_state = "running" if active_stdout == "active" else "stopped"
 
                     # Check enabled state
-                    enabled_result = await conn.run(f"systemctl is-enabled {name}", check=False)
+                    enabled_result = await conn.run(f"systemctl is-enabled {shlex.quote(name)}", check=False)
                     enabled_stdout = enabled_result.stdout.strip()
                     enabled = enabled_stdout == "enabled"
 

@@ -8,7 +8,7 @@ from fastapi_users.authentication import (
     JWTStrategy,
 )
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -55,6 +55,9 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %d (%s) registered.", user.id, user.email)
         async with AsyncSessionLocal() as session:
+            # Advisory lock serializes with the register endpoint to prevent
+            # multiple first-user superuser promotions
+            await session.execute(text("SELECT pg_advisory_xact_lock(8675309)"))
             result = await session.execute(select(func.count()).select_from(User))
             count = result.scalar_one()
             if count == 1:

@@ -14,7 +14,8 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
     import ansible_runner
 
     private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    ssh_key_path = f"/dev/shm/barricade-{job_id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
 
     try:
         import asyncio

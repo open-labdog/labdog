@@ -25,6 +25,8 @@ def _mock_session_with_count(count_value):
     mock_result.scalar_one.return_value = count_value
     mock_session = AsyncMock()
     mock_session.execute = AsyncMock(return_value=mock_result)
+    mock_session.get = AsyncMock(return_value=None)
+    mock_session.commit = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
     return mock_session
@@ -36,12 +38,21 @@ class TestAuth:
     async def test_register_user(self, client):
         """Test user registration with valid credentials."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
-        password = "TestPass1!"
+        password = "TestPass1!Secure"
 
         # Mock the separate session used for user count check (returns 0 users)
-        with patch(
-            "app.api.auth_setup.AsyncSessionLocal",
-            return_value=_mock_session_with_count(0),
+        mock_session_factory = MagicMock(
+            side_effect=lambda: _mock_session_with_count(0)
+        )
+        with (
+            patch(
+                "app.api.auth_setup.AsyncSessionLocal",
+                return_value=_mock_session_with_count(0),
+            ),
+            patch(
+                "app.auth.users.AsyncSessionLocal",
+                mock_session_factory,
+            ),
         ):
             resp = await client.post(
                 "/api/auth/register",
@@ -56,7 +67,7 @@ class TestAuth:
     async def test_login_sets_cookie(self, client, db):
         """Test that login sets the barricade_auth cookie."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
-        password = "TestPass1!"
+        password = "TestPass1!Secure"
 
         # Create user directly in DB
         ph = PasswordHelper()
@@ -93,7 +104,7 @@ class TestAuth:
     async def test_login_wrong_password(self, client, db):
         """Test login fails with incorrect password."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
-        password = "TestPass1!"
+        password = "TestPass1!Secure"
 
         # Create user directly in DB
         ph = PasswordHelper()

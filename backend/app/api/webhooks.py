@@ -49,7 +49,7 @@ async def _find_repo_by_url(url: str, db: AsyncSession) -> GitRepository | None:
     if repo:
         return repo
     # Try stripping .git suffix or adding it
-    alt_url = url.rstrip(".git") if url.endswith(".git") else url + ".git"
+    alt_url = url.removesuffix(".git") if url.endswith(".git") else url + ".git"
     result = await db.execute(
         select(GitRepository).where(GitRepository.url == alt_url),
     )
@@ -97,10 +97,11 @@ async def github_webhook(
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify signature
-    if repo.webhook_secret:
-        sig = request.headers.get("X-Hub-Signature-256")
-        if not _verify_github_signature(body, repo.webhook_secret, sig):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    sig = request.headers.get("X-Hub-Signature-256")
+    if not _verify_github_signature(body, repo.webhook_secret, sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     # Check event type
     event = request.headers.get("X-GitHub-Event", "")
@@ -137,10 +138,11 @@ async def gitlab_webhook(
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify token
-    if repo.webhook_secret:
-        token = request.headers.get("X-Gitlab-Token")
-        if not _verify_gitlab_token(repo.webhook_secret, token):
-            raise HTTPException(status_code=401, detail="Invalid token")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    token = request.headers.get("X-Gitlab-Token")
+    if not _verify_gitlab_token(repo.webhook_secret, token):
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Check for branch deletion
     after = payload.get("checkout_sha") or payload.get("after", "")
@@ -170,10 +172,11 @@ async def gitea_webhook(
     if not repo:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    if repo.webhook_secret:
-        sig = request.headers.get("X-Gitea-Signature")
-        if not _verify_gitea_signature(body, repo.webhook_secret, sig):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    sig = request.headers.get("X-Gitea-Signature")
+    if not _verify_gitea_signature(body, repo.webhook_secret, sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     ref = payload.get("ref", "")
     after = payload.get("after", "")

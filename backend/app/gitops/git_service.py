@@ -66,7 +66,8 @@ def _clone_ssh(
             f"encrypted_ssh_key required for SSH auth (repo '{repo.name}', ssh_key_id={repo.ssh_key_id})"
         )
 
-    ssh_key_path = f"/dev/shm/barricade-git-{repo.id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
     try:
         master_key = get_master_key()
         private_key = decrypt_ssh_key(encrypted_ssh_key, master_key)
@@ -78,7 +79,7 @@ def _clone_ssh(
 
         ssh_cmd = (
             f"ssh -i {ssh_key_path} "
-            "-o StrictHostKeyChecking=no "
+            "-o StrictHostKeyChecking=accept-new "
             "-o UserKnownHostsFile=/dev/null"
         )
         env = {**os.environ, "GIT_SSH_COMMAND": ssh_cmd}

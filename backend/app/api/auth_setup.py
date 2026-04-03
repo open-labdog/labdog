@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 
 from app.auth.schemas import UserCreate, UserRead
 from app.auth.users import get_user_manager, UserManager
@@ -27,16 +27,19 @@ async def register(
 ):
     try:
         async with AsyncSessionLocal() as session:
+            # Advisory lock prevents TOCTOU race between count check and user creation
+            await session.execute(text("SELECT pg_advisory_xact_lock(8675309)"))
             result = await session.execute(select(func.count()).select_from(User))
             count = result.scalar_one()
+            if count > 0:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Registration is closed. Contact an administrator.",
+                )
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=503, detail="Database unavailable")
-
-    if count > 0:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Registration is closed. Contact an administrator.",
-        )
 
     user = await user_manager.create(user_create)
     return user

@@ -24,7 +24,8 @@ def run_service_sync(self, job_id: int, host_id: int) -> dict:
 
     # Create isolated working directory
     private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    ssh_key_path = f"/dev/shm/barricade-{job_id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
 
     try:
         # Import DB dependencies inside task (not at module level)

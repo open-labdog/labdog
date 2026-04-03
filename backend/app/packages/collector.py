@@ -1,6 +1,7 @@
 """Collect current package states from remote hosts via SSH (dpkg/rpm)."""
 
 import asyncio
+import shlex
 from typing import Optional
 
 import asyncssh
@@ -41,7 +42,7 @@ async def collect_package_states(
                     try:
                         if use_dpkg:
                             result = await conn.run(
-                                f"dpkg -l {pkg_name} 2>/dev/null | grep -E '^ii|^rc|^un' | head -1",
+                                f"dpkg -l {shlex.quote(pkg_name)} 2>/dev/null | grep -E '^ii|^rc|^un' | head -1",
                                 check=False,
                             )
                             state, version = _parse_dpkg_output(
@@ -49,7 +50,7 @@ async def collect_package_states(
                             )
                         elif use_rpm:
                             result = await conn.run(
-                                f"rpm -q {pkg_name} 2>/dev/null",
+                                f"rpm -q {shlex.quote(pkg_name)} 2>/dev/null",
                                 check=False,
                             )
                             state, version = _parse_rpm_output(
