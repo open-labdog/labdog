@@ -21,7 +21,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
     # Create isolated working directory
     private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    ssh_key_path = f"/dev/shm/barricade-{job_id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
 
     try:
         # Import DB dependencies inside task (not at module level)
@@ -67,30 +68,10 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 os.chmod(ssh_key_path, 0o600)
 
                 # Get merged rules for this host
-                memberships = await db.execute(
-                    select(HostGroupMembership.c.group_id).where(
-                        HostGroupMembership.c.host_id == host_id
-                    )
+                from app.rules.desired_state import get_desired_state
+                merged_rules, merged_policies = await get_desired_state(
+                    host_id, db, host_source_ip=host.barricade_source_ip
                 )
-                group_ids = [r[0] for r in memberships.all()]
-
-                groups_data = []
-                for gid in group_ids:
-                    group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
-                    group = group_result.scalar_one()
-                    rules_result = await db.execute(
-                        select(FirewallRule).where(FirewallRule.group_id == gid)
-                    )
-                    rules = firewall_rules_to_specs(rules_result.scalars().all())
-                    groups_data.append({
-                        "id": gid, "priority": group.priority, "rules": rules,
-                        "input_policy": group.input_policy, "output_policy": group.output_policy,
-                    })
-
-                merged_rules = merge_group_rules(groups_data, host_source_ip=host.barricade_source_ip)
-
-                from app.rules.merge import merge_group_policies
-                merged_policies = merge_group_policies(groups_data)
 
                 # Generate playbook and inventory
                 backend = (

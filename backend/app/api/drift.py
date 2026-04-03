@@ -8,11 +8,12 @@ from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
 from app.models.user import User
-from app.auth.users import current_active_user
+from app.auth.users import current_active_user, current_superuser
 from app.drift.detector import check_drift
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.merge import merge_group_rules, merge_group_policies
 from app.rules.converter import firewall_rules_to_specs
+from app.rules.desired_state import get_desired_state
 
 router = APIRouter(prefix="/drift", tags=["drift"])
 
@@ -52,36 +53,7 @@ async def _get_desired_state_for_host(
     host_id: int, db: AsyncSession, host_source_ip: str | None = None,
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Return (merged_rules, merged_policies) for a host."""
-    memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
-    )
-    group_ids = [r[0] for r in memberships.all()]
-    if not group_ids:
-        host_rules_result = await db.execute(
-            select(FirewallRule).where(FirewallRule.host_id == host_id)
-        )
-        host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
-        if not host_rule_specs:
-            return [], ChainPolicies()
-        return merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs), ChainPolicies()
-    groups_data = []
-    for gid in group_ids:
-        g = await db.execute(select(HostGroup).where(HostGroup.id == gid))
-        group = g.scalar_one()
-        r = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
-        rules = firewall_rules_to_specs(r.scalars().all())
-        groups_data.append({
-            "id": gid, "priority": group.priority, "rules": rules,
-            "input_policy": group.input_policy, "output_policy": group.output_policy,
-        })
-    # Fetch host-level rule overrides
-    host_rules_result = await db.execute(
-        select(FirewallRule).where(FirewallRule.host_id == host_id)
-    )
-    host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
-    merged_rules = merge_group_rules(groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs)
-    merged_policies = merge_group_policies(groups_data)
-    return merged_rules, merged_policies
+    return await get_desired_state(host_id, db, host_source_ip=host_source_ip)
 
 
 @router.post("/hosts/{host_id}/check", response_model=DriftResponse)
@@ -163,7 +135,7 @@ async def check_group_drift(
 async def update_drift_settings(
     host_id: int,
     body: DriftSettingsUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))

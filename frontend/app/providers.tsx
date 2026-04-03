@@ -8,7 +8,14 @@ import { AuthContext, User } from '@/lib/auth'
 import { API_BASE } from '@/lib/api'
 import { AuthGuard } from '@/components/auth-guard'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+})
 
 function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)

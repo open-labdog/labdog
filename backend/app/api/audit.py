@@ -6,7 +6,7 @@ from datetime import datetime
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
-from app.auth.users import current_active_user
+from app.auth.users import current_superuser
 
 router = APIRouter(prefix="/audit-log", tags=["audit"])
 
@@ -32,7 +32,7 @@ async def list_audit_logs(
     user_id: int | None = None,
     limit: int = Query(default=50, le=200),
     cursor: int | None = None,  # cursor-based: pass last seen id
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """List audit log entries. Cursor-based pagination (pass id of last seen entry)."""

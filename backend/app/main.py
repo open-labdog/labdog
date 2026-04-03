@@ -171,6 +171,7 @@ class SecurityHeadersMiddleware:
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     (b"x-xss-protection", b"1; mode=block"),
                     (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=()"),
+                    (b"content-security-policy", b"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"),
                 ]
                 if settings.tls.force_https or settings.security.cookie_secure:
                     extra.append((
@@ -277,7 +278,7 @@ def create_app() -> FastAPI:
                     "/api/auth/register",
                 ):
                     client_ip = _get_client_ip(request)
-                    if not _login_limiter.test(client_ip):
+                    if not _login_limiter.hit(client_ip):
                         response = Response(
                             content='{"detail":"Too many login attempts. Try again later."}',
                             status_code=429,
@@ -285,7 +286,6 @@ def create_app() -> FastAPI:
                         )
                         await response(scope, receive, send)
                         return
-                    _login_limiter.hit(client_ip)
                 await self.app(scope, receive, send)
 
         app.add_middleware(_LoginRateLimitMiddleware)
@@ -368,6 +368,8 @@ def create_app() -> FastAPI:
         async def spa_fallback(full_path: str):
             """Serve static files; fall back to index.html for SPA routes."""
             file_path = static_dir / full_path
+            if full_path and not file_path.resolve().is_relative_to(static_dir.resolve()):
+                return FileResponse(index_html)
             if full_path and file_path.is_file():
                 return FileResponse(file_path)
             # Support trailingSlash: true exports (e.g. /login/ → login/index.html)

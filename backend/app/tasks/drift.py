@@ -15,7 +15,7 @@ def check_all_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.drift.detector import check_drift
-    from app.sync.diff import SSHFetchError, fetch_current_state
+    from app.sync.diff import SSHFetchError, fetch_current_firewall_state
     from app.ssh_utils import get_source_ip, ssh_connect
     from datetime import datetime, timezone
 
@@ -31,8 +31,8 @@ def check_all_drift():
                     from app.api.drift import _get_desired_state_for_host
 
                     desired, desired_policies = await _get_desired_state_for_host(host.id, db, host_source_ip=host.barricade_source_ip)
-                    current = await fetch_current_state(host.id, db)
-                    drift_result = await check_drift(host.id, desired, db, desired_policies=desired_policies)
+                    current_fw_state = await fetch_current_firewall_state(host.id, db)
+                    drift_result = await check_drift(host.id, desired, db, desired_policies=desired_policies, current_state=current_fw_state)
                     host.sync_status = drift_result.status
                     host.last_drift_check_at = datetime.now(timezone.utc)
 
@@ -49,7 +49,7 @@ def check_all_drift():
                             host_id=host.id, module_type="firewall"
                         )
                         db.add(hms)
-                    hms.collected_state = [asdict(r) for r in current]
+                    hms.collected_state = [asdict(r) for r in current_fw_state.rules]
                     hms.collected_at = datetime.now(timezone.utc)
 
                     if not host.barricade_source_ip and host.ssh_key_id:

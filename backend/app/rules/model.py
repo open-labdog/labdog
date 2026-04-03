@@ -50,18 +50,21 @@ class FirewallRuleSpec:
             return f"{self.port_start}-{self.port_end}"
         return str(self.port_start)
 
+    def _match_key(self) -> tuple:
+        """Return a hashable key for functional equivalence comparison."""
+        return (
+            self.action,
+            self.protocol,
+            self.direction,
+            _normalize_cidr(self.source_cidr),
+            _normalize_cidr(self.destination_cidr),
+            self.port_start,
+            _normalize_port_end(self.port_start, self.port_end),
+        )
+
     def matches(self, other: "FirewallRuleSpec") -> bool:
         """Check if two rules are functionally equivalent (ignoring comment/priority/ids)."""
-        return (
-            self.action == other.action
-            and self.protocol == other.protocol
-            and self.direction == other.direction
-            and _normalize_cidr(self.source_cidr) == _normalize_cidr(other.source_cidr)
-            and _normalize_cidr(self.destination_cidr) == _normalize_cidr(other.destination_cidr)
-            and self.port_start == other.port_start
-            and _normalize_port_end(self.port_start, self.port_end)
-            == _normalize_port_end(other.port_start, other.port_end)
-        )
+        return self._match_key() == other._match_key()
 
 
 @dataclass

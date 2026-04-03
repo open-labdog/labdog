@@ -14,7 +14,8 @@ def user_sync_task(self, job_id: int, host_id: int) -> dict:
     import ansible_runner
 
     private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    ssh_key_path = f"/dev/shm/barricade-{job_id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
 
     try:
         import asyncio
@@ -84,7 +85,7 @@ def user_sync_task(self, job_id: int, host_id: int) -> dict:
                                 "ansible_port": host.ssh_port,
                                 "ansible_user": ssh_key.ssh_user,
                                 "ansible_ssh_private_key_file": ssh_key_path,
-                                "ansible_ssh_common_args": "-o StrictHostKeyChecking=no",
+                                "ansible_ssh_common_args": "-o StrictHostKeyChecking=accept-new",
                             }
                         }
                     }

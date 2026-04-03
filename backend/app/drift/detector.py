@@ -24,10 +24,15 @@ async def check_drift(
     desired_rules: list,
     db=None,
     desired_policies: ChainPolicies | None = None,
+    current_state=None,
 ) -> DriftResult:
-    """Check if host firewall matches desired state."""
+    """Check if host firewall matches desired state.
+
+    If *current_state* (a CollectedFirewallState) is provided, skip the
+    SSH fetch and use the pre-collected data instead.
+    """
     try:
-        state = await fetch_current_firewall_state(host_id, db)
+        state = current_state or await fetch_current_firewall_state(host_id, db)
         diff = compute_diff(
             state.rules, desired_rules,
             current_policies=state.policies,

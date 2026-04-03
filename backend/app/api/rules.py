@@ -6,7 +6,7 @@ from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
-from app.auth.users import current_active_user
+from app.auth.users import current_active_user, current_superuser
 from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse, ChainPoliciesResponse
 from app.schemas.groups import GroupPoliciesUpdate
 from app.rules.model import FirewallRuleSpec
@@ -45,7 +45,7 @@ async def list_rules(
 async def create_rule(
     group_id: int,
     body: RuleCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -65,7 +65,7 @@ async def create_rule(
 async def reorder_rules(
     group_id: int,
     body: RuleReorder,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -88,7 +88,7 @@ async def update_rule(
     group_id: int,
     rule_id: int,
     body: RuleUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -114,7 +114,7 @@ async def update_rule(
 async def delete_rule(
     group_id: int,
     rule_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)
@@ -152,7 +152,7 @@ async def list_host_rules(
 async def create_host_rule(
     host_id: int,
     body: RuleCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a host-level firewall rule override."""
@@ -175,7 +175,7 @@ async def update_host_rule(
     host_id: int,
     rule_id: int,
     body: RuleUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a host-level firewall rule override."""
@@ -201,7 +201,7 @@ async def update_host_rule(
 async def delete_host_rule(
     host_id: int,
     rule_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a host-level firewall rule override."""
@@ -333,7 +333,7 @@ async def get_group_policies(
 async def update_group_policies(
     group_id: int,
     body: GroupPoliciesUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     await _check_gitops_lock(group_id, db)

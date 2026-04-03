@@ -2,6 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
@@ -9,10 +10,11 @@ from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.auth.users import current_active_user
+from app.auth.users import current_active_user, current_superuser
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.merge import merge_group_rules, merge_group_policies
 from app.rules.converter import firewall_rules_to_specs
+from app.rules.desired_state import get_desired_state
 from app.sync.diff import SSHFetchError, compute_diff, fetch_current_firewall_state
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -59,37 +61,7 @@ async def _get_desired_state(
     host_id: int, db: AsyncSession, host_source_ip: str | None = None,
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Get merged desired rules and policies for a host from DB."""
-    memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
-    )
-    group_ids = [r[0] for r in memberships.all()]
-    if not group_ids:
-        host_rules_result = await db.execute(
-            select(FirewallRule).where(FirewallRule.host_id == host_id)
-        )
-        host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
-        if not host_rule_specs:
-            return [], ChainPolicies()
-        return merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs), ChainPolicies()
-
-    groups_data = []
-    for gid in group_ids:
-        group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
-        group = group_result.scalar_one()
-        rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
-        rules = firewall_rules_to_specs(rules_result.scalars().all())
-        groups_data.append({
-            "id": gid, "priority": group.priority, "rules": rules,
-            "input_policy": group.input_policy, "output_policy": group.output_policy,
-        })
-
-    # Fetch host-level rule overrides
-    host_rules_result = await db.execute(
-        select(FirewallRule).where(FirewallRule.host_id == host_id)
-    )
-    host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
-
-    return merge_group_rules(groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs), merge_group_policies(groups_data)
+    return await get_desired_state(host_id, db, host_source_ip=host_source_ip)
 
 
 @router.post("/hosts/{host_id}/plan", response_model=HostDiff)
@@ -197,7 +169,7 @@ class SyncJobResponse(BaseModel):
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_host_sync(
     host_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for a single host."""
@@ -235,14 +207,18 @@ async def trigger_host_sync(
             detail="Cannot sync — no rules defined. This would remove all firewall rules.",
         )
 
-    # Create sync job
+    # Create sync job (partial unique index prevents duplicates)
     job = SyncJob(
         host_id=host_id,
         status="pending",
         triggered_by_user_id=user.id,
     )
     db.add(job)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Sync already in progress for this host")
     await db.refresh(job)
 
     # Dispatch Celery task
@@ -256,7 +232,7 @@ async def trigger_host_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_sync(
     group_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for all hosts in a group."""
@@ -281,7 +257,9 @@ async def trigger_group_sync(
         # Skip hosts with running syncs
         running = await db.execute(
             select(SyncJob).where(
-                SyncJob.host_id == hid, SyncJob.status.in_(["pending", "running"])
+                SyncJob.host_id == hid,
+                SyncJob.module_type == "firewall",
+                SyncJob.status.in_(["pending", "running"]),
             )
         )
         if running.scalar_one_or_none():

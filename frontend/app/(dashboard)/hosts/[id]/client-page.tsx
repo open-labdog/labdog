@@ -33,7 +33,8 @@ import { GroupMultiSelect } from "@/components/group-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
-import { apiFetch, API_BASE } from "@/lib/api"
+import { apiFetch, API_BASE, ApiError } from "@/lib/api"
+import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
 import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
 
@@ -338,7 +339,7 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
     try {
       await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
-    } catch { /* ignore */ }
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
     setCollecting(false)
   }
 
@@ -353,7 +354,7 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
       })
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
       await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
-    } catch { /* ignore */ }
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
   }
 
   return (

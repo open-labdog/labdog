@@ -35,6 +35,8 @@ celery_app.conf.update(
         "gitops.*": {"queue": "long_running"},
     },
     worker_max_tasks_per_child=100,
+    task_time_limit=1800,
+    task_soft_time_limit=1500,
 )
 
 # Auto-discover tasks

@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from fastapi_users import schemas
 
 
@@ -6,7 +7,12 @@ class UserRead(schemas.BaseUser[int]):
 
 
 class UserCreate(schemas.BaseUserCreate):
-    pass
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, v: str) -> str:
+        if len(v) < 12:
+            raise ValueError("Password must be at least 12 characters")
+        return v
 
 
 class UserUpdate(schemas.BaseUserUpdate):

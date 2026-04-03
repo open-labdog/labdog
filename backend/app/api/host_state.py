@@ -133,6 +133,7 @@ async def collect_state(
             hms.collected_state = state
             hms.collected_at = now
             hms.error_message = None
+            hms.sync_status = "collected"
         except Exception as e:
             logger.warning("Collection failed for %s on host %d: %s", module_type, host_id, e)
             hms.collected_state = None
@@ -634,7 +635,8 @@ async def _detect_firewall_backend(
                 await db.flush()
 
     except Exception:
-        pass
+        logger.exception("Firewall backend detection failed for host %s", host_ip)
+        return None, ["Detection failed — check server logs"]
     return backend, messages
 
 

@@ -54,14 +54,14 @@ export default function DashboardPage() {
   const { data: hosts, isLoading: hostsLoading, refetch: refetchHosts } = useQuery<Host[]>({
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   })
   const showHostsLoading = useDelayedLoading(hostsLoading)
 
   const { data: groups } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
     queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-    refetchInterval: 10000,
+    refetchInterval: 30000,
   })
 
   const statusCounts: Record<SyncStatus, number> = {

@@ -51,18 +51,20 @@ def compute_diff(
     """
     diff = RulesetDiff()
 
-    # Find rules in desired but not in current (to add)
+    # Build hash sets for O(N) comparison instead of O(N²)
+    current_keys = {r._match_key() for r in current}
+    desired_keys = {r._match_key() for r in desired}
+
+    # Rules in desired but not in current → to add
     for d_rule in desired:
-        found = any(d_rule.matches(c_rule) for c_rule in current)
-        if found:
+        if d_rule._match_key() in current_keys:
             diff.rules_unchanged.append(d_rule)
         else:
             diff.rules_to_add.append(d_rule)
 
-    # Find rules in current but not in desired (to remove)
+    # Rules in current but not in desired → to remove
     for c_rule in current:
-        found = any(c_rule.matches(d_rule) for d_rule in desired)
-        if not found:
+        if c_rule._match_key() not in desired_keys:
             diff.rules_to_remove.append(c_rule)
 
     # Compare chain policies

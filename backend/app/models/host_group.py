@@ -14,7 +14,7 @@ class HostGroup(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    priority: Mapped[int] = mapped_column(Integer, unique=True)  # higher = higher priority
+    priority: Mapped[int] = mapped_column(Integer)  # higher = higher priority
     input_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
     output_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
