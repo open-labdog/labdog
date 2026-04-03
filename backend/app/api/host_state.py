@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 import asyncssh
@@ -148,13 +149,220 @@ async def collect_state(
             error_message=hms.error_message,
         ))
 
-    # Reset host sync_status: error if any module failed, unknown otherwise
-    # (unknown = state collected but drift not yet checked)
-    any_errors = any(r.sync_status == "error" for r in results)
-    host.sync_status = SyncStatus.error if any_errors else SyncStatus.unknown
+    # Run inline drift checks on successfully collected modules
+    await _run_inline_drift(host, db, collectors.keys())
+
+    # Rebuild results with updated sync_status from drift checks
+    results = []
+    for module_type in collectors:
+        hms = await _get_or_create_hms(db, host_id, module_type)
+        results.append(ModuleState(
+            module_type=hms.module_type,
+            sync_status=hms.sync_status,
+            collected_state=hms.collected_state,
+            collected_at=hms.collected_at,
+            drift_check_enabled=hms.drift_check_enabled,
+            error_message=hms.error_message,
+        ))
+
+    # Set host sync_status from module results
+    statuses = {r.sync_status for r in results}
+    if "error" in statuses:
+        host.sync_status = SyncStatus.error
+    elif "out_of_sync" in statuses or "drifted" in statuses:
+        host.sync_status = SyncStatus.out_of_sync
+    else:
+        host.sync_status = SyncStatus.in_sync
 
     await db.commit()
     return results
+
+
+async def _run_inline_drift(
+    host: Host, db: AsyncSession, module_types: Iterable[str],
+) -> None:
+    """Run drift checks using already-collected state (no SSH).
+
+    For each module with collected_state, compare against desired state
+    and update hms.sync_status to in_sync/out_of_sync.
+    Modules that failed collection (sync_status == "error") are skipped.
+    """
+    host_id = host.id
+
+    for module_type in module_types:
+        hms = await _get_or_create_hms(db, host_id, module_type)
+        if hms.sync_status == "error" or hms.collected_state is None:
+            continue
+
+        try:
+            if module_type == "firewall":
+                await _drift_firewall(host, hms, db)
+            elif module_type == "service":
+                await _drift_service(host_id, hms, db)
+            elif module_type == "hosts_file":
+                await _drift_hosts_file(host_id, hms, db)
+            elif module_type == "linux_user":
+                await _drift_linux_user(host_id, hms, db)
+            elif module_type == "cron":
+                await _drift_cron(host_id, hms, db)
+            elif module_type == "package":
+                await _drift_package(host_id, hms, db)
+            elif module_type == "resolver":
+                await _drift_resolver(host_id, hms, db)
+        except Exception as exc:
+            logger.warning("Inline drift check failed for %s on host %d: %s", module_type, host_id, exc)
+            # Leave sync_status as-is (from collection) rather than overwriting
+
+
+async def _drift_firewall(host: Host, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.api.drift import _get_desired_state_for_host
+    from app.rules.model import FirewallRuleSpec
+    from app.sync.diff import compute_diff as fw_compute_diff
+
+    desired, desired_policies = await _get_desired_state_for_host(
+        host.id, db, host_source_ip=host.barricade_source_ip,
+    )
+    current = [
+        FirewallRuleSpec(**{k: v for k, v in d.items() if k in FirewallRuleSpec.__dataclass_fields__})
+        for d in hms.collected_state
+    ]
+    diff = fw_compute_diff(current, desired, desired_policies=desired_policies)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_service(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.services.collector import ServiceCurrentState
+    from app.services.diff import compute_service_diff
+    from app.services.merge import get_effective_services
+
+    desired = await get_effective_services(host_id, db)
+    if not desired:
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
+
+    # collected_state from list_all_services: [{"unit", "active_state", "sub_state", ...}]
+    # Build a lookup of service states from the raw systemctl output
+    svc_map: dict[str, dict] = {}
+    for entry in hms.collected_state:
+        name = entry.get("unit") or entry.get("service_name", "")
+        svc_map[name] = entry
+
+    current = []
+    for svc in desired:
+        raw = svc_map.get(svc.service_name)
+        if raw:
+            # list_all_services format: active_state is "active"/"inactive"/"failed"
+            raw_active = raw.get("active_state", "")
+            if raw_active == "active" or raw_active == "running":
+                active_state = "running"
+            else:
+                active_state = "stopped"
+            enabled = raw.get("enabled", raw.get("sub_state") == "enabled")
+        else:
+            active_state = "stopped"
+            enabled = False
+        current.append(ServiceCurrentState(
+            service_name=svc.service_name,
+            active_state=active_state,
+            enabled=bool(enabled),
+        ))
+
+    diff = compute_service_diff(current, desired)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_hosts_file(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.hosts_mgmt.collector import ParsedHostsEntry
+    from app.hosts_mgmt.diff import compute_hosts_diff
+    from app.hosts_mgmt.merge import get_effective_hosts_entries
+
+    desired = await get_effective_hosts_entries(host_id, db)
+    current = [
+        ParsedHostsEntry(
+            ip_address=e["ip_address"],
+            hostname=e["hostname"],
+            aliases=e.get("aliases", []),
+        )
+        for e in hms.collected_state
+    ]
+    diff = compute_hosts_diff(current, desired)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_linux_user(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.user_mgmt.diff import diff_users, diff_groups
+    from app.user_mgmt.merge import get_effective_users, get_effective_groups
+
+    data = hms.collected_state  # {"users": [...], "groups": [...]}
+    actual_users = data.get("users", [])
+    actual_groups = data.get("groups", [])
+
+    desired_users = await get_effective_users(host_id, db)
+    desired_groups = await get_effective_groups(host_id, db)
+
+    user_diff = diff_users(
+        [u.model_dump() if hasattr(u, "model_dump") else u for u in desired_users],
+        actual_users,
+    )
+    group_diff = diff_groups(
+        [g.model_dump() if hasattr(g, "model_dump") else g for g in desired_groups],
+        actual_groups,
+    )
+    has_drift = user_diff.has_changes or group_diff.has_changes
+    hms.sync_status = "in_sync" if not has_drift else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_cron(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.cron.diff import diff_cron_jobs
+    from app.cron.merge import get_effective_cron_jobs
+
+    desired = await get_effective_cron_jobs(host_id, db)
+    desired_dicts = [j.model_dump() if hasattr(j, "model_dump") else j for j in desired]
+    actual = hms.collected_state  # list of cron job dicts
+
+    diff = diff_cron_jobs(desired_dicts, actual)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_package(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.packages.diff import compute_diff as pkg_compute_diff
+    from app.packages.merge import get_effective_packages
+
+    effective = await get_effective_packages(host_id, db)
+    desired_dicts = [
+        {"package_name": p.package_name, "state": p.state, "version": p.version, "hold": p.hold}
+        if hasattr(p, "package_name") else p
+        for p in effective
+    ]
+    data = hms.collected_state  # {"packages": [...], "repos": [...]}
+    actual = data.get("packages", []) if isinstance(data, dict) else data
+
+    diff = pkg_compute_diff(desired_dicts, actual)
+    hms.sync_status = "in_sync" if not diff.has_drift else "out_of_sync"
+    hms.error_message = None
+
+
+async def _drift_resolver(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> None:
+    from app.resolver.diff import compute_resolver_diff
+    from app.resolver.merge import get_effective_resolver
+
+    effective = await get_effective_resolver(host_id, db)
+    desired_dict = None
+    if effective:
+        desired_dict = {
+            "nameservers": effective.nameservers if hasattr(effective, "nameservers") else [],
+            "search_domains": effective.search_domains if hasattr(effective, "search_domains") else [],
+            "options": effective.options if hasattr(effective, "options") else {},
+        }
+    diff = compute_resolver_diff(hms.collected_state, desired_dict)
+    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+    hms.error_message = None
 
 
 def _build_collectors(
