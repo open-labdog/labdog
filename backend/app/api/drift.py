@@ -57,7 +57,13 @@ async def _get_desired_state_for_host(
     )
     group_ids = [r[0] for r in memberships.all()]
     if not group_ids:
-        return [], ChainPolicies()
+        host_rules_result = await db.execute(
+            select(FirewallRule).where(FirewallRule.host_id == host_id)
+        )
+        host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
+        if not host_rule_specs:
+            return [], ChainPolicies()
+        return merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs), ChainPolicies()
     groups_data = []
     for gid in group_ids:
         g = await db.execute(select(HostGroup).where(HostGroup.id == gid))
@@ -68,7 +74,12 @@ async def _get_desired_state_for_host(
             "id": gid, "priority": group.priority, "rules": rules,
             "input_policy": group.input_policy, "output_policy": group.output_policy,
         })
-    merged_rules = merge_group_rules(groups_data, host_source_ip=host_source_ip)
+    # Fetch host-level rule overrides
+    host_rules_result = await db.execute(
+        select(FirewallRule).where(FirewallRule.host_id == host_id)
+    )
+    host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
+    merged_rules = merge_group_rules(groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs)
     merged_policies = merge_group_policies(groups_data)
     return merged_rules, merged_policies
 

@@ -50,7 +50,7 @@ function ActionBadge({ action }: { action: string }) {
   )
 }
 
-function formatPorts(rule: FirewallRule): string {
+function formatPorts(rule: { port_start: number | null; port_end: number | null }): string {
   if (rule.port_start == null) return "—"
   if (rule.port_end != null && rule.port_end !== rule.port_start) {
     return `${rule.port_start}–${rule.port_end}`
@@ -603,6 +603,18 @@ function SyncStatusMessage({
   const outOfSync = modules?.filter(m => m.sync_status === "out_of_sync") ?? []
   const errored = modules?.filter(m => m.error_message) ?? []
 
+  if (errored.length > 0) {
+    const msgs = errored.map(m => `${m.module_type}: ${m.error_message}`).join("; ")
+    return (
+      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
+        <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
+        <span className="text-red-400 text-sm">
+          Sync check encountered errors.{msgs ? ` ${msgs}` : ""}
+        </span>
+      </div>
+    )
+  }
+
   if (host.sync_status === "in_sync" || (host.sync_status === "out_of_sync" && outOfSync.length === 0)) {
     return (
       <div className="rounded-lg border border-green-700/50 bg-green-950/20 px-4 py-3 flex items-center gap-2">
@@ -619,18 +631,6 @@ function SyncStatusMessage({
         <AlertTriangleIcon className="w-4 h-4 text-amber-400 shrink-0" />
         <span className="text-amber-400 text-sm">
           Configuration drift detected. {outOfSync.length} module(s) out of sync: {names}.
-        </span>
-      </div>
-    )
-  }
-
-  if (host.sync_status === "error") {
-    const msgs = errored.map(m => `${m.module_type}: ${m.error_message}`).join("; ")
-    return (
-      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
-        <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
-        <span className="text-red-400 text-sm">
-          Sync check encountered errors.{msgs ? ` ${msgs}` : ""}
         </span>
       </div>
     )
@@ -717,7 +717,7 @@ export default function HostDetailPage() {
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
-    effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery,
+    effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery, hostFirewallOverrides: hostFirewallOverridesQuery,
     effectiveHosts: effectiveHostsQuery, showHostsEntriesLoading, hostHostsOverrides: hostHostsOverridesQuery,
     effectiveLinuxUsers: effectiveLinuxUsersQuery, showLinuxUsersLoading,
     effectiveLinuxGroups: effectiveLinuxGroupsQuery, showLinuxGroupsLoading,
@@ -741,6 +741,7 @@ export default function HostDetailPage() {
   const servicesLoading = effectiveServicesQuery.isLoading
   const servicesError = effectiveServicesQuery.error
   const hostOverrides = hostOverridesQuery.data
+  const hostFirewallOverrides = hostFirewallOverridesQuery.data
   const effectiveHosts = effectiveHostsQuery.data
   const hostsEntriesLoading = effectiveHostsQuery.isLoading
   const hostsEntriesError = effectiveHostsQuery.error
@@ -770,6 +771,7 @@ export default function HostDetailPage() {
 
   const {
     editOpen, setEditOpen,
+    fwDialogOpen, setFwDialogOpen,
     svcDialogOpen, setSvcDialogOpen,
     hostsDialogOpen, setHostsDialogOpen,
     luDialogOpen, setLuDialogOpen,
@@ -788,7 +790,7 @@ export default function HostDetailPage() {
   const tabQueryKeys: Record<string, string[][]> = {
     overview: [["host", String(id)], ["host-current-state", String(id)]],
     groups: [["host", String(id)], ["groups"]],
-    rules: [["host-effective-rules", String(id)], ["host-current-state", String(id)]],
+    rules: [["host-effective-rules", String(id)], ["host-firewall-overrides", String(id)], ["host-current-state", String(id)]],
     services: [["host-effective-services", String(id)], ["host-service-overrides", String(id)]],
     "hosts-file": [["host-effective-hosts-entries", String(id)], ["host-hosts-overrides", String(id)]],
     users: [["host-effective-linux-users", String(id)], ["host-effective-linux-groups", String(id)]],
@@ -1175,6 +1177,59 @@ export default function HostDetailPage() {
       apiFetch(`/api/hosts/${id}/services/${overrideId}`, { method: "DELETE" }),
     invalidateKeys: [["host-effective-services", id], ["host-service-overrides", id]],
   })
+
+  // Firewall rule override state
+  const [fwAction, setFwAction] = useState("allow")
+  const [fwProtocol, setFwProtocol] = useState("tcp")
+  const [fwDirection, setFwDirection] = useState("input")
+  const [fwSourceCidr, setFwSourceCidr] = useState("")
+  const [fwDestCidr, setFwDestCidr] = useState("")
+  const [fwPortStart, setFwPortStart] = useState("")
+  const [fwPortEnd, setFwPortEnd] = useState("")
+  const [fwPriority, setFwPriority] = useState("0")
+  const [fwComment, setFwComment] = useState("")
+
+  const fwCreateMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/firewall-rules`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-rules", id], ["host-firewall-overrides", id]],
+    onSuccess: () => setFwDialogOpen(false),
+  })
+
+  const fwDeleteMutation = useApiMutation({
+    mutationFn: (ruleId: number) =>
+      apiFetch(`/api/hosts/${id}/firewall-rules/${ruleId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-rules", id], ["host-firewall-overrides", id]],
+  })
+
+  function handleFwSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    fwCreateMutation.mutate({
+      action: fwAction,
+      protocol: fwProtocol,
+      direction: fwDirection,
+      source_cidr: fwSourceCidr || null,
+      destination_cidr: fwDestCidr || null,
+      port_start: fwPortStart ? Number(fwPortStart) : null,
+      port_end: fwPortEnd ? Number(fwPortEnd) : null,
+      priority: Number(fwPriority),
+      comment: fwComment || null,
+    })
+  }
+
+  function handleFwDelete(ruleId: number) {
+    setConfirmState({
+      open: true,
+      title: "Delete Firewall Rule Override",
+      description: "This will remove the host-level firewall rule override. The change will take effect on the next sync.",
+      variant: "destructive",
+      confirmLabel: "Delete",
+      action: async () => {
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        try { await fwDeleteMutation.mutateAsync(ruleId) } finally { setConfirmState(null) }
+      },
+    })
+  }
 
   // Live inventory state
   const [inventoryLoaded, setInventoryLoaded] = useState(false)
@@ -1944,23 +1999,43 @@ export default function HostDetailPage() {
                 Combined rules applied to this host from all assigned groups, in priority order.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={moduleSyncing || !host?.ssh_key_id}
-              onClick={async () => {
-                setModuleSyncing(true)
-                try {
-                  await apiFetch(moduleSyncEndpoints["rules"], { method: "POST" })
-                  for (const key of tabQueryKeys["rules"]) await queryClient.invalidateQueries({ queryKey: key })
-                  await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                } catch { /* ignore */ }
-                setModuleSyncing(false)
-              }}
-            >
-              <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-              {moduleSyncing ? "Syncing..." : "Sync Rules"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  setFwAction("allow")
+                  setFwProtocol("tcp")
+                  setFwDirection("input")
+                  setFwSourceCidr("")
+                  setFwDestCidr("")
+                  setFwPortStart("")
+                  setFwPortEnd("")
+                  setFwPriority("0")
+                  setFwComment("")
+                  fwCreateMutation.reset()
+                  setFwDialogOpen(true)
+                }}
+              >
+                Add Rule
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["rules"], { method: "POST" })
+                    for (const key of tabQueryKeys["rules"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync Rules"}
+              </Button>
+            </div>
           </div>
 
           {effectivePolicies && (
@@ -1997,12 +2072,13 @@ export default function HostDetailPage() {
                     <TableHead>Port(s)</TableHead>
                     <TableHead>Group</TableHead>
                     <TableHead>Comment</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {effectiveRules.map((rule) => (
-                    <TableRow key={`${rule.id}-${rule.group_id}`} className="border-slate-700">
-                      <TableCell className="font-mono text-slate-300 text-xs">{rule.priority}</TableCell>
+                    <TableRow key={`${rule.rule_id ?? 'sys'}-${rule.group_id ?? 'none'}`} className="border-slate-700">
+                      <TableCell className="font-mono text-slate-300 text-xs">{rule.group_priority ?? rule.priority}</TableCell>
                       <TableCell>
                         <ActionBadge action={rule.action} />
                       </TableCell>
@@ -2013,16 +2089,163 @@ export default function HostDetailPage() {
                       <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs font-mono">
-                          {groups?.find(g => g.id === rule.group_id)?.name ?? `#${rule.group_id}`}
+                          {rule.source === "system" ? "System" : rule.source === "host" ? "Host override" : `Group: ${rule.group_name ?? "—"}`}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
+                      <TableCell>
+                        {rule.source === "host" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleFwDelete(rule.rule_id!)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            Delete
+                          </Button>
+                        ) : (
+                          <span className="text-slate-600 text-xs">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           )}
+          {fwDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{fwDeleteMutation.error.message}</div>
+          )}
+
+          <Dialog open={fwDialogOpen} onOpenChange={setFwDialogOpen}>
+            <DialogContent className="sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Add Firewall Rule Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleFwSubmit} className="space-y-4 mt-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-action">Action</Label>
+                    <select
+                      id="fw-action"
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                      value={fwAction}
+                      onChange={(e) => setFwAction(e.target.value)}
+                    >
+                      <option value="allow">Allow</option>
+                      <option value="deny">Deny</option>
+                      <option value="reject">Reject</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-protocol">Protocol</Label>
+                    <select
+                      id="fw-protocol"
+                      className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                      value={fwProtocol}
+                      onChange={(e) => setFwProtocol(e.target.value)}
+                    >
+                      <option value="tcp">TCP</option>
+                      <option value="udp">UDP</option>
+                      <option value="icmp">ICMP</option>
+                      <option value="any">Any</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fw-direction">Direction</Label>
+                  <select
+                    id="fw-direction"
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+                    value={fwDirection}
+                    onChange={(e) => setFwDirection(e.target.value)}
+                  >
+                    <option value="input">Input</option>
+                    <option value="output">Output</option>
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-source-cidr">Source CIDR</Label>
+                    <Input
+                      id="fw-source-cidr"
+                      type="text"
+                      placeholder="e.g. 10.0.0.0/24"
+                      value={fwSourceCidr}
+                      onChange={(e) => setFwSourceCidr(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-dest-cidr">Destination CIDR</Label>
+                    <Input
+                      id="fw-dest-cidr"
+                      type="text"
+                      placeholder="e.g. 0.0.0.0/0"
+                      value={fwDestCidr}
+                      onChange={(e) => setFwDestCidr(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-port-start">Port Start</Label>
+                    <Input
+                      id="fw-port-start"
+                      type="number"
+                      min={1}
+                      max={65535}
+                      placeholder="e.g. 80"
+                      value={fwPortStart}
+                      onChange={(e) => setFwPortStart(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="fw-port-end">Port End</Label>
+                    <Input
+                      id="fw-port-end"
+                      type="number"
+                      min={1}
+                      max={65535}
+                      placeholder="e.g. 443"
+                      value={fwPortEnd}
+                      onChange={(e) => setFwPortEnd(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fw-priority">Priority</Label>
+                  <Input
+                    id="fw-priority"
+                    type="number"
+                    value={fwPriority}
+                    onChange={(e) => setFwPriority(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="fw-comment">Comment</Label>
+                  <Input
+                    id="fw-comment"
+                    type="text"
+                    placeholder="Optional description"
+                    value={fwComment}
+                    onChange={(e) => setFwComment(e.target.value)}
+                  />
+                </div>
+                {fwCreateMutation.error && (
+                  <p className="text-sm text-red-400">{fwCreateMutation.error.message}</p>
+                )}
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setFwDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={fwCreateMutation.isPending}>
+                    {fwCreateMutation.isPending ? "Saving..." : "Add Rule"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
           {host?.firewall_backend === "unknown" && (
             <InstallFirewallSection hostId={id} queryClient={queryClient} />
           )}

@@ -71,7 +71,8 @@ class RuleUpdate(BaseModel):
 
 class RuleResponse(BaseModel):
     id: int
-    group_id: int
+    group_id: int | None = None
+    host_id: int | None = None
     action: str
     protocol: str
     direction: str
@@ -103,6 +104,16 @@ class EffectiveRuleResponse(BaseModel):
     comment: Optional[str]
     priority: int
     is_system: bool
+    # Phase 1: group info
+    group_id: Optional[int] = None
+    group_name: Optional[str] = None
+    rule_id: Optional[int] = None
+    # Phase 2: group priority
+    group_priority: Optional[int] = None
+    # Phase 3: source tracking
+    source: str = "group"  # "group" | "host" | "system"
+    source_id: Optional[int] = None
+    source_name: Optional[str] = None
 
 
 class ChainPoliciesResponse(BaseModel):

@@ -20,6 +20,7 @@ def merge_group_rules(
     groups: list[dict],  # [{"id": int, "priority": int, "rules": list[FirewallRuleSpec]}]
     server_ip: str | None = None,
     host_source_ip: str | None = None,
+    host_rules: list[FirewallRuleSpec] | None = None,
 ) -> list[FirewallRuleSpec]:
     """
     Merge rules from multiple groups using priority-based conflict resolution.
@@ -30,6 +31,7 @@ def merge_group_rules(
         groups: List of dicts with id, priority, and rules list
         server_ip: Barricade server IP for SSH lockout rule (defaults to settings)
         host_source_ip: Per-host detected source IP (takes precedence over server_ip)
+        host_rules: Host-level override rules; replace any group rule with the same signature
 
     Returns:
         Ordered list of FirewallRuleSpec (SSH lockout first, then merged rules)
@@ -52,8 +54,21 @@ def merge_group_rules(
                    rule.source_cidr, rule.destination_cidr)
             if sig not in seen_signatures:
                 seen_signatures.add(sig)
+                rule.group_priority = group["priority"]
                 merged.append(rule)
             # If sig already seen: higher-priority group's rule wins (already in merged)
+
+    # Apply host-level overrides — host rules replace group rules with same signature
+    if host_rules:
+        for rule in host_rules:
+            sig = (rule.protocol, rule.direction, rule.port_start, rule.port_end,
+                   rule.source_cidr, rule.destination_cidr)
+            if sig in seen_signatures:
+                # Replace existing group rule with host override
+                merged = [r for r in merged if (r.protocol, r.direction, r.port_start, r.port_end,
+                          r.source_cidr, r.destination_cidr) != sig]
+            seen_signatures.add(sig)
+            merged.append(rule)
 
     # Sort merged rules by priority within each group
     merged.sort(key=lambda r: r.priority, reverse=True)
