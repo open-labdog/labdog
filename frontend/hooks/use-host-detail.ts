@@ -8,8 +8,9 @@ import type {
   Host,
   HostGroup,
   SSHKey,
-  FirewallRule,
   ChainPolicies,
+  EffectiveFirewallRule,
+  FirewallRule,
   EffectiveService,
   ServiceRule,
   EffectiveHostsEntry,
@@ -28,10 +29,6 @@ import type {
   ModuleCurrentState,
 } from "@/lib/types"
 
-interface EffectiveRule extends FirewallRule {
-  group_id: number
-}
-
 type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
@@ -41,9 +38,9 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id,
   })
 
-  const effectiveRules = useQuery<EffectiveRule[]>({
+  const effectiveRules = useQuery<EffectiveFirewallRule[]>({
     queryKey: ["host-effective-rules", id],
-    queryFn: () => apiFetch<EffectiveRule[]>(`/api/hosts/${id}/effective-rules`),
+    queryFn: () => apiFetch<EffectiveFirewallRule[]>(`/api/hosts/${id}/effective-rules`),
     enabled: !!id,
   })
   const showRulesLoading = useDelayedLoading(effectiveRules.isLoading)
@@ -76,6 +73,12 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     queryKey: ["host-service-overrides", id],
     queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
     enabled: !!id && activeTab === "services",
+  })
+
+  const hostFirewallOverrides = useQuery<FirewallRule[]>({
+    queryKey: ["host-firewall-overrides", id],
+    queryFn: () => apiFetch<FirewallRule[]>(`/api/hosts/${id}/firewall-rules`),
+    enabled: !!id && activeTab === "rules",
   })
 
   // Hosts file tab
@@ -190,6 +193,7 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     effectiveServices,
     showServicesLoading,
     hostOverrides,
+    hostFirewallOverrides,
     effectiveHosts,
     showHostsEntriesLoading,
     hostHostsOverrides,
@@ -215,6 +219,7 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
 
 export function useHostDialogs() {
   const [editOpen, setEditOpen] = useState(false)
+  const [fwDialogOpen, setFwDialogOpen] = useState(false)
   const [svcDialogOpen, setSvcDialogOpen] = useState(false)
   const [hostsDialogOpen, setHostsDialogOpen] = useState(false)
   const [luDialogOpen, setLuDialogOpen] = useState(false)
@@ -225,6 +230,7 @@ export function useHostDialogs() {
 
   return {
     editOpen, setEditOpen,
+    fwDialogOpen, setFwDialogOpen,
     svcDialogOpen, setSvcDialogOpen,
     hostsDialogOpen, setHostsDialogOpen,
     luDialogOpen, setLuDialogOpen,

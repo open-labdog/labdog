@@ -39,6 +39,8 @@ class FirewallRuleSpec:
     is_system: bool = False  # True = auto-injected, non-deletable
     priority: int = 0  # ordering within group
     group_id: Optional[int] = None  # source group (for merge tracking)
+    host_id: Optional[int] = None   # source host (for host-level overrides)
+    group_priority: int | None = None  # source group priority (for display)
     rule_id: Optional[int] = None  # DB id (for update tracking)
 
     def port_display(self) -> str:

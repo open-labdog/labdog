@@ -64,7 +64,13 @@ async def _get_desired_state(
     )
     group_ids = [r[0] for r in memberships.all()]
     if not group_ids:
-        return [], ChainPolicies()
+        host_rules_result = await db.execute(
+            select(FirewallRule).where(FirewallRule.host_id == host_id)
+        )
+        host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
+        if not host_rule_specs:
+            return [], ChainPolicies()
+        return merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs), ChainPolicies()
 
     groups_data = []
     for gid in group_ids:
@@ -77,7 +83,13 @@ async def _get_desired_state(
             "input_policy": group.input_policy, "output_policy": group.output_policy,
         })
 
-    return merge_group_rules(groups_data, host_source_ip=host_source_ip), merge_group_policies(groups_data)
+    # Fetch host-level rule overrides
+    host_rules_result = await db.execute(
+        select(FirewallRule).where(FirewallRule.host_id == host_id)
+    )
+    host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
+
+    return merge_group_rules(groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs), merge_group_policies(groups_data)
 
 
 @router.post("/hosts/{host_id}/plan", response_model=HostDiff)

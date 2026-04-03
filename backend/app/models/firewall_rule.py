@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -27,11 +27,21 @@ class RuleDirection(str, enum.Enum):
 
 class FirewallRule(Base):
     __tablename__ = "firewall_rules"
+    __table_args__ = (
+        CheckConstraint(
+            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            name="ck_firewall_rules_scope",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    group_id: Mapped[int] = mapped_column(
+    group_id: Mapped[int | None] = mapped_column(
         ForeignKey("host_groups.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+    )
+    host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="CASCADE"),
+        nullable=True,
     )
     action: Mapped[RuleAction] = mapped_column(
         Enum(RuleAction, name="ruleaction"),

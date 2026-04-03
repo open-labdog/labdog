@@ -121,6 +121,26 @@ export interface FirewallRule {
   updated_at: string
 }
 
+export interface EffectiveFirewallRule {
+  action: string
+  protocol: string
+  direction: string
+  source_cidr: string | null
+  destination_cidr: string | null
+  port_start: number | null
+  port_end: number | null
+  comment: string | null
+  priority: number
+  is_system: boolean
+  group_id: number | null
+  group_name: string | null
+  rule_id: number | null
+  group_priority: number | null
+  source: "group" | "host" | "system"
+  source_id: number | null
+  source_name: string | null
+}
+
 export interface AdminUser {
   id: number
   email: string
