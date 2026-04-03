@@ -14,7 +14,7 @@ from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
-from app.models.host import Host
+from app.models.host import Host, SyncStatus
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
@@ -108,6 +108,7 @@ async def collect_state(
         msg = str(e) or "connection timed out"
         logger.warning("Host %d unreachable, skipping all collectors: %s", host_id, msg)
         error_msg = f"Host unreachable: {msg}"
+        host.sync_status = SyncStatus.error
         for module_type in collectors:
             hms = await _get_or_create_hms(db, host_id, module_type)
             hms.collected_at = now
@@ -146,6 +147,11 @@ async def collect_state(
             drift_check_enabled=hms.drift_check_enabled,
             error_message=hms.error_message,
         ))
+
+    # Reset host sync_status: error if any module failed, unknown otherwise
+    # (unknown = state collected but drift not yet checked)
+    any_errors = any(r.sync_status == "error" for r in results)
+    host.sync_status = SyncStatus.error if any_errors else SyncStatus.unknown
 
     await db.commit()
     return results
