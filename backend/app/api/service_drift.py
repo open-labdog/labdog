@@ -98,6 +98,9 @@ async def check_service_drift(
 
         hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return ServiceDriftResponse(

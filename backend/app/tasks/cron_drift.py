@@ -81,6 +81,9 @@ def check_all_cron_drift():
                     hms.collected_at = datetime.now(timezone.utc)
                     hms.error_message = None
 
+                    from app.api.host_state import refresh_host_sync_status
+                    await refresh_host_sync_status(host, db)
+
                     if not host.barricade_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)

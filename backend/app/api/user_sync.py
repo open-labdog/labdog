@@ -114,6 +114,9 @@ async def check_user_drift(
 
         hms.sync_status = "drifted" if users_drifted or groups_drifted else "in_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return UserDriftResponse(
@@ -135,6 +138,9 @@ async def check_user_drift(
     except Exception as e:
         hms.sync_status = "error"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return UserDriftResponse(

@@ -79,10 +79,10 @@ export default function DashboardPage() {
   }
 
   const handleCheckAll = async () => {
-    if (!groups) return
+    if (!hosts) return
     await Promise.allSettled(
-      groups.map((g) =>
-        apiFetch(`/api/drift/groups/${g.id}/check`, { method: "POST" }).catch(() => null)
+      hosts.map((h) =>
+        apiFetch(`/api/hosts/${h.id}/collect-state`, { method: "POST" }).catch(() => null)
       )
     )
     refetchHosts()

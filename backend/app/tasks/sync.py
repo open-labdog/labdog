@@ -135,8 +135,6 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 # Update host sync status
                 host_result = await db.execute(select(Host).where(Host.id == host_id))
                 host = host_result.scalar_one()
-                from app.models.host import SyncStatus
-                host.sync_status = SyncStatus.in_sync if runner.status == "successful" else SyncStatus.error
                 host.last_sync_at = datetime.now(timezone.utc)
 
                 # Collect actual state from host so it matches what collect-state returns
@@ -177,7 +175,20 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     hms.collected_at = now
                     hms.sync_status = "in_sync"
                     hms.error_message = None
+                else:
+                    # Mark firewall module as error on failed sync
+                    hms_result = await db.execute(
+                        select(HostModuleStatus).where(
+                            HostModuleStatus.host_id == host_id,
+                            HostModuleStatus.module_type == "firewall",
+                        )
+                    )
+                    hms = hms_result.scalar_one_or_none()
+                    if hms:
+                        hms.sync_status = "error"
 
+                from app.api.host_state import refresh_host_sync_status
+                await refresh_host_sync_status(host, db)
                 await db.commit()
 
         asyncio.run(_update_status())

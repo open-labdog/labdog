@@ -283,6 +283,9 @@ async def check_cron_drift(
 
         hms.sync_status = "drifted" if drifted else "in_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return CronDriftCheckResponse(
@@ -300,6 +303,9 @@ async def check_cron_drift(
     except Exception as e:
         hms.sync_status = "error"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return CronDriftCheckResponse(
