@@ -134,10 +134,13 @@ class TestDrift:
             port_end=22,
         )
 
-        # Mock fetch_current_state to return empty list (no rules on host)
+        # Mock fetch_current_firewall_state to return empty state (no rules on host)
+        from app.sync.collector import CollectedFirewallState
+        from app.rules.model import ChainPolicies
+        empty_state = CollectedFirewallState(rules=[], policies=ChainPolicies())
         with patch(
-            "app.drift.detector.fetch_current_state",
-            new=AsyncMock(return_value=[]),
+            "app.drift.detector.fetch_current_firewall_state",
+            new=AsyncMock(return_value=empty_state),
         ):
             resp = await superuser_client.post(f"/api/drift/hosts/{host.id}/check")
 
