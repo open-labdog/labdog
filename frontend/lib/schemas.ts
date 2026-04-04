@@ -122,8 +122,6 @@ export const packageSchema = z.object({
   package_manager: z.enum(["auto", "apt", "dnf", "yum"]).default("auto"),
   comment: z.string().optional(),
 })
-export type PackageInput = z.infer<typeof packageSchema>
-
 // Linux user schema
 export const linuxUserSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -132,4 +130,3 @@ export const linuxUserSchema = z.object({
   home_dir: z.string().optional(),
   comment: z.string().optional(),
 })
-export type LinuxUserInput = z.infer<typeof linuxUserSchema>

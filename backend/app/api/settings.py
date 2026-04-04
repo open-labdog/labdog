@@ -13,7 +13,6 @@ from app.settings_service import (
     SETTING_DEFINITIONS,
     get_all_settings,
     update_setting,
-    invalidate_cache,
 )
 
 logger = logging.getLogger(__name__)

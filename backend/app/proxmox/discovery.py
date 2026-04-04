@@ -48,8 +48,6 @@ def _extract_lxc_ips(interfaces: list[dict]) -> set[str]:
             ip = inet.split("/")[0]
             if ip and not ip.startswith("127."):
                 ips.add(ip)
-        inet6 = iface.get("inet6")
-        # Skip IPv6 for now — only match on IPv4
     return ips
 
 
@@ -69,8 +67,6 @@ async def _scan_pve_node(
     client: ProxmoxClient,
     node: ProxmoxNode,
     pve_node_name: str,
-    target_ip: str | None = None,
-    ip_to_host: dict[str, Host] | None = None,
 ) -> list[tuple[str, int, str, set[str]]]:
     """Scan a single PVE node for QEMU VMs and LXC containers.
 
