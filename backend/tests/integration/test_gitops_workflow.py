@@ -131,7 +131,7 @@ class TestGitOpsWorkflow:
 
         try:
             # -- STEP 1: Create group with GitOps enabled --
-            group = await create_group(db, name="web-servers-gitops", priority=9990)
+            group = await create_group(db, name="web-servers-gitops", priority=999)
             group.gitops_enabled = True
             group.gitops_file_path = "groups/web-servers.yaml"
             group.gitops_status = GitOpsStatus.disconnected

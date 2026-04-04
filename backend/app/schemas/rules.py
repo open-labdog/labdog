@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Optional
 import ipaddress
@@ -13,7 +13,7 @@ class RuleCreate(BaseModel):
     port_start: Optional[int] = None
     port_end: Optional[int] = None
     comment: Optional[str] = None
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("action")
     @classmethod
@@ -66,7 +66,7 @@ class RuleUpdate(BaseModel):
     port_start: Optional[int] = None
     port_end: Optional[int] = None
     comment: Optional[str] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
 
     @field_validator("action")
     @classmethod
@@ -160,3 +160,7 @@ class EffectiveRuleResponse(BaseModel):
 class ChainPoliciesResponse(BaseModel):
     input: str   # "accept" | "drop"
     output: str  # "accept" | "drop"
+    input_source_group_id: int | None = None
+    input_source_group_name: str | None = None
+    output_source_group_id: int | None = None
+    output_source_group_name: str | None = None

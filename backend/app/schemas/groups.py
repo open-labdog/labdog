@@ -14,7 +14,7 @@ class GroupCreate(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
-    priority: int = Field(ge=0, le=2_147_483_647)
+    priority: int = Field(ge=1, le=1000)
     input_policy: str | None = None
     output_policy: str | None = None
 
@@ -28,7 +28,7 @@ class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     category: str | None = None
-    priority: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    priority: int | None = Field(default=None, ge=1, le=1000)
     input_policy: str | None = None
     output_policy: str | None = None
 

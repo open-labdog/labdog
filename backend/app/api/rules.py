@@ -370,9 +370,16 @@ async def get_effective_policies(
         group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = group_result.scalar_one()
         groups_data.append({
-            "id": gid, "priority": group.priority, "rules": [],
+            "id": gid, "name": group.name, "priority": group.priority, "rules": [],
             "input_policy": group.input_policy, "output_policy": group.output_policy,
         })
 
     policies = merge_group_policies(groups_data)
-    return ChainPoliciesResponse(input=policies.input, output=policies.output)
+    return ChainPoliciesResponse(
+        input=policies.input,
+        output=policies.output,
+        input_source_group_id=policies.input_source_group_id,
+        input_source_group_name=policies.input_source_group_name,
+        output_source_group_id=policies.output_source_group_id,
+        output_source_group_name=policies.output_source_group_name,
+    )

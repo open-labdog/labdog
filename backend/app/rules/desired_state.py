@@ -68,6 +68,7 @@ async def get_desired_state(
         groups_data.append(
             {
                 "id": gid,
+                "name": group.name,
                 "priority": group.priority,
                 "rules": rules,
                 "input_policy": group.input_policy,

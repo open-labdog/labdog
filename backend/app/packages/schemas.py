@@ -1,7 +1,7 @@
 import re
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.packages.constants import is_protected
 
@@ -13,7 +13,7 @@ class PackageRuleCreate(BaseModel):
     version: Optional[str] = None
     state: Literal["present", "absent", "latest"] = "present"
     package_manager: Literal["auto", "apt", "dnf", "yum"] = "auto"
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
     comment: Optional[str] = None
     hold: bool = False
 
@@ -38,7 +38,7 @@ class PackageRuleUpdate(BaseModel):
     version: Optional[str] = None
     state: Optional[Literal["present", "absent", "latest"]] = None
     package_manager: Optional[Literal["auto", "apt", "dnf", "yum"]] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
     comment: Optional[str] = None
     hold: Optional[bool] = None
 

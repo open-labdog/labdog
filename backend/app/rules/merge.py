@@ -88,16 +88,24 @@ def merge_group_policies(groups: list[dict]) -> ChainPolicies:
     sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
     input_policy: str | None = None
     output_policy: str | None = None
+    input_source: tuple[int | None, str | None] = (None, None)
+    output_source: tuple[int | None, str | None] = (None, None)
 
     for group in sorted_groups:
         if input_policy is None and group.get("input_policy"):
             input_policy = group["input_policy"]
+            input_source = (group["id"], group.get("name"))
         if output_policy is None and group.get("output_policy"):
             output_policy = group["output_policy"]
+            output_source = (group["id"], group.get("name"))
         if input_policy and output_policy:
             break
 
     return ChainPolicies(
         input=input_policy or "drop",
         output=output_policy or "accept",
+        input_source_group_id=input_source[0],
+        input_source_group_name=input_source[1],
+        output_source_group_id=output_source[0],
+        output_source_group_name=output_source[1],
     )

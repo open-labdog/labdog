@@ -18,7 +18,7 @@ export const groupSchema = z.object({
   category: z.string().max(100, "Category too long").optional(),
   priority: z.number()
     .min(1, "Priority must be at least 1")
-    .max(2147483647, "Priority must be at most 2147483647")
+    .max(1000, "Priority must be at most 1000")
     .refine((v) => Number.isInteger(v), "Priority must be a whole number"),
 })
 export type GroupInput = z.infer<typeof groupSchema>

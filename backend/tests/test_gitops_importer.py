@@ -50,7 +50,7 @@ async def _make_gitops_group(db, name=None, priority=None):
     group = await create_group(
         db,
         name=name or f"gitops-{uuid.uuid4().hex[:6]}",
-        priority=priority or int(uuid.uuid4().int % 9000) + 1000,
+        priority=priority or int(uuid.uuid4().int % 1000) + 1,
     )
     group.gitops_enabled = True
     group.gitops_file_path = "test.yaml"
@@ -139,7 +139,7 @@ class TestImporter:
 
     async def test_import_non_gitops_group_rejected(self, db):
         """Importing to a non-gitops group returns error."""
-        group = await create_group(db, priority=int(uuid.uuid4().int % 9000) + 1000)
+        group = await create_group(db, priority=int(uuid.uuid4().int % 1000) + 1)
         result = await import_group_from_yaml(
             group_id=group.id,
             yaml_content=VALID_YAML,

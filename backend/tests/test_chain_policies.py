@@ -38,68 +38,90 @@ class TestMergeGroupPolicies:
         p = merge_group_policies([])
         assert p.input == "drop"
         assert p.output == "accept"
+        assert p.input_source_group_id is None
+        assert p.output_source_group_id is None
 
     def test_no_policies_set(self):
         groups = [
-            {"id": 1, "priority": 100, "rules": [], "input_policy": None, "output_policy": None},
+            {"id": 1, "name": "Base", "priority": 100, "rules": [], "input_policy": None, "output_policy": None},
         ]
         p = merge_group_policies(groups)
         assert p.input == "drop"
         assert p.output == "accept"
+        assert p.input_source_group_id is None
+        assert p.output_source_group_id is None
 
     def test_single_group_sets_input(self):
         groups = [
-            {"id": 1, "priority": 100, "rules": [], "input_policy": "accept", "output_policy": None},
+            {"id": 1, "name": "Base", "priority": 100, "rules": [], "input_policy": "accept", "output_policy": None},
         ]
         p = merge_group_policies(groups)
         assert p.input == "accept"
         assert p.output == "accept"  # default
+        assert p.input_source_group_id == 1
+        assert p.input_source_group_name == "Base"
+        assert p.output_source_group_id is None
 
     def test_single_group_sets_output(self):
         groups = [
-            {"id": 1, "priority": 100, "rules": [], "input_policy": None, "output_policy": "drop"},
+            {"id": 1, "name": "Base", "priority": 100, "rules": [], "input_policy": None, "output_policy": "drop"},
         ]
         p = merge_group_policies(groups)
         assert p.input == "drop"  # default
         assert p.output == "drop"
+        assert p.input_source_group_id is None
+        assert p.output_source_group_id == 1
+        assert p.output_source_group_name == "Base"
 
     def test_highest_priority_wins(self):
         groups = [
-            {"id": 1, "priority": 50, "rules": [], "input_policy": "drop", "output_policy": "accept"},
-            {"id": 2, "priority": 200, "rules": [], "input_policy": "accept", "output_policy": "drop"},
+            {"id": 1, "name": "Low", "priority": 50, "rules": [], "input_policy": "drop", "output_policy": "accept"},
+            {"id": 2, "name": "High", "priority": 200, "rules": [], "input_policy": "accept", "output_policy": "drop"},
         ]
         p = merge_group_policies(groups)
         assert p.input == "accept"   # from group 2 (priority 200)
         assert p.output == "drop"    # from group 2 (priority 200)
+        assert p.input_source_group_id == 2
+        assert p.input_source_group_name == "High"
+        assert p.output_source_group_id == 2
+        assert p.output_source_group_name == "High"
 
     def test_partial_definition_per_chain(self):
         """Group A sets input, Group B sets output — both should take effect."""
         groups = [
-            {"id": 1, "priority": 100, "rules": [], "input_policy": "accept", "output_policy": None},
-            {"id": 2, "priority": 50, "rules": [], "input_policy": None, "output_policy": "drop"},
+            {"id": 1, "name": "GroupA", "priority": 100, "rules": [], "input_policy": "accept", "output_policy": None},
+            {"id": 2, "name": "GroupB", "priority": 50, "rules": [], "input_policy": None, "output_policy": "drop"},
         ]
         p = merge_group_policies(groups)
         assert p.input == "accept"  # from group 1 (priority 100)
         assert p.output == "drop"   # from group 2 (only one that sets it)
+        assert p.input_source_group_id == 1
+        assert p.input_source_group_name == "GroupA"
+        assert p.output_source_group_id == 2
+        assert p.output_source_group_name == "GroupB"
 
     def test_lower_priority_fills_gaps(self):
         """Higher priority sets input, lower priority sets output."""
         groups = [
-            {"id": 1, "priority": 200, "rules": [], "input_policy": "accept", "output_policy": None},
-            {"id": 2, "priority": 100, "rules": [], "input_policy": "drop", "output_policy": "drop"},
+            {"id": 1, "name": "High", "priority": 200, "rules": [], "input_policy": "accept", "output_policy": None},
+            {"id": 2, "name": "Low", "priority": 100, "rules": [], "input_policy": "drop", "output_policy": "drop"},
         ]
         p = merge_group_policies(groups)
         assert p.input == "accept"  # from group 1 (priority 200)
         assert p.output == "drop"   # from group 2 (group 1 didn't set it)
+        assert p.input_source_group_id == 1
+        assert p.output_source_group_id == 2
 
     def test_missing_policy_keys(self):
         """Groups without policy keys should still work."""
         groups = [
-            {"id": 1, "priority": 100, "rules": []},
+            {"id": 1, "name": "Bare", "priority": 100, "rules": []},
         ]
         p = merge_group_policies(groups)
         assert p.input == "drop"
         assert p.output == "accept"
+        assert p.input_source_group_id is None
+        assert p.output_source_group_id is None
 
 
 # ---------------------------------------------------------------------------

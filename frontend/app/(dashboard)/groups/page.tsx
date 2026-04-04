@@ -300,7 +300,7 @@ export default function GroupsPage() {
                       </TableCell>
                       <TableCell className="text-slate-400 truncate">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
                       <TableCell className="tabular-nums">
-                        {group.priority >= 2147483647 ? <span className="text-slate-500">—</span> : group.priority}
+                        {group.priority}
                       </TableCell>
                       <TableCell>
                         {group.gitops_enabled && group.gitops_status ? (
@@ -429,7 +429,7 @@ export default function GroupsPage() {
                               <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
                             </TableCell>
                             <TableCell className="tabular-nums">
-                              {group.priority >= 2147483647 ? <span className="text-slate-500">—</span> : group.priority}
+                              {group.priority}
                             </TableCell>
                             <TableCell>
                               {group.gitops_enabled && group.gitops_status ? (

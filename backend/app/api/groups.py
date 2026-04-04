@@ -72,6 +72,20 @@ async def update_group(
     group = result.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    # Check unique priority (skip if unchanged)
+    if body.priority is not None and body.priority != group.priority:
+        existing_p = await db.execute(
+            select(HostGroup).where(HostGroup.priority == body.priority, HostGroup.id != group_id)
+        )
+        if existing_p.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Group priority already in use")
+    # Check unique name (skip if unchanged)
+    if body.name is not None and body.name != group.name:
+        existing_n = await db.execute(
+            select(HostGroup).where(HostGroup.name == body.name, HostGroup.id != group_id)
+        )
+        if existing_n.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="Group name already exists")
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(group, field, value)
     await db.commit()
