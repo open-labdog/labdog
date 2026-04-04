@@ -16,9 +16,10 @@ def _sample_rules():
 
 
 class TestNftablesRenderer:
-    def test_contains_flush(self):
+    def test_scoped_table_flush(self):
         config = render_nftables_config(_sample_rules())
-        assert "flush ruleset" in config
+        assert "flush ruleset" not in config
+        assert "delete table inet filter" in config
 
     def test_contains_inet_filter(self):
         config = render_nftables_config(_sample_rules())
@@ -59,17 +60,18 @@ class TestIptablesRenderer:
 
     def test_contains_default_policies(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert ":INPUT DROP [0:0]" in v4
-        assert ":FORWARD DROP [0:0]" in v4
-        assert ":OUTPUT ACCEPT [0:0]" in v4
+        assert ":BARRICADE-INPUT - [0:0]" in v4
+        assert ":BARRICADE-OUTPUT - [0:0]" in v4
+        assert "-A BARRICADE-INPUT -j DROP" in v4
+        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
 
     def test_contains_conntrack(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT" in v4
+        assert "-A BARRICADE-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT" in v4
 
     def test_contains_loopback(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A INPUT -i lo -j ACCEPT" in v4
+        assert "-A BARRICADE-INPUT -i lo -j ACCEPT" in v4
 
     def test_ipv6_rule_goes_to_v6_file(self):
         rules = [FirewallRuleSpec(action="allow", protocol="tcp", direction="input",

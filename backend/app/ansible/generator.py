@@ -25,15 +25,15 @@ def generate_nftables_playbook(
     tasks = [
         {
             "name": "Backup current nftables ruleset",
-            "ansible.builtin.shell": "/usr/sbin/nft list ruleset > /tmp/nftables-backup.conf 2>/dev/null || touch /tmp/nftables-backup.conf",
+            "ansible.builtin.shell": "/usr/sbin/nft list table inet filter > /tmp/nftables-backup.conf 2>/dev/null || touch /tmp/nftables-backup.conf",
         },
         {
             "name": "Schedule automatic revert in 60 seconds (deadman switch)",
             "ansible.builtin.shell": (
                 "nohup bash -c '"
                 "sleep 60 && "
-                "/usr/sbin/nft flush ruleset && "
-                "/usr/sbin/nft -f /tmp/nftables-backup.conf && "
+                "/usr/sbin/nft delete table inet filter 2>/dev/null; "
+                "/usr/sbin/nft -f /tmp/nftables-backup.conf 2>/dev/null; "
                 "cp /tmp/nftables-backup.conf.orig /etc/nftables.conf 2>/dev/null"
                 "' > /tmp/nftables-revert.log 2>&1 & "
                 "echo $! > /tmp/nftables-revert.pid"
@@ -165,11 +165,39 @@ def generate_iptables_playbook(
         },
         {
             "name": "Apply iptables rules (IPv4)",
-            "ansible.builtin.shell": "iptables-restore < /etc/iptables.rules",
+            "ansible.builtin.shell": "iptables-restore --noflush < /etc/iptables.rules",
         },
         {
             "name": "Apply ip6tables rules (IPv6)",
-            "ansible.builtin.shell": "ip6tables-restore < /etc/ip6tables.rules",
+            "ansible.builtin.shell": "ip6tables-restore --noflush < /etc/ip6tables.rules",
+        },
+        {
+            "name": "Ensure INPUT jumps to BARRICADE-INPUT",
+            "ansible.builtin.shell": (
+                "iptables -C INPUT -j BARRICADE-INPUT 2>/dev/null || "
+                "iptables -I INPUT 1 -j BARRICADE-INPUT"
+            ),
+        },
+        {
+            "name": "Ensure OUTPUT jumps to BARRICADE-OUTPUT",
+            "ansible.builtin.shell": (
+                "iptables -C OUTPUT -j BARRICADE-OUTPUT 2>/dev/null || "
+                "iptables -I OUTPUT 1 -j BARRICADE-OUTPUT"
+            ),
+        },
+        {
+            "name": "Ensure INPUT jumps to BARRICADE-INPUT (IPv6)",
+            "ansible.builtin.shell": (
+                "ip6tables -C INPUT -j BARRICADE-INPUT 2>/dev/null || "
+                "ip6tables -I INPUT 1 -j BARRICADE-INPUT"
+            ),
+        },
+        {
+            "name": "Ensure OUTPUT jumps to BARRICADE-OUTPUT (IPv6)",
+            "ansible.builtin.shell": (
+                "ip6tables -C OUTPUT -j BARRICADE-OUTPUT 2>/dev/null || "
+                "ip6tables -I OUTPUT 1 -j BARRICADE-OUTPUT"
+            ),
         },
         {
             "name": "Cancel automatic revert (SSH still works)",
