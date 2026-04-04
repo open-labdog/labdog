@@ -558,6 +558,27 @@ async def _detect_firewall_backend(
             if r.exit_status == 0:
                 backend = "nftables"
 
+            # If Docker is running, prefer iptables — Docker defaults to
+            # iptables and its nftables support is experimental (v29+).
+            if backend == "nftables":
+                r = await conn.run(
+                    "test -S /run/docker.sock || "
+                    "systemctl is-active --quiet docker 2>/dev/null",
+                    check=False,
+                )
+                if r.exit_status == 0:
+                    # Verify iptables is available before downgrading
+                    r2 = await conn.run(
+                        "command -v iptables || test -x /usr/sbin/iptables",
+                        check=False,
+                    )
+                    if r2.exit_status == 0:
+                        backend = "iptables"
+                        messages.append(
+                            "Docker detected; using iptables backend "
+                            "(Docker defaults to iptables)."
+                        )
+
             # Check for iptables
             if backend is None:
                 r = await conn.run("command -v iptables || test -x /usr/sbin/iptables", check=False)

@@ -140,30 +140,26 @@ class TestNftablesRendererPolicies:
 class TestIptablesRendererPolicies:
     def test_default_policies(self):
         v4, _ = render_iptables_rules([])
-        assert ":INPUT DROP [0:0]" in v4
-        assert ":OUTPUT ACCEPT [0:0]" in v4
-        assert ":FORWARD DROP [0:0]" in v4
+        assert ":BARRICADE-INPUT - [0:0]" in v4
+        assert ":BARRICADE-OUTPUT - [0:0]" in v4
+        assert "-A BARRICADE-INPUT -j DROP" in v4
+        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert ":FORWARD" not in v4
 
     def test_custom_input_accept(self):
         v4, _ = render_iptables_rules([], policies=ChainPolicies(input="accept"))
-        assert ":INPUT ACCEPT [0:0]" in v4
-        assert ":OUTPUT ACCEPT [0:0]" in v4
-        assert ":FORWARD DROP [0:0]" in v4  # always DROP
+        assert "-A BARRICADE-INPUT -j ACCEPT" in v4
+        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
 
     def test_custom_output_drop(self):
         v4, _ = render_iptables_rules([], policies=ChainPolicies(output="drop"))
-        assert ":INPUT DROP [0:0]" in v4
-        assert ":OUTPUT DROP [0:0]" in v4
+        assert "-A BARRICADE-INPUT -j DROP" in v4
+        assert "-A BARRICADE-OUTPUT -j DROP" in v4
 
     def test_none_uses_defaults(self):
         v4, _ = render_iptables_rules([], policies=None)
-        assert ":INPUT DROP [0:0]" in v4
-        assert ":OUTPUT ACCEPT [0:0]" in v4
-
-    def test_forward_always_drop(self):
-        """FORWARD must stay DROP regardless of policies."""
-        v4, _ = render_iptables_rules([], policies=ChainPolicies(input="accept", output="accept"))
-        assert ":FORWARD DROP [0:0]" in v4
+        assert "-A BARRICADE-INPUT -j DROP" in v4
+        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
 
 
 # ---------------------------------------------------------------------------

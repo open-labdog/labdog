@@ -49,8 +49,8 @@ def render_nftables_config(
 
     lines = [
         "#!/usr/sbin/nft -f",
-        "flush ruleset",
-        "",
+        "table inet filter {}",  # ensure table exists (no-op if already exists)
+        "delete table inet filter",
         "table inet filter {",
         "  chain input {",
         f"    type filter hook input priority 0; policy {policies.input};",
