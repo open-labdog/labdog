@@ -95,15 +95,6 @@ export interface VMMapping {
   discovered_at: string
 }
 
-export interface GitOpsStatusResponse {
-  gitops_enabled: boolean
-  git_repository_id: number | null
-  gitops_file_path: string | null
-  gitops_status: string
-  gitops_error_message: string | null
-  gitops_last_import_at: string | null
-}
-
 export interface FirewallRule {
   id: number
   group_id: number
