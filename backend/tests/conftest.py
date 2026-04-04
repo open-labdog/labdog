@@ -178,7 +178,7 @@ async def create_group(db, name=None, priority=None, description=None):
     from app.models.host_group import HostGroup
     group = HostGroup(
         name=name or f"group-{uuid.uuid4().hex[:8]}",
-        priority=priority if priority is not None else int(uuid.uuid4().int % 10000),
+        priority=priority if priority is not None else int(uuid.uuid4().int % 1000) + 1,
         description=description,
     )
     db.add(group)

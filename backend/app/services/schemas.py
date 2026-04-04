@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Literal, Optional
 import re
@@ -9,7 +9,7 @@ class ServiceRuleCreate(BaseModel):
     service_name: str
     state: Literal["running", "stopped"]
     enabled: bool = True
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
     comment: Optional[str] = None
     unit_content: Optional[str] = None
     deploy_mode: Literal["full", "override"] = "override"
@@ -33,7 +33,7 @@ class ServiceRuleUpdate(BaseModel):
     service_name: Optional[str] = None
     state: Optional[Literal["running", "stopped"]] = None
     enabled: Optional[bool] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
     comment: Optional[str] = None
     unit_content: Optional[str] = None
     deploy_mode: Optional[Literal["full", "override"]] = None

@@ -1,6 +1,6 @@
 import ipaddress
 import re
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -12,7 +12,7 @@ class HostsEntryCreate(BaseModel):
     hostname: str
     aliases: list[str] = []
     comment: Optional[str] = None
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("ip_address")
     @classmethod
@@ -50,7 +50,7 @@ class HostsEntryUpdate(BaseModel):
     hostname: Optional[str] = None
     aliases: Optional[list[str]] = None
     comment: Optional[str] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
 
     @field_validator("ip_address")
     @classmethod

@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.cron.validators import validate_cron_expression
 
@@ -17,7 +17,7 @@ class CronJobCreate(BaseModel):
     command: str
     environment: dict[str, str] = {}
     state: Literal["present", "absent"] = "present"
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
     comment: Optional[str] = None
 
     @field_validator("name")
@@ -63,7 +63,7 @@ class CronJobUpdate(BaseModel):
     command: Optional[str] = None
     environment: Optional[dict[str, str]] = None
     state: Optional[Literal["present", "absent"]] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
     comment: Optional[str] = None
 
     @field_validator("name")

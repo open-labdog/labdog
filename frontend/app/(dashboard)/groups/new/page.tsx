@@ -102,7 +102,7 @@ export default function NewGroupPage() {
                type="number"
                {...form.register("priority", { valueAsNumber: true })}
                min={1}
-               max={2147483647}
+               max={1000}
              />
              {form.formState.errors.priority && (
                <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>

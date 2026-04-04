@@ -17,6 +17,10 @@ export interface HostGroup {
 export interface ChainPolicies {
   input: "accept" | "drop"
   output: "accept" | "drop"
+  input_source_group_id: number | null
+  input_source_group_name: string | null
+  output_source_group_id: number | null
+  output_source_group_name: string | null
 }
 export interface Host {
   id: number; hostname: string; ip_address: string; ssh_port: number; ssh_user: string

@@ -73,3 +73,7 @@ class ChainPolicies:
 
     input: str = "drop"     # "accept" | "drop"
     output: str = "accept"  # "accept" | "drop"
+    input_source_group_id: int | None = None
+    input_source_group_name: str | None = None
+    output_source_group_id: int | None = None
+    output_source_group_name: str | None = None

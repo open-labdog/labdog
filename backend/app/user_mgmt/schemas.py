@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
 from typing import Literal, Optional
 import re
@@ -23,7 +23,7 @@ class LinuxUserCreate(BaseModel):
     sudo_rule: Optional[str] = None
     authorized_keys: list[str] = []
     supplementary_groups: list[str] = []
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("username")
     @classmethod
@@ -80,7 +80,7 @@ class LinuxUserUpdate(BaseModel):
     sudo_rule: Optional[str] = None
     authorized_keys: Optional[list[str]] = None
     supplementary_groups: Optional[list[str]] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
 
     @field_validator("username")
     @classmethod
@@ -153,7 +153,7 @@ class LinuxGroupCreate(BaseModel):
     groupname: str
     gid: Optional[int] = None
     state: Literal["present", "absent"] = "present"
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("groupname")
     @classmethod
@@ -178,7 +178,7 @@ class LinuxGroupUpdate(BaseModel):
     groupname: Optional[str] = None
     gid: Optional[int] = None
     state: Optional[Literal["present", "absent"]] = None
-    priority: Optional[int] = None
+    priority: Optional[int] = Field(default=None, ge=0, le=10000)
 
     @field_validator("groupname")
     @classmethod
