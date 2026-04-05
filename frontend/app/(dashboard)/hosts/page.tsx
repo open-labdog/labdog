@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { SearchIcon, XIcon, ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading } from "@/lib/utils"
@@ -23,6 +24,23 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import type { Host, HostGroup } from "@/lib/types"
 
+function formatRelativeTime(dateStr: string | null): string {
+  if (!dateStr) return "Never"
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return `${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hour${hours !== 1 ? "s" : ""} ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} day${days !== 1 ? "s" : ""} ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} month${months !== 1 ? "s" : ""} ago`
+  const years = Math.floor(months / 12)
+  return `${years} year${years !== 1 ? "s" : ""} ago`
+}
+
 export default function HostsPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
@@ -30,6 +48,10 @@ export default function HostsPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [bulkDriftConfirmOpen, setBulkDriftConfirmOpen] = useState(false)
+  const [bulkDriftTarget, setBulkDriftTarget] = useState<boolean>(true)
+  const [bulkDriftUpdating, setBulkDriftUpdating] = useState(false)
+  const [bulkDriftProgress, setBulkDriftProgress] = useState<{ done: number; total: number } | null>(null)
   const [groupDropdownOpen, setGroupDropdownOpen] = useState(false)
   const [groupSearch, setGroupSearch] = useState("")
   const groupDropdownRef = useRef<HTMLDivElement>(null)
@@ -113,6 +135,36 @@ export default function HostsPage() {
       showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
     }
     setBulkConfirmOpen(false)
+  }
+
+  async function handleBulkDriftToggle() {
+    const ids = Array.from(selected)
+    setBulkDriftUpdating(true)
+    setBulkDriftProgress({ done: 0, total: ids.length })
+    let success = 0, failed = 0
+    for (const id of ids) {
+      try {
+        await apiFetch(`/api/hosts/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ drift_check_enabled: bulkDriftTarget }),
+        })
+        success++
+      } catch {
+        failed++
+      }
+      setBulkDriftProgress({ done: success + failed, total: ids.length })
+    }
+    setBulkDriftUpdating(false)
+    setBulkDriftProgress(null)
+    setSelected(new Set())
+    await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+    const label = bulkDriftTarget ? "enabled" : "disabled"
+    if (failed === 0) {
+      showSuccess(`Drift check ${label} for ${success} host${success !== 1 ? "s" : ""}`)
+    } else {
+      showError(`Updated ${success} of ${ids.length}. ${failed} failed.`)
+    }
+    setBulkDriftConfirmOpen(false)
   }
 
   return (
@@ -240,15 +292,35 @@ export default function HostsPage() {
               <span className="text-sm text-slate-300">{selected.size} selected</span>
               {bulkProgress ? (
                 <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+              ) : bulkDriftProgress ? (
+                <span className="text-sm text-slate-400">Updating drift check {bulkDriftProgress.done}/{bulkDriftProgress.total}...</span>
               ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkConfirmOpen(true)}
-                  disabled={bulkDeleting}
-                >
-                  Delete Selected
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setBulkDriftTarget(true); setBulkDriftConfirmOpen(true) }}
+                    disabled={bulkDeleting || bulkDriftUpdating}
+                  >
+                    Enable Drift Check
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setBulkDriftTarget(false); setBulkDriftConfirmOpen(true) }}
+                    disabled={bulkDeleting || bulkDriftUpdating}
+                  >
+                    Disable Drift Check
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setBulkConfirmOpen(true)}
+                    disabled={bulkDeleting || bulkDriftUpdating}
+                  >
+                    Delete Selected
+                  </Button>
+                </>
               )}
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
                 Clear
@@ -270,7 +342,8 @@ export default function HostsPage() {
                   </TableHead>
                   <TableHead>Hostname</TableHead>
                   <TableHead>IP Address</TableHead>
-                  <TableHead>Groups</TableHead>
+                  <TableHead>Drift Check</TableHead>
+                  <TableHead>Last Drift Check</TableHead>
                   <TableHead>Firewall</TableHead>
                   <TableHead>Status</TableHead>
                 </TableRow>
@@ -292,20 +365,12 @@ export default function HostsPage() {
                     </TableCell>
                     <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
-                        {host.group_ids.length > 0 ? (
-                          host.group_ids.map(gid => {
-                            const g = groupMap.get(gid)
-                            return g ? (
-                              <Link key={gid} href={`/groups/${gid}`} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors">
-                                {g.name}
-                              </Link>
-                            ) : null
-                          })
-                        ) : (
-                          <span className="text-xs text-slate-500">&mdash;</span>
-                        )}
-                      </div>
+                      <Badge variant={host.drift_check_enabled ? "default" : "secondary"} className="text-xs">
+                        {host.drift_check_enabled ? "Enabled" : "Disabled"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-slate-400 text-sm">
+                      {formatRelativeTime(host.last_drift_check_at)}
                     </TableCell>
                     <TableCell>
                       <FirewallBadge backend={host.firewall_backend} />
@@ -330,6 +395,17 @@ export default function HostsPage() {
         variant="destructive"
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
+      />
+      <ConfirmDialog
+        open={bulkDriftConfirmOpen}
+        onOpenChange={setBulkDriftConfirmOpen}
+        title={`${bulkDriftTarget ? "Enable" : "Disable"} drift check for ${selected.size} ${selected.size === 1 ? "host" : "hosts"}?`}
+        description={bulkDriftTarget
+          ? "Drift checking will be scheduled for the selected hosts."
+          : "Drift checking will be stopped for the selected hosts."}
+        confirmLabel={bulkDriftTarget ? "Enable" : "Disable"}
+        loading={bulkDriftUpdating}
+        onConfirm={handleBulkDriftToggle}
       />
     </div>
   )

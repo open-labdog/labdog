@@ -605,12 +605,27 @@ function SyncStatusMessage({
   const errored = modules?.filter(m => m.error_message) ?? []
 
   if (errored.length > 0) {
-    const msgs = errored.map(m => `${m.module_type}: ${m.error_message}`).join("; ")
+    const byMessage = new Map<string, string[]>()
+    for (const m of errored) {
+      const msg = m.error_message!
+      const existing = byMessage.get(msg)
+      if (existing) {
+        existing.push(m.module_type)
+      } else {
+        byMessage.set(msg, [m.module_type])
+      }
+    }
+    const detail =
+      byMessage.size === 1
+        ? byMessage.keys().next().value
+        : [...byMessage.entries()]
+            .map(([msg, mods]) => `${msg} (${mods.join(", ")})`)
+            .join("; ")
     return (
       <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
         <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
         <span className="text-red-400 text-sm">
-          Sync check encountered errors.{msgs ? ` ${msgs}` : ""}
+          Sync check encountered errors.{detail ? ` ${detail}` : ""}
         </span>
       </div>
     )
@@ -825,6 +840,8 @@ export default function HostDetailPage() {
   const [addGroupSearch, setAddGroupSearch] = useState("")
   const [addGroupSelected, setAddGroupSelected] = useState<Set<number>>(new Set())
   const [removeGroupConfirm, setRemoveGroupConfirm] = useState<number | null>(null)
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
+  const [bulkRemoveGroupConfirm, setBulkRemoveGroupConfirm] = useState(false)
   const groupMembershipMutation = useApiMutation({
     mutationFn: (data: { group_ids: number[] }) =>
       apiFetch(`/api/hosts/${id}`, { method: "PUT", body: JSON.stringify(data) }),
@@ -1720,11 +1737,27 @@ export default function HostDetailPage() {
       {(() => {
         const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
         if (!errors.length) return null
-        const uniqueMessages = [...new Set(errors.map(m => m.error_message!))]
+        const byMessage = new Map<string, string[]>()
+        for (const m of errors) {
+          const msg = m.error_message!
+          const existing = byMessage.get(msg)
+          if (existing) {
+            existing.push(m.module_type)
+          } else {
+            byMessage.set(msg, [m.module_type])
+          }
+        }
+        const detail =
+          byMessage.size === 1
+            ? byMessage.keys().next().value
+            : [...byMessage.entries()]
+                .map(([msg, mods]) => `${msg} (${mods.join(", ")})`)
+                .join("; ")
         return (
           <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
+            <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
             <span className="text-red-400 text-sm">
-              {uniqueMessages.join("; ")}
+              Sync check encountered errors.{detail ? ` ${detail}` : ""}
             </span>
           </div>
         )
@@ -1812,48 +1845,98 @@ export default function HostDetailPage() {
           {host && groups && (() => {
             const memberGroups = groups.filter(g => (host.group_ids ?? []).includes(g.id))
               .sort((a, b) => a.priority - b.priority)
+            const allSelected = memberGroups.length > 0 && selectedGroupIds.size === memberGroups.length
             return memberGroups.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 This host is not a member of any groups.
               </div>
             ) : (
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Name</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Priority</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-[100px]">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {memberGroups.map(g => (
-                      <TableRow key={g.id} className="border-slate-700">
-                        <TableCell>
-                          <Link href={`/groups/${g.id}`} className="text-blue-400 hover:underline">
-                            {g.name}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
-                        <TableCell className="text-slate-300">{g.priority}</TableCell>
-                        <TableCell className="text-slate-400">{g.description ?? "\u2014"}</TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-400 hover:text-red-300"
-                            onClick={() => setRemoveGroupConfirm(g.id)}
-                          >
-                            Remove
-                          </Button>
-                        </TableCell>
+              <>
+                {selectedGroupIds.size > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                    <span className="text-sm text-slate-300">{selectedGroupIds.size} selected</span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setBulkRemoveGroupConfirm(true)}
+                      disabled={groupMembershipMutation.isPending}
+                    >
+                      Remove Selected
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedGroupIds(new Set())}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
+                <div className="rounded-lg border border-slate-700 bg-slate-900">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-700">
+                        <TableHead className="w-10">
+                          <input
+                            type="checkbox"
+                            checked={allSelected}
+                            onChange={() => {
+                              if (allSelected) {
+                                setSelectedGroupIds(new Set())
+                              } else {
+                                setSelectedGroupIds(new Set(memberGroups.map(g => g.id)))
+                              }
+                            }}
+                            className="rounded border-slate-600"
+                            aria-label="Select all groups"
+                          />
+                        </TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Priority</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="w-[100px]">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {memberGroups.map(g => (
+                        <TableRow key={g.id} className="border-slate-700">
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={selectedGroupIds.has(g.id)}
+                              onChange={() => {
+                                setSelectedGroupIds(prev => {
+                                  const next = new Set(prev)
+                                  if (next.has(g.id)) next.delete(g.id)
+                                  else next.add(g.id)
+                                  return next
+                                })
+                              }}
+                              className="rounded border-slate-600"
+                              aria-label={`Select ${g.name}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Link href={`/groups/${g.id}`} className="text-blue-400 hover:underline">
+                              {g.name}
+                            </Link>
+                          </TableCell>
+                          <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
+                          <TableCell className="text-slate-300">{g.priority}</TableCell>
+                          <TableCell className="text-slate-400">{g.description ?? "\u2014"}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-red-400 hover:text-red-300"
+                              onClick={() => setRemoveGroupConfirm(g.id)}
+                            >
+                              Remove
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )
           })()}
 
@@ -1982,6 +2065,38 @@ export default function HostDetailPage() {
               )
             }}
           />
+
+          {(() => {
+            const selectedNames = groups
+              ?.filter(g => selectedGroupIds.has(g.id))
+              .map(g => g.name) ?? []
+            const nameList = selectedNames.length <= 5
+              ? selectedNames.join(", ")
+              : `${selectedNames.slice(0, 5).join(", ")} and ${selectedNames.length - 5} more`
+            return (
+              <ConfirmDialog
+                open={bulkRemoveGroupConfirm}
+                onOpenChange={(open) => { if (!open) setBulkRemoveGroupConfirm(false) }}
+                title={`Remove ${selectedGroupIds.size} ${selectedGroupIds.size === 1 ? "group" : "groups"} from this host?`}
+                description={`The host will no longer inherit rules and configurations from: ${nameList}.`}
+                confirmLabel="Remove All"
+                variant="destructive"
+                loading={groupMembershipMutation.isPending}
+                onConfirm={() => {
+                  const currentIds = host?.group_ids ?? []
+                  groupMembershipMutation.mutate(
+                    { group_ids: currentIds.filter(gid => !selectedGroupIds.has(gid)) },
+                    {
+                      onSuccess: () => {
+                        setBulkRemoveGroupConfirm(false)
+                        setSelectedGroupIds(new Set())
+                      },
+                    }
+                  )
+                }}
+              />
+            )
+          })()}
         </div>
       )}
 
@@ -2343,7 +2458,7 @@ export default function HostDetailPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
-                          {svc.source === "group" ? `Group: ${svc.source_name}` : "Host override"}
+                          {svc.source === "group" ? svc.source_name : "Host override"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -2770,7 +2885,7 @@ export default function HostDetailPage() {
                           {entry.source === "system"
                             ? "System"
                             : entry.source === "group"
-                              ? `Group: ${entry.source_name}`
+                              ? entry.source_name
                               : "Host override"}
                         </Badge>
                       </TableCell>
@@ -2978,7 +3093,7 @@ export default function HostDetailPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">
-                            {user.source === "group" ? `Group: ${user.source_name}` : "Host override"}
+                            {user.source === "group" ? user.source_name : "Host override"}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -3040,7 +3155,7 @@ export default function HostDetailPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs">
-                            {group.source === "group" ? `Group: ${group.source_name}` : "Host override"}
+                            {group.source === "group" ? group.source_name : "Host override"}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -3374,7 +3489,7 @@ export default function HostDetailPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
-                          {job.source === "group" ? `Group: ${job.source_name}` : "Host override"}
+                          {job.source === "group" ? job.source_name : "Host override"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -3671,7 +3786,7 @@ export default function HostDetailPage() {
                        </TableCell>
                        <TableCell>
                          <Badge variant="outline" className="text-xs">
-                           {pkg.source === "group" ? `Group: ${pkg.source_name}` : "Host override"}
+                           {pkg.source === "group" ? pkg.source_name : "Host override"}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -3912,7 +4027,7 @@ export default function HostDetailPage() {
                 <span className="text-slate-400 text-sm w-40 shrink-0">Source</span>
                 <Badge variant="outline" className="text-xs">
                   {effectiveResolver.source === "group"
-                    ? `Group: ${effectiveResolver.source_name}`
+                    ? effectiveResolver.source_name
                     : "Host override"}
                 </Badge>
               </div>
