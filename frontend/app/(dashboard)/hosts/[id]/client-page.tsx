@@ -2036,8 +2036,26 @@ export default function HostDetailPage() {
           {effectivePolicies && (
             <div className="flex items-center gap-4 text-sm">
               <span className="text-slate-400">Chain Policies:</span>
-              <span className="text-slate-300">INPUT: <span className={effectivePolicies.input === "accept" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>{effectivePolicies.input}</span>{" "}<span className="text-slate-500">({effectivePolicies.input_source_group_name ?? "default"})</span></span>
-              <span className="text-slate-300">OUTPUT: <span className={effectivePolicies.output === "drop" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>{effectivePolicies.output}</span>{" "}<span className="text-slate-500">({effectivePolicies.output_source_group_name ?? "default"})</span></span>
+              <span className="text-slate-300 flex items-center gap-1.5">
+                INPUT:{" "}
+                <span className={effectivePolicies.input === "accept" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>
+                  {effectivePolicies.input}
+                </span>
+                <span className="text-slate-500 text-xs">from</span>
+                <Badge variant="outline" className="text-xs font-mono">
+                  {effectivePolicies.input_source_group_name ?? "default"}
+                </Badge>
+              </span>
+              <span className="text-slate-300 flex items-center gap-1.5">
+                OUTPUT:{" "}
+                <span className={effectivePolicies.output === "drop" ? "text-amber-400 font-medium" : "text-slate-200 font-medium"}>
+                  {effectivePolicies.output}
+                </span>
+                <span className="text-slate-500 text-xs">from</span>
+                <Badge variant="outline" className="text-xs font-mono">
+                  {effectivePolicies.output_source_group_name ?? "default"}
+                </Badge>
+              </span>
             </div>
           )}
 

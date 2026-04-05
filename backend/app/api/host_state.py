@@ -233,6 +233,10 @@ async def _drift_firewall(host: Host, hms: HostModuleStatus, db: AsyncSession) -
     desired, desired_policies = await _get_desired_state_for_host(
         host.id, db, host_source_ip=host.barricade_source_ip,
     )
+    if not desired:
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
     current = [
         FirewallRuleSpec(**{k: v for k, v in d.items() if k in FirewallRuleSpec.__dataclass_fields__})
         for d in hms.collected_state
@@ -291,6 +295,10 @@ async def _drift_hosts_file(host_id: int, hms: HostModuleStatus, db: AsyncSessio
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host_id, db)
+    if not desired or all(e.is_system for e in desired):
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
     current = [
         ParsedHostsEntry(
             ip_address=e["ip_address"],
@@ -308,12 +316,16 @@ async def _drift_linux_user(host_id: int, hms: HostModuleStatus, db: AsyncSessio
     from app.user_mgmt.diff import diff_users, diff_groups
     from app.user_mgmt.merge import get_effective_users, get_effective_groups
 
+    desired_users = await get_effective_users(host_id, db)
+    desired_groups = await get_effective_groups(host_id, db)
+    if not desired_users and not desired_groups:
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
+
     data = hms.collected_state  # {"users": [...], "groups": [...]}
     actual_users = data.get("users", [])
     actual_groups = data.get("groups", [])
-
-    desired_users = await get_effective_users(host_id, db)
-    desired_groups = await get_effective_groups(host_id, db)
 
     user_diff = diff_users(
         [u.model_dump() if hasattr(u, "model_dump") else u for u in desired_users],
@@ -334,6 +346,10 @@ async def _drift_cron(host_id: int, hms: HostModuleStatus, db: AsyncSession) -> 
     from app.cron.merge import get_effective_cron_jobs
 
     desired = await get_effective_cron_jobs(host_id, db)
+    if not desired:
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
     desired_dicts = [j.model_dump() if hasattr(j, "model_dump") else j for j in desired]
     actual = hms.collected_state  # list of cron job dicts
 
@@ -366,13 +382,15 @@ async def _drift_resolver(host_id: int, hms: HostModuleStatus, db: AsyncSession)
     from app.resolver.merge import get_effective_resolver
 
     effective = await get_effective_resolver(host_id, db)
-    desired_dict = None
-    if effective:
-        desired_dict = {
-            "nameservers": effective.nameservers if hasattr(effective, "nameservers") else [],
-            "search_domains": effective.search_domains if hasattr(effective, "search_domains") else [],
-            "options": effective.options if hasattr(effective, "options") else {},
-        }
+    if not effective:
+        hms.sync_status = "in_sync"
+        hms.error_message = None
+        return
+    desired_dict = {
+        "nameservers": effective.nameservers if hasattr(effective, "nameservers") else [],
+        "search_domains": effective.search_domains if hasattr(effective, "search_domains") else [],
+        "options": effective.options if hasattr(effective, "options") else {},
+    }
     diff = compute_resolver_diff(hms.collected_state, desired_dict)
     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
     hms.error_message = None
