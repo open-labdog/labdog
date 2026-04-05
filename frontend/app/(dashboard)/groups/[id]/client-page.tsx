@@ -75,6 +75,9 @@ export default function GroupDetailPage() {
     action: () => void | Promise<void>
     loading?: boolean
   } | null>(null)
+  const [removeSelected, setRemoveSelected] = useState<Set<number>>(new Set())
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const [removeLoading, setRemoveLoading] = useState(false)
 
   const editForm = useForm<GroupInput>({
     resolver: zodResolver(groupSchema),
@@ -146,6 +149,39 @@ export default function GroupDetailPage() {
     },
     successMessage: "Hosts added to group",
   })
+
+  function toggleRemoveHost(hostId: number) {
+    setRemoveSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(hostId)) next.delete(hostId)
+      else next.add(hostId)
+      return next
+    })
+  }
+
+  function toggleRemoveAll() {
+    if (removeSelected.size === groupHosts.length && groupHosts.length > 0) {
+      setRemoveSelected(new Set())
+    } else {
+      setRemoveSelected(new Set(groupHosts.map((h) => h.id)))
+    }
+  }
+
+  async function handleBulkRemove() {
+    const ids = Array.from(removeSelected)
+    setRemoveLoading(true)
+    try {
+      await apiFetch(`/api/groups/${id}/hosts`, {
+        method: "DELETE",
+        body: JSON.stringify({ host_ids: ids }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+      setRemoveSelected(new Set())
+    } finally {
+      setRemoveLoading(false)
+      setRemoveConfirmOpen(false)
+    }
+  }
 
   function toggleAddHost(hostId: number) {
     setAddHostsSelected((prev) => {
@@ -593,45 +629,81 @@ export default function GroupDetailPage() {
             )}
 
             {!hostsLoading && groupHosts.length > 0 && (
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Hostname</TableHead>
-                      <TableHead>IP Address</TableHead>
-                      <TableHead>Firewall</TableHead>
-                      <TableHead>Sync Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {groupHosts.map((host) => (
-                      <TableRow key={host.id} className="border-slate-700">
-                        <TableCell className="font-medium">
-                          <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
-                        </TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">
-                          {host.ip_address}
-                        </TableCell>
-                        <TableCell>
-                          <FirewallBadge backend={host.firewall_backend} />
-                        </TableCell>
-                        <TableCell>
-                          <SyncStatusBadge status={host.sync_status} />
-                        </TableCell>
-                        <TableCell>
-                          <Link
-                            href={`/hosts/${host.id}`}
-                            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-                          >
-                            View
-                          </Link>
-                        </TableCell>
+              <>
+                {removeSelected.size > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
+                    <span className="text-sm text-slate-300">{removeSelected.size} selected</span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setRemoveConfirmOpen(true)}
+                      disabled={removeLoading}
+                    >
+                      Remove Selected
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setRemoveSelected(new Set())}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
+                <div className="rounded-lg border border-slate-700 bg-slate-900">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-slate-700">
+                        <TableHead className="w-10">
+                          <input
+                            type="checkbox"
+                            checked={removeSelected.size === groupHosts.length && groupHosts.length > 0}
+                            onChange={toggleRemoveAll}
+                            className="rounded border-slate-600"
+                            aria-label="Select all hosts"
+                          />
+                        </TableHead>
+                        <TableHead>Hostname</TableHead>
+                        <TableHead>IP Address</TableHead>
+                        <TableHead>Firewall</TableHead>
+                        <TableHead>Sync Status</TableHead>
+                        <TableHead>Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {groupHosts.map((host) => (
+                        <TableRow key={host.id} className="border-slate-700">
+                          <TableCell>
+                            <input
+                              type="checkbox"
+                              checked={removeSelected.has(host.id)}
+                              onChange={() => toggleRemoveHost(host.id)}
+                              className="rounded border-slate-600"
+                              aria-label={`Select ${host.hostname}`}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
+                          </TableCell>
+                          <TableCell className="font-mono text-slate-300 text-xs">
+                            {host.ip_address}
+                          </TableCell>
+                          <TableCell>
+                            <FirewallBadge backend={host.firewall_backend} />
+                          </TableCell>
+                          <TableCell>
+                            <SyncStatusBadge status={host.sync_status} />
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/hosts/${host.id}`}
+                              className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+                            >
+                              View
+                            </Link>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </div>
 
@@ -736,6 +808,17 @@ export default function GroupDetailPage() {
           onConfirm={confirmState.action}
         />
       )}
+
+      <ConfirmDialog
+        open={removeConfirmOpen}
+        onOpenChange={(open) => { if (!open) setRemoveConfirmOpen(false) }}
+        title={`Remove ${removeSelected.size} ${removeSelected.size === 1 ? "host" : "hosts"} from group?`}
+        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from Barricade.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        loading={removeLoading}
+        onConfirm={handleBulkRemove}
+      />
 
     </div>
   )

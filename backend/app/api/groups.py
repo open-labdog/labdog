@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.host import HostGroupMembership
@@ -160,6 +160,27 @@ async def add_hosts_to_group(
         await db.commit()
 
     return {"added": len(to_add), "already_member": len(already_member)}
+
+
+@router.delete("/{group_id}/hosts", status_code=204)
+async def remove_hosts_from_group(
+    group_id: int,
+    body: BulkAddHostsRequest,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove multiple hosts from this group."""
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    await db.execute(
+        delete(HostGroupMembership).where(
+            HostGroupMembership.c.group_id == group_id,
+            HostGroupMembership.c.host_id.in_(body.host_ids),
+        )
+    )
+    await db.commit()
 
 
 @router.post("/{group_id}/gitops/enable", response_model=GitOpsStatusResponse)
