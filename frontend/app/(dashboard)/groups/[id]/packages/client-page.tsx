@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import { Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,7 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -26,7 +28,7 @@ import {
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
+import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
 
@@ -67,6 +69,8 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
 
   const [repoDialogOpen, setRepoDialogOpen] = useState(false)
   const [repoEditing, setRepoEditing] = useState<PackageRepository | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<PackageRule | null>(null)
+  const [uninstallChecked, setUninstallChecked] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
@@ -93,6 +97,13 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
   })
   const showRepoLoading = useDelayedLoading(repoLoading)
 
+  const { data: hostCountData } = useQuery<{ count: number }>({
+    queryKey: ["group-host-count", id],
+    queryFn: () => apiFetch<{ count: number }>(`/api/groups/${id}/host-count`),
+    enabled: !!id,
+  })
+  const hostCount = hostCountData?.count ?? 0
+
   const pkgSaveMutation = useApiMutation({
     mutationFn: ({ pkgId, payload }: { pkgId?: number; payload: Record<string, unknown> }) => {
       if (pkgId) return apiFetch(`/api/groups/${id}/packages/${pkgId}`, { method: "PUT", body: JSON.stringify(payload) })
@@ -103,7 +114,8 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
   })
 
   const pkgDeleteMutation = useApiMutation({
-    mutationFn: (pkgId: number) => apiFetch(`/api/groups/${id}/packages/${pkgId}`, { method: "DELETE" }),
+    mutationFn: ({ pkgId, uninstall }: { pkgId: number; uninstall: boolean }) =>
+      apiFetch(`/api/groups/${id}/packages/${pkgId}${uninstall ? "?uninstall=true" : ""}`, { method: "DELETE" }),
     invalidateKeys: [["group-packages", id]],
   })
 
@@ -155,15 +167,18 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
   }
 
   function handlePkgDelete(pkg: PackageRule) {
-    setConfirmState({
-      open: true,
-      title: "Delete Package Rule",
-      description: `Delete package rule "${pkg.package_name}"? This action cannot be undone.`,
-      action: async () => {
-        setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
-        try { await pkgDeleteMutation.mutateAsync(pkg.id) } finally { setConfirmState(null) }
-      },
-    })
+    setDeleteTarget(pkg)
+    setUninstallChecked(false)
+  }
+
+  async function handleConfirmPkgDelete() {
+    if (!deleteTarget) return
+    try {
+      await pkgDeleteMutation.mutateAsync({ pkgId: deleteTarget.id, uninstall: uninstallChecked })
+    } finally {
+      setDeleteTarget(null)
+      setUninstallChecked(false)
+    }
   }
 
   function openRepoCreateDialog() {
@@ -512,6 +527,51 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
           onConfirm={confirmState.action}
         />
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setUninstallChecked(false) } }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete Package Rule</DialogTitle>
+            <DialogDescription>
+              {uninstallChecked
+                ? `This will set "${deleteTarget?.package_name}" to absent and trigger a sync to uninstall it from ${hostCount} host(s). The rule stays until you remove it after sync completes.`
+                : `Remove "${deleteTarget?.package_name}" from this group?${hostCount > 0 ? ` The package will remain installed on ${hostCount} host(s).` : ""}`}
+            </DialogDescription>
+          </DialogHeader>
+          {hostCount > 0 && (
+            <div className={cn(
+              "rounded-lg border p-3",
+              uninstallChecked ? "border-amber-600 bg-amber-950/30" : "border-slate-700 bg-slate-800/50"
+            )}>
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={uninstallChecked}
+                  onChange={(e) => setUninstallChecked(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded border-slate-600 bg-slate-800 accent-amber-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-200">
+                    Also uninstall {deleteTarget?.package_name} from {hostCount} host(s)
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    Sets state to absent and triggers a package sync. If the sync fails, drift detection will flag affected hosts so you can retry.
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setUninstallChecked(false) }} disabled={pkgDeleteMutation.isPending}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmPkgDelete} disabled={pkgDeleteMutation.isPending}>
+              {pkgDeleteMutation.isPending && <Loader2Icon className="animate-spin mr-1 h-4 w-4" />}
+              {uninstallChecked ? "Uninstall + Sync" : "Delete Rule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Repository Dialog */}
       <Dialog open={repoDialogOpen} onOpenChange={setRepoDialogOpen}>

@@ -115,6 +115,21 @@ async def delete_group(
     await db.commit()
 
 
+@router.get("/{group_id}/host-count")
+async def get_group_host_count(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import func
+    result = await db.execute(
+        select(func.count()).select_from(HostGroupMembership).where(
+            HostGroupMembership.c.group_id == group_id
+        )
+    )
+    return {"count": result.scalar()}
+
+
 @router.post("/{group_id}/hosts", status_code=200)
 async def add_hosts_to_group(
     group_id: int,
