@@ -576,6 +576,20 @@ async def _detect_firewall_backend(
             if r.exit_status == 0:
                 backend = "nftables"
 
+            # Cached helper: check iptables availability at most once across
+            # all container-runtime downgrade checks below.
+            iptables_available = None
+
+            async def _check_iptables_available() -> bool:
+                nonlocal iptables_available
+                if iptables_available is None:
+                    r = await conn.run(
+                        "command -v iptables || test -x /usr/sbin/iptables",
+                        check=False,
+                    )
+                    iptables_available = r.exit_status == 0
+                return iptables_available
+
             # If Docker is running, prefer iptables — Docker defaults to
             # iptables and its nftables support is experimental (v29+).
             if backend == "nftables":
@@ -585,16 +599,44 @@ async def _detect_firewall_backend(
                     check=False,
                 )
                 if r.exit_status == 0:
-                    # Verify iptables is available before downgrading
-                    r2 = await conn.run(
-                        "command -v iptables || test -x /usr/sbin/iptables",
-                        check=False,
-                    )
-                    if r2.exit_status == 0:
+                    if await _check_iptables_available():
                         backend = "iptables"
                         messages.append(
                             "Docker detected; using iptables backend "
                             "(Docker defaults to iptables)."
+                        )
+
+            # If kube-proxy is running in iptables mode, prefer iptables to
+            # avoid conflicts with KUBE-* chains it manages.
+            if backend == "nftables":
+                r = await conn.run(
+                    "systemctl is-active --quiet kubelet 2>/dev/null && "
+                    "iptables -S 2>/dev/null | grep -q KUBE-",
+                    check=False,
+                )
+                if r.exit_status == 0:
+                    if await _check_iptables_available():
+                        backend = "iptables"
+                        messages.append(
+                            "Kubernetes kube-proxy (iptables mode) detected; "
+                            "using iptables backend to avoid rule conflicts."
+                        )
+
+            # If nerdctl with rootful CNI networking is present, prefer
+            # iptables — CNI plugins default to iptables rules.
+            if backend == "nftables":
+                r = await conn.run(
+                    "command -v nerdctl >/dev/null 2>&1 && "
+                    "test -d /etc/cni/net.d && "
+                    "ls /etc/cni/net.d/nerdctl-*.conflist >/dev/null 2>&1",
+                    check=False,
+                )
+                if r.exit_status == 0:
+                    if await _check_iptables_available():
+                        backend = "iptables"
+                        messages.append(
+                            "nerdctl with CNI networking detected; using iptables "
+                            "backend (CNI plugins default to iptables)."
                         )
 
             # Check for iptables
