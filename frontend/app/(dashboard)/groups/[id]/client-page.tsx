@@ -585,7 +585,7 @@ export default function GroupDetailPage() {
           ["users", "Users"],
           ["cron-jobs", "Cron Jobs"],
           ["packages", "Packages"],
-          ["ca-certs", "CA Certificates"],
+          ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
           ["sync", "Sync"],
           ["workflow", "Updates"],

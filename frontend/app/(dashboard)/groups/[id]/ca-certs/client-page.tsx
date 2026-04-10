@@ -172,7 +172,7 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
     <div className="space-y-6">
       {!embedded && (
         <div>
-          <h1 className="text-2xl font-semibold text-white">CA Certificates</h1>
+          <h1 className="text-2xl font-semibold text-white">CA Certs</h1>
           <p className="text-slate-400 text-sm mt-1">
             Trusted certificate authorities deployed to hosts in this group.
           </p>
