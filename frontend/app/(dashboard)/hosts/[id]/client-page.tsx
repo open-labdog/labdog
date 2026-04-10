@@ -1796,7 +1796,7 @@ export default function HostDetailPage() {
               : "text-slate-400 hover:text-white"
           }`}
         >
-          CA Certificates
+          CA Certs
         </button>
         <button
           role="tab"
@@ -4068,7 +4068,7 @@ export default function HostDetailPage() {
             <div>
               <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                 <ShieldCheckIcon className="w-5 h-5" />
-                Effective CA Certificates
+                Effective CA Certs
               </h2>
               <p className="text-slate-400 text-sm mt-1">
                 Trusted certificate authorities applied to this host from groups and host-level overrides.
