@@ -13,6 +13,7 @@ from app.models.firewall_rule import FirewallRule
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
+from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.schemas.hosts import HostCreate, HostUpdate, HostResponse
 
 
@@ -52,7 +53,7 @@ async def list_hosts(
 @router.post("", response_model=HostResponse, status_code=201)
 async def create_host(
     body: HostCreate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     hostname = body.hostname
@@ -115,6 +116,11 @@ async def create_host(
             insert(HostGroupMembership),
             [{"host_id": host.id, "group_id": gid} for gid in body.group_ids],
         )
+        await db.flush()
+        for gid in body.group_ids:
+            await auto_enqueue_for_new_membership(
+                host.id, gid, db, triggered_by_user_id=user.id
+            )
 
     await db.commit()
     await db.refresh(host)
@@ -145,7 +151,7 @@ async def get_host(
 async def update_host(
     host_id: int,
     body: HostUpdate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host).where(Host.id == host_id))
@@ -159,7 +165,18 @@ async def update_host(
     for field, value in update_data.items():
         setattr(host, field, value)
 
+    new_group_ids: list[int] = []
     if group_ids is not None:
+        # Determine which memberships are *new* so we only enqueue
+        # actions for hosts joining a group, not for existing memberships.
+        existing = await db.execute(
+            select(HostGroupMembership.c.group_id).where(
+                HostGroupMembership.c.host_id == host_id
+            )
+        )
+        existing_set = {r[0] for r in existing.all()}
+        new_group_ids = [gid for gid in group_ids if gid not in existing_set]
+
         await db.execute(
             delete(HostGroupMembership).where(HostGroupMembership.c.host_id == host_id)
         )
@@ -167,6 +184,12 @@ async def update_host(
             await db.execute(
                 insert(HostGroupMembership),
                 [{"host_id": host_id, "group_id": gid} for gid in group_ids],
+            )
+        await db.flush()
+
+        for gid in new_group_ids:
+            await auto_enqueue_for_new_membership(
+                host_id, gid, db, triggered_by_user_id=user.id
             )
 
     await db.commit()

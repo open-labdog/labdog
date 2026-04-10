@@ -30,6 +30,8 @@ from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
+from app.api.ca_certs import router as ca_certs_router
+from app.api.ca_cert_actions import router as ca_cert_actions_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
 from app.api.rules import router as rules_router
@@ -345,6 +347,8 @@ def create_app() -> FastAPI:
     app.include_router(cron_sync_router, prefix="/api")
     app.include_router(packages_router, prefix="/api")
     app.include_router(package_sync_router, prefix="/api")
+    app.include_router(ca_certs_router, prefix="/api")
+    app.include_router(ca_cert_actions_router, prefix="/api")
     app.include_router(resolver_router, prefix="/api")
     app.include_router(resolver_sync_router, prefix="/api")
     app.include_router(proxmox_nodes_router, prefix="/api")

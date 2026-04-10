@@ -8,6 +8,7 @@ from app.models.host_group import HostGroup
 from app.models.git_repository import GitRepository, GitOpsStatus
 from app.models.user import User
 from app.auth.users import current_active_user, current_superuser
+from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.schemas.groups import GroupCreate, GroupUpdate, GroupResponse
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
 
@@ -134,7 +135,7 @@ async def get_group_host_count(
 async def add_hosts_to_group(
     group_id: int,
     body: BulkAddHostsRequest,
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Add multiple hosts to this group (skips hosts already in the group)."""
@@ -157,6 +158,15 @@ async def add_hosts_to_group(
             insert(HostGroupMembership),
             [{"host_id": hid, "group_id": group_id} for hid in to_add],
         )
+        await db.flush()
+
+        # Auto-enqueue CA cert deploy for newly-added hosts (no-op if the
+        # group has no certs or the host has no SSH key).
+        for hid in to_add:
+            await auto_enqueue_for_new_membership(
+                hid, group_id, db, triggered_by_user_id=user.id
+            )
+
         await db.commit()
 
     return {"added": len(to_add), "already_member": len(already_member)}

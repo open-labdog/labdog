@@ -3,7 +3,7 @@
 import { useState, useEffect, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
+import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
@@ -729,7 +729,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns">("overview")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -740,6 +740,7 @@ export default function HostDetailPage() {
     hostLinuxUserOverrides: hostLinuxUserOverridesQuery, hostLinuxGroupOverrides: hostLinuxGroupOverridesQuery,
     effectiveCronJobs: effectiveCronJobsQuery, showCronJobsLoading, hostCronOverrides: hostCronOverridesQuery,
     effectivePackages: effectivePackagesQuery, showPackagesLoading, hostPackageOverrides: hostPackageOverridesQuery, effectiveRepos: effectiveReposQuery,
+    effectiveCACerts: effectiveCACertsQuery, showCACertsLoading, hostCACertOverrides: hostCACertOverridesQuery, hostCACertRuns: hostCACertRunsQuery,
     effectiveResolver: effectiveResolverQuery, showResolverLoading, hostResolverOverride: hostResolverOverrideQuery,
     currentState: currentStateQuery,
   } = useHostQueries(id, activeTab)
@@ -779,6 +780,11 @@ export default function HostDetailPage() {
   const packagesError = effectivePackagesQuery.error
   const hostPackageOverrides = hostPackageOverridesQuery.data
   const effectiveRepos = effectiveReposQuery.data
+  const effectiveCACerts = effectiveCACertsQuery.data
+  const caCertsLoading = effectiveCACertsQuery.isLoading
+  const caCertsError = effectiveCACertsQuery.error
+  const hostCACertOverrides = hostCACertOverridesQuery.data
+  const hostCACertRuns = hostCACertRunsQuery.data
   const effectiveResolver = effectiveResolverQuery.data
   const resolverLoading = effectiveResolverQuery.isLoading
   const resolverError = effectiveResolverQuery.error
@@ -794,6 +800,7 @@ export default function HostDetailPage() {
     lgDialogOpen, setLgDialogOpen,
     cjDialogOpen, setCjDialogOpen,
     ppDialogOpen, setPpDialogOpen,
+    caDialogOpen, setCaDialogOpen,
     protectedConfirmOpen, setProtectedConfirmOpen,
   } = useHostDialogs()
 
@@ -812,6 +819,7 @@ export default function HostDetailPage() {
     users: [["host-effective-linux-users", String(id)], ["host-effective-linux-groups", String(id)]],
     "cron-jobs": [["host-effective-cron-jobs", String(id)], ["host-cron-overrides", String(id)]],
     packages: [["host-effective-packages", String(id)], ["host-package-overrides", String(id)], ["host-effective-repos", String(id)]],
+    "ca-certs": [["host-effective-ca-certs", String(id)], ["host-ca-cert-overrides", String(id)], ["host-ca-cert-runs", String(id)]],
     dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
   }
 
@@ -987,6 +995,64 @@ export default function HostDetailPage() {
         if (!override) { setConfirmState(null); return }
         setConfirmState(prev => prev ? { ...prev, loading: true } : null)
         try { await ppDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
+      },
+    })
+  }
+
+  const [caName, setCaName] = useState("")
+  const [caPem, setCaPem] = useState("")
+  const [caComment, setCaComment] = useState("")
+  const [caDeployConfirm, setCaDeployConfirm] = useState(false)
+  const caSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/ca-certs`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-ca-certs", id], ["host-ca-cert-overrides", id]],
+    onSuccess: () => setCaDialogOpen(false),
+  })
+
+  const caDeleteMutation = useApiMutation({
+    mutationFn: (overrideId: number) =>
+      apiFetch(`/api/hosts/${id}/ca-certs/${overrideId}`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-ca-certs", id], ["host-ca-cert-overrides", id]],
+  })
+
+  const caDeployMutation = useApiMutation({
+    mutationFn: () =>
+      apiFetch(`/api/ca-certs/hosts/${id}/deploy`, { method: "POST" }),
+    invalidateKeys: [["host-ca-cert-runs", id]],
+    onSuccess: () => setCaDeployConfirm(false),
+  })
+
+  function openCaDialog() {
+    setCaName("")
+    setCaPem("")
+    setCaComment("")
+    caSaveMutation.reset()
+    setCaDialogOpen(true)
+  }
+
+  function handleCaSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    caSaveMutation.mutate({
+      name: caName,
+      pem_content: caPem,
+      state: "present",
+      comment: caComment || null,
+    })
+  }
+
+  function handleCaDelete(fingerprint: string, name: string) {
+    setConfirmState({
+      open: true,
+      title: "Delete CA Certificate Override",
+      description: `Delete host CA certificate override "${name}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        const override = hostCACertOverrides?.find(o => o.fingerprint_sha256 === fingerprint)
+        if (!override) { setConfirmState(null); return }
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        try { await caDeleteMutation.mutateAsync(override.id) } finally { setConfirmState(null) }
       },
     })
   }
@@ -1719,6 +1785,18 @@ export default function HostDetailPage() {
           }`}
         >
           Packages
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "ca-certs"}
+          onClick={() => setActiveTab("ca-certs")}
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+            activeTab === "ca-certs"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          CA Certificates
         </button>
         <button
           role="tab"
@@ -2533,18 +2611,21 @@ export default function HostDetailPage() {
                   </div>
                 )}
 
-                {svcOriginalUnit !== null && (
-                  <details className="group">
-                    <summary className="cursor-pointer text-sm text-slate-400 hover:text-slate-300 select-none">
-                      Original unit file {svcOriginalLoading ? "(loading...)" : ""}
-                    </summary>
-                    <pre className="mt-2 rounded-md border border-slate-700 bg-slate-950 p-3 text-xs font-mono text-slate-300 overflow-x-auto max-h-48 overflow-y-auto whitespace-pre">
-                      {svcOriginalUnit}
-                    </pre>
-                  </details>
-                )}
-                {svcOriginalLoading && svcOriginalUnit === null && (
-                  <p className="text-xs text-slate-500">Loading original unit file...</p>
+                {svcEditorMode === "edit" && (
+                  <div className="space-y-2">
+                    <Label>Current on-disk unit file (systemctl cat)</Label>
+                    {svcOriginalLoading ? (
+                      <p className="text-xs text-slate-500">Fetching current unit file from host...</p>
+                    ) : typeof svcOriginalUnit === "string" ? (
+                      <pre className="rounded-md border border-slate-700 bg-slate-950 p-3 text-xs font-mono text-slate-300 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre">
+                        {svcOriginalUnit}
+                      </pre>
+                    ) : (
+                      <div className="rounded-md border border-amber-700/50 bg-amber-950/30 p-3 text-xs text-amber-300">
+                        Could not fetch the on-disk unit file from the host. Check SSH connectivity or whether the service exists on the target.
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <div className="space-y-2">
@@ -3980,6 +4061,231 @@ export default function HostDetailPage() {
         </div>
         )
       })()}
+
+      {activeTab === "ca-certs" && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ShieldCheckIcon className="w-5 h-5" />
+                Effective CA Certificates
+              </h2>
+              <p className="text-slate-400 text-sm mt-1">
+                Trusted certificate authorities applied to this host from groups and host-level overrides.
+                Deployed as a one-time action — no drift detection.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={caDeployMutation.isPending || !host?.ssh_key_id}
+                onClick={() => setCaDeployConfirm(true)}
+              >
+                <PlayIcon className="w-4 h-4 mr-1" />
+                Deploy
+              </Button>
+              <Button onClick={openCaDialog}>Add Override</Button>
+            </div>
+          </div>
+
+          {caDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{caDeleteMutation.error.message}</div>
+          )}
+          {caDeployMutation.error && (
+            <div className="text-red-400 text-sm">{caDeployMutation.error.message}</div>
+          )}
+
+          {showCACertsLoading && <TableSkeleton rows={3} columns={5} />}
+
+          {caCertsError && (
+            <div className="text-red-400 py-6 text-center">Failed to load CA certificates</div>
+          )}
+
+          {!caCertsLoading && !caCertsError && effectiveCACerts && effectiveCACerts.length === 0 && (
+            <div className="text-slate-400 py-6 text-center">
+              No CA certificates configured. Add a host override or assign certificates to a group.
+            </div>
+          )}
+
+          {!caCertsLoading && !caCertsError && effectiveCACerts && effectiveCACerts.length > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Name</TableHead>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Expires</TableHead>
+                    <TableHead>Fingerprint (SHA-256)</TableHead>
+                    <TableHead>State</TableHead>
+                    <TableHead>Source</TableHead>
+                    <TableHead className="w-32">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {effectiveCACerts.map((c) => {
+                    const fpShort = (() => {
+                      const parts = c.fingerprint_sha256.split(":")
+                      if (parts.length <= 14) return c.fingerprint_sha256
+                      return `${parts.slice(0, 6).join(":")}…${parts.slice(-6).join(":")}`
+                    })()
+                    return (
+                      <TableRow key={`${c.source}-${c.source_id}-${c.fingerprint_sha256}`} className="border-slate-700">
+                        <TableCell className="font-medium text-white">{c.name}</TableCell>
+                        <TableCell className="text-slate-300 text-sm max-w-xs truncate" title={c.subject ?? ""}>
+                          {c.subject ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-slate-300 text-sm">
+                          {c.not_after ? new Date(c.not_after).toLocaleDateString() : "—"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs text-slate-400" title={c.fingerprint_sha256}>
+                          {fpShort}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={c.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                            {c.state.charAt(0).toUpperCase() + c.state.slice(1)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {c.source === "group" ? c.source_name : "Host override"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {c.source === "host" ? (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={caDeleteMutation.isPending}
+                              onClick={() => handleCaDelete(c.fingerprint_sha256, c.name)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {caDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          ) : (
+                            <span className="text-slate-600 text-xs">Read-only</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          {/* Recent runs */}
+          <div>
+            <h2 className="text-lg font-semibold text-white">Recent Deployment Runs</h2>
+            <p className="text-slate-400 text-sm mt-1">Deployment history for this host.</p>
+          </div>
+
+          {(!hostCACertRuns || hostCACertRuns.length === 0) ? (
+            <p className="text-slate-500 text-sm">No deployment runs yet.</p>
+          ) : (
+            <div className="rounded-lg border border-slate-700 bg-slate-900">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-slate-700">
+                    <TableHead>Run #</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Started</TableHead>
+                    <TableHead>Completed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {hostCACertRuns.slice(0, 20).map((r) => {
+                    const statusClass: Record<string, string> = {
+                      pending: "bg-slate-600 text-white",
+                      running: "bg-blue-600 text-white",
+                      success: "bg-green-600 text-white",
+                      failed: "bg-red-600 text-white",
+                      cancelled: "bg-slate-500 text-white",
+                    }
+                    const fmt = (s: string | null) => {
+                      if (!s) return "—"
+                      try { return new Date(s).toLocaleString() } catch { return s }
+                    }
+                    return (
+                      <TableRow key={r.id} className="border-slate-700">
+                        <TableCell className="font-mono text-xs text-slate-400">#{r.id}</TableCell>
+                        <TableCell><Badge className={statusClass[r.status] ?? ""}>{r.status}</Badge></TableCell>
+                        <TableCell className="text-slate-300 text-sm">{fmt(r.started_at)}</TableCell>
+                        <TableCell className="text-slate-300 text-sm">{fmt(r.completed_at)}</TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <Dialog open={caDialogOpen} onOpenChange={setCaDialogOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Add CA Certificate Override</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleCaSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ca-name">Display name</Label>
+                  <Input
+                    id="ca-name"
+                    type="text"
+                    placeholder="e.g. Internal Root CA"
+                    value={caName}
+                    onChange={(e) => setCaName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ca-pem">PEM content</Label>
+                  <textarea
+                    id="ca-pem"
+                    className="w-full h-48 rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+                    value={caPem}
+                    onChange={(e) => setCaPem(e.target.value)}
+                    placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ca-comment">Comment (optional)</Label>
+                  <Input
+                    id="ca-comment"
+                    type="text"
+                    placeholder="Why this CA is trusted"
+                    value={caComment}
+                    onChange={(e) => setCaComment(e.target.value)}
+                  />
+                </div>
+
+                {caSaveMutation.error && (
+                  <p className="text-sm text-red-400">{caSaveMutation.error.message}</p>
+                )}
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setCaDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={caSaveMutation.isPending}>
+                    {caSaveMutation.isPending ? "Saving..." : "Add Certificate"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <ConfirmDialog
+            open={caDeployConfirm}
+            onOpenChange={setCaDeployConfirm}
+            title="Deploy CA certificates to this host?"
+            description="This runs the CA cert deployment Ansible playbook on this host. If a deploy is already in progress it will be rejected."
+            confirmLabel="Deploy"
+            onConfirm={() => caDeployMutation.mutate(undefined)}
+            loading={caDeployMutation.isPending}
+          />
+        </div>
+      )}
 
       {activeTab === "dns" && (
         <div className="space-y-6">
