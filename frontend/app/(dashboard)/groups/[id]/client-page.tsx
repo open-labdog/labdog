@@ -48,11 +48,12 @@ import GroupHostsEntriesPage from "./hosts-entries/client-page"
 import GroupUsersPage from "./users/client-page"
 import GroupCronJobsPage from "./cron-jobs/client-page"
 import GroupPackagesPage from "./packages/client-page"
+import GroupCACertsPage from "./ca-certs/client-page"
 import GroupResolverPage from "./resolver/client-page"
 import GroupSyncPage from "./sync/client-page"
 import WorkflowConfigPage from "./workflow/client-page"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns" | "sync" | "workflow"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow"
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -584,6 +585,7 @@ export default function GroupDetailPage() {
           ["users", "Users"],
           ["cron-jobs", "Cron Jobs"],
           ["packages", "Packages"],
+          ["ca-certs", "CA Certificates"],
           ["dns", "DNS Resolver"],
           ["sync", "Sync"],
           ["workflow", "Updates"],
@@ -792,6 +794,7 @@ export default function GroupDetailPage() {
       {activeTab === "users" && <GroupUsersPage embedded />}
       {activeTab === "cron-jobs" && <GroupCronJobsPage embedded />}
       {activeTab === "packages" && <GroupPackagesPage embedded />}
+      {activeTab === "ca-certs" && <GroupCACertsPage embedded />}
       {activeTab === "dns" && <GroupResolverPage embedded />}
       {activeTab === "sync" && <GroupSyncPage embedded />}
       {activeTab === "workflow" && <WorkflowConfigPage embedded />}

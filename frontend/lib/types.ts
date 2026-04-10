@@ -394,3 +394,46 @@ export interface WorkflowHostRun {
 export interface WorkflowRunDetail extends WorkflowRun {
   host_runs: WorkflowHostRun[]
 }
+
+// ── CA certificates ─────────────────────────────────────────────────────────
+
+export interface CACertRule {
+  id: number
+  group_id: number | null
+  host_id: number | null
+  name: string
+  fingerprint_sha256: string
+  subject: string | null
+  issuer: string | null
+  not_before: string | null
+  not_after: string | null
+  state: "present" | "absent"
+  comment: string | null
+}
+
+export interface EffectiveCACert {
+  name: string
+  fingerprint_sha256: string
+  subject: string | null
+  issuer: string | null
+  not_before: string | null
+  not_after: string | null
+  state: "present" | "absent"
+  pem_content: string
+  source: "group" | "host"
+  source_id: number
+  source_name: string
+}
+
+export interface CACertActionRun {
+  id: number
+  host_id: number
+  group_id: number | null
+  status: "pending" | "running" | "success" | "failed" | "cancelled"
+  started_at: string | null
+  completed_at: string | null
+  ansible_output: string | null
+  error_message: string | null
+  triggered_by_user_id: number | null
+  created_at: string
+}

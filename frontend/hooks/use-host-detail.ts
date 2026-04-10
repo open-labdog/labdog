@@ -27,9 +27,12 @@ import type {
   EffectiveResolverConfig,
   ResolverConfig,
   ModuleCurrentState,
+  CACertRule,
+  EffectiveCACert,
+  CACertActionRun,
 } from "@/lib/types"
 
-type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
+type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
   const host = useQuery<Host>({
@@ -156,6 +159,27 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id && activeTab === "packages",
   })
 
+  // CA certs tab
+  const effectiveCACerts = useQuery<EffectiveCACert[]>({
+    queryKey: ["host-effective-ca-certs", id],
+    queryFn: () => apiFetch<EffectiveCACert[]>(`/api/hosts/${id}/effective-ca-certs`),
+    enabled: !!id && activeTab === "ca-certs",
+  })
+  const showCACertsLoading = useDelayedLoading(effectiveCACerts.isLoading)
+
+  const hostCACertOverrides = useQuery<CACertRule[]>({
+    queryKey: ["host-ca-cert-overrides", id],
+    queryFn: () => apiFetch<CACertRule[]>(`/api/hosts/${id}/ca-certs`),
+    enabled: !!id && activeTab === "ca-certs",
+  })
+
+  const hostCACertRuns = useQuery<CACertActionRun[]>({
+    queryKey: ["host-ca-cert-runs", id],
+    queryFn: () => apiFetch<CACertActionRun[]>(`/api/ca-certs/hosts/${id}/runs`),
+    enabled: !!id && activeTab === "ca-certs",
+    refetchInterval: 5000,
+  })
+
   const effectiveResolver = useQuery<EffectiveResolverConfig>({
     queryKey: ["host-effective-resolver", id],
     queryFn: () => apiFetch<EffectiveResolverConfig>(`/api/hosts/${id}/effective-resolver`),
@@ -210,6 +234,10 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     showPackagesLoading,
     hostPackageOverrides,
     effectiveRepos,
+    effectiveCACerts,
+    showCACertsLoading,
+    hostCACertOverrides,
+    hostCACertRuns,
     effectiveResolver,
     showResolverLoading,
     hostResolverOverride,
@@ -226,6 +254,7 @@ export function useHostDialogs() {
   const [lgDialogOpen, setLgDialogOpen] = useState(false)
   const [cjDialogOpen, setCjDialogOpen] = useState(false)
   const [ppDialogOpen, setPpDialogOpen] = useState(false)
+  const [caDialogOpen, setCaDialogOpen] = useState(false)
   const [protectedConfirmOpen, setProtectedConfirmOpen] = useState(false)
 
   return {
@@ -237,6 +266,7 @@ export function useHostDialogs() {
     lgDialogOpen, setLgDialogOpen,
     cjDialogOpen, setCjDialogOpen,
     ppDialogOpen, setPpDialogOpen,
+    caDialogOpen, setCaDialogOpen,
     protectedConfirmOpen, setProtectedConfirmOpen,
   }
 }
