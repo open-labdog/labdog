@@ -196,7 +196,7 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
             onClick={() => setDeployConfirm(true)}
           >
             <PlayIcon className="w-4 h-4 mr-1" />
-            Deploy to all hosts
+            Deploy to All Hosts
           </Button>
           <Button onClick={() => setAddOpen(true)}>Add Certificate</Button>
         </div>

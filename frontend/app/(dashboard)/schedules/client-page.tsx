@@ -60,12 +60,12 @@ export default function SchedulesPage() {
 
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: "Schedules" }]} />
+      <Breadcrumb items={[{ label: "Update Workflows" }]} />
 
       <div>
-        <h1 className="text-2xl font-bold text-white">Schedules</h1>
+        <h1 className="text-2xl font-bold text-white">Update Workflows</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Overview of automated update workflows configured across your groups.
+          Automated update workflows configured across your groups.
         </p>
       </div>
 
@@ -74,7 +74,7 @@ export default function SchedulesPage() {
       {!isLoading && (!workflows || workflows.length === 0) && (
         <div className="text-slate-400 py-8 text-center">
           No update workflows configured yet. Configure one from a group&apos;s{" "}
-          <strong>Updates</strong> tab.
+          <strong>Workflow</strong> tab.
         </div>
       )}
 

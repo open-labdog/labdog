@@ -42,15 +42,15 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       items: [
         { href: "/hosts", label: "Hosts" },
         { href: "/groups", label: "Groups" },
-        { href: "/schedules", label: "Schedules" },
+        { href: "/schedules", label: "Update Workflows" },
       ],
     },
     {
-      label: "CONFIG",
+      label: "INTEGRATIONS",
       items: [
         { href: "/ssh-keys", label: "SSH Keys" },
         { href: "/git-repos", label: "Git Repos" },
-        { href: "/hypervisors", label: "Hypervisors" },
+        { href: "/hypervisors", label: "Proxmox" },
       ],
     },
     {

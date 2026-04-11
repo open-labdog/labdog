@@ -135,11 +135,10 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
 
   return (
     <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Hosts Entries" }]} />}
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Hosts File" }]} />}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Hosts File Entries</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
+          <h1 className="text-2xl font-bold text-white">Hosts File</h1>
         </div>
         <Button onClick={openCreateDialog}>Add Entry</Button>
       </div>

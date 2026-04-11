@@ -369,7 +369,6 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Firewall Rules</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
         </div>
         {!gitopsEnabled && <Button onClick={handleAdd}>Add Rule</Button>}
       </div>
@@ -384,9 +383,9 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         </div>
       )}
 
-      {/* Chain Default Policies */}
+      {/* Default Policies */}
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-        <h2 className="text-sm font-medium text-slate-300 mb-3">Chain Default Policies</h2>
+        <h2 className="text-sm font-medium text-slate-300 mb-3">Default Policies</h2>
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
             <Label htmlFor="input-policy" className="text-slate-400 text-xs">INPUT</Label>
@@ -461,7 +460,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
                     <TableHead>Protocol</TableHead>
                     <TableHead>Direction</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>Dest</TableHead>
+                    <TableHead>Destination</TableHead>
                     <TableHead>Port(s)</TableHead>
                     <TableHead>Comment</TableHead>
                     <TableHead className="w-48">Actions</TableHead>

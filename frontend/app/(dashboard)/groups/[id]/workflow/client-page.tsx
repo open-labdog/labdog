@@ -447,7 +447,7 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
                         {formatDateTime(run.completed_at)}
                       </TableCell>
                       <TableCell className="text-slate-400 text-sm">
-                        {run.triggered_by ? `User ${run.triggered_by}` : "Scheduled"}
+                        {run.triggered_by ? "Manual" : "Scheduled"}
                       </TableCell>
                     </TableRow>
                   ))}

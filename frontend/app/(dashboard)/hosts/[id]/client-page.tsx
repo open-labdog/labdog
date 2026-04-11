@@ -98,7 +98,7 @@ function ModuleStateView({ moduleType, state }: { moduleType: string; state: unk
             <TableHead>Protocol</TableHead>
             <TableHead>Direction</TableHead>
             <TableHead>Source</TableHead>
-            <TableHead>Dest</TableHead>
+            <TableHead>Destination</TableHead>
             <TableHead>Port(s)</TableHead>
             <TableHead>Comment</TableHead>
           </TableRow>
@@ -530,7 +530,7 @@ function ProxmoxVMSection({
       >
         <div className="flex items-center gap-2">
           {expanded ? <ChevronDownIcon className="w-4 h-4 text-slate-400" /> : <ChevronRightIcon className="w-4 h-4 text-slate-400" />}
-          <h3 className="text-sm font-semibold text-slate-200">Proxmox VM</h3>
+          <h3 className="text-sm font-semibold text-slate-200">VM Mapping</h3>
           {!expanded && mapping && (
             <span className="text-slate-400 text-xs ml-1">{mapping.vm_name} (VMID {mapping.vmid})</span>
           )}
@@ -580,7 +580,7 @@ function ProxmoxVMSection({
               <InfoRow label="VMID">
                 <span className="font-mono">{mapping.vmid}</span>
               </InfoRow>
-              <InfoRow label="PVE Node">
+              <InfoRow label="Proxmox Node">
                 <span className="font-mono">{mapping.pve_node_name}</span>
               </InfoRow>
               <InfoRow label="Discovered">
@@ -1808,7 +1808,7 @@ export default function HostDetailPage() {
               : "text-slate-400 hover:text-white"
           }`}
         >
-          DNS
+          DNS Resolver
         </button>
       </div>
 
@@ -1856,7 +1856,7 @@ export default function HostDetailPage() {
               <InfoRow label="SSH Port">
                 <span className="font-mono">{host.ssh_port}</span>
               </InfoRow>
-              <InfoRow label="Barricade Source IP">
+              <InfoRow label="Management IP">
                 <span className="font-mono">{host.barricade_source_ip ?? "Not yet detected"}</span>
               </InfoRow>
               <InfoRow label="Firewall Backend">
@@ -1875,7 +1875,7 @@ export default function HostDetailPage() {
                   ? new Date(host.last_drift_check_at).toLocaleString()
                   : "Never"}
               </InfoRow>
-              <InfoRow label="Drift Check">
+              <InfoRow label="Drift Monitoring">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -2274,7 +2274,7 @@ export default function HostDetailPage() {
                     <TableHead>Protocol</TableHead>
                     <TableHead>Direction</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>Dest</TableHead>
+                    <TableHead>Destination</TableHead>
                     <TableHead>Port(s)</TableHead>
                     <TableHead>Group</TableHead>
                     <TableHead>Comment</TableHead>
