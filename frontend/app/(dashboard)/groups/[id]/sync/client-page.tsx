@@ -244,8 +244,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
       {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Sync Group</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
+          <h1 className="text-2xl font-bold text-white">Sync</h1>
         </div>
         <div className="flex gap-3">
           <Button
@@ -297,7 +296,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
       {plan && !previewMutation.isPending && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-white">Planned Changes</h2>
+            <h2 className="text-lg font-semibold text-white">Preview</h2>
             {!hasChanges && (
               <span className="text-sm text-green-400">All hosts in sync</span>
             )}
@@ -321,7 +320,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Confirm Apply</DialogTitle>
+            <DialogTitle>Confirm Changes</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-slate-400">
             This will apply the planned firewall changes to all hosts in this group.

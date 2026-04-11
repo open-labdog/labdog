@@ -251,7 +251,6 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Cron Jobs</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
         </div>
         <Button onClick={openCreateDialog}>Add Cron Job</Button>
       </div>

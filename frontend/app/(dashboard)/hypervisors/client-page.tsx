@@ -6,12 +6,12 @@ import ProxmoxSettingsPage from "@/app/(dashboard)/settings/proxmox/client-page"
 export default function HypervisorsPage() {
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: "Hypervisors" }]} />
+      <Breadcrumb items={[{ label: "Proxmox" }]} />
 
       <div>
-        <h1 className="text-2xl font-bold text-white">Hypervisors</h1>
+        <h1 className="text-2xl font-bold text-white">Proxmox</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Manage hypervisor connections for VM snapshot and rollback support.
+          Manage Proxmox connections for VM snapshot and rollback support.
         </p>
       </div>
 
@@ -21,7 +21,7 @@ export default function HypervisorsPage() {
           before applying system updates. If an update fails verification, the
           snapshot enables instant rollback to the pre-update state. Configure
           snapshot and rollback settings in each group&apos;s{" "}
-          <strong className="text-white">Updates</strong> tab.
+          <strong className="text-white">Workflow</strong> tab.
         </p>
       </div>
 

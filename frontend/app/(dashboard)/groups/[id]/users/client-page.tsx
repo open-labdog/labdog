@@ -222,7 +222,6 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Linux Users</h1>
-            <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
           </div>
           <Button onClick={openCreateUserDialog}>Add User</Button>
         </div>

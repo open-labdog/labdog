@@ -149,7 +149,6 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Service Rules</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
         </div>
         <Button onClick={openCreateDialog}>Add Service</Button>
       </div>
