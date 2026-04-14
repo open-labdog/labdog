@@ -712,34 +712,6 @@ function SyncStatusMessage({
   modules: import("@/lib/types").ModuleCurrentState[] | undefined
 }) {
   const outOfSync = modules?.filter(m => m.sync_status === "out_of_sync") ?? []
-  const errored = modules?.filter(m => m.error_message) ?? []
-
-  if (errored.length > 0) {
-    const byMessage = new Map<string, string[]>()
-    for (const m of errored) {
-      const msg = m.error_message!
-      const existing = byMessage.get(msg)
-      if (existing) {
-        existing.push(m.module_type)
-      } else {
-        byMessage.set(msg, [m.module_type])
-      }
-    }
-    const detail =
-      byMessage.size === 1
-        ? byMessage.keys().next().value
-        : [...byMessage.entries()]
-            .map(([msg, mods]) => `${msg} (${mods.join(", ")})`)
-            .join("; ")
-    return (
-      <div className="rounded-lg border border-red-700/50 bg-red-950/20 px-4 py-3 flex items-center gap-2">
-        <XCircleIcon className="w-4 h-4 text-red-400 shrink-0" />
-        <span className="text-red-400 text-sm">
-          Sync check encountered errors.{detail ? ` ${detail}` : ""}
-        </span>
-      </div>
-    )
-  }
 
   if (host.sync_status === "in_sync") {
     return (
