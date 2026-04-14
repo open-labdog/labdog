@@ -36,7 +36,7 @@ import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { FirewallRule, HostsEntry, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
+import type { FirewallRule, HostsEntry, LinuxGroup, LinuxUser, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -82,7 +82,24 @@ function InfoRow({ label, children }: { label: string; children: React.ReactNode
   )
 }
 
-function ModuleStateView({ moduleType, state }: { moduleType: string; state: unknown }) {
+type CollectedUser = { username: string; uid?: number | null; home?: string | null; shell?: string | null }
+type CollectedGroup = { groupname: string; gid?: number | null }
+
+function ModuleStateView({
+  moduleType,
+  state,
+  onManageUser,
+  onManageGroup,
+  userHasOverride,
+  groupHasOverride,
+}: {
+  moduleType: string
+  state: unknown
+  onManageUser?: (u: CollectedUser) => void
+  onManageGroup?: (g: CollectedGroup) => void
+  userHasOverride?: (username: string) => boolean
+  groupHasOverride?: (groupname: string) => boolean
+}) {
   // Handle error objects from collectors
   if (state && typeof state === "object" && "error" in (state as Record<string, unknown>)) {
     return <p className="text-amber-400 text-sm">{String((state as Record<string, unknown>).error)}</p>
@@ -177,24 +194,98 @@ function ModuleStateView({ moduleType, state }: { moduleType: string; state: unk
 
   if (moduleType === "linux_user" && typeof state === "object" && state !== null) {
     const { users, groups } = state as { users: Array<Record<string, unknown>>; groups: Array<Record<string, unknown>> }
+    const isSystemUid = (uid: unknown) => uid === 0 || uid === 65534
+    const isSystemGid = (gid: unknown) => gid === 0 || gid === 65534
+    const normalUsers = users?.filter((u) => !isSystemUid(u.uid)) ?? []
+    const systemUsers = users?.filter((u) => isSystemUid(u.uid)) ?? []
+    const normalGroups = groups?.filter((g) => !isSystemGid(g.gid)) ?? []
+    const systemGroups = groups?.filter((g) => isSystemGid(g.gid)) ?? []
     return (
       <div className="space-y-4">
         <div>
-          <h4 className="text-sm font-medium text-slate-300 mb-2">Users ({users?.length ?? 0})</h4>
-          <div className="font-mono text-xs text-slate-400 space-y-0.5">
-            {users?.map((u, i) => (
-              <div key={i}>{String(u.username ?? u.name)} (uid={String(u.uid ?? "?")})</div>
-            ))}
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Users ({normalUsers.length})</h4>
+          <div className="space-y-0.5">
+            {normalUsers.map((u, i) => {
+              const username = String(u.username ?? u.name ?? "")
+              const uid = u.uid as number | undefined
+              const managed = username && userHasOverride?.(username)
+              return (
+                <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                  <div className="font-mono text-xs text-slate-400">
+                    {username} (uid={String(uid ?? "?")})
+                    {managed && <span className="ml-2 text-[10px] text-green-500 font-sans">Managed</span>}
+                  </div>
+                  {onManageUser && username && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                      onClick={() => onManageUser({
+                        username,
+                        uid: typeof uid === "number" ? uid : null,
+                        home: (u.home as string | undefined) ?? null,
+                        shell: (u.shell as string | undefined) ?? null,
+                      })}
+                    >
+                      {managed ? "Edit" : "Manage"}
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
         <div>
-          <h4 className="text-sm font-medium text-slate-300 mb-2">Groups ({groups?.length ?? 0})</h4>
-          <div className="font-mono text-xs text-slate-400 space-y-0.5">
-            {groups?.map((g, i) => (
-              <div key={i}>{String(g.groupname ?? g.name)} (gid={String(g.gid ?? "?")})</div>
-            ))}
+          <h4 className="text-sm font-medium text-slate-300 mb-2">Groups ({normalGroups.length})</h4>
+          <div className="space-y-0.5">
+            {normalGroups.map((g, i) => {
+              const groupname = String(g.groupname ?? g.name ?? "")
+              const gid = g.gid as number | undefined
+              const managed = groupname && groupHasOverride?.(groupname)
+              return (
+                <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                  <div className="font-mono text-xs text-slate-400">
+                    {groupname} (gid={String(gid ?? "?")})
+                    {managed && <span className="ml-2 text-[10px] text-green-500 font-sans">Managed</span>}
+                  </div>
+                  {onManageGroup && groupname && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                      onClick={() => onManageGroup({
+                        groupname,
+                        gid: typeof gid === "number" ? gid : null,
+                      })}
+                    >
+                      {managed ? "Edit" : "Manage"}
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
+        {(systemUsers.length > 0 || systemGroups.length > 0) && (
+          <div className="pt-2 border-t border-slate-800">
+            <h4 className="text-xs font-medium text-slate-500 mb-1">System (read-only)</h4>
+            <p className="text-xs text-slate-600 mb-2">Managed by the OS — not editable via Barricade.</p>
+            {systemUsers.length > 0 && (
+              <div className="font-mono text-xs text-slate-500 space-y-0.5">
+                {systemUsers.map((u, i) => (
+                  <div key={`u-${i}`}>{String(u.username ?? u.name)} (uid={String(u.uid ?? "?")})</div>
+                ))}
+              </div>
+            )}
+            {systemGroups.length > 0 && (
+              <div className="font-mono text-xs text-slate-500 space-y-0.5 mt-1">
+                {systemGroups.map((g, i) => (
+                  <div key={`g-${i}`}>{String(g.groupname ?? g.name)} (gid={String(g.gid ?? "?")})</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -325,10 +416,22 @@ const DRIFT_SETTINGS_PATH: Record<string, string> = {
   resolver: "/api/resolver/hosts/{id}/drift-settings",
 }
 
-function CurrentStateSection({ moduleType, modules, hostId }: {
+function CurrentStateSection({
+  moduleType,
+  modules,
+  hostId,
+  onManageUser,
+  onManageGroup,
+  userHasOverride,
+  groupHasOverride,
+}: {
   moduleType: string
   modules: import("@/lib/types").ModuleCurrentState[] | undefined
   hostId: number
+  onManageUser?: (u: CollectedUser) => void
+  onManageGroup?: (g: CollectedGroup) => void
+  userHasOverride?: (username: string) => boolean
+  groupHasOverride?: (groupname: string) => boolean
 }) {
   const [collecting, setCollecting] = useState(false)
   const queryClient = useQueryClient()
@@ -389,7 +492,14 @@ function CurrentStateSection({ moduleType, modules, hostId }: {
         <p className="text-slate-400 text-sm">Not yet collected.</p>
       ) : (
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-          <ModuleStateView moduleType={moduleType} state={mod.collected_state} />
+          <ModuleStateView
+            moduleType={moduleType}
+            state={mod.collected_state}
+            onManageUser={onManageUser}
+            onManageGroup={onManageGroup}
+            userHasOverride={userHasOverride}
+            groupHasOverride={groupHasOverride}
+          />
         </div>
       )}
     </div>
@@ -911,9 +1021,16 @@ export default function HostDetailPage() {
   const [luAuthorizedKeys, setLuAuthorizedKeys] = useState("")
   const [luSupplementaryGroups, setLuSupplementaryGroups] = useState("")
   const [luPriority, setLuPriority] = useState(100)
+  const [luEditingId, setLuEditingId] = useState<number | null>(null)
   const luSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/linux-users`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-linux-users", id], ["host-linux-user-overrides", id]],
+    onSuccess: () => setLuDialogOpen(false),
+  })
+  const luUpdateMutation = useApiMutation({
+    mutationFn: ({ overrideId, payload }: { overrideId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/linux-users/${overrideId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-linux-users", id], ["host-linux-user-overrides", id]],
     onSuccess: () => setLuDialogOpen(false),
   })
@@ -1100,9 +1217,16 @@ export default function HostDetailPage() {
   const [lgGid, setLgGid] = useState("")
   const [lgState, setLgState] = useState<"present" | "absent">("present")
   const [lgPriority, setLgPriority] = useState(100)
+  const [lgEditingId, setLgEditingId] = useState<number | null>(null)
   const lgSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/linux-groups`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-linux-groups", id], ["host-linux-group-overrides", id]],
+    onSuccess: () => setLgDialogOpen(false),
+  })
+  const lgUpdateMutation = useApiMutation({
+    mutationFn: ({ overrideId, payload }: { overrideId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/linux-groups/${overrideId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-linux-groups", id], ["host-linux-group-overrides", id]],
     onSuccess: () => setLgDialogOpen(false),
   })
@@ -1114,6 +1238,7 @@ export default function HostDetailPage() {
   })
 
   function openLuDialog() {
+    setLuEditingId(null)
     setLuUsername("")
     setLuUid("")
     setLuShell("/bin/bash")
@@ -1125,19 +1250,47 @@ export default function HostDetailPage() {
     setLuSupplementaryGroups("")
     setLuPriority(100)
     luSaveMutation.reset()
+    luUpdateMutation.reset()
+    setLuDialogOpen(true)
+  }
+
+  function openLuEditDialog(override: LinuxUser) {
+    setLuEditingId(override.id)
+    setLuUsername(override.username)
+    setLuUid(override.uid != null ? String(override.uid) : "")
+    setLuShell(override.shell)
+    setLuHomeDir(override.home_dir ?? "")
+    setLuState(override.state)
+    setLuComment(override.comment ?? "")
+    setLuSudoRule(override.sudo_rule ?? "")
+    setLuAuthorizedKeys(override.authorized_keys.join("\n"))
+    setLuSupplementaryGroups(override.supplementary_groups.join(", "))
+    setLuPriority(override.priority)
+    luSaveMutation.reset()
+    luUpdateMutation.reset()
     setLuDialogOpen(true)
   }
 
   function handleLuSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    luSaveMutation.mutate({
+    const payload = {
       username: luUsername, uid: luUid ? Number(luUid) : null, shell: luShell,
       home_dir: luHomeDir || null, state: luState, comment: luComment || null,
       sudo_rule: luSudoRule || null,
       authorized_keys: luAuthorizedKeys.split("\n").map((k) => k.trim()).filter(Boolean),
       supplementary_groups: luSupplementaryGroups.split(",").map((g) => g.trim()).filter(Boolean),
       priority: luPriority,
-    })
+    }
+    if (luEditingId != null) {
+      luUpdateMutation.mutate({ overrideId: luEditingId, payload })
+    } else {
+      luSaveMutation.mutate(payload)
+    }
+  }
+
+  function handleLuEdit(username: string) {
+    const override = hostLinuxUserOverrides?.find(o => o.username === username)
+    if (override) openLuEditDialog(override)
   }
 
   function handleLuDelete(username: string) {
@@ -1157,19 +1310,80 @@ export default function HostDetailPage() {
   }
 
   function openLgDialog() {
+    setLgEditingId(null)
     setLgGroupname("")
     setLgGid("")
     setLgState("present")
     setLgPriority(100)
     lgSaveMutation.reset()
+    lgUpdateMutation.reset()
+    setLgDialogOpen(true)
+  }
+
+  function openLgEditDialog(override: LinuxGroup) {
+    setLgEditingId(override.id)
+    setLgGroupname(override.groupname)
+    setLgGid(override.gid != null ? String(override.gid) : "")
+    setLgState(override.state)
+    setLgPriority(override.priority)
+    lgSaveMutation.reset()
+    lgUpdateMutation.reset()
     setLgDialogOpen(true)
   }
 
   function handleLgSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    lgSaveMutation.mutate({
+    const payload = {
       groupname: lgGroupname, gid: lgGid ? Number(lgGid) : null, state: lgState, priority: lgPriority,
-    })
+    }
+    if (lgEditingId != null) {
+      lgUpdateMutation.mutate({ overrideId: lgEditingId, payload })
+    } else {
+      lgSaveMutation.mutate(payload)
+    }
+  }
+
+  function handleLgEdit(groupname: string) {
+    const override = hostLinuxGroupOverrides?.find(o => o.groupname === groupname)
+    if (override) openLgEditDialog(override)
+  }
+
+  function manageCollectedUser(collected: { username: string; uid?: number | null; home?: string | null; shell?: string | null }) {
+    const existing = hostLinuxUserOverrides?.find(o => o.username === collected.username)
+    if (existing) {
+      openLuEditDialog(existing)
+      return
+    }
+    setLuEditingId(null)
+    setLuUsername(collected.username)
+    setLuUid(collected.uid != null ? String(collected.uid) : "")
+    setLuShell(collected.shell || "/bin/bash")
+    setLuHomeDir(collected.home ?? "")
+    setLuState("present")
+    setLuComment("")
+    setLuSudoRule("")
+    setLuAuthorizedKeys("")
+    setLuSupplementaryGroups("")
+    setLuPriority(100)
+    luSaveMutation.reset()
+    luUpdateMutation.reset()
+    setLuDialogOpen(true)
+  }
+
+  function manageCollectedGroup(collected: { groupname: string; gid?: number | null }) {
+    const existing = hostLinuxGroupOverrides?.find(o => o.groupname === collected.groupname)
+    if (existing) {
+      openLgEditDialog(existing)
+      return
+    }
+    setLgEditingId(null)
+    setLgGroupname(collected.groupname)
+    setLgGid(collected.gid != null ? String(collected.gid) : "")
+    setLgState("present")
+    setLgPriority(100)
+    lgSaveMutation.reset()
+    lgUpdateMutation.reset()
+    setLgDialogOpen(true)
   }
 
   function handleLgDelete(groupname: string) {
@@ -3179,15 +3393,25 @@ export default function HostDetailPage() {
                         </TableCell>
                         <TableCell>
                           {user.source === "host" ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={luDeleteMutation.isPending}
-                              onClick={() => handleLuDelete(user.username)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {luDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleLuEdit(user.username)}
+                                className="text-slate-300 hover:text-white hover:bg-slate-800"
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={luDeleteMutation.isPending}
+                                onClick={() => handleLuDelete(user.username)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                              >
+                                {luDeleteMutation.isPending ? "…" : "Delete"}
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-slate-600 text-xs">Read-only</span>
                           )}
@@ -3241,15 +3465,25 @@ export default function HostDetailPage() {
                         </TableCell>
                         <TableCell>
                           {group.source === "host" ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={lgDeleteMutation.isPending}
-                              onClick={() => handleLgDelete(group.groupname)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {lgDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleLgEdit(group.groupname)}
+                                className="text-slate-300 hover:text-white hover:bg-slate-800"
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={lgDeleteMutation.isPending}
+                                onClick={() => handleLgDelete(group.groupname)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                              >
+                                {lgDeleteMutation.isPending ? "…" : "Delete"}
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-slate-600 text-xs">Read-only</span>
                           )}
@@ -3265,7 +3499,7 @@ export default function HostDetailPage() {
           <Dialog open={luDialogOpen} onOpenChange={setLuDialogOpen}>
             <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Add Linux User Override</DialogTitle>
+                <DialogTitle>{luEditingId != null ? "Edit Linux User Override" : "Add Linux User Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleLuSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -3277,6 +3511,7 @@ export default function HostDetailPage() {
                     value={luUsername}
                     onChange={(e) => setLuUsername(e.target.value)}
                     required
+                    disabled={luEditingId != null}
                   />
                 </div>
 
@@ -3386,8 +3621,8 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {luSaveMutation.error && (
-                  <p className="text-sm text-red-400">{luSaveMutation.error.message}</p>
+                {(luSaveMutation.error || luUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(luSaveMutation.error || luUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
@@ -3398,8 +3633,12 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={luSaveMutation.isPending}>
-                    {luSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={luSaveMutation.isPending || luUpdateMutation.isPending}>
+                    {luSaveMutation.isPending || luUpdateMutation.isPending
+                      ? "Saving..."
+                      : luEditingId != null
+                        ? "Save Changes"
+                        : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -3409,7 +3648,7 @@ export default function HostDetailPage() {
           <Dialog open={lgDialogOpen} onOpenChange={setLgDialogOpen}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Add Linux Group Override</DialogTitle>
+                <DialogTitle>{lgEditingId != null ? "Edit Linux Group Override" : "Add Linux Group Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleLgSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -3421,6 +3660,7 @@ export default function HostDetailPage() {
                     value={lgGroupname}
                     onChange={(e) => setLgGroupname(e.target.value)}
                     required
+                    disabled={lgEditingId != null}
                   />
                 </div>
 
@@ -3461,8 +3701,8 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {lgSaveMutation.error && (
-                  <p className="text-sm text-red-400">{lgSaveMutation.error.message}</p>
+                {(lgSaveMutation.error || lgUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(lgSaveMutation.error || lgUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
@@ -3473,14 +3713,26 @@ export default function HostDetailPage() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={lgSaveMutation.isPending}>
-                    {lgSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={lgSaveMutation.isPending || lgUpdateMutation.isPending}>
+                    {lgSaveMutation.isPending || lgUpdateMutation.isPending
+                      ? "Saving..."
+                      : lgEditingId != null
+                        ? "Save Changes"
+                        : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
             </DialogContent>
           </Dialog>
-          <CurrentStateSection moduleType="linux_user" modules={currentStateQuery.data} hostId={id} />
+          <CurrentStateSection
+            moduleType="linux_user"
+            modules={currentStateQuery.data}
+            hostId={id}
+            onManageUser={manageCollectedUser}
+            onManageGroup={manageCollectedGroup}
+            userHasOverride={(username) => !!hostLinuxUserOverrides?.find(o => o.username === username)}
+            groupHasOverride={(groupname) => !!hostLinuxGroupOverrides?.find(o => o.groupname === groupname)}
+          />
         </div>
       )}
 
