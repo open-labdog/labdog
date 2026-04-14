@@ -428,6 +428,7 @@ export interface EffectiveCACert {
 export interface CACertActionRun {
   id: number
   host_id: number
+  hostname: string | null
   group_id: number | null
   status: "pending" | "running" | "success" | "failed" | "cancelled"
   started_at: string | null

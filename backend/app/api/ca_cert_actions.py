@@ -36,6 +36,7 @@ router = APIRouter(prefix="/ca-certs", tags=["ca-cert-actions"])
 class CACertActionRunResponse(BaseModel):
     id: int
     host_id: int
+    hostname: str | None = None
     group_id: int | None
     status: str
     started_at: datetime | None
@@ -45,6 +46,22 @@ class CACertActionRunResponse(BaseModel):
     triggered_by_user_id: int | None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+def _serialize_run(job: SyncJob, hostname: str | None) -> CACertActionRunResponse:
+    return CACertActionRunResponse(
+        id=job.id,
+        host_id=job.host_id,
+        hostname=hostname,
+        group_id=job.group_id,
+        status=job.status,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        ansible_output=job.ansible_output,
+        error_message=job.error_message,
+        triggered_by_user_id=job.triggered_by_user_id,
+        created_at=job.created_at,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +104,7 @@ async def deploy_ca_certs_to_host(
 
     await db.commit()
     await db.refresh(job)
-    return job
+    return _serialize_run(job, host.hostname)
 
 
 @router.post("/groups/{group_id}/deploy", status_code=201)
@@ -157,7 +174,7 @@ async def list_host_ca_cert_runs(
         .order_by(SyncJob.created_at.desc())
         .limit(max(1, min(limit, 100)))
     )
-    return result.scalars().all()
+    return [_serialize_run(j, host.hostname) for j in result.scalars().all()]
 
 
 @router.get(
@@ -175,7 +192,8 @@ async def list_group_ca_cert_runs(
         raise HTTPException(status_code=404, detail="Group not found")
 
     result = await db.execute(
-        select(SyncJob)
+        select(SyncJob, Host.hostname)
+        .join(Host, Host.id == SyncJob.host_id)
         .where(
             SyncJob.group_id == group_id,
             SyncJob.module_type == CA_CERT_MODULE_TYPE,
@@ -183,7 +201,7 @@ async def list_group_ca_cert_runs(
         .order_by(SyncJob.created_at.desc())
         .limit(max(1, min(limit, 200)))
     )
-    return result.scalars().all()
+    return [_serialize_run(job, hostname) for job, hostname in result.all()]
 
 
 @router.get("/runs/{run_id}", response_model=CACertActionRunResponse)
@@ -192,12 +210,15 @@ async def get_ca_cert_run(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    job = (await db.execute(
-        select(SyncJob).where(
+    row = (await db.execute(
+        select(SyncJob, Host.hostname)
+        .join(Host, Host.id == SyncJob.host_id)
+        .where(
             SyncJob.id == run_id,
             SyncJob.module_type == CA_CERT_MODULE_TYPE,
         )
-    )).scalar_one_or_none()
-    if not job:
+    )).first()
+    if not row:
         raise HTTPException(status_code=404, detail="CA cert action run not found")
-    return job
+    job, hostname = row
+    return _serialize_run(job, hostname)
