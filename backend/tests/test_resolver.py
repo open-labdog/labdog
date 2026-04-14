@@ -14,6 +14,10 @@ from app.resolver.collector import (
     parse_networkmanager_conf,
 )
 from app.resolver.diff import compute_resolver_diff, ResolverDiff
+from app.resolver.generator import (
+    CLOUD_INIT_DISABLE_PATH,
+    generate_resolver_playbook,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -242,3 +246,37 @@ class TestResolverDiff:
         assert diff.nameservers_changed is False
         assert diff.options_changed is True
         assert diff.has_changes is True
+
+
+# ---------------------------------------------------------------------------
+# Playbook generation tests
+# ---------------------------------------------------------------------------
+
+
+def _tasks_for(resolver_type: str) -> list[dict]:
+    out = generate_resolver_playbook(
+        host_ip="10.0.0.1",
+        resolver_type=resolver_type,
+        rendered_content="nameserver 8.8.8.8\n",
+        ssh_key_path="/tmp/key",
+    )
+    return out["playbook"][0]["tasks"]
+
+
+class TestResolverPlaybook:
+    @pytest.mark.parametrize("resolver_type", ["resolv_conf", "systemd_resolved", "networkmanager"])
+    def test_cloud_init_disable_tasks_lead_playbook(self, resolver_type):
+        tasks = _tasks_for(resolver_type)
+        assert tasks[0]["ansible.builtin.stat"]["path"] == "/etc/cloud/cloud.cfg.d"
+        assert tasks[0]["register"] == "barricade_cloud_init_dir"
+        assert tasks[1]["ansible.builtin.copy"]["dest"] == CLOUD_INIT_DISABLE_PATH
+        assert tasks[1]["when"] == "barricade_cloud_init_dir.stat.exists"
+
+    def test_resolv_conf_replaces_symlink_before_writing(self):
+        tasks = _tasks_for("resolv_conf")
+        # tasks[0..1] are the cloud-init guard; backend tasks start at index 2.
+        stat_task, rm_task, write_task = tasks[2], tasks[3], tasks[4]
+        assert stat_task["ansible.builtin.stat"]["path"] == "/etc/resolv.conf"
+        assert rm_task["ansible.builtin.file"] == {"path": "/etc/resolv.conf", "state": "absent"}
+        assert "islnk" in rm_task["when"]
+        assert write_task["ansible.builtin.copy"]["dest"] == "/etc/resolv.conf"
