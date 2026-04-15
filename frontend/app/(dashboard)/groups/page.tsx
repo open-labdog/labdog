@@ -3,28 +3,21 @@
 import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, LayoutListIcon, TableIcon, PencilIcon, CheckIcon, Trash2Icon, PlayIcon } from "lucide-react"
+import { LayoutListIcon, TableIcon, PencilIcon, CheckIcon, XIcon, Trash2Icon, PlayIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { GitOpsStatusBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import type { HostGroup } from "@/lib/types"
 
 export default function GroupsPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
@@ -47,13 +40,11 @@ export default function GroupsPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
-  const filteredGroups = groups?.filter(g =>
-    g.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) ?? []
+  const allGroups = groups ?? []
 
   const groupedByCategory = useMemo(() => {
     const sections = new Map<string, HostGroup[]>()
-    for (const group of filteredGroups) {
+    for (const group of allGroups) {
       const key = group.category || "__uncategorized__"
       if (!sections.has(key)) sections.set(key, [])
       sections.get(key)!.push(group)
@@ -63,7 +54,7 @@ export default function GroupsPage() {
       if (b === "__uncategorized__") return -1
       return a.localeCompare(b)
     })
-  }, [filteredGroups])
+  }, [allGroups])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -74,13 +65,6 @@ export default function GroupsPage() {
     })
   }
 
-  const toggleSelectAll = () => {
-    if (selected.size === filteredGroups.length && filteredGroups.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredGroups.map(g => g.id)))
-    }
-  }
 
   async function handleBulkDelete() {
     const ids = Array.from(selected)
@@ -177,6 +161,98 @@ export default function GroupsPage() {
     else showError("No modules to sync")
   }
 
+  function buildColumns(rows: HostGroup[], showCategory: boolean): ColumnDef<HostGroup>[] {
+    return [
+      {
+        key: "select",
+        label: "",
+        cell: (group) => (
+          <input
+            type="checkbox"
+            checked={selected.has(group.id)}
+            onChange={() => toggleSelect(group.id)}
+            className="rounded border-slate-600"
+          />
+        ),
+        defaultWidth: 40,
+        resizable: false,
+        sortable: false,
+      },
+      {
+        key: "name",
+        label: "Name",
+        accessor: (g) => g.name,
+        cell: (g) => (
+          <Link href={`/groups/${g.id}`} className="text-white hover:text-blue-400 transition-colors font-medium">
+            {g.name}
+          </Link>
+        ),
+        defaultWidth: 220,
+        filter: { type: "text" },
+      },
+      ...(showCategory ? [{
+        key: "category",
+        label: "Category",
+        accessor: (g: HostGroup) => g.category ?? "",
+        cell: (g: HostGroup) => g.category
+          ? <span className="text-slate-400">{g.category}</span>
+          : <span className="text-slate-500">—</span>,
+        defaultWidth: 140,
+        filter: { type: "enum" as const, from: "accessor" as const },
+      }] : []),
+      {
+        key: "priority",
+        label: "Priority",
+        accessor: (g) => g.priority,
+        cell: (g) => <span className="tabular-nums">{g.priority}</span>,
+        defaultWidth: 96,
+      },
+      {
+        key: "gitops",
+        label: "GitOps",
+        accessor: (g) => g.gitops_enabled ? "enabled" : "disabled",
+        cell: (g) => g.gitops_enabled && g.gitops_status
+          ? <GitOpsStatusBadge status={g.gitops_status} />
+          : <span className="text-slate-500">—</span>,
+        defaultWidth: 120,
+        filter: { type: "boolean" },
+      },
+      {
+        key: "description",
+        label: "Description",
+        accessor: (g) => g.description ?? "",
+        cell: (g) => <span className="text-slate-400 truncate">{g.description ?? "—"}</span>,
+      },
+      {
+        key: "actions",
+        label: "Actions",
+        cell: (group) => (
+          <div className="flex gap-1">
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={syncingGroup === group.id}
+              onClick={() => handleSyncGroup(group.id)}
+            >
+              <PlayIcon className="w-3.5 h-3.5 mr-1" />
+              {syncingGroup === group.id ? "..." : "Sync"}
+            </Button>
+            <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
+          </div>
+        ),
+        defaultWidth: 160,
+        resizable: false,
+        sortable: false,
+      },
+    ]
+  }
+
+  const flatColumns = useMemo(
+    () => buildColumns(allGroups, true),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allGroups, selected, syncingGroup]
+  )
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Groups" }]} />
@@ -189,23 +265,6 @@ export default function GroupsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search groups..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-            >
-              <XIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
         <button
           onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
           className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
@@ -213,11 +272,6 @@ export default function GroupsPage() {
           {viewMode === "flat" ? <LayoutListIcon className="w-4 h-4" /> : <TableIcon className="w-4 h-4" />}
           {viewMode === "flat" ? "Category View" : "Flat View"}
         </button>
-        {searchQuery && (
-          <span className="text-sm text-slate-400">
-            Showing {filteredGroups.length} of {groups?.length ?? 0} groups
-          </span>
-        )}
       </div>
 
       {showLoading && <TableSkeleton rows={5} columns={3} />}
@@ -226,13 +280,7 @@ export default function GroupsPage() {
         <div className="text-red-400 py-8 text-center">Failed to load groups</div>
       )}
 
-      {!isLoading && !error && filteredGroups.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
-      )}
-
-      {!isLoading && !error && groups?.length === 0 && !searchQuery && (
+      {!isLoading && !error && allGroups.length === 0 && (
         <div className="text-slate-400 py-8 text-center">
           No groups yet.{" "}
           <Link href="/groups/new" className="underline hover:text-white">
@@ -241,7 +289,7 @@ export default function GroupsPage() {
         </div>
       )}
 
-      {!isLoading && !error && filteredGroups.length > 0 && (
+      {!isLoading && !error && allGroups.length > 0 && (
         <>
           {selected.size > 0 && (
             <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
@@ -263,203 +311,88 @@ export default function GroupsPage() {
               </Button>
             </div>
           )}
+
           {viewMode === "flat" ? (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table className="table-fixed">
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        checked={selected.size === filteredGroups.length && filteredGroups.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-600"
-                      />
-                    </TableHead>
-                    <TableHead className="w-[22%]">Name</TableHead>
-                    <TableHead className="w-[14%]">Category</TableHead>
-                    <TableHead className="w-24">Priority</TableHead>
-                    <TableHead className="w-24">GitOps</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredGroups.map((group) => (
-                    <TableRow key={group.id} className="border-slate-700">
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(group.id)}
-                          onChange={() => toggleSelect(group.id)}
-                          className="rounded border-slate-600"
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium truncate">
-                        <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
-                      </TableCell>
-                      <TableCell className="text-slate-400 truncate">{group.category ?? <span className="text-slate-500">—</span>}</TableCell>
-                      <TableCell className="tabular-nums">
-                        {group.priority}
-                      </TableCell>
-                      <TableCell>
-                        {group.gitops_enabled && group.gitops_status ? (
-                          <GitOpsStatusBadge status={group.gitops_status} />
-                        ) : (
-                          <span className="text-slate-500">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-slate-400 truncate">{group.description ?? "—"}</TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={syncingGroup === group.id}
-                            onClick={() => handleSyncGroup(group.id)}
-                          >
-                            <PlayIcon className="w-3.5 h-3.5 mr-1" />
-                            {syncingGroup === group.id ? "..." : "Sync"}
-                          </Button>
-                          <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable<HostGroup>
+              tableId="groups-flat"
+              columns={flatColumns}
+              data={allGroups}
+              getRowKey={(g) => g.id}
+              emptyMessage="No groups found."
+            />
           ) : (
             <div className="space-y-4">
-              {groupedByCategory.map(([category, categoryGroups]) => (
-                <details key={category} open className="group">
-                  <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
-                    <span className="transition-transform group-open:rotate-90">▶</span>
-                    {editingCategory === category ? (
-                      <span className="flex items-center gap-1.5" onClick={e => e.preventDefault()}>
-                        <Input
-                          autoFocus
-                          value={editCategoryValue}
-                          onChange={e => setEditCategoryValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") handleRenameCategory(category)
-                            if (e.key === "Escape") setEditingCategory(null)
-                          }}
-                          placeholder="Category name (empty to clear)"
-                          className="h-7 w-48 text-sm"
-                        />
-                        <button
-                          onClick={() => handleRenameCategory(category)}
-                          className="p-1 rounded hover:bg-slate-700 text-green-400 hover:text-green-300"
-                          title="Save"
-                        >
-                          <CheckIcon className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setEditingCategory(null)}
-                          className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
-                          title="Cancel"
-                        >
-                          <XIcon className="w-3.5 h-3.5" />
-                        </button>
-                      </span>
-                    ) : (
-                      <>
-                        <span>{category === "__uncategorized__" ? "Uncategorized" : category}</span>
-                        <span className="text-slate-500 font-normal">({categoryGroups.length})</span>
-                        <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1" onClick={e => e.preventDefault()}>
+              {groupedByCategory.map(([category, categoryGroups]) => {
+                const catColumns = buildColumns(categoryGroups, false)
+                return (
+                  <details key={category} open className="group">
+                    <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
+                      <span className="transition-transform group-open:rotate-90">▶</span>
+                      {editingCategory === category ? (
+                        <span className="flex items-center gap-1.5" onClick={e => e.preventDefault()}>
+                          <Input
+                            autoFocus
+                            value={editCategoryValue}
+                            onChange={e => setEditCategoryValue(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") handleRenameCategory(category)
+                              if (e.key === "Escape") setEditingCategory(null)
+                            }}
+                            placeholder="Category name (empty to clear)"
+                            className="h-7 w-48 text-sm"
+                          />
                           <button
-                            onClick={() => startEditingCategory(category)}
-                            className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-white"
-                            title="Rename category"
+                            onClick={() => handleRenameCategory(category)}
+                            className="p-1 rounded hover:bg-slate-700 text-green-400 hover:text-green-300"
+                            title="Save"
                           >
-                            <PencilIcon className="w-3.5 h-3.5" />
+                            <CheckIcon className="w-3.5 h-3.5" />
                           </button>
-                          {category !== "__uncategorized__" && (
-                            <button
-                              onClick={() => handleDeleteCategory(category)}
-                              className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-red-400"
-                              title="Remove category (moves groups to Uncategorized)"
-                            >
-                              <Trash2Icon className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setEditingCategory(null)}
+                            className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white"
+                            title="Cancel"
+                          >
+                            <XIcon className="w-3.5 h-3.5" />
+                          </button>
                         </span>
-                      </>
-                    )}
-                  </summary>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
-                    <Table className="table-fixed">
-                      <TableHeader>
-                        <TableRow className="border-slate-700">
-                          <TableHead className="w-10">
-                            <input
-                              type="checkbox"
-                              checked={categoryGroups.every(g => selected.has(g.id)) && categoryGroups.length > 0}
-                              onChange={() => {
-                                const allSelected = categoryGroups.every(g => selected.has(g.id))
-                                setSelected(prev => {
-                                  const next = new Set(prev)
-                                  categoryGroups.forEach(g => allSelected ? next.delete(g.id) : next.add(g.id))
-                                  return next
-                                })
-                              }}
-                              className="rounded border-slate-600"
-                            />
-                          </TableHead>
-                          <TableHead className="w-[25%]">Name</TableHead>
-                          <TableHead className="w-24">Priority</TableHead>
-                          <TableHead className="w-24">GitOps</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead className="w-40">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {categoryGroups.map((group) => (
-                          <TableRow key={group.id} className="border-slate-700">
-                            <TableCell>
-                              <input
-                                type="checkbox"
-                                checked={selected.has(group.id)}
-                                onChange={() => toggleSelect(group.id)}
-                                className="rounded border-slate-600"
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium truncate">
-                              <Link href={`/groups/${group.id}`} className="text-white hover:text-blue-400 transition-colors">{group.name}</Link>
-                            </TableCell>
-                            <TableCell className="tabular-nums">
-                              {group.priority}
-                            </TableCell>
-                            <TableCell>
-                              {group.gitops_enabled && group.gitops_status ? (
-                                <GitOpsStatusBadge status={group.gitops_status} />
-                              ) : (
-                                <span className="text-slate-500">—</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-slate-400 truncate">{group.description ?? "—"}</TableCell>
-                            <TableCell>
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={syncingGroup === group.id}
-                                  onClick={() => handleSyncGroup(group.id)}
-                                >
-                                  <PlayIcon className="w-3.5 h-3.5 mr-1" />
-                                  {syncingGroup === group.id ? "..." : "Sync"}
-                                </Button>
-                                <Link href={`/groups/${group.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </details>
-              ))}
+                      ) : (
+                        <>
+                          <span>{category === "__uncategorized__" ? "Uncategorized" : category}</span>
+                          <span className="text-slate-500 font-normal">({categoryGroups.length})</span>
+                          <span className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 ml-1" onClick={e => e.preventDefault()}>
+                            <button
+                              onClick={() => startEditingCategory(category)}
+                              className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-white"
+                              title="Rename category"
+                            >
+                              <PencilIcon className="w-3.5 h-3.5" />
+                            </button>
+                            {category !== "__uncategorized__" && (
+                              <button
+                                onClick={() => handleDeleteCategory(category)}
+                                className="p-1 rounded hover:bg-slate-700 text-slate-500 hover:text-red-400"
+                                title="Remove category (moves groups to Uncategorized)"
+                              >
+                                <Trash2Icon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </span>
+                        </>
+                      )}
+                    </summary>
+                    <div className="mt-1">
+                      <DataTable<HostGroup>
+                        tableId={`groups-category-${category}`}
+                        columns={catColumns}
+                        data={categoryGroups}
+                        getRowKey={(g) => g.id}
+                        emptyMessage="No groups in this category."
+                      />
+                    </div>
+                  </details>
+                )
+              })}
             </div>
           )}
         </>

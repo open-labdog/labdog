@@ -2,22 +2,13 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { SearchIcon, XIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 
 interface AuditEntry {
   id: number
@@ -48,14 +39,9 @@ function ActionBadge({ action }: { action: string }) {
   )
 }
 
-const ACTION_TYPES = ["all", "create", "update", "delete"]
-const ENTITY_TYPES = ["all", "group", "host", "rule", "ssh_key"]
 const PAGE_SIZE = 20
 
 export default function AuditPage() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [actionFilter, setActionFilter] = useState("all")
-  const [entityFilter, setEntityFilter] = useState("all")
   const [page, setPage] = useState(1)
 
   const { data, isLoading, error } = useQuery<AuditEntry[]>({
@@ -73,24 +59,8 @@ export default function AuditPage() {
   const showLoading = useDelayedLoading(isLoading)
 
   const entries = data ?? []
-
-  const filtered = entries.filter((e) => {
-    if (actionFilter !== "all" && e.action !== actionFilter) return false
-    if (entityFilter !== "all" && e.entity_type !== entityFilter) return false
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase()
-      return (
-        e.action.toLowerCase().includes(q) ||
-        e.entity_type.toLowerCase().includes(q) ||
-        (e.ip_address?.toLowerCase().includes(q) ?? false) ||
-        String(e.entity_id ?? "").includes(q)
-      )
-    }
-    return true
-  })
-
-  const paginated = filtered.slice(0, page * PAGE_SIZE)
-  const hasMore = paginated.length < filtered.length
+  const paginated = entries.slice(0, page * PAGE_SIZE)
+  const hasMore = paginated.length < entries.length
 
   return (
     <div className="space-y-6">
@@ -102,57 +72,6 @@ export default function AuditPage() {
         </p>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex gap-4 flex-wrap items-end">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search audit log..."
-            value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => { setSearchQuery(""); setPage(1) }}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-            >
-              <XIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="action-filter" className="text-sm text-slate-400">Action:</label>
-          <select
-            id="action-filter"
-            value={actionFilter}
-            onChange={(e) => { setActionFilter(e.target.value); setPage(1) }}
-            className="rounded-md border border-slate-700 bg-slate-900 text-slate-200 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          >
-            {ACTION_TYPES.map((a) => (
-              <option key={a} value={a}>
-                {a === "all" ? "All Actions" : a.charAt(0).toUpperCase() + a.slice(1)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="entity-filter" className="text-sm text-slate-400">Entity:</label>
-          <select
-            id="entity-filter"
-            value={entityFilter}
-            onChange={(e) => { setEntityFilter(e.target.value); setPage(1) }}
-            className="rounded-md border border-slate-700 bg-slate-900 text-slate-200 text-sm px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-slate-500"
-          >
-            {ENTITY_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t === "all" ? "All Entities" : t.replace("_", " ")}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
       {showLoading && <TableSkeleton rows={5} columns={5} />}
 
       {error && (
@@ -161,52 +80,72 @@ export default function AuditPage() {
         </div>
       )}
 
-      {!isLoading && filtered.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
-      )}
-
-      {!isLoading && filtered.length === 0 && !searchQuery && (
-        <div className="text-slate-400 py-8 text-center">No audit entries found.</div>
-      )}
-
       {!isLoading && (
         <>
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Timestamp</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Action</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>IP Address</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginated.map((entry) => (
-                  <TableRow key={entry.id} className="border-slate-700">
-                    <TableCell className="font-mono text-slate-300 text-xs whitespace-nowrap">
-                      {new Date(entry.created_at).toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-slate-300 text-sm">
-                      {entry.user_id ? `User #${entry.user_id}` : "System"}
-                    </TableCell>
-                    <TableCell>
-                      <ActionBadge action={entry.action} />
-                    </TableCell>
-                    <TableCell className="text-slate-300 text-sm capitalize">
-                      {entry.entity_type.replace("_", " ")}{entry.entity_id ? ` #${entry.entity_id}` : ""}
-                    </TableCell>
-                    <TableCell className="text-slate-400 text-xs max-w-xs truncate">
-                      {entry.ip_address ?? "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+          <DataTable<AuditEntry>
+            tableId="audit-log"
+            data={paginated}
+            emptyMessage="No audit entries found."
+            getRowKey={(e) => e.id}
+            columns={[
+              {
+                key: "timestamp",
+                label: "Timestamp",
+                accessor: (e) => e.created_at,
+                cell: (e) => (
+                  <span className="font-mono text-slate-300 text-xs whitespace-nowrap">
+                    {new Date(e.created_at).toLocaleString()}
+                  </span>
+                ),
+                defaultWidth: 180,
+                filter: { type: "dateRange" },
+              },
+              {
+                key: "user",
+                label: "User",
+                accessor: (e) => e.user_id ? `User #${e.user_id}` : "System",
+                cell: (e) => (
+                  <span className="text-slate-300 text-sm">
+                    {e.user_id ? `User #${e.user_id}` : "System"}
+                  </span>
+                ),
+                defaultWidth: 140,
+                filter: { type: "text" },
+              },
+              {
+                key: "action",
+                label: "Action",
+                accessor: (e) => e.action,
+                cell: (e) => <ActionBadge action={e.action} />,
+                defaultWidth: 120,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "entity",
+                label: "Entity",
+                accessor: (e) => `${e.entity_type}${e.entity_id ? ` #${e.entity_id}` : ""}`,
+                cell: (e) => (
+                  <span className="text-slate-300 text-sm capitalize">
+                    {e.entity_type.replace("_", " ")}{e.entity_id ? ` #${e.entity_id}` : ""}
+                  </span>
+                ),
+                defaultWidth: 180,
+                filter: { type: "text" },
+              },
+              {
+                key: "ip_address",
+                label: "IP Address",
+                accessor: (e) => e.ip_address ?? "",
+                cell: (e) => (
+                  <span className="text-slate-400 text-xs">
+                    {e.ip_address ?? "—"}
+                  </span>
+                ),
+                defaultWidth: 160,
+                filter: { type: "text", placeholder: "e.g. 10.0.1" },
+              },
+            ]}
+          />
 
           {hasMore && (
             <div className="flex justify-center">
@@ -219,12 +158,9 @@ export default function AuditPage() {
             </div>
           )}
 
-          {filtered.length > 0 && (
+          {entries.length > 0 && (
             <p className="text-center text-xs text-slate-500">
-              Showing {paginated.length} of {filtered.length} entries
-              {(searchQuery || actionFilter !== "all" || entityFilter !== "all") && entries.length !== filtered.length && (
-                <> (filtered from {entries.length} total)</>
-              )}
+              Showing {paginated.length} of {entries.length} entries
             </p>
           )}
         </>

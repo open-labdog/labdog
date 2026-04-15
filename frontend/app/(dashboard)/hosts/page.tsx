@@ -3,21 +3,13 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, ChevronDownIcon } from "lucide-react"
+import { ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
@@ -42,7 +34,6 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 export default function HostsPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
@@ -86,12 +77,10 @@ export default function HostsPage() {
   const showLoading = useDelayedLoading(isLoading)
 
   const filteredHosts = hosts?.filter(h => {
-    const q = searchQuery.toLowerCase()
-    const matchesSearch = h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
     const matchesGroup = filterGroup === null ? true
       : filterGroup === "ungrouped" ? h.group_ids.length === 0
       : h.group_ids.includes(filterGroup)
-    return matchesSearch && matchesGroup
+    return matchesGroup
   }) ?? []
 
   const toggleSelect = (id: number) => {
@@ -101,14 +90,6 @@ export default function HostsPage() {
       else next.add(id)
       return next
     })
-  }
-
-  const toggleSelectAll = () => {
-    if (selected.size === filteredHosts.length && filteredHosts.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredHosts.map(h => h.id)))
-    }
   }
 
   async function handleBulkDelete() {
@@ -184,26 +165,6 @@ export default function HostsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search by hostname or IP..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-              aria-label="Clear search"
-            >
-              <XIcon className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
         <div className="relative" ref={groupDropdownRef}>
           <Button
             variant="outline"
@@ -257,12 +218,53 @@ export default function HostsPage() {
             </div>
           )}
         </div>
-        {(searchQuery || filterGroup !== null) && (
+        {filterGroup !== null && (
           <span className="text-sm text-slate-400">
             Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
           </span>
         )}
       </div>
+
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+          <span className="text-sm text-slate-300">{selected.size} selected</span>
+          {bulkProgress ? (
+            <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+          ) : bulkDriftProgress ? (
+            <span className="text-sm text-slate-400">Updating drift check {bulkDriftProgress.done}/{bulkDriftProgress.total}...</span>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setBulkDriftTarget(true); setBulkDriftConfirmOpen(true) }}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Enable Drift Check
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setBulkDriftTarget(false); setBulkDriftConfirmOpen(true) }}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Disable Drift Check
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setBulkConfirmOpen(true)}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Delete Selected
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
@@ -270,120 +272,100 @@ export default function HostsPage() {
         <div className="text-red-400 py-8 text-center">Failed to load hosts</div>
       )}
 
-      {!isLoading && !error && filteredHosts.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
+      {!isLoading && !error && (
+        <DataTable<Host>
+          tableId="hosts"
+          data={filteredHosts}
+          emptyMessage={
+            hosts?.length === 0
+              ? undefined
+              : "No hosts match the current filter."
+          }
+          getRowKey={(h) => h.id}
+          columns={[
+            {
+              key: "select",
+              label: "",
+              cell: (h) => (
+                <input
+                  type="checkbox"
+                  checked={selected.has(h.id)}
+                  onChange={() => toggleSelect(h.id)}
+                  className="rounded border-slate-600"
+                  aria-label={`Select ${h.hostname}`}
+                />
+              ),
+              defaultWidth: 40,
+              resizable: false,
+              sortable: false,
+            },
+            {
+              key: "hostname",
+              label: "Hostname",
+              accessor: (h) => h.hostname,
+              cell: (h) => (
+                <Link href={`/hosts/${h.id}`} className="text-white hover:text-blue-400 transition-colors font-medium">
+                  {h.hostname}
+                </Link>
+              ),
+              defaultWidth: 200,
+              filter: { type: "text", placeholder: "e.g. web-01" },
+            },
+            {
+              key: "ip_address",
+              label: "IP Address",
+              accessor: (h) => h.ip_address,
+              cell: (h) => <span className="font-mono text-slate-300">{h.ip_address}</span>,
+              defaultWidth: 140,
+              filter: { type: "text", placeholder: "e.g. 10.0.1" },
+            },
+            {
+              key: "drift_check_enabled",
+              label: "Drift Check",
+              accessor: (h) => h.drift_check_enabled,
+              cell: (h) => (
+                <Badge variant={h.drift_check_enabled ? "default" : "secondary"} className="text-xs">
+                  {h.drift_check_enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              ),
+              defaultWidth: 120,
+              filter: { type: "boolean", trueLabel: "Enabled", falseLabel: "Disabled" },
+            },
+            {
+              key: "last_drift_check_at",
+              label: "Last Drift Check",
+              accessor: (h) => h.last_drift_check_at ?? "",
+              cell: (h) => <span className="text-slate-400 text-sm">{formatRelativeTime(h.last_drift_check_at)}</span>,
+              defaultWidth: 160,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "firewall_backend",
+              label: "Firewall",
+              accessor: (h) => h.firewall_backend,
+              cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+              defaultWidth: 120,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "sync_status",
+              label: "Status",
+              accessor: (h) => h.sync_status,
+              cell: (h) => <SyncStatusBadge status={h.sync_status} />,
+              defaultWidth: 130,
+              filter: { type: "enum", from: "accessor" },
+            },
+          ]}
+        />
       )}
 
-      {!isLoading && !error && hosts?.length === 0 && !searchQuery && (
+      {!isLoading && !error && hosts?.length === 0 && (
         <div className="text-slate-400 py-8 text-center">
           No hosts yet.{" "}
           <Link href="/hosts/new" className="underline hover:text-white">
             Add your first host
           </Link>
         </div>
-      )}
-
-      {!isLoading && !error && filteredHosts.length > 0 && (
-        <>
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
-              <span className="text-sm text-slate-300">{selected.size} selected</span>
-              {bulkProgress ? (
-                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
-              ) : bulkDriftProgress ? (
-                <span className="text-sm text-slate-400">Updating drift check {bulkDriftProgress.done}/{bulkDriftProgress.total}...</span>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setBulkDriftTarget(true); setBulkDriftConfirmOpen(true) }}
-                    disabled={bulkDeleting || bulkDriftUpdating}
-                  >
-                    Enable Drift Check
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => { setBulkDriftTarget(false); setBulkDriftConfirmOpen(true) }}
-                    disabled={bulkDeleting || bulkDriftUpdating}
-                  >
-                    Disable Drift Check
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setBulkConfirmOpen(true)}
-                    disabled={bulkDeleting || bulkDriftUpdating}
-                  >
-                    Delete Selected
-                  </Button>
-                </>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-            </div>
-          )}
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === filteredHosts.length && filteredHosts.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-600"
-                      aria-label="Select all hosts"
-                    />
-                  </TableHead>
-                  <TableHead>Hostname</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Drift Check</TableHead>
-                  <TableHead>Last Drift Check</TableHead>
-                  <TableHead>Firewall</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredHosts.map((host) => (
-                  <TableRow key={host.id} className="border-slate-700">
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(host.id)}
-                        onChange={() => toggleSelect(host.id)}
-                        className="rounded border-slate-600"
-                        aria-label={`Select ${host.hostname}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
-                    </TableCell>
-                    <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
-                    <TableCell>
-                      <Badge variant={host.drift_check_enabled ? "default" : "secondary"} className="text-xs">
-                        {host.drift_check_enabled ? "Enabled" : "Disabled"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-slate-400 text-sm">
-                      {formatRelativeTime(host.last_drift_check_at)}
-                    </TableCell>
-                    <TableCell>
-                      <FirewallBadge backend={host.firewall_backend} />
-                    </TableCell>
-                    <TableCell>
-                      <SyncStatusBadge status={host.sync_status} />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </>
       )}
 
       <ConfirmDialog

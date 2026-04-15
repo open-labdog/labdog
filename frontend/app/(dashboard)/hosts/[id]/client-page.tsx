@@ -20,15 +20,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import { DataTable } from "@/components/ui/data-table"
 import { GroupMultiSelect } from "@/components/group-multi-select"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
@@ -36,7 +29,7 @@ import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
+import type { CACertActionRun, EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectiveLinuxGroup, EffectiveLinuxUser, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, PackageRepository, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -108,87 +101,55 @@ function ModuleStateView({
   if (moduleType === "firewall" && Array.isArray(state)) {
     const rules = state as Array<{ action: string; protocol: string; direction: string; source_cidr?: string; destination_cidr?: string; port_start?: number; port_end?: number; comment?: string }>
     return (
-      <Table>
-        <TableHeader>
-          <TableRow className="border-slate-700">
-            <TableHead>Action</TableHead>
-            <TableHead>Protocol</TableHead>
-            <TableHead>Direction</TableHead>
-            <TableHead>Source</TableHead>
-            <TableHead>Destination</TableHead>
-            <TableHead>Port(s)</TableHead>
-            <TableHead>Comment</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rules.map((r, i) => (
-            <TableRow key={i} className="border-slate-700">
-              <TableCell>
-                <ActionBadge action={r.action} />
-              </TableCell>
-              <TableCell className="text-slate-300 uppercase text-xs">{r.protocol}</TableCell>
-              <TableCell className="text-slate-300 capitalize text-xs">{r.direction}</TableCell>
-              <TableCell className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</TableCell>
-              <TableCell className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</TableCell>
-              <TableCell className="font-mono text-slate-300 text-xs">
-                {r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}
-              </TableCell>
-              <TableCell className="text-slate-400 text-xs truncate max-w-[140px]">{r.comment ?? "—"}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable
+        tableId="current-state-firewall"
+        data={rules}
+        getRowKey={(_, i) => i}
+        emptyMessage="No firewall rules."
+        columns={[
+          { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
+          { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
+          { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", from: "accessor" } },
+          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+          { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
+          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[140px]">{r.comment ?? "—"}</span>, defaultWidth: 140 },
+        ]}
+      />
     )
   }
 
   if (moduleType === "service" && Array.isArray(state)) {
     const services = state as Array<{ unit?: string; service_name?: string; active_state: string; sub_state?: string; description?: string; enabled?: boolean }>
     return (
-      <Table>
-        <TableHeader>
-          <TableRow className="border-slate-700">
-            <TableHead>Service</TableHead>
-            <TableHead>State</TableHead>
-            <TableHead>Description</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {services.map((s, i) => (
-            <TableRow key={i} className="border-slate-700">
-              <TableCell className="font-mono text-white text-sm">{s.unit ?? s.service_name}</TableCell>
-              <TableCell>
-                <Badge className={s.active_state === "active" || s.active_state === "running" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : "bg-slate-600 text-white"}>
-                  {s.sub_state ?? s.active_state}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-slate-400 text-sm truncate max-w-xs">{s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : "—")}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable
+        tableId="current-state-service"
+        data={services}
+        getRowKey={(_, i) => i}
+        emptyMessage="No services."
+        columns={[
+          { key: "service", label: "Service", accessor: (s) => s.unit ?? s.service_name ?? "", cell: (s) => <span className="font-mono text-white text-sm">{s.unit ?? s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
+          { key: "state", label: "State", accessor: (s) => s.sub_state ?? s.active_state, cell: (s) => <Badge className={s.active_state === "active" || s.active_state === "running" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : "bg-slate-600 text-white"}>{s.sub_state ?? s.active_state}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+          { key: "description", label: "Description", accessor: (s) => s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : ""), cell: (s) => <span className="text-slate-400 text-sm truncate max-w-xs">{s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : "—")}</span>, defaultWidth: 260 },
+        ]}
+      />
     )
   }
 
   if (moduleType === "hosts_file" && Array.isArray(state)) {
+    const entries = state as Array<{ ip_address: string; hostname: string; aliases: string[] }>
     return (
-      <Table>
-        <TableHeader>
-          <TableRow className="border-slate-700">
-            <TableHead>IP Address</TableHead>
-            <TableHead>Hostname</TableHead>
-            <TableHead>Aliases</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {(state as Array<{ ip_address: string; hostname: string; aliases: string[] }>).map((e, i) => (
-            <TableRow key={i} className="border-slate-700">
-              <TableCell className="font-mono text-slate-300 text-sm">{e.ip_address}</TableCell>
-              <TableCell className="text-white">{e.hostname}</TableCell>
-              <TableCell className="text-slate-400 text-sm">{e.aliases?.join(", ") || "—"}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable
+        tableId="current-state-hosts_file"
+        data={entries}
+        getRowKey={(_, i) => i}
+        emptyMessage="No hosts file entries."
+        columns={[
+          { key: "ip_address", label: "IP Address", accessor: (e) => e.ip_address, cell: (e) => <span className="font-mono text-slate-300 text-sm">{e.ip_address}</span>, defaultWidth: 140, filter: { type: "text", placeholder: "e.g. 10.0.1" } },
+          { key: "hostname", label: "Hostname", accessor: (e) => e.hostname, cell: (e) => <span className="text-white">{e.hostname}</span>, defaultWidth: 180, filter: { type: "text", placeholder: "e.g. web-01" } },
+          { key: "aliases", label: "Aliases", accessor: (e) => e.aliases?.join(", ") ?? "", cell: (e) => <span className="text-slate-400 text-sm">{e.aliases?.join(", ") || "—"}</span>, defaultWidth: 200 },
+        ]}
+      />
     )
   }
 
@@ -306,24 +267,17 @@ function ModuleStateView({
         <div>
           <h4 className="text-sm font-medium text-slate-300 mb-2">Packages ({packages.length})</h4>
           {packages.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Package</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>State</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {packages.map((p, i) => (
-                  <TableRow key={i} className="border-slate-700">
-                    <TableCell className="font-mono text-white text-sm">{p.name}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{p.version ?? "—"}</TableCell>
-                    <TableCell className="text-slate-400">{p.state ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable
+              tableId="current-state-package-packages"
+              data={packages}
+              getRowKey={(_, i) => i}
+              emptyMessage="No managed packages configured."
+              columns={[
+                { key: "name", label: "Package", accessor: (p) => p.name, cell: (p) => <span className="font-mono text-white text-sm">{p.name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. curl" } },
+                { key: "version", label: "Version", accessor: (p) => p.version ?? "", cell: (p) => <span className="font-mono text-slate-300 text-xs">{p.version ?? "—"}</span>, defaultWidth: 140, filter: { type: "text" } },
+                { key: "state", label: "State", accessor: (p) => p.state ?? "", cell: (p) => <span className="text-slate-400">{p.state ?? "—"}</span>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+              ]}
+            />
           ) : (
             <p className="text-slate-500 text-sm">No managed packages configured.</p>
           )}
@@ -331,26 +285,18 @@ function ModuleStateView({
         <div>
           <h4 className="text-sm font-medium text-slate-300 mb-2">Repositories ({repos.length})</h4>
           {repos.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Enabled</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {repos.map((r, i) => (
-                  <TableRow key={i} className="border-slate-700">
-                    <TableCell className="text-white text-sm">{r.name}</TableCell>
-                    <TableCell><Badge variant="outline" className="text-xs font-mono">{r.type}</Badge></TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs max-w-xs truncate">{r.url}</TableCell>
-                    <TableCell className="text-slate-400">{r.enabled !== false ? "Yes" : "No"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <DataTable
+              tableId="current-state-package-repos"
+              data={repos}
+              getRowKey={(_, i) => i}
+              emptyMessage="No repositories detected."
+              columns={[
+                { key: "name", label: "Name", accessor: (r) => r.name, cell: (r) => <span className="text-white text-sm">{r.name}</span>, defaultWidth: 160, filter: { type: "text" } },
+                { key: "type", label: "Type", accessor: (r) => r.type, cell: (r) => <Badge variant="outline" className="text-xs font-mono">{r.type}</Badge>, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
+                { key: "url", label: "URL", accessor: (r) => r.url, cell: (r) => <span className="font-mono text-slate-300 text-xs max-w-xs truncate">{r.url}</span>, defaultWidth: 260, filter: { type: "text", placeholder: "e.g. github.com" } },
+                { key: "enabled", label: "Enabled", accessor: (r) => r.enabled !== false, cell: (r) => <span className="text-slate-400">{r.enabled !== false ? "Yes" : "No"}</span>, defaultWidth: 90, filter: { type: "boolean" } },
+              ]}
+            />
           ) : (
             <p className="text-slate-500 text-sm">No repositories detected.</p>
           )}
@@ -373,27 +319,19 @@ function ModuleStateView({
   }
 
   if (moduleType === "cron" && Array.isArray(state)) {
+    const cronEntries = state as Array<Record<string, unknown>>
     return (
-      <Table>
-        <TableHeader>
-          <TableRow className="border-slate-700">
-            <TableHead>Name/Command</TableHead>
-            <TableHead>Schedule</TableHead>
-            <TableHead>User</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {(state as Array<Record<string, unknown>>).map((c, i) => (
-            <TableRow key={i} className="border-slate-700">
-              <TableCell className="font-mono text-white text-sm">{String(c.name ?? c.command ?? "—")}</TableCell>
-              <TableCell className="font-mono text-slate-300 text-xs">
-                {[c.minute, c.hour, c.day, c.month, c.weekday].filter(Boolean).join(" ") || "—"}
-              </TableCell>
-              <TableCell className="text-slate-400">{String(c.user ?? "—")}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <DataTable
+        tableId="current-state-cron"
+        data={cronEntries}
+        getRowKey={(_, i) => i}
+        emptyMessage="No cron jobs."
+        columns={[
+          { key: "name", label: "Name/Command", accessor: (c) => String(c.name ?? c.command ?? ""), cell: (c) => <span className="font-mono text-white text-sm">{String(c.name ?? c.command ?? "—")}</span>, defaultWidth: 220, filter: { type: "text", placeholder: "e.g. backup" } },
+          { key: "schedule", label: "Schedule", accessor: (c) => [c.minute, c.hour, c.day, c.month, c.weekday].filter(Boolean).join(" ") || "—", cell: (c) => <span className="font-mono text-slate-300 text-xs">{[c.minute, c.hour, c.day, c.month, c.weekday].filter(Boolean).join(" ") || "—"}</span>, defaultWidth: 140, filter: { type: "text", placeholder: "e.g. */5" } },
+          { key: "user", label: "User", accessor: (c) => String(c.user ?? ""), cell: (c) => <span className="text-slate-400">{String(c.user ?? "—")}</span>, defaultWidth: 110, filter: { type: "text", placeholder: "e.g. root" } },
+        ]}
+      />
     )
   }
 
@@ -2434,7 +2372,6 @@ export default function HostDetailPage() {
           {host && groups && (() => {
             const memberGroups = groups.filter(g => (host.group_ids ?? []).includes(g.id))
               .sort((a, b) => a.priority - b.priority)
-            const allSelected = memberGroups.length > 0 && selectedGroupIds.size === memberGroups.length
             return memberGroups.length === 0 ? (
               <div className="text-center py-12 text-slate-400">
                 This host is not a member of any groups.
@@ -2457,74 +2394,53 @@ export default function HostDetailPage() {
                     </Button>
                   </div>
                 )}
-                <div className="rounded-lg border border-slate-700 bg-slate-900">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-700">
-                        <TableHead className="w-10">
-                          <input
-                            type="checkbox"
-                            checked={allSelected}
-                            onChange={() => {
-                              if (allSelected) {
-                                setSelectedGroupIds(new Set())
-                              } else {
-                                setSelectedGroupIds(new Set(memberGroups.map(g => g.id)))
-                              }
-                            }}
-                            className="rounded border-slate-600"
-                            aria-label="Select all groups"
-                          />
-                        </TableHead>
-                        <TableHead>Name</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="w-[100px]">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {memberGroups.map(g => (
-                        <TableRow key={g.id} className="border-slate-700">
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              checked={selectedGroupIds.has(g.id)}
-                              onChange={() => {
-                                setSelectedGroupIds(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(g.id)) next.delete(g.id)
-                                  else next.add(g.id)
-                                  return next
-                                })
-                              }}
-                              className="rounded border-slate-600"
-                              aria-label={`Select ${g.name}`}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <Link href={`/groups/${g.id}`} className="text-blue-400 hover:underline">
-                              {g.name}
-                            </Link>
-                          </TableCell>
-                          <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
-                          <TableCell className="text-slate-300">{g.priority}</TableCell>
-                          <TableCell className="text-slate-400">{g.description ?? "\u2014"}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-red-400 hover:text-red-300"
-                              onClick={() => setRemoveGroupConfirm(g.id)}
-                            >
-                              Remove
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <DataTable<import("@/lib/types").HostGroup>
+                  tableId="host-member-groups"
+                  data={memberGroups}
+                  getRowKey={(g) => g.id}
+                  emptyMessage="This host is not a member of any groups."
+                  columns={[
+                    {
+                      key: "select",
+                      label: "",
+                      cell: (g) => (
+                        <input
+                          type="checkbox"
+                          checked={selectedGroupIds.has(g.id)}
+                          onChange={() => {
+                            setSelectedGroupIds(prev => {
+                              const next = new Set(prev)
+                              if (next.has(g.id)) next.delete(g.id)
+                              else next.add(g.id)
+                              return next
+                            })
+                          }}
+                          className="rounded border-slate-600"
+                          aria-label={`Select ${g.name}`}
+                        />
+                      ),
+                      defaultWidth: 40,
+                      resizable: false,
+                      sortable: false,
+                    },
+                    { key: "name", label: "Name", accessor: (g) => g.name, cell: (g) => <Link href={`/groups/${g.id}`} className="text-blue-400 hover:underline">{g.name}</Link>, defaultWidth: 180, filter: { type: "text" } },
+                    { key: "category", label: "Category", accessor: (g) => g.category ?? "", cell: (g) => <span className="text-slate-300">{g.category ?? "\u2014"}</span>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
+                    { key: "priority", label: "Priority", accessor: (g) => g.priority, cell: (g) => <span className="text-slate-300">{g.priority}</span>, defaultWidth: 90 },
+                    { key: "description", label: "Description", accessor: (g) => g.description ?? "", cell: (g) => <span className="text-slate-400">{g.description ?? "\u2014"}</span>, defaultWidth: 220 },
+                    {
+                      key: "actions",
+                      label: "Actions",
+                      cell: (g) => (
+                        <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300" onClick={() => setRemoveGroupConfirm(g.id)}>
+                          Remove
+                        </Button>
+                      ),
+                      defaultWidth: 100,
+                      resizable: false,
+                      sortable: false,
+                    },
+                  ]}
+                />
               </>
             )
           })()}
@@ -2555,58 +2471,42 @@ export default function HostDetailPage() {
                       {addGroupSearch ? "No matching groups found." : "This host already belongs to all groups."}
                     </p>
                   ) : (
-                    <div className="rounded-lg border border-slate-700 max-h-[360px] overflow-y-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="border-slate-700">
-                            <TableHead className="w-10">
+                    <div className="max-h-[360px] overflow-y-auto">
+                      <DataTable<import("@/lib/types").HostGroup>
+                        tableId="host-add-groups-picker"
+                        data={filtered}
+                        getRowKey={(g) => g.id}
+                        emptyMessage="No groups available."
+                        onRowClick={(g) => {
+                          setAddGroupSelected(prev => {
+                            const next = new Set(prev)
+                            if (next.has(g.id)) next.delete(g.id)
+                            else next.add(g.id)
+                            return next
+                          })
+                        }}
+                        rowClassName={() => "cursor-pointer hover:bg-slate-800"}
+                        columns={[
+                          {
+                            key: "select",
+                            label: "",
+                            cell: (g) => (
                               <input
                                 type="checkbox"
-                                checked={addGroupSelected.size === filtered.length && filtered.length > 0}
-                                onChange={() => {
-                                  if (addGroupSelected.size === filtered.length && filtered.length > 0) {
-                                    setAddGroupSelected(new Set())
-                                  } else {
-                                    setAddGroupSelected(new Set(filtered.map(g => g.id)))
-                                  }
-                                }}
+                                checked={addGroupSelected.has(g.id)}
+                                onChange={(e) => e.stopPropagation()}
                                 className="rounded border-slate-600"
                               />
-                            </TableHead>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Priority</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filtered.map((g) => (
-                            <TableRow
-                              key={g.id}
-                              className="border-slate-700 cursor-pointer hover:bg-slate-800"
-                              onClick={() => {
-                                setAddGroupSelected(prev => {
-                                  const next = new Set(prev)
-                                  if (next.has(g.id)) next.delete(g.id)
-                                  else next.add(g.id)
-                                  return next
-                                })
-                              }}
-                            >
-                              <TableCell>
-                                <input
-                                  type="checkbox"
-                                  checked={addGroupSelected.has(g.id)}
-                                  onChange={(e) => e.stopPropagation()}
-                                  className="rounded border-slate-600"
-                                />
-                              </TableCell>
-                              <TableCell className="font-medium text-white">{g.name}</TableCell>
-                              <TableCell className="text-slate-300">{g.category ?? "\u2014"}</TableCell>
-                              <TableCell className="text-slate-300">{g.priority}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                            ),
+                            defaultWidth: 40,
+                            resizable: false,
+                            sortable: false,
+                          },
+                          { key: "name", label: "Name", accessor: (g) => g.name, cell: (g) => <span className="font-medium text-white">{g.name}</span>, defaultWidth: 180, filter: { type: "text" } },
+                          { key: "category", label: "Category", accessor: (g) => g.category ?? "", cell: (g) => <span className="text-slate-300">{g.category ?? "\u2014"}</span>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
+                          { key: "priority", label: "Priority", accessor: (g) => g.priority, cell: (g) => <span className="text-slate-300">{g.priority}</span>, defaultWidth: 90 },
+                        ]}
+                      />
                     </div>
                   )
                 })()}
@@ -2761,69 +2661,44 @@ export default function HostDetailPage() {
           )}
 
           {!rulesLoading && !rulesError && effectiveRules && effectiveRules.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead className="w-16">Priority</TableHead>
-                    <TableHead>Action</TableHead>
-                    <TableHead>Protocol</TableHead>
-                    <TableHead>Direction</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead>Destination</TableHead>
-                    <TableHead>Port(s)</TableHead>
-                    <TableHead>Group</TableHead>
-                    <TableHead>Comment</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveRules.map((rule) => (
-                    <TableRow key={`${rule.rule_id ?? 'sys'}-${rule.group_id ?? 'none'}`} className="border-slate-700">
-                      <TableCell className="font-mono text-slate-300 text-xs">{rule.group_priority ?? rule.priority}</TableCell>
-                      <TableCell>
-                        <ActionBadge action={rule.action} />
-                      </TableCell>
-                      <TableCell className="text-slate-300 uppercase text-xs">{rule.protocol}</TableCell>
-                      <TableCell className="text-slate-300 capitalize text-xs">{rule.direction}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{rule.source_cidr ?? "any"}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{rule.destination_cidr ?? "any"}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{formatPorts(rule)}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">
-                          {rule.source === "system" ? "System" : rule.source === "host" ? "Host override" : rule.group_name ?? "—"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
-                      <TableCell>
-                        {rule.is_system || rule.source === "system" ? (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        ) : rule.source === "group" ? (
-                          <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>
-                            Edit
-                          </Button>
-                        ) : rule.rule_id != null ? (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={fwDeleteMutation.isPending}
-                              onClick={() => handleFwDelete(rule.rule_id!)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {fwDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
-                          </div>
-                        ) : null}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable<EffectiveFirewallRule>
+              tableId="host-effective-rules"
+              data={effectiveRules}
+              getRowKey={(rule) => `${rule.rule_id ?? "sys"}-${rule.group_id ?? "none"}`}
+              emptyMessage="No effective rules."
+              columns={[
+                { key: "priority", label: "Priority", accessor: (r) => r.group_priority ?? r.priority, cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.group_priority ?? r.priority}</span>, defaultWidth: 80 },
+                { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
+                { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
+                { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", from: "accessor" } },
+                { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+                { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+                { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{formatPorts(r)}</span>, defaultWidth: 90 },
+                { key: "group", label: "Group", accessor: (r) => r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "", cell: (r) => <Badge variant="outline" className="text-xs font-mono">{r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "—"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
+                { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs max-w-[140px] truncate">{r.comment ?? "—"}</span>, defaultWidth: 140 },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (rule) => (
+                    rule.is_system || rule.source === "system" ? (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    ) : rule.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>Edit</Button>
+                    ) : rule.rule_id != null ? (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>Edit</Button>
+                        <Button size="sm" variant="ghost" disabled={fwDeleteMutation.isPending} onClick={() => handleFwDelete(rule.rule_id!)} className="text-red-400 hover:text-red-300 hover:bg-red-950">
+                          {fwDeleteMutation.isPending ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    ) : null
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
           {fwDeleteMutation.error && (
             <div className="text-red-400 text-sm">{fwDeleteMutation.error.message}</div>
@@ -3015,73 +2890,51 @@ export default function HostDetailPage() {
           )}
 
           {!servicesLoading && !servicesError && effectiveServices && effectiveServices.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Service Name</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Enabled</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveServices.map((svc) => (
-                    <TableRow key={`${svc.source}-${svc.source_id}-${svc.service_name}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{svc.service_name}</TableCell>
-                      <TableCell>
-                        <Badge className={svc.state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
-                          {svc.state.charAt(0).toUpperCase() + svc.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {svc.enabled ? (
-                          <Badge className="bg-green-700 text-white">Enabled</Badge>
-                        ) : (
-                          <Badge variant="outline">Disabled</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {svc.source === "group" ? svc.source_name : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {svc.source === "group" ? (
-                          <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>
-                            Edit
-                          </Button>
-                        ) : svc.source === "host" ? (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={svcDeleteMutation.isPending}
-                              onClick={() => handleSvcDelete(svc.service_name)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {svcDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            <DataTable<EffectiveService>
+              tableId="host-effective-services"
+              data={effectiveServices}
+              getRowKey={(svc) => `${svc.source}-${svc.source_id}-${svc.service_name}`}
+              emptyMessage="No services configured."
+              columns={[
+                { key: "service_name", label: "Service Name", accessor: (s) => s.service_name, cell: (s) => <span className="font-mono text-white text-sm">{s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
+                { key: "state", label: "State", accessor: (s) => s.state, cell: (s) => <Badge className={s.state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>{s.state.charAt(0).toUpperCase() + s.state.slice(1)}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+                { key: "enabled", label: "Enabled", accessor: (s) => s.enabled, cell: (s) => s.enabled ? <Badge className="bg-green-700 text-white">Enabled</Badge> : <Badge variant="outline">Disabled</Badge>, defaultWidth: 100, filter: { type: "boolean" } },
+                { key: "source", label: "Source", accessor: (s) => s.source === "group" ? s.source_name : "Host override", cell: (s) => <Badge variant="outline" className="text-xs">{s.source === "group" ? s.source_name : "Host override"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (svc) => (
+                    svc.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>Edit</Button>
+                    ) : svc.source === "host" ? (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>Edit</Button>
+                        <Button size="sm" variant="ghost" disabled={svcDeleteMutation.isPending} onClick={() => handleSvcDelete(svc.service_name)} className="text-red-400 hover:text-red-300 hover:bg-red-950">
+                          {svcDeleteMutation.isPending ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    )
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
 
           <Dialog open={svcDialogOpen} onOpenChange={setSvcDialogOpen}>
             <DialogContent className="sm:max-w-2xl">
               <DialogHeader>
-                <DialogTitle>{svcEditorMode === "edit" ? "Edit Service" : "Add Service"}</DialogTitle>
+                <DialogTitle>
+                  {svcEditorMode === "edit"
+                    ? "Edit Service Override"
+                    : svcOriginalAttempted
+                      ? `Add Service Override${svcName ? `: ${svcName}` : ""}`
+                      : "Add Service"}
+                </DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSvcSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -3092,7 +2945,7 @@ export default function HostDetailPage() {
                     placeholder="e.g. nginx, sshd, docker"
                     value={svcName}
                     onChange={(e) => setSvcName(e.target.value)}
-                    disabled={svcEditorMode === "edit"}
+                    disabled={svcEditorMode === "edit" || svcOriginalAttempted}
                     required
                   />
                 </div>
@@ -3134,7 +2987,7 @@ export default function HostDetailPage() {
                     {svcOriginalLoading ? (
                       <p className="text-xs text-slate-500">Fetching current unit file from host...</p>
                     ) : typeof svcOriginalUnit === "string" ? (
-                      <pre className="rounded-md border border-slate-700 bg-slate-950 p-3 text-xs font-mono text-slate-300 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre">
+                      <pre className="rounded-md border border-slate-700 bg-slate-950 p-3 text-xs font-mono text-slate-300 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre">
                         {svcOriginalUnit}
                       </pre>
                     ) : (
@@ -3279,94 +3132,71 @@ export default function HostDetailPage() {
                 </label>
               </div>
 
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Unit</TableHead>
-                      <TableHead>Active State</TableHead>
-                      <TableHead>Sub State</TableHead>
-                      <TableHead>Load State</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="w-64">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInventory.map((svc) => (
-                      <TableRow key={svc.unit} className="border-slate-700">
-                        <TableCell className="font-mono text-white text-sm">
-                          {svc.unit}
-                          {svc.is_managed && (
-                            <Badge variant="outline" className="text-xs ml-2">Managed</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={
-                              svc.active_state === "active"
-                                ? "bg-green-600 text-white"
-                                : svc.active_state === "failed"
-                                  ? "bg-red-600 text-white"
-                                  : svc.active_state === "activating" || svc.active_state === "deactivating"
-                                    ? "bg-yellow-600 text-white"
-                                    : "bg-slate-600 text-white"
-                            }
-                          >
-                            {svc.active_state}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-slate-300 text-xs">{svc.sub_state}</TableCell>
-                        <TableCell className="text-slate-300 text-xs">{svc.load_state}</TableCell>
-                        <TableCell className="text-slate-400 text-xs max-w-[200px] truncate">{svc.description}</TableCell>
-                        <TableCell>
-                          <div className="flex gap-1 flex-wrap">
-                            {(["start", "stop", "restart"] as const).map((action) => (
-                              <Button
-                                key={action}
-                                size="sm"
-                                variant="ghost"
-                                disabled={actionLoading && pendingAction?.service === svc.unit}
-                                onClick={() => handleActionClick(svc, action)}
-                                className="text-xs"
-                              >
-                                {actionLoading && pendingAction?.service === svc.unit && pendingAction?.action === action
-                                  ? "..."
-                                  : action.charAt(0).toUpperCase() + action.slice(1)}
-                              </Button>
-                            ))}
-                            {!svc.is_protected && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => openSvcEdit(svc)}
-                                className="text-xs text-blue-400 hover:text-blue-300"
-                              >
-                                Edit
-                              </Button>
-                            )}
-                            {svc.is_managed && !svc.is_protected && (() => {
-                              const matchingOverride = hostOverrides?.find(
-                                (o) => o.service_name === svc.unit || o.service_name === svc.unit.replace(/\.service$/, "")
-                              )
-                              return matchingOverride ? (
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={svcDeleteMutation.isPending}
-                                  onClick={() => handleSvcDelete(svc.unit)}
-                                  className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950"
-                                >
-                                  {svcDeleteMutation.isPending ? "..." : "Remove"}
-                                </Button>
-                              ) : null
-                            })()}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+              <DataTable<LiveService>
+                tableId="host-service-inventory"
+                data={filteredInventory}
+                getRowKey={(svc) => svc.unit}
+                emptyMessage="No services found."
+                columns={[
+                  {
+                    key: "unit",
+                    label: "Unit",
+                    accessor: (s) => s.unit,
+                    cell: (s) => (
+                      <span className="font-mono text-white text-sm">
+                        {s.unit}
+                        {s.is_managed && <Badge variant="outline" className="text-xs ml-2">Managed</Badge>}
+                      </span>
+                    ),
+                    defaultWidth: 220,
+                    filter: { type: "text", placeholder: "e.g. ssh" },
+                  },
+                  {
+                    key: "active_state",
+                    label: "Active State",
+                    accessor: (s) => s.active_state,
+                    cell: (s) => (
+                      <Badge className={s.active_state === "active" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : s.active_state === "activating" || s.active_state === "deactivating" ? "bg-yellow-600 text-white" : "bg-slate-600 text-white"}>
+                        {s.active_state}
+                      </Badge>
+                    ),
+                    defaultWidth: 120,
+                    filter: { type: "enum", from: "accessor" },
+                  },
+                  { key: "sub_state", label: "Sub State", accessor: (s) => s.sub_state, cell: (s) => <span className="text-slate-300 text-xs">{s.sub_state}</span>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+                  { key: "load_state", label: "Load State", accessor: (s) => s.load_state, cell: (s) => <span className="text-slate-300 text-xs">{s.load_state}</span>, defaultWidth: 100, filter: { type: "enum", from: "accessor" } },
+                  { key: "description", label: "Description", accessor: (s) => s.description, cell: (s) => <span className="text-slate-400 text-xs max-w-[200px] truncate">{s.description}</span>, defaultWidth: 200 },
+                  {
+                    key: "actions",
+                    label: "Actions",
+                    cell: (svc) => (
+                      <div className="flex gap-1 flex-wrap">
+                        {(["start", "stop", "restart"] as const).map((action) => (
+                          <Button key={action} size="sm" variant="ghost" disabled={actionLoading && pendingAction?.service === svc.unit} onClick={() => handleActionClick(svc, action)} className="text-xs">
+                            {actionLoading && pendingAction?.service === svc.unit && pendingAction?.action === action ? "..." : action.charAt(0).toUpperCase() + action.slice(1)}
+                          </Button>
+                        ))}
+                        {!svc.is_protected && (
+                          <Button size="sm" variant="ghost" onClick={() => openSvcEdit(svc)} className="text-xs text-blue-400 hover:text-blue-300">Edit</Button>
+                        )}
+                        {svc.is_managed && !svc.is_protected && (() => {
+                          const matchingOverride = hostOverrides?.find(
+                            (o) => o.service_name === svc.unit || o.service_name === svc.unit.replace(/\.service$/, "")
+                          )
+                          return matchingOverride ? (
+                            <Button size="sm" variant="ghost" disabled={svcDeleteMutation.isPending} onClick={() => handleSvcDelete(svc.unit)} className="text-xs text-red-400 hover:text-red-300 hover:bg-red-950">
+                              {svcDeleteMutation.isPending ? "..." : "Remove"}
+                            </Button>
+                          ) : null
+                        })()}
+                      </div>
+                    ),
+                    defaultWidth: 220,
+                    resizable: false,
+                    sortable: false,
+                  },
+                ]}
+              />
 
               <p className="text-slate-500 text-xs">
                 Showing {filteredInventory.length} of {inventory.length} services
@@ -3477,85 +3307,95 @@ export default function HostDetailPage() {
             <div className="text-red-400 py-6 text-center">Failed to load hosts entries</div>
           )}
 
-          {!hostsEntriesLoading && !hostsEntriesError && effectiveHosts && effectiveHosts.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No hosts entries configured. Add a host override or assign entries to a group.
-            </div>
-          )}
-
-          {!hostsEntriesLoading && !hostsEntriesError && effectiveHosts && effectiveHosts.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>IP Address</TableHead>
-                    <TableHead>Hostname</TableHead>
-                    <TableHead>Aliases</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveHosts.map((entry) => (
-                    <TableRow key={`${entry.source}-${entry.source_id}-${entry.ip_address}-${entry.hostname}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{entry.ip_address}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-sm">{entry.hostname}</TableCell>
-                      <TableCell className="text-slate-300 text-xs max-w-[200px] truncate">
-                        {entry.aliases.length > 0 ? entry.aliases.join(", ") : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {entry.source === "system"
-                            ? "System"
-                            : entry.source === "group"
-                              ? entry.source_name
-                              : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {entry.is_system || entry.source === "system" ? (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        ) : entry.source === "group" ? (
+          {!hostsEntriesLoading && !hostsEntriesError && (
+            <DataTable<EffectiveHostsEntry>
+              tableId="host-effective-hosts-entries"
+              data={effectiveHosts}
+              emptyMessage="No hosts entries configured. Add a host override or assign entries to a group."
+              getRowKey={(entry) => `${entry.source}-${entry.source_id}-${entry.ip_address}-${entry.hostname}`}
+              columns={[
+                {
+                  key: "ip_address",
+                  label: "IP Address",
+                  accessor: (entry) => entry.ip_address,
+                  cell: (entry) => <span className="font-mono text-white text-sm">{entry.ip_address}</span>,
+                  defaultWidth: 140,
+                  filter: { type: "text", placeholder: "e.g. 10.0.1" },
+                },
+                {
+                  key: "hostname",
+                  label: "Hostname",
+                  accessor: (entry) => entry.hostname,
+                  cell: (entry) => <span className="font-mono text-slate-300 text-sm">{entry.hostname}</span>,
+                  defaultWidth: 180,
+                  filter: { type: "text", placeholder: "e.g. web-01" },
+                },
+                {
+                  key: "aliases",
+                  label: "Aliases",
+                  accessor: (entry) => entry.aliases.join(", "),
+                  cell: (entry) => (
+                    <span className="text-slate-300 text-xs truncate">
+                      {entry.aliases.length > 0 ? entry.aliases.join(", ") : "—"}
+                    </span>
+                  ),
+                  defaultWidth: 200,
+                },
+                {
+                  key: "source",
+                  label: "Source",
+                  accessor: (entry) =>
+                    entry.source === "system" ? "System" : entry.source === "group" ? entry.source_name : "Host override",
+                  cell: (entry) => (
+                    <Badge variant="outline" className="text-xs">
+                      {entry.source === "system"
+                        ? "System"
+                        : entry.source === "group"
+                          ? entry.source_name
+                          : "Host override"}
+                    </Badge>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (entry) => (
+                    entry.is_system || entry.source === "system" ? (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    ) : entry.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openHostsEditDialog(entry)}>
+                        Edit
+                      </Button>
+                    ) : (() => {
+                      const override = hostHostsOverrides?.find(
+                        (o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address
+                      )
+                      return override ? (
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => openHostsEditDialog(entry)}>
+                            Edit
+                          </Button>
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => openHostsEditDialog(entry)}
+                            disabled={hostsDeleteMutation.isPending}
+                            onClick={() => handleHostsEntryDelete(override)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
                           >
-                            Edit
+                            {hostsDeleteMutation.isPending ? "…" : "Delete"}
                           </Button>
-                        ) : (
-                          (() => {
-                            const override = hostHostsOverrides?.find(
-                              (o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address
-                            )
-                            return override ? (
-                              <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => openHostsEditDialog(entry)}
-                                >
-                                  Edit
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={hostsDeleteMutation.isPending}
-                                  onClick={() => handleHostsEntryDelete(override)}
-                                  className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                                >
-                                  {hostsDeleteMutation.isPending ? "…" : "Delete"}
-                                </Button>
-                              </div>
-                            ) : null
-                          })()
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                        </div>
+                      ) : null
+                    })()
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
 
           <Dialog open={hostsDialogOpen} onOpenChange={(open) => { if (!open) closeHostsDialog(); else setHostsDialogOpen(true) }}>
@@ -3692,82 +3532,118 @@ export default function HostDetailPage() {
             {linuxUsersError && (
               <div className="text-red-400 py-4 text-center text-sm">Failed to load users</div>
             )}
-            {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length === 0 && (
-              <p className="text-slate-500 text-sm">No users configured.</p>
-            )}
-            {!linuxUsersLoading && !linuxUsersError && effectiveLinuxUsers && effectiveLinuxUsers.length > 0 && (
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Username</TableHead>
-                      <TableHead>UID</TableHead>
-                      <TableHead>Shell</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead>Keys</TableHead>
-                      <TableHead>Sudo</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="w-40">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {effectiveLinuxUsers.map((user) => (
-                      <TableRow key={`${user.source}-${user.source_id}-${user.username}`} className="border-slate-700">
-                        <TableCell className="font-mono text-white text-sm">{user.username}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{user.shell}</TableCell>
-                        <TableCell>
-                          <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                            {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {user.sudo_rule ? (
-                            <Badge className="bg-amber-600 text-white">Yes</Badge>
-                          ) : (
-                            <span className="text-slate-600 text-xs">No</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {user.source === "group" ? user.source_name : "Host override"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {user.source === "host" ? (
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleLuEdit(user.username)}
-                                className="text-slate-300 hover:text-white hover:bg-slate-800"
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={luDeleteMutation.isPending}
-                                onClick={() => handleLuDelete(user.username)}
-                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                              >
-                                {luDeleteMutation.isPending ? "…" : "Delete"}
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-600 text-xs">Read-only</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+            {!linuxUsersLoading && !linuxUsersError && (
+              <DataTable<EffectiveLinuxUser>
+                tableId="host-effective-linux-users"
+                data={effectiveLinuxUsers}
+                emptyMessage="No users configured."
+                getRowKey={(user) => `${user.source}-${user.source_id}-${user.username}`}
+                columns={[
+                  {
+                    key: "username",
+                    label: "Username",
+                    accessor: (user) => user.username,
+                    cell: (user) => <span className="font-mono text-white text-sm">{user.username}</span>,
+                    defaultWidth: 160,
+                    filter: { type: "text", placeholder: "e.g. deploy" },
+                  },
+                  {
+                    key: "uid",
+                    label: "UID",
+                    accessor: (user) => user.uid ?? "auto",
+                    cell: (user) => <span className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</span>,
+                    defaultWidth: 80,
+                    filter: { type: "text" },
+                  },
+                  {
+                    key: "shell",
+                    label: "Shell",
+                    accessor: (user) => user.shell,
+                    cell: (user) => <span className="font-mono text-slate-300 text-xs">{user.shell}</span>,
+                    defaultWidth: 140,
+                    filter: { type: "text" },
+                  },
+                  {
+                    key: "state",
+                    label: "State",
+                    accessor: (user) => user.state,
+                    cell: (user) => (
+                      <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                        {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
+                      </Badge>
+                    ),
+                    defaultWidth: 110,
+                    filter: { type: "enum", from: "accessor" },
+                  },
+                  {
+                    key: "keys",
+                    label: "Keys",
+                    accessor: (user) => user.authorized_keys.length,
+                    cell: (user) => (
+                      <Badge variant="outline" className="text-xs">
+                        {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
+                      </Badge>
+                    ),
+                    defaultWidth: 80,
+                  },
+                  {
+                    key: "sudo",
+                    label: "Sudo",
+                    accessor: (user) => !!user.sudo_rule,
+                    cell: (user) => user.sudo_rule ? (
+                      <Badge className="bg-amber-600 text-white">Yes</Badge>
+                    ) : (
+                      <span className="text-slate-600 text-xs">No</span>
+                    ),
+                    defaultWidth: 80,
+                    filter: { type: "boolean" },
+                  },
+                  {
+                    key: "source",
+                    label: "Source",
+                    accessor: (user) => user.source === "group" ? user.source_name : "Host override",
+                    cell: (user) => (
+                      <Badge variant="outline" className="text-xs">
+                        {user.source === "group" ? user.source_name : "Host override"}
+                      </Badge>
+                    ),
+                    defaultWidth: 140,
+                    filter: { type: "enum", from: "accessor" },
+                  },
+                  {
+                    key: "actions",
+                    label: "Actions",
+                    cell: (user) => (
+                      user.source === "host" ? (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleLuEdit(user.username)}
+                            className="text-slate-300 hover:text-white hover:bg-slate-800"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={luDeleteMutation.isPending}
+                            onClick={() => handleLuDelete(user.username)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {luDeleteMutation.isPending ? "…" : "Delete"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-600 text-xs">Read-only</span>
+                      )
+                    ),
+                    defaultWidth: 160,
+                    resizable: false,
+                    sortable: false,
+                  },
+                ]}
+              />
             )}
           </div>
 
@@ -3780,66 +3656,87 @@ export default function HostDetailPage() {
             {linuxGroupsError && (
               <div className="text-red-400 py-4 text-center text-sm">Failed to load groups</div>
             )}
-            {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length === 0 && (
-              <p className="text-slate-500 text-sm">No groups configured.</p>
-            )}
-            {!linuxGroupsLoading && !linuxGroupsError && effectiveLinuxGroups && effectiveLinuxGroups.length > 0 && (
-              <div className="rounded-lg border border-slate-700 bg-slate-900">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Group Name</TableHead>
-                      <TableHead>GID</TableHead>
-                      <TableHead>State</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead className="w-40">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {effectiveLinuxGroups.map((group) => (
-                      <TableRow key={`${group.source}-${group.source_id}-${group.groupname}`} className="border-slate-700">
-                        <TableCell className="font-mono text-white text-sm">{group.groupname}</TableCell>
-                        <TableCell className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</TableCell>
-                        <TableCell>
-                          <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                            {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {group.source === "group" ? group.source_name : "Host override"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {group.source === "host" ? (
-                            <div className="flex gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleLgEdit(group.groupname)}
-                                className="text-slate-300 hover:text-white hover:bg-slate-800"
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={lgDeleteMutation.isPending}
-                                onClick={() => handleLgDelete(group.groupname)}
-                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                              >
-                                {lgDeleteMutation.isPending ? "…" : "Delete"}
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-600 text-xs">Read-only</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+            {!linuxGroupsLoading && !linuxGroupsError && (
+              <DataTable<EffectiveLinuxGroup>
+                tableId="host-effective-linux-groups"
+                data={effectiveLinuxGroups}
+                emptyMessage="No groups configured."
+                getRowKey={(group) => `${group.source}-${group.source_id}-${group.groupname}`}
+                columns={[
+                  {
+                    key: "groupname",
+                    label: "Group Name",
+                    accessor: (group) => group.groupname,
+                    cell: (group) => <span className="font-mono text-white text-sm">{group.groupname}</span>,
+                    defaultWidth: 180,
+                    filter: { type: "text" },
+                  },
+                  {
+                    key: "gid",
+                    label: "GID",
+                    accessor: (group) => group.gid ?? "auto",
+                    cell: (group) => <span className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</span>,
+                    defaultWidth: 80,
+                    filter: { type: "text" },
+                  },
+                  {
+                    key: "state",
+                    label: "State",
+                    accessor: (group) => group.state,
+                    cell: (group) => (
+                      <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                        {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
+                      </Badge>
+                    ),
+                    defaultWidth: 110,
+                    filter: { type: "enum", from: "accessor" },
+                  },
+                  {
+                    key: "source",
+                    label: "Source",
+                    accessor: (group) => group.source === "group" ? group.source_name : "Host override",
+                    cell: (group) => (
+                      <Badge variant="outline" className="text-xs">
+                        {group.source === "group" ? group.source_name : "Host override"}
+                      </Badge>
+                    ),
+                    defaultWidth: 140,
+                    filter: { type: "enum", from: "accessor" },
+                  },
+                  {
+                    key: "actions",
+                    label: "Actions",
+                    cell: (group) => (
+                      group.source === "host" ? (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleLgEdit(group.groupname)}
+                            className="text-slate-300 hover:text-white hover:bg-slate-800"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={lgDeleteMutation.isPending}
+                            onClick={() => handleLgDelete(group.groupname)}
+                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                          >
+                            {lgDeleteMutation.isPending ? "…" : "Delete"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-slate-600 text-xs">Read-only</span>
+                      )
+                    ),
+                    defaultWidth: 160,
+                    resizable: false,
+                    sortable: false,
+                  },
+                ]}
+              />
             )}
           </div>
 
@@ -4124,83 +4021,113 @@ export default function HostDetailPage() {
             <div className="text-red-400 py-6 text-center">Failed to load cron jobs</div>
           )}
 
-          {!cronJobsLoading && !cronJobsError && effectiveCronJobs && effectiveCronJobs.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No cron jobs configured. Add a host override or assign cron jobs to a group.
-            </div>
-          )}
-
-          {!cronJobsLoading && !cronJobsError && effectiveCronJobs && effectiveCronJobs.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Name</TableHead>
-                    <TableHead>User</TableHead>
-                    <TableHead>Schedule</TableHead>
-                    <TableHead>Command</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveCronJobs.map((job) => (
-                    <TableRow key={`${job.source}-${job.source_id}-${job.name}-${job.user}`} className="border-slate-700">
-                      <TableCell className="font-mono text-white text-sm">{job.name}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{job.user}</TableCell>
-                      <TableCell>
-                        <div>
-                          <span className="font-mono text-slate-300 text-xs">{job.schedule}</span>
-                          {cronToHuman(job.schedule) !== job.schedule && (
-                            <div className="text-slate-500 text-xs mt-0.5">{cronToHuman(job.schedule)}</div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs max-w-[200px]">
-                        <span title={job.command}>
-                          {job.command.length > 60 ? job.command.slice(0, 60) + "..." : job.command}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={job.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                          {job.state.charAt(0).toUpperCase() + job.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {job.source === "group" ? job.source_name : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {job.source === "group" ? (
-                          <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
-                            Edit
-                          </Button>
-                        ) : job.source === "host" ? (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={cjDeleteMutation.isPending}
-                              onClick={() => handleCjDelete(job.name, job.user)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {cjDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          {!cronJobsLoading && !cronJobsError && (
+            <DataTable<EffectiveCronJob>
+              tableId="host-effective-cron-jobs"
+              data={effectiveCronJobs}
+              emptyMessage="No cron jobs configured. Add a host override or assign cron jobs to a group."
+              getRowKey={(job) => `${job.source}-${job.source_id}-${job.name}-${job.user}`}
+              columns={[
+                {
+                  key: "name",
+                  label: "Name",
+                  accessor: (job) => job.name,
+                  cell: (job) => <span className="font-mono text-white text-sm">{job.name}</span>,
+                  defaultWidth: 180,
+                  filter: { type: "text", placeholder: "e.g. backup" },
+                },
+                {
+                  key: "user",
+                  label: "User",
+                  accessor: (job) => job.user,
+                  cell: (job) => <span className="font-mono text-slate-300 text-xs">{job.user}</span>,
+                  defaultWidth: 100,
+                  filter: { type: "text", placeholder: "e.g. root" },
+                },
+                {
+                  key: "schedule",
+                  label: "Schedule",
+                  accessor: (job) => job.schedule,
+                  cell: (job) => (
+                    <div>
+                      <span className="font-mono text-slate-300 text-xs">{job.schedule}</span>
+                      {cronToHuman(job.schedule) !== job.schedule && (
+                        <div className="text-slate-500 text-xs mt-0.5">{cronToHuman(job.schedule)}</div>
+                      )}
+                    </div>
+                  ),
+                  defaultWidth: 160,
+                  filter: { type: "text", placeholder: "e.g. */5" },
+                },
+                {
+                  key: "command",
+                  label: "Command",
+                  accessor: (job) => job.command,
+                  cell: (job) => (
+                    <span className="font-mono text-slate-300 text-xs" title={job.command}>
+                      {job.command.length > 60 ? job.command.slice(0, 60) + "..." : job.command}
+                    </span>
+                  ),
+                  defaultWidth: 260,
+                  filter: { type: "text", placeholder: "e.g. backup" },
+                },
+                {
+                  key: "state",
+                  label: "State",
+                  accessor: (job) => job.state,
+                  cell: (job) => (
+                    <Badge className={job.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                      {job.state.charAt(0).toUpperCase() + job.state.slice(1)}
+                    </Badge>
+                  ),
+                  defaultWidth: 110,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "source",
+                  label: "Source",
+                  accessor: (job) => job.source === "group" ? job.source_name : "Host override",
+                  cell: (job) => (
+                    <Badge variant="outline" className="text-xs">
+                      {job.source === "group" ? job.source_name : "Host override"}
+                    </Badge>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (job) => (
+                    job.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
+                        Edit
+                      </Button>
+                    ) : job.source === "host" ? (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={cjDeleteMutation.isPending}
+                          onClick={() => handleCjDelete(job.name, job.user)}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                        >
+                          {cjDeleteMutation.isPending ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    )
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
 
           <Dialog open={cjDialogOpen} onOpenChange={(open) => { if (!open) closeCjDialog(); else setCjDialogOpen(true) }}>
@@ -4422,89 +4349,119 @@ export default function HostDetailPage() {
             <div className="text-red-400 py-6 text-center">Failed to load packages</div>
           )}
 
-          {!packagesLoading && !packagesError && effectivePackages && effectivePackages.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No packages configured. Add a host override or assign packages to a group.
-            </div>
-          )}
-
-          {!packagesLoading && !packagesError && effectivePackages && effectivePackages.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                     <TableHead>Package Name</TableHead>
-                     <TableHead>Version</TableHead>
-                     <TableHead>State</TableHead>
-                     <TableHead>Package Manager</TableHead>
-                     <TableHead>Hold</TableHead>
-                     <TableHead>Source</TableHead>
-                     <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectivePackages.map((pkg) => (
-                    <TableRow key={`${pkg.source}-${pkg.source_id}-${pkg.package_name}`} className={`border-slate-700 ${packageErrors[pkg.package_name] ? "bg-red-950/20" : ""}`}>
-                      <TableCell className="font-mono text-sm">
-                        <span className={packageErrors[pkg.package_name] ? "text-red-400" : "text-white"}>{pkg.package_name}</span>
-                        {packageErrors[pkg.package_name] && (
-                          <div className="text-red-400 text-xs mt-1 font-sans">{packageErrors[pkg.package_name]}</div>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</TableCell>
-                      <TableCell>
-                        <Badge className={
-                          pkg.state === "present" ? "bg-green-600 text-white"
-                            : pkg.state === "latest" ? "bg-blue-600 text-white"
-                            : "bg-red-600 text-white"
-                        }>
-                          {pkg.state.charAt(0).toUpperCase() + pkg.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
-                       </TableCell>
-                       <TableCell>
-                         {pkg.hold ? (
-                           <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
-                         ) : (
-                           <span className="text-slate-600">—</span>
-                         )}
-                       </TableCell>
-                       <TableCell>
-                         <Badge variant="outline" className="text-xs">
-                           {pkg.source === "group" ? pkg.source_name : "Host override"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {pkg.source === "group" ? (
-                          <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
-                            Edit
-                          </Button>
-                        ) : pkg.source === "host" ? (
-                          <div className="flex gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
-                              Edit
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={ppDeleteMutation.isPending}
-                              onClick={() => handlePpDelete(pkg.package_name)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {ppDeleteMutation.isPending ? "…" : "Delete"}
-                            </Button>
-                          </div>
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          {!packagesLoading && !packagesError && (
+            <DataTable<EffectivePackage>
+              tableId="host-effective-packages"
+              data={effectivePackages}
+              emptyMessage="No packages configured. Add a host override or assign packages to a group."
+              getRowKey={(pkg) => `${pkg.source}-${pkg.source_id}-${pkg.package_name}`}
+              columns={[
+                {
+                  key: "package_name",
+                  label: "Package Name",
+                  accessor: (pkg) => pkg.package_name,
+                  cell: (pkg) => (
+                    <div className="font-mono text-sm">
+                      <span className={packageErrors[pkg.package_name] ? "text-red-400" : "text-white"}>{pkg.package_name}</span>
+                      {packageErrors[pkg.package_name] && (
+                        <div className="text-red-400 text-xs mt-1 font-sans">{packageErrors[pkg.package_name]}</div>
+                      )}
+                    </div>
+                  ),
+                  defaultWidth: 180,
+                  filter: { type: "text", placeholder: "e.g. curl" },
+                },
+                {
+                  key: "version",
+                  label: "Version",
+                  accessor: (pkg) => pkg.version ?? "any",
+                  cell: (pkg) => <span className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</span>,
+                  defaultWidth: 100,
+                  filter: { type: "text" },
+                },
+                {
+                  key: "state",
+                  label: "State",
+                  accessor: (pkg) => pkg.state,
+                  cell: (pkg) => (
+                    <Badge className={
+                      pkg.state === "present" ? "bg-green-600 text-white"
+                        : pkg.state === "latest" ? "bg-blue-600 text-white"
+                        : "bg-red-600 text-white"
+                    }>
+                      {pkg.state.charAt(0).toUpperCase() + pkg.state.slice(1)}
+                    </Badge>
+                  ),
+                  defaultWidth: 110,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "package_manager",
+                  label: "Package Manager",
+                  accessor: (pkg) => pkg.package_manager,
+                  cell: (pkg) => <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>,
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "hold",
+                  label: "Hold",
+                  accessor: (pkg) => pkg.hold,
+                  cell: (pkg) => (
+                    pkg.hold ? (
+                      <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )
+                  ),
+                  defaultWidth: 80,
+                  filter: { type: "boolean" },
+                },
+                {
+                  key: "source",
+                  label: "Source",
+                  accessor: (pkg) => pkg.source === "group" ? pkg.source_name : "Host override",
+                  cell: (pkg) => (
+                    <Badge variant="outline" className="text-xs">
+                      {pkg.source === "group" ? pkg.source_name : "Host override"}
+                    </Badge>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (pkg) => (
+                    pkg.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
+                        Edit
+                      </Button>
+                    ) : pkg.source === "host" ? (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={ppDeleteMutation.isPending}
+                          onClick={() => handlePpDelete(pkg.package_name)}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                        >
+                          {ppDeleteMutation.isPending ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    )
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
 
           {/* Effective Repositories */}
@@ -4521,54 +4478,78 @@ export default function HostDetailPage() {
             <div className="text-red-400 py-6 text-center">Failed to load repositories</div>
           )}
 
-          {!effectiveReposQuery.isLoading && !effectiveReposQuery.error && effectiveRepos && effectiveRepos.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No repositories configured. Add repositories at the group level.
-            </div>
-          )}
-
-          {!effectiveReposQuery.isLoading && !effectiveReposQuery.error && effectiveRepos && effectiveRepos.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Name</TableHead>
-                    <TableHead>URL</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Distribution</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Source</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveRepos.map((repo) => (
-                    <TableRow key={repo.id} className="border-slate-700">
-                      <TableCell className="font-medium text-white">{repo.name}</TableCell>
-                      <TableCell className="font-mono text-slate-300 text-xs max-w-xs truncate">{repo.url}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs font-mono">{repo.repo_type}</Badge>
-                      </TableCell>
-                      <TableCell className="text-slate-400 text-sm">
-                        {repo.distribution ?? <span className="text-slate-600">—</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={repo.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                          {repo.state.charAt(0).toUpperCase() + repo.state.slice(1)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          href={`/groups/${repo.group_id}`}
-                          className="text-xs text-blue-400 hover:text-blue-300 underline"
-                        >
-                          Group {groups?.find(g => g.id === repo.group_id)?.name ?? repo.group_id}
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          {!effectiveReposQuery.isLoading && !effectiveReposQuery.error && (
+            <DataTable<PackageRepository>
+              tableId="host-effective-package-repos"
+              data={effectiveRepos}
+              emptyMessage="No repositories configured. Add repositories at the group level."
+              getRowKey={(repo) => repo.id}
+              columns={[
+                {
+                  key: "name",
+                  label: "Name",
+                  accessor: (repo) => repo.name,
+                  cell: (repo) => <span className="font-medium text-white">{repo.name}</span>,
+                  defaultWidth: 160,
+                  filter: { type: "text" },
+                },
+                {
+                  key: "url",
+                  label: "URL",
+                  accessor: (repo) => repo.url,
+                  cell: (repo) => <span className="font-mono text-slate-300 text-xs truncate">{repo.url}</span>,
+                  defaultWidth: 260,
+                  filter: { type: "text", placeholder: "e.g. github.com" },
+                },
+                {
+                  key: "repo_type",
+                  label: "Type",
+                  accessor: (repo) => repo.repo_type,
+                  cell: (repo) => <Badge variant="outline" className="text-xs font-mono">{repo.repo_type}</Badge>,
+                  defaultWidth: 80,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "distribution",
+                  label: "Distribution",
+                  accessor: (repo) => repo.distribution ?? "",
+                  cell: (repo) => (
+                    <span className="text-slate-400 text-sm">
+                      {repo.distribution ?? <span className="text-slate-600">—</span>}
+                    </span>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "text" },
+                },
+                {
+                  key: "state",
+                  label: "State",
+                  accessor: (repo) => repo.state,
+                  cell: (repo) => (
+                    <Badge className={repo.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                      {repo.state.charAt(0).toUpperCase() + repo.state.slice(1)}
+                    </Badge>
+                  ),
+                  defaultWidth: 110,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "source",
+                  label: "Source",
+                  accessor: (repo) => groups?.find(g => g.id === repo.group_id)?.name ?? String(repo.group_id),
+                  cell: (repo) => (
+                    <Link
+                      href={`/groups/${repo.group_id}`}
+                      className="text-xs text-blue-400 hover:text-blue-300 underline"
+                    >
+                      Group {groups?.find(g => g.id === repo.group_id)?.name ?? repo.group_id}
+                    </Link>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+              ]}
+            />
           )}
 
           <Dialog open={ppDialogOpen} onOpenChange={(open) => { if (!open) closePpDialog(); else setPpDialogOpen(true) }}>
@@ -4715,85 +4696,119 @@ export default function HostDetailPage() {
             <div className="text-red-400 py-6 text-center">Failed to load CA certificates</div>
           )}
 
-          {!caCertsLoading && !caCertsError && effectiveCACerts && effectiveCACerts.length === 0 && (
-            <div className="text-slate-400 py-6 text-center">
-              No CA certificates configured. Add a host override or assign certificates to a group.
-            </div>
-          )}
-
-          {!caCertsLoading && !caCertsError && effectiveCACerts && effectiveCACerts.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Name</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Fingerprint (SHA-256)</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Source</TableHead>
-                    <TableHead className="w-40">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {effectiveCACerts.map((c) => {
-                    const fpShort = (() => {
-                      const parts = c.fingerprint_sha256.split(":")
-                      if (parts.length <= 14) return c.fingerprint_sha256
-                      return `${parts.slice(0, 6).join(":")}…${parts.slice(-6).join(":")}`
-                    })()
+          {!caCertsLoading && !caCertsError && (
+            <DataTable<EffectiveCACert>
+              tableId="host-effective-ca-certs"
+              data={effectiveCACerts}
+              emptyMessage="No CA certificates configured. Add a host override or assign certificates to a group."
+              getRowKey={(c) => `${c.source}-${c.source_id}-${c.fingerprint_sha256}`}
+              columns={[
+                {
+                  key: "name",
+                  label: "Name",
+                  accessor: (c) => c.name,
+                  cell: (c) => <span className="font-medium text-white">{c.name}</span>,
+                  defaultWidth: 160,
+                  filter: { type: "text" },
+                },
+                {
+                  key: "subject",
+                  label: "Subject",
+                  accessor: (c) => c.subject ?? "",
+                  cell: (c) => (
+                    <span className="text-slate-300 text-sm truncate" title={c.subject ?? ""}>
+                      {c.subject ?? "—"}
+                    </span>
+                  ),
+                  defaultWidth: 200,
+                  filter: { type: "text", placeholder: "e.g. Root CA" },
+                },
+                {
+                  key: "not_after",
+                  label: "Expires",
+                  accessor: (c) => c.not_after ?? "",
+                  cell: (c) => (
+                    <span className="text-slate-300 text-sm">
+                      {c.not_after ? new Date(c.not_after).toLocaleDateString() : "—"}
+                    </span>
+                  ),
+                  defaultWidth: 120,
+                  filter: { type: "dateRange" },
+                },
+                {
+                  key: "fingerprint_sha256",
+                  label: "Fingerprint (SHA-256)",
+                  accessor: (c) => c.fingerprint_sha256,
+                  cell: (c) => {
+                    const parts = c.fingerprint_sha256.split(":")
+                    const fpShort = parts.length <= 14
+                      ? c.fingerprint_sha256
+                      : `${parts.slice(0, 6).join(":")}…${parts.slice(-6).join(":")}`
                     return (
-                      <TableRow key={`${c.source}-${c.source_id}-${c.fingerprint_sha256}`} className="border-slate-700">
-                        <TableCell className="font-medium text-white">{c.name}</TableCell>
-                        <TableCell className="text-slate-300 text-sm max-w-xs truncate" title={c.subject ?? ""}>
-                          {c.subject ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-slate-300 text-sm">
-                          {c.not_after ? new Date(c.not_after).toLocaleDateString() : "—"}
-                        </TableCell>
-                        <TableCell className="font-mono text-xs text-slate-400" title={c.fingerprint_sha256}>
-                          {fpShort}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={c.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                            {c.state.charAt(0).toUpperCase() + c.state.slice(1)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {c.source === "group" ? c.source_name : "Host override"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {c.source === "group" ? (
-                            <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
-                              Edit
-                            </Button>
-                          ) : c.source === "host" ? (
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
-                                Edit
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={caDeleteMutation.isPending}
-                                onClick={() => handleCaDelete(c.fingerprint_sha256, c.name)}
-                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                              >
-                                {caDeleteMutation.isPending ? "…" : "Delete"}
-                              </Button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-600 text-xs">Read-only</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                      <span className="font-mono text-xs text-slate-400" title={c.fingerprint_sha256}>
+                        {fpShort}
+                      </span>
                     )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+                  },
+                  defaultWidth: 200,
+                },
+                {
+                  key: "state",
+                  label: "State",
+                  accessor: (c) => c.state,
+                  cell: (c) => (
+                    <Badge className={c.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
+                      {c.state.charAt(0).toUpperCase() + c.state.slice(1)}
+                    </Badge>
+                  ),
+                  defaultWidth: 110,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "source",
+                  label: "Source",
+                  accessor: (c) => c.source === "group" ? c.source_name : "Host override",
+                  cell: (c) => (
+                    <Badge variant="outline" className="text-xs">
+                      {c.source === "group" ? c.source_name : "Host override"}
+                    </Badge>
+                  ),
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "actions",
+                  label: "Actions",
+                  cell: (c) => (
+                    c.source === "group" ? (
+                      <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
+                        Edit
+                      </Button>
+                    ) : c.source === "host" ? (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={caDeleteMutation.isPending}
+                          onClick={() => handleCaDelete(c.fingerprint_sha256, c.name)}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                        >
+                          {caDeleteMutation.isPending ? "…" : "Delete"}
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-slate-600 text-xs">Read-only</span>
+                    )
+                  ),
+                  defaultWidth: 160,
+                  resizable: false,
+                  sortable: false,
+                },
+              ]}
+            />
           )}
 
           {/* Recent runs */}
@@ -4802,45 +4817,63 @@ export default function HostDetailPage() {
             <p className="text-slate-400 text-sm mt-1">Deployment history for this host.</p>
           </div>
 
-          {(!hostCACertRuns || hostCACertRuns.length === 0) ? (
-            <p className="text-slate-500 text-sm">No deployment runs yet.</p>
-          ) : (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Run #</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Completed</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {hostCACertRuns.slice(0, 20).map((r) => {
-                    const statusClass: Record<string, string> = {
-                      pending: "bg-slate-600 text-white",
-                      running: "bg-blue-600 text-white",
-                      success: "bg-green-600 text-white",
-                      failed: "bg-red-600 text-white",
-                      cancelled: "bg-slate-500 text-white",
-                    }
-                    const fmt = (s: string | null) => {
-                      if (!s) return "—"
-                      try { return new Date(s).toLocaleString() } catch { return s }
-                    }
-                    return (
-                      <TableRow key={r.id} className="border-slate-700">
-                        <TableCell className="font-mono text-xs text-slate-400">#{r.id}</TableCell>
-                        <TableCell><Badge className={statusClass[r.status] ?? ""}>{r.status}</Badge></TableCell>
-                        <TableCell className="text-slate-300 text-sm">{fmt(r.started_at)}</TableCell>
-                        <TableCell className="text-slate-300 text-sm">{fmt(r.completed_at)}</TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          )}
+          <DataTable<CACertActionRun>
+            tableId="host-ca-cert-runs"
+            data={hostCACertRuns?.slice(0, 20)}
+            emptyMessage="No deployment runs yet."
+            getRowKey={(r) => r.id}
+            columns={[
+              {
+                key: "id",
+                label: "Run #",
+                accessor: (r) => r.id,
+                cell: (r) => <span className="font-mono text-xs text-slate-400">#{r.id}</span>,
+                defaultWidth: 80,
+                sortable: true,
+              },
+              {
+                key: "status",
+                label: "Status",
+                accessor: (r) => r.status,
+                cell: (r) => {
+                  const statusClass: Record<string, string> = {
+                    pending: "bg-slate-600 text-white",
+                    running: "bg-blue-600 text-white",
+                    success: "bg-green-600 text-white",
+                    failed: "bg-red-600 text-white",
+                    cancelled: "bg-slate-500 text-white",
+                  }
+                  return <Badge className={statusClass[r.status] ?? ""}>{r.status}</Badge>
+                },
+                defaultWidth: 110,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "started_at",
+                label: "Started",
+                accessor: (r) => r.started_at ?? "",
+                cell: (r) => {
+                  const s = r.started_at
+                  if (!s) return <span className="text-slate-300 text-sm">—</span>
+                  try { return <span className="text-slate-300 text-sm">{new Date(s).toLocaleString()}</span> } catch { return <span className="text-slate-300 text-sm">{s}</span> }
+                },
+                defaultWidth: 180,
+                filter: { type: "dateRange" },
+              },
+              {
+                key: "completed_at",
+                label: "Completed",
+                accessor: (r) => r.completed_at ?? "",
+                cell: (r) => {
+                  const s = r.completed_at
+                  if (!s) return <span className="text-slate-300 text-sm">—</span>
+                  try { return <span className="text-slate-300 text-sm">{new Date(s).toLocaleString()}</span> } catch { return <span className="text-slate-300 text-sm">{s}</span> }
+                },
+                defaultWidth: 180,
+                filter: { type: "dateRange" },
+              },
+            ]}
+          />
 
           <Dialog open={caDialogOpen} onOpenChange={(open) => { if (!open) closeCaDialog(); else setCaDialogOpen(true) }}>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">

@@ -8,6 +8,7 @@ import { Loader2Icon, PlayIcon, ShieldCheckIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import {
   Dialog,
   DialogContent,
@@ -19,14 +20,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import type { CACertActionRun, CACertRule } from "@/lib/types"
@@ -202,91 +195,150 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
         </div>
       </div>
 
-      {showLoading ? (
-        <TableSkeleton />
-      ) : certs.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center">
-          <p className="text-slate-400">No CA certificates defined for this group.</p>
-          <Button className="mt-4" onClick={() => setAddOpen(true)}>
-            Add the first certificate
-          </Button>
-        </div>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Expires</TableHead>
-              <TableHead>Fingerprint (SHA-256)</TableHead>
-              <TableHead>State</TableHead>
-              <TableHead className="w-[140px]">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {certs.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell className="font-medium text-white">{c.name}</TableCell>
-                <TableCell className="text-slate-300 text-sm max-w-xs truncate" title={c.subject ?? ""}>
+      {showLoading && <TableSkeleton />}
+
+      {!showLoading && (
+        <DataTable<CACertRule>
+          tableId="group-ca-certs"
+          data={certs}
+          emptyMessage={
+            <div className="rounded-lg border border-dashed border-slate-700 p-8 text-center">
+              <p className="text-slate-400">No CA certificates defined for this group.</p>
+              <Button className="mt-4" onClick={() => setAddOpen(true)}>
+                Add the first certificate
+              </Button>
+            </div>
+          }
+          getRowKey={(c) => c.id}
+          columns={[
+            {
+              key: "name",
+              label: "Name",
+              accessor: (c) => c.name,
+              cell: (c) => <span className="font-medium text-white">{c.name}</span>,
+              defaultWidth: 180,
+              filter: { type: "text" },
+            },
+            {
+              key: "subject",
+              label: "Subject",
+              accessor: (c) => c.subject ?? "",
+              cell: (c) => (
+                <span className="text-slate-300 text-sm truncate max-w-xs block" title={c.subject ?? ""}>
                   {c.subject ?? "—"}
-                </TableCell>
-                <TableCell className="text-slate-300 text-sm">
+                </span>
+              ),
+              defaultWidth: 200,
+              filter: { type: "text", placeholder: "e.g. Root CA" },
+            },
+            {
+              key: "expires",
+              label: "Expires",
+              accessor: (c) => c.not_after,
+              cell: (c) => (
+                <span className="text-slate-300 text-sm">
                   {c.not_after ? new Date(c.not_after).toLocaleDateString() : "—"}
-                </TableCell>
-                <TableCell className="font-mono text-xs text-slate-400" title={c.fingerprint_sha256}>
+                </span>
+              ),
+              defaultWidth: 140,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "fingerprint",
+              label: "Fingerprint (SHA-256)",
+              accessor: (c) => c.fingerprint_sha256,
+              cell: (c) => (
+                <span className="font-mono text-xs text-slate-400" title={c.fingerprint_sha256}>
                   {shortFingerprint(c.fingerprint_sha256)}
-                </TableCell>
-                <TableCell><StateBadge state={c.state} /></TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-red-400 hover:text-red-300"
-                      onClick={() => setDeleteTarget(c)}
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+                </span>
+              ),
+              defaultWidth: 200,
+            },
+            {
+              key: "state",
+              label: "State",
+              accessor: (c) => c.state,
+              cell: (c) => <StateBadge state={c.state} />,
+              defaultWidth: 120,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (c) => (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => openEdit(c)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-400 hover:text-red-300"
+                    onClick={() => setDeleteTarget(c)}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 140,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {/* Recent runs */}
       <div className="space-y-3">
         <h2 className="text-lg font-semibold text-white">Recent Deployment Runs</h2>
-        {runs.length === 0 ? (
-          <p className="text-slate-400 text-sm">No deployment runs yet.</p>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Run #</TableHead>
-                <TableHead>Host</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Started</TableHead>
-                <TableHead>Completed</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {runs.slice(0, 20).map((r) => (
-                <TableRow key={r.id}>
-                  <TableCell className="font-mono text-xs text-slate-400">#{r.id}</TableCell>
-                  <TableCell className="text-slate-300">{r.hostname ?? `host ${r.host_id}`}</TableCell>
-                  <TableCell><StatusBadge status={r.status} /></TableCell>
-                  <TableCell className="text-slate-300 text-sm">{formatDateTime(r.started_at)}</TableCell>
-                  <TableCell className="text-slate-300 text-sm">{formatDateTime(r.completed_at)}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+        <DataTable<CACertActionRun>
+          tableId="group-ca-cert-runs"
+          data={runs.slice(0, 20)}
+          emptyMessage={<p className="text-slate-400 text-sm">No deployment runs yet.</p>}
+          getRowKey={(r) => r.id}
+          columns={[
+            {
+              key: "run_id",
+              label: "Run #",
+              accessor: (r) => r.id,
+              cell: (r) => <span className="font-mono text-xs text-slate-400">#{r.id}</span>,
+              defaultWidth: 80,
+              filter: { type: "text" },
+            },
+            {
+              key: "host",
+              label: "Host",
+              accessor: (r) => r.hostname ?? `host ${r.host_id}`,
+              cell: (r) => <span className="text-slate-300">{r.hostname ?? `host ${r.host_id}`}</span>,
+              defaultWidth: 180,
+              filter: { type: "text" },
+            },
+            {
+              key: "status",
+              label: "Status",
+              accessor: (r) => r.status,
+              cell: (r) => <StatusBadge status={r.status} />,
+              defaultWidth: 120,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "started_at",
+              label: "Started",
+              accessor: (r) => r.started_at,
+              cell: (r) => <span className="text-slate-300 text-sm">{formatDateTime(r.started_at)}</span>,
+              defaultWidth: 160,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "completed_at",
+              label: "Completed",
+              accessor: (r) => r.completed_at,
+              cell: (r) => <span className="text-slate-300 text-sm">{formatDateTime(r.completed_at)}</span>,
+              defaultWidth: 160,
+              filter: { type: "dateRange" },
+            },
+          ]}
+        />
       </div>
 
       {/* Add dialog */}

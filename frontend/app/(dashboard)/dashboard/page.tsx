@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import type { Host, HostGroup, SyncStatus } from "@/lib/types"
+import type { Host, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -15,14 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return "Never"
@@ -57,12 +50,6 @@ export default function DashboardPage() {
     refetchInterval: 30000,
   })
   const showHostsLoading = useDelayedLoading(hostsLoading)
-
-  const { data: groups } = useQuery<HostGroup[]>({
-    queryKey: ["groups"],
-    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-    refetchInterval: 30000,
-  })
 
   const statusCounts: Record<SyncStatus, number> = {
     in_sync: 0,
@@ -135,49 +122,73 @@ export default function DashboardPage() {
       {/* Host table */}
       {showHostsLoading && <TableSkeleton rows={5} columns={5} />}
 
-      {!hostsLoading && hosts && hosts.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">No hosts configured yet.</div>
-      )}
-
-      {!hostsLoading && hosts && hosts.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Hostname</TableHead>
-                <TableHead>IP Address</TableHead>
-                <TableHead>Firewall</TableHead>
-                <TableHead>Sync Status</TableHead>
-                <TableHead>Last Drift Check</TableHead>
-                <TableHead>Last Sync</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {hosts.map((host) => (
-                <TableRow key={host.id} className="border-slate-700">
-                  <TableCell className="font-medium">
-                    <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
-                  </TableCell>
-                  <TableCell className="font-mono text-slate-300 text-xs">
-                    {host.ip_address}
-                  </TableCell>
-                  <TableCell>
-                    <FirewallBadge backend={host.firewall_backend} />
-                  </TableCell>
-                  <TableCell>
-                    <SyncStatusBadge status={host.sync_status} />
-                  </TableCell>
-                  <TableCell className="text-slate-400 text-xs">
-                    {formatDate(host.last_drift_check_at)}
-                  </TableCell>
-                  <TableCell className="text-slate-400 text-xs">
-                    {formatDate(host.last_sync_at)}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!hostsLoading && (
+        <DataTable<Host>
+          tableId="dashboard-hosts"
+          data={hosts}
+          emptyMessage="No hosts configured yet."
+          getRowKey={(h) => h.id}
+          columns={[
+            {
+              key: "hostname",
+              label: "Hostname",
+              accessor: (h) => h.hostname,
+              cell: (h) => (
+                <Link href={`/hosts/${h.id}`} className="font-medium text-white hover:text-blue-400 transition-colors">
+                  {h.hostname}
+                </Link>
+              ),
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "e.g. web-01" },
+            },
+            {
+              key: "ip_address",
+              label: "IP Address",
+              accessor: (h) => h.ip_address,
+              cell: (h) => (
+                <span className="font-mono text-slate-300 text-xs">{h.ip_address}</span>
+              ),
+              defaultWidth: 150,
+              filter: { type: "text", placeholder: "e.g. 10.0.1" },
+            },
+            {
+              key: "firewall",
+              label: "Firewall",
+              accessor: (h) => h.firewall_backend,
+              cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+              defaultWidth: 130,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "sync_status",
+              label: "Sync Status",
+              accessor: (h) => h.sync_status,
+              cell: (h) => <SyncStatusBadge status={h.sync_status} />,
+              defaultWidth: 140,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "last_drift_check",
+              label: "Last Drift Check",
+              accessor: (h) => h.last_drift_check_at ?? "",
+              cell: (h) => (
+                <span className="text-slate-400 text-xs">{formatDate(h.last_drift_check_at)}</span>
+              ),
+              defaultWidth: 180,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "last_sync",
+              label: "Last Sync",
+              accessor: (h) => h.last_sync_at ?? "",
+              cell: (h) => (
+                <span className="text-slate-400 text-xs">{formatDate(h.last_sync_at)}</span>
+              ),
+              defaultWidth: 180,
+              filter: { type: "dateRange" },
+            },
+          ]}
+        />
       )}
     </div>
   )

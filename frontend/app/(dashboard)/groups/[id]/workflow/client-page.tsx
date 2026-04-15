@@ -8,15 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -411,49 +404,56 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
 
           {showRunsLoading && <TableSkeleton rows={5} columns={5} />}
 
-          {!runsLoading && runs.length === 0 && (
-            <div className="text-slate-400 py-8 text-center">
-              No runs yet. Click <strong>Run Now</strong> to trigger the first run.
-            </div>
-          )}
-
-          {!runsLoading && runs.length > 0 && (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead>Run ID</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead>Completed</TableHead>
-                    <TableHead>Triggered By</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {runs.map((run) => (
-                    <TableRow
-                      key={run.id}
-                      className="border-slate-700 cursor-pointer hover:bg-slate-800"
-                      onClick={() => router.push(`/groups/${id}/workflow/runs/${run.id}`)}
-                    >
-                      <TableCell className="font-mono text-white text-sm">#{run.id}</TableCell>
-                      <TableCell>
-                        <RunStatusBadge status={run.status} />
-                      </TableCell>
-                      <TableCell className="text-slate-300 text-sm">
-                        {formatDateTime(run.started_at)}
-                      </TableCell>
-                      <TableCell className="text-slate-300 text-sm">
-                        {formatDateTime(run.completed_at)}
-                      </TableCell>
-                      <TableCell className="text-slate-400 text-sm">
-                        {run.triggered_by ? "Manual" : "Scheduled"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+          {!runsLoading && (
+            <DataTable<WorkflowRun>
+              tableId="group-workflow-runs"
+              data={runs}
+              emptyMessage={<>No runs yet. Click <strong>Run Now</strong> to trigger the first run.</>}
+              getRowKey={(r) => r.id}
+              onRowClick={(run) => router.push(`/groups/${id}/workflow/runs/${run.id}`)}
+              rowClassName={() => "cursor-pointer"}
+              columns={[
+                {
+                  key: "id",
+                  label: "Run ID",
+                  accessor: (r) => r.id,
+                  cell: (r) => <span className="font-mono text-white text-sm">#{r.id}</span>,
+                  defaultWidth: 100,
+                },
+                {
+                  key: "status",
+                  label: "Status",
+                  accessor: (r) => r.status,
+                  cell: (r) => <RunStatusBadge status={r.status} />,
+                  defaultWidth: 120,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "started_at",
+                  label: "Started",
+                  accessor: (r) => r.started_at,
+                  cell: (r) => <span className="text-slate-300 text-sm">{formatDateTime(r.started_at)}</span>,
+                  defaultWidth: 180,
+                  filter: { type: "dateRange" },
+                },
+                {
+                  key: "completed_at",
+                  label: "Completed",
+                  accessor: (r) => r.completed_at,
+                  cell: (r) => <span className="text-slate-300 text-sm">{formatDateTime(r.completed_at)}</span>,
+                  defaultWidth: 180,
+                  filter: { type: "dateRange" },
+                },
+                {
+                  key: "triggered_by",
+                  label: "Triggered By",
+                  accessor: (r) => r.triggered_by ? "Manual" : "Scheduled",
+                  cell: (r) => <span className="text-slate-400 text-sm">{r.triggered_by ? "Manual" : "Scheduled"}</span>,
+                  defaultWidth: 140,
+                  filter: { type: "enum", from: "accessor" },
+                },
+              ]}
+            />
           )}
         </div>
       )}
