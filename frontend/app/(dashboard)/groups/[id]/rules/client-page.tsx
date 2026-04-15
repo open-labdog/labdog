@@ -281,7 +281,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         cell: (rule: FirewallRule) => <ActionBadge action={rule.action} />,
         defaultWidth: 100,
         sortable: false,
-        filter: { type: "enum" as const, from: "accessor" as const },
+        filter: { type: "enum" as const, options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] },
       },
       {
         key: "protocol",
@@ -292,7 +292,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         ),
         defaultWidth: 100,
         sortable: false,
-        filter: { type: "enum" as const, from: "accessor" as const },
+        filter: { type: "enum" as const, options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] },
       },
       {
         key: "direction",
@@ -303,7 +303,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         ),
         defaultWidth: 100,
         sortable: false,
-        filter: { type: "enum" as const, from: "accessor" as const },
+        filter: { type: "enum" as const, options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] },
       },
       {
         key: "source_cidr",

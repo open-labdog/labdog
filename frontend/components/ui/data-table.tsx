@@ -54,29 +54,37 @@ export function DataTable<T>({
   const popoverRefs = useRef<Map<string, HTMLElement | null>>(new Map())
   const triggerRefs = useRef<Map<string, HTMLButtonElement | null>>(new Map())
 
-  const POPOVER_W = 320
-  const POPOVER_H = 260
-
   const computePos = useCallback((key: string) => {
     const btn = triggerRefs.current.get(key)
     if (!btn) return
     const rect = btn.getBoundingClientRect()
-    let left = rect.right - POPOVER_W
+    const popover = popoverRefs.current.get(key)
+    const popW = popover?.offsetWidth ?? 220
+    const popH = popover?.offsetHeight ?? 200
+
+    // Right-align the popover to the trigger: popover right edge == trigger right edge.
+    let left = rect.right - popW
+    // Clamp to viewport
     if (left < 8) left = 8
-    const top =
-      rect.bottom + POPOVER_H > window.innerHeight
-        ? rect.top - POPOVER_H - 4
-        : rect.bottom + 4
+    if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8
+
+    const top = rect.bottom + popH > window.innerHeight
+      ? Math.max(8, rect.top - popH - 4)
+      : rect.bottom + 4
+
     setPopoverPos({ top, left })
   }, [])
 
   useEffect(() => {
     if (!openFilterKey) return
     computePos(openFilterKey)
+    // Recompute once after the popover has rendered so we use its actual size.
+    const raf = requestAnimationFrame(() => computePos(openFilterKey))
     function onReposition() { computePos(openFilterKey!) }
     window.addEventListener("resize", onReposition)
     window.addEventListener("scroll", onReposition, true)
     return () => {
+      cancelAnimationFrame(raf)
       window.removeEventListener("resize", onReposition)
       window.removeEventListener("scroll", onReposition, true)
     }
@@ -132,7 +140,11 @@ export function DataTable<T>({
         if (v == null) continue
         values.add(String(v))
       }
-      map.set(col.key, Array.from(values).sort().map(v => ({ label: v, value: v })))
+      const spec = col.filter
+      map.set(col.key, Array.from(values).sort().map(v => ({
+        label: spec.formatOption ? spec.formatOption(v) : v,
+        value: v,
+      })))
     }
     return map
   }, [columns, data])
@@ -181,9 +193,11 @@ export function DataTable<T>({
                   />
                 </div>
                 <div className="flex items-center justify-between border-t border-slate-800 px-2 py-1.5">
-                  <Button type="button" size="xs" variant="ghost" onClick={() => resetFilter(col)}>
-                    Reset
-                  </Button>
+                  {col.filter.type === "text" || col.filter.type === "dateRange" ? (
+                    <Button type="button" size="xs" variant="ghost" onClick={() => resetFilter(col)}>
+                      Reset
+                    </Button>
+                  ) : <span />}
                   <Button type="button" size="xs" onClick={() => setOpenFilterKey(null)}>
                     OK
                   </Button>

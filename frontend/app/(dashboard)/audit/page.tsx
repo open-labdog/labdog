@@ -118,7 +118,7 @@ export default function AuditPage() {
                 accessor: (e) => e.action,
                 cell: (e) => <ActionBadge action={e.action} />,
                 defaultWidth: 120,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Create",value:"create"},{label:"Update",value:"update"},{label:"Delete",value:"delete"}] },
               },
               {
                 key: "entity",

@@ -266,7 +266,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 accessor: (user) => user.state,
                 cell: (user) => <UserStateBadge state={user.state} />,
                 defaultWidth: 120,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },
               {
                 key: "keys",
@@ -376,7 +376,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 accessor: (g) => g.state,
                 cell: (g) => <UserStateBadge state={g.state} />,
                 defaultWidth: 120,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },
               {
                 key: "priority",

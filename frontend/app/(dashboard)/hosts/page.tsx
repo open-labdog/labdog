@@ -345,7 +345,7 @@ export default function HostsPage() {
               accessor: (h) => h.firewall_backend,
               cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
               defaultWidth: 120,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"nftables",value:"nftables"},{label:"iptables",value:"iptables"},{label:"Unknown",value:"unknown"}] },
             },
             {
               key: "sync_status",
@@ -353,7 +353,7 @@ export default function HostsPage() {
               accessor: (h) => h.sync_status,
               cell: (h) => <SyncStatusBadge status={h.sync_status} />,
               defaultWidth: 130,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"In Sync",value:"in_sync"},{label:"Out of Sync",value:"out_of_sync"},{label:"Unknown",value:"unknown"},{label:"Error",value:"error"}] },
             },
           ]}
         />

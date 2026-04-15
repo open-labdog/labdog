@@ -286,7 +286,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 accessor: (pkg) => pkg.state,
                 cell: (pkg) => <StateBadge state={pkg.state} />,
                 defaultWidth: 120,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"},{label:"Latest",value:"latest"}] },
               },
               {
                 key: "package_manager",
@@ -296,7 +296,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                   <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
                 ),
                 defaultWidth: 160,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Auto",value:"auto"},{label:"APT",value:"apt"},{label:"DNF",value:"dnf"},{label:"YUM",value:"yum"}] },
               },
               {
                 key: "hold",
@@ -393,7 +393,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 accessor: (repo) => repo.repo_type,
                 cell: (repo) => <RepoTypeBadge type={repo.repo_type} />,
                 defaultWidth: 100,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"APT",value:"apt"},{label:"YUM",value:"yum"}] },
               },
               {
                 key: "distribution",
@@ -411,7 +411,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 accessor: (repo) => repo.state,
                 cell: (repo) => <StateBadge state={repo.state} />,
                 defaultWidth: 120,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },
               {
                 key: "actions",
