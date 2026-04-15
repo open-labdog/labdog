@@ -52,6 +52,8 @@ export const serviceSchema = z.object({
   service_name: z.string().min(1, "Service name is required"),
   state: z.enum(["running", "stopped"]),
   enabled: z.boolean(),
+  unit_content: z.string().optional(),
+  deploy_mode: z.enum(["full", "override"]),
   priority: z.number().int().min(0, "Priority must be non-negative"),
   comment: z.string().optional(),
 })

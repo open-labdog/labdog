@@ -59,7 +59,7 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
 
-  const serviceDefaults: ServiceInput = { service_name: "", state: "running", enabled: true, priority: 100, comment: "" }
+  const serviceDefaults: ServiceInput = { service_name: "", state: "running", enabled: true, unit_content: "", deploy_mode: "override", priority: 100, comment: "" }
 
   const form = useForm<ServiceInput>({
     resolver: zodResolver(serviceSchema),
@@ -116,6 +116,8 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
         service_name: editingService.service_name,
         state: editingService.state,
         enabled: editingService.enabled,
+        unit_content: editingService.unit_content ?? "",
+        deploy_mode: (editingService.deploy_mode as "full" | "override") ?? "override",
         priority: editingService.priority,
         comment: editingService.comment ?? "",
       })
@@ -123,7 +125,11 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
   }, [dialogOpen, editingService, form])
 
   const onSubmit = form.handleSubmit((data) => {
-    const payload = { ...data, comment: data.comment || null }
+    const payload = {
+      ...data,
+      comment: data.comment || null,
+      unit_content: data.unit_content || null,
+    }
     saveMutation.mutate({ serviceId: editingService?.id, payload })
   })
 
@@ -219,7 +225,7 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingService ? "Edit Service Rule" : "Add Service Rule"}</DialogTitle>
           </DialogHeader>
@@ -233,6 +239,48 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
                 {...form.register("service_name")}
               />
               {form.formState.errors.service_name?.message && <p className="text-sm text-red-400">{form.formState.errors.service_name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Deploy Mode</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.watch("deploy_mode") === "override" ? "default" : "outline"}
+                  onClick={() => form.setValue("deploy_mode", "override", { shouldDirty: true })}
+                >
+                  Override existing
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.watch("deploy_mode") === "full" ? "default" : "outline"}
+                  onClick={() => form.setValue("deploy_mode", "full", { shouldDirty: true })}
+                >
+                  New Service (full file)
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="service-unit-content">Unit file content</Label>
+              <textarea
+                id="service-unit-content"
+                rows={8}
+                placeholder={
+                  form.watch("deploy_mode") === "full"
+                    ? "[Unit]\nDescription=My Service\n\n[Service]\nExecStart=/usr/bin/myapp\nRestart=always\n\n[Install]\nWantedBy=multi-user.target"
+                    : "[Service]\nMemoryLimit=512M"
+                }
+                {...form.register("unit_content")}
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+              />
+              <p className="text-xs text-slate-500">
+                {form.watch("deploy_mode") === "full"
+                  ? "Full unit file — will be deployed to /etc/systemd/system/<name>.service on every host in the group."
+                  : "Drop-in override — applied only on hosts where the service already exists. Skipped silently if missing."}
+              </p>
             </div>
 
             <div className="space-y-2">

@@ -136,6 +136,8 @@ async def list_all_services(
                     parts = stripped.split(maxsplit=4)
                     if len(parts) < 4:
                         continue
+                    if not parts[0].endswith(".service"):
+                        continue
                     unit = parts[0].removesuffix(".service")
                     load_state = parts[1]
                     active_state = parts[2]

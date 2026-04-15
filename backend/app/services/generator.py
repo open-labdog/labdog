@@ -137,12 +137,24 @@ def generate_service_playbook(
 
     cleanup_tasks, allowed_unit_paths, allowed_override_paths = generate_cleanup_tasks(services)
 
+    gather_task = {
+        "name": "Gather systemd service facts",
+        "ansible.builtin.service_facts": {},
+    }
+
     deploy_tasks: list[dict] = []
     for svc in services:
         service_name = svc["service_name"]
         unit_content = svc.get("unit_content")
         deploy_mode = svc.get("deploy_mode", "override")
         file_deployed = False
+        is_override = deploy_mode == "override"
+        when_clause = f"'{service_name}.service' in ansible_facts.services" if is_override else None
+
+        def _with_when(task: dict) -> dict:
+            if when_clause:
+                task["when"] = when_clause
+            return task
 
         if unit_content is not None:
             if deploy_mode == "full":
@@ -159,7 +171,7 @@ def generate_service_playbook(
                 file_deployed = True
 
             elif deploy_mode == "override":
-                deploy_tasks.append({
+                deploy_tasks.append(_with_when({
                     "name": f"Create override directory for {service_name}",
                     "ansible.builtin.file": {
                         "path": f"/etc/systemd/system/{service_name}.service.d",
@@ -168,8 +180,8 @@ def generate_service_playbook(
                         "group": "root",
                         "mode": "0755",
                     },
-                })
-                deploy_tasks.append({
+                }))
+                deploy_tasks.append(_with_when({
                     "name": f"Deploy override file for {service_name}",
                     "ansible.builtin.copy": {
                         "dest": f"/etc/systemd/system/{service_name}.service.d/barricade.conf",
@@ -178,26 +190,26 @@ def generate_service_playbook(
                         "group": "root",
                         "mode": "0644",
                     },
-                })
+                }))
                 file_deployed = True
 
         if file_deployed:
-            deploy_tasks.append({
+            deploy_tasks.append(_with_when({
                 "name": f"Reload systemd after deploying {service_name}",
                 "ansible.builtin.systemd": {
                     "daemon_reload": True,
                 },
-            })
+            }))
 
         state_str = svc["state"].value if hasattr(svc["state"], "value") else str(svc["state"])
-        deploy_tasks.append({
+        deploy_tasks.append(_with_when({
             "name": f"Manage service {service_name}",
             "ansible.builtin.service": {
                 "name": service_name,
                 "state": STATE_MAP.get(state_str, "started"),
                 "enabled": svc["enabled"],
             },
-        })
+        }))
 
     playbook = [
         {
@@ -209,7 +221,7 @@ def generate_service_playbook(
                 "allowed_unit_paths": allowed_unit_paths,
                 "allowed_override_paths": allowed_override_paths,
             },
-            "tasks": cleanup_tasks + deploy_tasks,
+            "tasks": [gather_task] + cleanup_tasks + deploy_tasks,
         }
     ]
 

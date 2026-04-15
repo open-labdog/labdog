@@ -36,7 +36,7 @@ import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { FirewallRule, HostsEntry, LinuxGroup, LinuxUser, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
+import type { EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -594,7 +594,7 @@ function ProxmoxVMSection({
   hostId: number
   queryClient: ReturnType<typeof useQueryClient>
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null)
 
   const {
     data: mapping,
@@ -613,9 +613,7 @@ function ProxmoxVMSection({
     retry: false,
   })
 
-  useEffect(() => {
-    if (mapping) setExpanded(true)
-  }, [mapping])
+  const expanded = userExpanded ?? Boolean(mapping)
 
   const discoverMutation = useMutation({
     mutationFn: async () => {
@@ -636,7 +634,7 @@ function ProxmoxVMSection({
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-0">
       <div
         className="flex items-center justify-between pb-3 mb-1 border-b border-slate-800 cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => setUserExpanded(!expanded)}
       >
         <div className="flex items-center gap-2">
           {expanded ? <ChevronDownIcon className="w-4 h-4 text-slate-400" /> : <ChevronRightIcon className="w-4 h-4 text-slate-400" />}
@@ -815,7 +813,7 @@ export default function HostDetailPage() {
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
-    effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery, hostFirewallOverrides: hostFirewallOverridesQuery,
+    effectiveServices: effectiveServicesQuery, showServicesLoading, hostOverrides: hostOverridesQuery,
     effectiveHosts: effectiveHostsQuery, showHostsEntriesLoading, hostHostsOverrides: hostHostsOverridesQuery,
     effectiveLinuxUsers: effectiveLinuxUsersQuery, showLinuxUsersLoading,
     effectiveLinuxGroups: effectiveLinuxGroupsQuery, showLinuxGroupsLoading,
@@ -840,7 +838,6 @@ export default function HostDetailPage() {
   const servicesLoading = effectiveServicesQuery.isLoading
   const servicesError = effectiveServicesQuery.error
   const hostOverrides = hostOverridesQuery.data
-  const hostFirewallOverrides = hostFirewallOverridesQuery.data
   const effectiveHosts = effectiveHostsQuery.data
   const hostsEntriesLoading = effectiveHostsQuery.isLoading
   const hostsEntriesError = effectiveHostsQuery.error
@@ -970,9 +967,17 @@ export default function HostDetailPage() {
   const [hostsAliases, setHostsAliases] = useState("")
   const [hostsComment, setHostsComment] = useState("")
   const [hostsPriority, setHostsPriority] = useState(100)
+  const [hostsEditingId, setHostsEditingId] = useState<number | null>(null)
   const hostsSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/hosts-entries`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
+    onSuccess: () => setHostsDialogOpen(false),
+  })
+
+  const hostsUpdateMutation = useApiMutation({
+    mutationFn: ({ entryId, payload }: { entryId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/hosts-entries/${entryId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
     onSuccess: () => setHostsDialogOpen(false),
   })
@@ -1021,9 +1026,17 @@ export default function HostDetailPage() {
   const [cjPriority, setCjPriority] = useState(100)
   const [cjComment, setCjComment] = useState("")
   const [cjEnvVars, setCjEnvVars] = useState<{ key: string; value: string }[]>([])
+  const [cjEditingId, setCjEditingId] = useState<number | null>(null)
   const cjSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/cron-jobs`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
+    onSuccess: () => setCjDialogOpen(false),
+  })
+
+  const cjUpdateMutation = useApiMutation({
+    mutationFn: ({ overrideId, payload }: { overrideId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/cron-jobs/${overrideId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
     onSuccess: () => setCjDialogOpen(false),
   })
@@ -1040,9 +1053,17 @@ export default function HostDetailPage() {
   const [ppManager, setPpManager] = useState<"auto" | "apt" | "dnf" | "yum">("auto")
   const [ppComment, setPpComment] = useState("")
   const [ppHold, setPpHold] = useState(false)
+  const [ppEditingId, setPpEditingId] = useState<number | null>(null)
   const ppSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/packages`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-packages", id], ["host-package-overrides", id]],
+    onSuccess: () => setPpDialogOpen(false),
+  })
+
+  const ppUpdateMutation = useApiMutation({
+    mutationFn: ({ overrideId, payload }: { overrideId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/packages/${overrideId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-packages", id], ["host-package-overrides", id]],
     onSuccess: () => setPpDialogOpen(false),
   })
@@ -1060,16 +1081,44 @@ export default function HostDetailPage() {
     setPpManager("auto")
     setPpComment("")
     setPpHold(false)
+    setPpEditingId(null)
     ppSaveMutation.reset()
+    ppUpdateMutation.reset()
     setPpDialogOpen(true)
+  }
+
+  function openPpEditDialog(pkg: EffectivePackage) {
+    const override = pkg.source === "host"
+      ? hostPackageOverrides?.find(o => o.package_name === pkg.package_name)
+      : null
+    setPpName(pkg.package_name)
+    setPpVersion(pkg.version ?? "")
+    setPpState(pkg.state)
+    setPpManager(pkg.package_manager)
+    setPpComment(override?.comment ?? "")
+    setPpHold(pkg.hold)
+    setPpEditingId(override?.id ?? null)
+    ppSaveMutation.reset()
+    ppUpdateMutation.reset()
+    setPpDialogOpen(true)
+  }
+
+  function closePpDialog() {
+    setPpDialogOpen(false)
+    setPpEditingId(null)
   }
 
   function handlePpSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    ppSaveMutation.mutate({
+    const payload = {
       package_name: ppName, version: ppVersion || null, state: ppState,
       package_manager: ppManager, comment: ppComment || null, hold: ppHold,
-    })
+    }
+    if (ppEditingId != null) {
+      ppUpdateMutation.mutate({ overrideId: ppEditingId, payload })
+    } else {
+      ppSaveMutation.mutate(payload)
+    }
   }
 
   function handlePpDelete(packageName: string) {
@@ -1091,10 +1140,19 @@ export default function HostDetailPage() {
   const [caName, setCaName] = useState("")
   const [caPem, setCaPem] = useState("")
   const [caComment, setCaComment] = useState("")
+  const [caState, setCaState] = useState<"present" | "absent">("present")
+  const [caEditingId, setCaEditingId] = useState<number | null>(null)
   const [caDeployConfirm, setCaDeployConfirm] = useState(false)
   const caSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/ca-certs`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-ca-certs", id], ["host-ca-cert-overrides", id]],
+    onSuccess: () => setCaDialogOpen(false),
+  })
+
+  const caUpdateMutation = useApiMutation({
+    mutationFn: ({ overrideId, payload }: { overrideId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/ca-certs/${overrideId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-ca-certs", id], ["host-ca-cert-overrides", id]],
     onSuccess: () => setCaDialogOpen(false),
   })
@@ -1116,18 +1174,45 @@ export default function HostDetailPage() {
     setCaName("")
     setCaPem("")
     setCaComment("")
+    setCaState("present")
+    setCaEditingId(null)
     caSaveMutation.reset()
+    caUpdateMutation.reset()
     setCaDialogOpen(true)
+  }
+
+  function openCaEditDialog(cert: EffectiveCACert) {
+    const override = cert.source === "host"
+      ? hostCACertOverrides?.find(o => o.fingerprint_sha256 === cert.fingerprint_sha256)
+      : null
+    setCaName(cert.name)
+    setCaPem(cert.pem_content)
+    setCaComment(override?.comment ?? "")
+    setCaState(cert.state)
+    setCaEditingId(override?.id ?? null)
+    caSaveMutation.reset()
+    caUpdateMutation.reset()
+    setCaDialogOpen(true)
+  }
+
+  function closeCaDialog() {
+    setCaDialogOpen(false)
+    setCaEditingId(null)
   }
 
   function handleCaSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    caSaveMutation.mutate({
+    const payload = {
       name: caName,
       pem_content: caPem,
-      state: "present",
+      state: caState,
       comment: caComment || null,
-    })
+    }
+    if (caEditingId != null) {
+      caUpdateMutation.mutate({ overrideId: caEditingId, payload })
+    } else {
+      caSaveMutation.mutate(payload)
+    }
   }
 
   function handleCaDelete(fingerprint: string, name: string) {
@@ -1146,6 +1231,98 @@ export default function HostDetailPage() {
     })
   }
 
+  // Resolver override state
+  const [resolverDialogOpen, setResolverDialogOpen] = useState(false)
+  const [resolverType, setResolverType] = useState<"resolv_conf" | "systemd_resolved" | "networkmanager">("resolv_conf")
+  const [resolverNameservers, setResolverNameservers] = useState<string[]>([])
+  const [resolverNsInput, setResolverNsInput] = useState("")
+  const [resolverSearchDomains, setResolverSearchDomains] = useState<string[]>([])
+  const [resolverSdInput, setResolverSdInput] = useState("")
+  const [resolverOptions, setResolverOptions] = useState<{ key: string; value: string }[]>([])
+  const [resolverDnsOverTls, setResolverDnsOverTls] = useState(false)
+
+  const resolverSaveMutation = useApiMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      apiFetch(`/api/hosts/${id}/resolver`, { method: "PUT", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-resolver", id], ["host-resolver-override", id]],
+    onSuccess: () => setResolverDialogOpen(false),
+  })
+
+  const resolverDeleteMutation = useApiMutation({
+    mutationFn: () =>
+      apiFetch(`/api/hosts/${id}/resolver`, { method: "DELETE" }),
+    invalidateKeys: [["host-effective-resolver", id], ["host-resolver-override", id]],
+  })
+
+  function openResolverEditDialog() {
+    const source: EffectiveResolverConfig | undefined = effectiveResolver
+    if (source) {
+      setResolverType(source.resolver_type)
+      setResolverNameservers([...source.nameservers])
+      setResolverSearchDomains([...source.search_domains])
+      setResolverOptions(Object.entries(source.options).map(([key, value]) => ({ key, value: String(value) })))
+      setResolverDnsOverTls(source.dns_over_tls)
+    } else {
+      setResolverType("resolv_conf")
+      setResolverNameservers([])
+      setResolverSearchDomains([])
+      setResolverOptions([])
+      setResolverDnsOverTls(false)
+    }
+    setResolverNsInput("")
+    setResolverSdInput("")
+    resolverSaveMutation.reset()
+    setResolverDialogOpen(true)
+  }
+
+  function handleResolverSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    const optionsObj: Record<string, number | string> = {}
+    for (const o of resolverOptions) {
+      const k = o.key.trim()
+      if (!k) continue
+      const numVal = Number(o.value)
+      optionsObj[k] = !isNaN(numVal) && o.value.trim() !== "" ? numVal : o.value
+    }
+    resolverSaveMutation.mutate({
+      nameservers: resolverNameservers,
+      search_domains: resolverSearchDomains,
+      options: optionsObj,
+      resolver_type: resolverType,
+      dns_over_tls: resolverDnsOverTls,
+    })
+  }
+
+  function handleResolverDeleteOverride() {
+    setConfirmState({
+      open: true,
+      title: "Delete Resolver Override",
+      description: "Remove this host's DNS resolver override? The host will revert to inheriting from the group.",
+      confirmLabel: "Delete",
+      variant: "destructive",
+      action: async () => {
+        setConfirmState(prev => prev ? { ...prev, loading: true } : null)
+        try { await resolverDeleteMutation.mutateAsync(undefined as never) } finally { setConfirmState(null) }
+      },
+    })
+  }
+
+  function addResolverNameserver() {
+    const val = resolverNsInput.trim()
+    if (val && !resolverNameservers.includes(val)) {
+      setResolverNameservers([...resolverNameservers, val])
+      setResolverNsInput("")
+    }
+  }
+
+  function addResolverSearchDomain() {
+    const val = resolverSdInput.trim()
+    if (val && !resolverSearchDomains.includes(val)) {
+      setResolverSearchDomains([...resolverSearchDomains, val])
+      setResolverSdInput("")
+    }
+  }
+
   function openCjDialog() {
     setCjName("")
     setCjUser("root")
@@ -1155,18 +1332,48 @@ export default function HostDetailPage() {
     setCjPriority(100)
     setCjComment("")
     setCjEnvVars([])
+    setCjEditingId(null)
     cjSaveMutation.reset()
+    cjUpdateMutation.reset()
     setCjDialogOpen(true)
+  }
+
+  function openCjEditDialog(job: EffectiveCronJob) {
+    const override = job.source === "host"
+      ? hostCronOverrides?.find(o => o.name === job.name && o.user === job.user)
+      : null
+    setCjName(job.name)
+    setCjUser(job.user)
+    setCjSchedule(job.schedule)
+    setCjCommand(job.command)
+    setCjState(job.state)
+    setCjPriority(job.priority)
+    setCjComment(job.comment ?? "")
+    setCjEnvVars(Object.entries(job.environment).map(([key, value]) => ({ key, value })))
+    setCjEditingId(override?.id ?? null)
+    cjSaveMutation.reset()
+    cjUpdateMutation.reset()
+    setCjDialogOpen(true)
+  }
+
+  function closeCjDialog() {
+    setCjDialogOpen(false)
+    setCjEditingId(null)
   }
 
   function handleCjSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const env: Record<string, string> = {}
     for (const v of cjEnvVars) { const k = v.key.trim(); if (k) env[k] = v.value }
-    cjSaveMutation.mutate({
+    const payload = {
       name: cjName, user: cjUser, schedule: cjSchedule, command: cjCommand,
       state: cjState, priority: cjPriority, comment: cjComment || null, environment: env,
-    })
+    }
+    if (cjEditingId != null) {
+      cjUpdateMutation.mutate({ overrideId: cjEditingId, payload })
+    } else {
+      cjSaveMutation.mutate(payload)
+    }
   }
 
   function handleCjDelete(name: string, user: string) {
@@ -1380,17 +1587,44 @@ export default function HostDetailPage() {
     setHostsAliases("")
     setHostsComment("")
     setHostsPriority(100)
+    setHostsEditingId(null)
     hostsSaveMutation.reset()
+    hostsUpdateMutation.reset()
     setHostsDialogOpen(true)
+  }
+
+  function openHostsEditDialog(entry: EffectiveHostsEntry) {
+    const override = entry.source === "host"
+      ? hostHostsOverrides?.find((o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address)
+      : null
+    setHostsIp(entry.ip_address)
+    setHostsHostname(entry.hostname)
+    setHostsAliases(entry.aliases.join(", "))
+    setHostsComment(entry.comment ?? "")
+    setHostsPriority(override?.priority ?? 100)
+    setHostsEditingId(override?.id ?? null)
+    hostsSaveMutation.reset()
+    hostsUpdateMutation.reset()
+    setHostsDialogOpen(true)
+  }
+
+  function closeHostsDialog() {
+    setHostsDialogOpen(false)
+    setHostsEditingId(null)
   }
 
   function handleHostsSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    hostsSaveMutation.mutate({
+    const payload = {
       ip_address: hostsIp, hostname: hostsHostname,
       aliases: hostsAliases.split(",").map((a) => a.trim()).filter(Boolean),
       comment: hostsComment || null, priority: hostsPriority,
-    })
+    }
+    if (hostsEditingId != null) {
+      hostsUpdateMutation.mutate({ entryId: hostsEditingId, payload })
+    } else {
+      hostsSaveMutation.mutate(payload)
+    }
   }
 
   function handleHostsEntryDelete(entry: HostsEntry) {
@@ -1429,8 +1663,11 @@ export default function HostDetailPage() {
   const [svcEditRuleId, setSvcEditRuleId] = useState<number | null>(null)
   const [svcDeployMode, setSvcDeployMode] = useState<"full" | "override">("override")
   const [svcUnitContent, setSvcUnitContent] = useState("")
+  const [svcState, setSvcState] = useState<"running" | "stopped">("running")
+  const [svcEnabled, setSvcEnabled] = useState(true)
   const [svcOriginalUnit, setSvcOriginalUnit] = useState<string | null>(null)
   const [svcOriginalLoading, setSvcOriginalLoading] = useState(false)
+  const [svcOriginalAttempted, setSvcOriginalAttempted] = useState(false)
   const svcSaveMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) => {
       if (svcEditorMode === "edit" && svcEditRuleId !== null) {
@@ -1458,10 +1695,18 @@ export default function HostDetailPage() {
   const [fwPortEnd, setFwPortEnd] = useState("")
   const [fwPriority, setFwPriority] = useState("0")
   const [fwComment, setFwComment] = useState("")
+  const [fwEditingId, setFwEditingId] = useState<number | null>(null)
 
   const fwCreateMutation = useApiMutation({
     mutationFn: (payload: Record<string, unknown>) =>
       apiFetch(`/api/hosts/${id}/firewall-rules`, { method: "POST", body: JSON.stringify(payload) }),
+    invalidateKeys: [["host-effective-rules", id], ["host-firewall-overrides", id]],
+    onSuccess: () => setFwDialogOpen(false),
+  })
+
+  const fwUpdateMutation = useApiMutation({
+    mutationFn: ({ ruleId, payload }: { ruleId: number; payload: Record<string, unknown> }) =>
+      apiFetch(`/api/hosts/${id}/firewall-rules/${ruleId}`, { method: "PUT", body: JSON.stringify(payload) }),
     invalidateKeys: [["host-effective-rules", id], ["host-firewall-overrides", id]],
     onSuccess: () => setFwDialogOpen(false),
   })
@@ -1472,9 +1717,46 @@ export default function HostDetailPage() {
     invalidateKeys: [["host-effective-rules", id], ["host-firewall-overrides", id]],
   })
 
+  function openFwAddDialog() {
+    setFwAction("allow")
+    setFwProtocol("tcp")
+    setFwDirection("input")
+    setFwSourceCidr("")
+    setFwDestCidr("")
+    setFwPortStart("")
+    setFwPortEnd("")
+    setFwPriority("0")
+    setFwComment("")
+    setFwEditingId(null)
+    fwCreateMutation.reset()
+    fwUpdateMutation.reset()
+    setFwDialogOpen(true)
+  }
+
+  function openFwEditDialog(rule: EffectiveFirewallRule) {
+    setFwAction(rule.action)
+    setFwProtocol(rule.protocol)
+    setFwDirection(rule.direction)
+    setFwSourceCidr(rule.source_cidr ?? "")
+    setFwDestCidr(rule.destination_cidr ?? "")
+    setFwPortStart(rule.port_start != null ? String(rule.port_start) : "")
+    setFwPortEnd(rule.port_end != null ? String(rule.port_end) : "")
+    setFwPriority(String(rule.priority))
+    setFwComment(rule.comment ?? "")
+    setFwEditingId(rule.source === "host" ? rule.rule_id : null)
+    fwCreateMutation.reset()
+    fwUpdateMutation.reset()
+    setFwDialogOpen(true)
+  }
+
+  function closeFwDialog() {
+    setFwDialogOpen(false)
+    setFwEditingId(null)
+  }
+
   function handleFwSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    fwCreateMutation.mutate({
+    const payload = {
       action: fwAction,
       protocol: fwProtocol,
       direction: fwDirection,
@@ -1484,7 +1766,12 @@ export default function HostDetailPage() {
       port_end: fwPortEnd ? Number(fwPortEnd) : null,
       priority: Number(fwPriority),
       comment: fwComment || null,
-    })
+    }
+    if (fwEditingId != null) {
+      fwUpdateMutation.mutate({ ruleId: fwEditingId, payload })
+    } else {
+      fwCreateMutation.mutate(payload)
+    }
   }
 
   function handleFwDelete(ruleId: number) {
@@ -1521,9 +1808,45 @@ export default function HostDetailPage() {
     setSvcEditRuleId(null)
     setSvcDeployMode("override")
     setSvcUnitContent("")
+    setSvcState("running")
+    setSvcEnabled(true)
     setSvcOriginalUnit(null)
+    setSvcOriginalAttempted(false)
     svcSaveMutation.reset()
     setSvcDialogOpen(true)
+  }
+
+  async function openSvcEditFromEffective(svc: EffectiveService) {
+    setSvcName(svc.service_name)
+    setSvcDeployMode(svc.deploy_mode)
+    setSvcUnitContent(svc.unit_content ?? "")
+    setSvcState(svc.state === "stopped" ? "stopped" : "running")
+    setSvcEnabled(svc.enabled)
+    setSvcOriginalUnit(null)
+    setSvcOriginalLoading(true)
+    setSvcOriginalAttempted(true)
+    svcSaveMutation.reset()
+
+    if (svc.source === "host") {
+      const override = hostOverrides?.find(o => o.service_name === svc.service_name)
+      setSvcEditorMode("edit")
+      setSvcEditRuleId(override?.id ?? null)
+    } else {
+      setSvcEditorMode("add")
+      setSvcEditRuleId(null)
+    }
+
+    setSvcDialogOpen(true)
+
+    const unitName = svc.service_name.endsWith(".service") ? svc.service_name : `${svc.service_name}.service`
+    try {
+      const res = await apiFetch<{ content: string }>(`/api/services/hosts/${id}/unit-file/${unitName}`)
+      setSvcOriginalUnit(res.content)
+    } catch {
+      setSvcOriginalUnit(null)
+    } finally {
+      setSvcOriginalLoading(false)
+    }
   }
 
   async function openSvcEdit(svc: LiveService) {
@@ -1531,6 +1854,7 @@ export default function HostDetailPage() {
     setSvcName(serviceName)
     setSvcOriginalUnit(null)
     setSvcOriginalLoading(true)
+    setSvcOriginalAttempted(true)
     svcSaveMutation.reset()
 
     if (svc.is_managed) {
@@ -1544,11 +1868,15 @@ export default function HostDetailPage() {
       setSvcEditRuleId(matchingOverride?.id ?? null)
       setSvcDeployMode(matchingEffective?.deploy_mode ?? "override")
       setSvcUnitContent(matchingEffective?.unit_content ?? "")
+      setSvcState(matchingEffective?.state === "stopped" ? "stopped" : "running")
+      setSvcEnabled(matchingEffective?.enabled ?? true)
     } else {
       setSvcEditorMode("add")
       setSvcEditRuleId(null)
       setSvcDeployMode("override")
       setSvcUnitContent("")
+      setSvcState("running")
+      setSvcEnabled(true)
     }
 
     setSvcDialogOpen(true)
@@ -1565,19 +1893,16 @@ export default function HostDetailPage() {
 
   function handleSvcSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const base = {
+      deploy_mode: svcDeployMode,
+      unit_content: svcUnitContent || null,
+      state: svcState,
+      enabled: svcEnabled,
+    }
     if (svcEditorMode === "edit") {
-      svcSaveMutation.mutate({
-        unit_content: svcUnitContent || null,
-        deploy_mode: svcDeployMode,
-      })
+      svcSaveMutation.mutate(base)
     } else {
-      svcSaveMutation.mutate({
-        service_name: svcName,
-        deploy_mode: svcDeployMode,
-        unit_content: svcUnitContent || null,
-        state: "stopped",
-        enabled: false,
-      })
+      svcSaveMutation.mutate({ service_name: svcName, ...base })
     }
   }
 
@@ -2374,22 +2699,7 @@ export default function HostDetailPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  setFwAction("allow")
-                  setFwProtocol("tcp")
-                  setFwDirection("input")
-                  setFwSourceCidr("")
-                  setFwDestCidr("")
-                  setFwPortStart("")
-                  setFwPortEnd("")
-                  setFwPriority("0")
-                  setFwComment("")
-                  fwCreateMutation.reset()
-                  setFwDialogOpen(true)
-                }}
-              >
+              <Button size="sm" onClick={openFwAddDialog}>
                 Add Rule
               </Button>
               <Button
@@ -2464,7 +2774,7 @@ export default function HostDetailPage() {
                     <TableHead>Port(s)</TableHead>
                     <TableHead>Group</TableHead>
                     <TableHead>Comment</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2486,18 +2796,28 @@ export default function HostDetailPage() {
                       </TableCell>
                       <TableCell className="text-slate-400 text-xs max-w-[140px] truncate">{rule.comment ?? "—"}</TableCell>
                       <TableCell>
-                        {rule.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleFwDelete(rule.rule_id!)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            Delete
+                        {rule.is_system || rule.source === "system" ? (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        ) : rule.source === "group" ? (
+                          <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>
+                            Edit
                           </Button>
-                        ) : (
-                          <span className="text-slate-600 text-xs">—</span>
-                        )}
+                        ) : rule.rule_id != null ? (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openFwEditDialog(rule)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={fwDeleteMutation.isPending}
+                              onClick={() => handleFwDelete(rule.rule_id!)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {fwDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          </div>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -2509,10 +2829,10 @@ export default function HostDetailPage() {
             <div className="text-red-400 text-sm">{fwDeleteMutation.error.message}</div>
           )}
 
-          <Dialog open={fwDialogOpen} onOpenChange={setFwDialogOpen}>
+          <Dialog open={fwDialogOpen} onOpenChange={(open) => { if (!open) closeFwDialog(); else setFwDialogOpen(true) }}>
             <DialogContent className="sm:max-w-lg">
               <DialogHeader>
-                <DialogTitle>Add Firewall Rule Override</DialogTitle>
+                <DialogTitle>{fwEditingId != null ? "Edit Firewall Rule Override" : "Add Firewall Rule Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleFwSubmit} className="space-y-4 mt-2">
                 <div className="grid grid-cols-2 gap-4">
@@ -2623,15 +2943,17 @@ export default function HostDetailPage() {
                     onChange={(e) => setFwComment(e.target.value)}
                   />
                 </div>
-                {fwCreateMutation.error && (
-                  <p className="text-sm text-red-400">{fwCreateMutation.error.message}</p>
+                {(fwCreateMutation.error || fwUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(fwCreateMutation.error ?? fwUpdateMutation.error)?.message}</p>
                 )}
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setFwDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={closeFwDialog}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={fwCreateMutation.isPending}>
-                    {fwCreateMutation.isPending ? "Saving..." : "Add Rule"}
+                  <Button type="submit" disabled={fwCreateMutation.isPending || fwUpdateMutation.isPending}>
+                    {fwCreateMutation.isPending || fwUpdateMutation.isPending
+                      ? "Saving..."
+                      : fwEditingId != null ? "Save Changes" : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -2701,7 +3023,7 @@ export default function HostDetailPage() {
                     <TableHead>State</TableHead>
                     <TableHead>Enabled</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -2726,16 +3048,25 @@ export default function HostDetailPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {svc.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={svcDeleteMutation.isPending}
-                            onClick={() => handleSvcDelete(svc.service_name)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {svcDeleteMutation.isPending ? "…" : "Delete"}
+                        {svc.source === "group" ? (
+                          <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>
+                            Edit
                           </Button>
+                        ) : svc.source === "host" ? (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openSvcEditFromEffective(svc)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={svcDeleteMutation.isPending}
+                              onClick={() => handleSvcDelete(svc.service_name)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {svcDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
                         )}
@@ -2797,7 +3128,7 @@ export default function HostDetailPage() {
                   </div>
                 )}
 
-                {svcEditorMode === "edit" && (
+                {svcOriginalAttempted && (
                   <div className="space-y-2">
                     <Label>Current on-disk unit file (systemctl cat)</Label>
                     {svcOriginalLoading ? (
@@ -2818,7 +3149,7 @@ export default function HostDetailPage() {
                   <Label htmlFor="svc-unit-content">Unit file content</Label>
                   <Textarea
                     id="svc-unit-content"
-                    rows={20}
+                    rows={8}
                     className="font-mono text-sm resize-y"
                     placeholder={
                       svcDeployMode === "full"
@@ -2828,6 +3159,31 @@ export default function HostDetailPage() {
                     value={svcUnitContent}
                     onChange={(e) => setSvcUnitContent(e.target.value)}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="svc-state">State</Label>
+                  <select
+                    id="svc-state"
+                    value={svcState}
+                    onChange={(e) => setSvcState(e.target.value as "running" | "stopped")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="running">Running</option>
+                    <option value="stopped">Stopped</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    id="svc-enabled"
+                    type="checkbox"
+                    checked={svcEnabled}
+                    onChange={(e) => setSvcEnabled(e.target.checked)}
+                    className="rounded border-input"
+                  />
+                  <Label htmlFor="svc-enabled">Enabled</Label>
+                  <span className="text-xs text-slate-500">Start on boot</span>
                 </div>
 
                 {svcSaveMutation.error && (
@@ -3136,7 +3492,7 @@ export default function HostDetailPage() {
                     <TableHead>Hostname</TableHead>
                     <TableHead>Aliases</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -3157,25 +3513,42 @@ export default function HostDetailPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {entry.source === "host" && !entry.is_system ? (
+                        {entry.is_system || entry.source === "system" ? (
+                          <span className="text-slate-600 text-xs">Read-only</span>
+                        ) : entry.source === "group" ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openHostsEditDialog(entry)}
+                          >
+                            Edit
+                          </Button>
+                        ) : (
                           (() => {
                             const override = hostHostsOverrides?.find(
                               (o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address
                             )
                             return override ? (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                disabled={hostsDeleteMutation.isPending}
-                                onClick={() => handleHostsEntryDelete(override)}
-                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                              >
-                                {hostsDeleteMutation.isPending ? "…" : "Delete"}
-                              </Button>
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => openHostsEditDialog(entry)}
+                                >
+                                  Edit
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  disabled={hostsDeleteMutation.isPending}
+                                  onClick={() => handleHostsEntryDelete(override)}
+                                  className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                                >
+                                  {hostsDeleteMutation.isPending ? "…" : "Delete"}
+                                </Button>
+                              </div>
                             ) : null
                           })()
-                        ) : (
-                          <span className="text-slate-600 text-xs">Read-only</span>
                         )}
                       </TableCell>
                     </TableRow>
@@ -3185,10 +3558,10 @@ export default function HostDetailPage() {
             </div>
           )}
 
-          <Dialog open={hostsDialogOpen} onOpenChange={setHostsDialogOpen}>
+          <Dialog open={hostsDialogOpen} onOpenChange={(open) => { if (!open) closeHostsDialog(); else setHostsDialogOpen(true) }}>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Add Hosts Entry Override</DialogTitle>
+                <DialogTitle>{hostsEditingId != null ? "Edit Hosts Entry Override" : "Add Hosts Entry Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleHostsSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -3249,20 +3622,22 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {hostsSaveMutation.error && (
-                  <p className="text-sm text-red-400">{hostsSaveMutation.error.message}</p>
+                {(hostsSaveMutation.error || hostsUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(hostsSaveMutation.error ?? hostsUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setHostsDialogOpen(false)}
+                    onClick={closeHostsDialog}
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={hostsSaveMutation.isPending}>
-                    {hostsSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={hostsSaveMutation.isPending || hostsUpdateMutation.isPending}>
+                    {hostsSaveMutation.isPending || hostsUpdateMutation.isPending
+                      ? "Saving..."
+                      : hostsEditingId != null ? "Save Changes" : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -3332,7 +3707,7 @@ export default function HostDetailPage() {
                       <TableHead>Keys</TableHead>
                       <TableHead>Sudo</TableHead>
                       <TableHead>Source</TableHead>
-                      <TableHead className="w-32">Actions</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3417,7 +3792,7 @@ export default function HostDetailPage() {
                       <TableHead>GID</TableHead>
                       <TableHead>State</TableHead>
                       <TableHead>Source</TableHead>
-                      <TableHead className="w-32">Actions</TableHead>
+                      <TableHead className="w-40">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -3766,7 +4141,7 @@ export default function HostDetailPage() {
                     <TableHead>Command</TableHead>
                     <TableHead>State</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -3798,16 +4173,25 @@ export default function HostDetailPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {job.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={cjDeleteMutation.isPending}
-                            onClick={() => handleCjDelete(job.name, job.user)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {cjDeleteMutation.isPending ? "..." : "Delete"}
+                        {job.source === "group" ? (
+                          <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
+                            Edit
                           </Button>
+                        ) : job.source === "host" ? (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openCjEditDialog(job)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={cjDeleteMutation.isPending}
+                              onClick={() => handleCjDelete(job.name, job.user)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {cjDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
                         )}
@@ -3819,10 +4203,10 @@ export default function HostDetailPage() {
             </div>
           )}
 
-          <Dialog open={cjDialogOpen} onOpenChange={setCjDialogOpen}>
+          <Dialog open={cjDialogOpen} onOpenChange={(open) => { if (!open) closeCjDialog(); else setCjDialogOpen(true) }}>
             <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Add Cron Job Override</DialogTitle>
+                <DialogTitle>{cjEditingId != null ? "Edit Cron Job Override" : "Add Cron Job Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleCjSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -3964,20 +4348,18 @@ export default function HostDetailPage() {
                   </div>
                 </div>
 
-                {cjSaveMutation.error && (
-                  <p className="text-sm text-red-400">{cjSaveMutation.error.message}</p>
+                {(cjSaveMutation.error || cjUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(cjSaveMutation.error ?? cjUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setCjDialogOpen(false)}
-                  >
+                  <Button type="button" variant="outline" onClick={closeCjDialog}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={cjSaveMutation.isPending}>
-                    {cjSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={cjSaveMutation.isPending || cjUpdateMutation.isPending}>
+                    {cjSaveMutation.isPending || cjUpdateMutation.isPending
+                      ? "Saving..."
+                      : cjEditingId != null ? "Save Changes" : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -4057,7 +4439,7 @@ export default function HostDetailPage() {
                      <TableHead>Package Manager</TableHead>
                      <TableHead>Hold</TableHead>
                      <TableHead>Source</TableHead>
-                     <TableHead className="w-32">Actions</TableHead>
+                     <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4095,16 +4477,25 @@ export default function HostDetailPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {pkg.source === "host" ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={ppDeleteMutation.isPending}
-                            onClick={() => handlePpDelete(pkg.package_name)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {ppDeleteMutation.isPending ? "..." : "Delete"}
+                        {pkg.source === "group" ? (
+                          <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
+                            Edit
                           </Button>
+                        ) : pkg.source === "host" ? (
+                          <div className="flex gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => openPpEditDialog(pkg)}>
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={ppDeleteMutation.isPending}
+                              onClick={() => handlePpDelete(pkg.package_name)}
+                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                            >
+                              {ppDeleteMutation.isPending ? "…" : "Delete"}
+                            </Button>
+                          </div>
                         ) : (
                           <span className="text-slate-600 text-xs">Read-only</span>
                         )}
@@ -4180,10 +4571,10 @@ export default function HostDetailPage() {
             </div>
           )}
 
-          <Dialog open={ppDialogOpen} onOpenChange={setPpDialogOpen}>
+          <Dialog open={ppDialogOpen} onOpenChange={(open) => { if (!open) closePpDialog(); else setPpDialogOpen(true) }}>
             <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Add Package Override</DialogTitle>
+                <DialogTitle>{ppEditingId != null ? "Edit Package Override" : "Add Package Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handlePpSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -4262,20 +4653,18 @@ export default function HostDetailPage() {
                   <span className="text-xs text-slate-500">Prevent automatic upgrades</span>
                 </div>
 
-                {ppSaveMutation.error && (
-                  <p className="text-sm text-red-400">{ppSaveMutation.error.message}</p>
+                {(ppSaveMutation.error || ppUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(ppSaveMutation.error ?? ppUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setPpDialogOpen(false)}
-                  >
+                  <Button type="button" variant="outline" onClick={closePpDialog}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={ppSaveMutation.isPending}>
-                    {ppSaveMutation.isPending ? "Saving..." : "Create Override"}
+                  <Button type="submit" disabled={ppSaveMutation.isPending || ppUpdateMutation.isPending}>
+                    {ppSaveMutation.isPending || ppUpdateMutation.isPending
+                      ? "Saving..."
+                      : ppEditingId != null ? "Save Changes" : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -4343,7 +4732,7 @@ export default function HostDetailPage() {
                     <TableHead>Fingerprint (SHA-256)</TableHead>
                     <TableHead>State</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="w-32">Actions</TableHead>
+                    <TableHead className="w-40">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -4376,16 +4765,25 @@ export default function HostDetailPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {c.source === "host" ? (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              disabled={caDeleteMutation.isPending}
-                              onClick={() => handleCaDelete(c.fingerprint_sha256, c.name)}
-                              className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                            >
-                              {caDeleteMutation.isPending ? "…" : "Delete"}
+                          {c.source === "group" ? (
+                            <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
+                              Edit
                             </Button>
+                          ) : c.source === "host" ? (
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => openCaEditDialog(c)}>
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                disabled={caDeleteMutation.isPending}
+                                onClick={() => handleCaDelete(c.fingerprint_sha256, c.name)}
+                                className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                              >
+                                {caDeleteMutation.isPending ? "…" : "Delete"}
+                              </Button>
+                            </div>
                           ) : (
                             <span className="text-slate-600 text-xs">Read-only</span>
                           )}
@@ -4444,10 +4842,10 @@ export default function HostDetailPage() {
             </div>
           )}
 
-          <Dialog open={caDialogOpen} onOpenChange={setCaDialogOpen}>
+          <Dialog open={caDialogOpen} onOpenChange={(open) => { if (!open) closeCaDialog(); else setCaDialogOpen(true) }}>
             <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle>Add CA Certificate Override</DialogTitle>
+                <DialogTitle>{caEditingId != null ? "Edit CA Certificate Override" : "Add CA Certificate Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleCaSubmit} className="space-y-4 mt-2">
                 <div className="space-y-2">
@@ -4473,6 +4871,18 @@ export default function HostDetailPage() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="ca-state">State</Label>
+                  <select
+                    id="ca-state"
+                    value={caState}
+                    onChange={(e) => setCaState(e.target.value as "present" | "absent")}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="present">Present</option>
+                    <option value="absent">Absent</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
                   <Label htmlFor="ca-comment">Comment (optional)</Label>
                   <Input
                     id="ca-comment"
@@ -4483,16 +4893,18 @@ export default function HostDetailPage() {
                   />
                 </div>
 
-                {caSaveMutation.error && (
-                  <p className="text-sm text-red-400">{caSaveMutation.error.message}</p>
+                {(caSaveMutation.error || caUpdateMutation.error) && (
+                  <p className="text-sm text-red-400">{(caSaveMutation.error ?? caUpdateMutation.error)?.message}</p>
                 )}
 
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setCaDialogOpen(false)}>
+                  <Button type="button" variant="outline" onClick={closeCaDialog}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={caSaveMutation.isPending}>
-                    {caSaveMutation.isPending ? "Saving..." : "Add Certificate"}
+                  <Button type="submit" disabled={caSaveMutation.isPending || caUpdateMutation.isPending}>
+                    {caSaveMutation.isPending || caUpdateMutation.isPending
+                      ? "Saving..."
+                      : caEditingId != null ? "Save Changes" : "Create Override"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -4520,23 +4932,39 @@ export default function HostDetailPage() {
                 DNS resolver configuration applied to this host.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={moduleSyncing || !host?.ssh_key_id}
-              onClick={async () => {
-                setModuleSyncing(true)
-                try {
-                  await apiFetch(moduleSyncEndpoints["dns"], { method: "POST" })
-                  for (const key of tabQueryKeys["dns"]) await queryClient.invalidateQueries({ queryKey: key })
-                  await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                } catch { /* ignore */ }
-                setModuleSyncing(false)
-              }}
-            >
-              <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-              {moduleSyncing ? "Syncing..." : "Sync DNS"}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={moduleSyncing || !host?.ssh_key_id}
+                onClick={async () => {
+                  setModuleSyncing(true)
+                  try {
+                    await apiFetch(moduleSyncEndpoints["dns"], { method: "POST" })
+                    for (const key of tabQueryKeys["dns"]) await queryClient.invalidateQueries({ queryKey: key })
+                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                  } catch { /* ignore */ }
+                  setModuleSyncing(false)
+                }}
+              >
+                <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
+                {moduleSyncing ? "Syncing..." : "Sync DNS"}
+              </Button>
+              {hostResolverOverride && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={resolverDeleteMutation.isPending}
+                  onClick={handleResolverDeleteOverride}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                >
+                  {resolverDeleteMutation.isPending ? "Deleting..." : "Delete Override"}
+                </Button>
+              )}
+              <Button size="sm" onClick={openResolverEditDialog}>
+                {hostResolverOverride ? "Edit Override" : effectiveResolver ? "Create Override" : "Configure DNS"}
+              </Button>
+            </div>
           </div>
 
           {showResolverLoading && <CardSkeleton />}
@@ -4620,10 +5048,170 @@ export default function HostDetailPage() {
           {!resolverLoading && !resolverError && effectiveResolver && (
             <div className="text-xs text-slate-500">
               {hostResolverOverride
-                ? "This host has a resolver override. Delete the override to inherit from the group."
+                ? "This host has a resolver override."
                 : "Inherited from group configuration."}
             </div>
           )}
+
+          {resolverDeleteMutation.error && (
+            <div className="text-red-400 text-sm">{resolverDeleteMutation.error.message}</div>
+          )}
+
+          <Dialog open={resolverDialogOpen} onOpenChange={setResolverDialogOpen}>
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{hostResolverOverride ? "Edit Host Override" : "Create Host Override"}</DialogTitle>
+              </DialogHeader>
+              <form onSubmit={handleResolverSubmit} className="space-y-4 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="resolver-type">Resolver Type</Label>
+                  <select
+                    id="resolver-type"
+                    value={resolverType}
+                    onChange={(e) => setResolverType(e.target.value as typeof resolverType)}
+                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                  >
+                    <option value="resolv_conf">resolv.conf</option>
+                    <option value="systemd_resolved">systemd-resolved</option>
+                    <option value="networkmanager">NetworkManager</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Nameservers</Label>
+                  {resolverNameservers.length > 0 && (
+                    <div className="space-y-1">
+                      {resolverNameservers.map((ns, idx) => (
+                        <div key={idx} className="flex items-center gap-2 rounded border border-slate-700 bg-slate-800 px-3 py-1.5">
+                          <span className="text-sm font-mono text-slate-300 flex-1">{ns}</span>
+                          <button
+                            type="button"
+                            onClick={() => setResolverNameservers(resolverNameservers.filter((_, i) => i !== idx))}
+                            className="text-red-400 hover:text-red-300 text-sm px-1"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g. 8.8.8.8 or 2001:4860:4860::8888"
+                      value={resolverNsInput}
+                      onChange={(e) => setResolverNsInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addResolverNameserver() } }}
+                      className="flex-1"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={addResolverNameserver}>Add</Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Search Domains</Label>
+                  {resolverSearchDomains.length > 0 && (
+                    <div className="space-y-1">
+                      {resolverSearchDomains.map((sd, idx) => (
+                        <div key={idx} className="flex items-center gap-2 rounded border border-slate-700 bg-slate-800 px-3 py-1.5">
+                          <span className="text-sm font-mono text-slate-300 flex-1">{sd}</span>
+                          <button
+                            type="button"
+                            onClick={() => setResolverSearchDomains(resolverSearchDomains.filter((_, i) => i !== idx))}
+                            className="text-red-400 hover:text-red-300 text-sm px-1"
+                          >
+                            &times;
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      placeholder="e.g. example.com"
+                      value={resolverSdInput}
+                      onChange={(e) => setResolverSdInput(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addResolverSearchDomain() } }}
+                      className="flex-1"
+                    />
+                    <Button type="button" variant="outline" size="sm" onClick={addResolverSearchDomain}>Add</Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Options</Label>
+                  <div className="space-y-2">
+                    {resolverOptions.map((opt, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <select
+                          value={opt.key}
+                          onChange={(e) => setResolverOptions(resolverOptions.map((o, i) => i === idx ? { ...o, key: e.target.value } : o))}
+                          className="w-40 rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                        >
+                          <option value="">Select option…</option>
+                          <option value="ndots">ndots</option>
+                          <option value="timeout">timeout</option>
+                          <option value="attempts">attempts</option>
+                          <option value="rotate">rotate</option>
+                          <option value="edns0">edns0</option>
+                        </select>
+                        <Input
+                          type="text"
+                          placeholder="value"
+                          value={opt.value}
+                          onChange={(e) => setResolverOptions(resolverOptions.map((o, i) => i === idx ? { ...o, value: e.target.value } : o))}
+                          className="flex-1 font-mono text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setResolverOptions(resolverOptions.filter((_, i) => i !== idx))}
+                          className="text-red-400 hover:text-red-300 hover:bg-red-950 px-2"
+                        >
+                          &times;
+                        </Button>
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" size="sm" onClick={() => setResolverOptions([...resolverOptions, { key: "", value: "" }])}>
+                      + Add option
+                    </Button>
+                  </div>
+                </div>
+
+                {resolverType === "systemd_resolved" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="resolver-dot"
+                      type="checkbox"
+                      checked={resolverDnsOverTls}
+                      onChange={(e) => setResolverDnsOverTls(e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    <Label htmlFor="resolver-dot">DNS-over-TLS</Label>
+                    <span className="text-xs text-slate-500">Encrypt DNS queries (systemd-resolved only)</span>
+                  </div>
+                )}
+
+                {resolverSaveMutation.error && (
+                  <p className="text-sm text-red-400">{resolverSaveMutation.error.message}</p>
+                )}
+
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setResolverDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={resolverSaveMutation.isPending}>
+                    {resolverSaveMutation.isPending
+                      ? "Saving..."
+                      : hostResolverOverride ? "Save Changes" : "Create Override"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+
           <CurrentStateSection moduleType="resolver" modules={currentStateQuery.data} hostId={id} />
         </div>
       )}
