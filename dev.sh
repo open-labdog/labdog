@@ -3,13 +3,49 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIDFILE_DIR="${SCRIPT_DIR}/.dev-pids"
+ENV_FILE="${SCRIPT_DIR}/.env"
 
-# Load .env if present
-if [[ -f "${SCRIPT_DIR}/.env" ]]; then
-  set -a
-  source "${SCRIPT_DIR}/.env"
-  set +a
-fi
+# Seed .env with dev-only secrets on first run. Barricade rejects the insecure
+# placeholder keys in barricade.toml at startup, so we generate a real pair here
+# and persist them for subsequent runs.
+ensure_dev_env() {
+  if [[ -f "$ENV_FILE" ]] \
+     && grep -q "^BARRICADE_SECURITY__SECRET_KEY=" "$ENV_FILE" \
+     && grep -q "^BARRICADE_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE"; then
+    return
+  fi
+
+  echo "[dev] Seeding ${ENV_FILE} with generated dev secrets..."
+  local venv_python="${SCRIPT_DIR}/backend/.venv/bin/python"
+  if [[ ! -x "$venv_python" ]]; then
+    echo "[dev] ERROR: backend venv not found at ${venv_python}. Run: cd backend && python -m venv .venv && uv pip install -e '.[dev]'"
+    exit 1
+  fi
+
+  # Use pure-stdlib generators that don't import app modules — importing
+  # app.config here would trigger the very validation we're trying to satisfy.
+  local secret enc
+  secret=$("$venv_python" -c 'import secrets; print(secrets.token_urlsafe(64))')
+  enc=$("$venv_python" -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')
+
+  touch "$ENV_FILE"
+  grep -q "^BARRICADE_SECURITY__SECRET_KEY=" "$ENV_FILE" \
+    || echo "BARRICADE_SECURITY__SECRET_KEY=${secret}" >> "$ENV_FILE"
+  grep -q "^BARRICADE_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE" \
+    || echo "BARRICADE_SECURITY__ENCRYPTION_KEY=${enc}" >> "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+}
+
+# Load .env if present (we may seed it below for commands that need secrets).
+load_dev_env() {
+  if [[ -f "$ENV_FILE" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$ENV_FILE"
+    set +a
+  fi
+}
+load_dev_env
 
 usage() {
   cat <<EOF
@@ -71,6 +107,9 @@ start_backend() {
     log "ERROR: Backend venv not found at ${VENV}. Run: cd backend && python -m venv .venv && uv pip install ."
     exit 1
   fi
+
+  ensure_dev_env
+  load_dev_env
 
   # Run migrations
   log "Running migrations..."
@@ -150,6 +189,8 @@ run_migrate() {
     log "ERROR: alembic not found in venv. Run: cd backend && uv pip install ."
     exit 1
   fi
+  ensure_dev_env
+  load_dev_env
   log "Running migrations..."
   (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" upgrade head)
   log "Migrations complete."
