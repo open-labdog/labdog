@@ -19,14 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import type { ProxmoxNode } from "@/lib/types"
 
 interface NodeFormState {
@@ -228,64 +221,73 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
         </div>
       )}
 
-      {!isLoading && !error && nodes && nodes.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Name</TableHead>
-                <TableHead>API URL</TableHead>
-                <TableHead>Token ID</TableHead>
-                <TableHead>SSL Verify</TableHead>
-                <TableHead className="w-48">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {nodes.map((node) => (
-                <TableRow key={node.id} className="border-slate-700">
-                  <TableCell className="font-medium text-white">{node.name}</TableCell>
-                  <TableCell className="font-mono text-slate-300 text-sm">{node.api_url}</TableCell>
-                  <TableCell className="font-mono text-slate-300 text-sm">{node.token_id}</TableCell>
-                  <TableCell>
-                    {node.verify_ssl ? (
-                      <span className="text-green-400 text-sm">Yes</span>
-                    ) : (
-                      <span className="text-yellow-400 text-sm">No</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={testingId === node.id}
-                        onClick={() => handleTestConnection(node)}
-                      >
-                        {testingId === node.id ? "Testing..." : "Test"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEdit(node)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        onClick={() => handleDelete(node)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<ProxmoxNode>
+          tableId="proxmox-nodes"
+          data={nodes}
+          emptyMessage={<>No Proxmox nodes configured. Click <strong>Add Node</strong> to get started.</>}
+          getRowKey={(n) => n.id}
+          columns={[
+            {
+              key: "name",
+              label: "Name",
+              accessor: (n) => n.name,
+              cell: (n) => <span className="font-medium text-white">{n.name}</span>,
+              defaultWidth: 180,
+              filter: { type: "text" },
+            },
+            {
+              key: "api_url",
+              label: "API URL",
+              accessor: (n) => n.api_url,
+              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.api_url}</span>,
+              defaultWidth: 280,
+              filter: { type: "text", placeholder: "e.g. github.com" },
+            },
+            {
+              key: "token_id",
+              label: "Token ID",
+              accessor: (n) => n.token_id,
+              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.token_id}</span>,
+              defaultWidth: 200,
+              filter: { type: "text" },
+            },
+            {
+              key: "verify_ssl",
+              label: "SSL Verify",
+              accessor: (n) => n.verify_ssl,
+              cell: (n) => n.verify_ssl
+                ? <span className="text-green-400 text-sm">Yes</span>
+                : <span className="text-yellow-400 text-sm">No</span>,
+              defaultWidth: 120,
+              filter: { type: "boolean" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (node) => (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" disabled={testingId === node.id} onClick={() => handleTestConnection(node)}>
+                    {testingId === node.id ? "Testing..." : "Test"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => openEdit(node)}>Edit</Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                    onClick={() => handleDelete(node)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 220,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       <Dialog

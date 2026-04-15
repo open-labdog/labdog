@@ -4,7 +4,6 @@ import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { SearchIcon, XIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -18,14 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
@@ -58,7 +50,6 @@ const defaultFormValues: GitRepoInput = {
 }
 
 export default function GitReposPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
@@ -78,11 +69,6 @@ export default function GitReposPage() {
     queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
   })
   const showLoading = useDelayedLoading(isLoading)
-
-  const filteredRepos = repos?.filter(r => {
-    const q = searchQuery.toLowerCase()
-    return r.name.toLowerCase().includes(q) || r.url.toLowerCase().includes(q)
-  }) ?? []
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -322,73 +308,86 @@ export default function GitReposPage() {
         </Dialog>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input placeholder="Search by name or URL..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 pr-8" />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
-              <XIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-        {searchQuery && <span className="text-sm text-slate-400">Showing {filteredRepos.length} of {repos?.length ?? 0} repos</span>}
-      </div>
-
       {showLoading && <TableSkeleton rows={5} columns={3} />}
       {error && <div className="text-red-400 py-8 text-center">Failed to load repositories</div>}
-      {!isLoading && !error && filteredRepos.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">No results matching &apos;{searchQuery}&apos;</div>
-      )}
-      {!isLoading && !error && repos?.length === 0 && !searchQuery && (
-        <div className="text-slate-400 py-8 text-center">No git repositories yet. Add your first repository to get started.</div>
-      )}
 
-      {!isLoading && !error && filteredRepos.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Name</TableHead>
-                <TableHead>URL</TableHead>
-                <TableHead>Branch</TableHead>
-                <TableHead>Auth Type</TableHead>
-                <TableHead>Last Sync</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRepos.map((repo) => (
-                <TableRow key={repo.id} className="border-slate-700">
-                  <TableCell className="font-medium text-white">{repo.name}</TableCell>
-                  <TableCell className="font-mono text-sm text-slate-300 max-w-[250px] truncate">{repo.url}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="border-slate-600 text-slate-300">{repo.branch}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge className={repo.auth_type === "ssh_key" ? "bg-blue-600 text-white" : "bg-amber-600 text-white"}>
-                      {repo.auth_type === "ssh_key" ? "SSH Key" : "HTTPS"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-slate-400">{relativeTime(repo.last_sync_at)}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => openEditDialog(repo)}>Edit</Button>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => setDeleteConfirmId(repo.id)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<GitRepository>
+          tableId="git-repos"
+          data={repos}
+          emptyMessage="No git repositories yet. Add your first repository to get started."
+          getRowKey={(r) => r.id}
+          columns={[
+            {
+              key: "name",
+              label: "Name",
+              accessor: (r) => r.name,
+              cell: (r) => <span className="font-medium text-white">{r.name}</span>,
+              defaultWidth: 160,
+              filter: { type: "text" },
+            },
+            {
+              key: "url",
+              label: "URL",
+              accessor: (r) => r.url,
+              cell: (r) => (
+                <span className="font-mono text-sm text-slate-300 truncate block max-w-[250px]">{r.url}</span>
+              ),
+              defaultWidth: 280,
+              filter: { type: "text", placeholder: "e.g. github.com" },
+            },
+            {
+              key: "branch",
+              label: "Branch",
+              accessor: (r) => r.branch,
+              cell: (r) => (
+                <Badge variant="outline" className="border-slate-600 text-slate-300">{r.branch}</Badge>
+              ),
+              defaultWidth: 120,
+              filter: { type: "text" },
+            },
+            {
+              key: "auth_type",
+              label: "Auth Type",
+              accessor: (r) => r.auth_type,
+              cell: (r) => (
+                <Badge className={r.auth_type === "ssh_key" ? "bg-blue-600 text-white" : "bg-amber-600 text-white"}>
+                  {r.auth_type === "ssh_key" ? "SSH Key" : "HTTPS"}
+                </Badge>
+              ),
+              defaultWidth: 130,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "last_sync",
+              label: "Last Sync",
+              accessor: (r) => r.last_sync_at ?? "",
+              cell: (r) => <span className="text-slate-400">{relativeTime(r.last_sync_at)}</span>,
+              defaultWidth: 160,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (r) => (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => openEditDialog(r)}>Edit</Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setDeleteConfirmId(r.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>

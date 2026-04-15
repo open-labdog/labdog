@@ -5,18 +5,11 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { TableSkeleton } from "@/components/ui/skeleton"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useDelayedLoading } from "@/lib/utils"
-import type { HostGroup, WorkflowRunDetail } from "@/lib/types"
+import type { HostGroup, WorkflowRunDetail, WorkflowHostRun } from "@/lib/types"
 
 function RunStatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -155,65 +148,85 @@ export default function WorkflowRunDetailPage() {
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-white">Host Progress</h2>
 
-            {run.host_runs.length === 0 ? (
-              <div className="text-slate-400 py-8 text-center">
-                No hosts have been processed yet.
-              </div>
-            ) : (
-              <div className="rounded-lg border border-slate-700 bg-slate-900 overflow-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-slate-700">
-                      <TableHead>Hostname</TableHead>
-                      <TableHead>Current Step</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Snapshot</TableHead>
-                      <TableHead>Error</TableHead>
-                      <TableHead>Started</TableHead>
-                      <TableHead>Completed</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {run.host_runs.map((hr) => (
-                      <TableRow key={hr.id} className="border-slate-700">
-                        <TableCell className="font-mono text-white text-sm">
-                          <Link
-                            href={`/hosts/${hr.host_id}`}
-                            className="hover:text-blue-400 transition-colors"
-                          >
-                            {hr.hostname}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <StepBadge step={hr.step} />
-                        </TableCell>
-                        <TableCell>
-                          <HostStatusBadge status={hr.status} />
-                        </TableCell>
-                        <TableCell className="font-mono text-slate-400 text-xs">
-                          {hr.snapshot_name ?? "—"}
-                        </TableCell>
-                        <TableCell className="text-red-400 text-xs max-w-[400px]">
-                          {hr.error_message ? (
-                            <span title={hr.error_message}>
-                              {hr.error_message}
-                            </span>
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-slate-300 text-sm whitespace-nowrap">
-                          {formatDateTime(hr.started_at)}
-                        </TableCell>
-                        <TableCell className="text-slate-300 text-sm whitespace-nowrap">
-                          {formatDateTime(hr.completed_at)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
+            <DataTable<WorkflowHostRun>
+              tableId="workflow-run-hosts"
+              data={run.host_runs}
+              emptyMessage="No hosts have been processed yet."
+              getRowKey={(hr) => hr.id}
+              columns={[
+                {
+                  key: "hostname",
+                  label: "Hostname",
+                  accessor: (hr) => hr.hostname,
+                  cell: (hr) => (
+                    <Link
+                      href={`/hosts/${hr.host_id}`}
+                      className="font-mono text-white text-sm hover:text-blue-400 transition-colors"
+                    >
+                      {hr.hostname}
+                    </Link>
+                  ),
+                  defaultWidth: 180,
+                  filter: { type: "text", placeholder: "e.g. web-01" },
+                },
+                {
+                  key: "step",
+                  label: "Current Step",
+                  accessor: (hr) => hr.step,
+                  cell: (hr) => <StepBadge step={hr.step} />,
+                  defaultWidth: 130,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "status",
+                  label: "Status",
+                  accessor: (hr) => hr.status,
+                  cell: (hr) => <HostStatusBadge status={hr.status} />,
+                  defaultWidth: 120,
+                  filter: { type: "enum", from: "accessor" },
+                },
+                {
+                  key: "snapshot_name",
+                  label: "Snapshot",
+                  accessor: (hr) => hr.snapshot_name ?? "",
+                  cell: (hr) => (
+                    <span className="font-mono text-slate-400 text-xs">{hr.snapshot_name ?? "—"}</span>
+                  ),
+                  defaultWidth: 180,
+                },
+                {
+                  key: "error_message",
+                  label: "Error",
+                  accessor: (hr) => hr.error_message ?? "",
+                  cell: (hr) => hr.error_message ? (
+                    <span className="text-red-400 text-xs" title={hr.error_message}>{hr.error_message}</span>
+                  ) : (
+                    <span className="text-slate-600">—</span>
+                  ),
+                  defaultWidth: 300,
+                },
+                {
+                  key: "started_at",
+                  label: "Started",
+                  accessor: (hr) => hr.started_at,
+                  cell: (hr) => (
+                    <span className="text-slate-300 text-sm whitespace-nowrap">{formatDateTime(hr.started_at)}</span>
+                  ),
+                  defaultWidth: 180,
+                  filter: { type: "dateRange" },
+                },
+                {
+                  key: "completed_at",
+                  label: "Completed",
+                  accessor: (hr) => hr.completed_at,
+                  cell: (hr) => (
+                    <span className="text-slate-300 text-sm whitespace-nowrap">{formatDateTime(hr.completed_at)}</span>
+                  ),
+                  defaultWidth: 180,
+                  filter: { type: "dateRange" },
+                },
+              ]}
+            />
           </div>
         </>
       )}

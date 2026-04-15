@@ -17,15 +17,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { cn, useDelayedLoading } from "@/lib/utils"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
@@ -160,14 +154,6 @@ export default function GroupDetailPage() {
     })
   }
 
-  function toggleRemoveAll() {
-    if (removeSelected.size === groupHosts.length && groupHosts.length > 0) {
-      setRemoveSelected(new Set())
-    } else {
-      setRemoveSelected(new Set(groupHosts.map((h) => h.id)))
-    }
-  }
-
   async function handleBulkRemove() {
     const ids = Array.from(removeSelected)
     setRemoveLoading(true)
@@ -191,14 +177,6 @@ export default function GroupDetailPage() {
       else next.add(hostId)
       return next
     })
-  }
-
-  function toggleAddAllHosts() {
-    if (addHostsSelected.size === availableHosts.length && availableHosts.length > 0) {
-      setAddHostsSelected(new Set())
-    } else {
-      setAddHostsSelected(new Set(availableHosts.map((h) => h.id)))
-    }
   }
 
   // Update form when group loads
@@ -648,63 +626,78 @@ export default function GroupDetailPage() {
                     </Button>
                   </div>
                 )}
-                <div className="rounded-lg border border-slate-700 bg-slate-900">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="border-slate-700">
-                        <TableHead className="w-10">
-                          <input
-                            type="checkbox"
-                            checked={removeSelected.size === groupHosts.length && groupHosts.length > 0}
-                            onChange={toggleRemoveAll}
-                            className="rounded border-slate-600"
-                            aria-label="Select all hosts"
-                          />
-                        </TableHead>
-                        <TableHead>Hostname</TableHead>
-                        <TableHead>IP Address</TableHead>
-                        <TableHead>Firewall</TableHead>
-                        <TableHead>Sync Status</TableHead>
-                        <TableHead>Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {groupHosts.map((host) => (
-                        <TableRow key={host.id} className="border-slate-700">
-                          <TableCell>
-                            <input
-                              type="checkbox"
-                              checked={removeSelected.has(host.id)}
-                              onChange={() => toggleRemoveHost(host.id)}
-                              className="rounded border-slate-600"
-                              aria-label={`Select ${host.hostname}`}
-                            />
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            <Link href={`/hosts/${host.id}`} className="text-white hover:text-blue-400 transition-colors">{host.hostname}</Link>
-                          </TableCell>
-                          <TableCell className="font-mono text-slate-300 text-xs">
-                            {host.ip_address}
-                          </TableCell>
-                          <TableCell>
-                            <FirewallBadge backend={host.firewall_backend} />
-                          </TableCell>
-                          <TableCell>
-                            <SyncStatusBadge status={host.sync_status} />
-                          </TableCell>
-                          <TableCell>
-                            <Link
-                              href={`/hosts/${host.id}`}
-                              className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-                            >
-                              View
-                            </Link>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                <DataTable<Host>
+                  tableId="group-hosts"
+                  data={groupHosts}
+                  getRowKey={(h) => h.id}
+                  emptyMessage="No hosts in this group."
+                  columns={[
+                    {
+                      key: "select",
+                      label: "",
+                      cell: (host) => (
+                        <input
+                          type="checkbox"
+                          checked={removeSelected.has(host.id)}
+                          onChange={() => toggleRemoveHost(host.id)}
+                          className="rounded border-slate-600"
+                          aria-label={`Select ${host.hostname}`}
+                        />
+                      ),
+                      defaultWidth: 40,
+                      resizable: false,
+                      sortable: false,
+                    },
+                    {
+                      key: "hostname",
+                      label: "Hostname",
+                      accessor: (h) => h.hostname,
+                      cell: (h) => (
+                        <Link href={`/hosts/${h.id}`} className="text-white hover:text-blue-400 transition-colors font-medium">
+                          {h.hostname}
+                        </Link>
+                      ),
+                      defaultWidth: 200,
+                      filter: { type: "text", placeholder: "e.g. web-01" },
+                    },
+                    {
+                      key: "ip_address",
+                      label: "IP Address",
+                      accessor: (h) => h.ip_address,
+                      cell: (h) => <span className="font-mono text-slate-300 text-xs">{h.ip_address}</span>,
+                      defaultWidth: 160,
+                      filter: { type: "text", placeholder: "e.g. 10.0.1" },
+                    },
+                    {
+                      key: "firewall",
+                      label: "Firewall",
+                      accessor: (h) => h.firewall_backend,
+                      cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+                      defaultWidth: 120,
+                      filter: { type: "enum", from: "accessor" },
+                    },
+                    {
+                      key: "sync_status",
+                      label: "Sync Status",
+                      accessor: (h) => h.sync_status,
+                      cell: (h) => <SyncStatusBadge status={h.sync_status} />,
+                      defaultWidth: 140,
+                      filter: { type: "enum", from: "accessor" },
+                    },
+                    {
+                      key: "actions",
+                      label: "Actions",
+                      cell: (h) => (
+                        <Link href={`/hosts/${h.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                          View
+                        </Link>
+                      ),
+                      defaultWidth: 100,
+                      resizable: false,
+                      sortable: false,
+                    },
+                  ] satisfies ColumnDef<Host>[]}
+                />
               </>
             )}
           </div>
@@ -727,47 +720,57 @@ export default function GroupDetailPage() {
                     {addHostsSearch ? "No matching hosts found." : "All hosts are already in this group."}
                   </p>
                 ) : (
-                  <div className="rounded-lg border border-slate-700 max-h-[360px] overflow-y-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-slate-700">
-                          <TableHead className="w-10">
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <DataTable<Host>
+                      tableId="group-add-hosts-picker"
+                      data={availableHosts}
+                      getRowKey={(h) => h.id}
+                      emptyMessage="No available hosts."
+                      onRowClick={(host) => toggleAddHost(host.id)}
+                      rowClassName={() => "cursor-pointer"}
+                      columns={[
+                        {
+                          key: "select",
+                          label: "",
+                          cell: (host) => (
                             <input
                               type="checkbox"
-                              checked={addHostsSelected.size === availableHosts.length && availableHosts.length > 0}
-                              onChange={toggleAddAllHosts}
+                              checked={addHostsSelected.has(host.id)}
+                              onChange={(e) => e.stopPropagation()}
                               className="rounded border-slate-600"
-                              aria-label="Select all hosts"
+                              aria-label={`Select ${host.hostname}`}
                             />
-                          </TableHead>
-                          <TableHead>Hostname</TableHead>
-                          <TableHead>IP Address</TableHead>
-                          <TableHead>Firewall</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {availableHosts.map((host) => (
-                          <TableRow
-                            key={host.id}
-                            className="border-slate-700 cursor-pointer hover:bg-slate-800"
-                            onClick={() => toggleAddHost(host.id)}
-                          >
-                            <TableCell>
-                              <input
-                                type="checkbox"
-                                checked={addHostsSelected.has(host.id)}
-                                onChange={(e) => e.stopPropagation()}
-                                className="rounded border-slate-600"
-                                aria-label={`Select ${host.hostname}`}
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium text-white">{host.hostname}</TableCell>
-                            <TableCell className="font-mono text-slate-300 text-xs">{host.ip_address}</TableCell>
-                            <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                          ),
+                          defaultWidth: 40,
+                          resizable: false,
+                          sortable: false,
+                        },
+                        {
+                          key: "hostname",
+                          label: "Hostname",
+                          accessor: (h) => h.hostname,
+                          cell: (h) => <span className="font-medium text-white">{h.hostname}</span>,
+                          defaultWidth: 200,
+                          filter: { type: "text", placeholder: "e.g. web-01" },
+                        },
+                        {
+                          key: "ip_address",
+                          label: "IP Address",
+                          accessor: (h) => h.ip_address,
+                          cell: (h) => <span className="font-mono text-slate-300 text-xs">{h.ip_address}</span>,
+                          defaultWidth: 160,
+                          filter: { type: "text", placeholder: "e.g. 10.0.1" },
+                        },
+                        {
+                          key: "firewall",
+                          label: "Firewall",
+                          accessor: (h) => h.firewall_backend,
+                          cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+                          defaultWidth: 120,
+                          filter: { type: "enum", from: "accessor" },
+                        },
+                      ] satisfies ColumnDef<Host>[]}
+                    />
                   </div>
                 )}
 

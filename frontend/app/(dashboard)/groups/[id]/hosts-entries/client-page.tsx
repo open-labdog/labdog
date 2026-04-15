@@ -17,15 +17,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { hostsEntrySchema, type HostsEntryInput } from "@/lib/schemas"
@@ -149,64 +142,78 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
         <div className="text-red-400 py-8 text-center">Failed to load hosts entries</div>
       )}
 
-      {!isLoading && !error && entries && entries.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">
-          No hosts file entries yet. Click <strong>Add Entry</strong> to create one.
-        </div>
-      )}
-
-      {!isLoading && !error && entries && entries.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>IP Address</TableHead>
-                <TableHead>Hostname</TableHead>
-                <TableHead>Aliases</TableHead>
-                <TableHead>Comment</TableHead>
-                <TableHead className="w-40">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow key={entry.id} className="border-slate-700">
-                  <TableCell className="font-mono text-white text-sm">{entry.ip_address}</TableCell>
-                  <TableCell className="font-mono text-slate-300 text-sm">{entry.hostname}</TableCell>
-                  <TableCell className="text-slate-300 text-xs max-w-[200px] truncate">
-                    {entry.aliases.length > 0 ? entry.aliases.join(", ") : "—"}
-                  </TableCell>
-                  <TableCell className="text-slate-400 text-xs max-w-[160px] truncate">{entry.comment ?? "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {entry.is_system ? (
-                        <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
-                      ) : (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openEditDialog(entry)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={deleteMutation.isPending}
-                            onClick={() => handleDelete(entry)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {deleteMutation.isPending ? "…" : "Delete"}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<HostsEntry>
+          tableId="group-hosts-entries"
+          data={entries}
+          emptyMessage={<>No hosts file entries yet. Click <strong>Add Entry</strong> to create one.</>}
+          getRowKey={(e) => e.id}
+          columns={[
+            {
+              key: "ip_address",
+              label: "IP Address",
+              accessor: (e) => e.ip_address,
+              cell: (e) => <span className="font-mono text-white text-sm">{e.ip_address}</span>,
+              defaultWidth: 160,
+              filter: { type: "text", placeholder: "e.g. 10.0.1" },
+            },
+            {
+              key: "hostname",
+              label: "Hostname",
+              accessor: (e) => e.hostname,
+              cell: (e) => <span className="font-mono text-slate-300 text-sm">{e.hostname}</span>,
+              defaultWidth: 200,
+              filter: { type: "text", placeholder: "e.g. web-01" },
+            },
+            {
+              key: "aliases",
+              label: "Aliases",
+              accessor: (e) => e.aliases.join(", "),
+              cell: (e) => (
+                <span className="text-slate-300 text-xs">
+                  {e.aliases.length > 0 ? e.aliases.join(", ") : "—"}
+                </span>
+              ),
+              defaultWidth: 200,
+            },
+            {
+              key: "comment",
+              label: "Comment",
+              accessor: (e) => e.comment ?? "",
+              cell: (e) => <span className="text-slate-400 text-xs">{e.comment ?? "—"}</span>,
+              defaultWidth: 180,
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (entry) => (
+                <div className="flex gap-1">
+                  {entry.is_system ? (
+                    <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => openEditDialog(entry)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => handleDelete(entry)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                      >
+                        {deleteMutation.isPending ? "…" : "Delete"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {/* Create/Edit Dialog */}

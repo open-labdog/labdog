@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -17,14 +18,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -260,68 +253,88 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
           <div className="text-red-400 py-8 text-center">Failed to load packages</div>
         )}
 
-        {!pkgLoading && !pkgError && packages.length === 0 && (
-          <div className="text-slate-400 py-8 text-center">
-            No package rules yet. Click <strong>Add Package</strong> to create one.
-          </div>
-        )}
-
-        {!pkgLoading && !pkgError && packages.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Package Name</TableHead>
-                  <TableHead>Version</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Package Manager</TableHead>
-                   <TableHead>Hold</TableHead>
-                   <TableHead className="w-40">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {packages.map((pkg) => (
-                  <TableRow key={pkg.id} className="border-slate-700">
-                    <TableCell className="font-mono text-white text-sm">{pkg.package_name}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</TableCell>
-                    <TableCell>
-                      <StateBadge state={pkg.state} />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
-                    </TableCell>
-                     <TableCell>
-                       {pkg.hold ? (
-                         <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
-                       ) : (
-                         <span className="text-slate-600">—</span>
-                       )}
-                     </TableCell>
-                     <TableCell>
-                       <div className="flex gap-1">
-                         <Button
-                           size="sm"
-                           variant="ghost"
-                           onClick={() => openPkgEditDialog(pkg)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={pkgDeleteMutation.isPending}
-                          onClick={() => handlePkgDelete(pkg)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        >
-                          {pkgDeleteMutation.isPending ? "..." : "Delete"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+        {!pkgLoading && !pkgError && (
+          <DataTable<PackageRule>
+            tableId="group-packages"
+            data={packages}
+            emptyMessage={
+              <div className="text-slate-400 py-8 text-center">
+                No package rules yet. Click <strong>Add Package</strong> to create one.
+              </div>
+            }
+            getRowKey={(pkg) => pkg.id}
+            columns={[
+              {
+                key: "package_name",
+                label: "Package Name",
+                accessor: (pkg) => pkg.package_name,
+                cell: (pkg) => <span className="font-mono text-white text-sm">{pkg.package_name}</span>,
+                defaultWidth: 200,
+                filter: { type: "text", placeholder: "e.g. curl" },
+              },
+              {
+                key: "version",
+                label: "Version",
+                accessor: (pkg) => pkg.version ?? "any",
+                cell: (pkg) => <span className="font-mono text-slate-300 text-xs">{pkg.version ?? "any"}</span>,
+                defaultWidth: 140,
+                filter: { type: "text" },
+              },
+              {
+                key: "state",
+                label: "State",
+                accessor: (pkg) => pkg.state,
+                cell: (pkg) => <StateBadge state={pkg.state} />,
+                defaultWidth: 120,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "package_manager",
+                label: "Package Manager",
+                accessor: (pkg) => pkg.package_manager,
+                cell: (pkg) => (
+                  <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>
+                ),
+                defaultWidth: 160,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "hold",
+                label: "Hold",
+                accessor: (pkg) => pkg.hold,
+                cell: (pkg) => pkg.hold ? (
+                  <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/50 text-amber-400">held</span>
+                ) : (
+                  <span className="text-slate-600">—</span>
+                ),
+                defaultWidth: 80,
+                filter: { type: "boolean" },
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                cell: (pkg) => (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openPkgEditDialog(pkg)}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={pkgDeleteMutation.isPending}
+                      onClick={() => handlePkgDelete(pkg)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                    >
+                      {pkgDeleteMutation.isPending ? "..." : "Delete"}
+                    </Button>
+                  </div>
+                ),
+                defaultWidth: 160,
+                resizable: false,
+                sortable: false,
+              },
+            ]}
+          />
         )}
       </div>
 
@@ -343,66 +356,88 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
           <div className="text-red-400 py-8 text-center">Failed to load repositories</div>
         )}
 
-        {!repoLoading && !repoError && repos.length === 0 && (
-          <div className="text-slate-400 py-8 text-center">
-            No repositories yet. Click <strong>Add Repository</strong> to create one.
-          </div>
-        )}
-
-        {!repoLoading && !repoError && repos.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Name</TableHead>
-                  <TableHead>URL</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Distribution</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {repos.map((repo) => (
-                  <TableRow key={repo.id} className="border-slate-700">
-                    <TableCell className="font-mono text-white text-sm">{repo.name}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs max-w-[240px]">
-                      <span title={repo.url}>{truncateUrl(repo.url)}</span>
-                    </TableCell>
-                    <TableCell>
-                      <RepoTypeBadge type={repo.repo_type} />
-                    </TableCell>
-                    <TableCell className="text-slate-300 text-xs">
-                      {repo.distribution ?? "—"}
-                    </TableCell>
-                    <TableCell>
-                      <StateBadge state={repo.state} />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openRepoEditDialog(repo)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={repoDeleteMutation.isPending}
-                          onClick={() => handleRepoDelete(repo)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        >
-                          {repoDeleteMutation.isPending ? "..." : "Delete"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+        {!repoLoading && !repoError && (
+          <DataTable<PackageRepository>
+            tableId="group-package-repos"
+            data={repos}
+            emptyMessage={
+              <div className="text-slate-400 py-8 text-center">
+                No repositories yet. Click <strong>Add Repository</strong> to create one.
+              </div>
+            }
+            getRowKey={(repo) => repo.id}
+            columns={[
+              {
+                key: "name",
+                label: "Name",
+                accessor: (repo) => repo.name,
+                cell: (repo) => <span className="font-mono text-white text-sm">{repo.name}</span>,
+                defaultWidth: 180,
+                filter: { type: "text" },
+              },
+              {
+                key: "url",
+                label: "URL",
+                accessor: (repo) => repo.url,
+                cell: (repo) => (
+                  <span className="font-mono text-slate-300 text-xs" title={repo.url}>
+                    {truncateUrl(repo.url)}
+                  </span>
+                ),
+                defaultWidth: 240,
+                filter: { type: "text", placeholder: "e.g. github.com" },
+              },
+              {
+                key: "repo_type",
+                label: "Type",
+                accessor: (repo) => repo.repo_type,
+                cell: (repo) => <RepoTypeBadge type={repo.repo_type} />,
+                defaultWidth: 100,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "distribution",
+                label: "Distribution",
+                accessor: (repo) => repo.distribution ?? "",
+                cell: (repo) => (
+                  <span className="text-slate-300 text-xs">{repo.distribution ?? "—"}</span>
+                ),
+                defaultWidth: 140,
+                filter: { type: "text" },
+              },
+              {
+                key: "state",
+                label: "State",
+                accessor: (repo) => repo.state,
+                cell: (repo) => <StateBadge state={repo.state} />,
+                defaultWidth: 120,
+                filter: { type: "enum", from: "accessor" },
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                cell: (repo) => (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openRepoEditDialog(repo)}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={repoDeleteMutation.isPending}
+                      onClick={() => handleRepoDelete(repo)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                    >
+                      {repoDeleteMutation.isPending ? "..." : "Delete"}
+                    </Button>
+                  </div>
+                ),
+                defaultWidth: 160,
+                resizable: false,
+                sortable: false,
+              },
+            ]}
+          />
         )}
       </div>
 

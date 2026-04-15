@@ -9,14 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import type { HostGroup, UpdateWorkflow } from "@/lib/types"
 
 interface WorkflowWithGroup {
@@ -71,99 +64,101 @@ export default function SchedulesPage() {
 
       {showLoading && <TableSkeleton rows={4} columns={6} />}
 
-      {!isLoading && (!workflows || workflows.length === 0) && (
-        <div className="text-slate-400 py-8 text-center">
-          No update workflows configured yet. Configure one from a group&apos;s{" "}
-          <strong>Workflow</strong> tab.
-        </div>
-      )}
-
-      {!isLoading && workflows && workflows.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead className="w-[20%]">Group</TableHead>
-                <TableHead className="w-[30%]">Schedule</TableHead>
-                <TableHead className="w-24">Enabled</TableHead>
-                <TableHead className="w-24">Snapshots</TableHead>
-                <TableHead className="w-28">Rollback</TableHead>
-                <TableHead className="w-28">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {workflows.map(({ group, workflow }) => (
-                <TableRow key={workflow.id} className="border-slate-700">
-                  <TableCell className="text-white font-medium">
-                    <Link
-                      href={`/groups/${group.id}`}
-                      className="hover:underline"
-                    >
-                      {group.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    {workflow.schedule_cron ? (
-                      <div>
-                        <span className="font-mono text-white text-sm">
-                          {workflow.schedule_cron}
-                        </span>
-                        {cronToHuman(workflow.schedule_cron) !==
-                          workflow.schedule_cron && (
-                          <div className="text-slate-400 text-xs mt-0.5">
-                            {cronToHuman(workflow.schedule_cron)}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-slate-500 text-sm">Manual only</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        workflow.enabled
-                          ? "bg-green-600 text-white"
-                          : "bg-slate-600 text-white"
-                      }
-                    >
-                      {workflow.enabled ? "Enabled" : "Disabled"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        workflow.pre_update_snapshot
-                          ? "bg-green-600 text-white"
-                          : "bg-slate-600 text-white"
-                      }
-                    >
-                      {workflow.pre_update_snapshot ? "On" : "Off"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      className={
-                        workflow.auto_rollback
-                          ? "bg-green-600 text-white"
-                          : "bg-slate-600 text-white"
-                      }
-                    >
-                      {workflow.auto_rollback ? "On" : "Off"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/groups/${group.id}?tab=workflow`}>
-                      <Button size="sm" variant="ghost">
-                        Configure
-                      </Button>
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && (
+        <DataTable<WorkflowWithGroup>
+          tableId="schedules"
+          data={workflows}
+          emptyMessage={
+            <>
+              No update workflows configured yet. Configure one from a group&apos;s{" "}
+              <strong>Workflow</strong> tab.
+            </>
+          }
+          getRowKey={(row) => row.workflow.id}
+          columns={[
+            {
+              key: "group",
+              label: "Group",
+              accessor: (row) => row.group.name,
+              cell: (row) => (
+                <Link href={`/groups/${row.group.id}`} className="text-white font-medium hover:underline">
+                  {row.group.name}
+                </Link>
+              ),
+              defaultWidth: 180,
+              filter: { type: "text" },
+            },
+            {
+              key: "schedule",
+              label: "Schedule",
+              accessor: (row) => row.workflow.schedule_cron ?? "",
+              cell: (row) => row.workflow.schedule_cron ? (
+                <div>
+                  <span className="font-mono text-white text-sm">
+                    {row.workflow.schedule_cron}
+                  </span>
+                  {cronToHuman(row.workflow.schedule_cron) !== row.workflow.schedule_cron && (
+                    <div className="text-slate-400 text-xs mt-0.5">
+                      {cronToHuman(row.workflow.schedule_cron)}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <span className="text-slate-500 text-sm">Manual only</span>
+              ),
+              defaultWidth: 240,
+              filter: { type: "text", placeholder: "e.g. */5" },
+            },
+            {
+              key: "enabled",
+              label: "Enabled",
+              accessor: (row) => row.workflow.enabled,
+              cell: (row) => (
+                <Badge className={row.workflow.enabled ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
+                  {row.workflow.enabled ? "Enabled" : "Disabled"}
+                </Badge>
+              ),
+              defaultWidth: 110,
+              filter: { type: "boolean" },
+            },
+            {
+              key: "snapshots",
+              label: "Snapshots",
+              accessor: (row) => row.workflow.pre_update_snapshot,
+              cell: (row) => (
+                <Badge className={row.workflow.pre_update_snapshot ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
+                  {row.workflow.pre_update_snapshot ? "On" : "Off"}
+                </Badge>
+              ),
+              defaultWidth: 110,
+              filter: { type: "boolean" },
+            },
+            {
+              key: "rollback",
+              label: "Rollback",
+              accessor: (row) => row.workflow.auto_rollback,
+              cell: (row) => (
+                <Badge className={row.workflow.auto_rollback ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
+                  {row.workflow.auto_rollback ? "On" : "Off"}
+                </Badge>
+              ),
+              defaultWidth: 110,
+              filter: { type: "boolean" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (row) => (
+                <Link href={`/groups/${row.group.id}?tab=workflow`}>
+                  <Button size="sm" variant="ghost">Configure</Button>
+                </Link>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
     </div>
   )

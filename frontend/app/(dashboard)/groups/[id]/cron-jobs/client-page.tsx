@@ -19,15 +19,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { cronJobSchema, type CronJobInput } from "@/lib/schemas"
@@ -261,69 +254,89 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
         <div className="text-red-400 py-8 text-center">Failed to load cron jobs</div>
       )}
 
-      {!isLoading && !error && cronJobs && cronJobs.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">
-          No cron jobs yet. Click <strong>Add Cron Job</strong> to create one.
-        </div>
-      )}
-
-      {!isLoading && !error && cronJobs && cronJobs.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Name</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Schedule</TableHead>
-                <TableHead>Command</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead className="w-40">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {cronJobs.map((job) => (
-                <TableRow key={job.id} className="border-slate-700">
-                  <TableCell className="font-mono text-white text-sm">{job.name}</TableCell>
-                  <TableCell className="font-mono text-slate-300 text-xs">{job.user}</TableCell>
-                  <TableCell>
-                    <div>
-                      <span className="font-mono text-slate-300 text-xs">{job.schedule}</span>
-                      {cronToHuman(job.schedule) !== job.schedule && (
-                        <div className="text-slate-500 text-xs mt-0.5">{cronToHuman(job.schedule)}</div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-mono text-slate-300 text-xs max-w-[240px]">
-                    <span title={job.command}>{truncateCommand(job.command)}</span>
-                  </TableCell>
-                  <TableCell>
-                    <StateBadge state={job.state} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEditDialog(job)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => handleDelete(job)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                      >
-                        {deleteMutation.isPending ? "..." : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<CronJob>
+          tableId="group-cron-jobs"
+          data={cronJobs}
+          emptyMessage={<>No cron jobs yet. Click <strong>Add Cron Job</strong> to create one.</>}
+          getRowKey={(j) => j.id}
+          columns={[
+            {
+              key: "name",
+              label: "Name",
+              accessor: (j) => j.name,
+              cell: (j) => <span className="font-mono text-white text-sm">{j.name}</span>,
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "e.g. backup" },
+            },
+            {
+              key: "user",
+              label: "User",
+              accessor: (j) => j.user,
+              cell: (j) => <span className="font-mono text-slate-300 text-xs">{j.user}</span>,
+              defaultWidth: 100,
+              filter: { type: "text", placeholder: "e.g. root" },
+            },
+            {
+              key: "schedule",
+              label: "Schedule",
+              accessor: (j) => j.schedule,
+              cell: (j) => (
+                <div>
+                  <span className="font-mono text-slate-300 text-xs">{j.schedule}</span>
+                  {cronToHuman(j.schedule) !== j.schedule && (
+                    <div className="text-slate-500 text-xs mt-0.5">{cronToHuman(j.schedule)}</div>
+                  )}
+                </div>
+              ),
+              defaultWidth: 160,
+              filter: { type: "text", placeholder: "e.g. */5" },
+            },
+            {
+              key: "command",
+              label: "Command",
+              accessor: (j) => j.command,
+              cell: (j) => (
+                <span className="font-mono text-slate-300 text-xs" title={j.command}>
+                  {truncateCommand(j.command)}
+                </span>
+              ),
+              defaultWidth: 260,
+              filter: { type: "text", placeholder: "e.g. backup" },
+            },
+            {
+              key: "state",
+              label: "State",
+              accessor: (j) => j.state,
+              cell: (j) => <StateBadge state={j.state} />,
+              defaultWidth: 110,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (job) => (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(job)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => handleDelete(job)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                  >
+                    {deleteMutation.isPending ? "..." : "Delete"}
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

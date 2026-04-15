@@ -11,14 +11,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { GroupMultiSelect } from "@/components/group-multi-select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import type { SSHKey, HostGroup } from "@/lib/types"
 
@@ -177,6 +171,57 @@ export default function DiscoverHostsPage() {
     ? Math.round((scanStatus.progress / scanStatus.total) * 100)
     : 0
 
+  const discoveryColumns: ColumnDef<DiscoveredHost>[] = [
+    {
+      key: "select",
+      label: "",
+      cell: (host) => (
+        <input
+          type="checkbox"
+          checked={selectedHosts.has(host.ip)}
+          onChange={() => toggleHost(host.ip)}
+          disabled={phase === "adding"}
+          className="rounded border-input"
+        />
+      ),
+      defaultWidth: 40,
+      resizable: false,
+      sortable: false,
+    },
+    {
+      key: "ip",
+      label: "IP Address",
+      accessor: (h) => h.ip,
+      cell: (h) => <span className="font-mono text-slate-300">{h.ip}</span>,
+      defaultWidth: 160,
+      filter: { type: "text", placeholder: "e.g. 10.0.1" },
+    },
+    {
+      key: "hostname",
+      label: "Hostname",
+      accessor: (h) => h.hostname ?? "",
+      cell: (h) => <span className="text-white">{h.hostname ?? "—"}</span>,
+      defaultWidth: 200,
+      filter: { type: "text", placeholder: "e.g. web-01" },
+    },
+    {
+      key: "ssh_status",
+      label: "Status",
+      accessor: (h) => h.ssh_status,
+      cell: (h) => h.ssh_status === "open" ? (
+        <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400 ring-1 ring-green-500/20">
+          SSH Open
+        </span>
+      ) : (
+        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
+          SSH Refused
+        </span>
+      ),
+      defaultWidth: 140,
+      filter: { type: "enum", from: "accessor" },
+    },
+  ]
+
   return (
     <div className="max-w-3xl space-y-6">
       <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discover" }]} />
@@ -263,54 +308,27 @@ export default function DiscoverHostsPage() {
       )}
 
       {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead className="w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedHosts.size === hostsFound.length && hostsFound.length > 0}
-                    onChange={toggleAll}
-                    disabled={phase === "adding"}
-                    className="rounded border-input"
-                  />
-                </TableHead>
-                <TableHead>IP Address</TableHead>
-                <TableHead>Hostname</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {hostsFound.map((host) => (
-                <TableRow key={host.ip} className="border-slate-700">
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      checked={selectedHosts.has(host.ip)}
-                      onChange={() => toggleHost(host.ip)}
-                      disabled={phase === "adding"}
-                      className="rounded border-input"
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-slate-300">{host.ip}</TableCell>
-                  <TableCell className="text-white">{host.hostname ?? "—"}</TableCell>
-                  <TableCell>
-                    {host.ssh_status === "open" ? (
-                      <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400 ring-1 ring-green-500/20">
-                        SSH Open
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
-                        SSH Refused
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
+            <div className="flex items-center gap-2 mb-1">
+              <input
+                type="checkbox"
+                checked={selectedHosts.size === hostsFound.length && hostsFound.length > 0}
+                onChange={toggleAll}
+                disabled={phase === "adding"}
+                className="rounded border-input"
+              />
+              <span className="text-sm text-slate-400">Select all</span>
+            </div>
+          )}
+          <DataTable<DiscoveredHost>
+            tableId="discovery-results"
+            columns={discoveryColumns}
+            data={hostsFound}
+            getRowKey={(h) => h.ip}
+            emptyMessage="No hosts found."
+          />
+        </>
       )}
 
       {(phase === "done" || phase === "adding") && selectedHosts.size > 0 && !addResult && (

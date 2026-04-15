@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
+import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,14 +19,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -37,7 +30,6 @@ import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
 import type { SSHKey } from "@/lib/types"
 
 export default function SSHKeysPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
@@ -65,10 +57,6 @@ export default function SSHKeysPage() {
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
   const showLoading = useDelayedLoading(isLoading)
-
-  const filteredKeys = sshKeys?.filter(k =>
-    k.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) ?? []
 
   const uploadMutation = useApiMutation({
     mutationFn: (data: SshKeyInput) =>
@@ -126,14 +114,6 @@ export default function SSHKeysPage() {
       else next.add(id)
       return next
     })
-  }
-
-  const toggleSelectAll = () => {
-    if (selected.size === filteredKeys.length && filteredKeys.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredKeys.map(k => k.id)))
-    }
   }
 
   async function handleBulkDelete() {
@@ -290,30 +270,26 @@ export default function SSHKeysPage() {
         </Dialog>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search SSH keys..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+          <span className="text-sm text-slate-300">{selected.size} selected</span>
+          {bulkProgress ? (
+            <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+          ) : (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkConfirmOpen(true)}
+              disabled={bulkDeleting}
             >
-              <XIcon className="w-4 h-4" />
-            </button>
+              Delete Selected
+            </Button>
           )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
         </div>
-        {searchQuery && (
-          <span className="text-sm text-slate-400">
-            Showing {filteredKeys.length} of {sshKeys?.length ?? 0} keys
-          </span>
-        )}
-      </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={3} />}
 
@@ -321,107 +297,84 @@ export default function SSHKeysPage() {
         <div className="text-red-400 py-8 text-center">Failed to load SSH keys</div>
       )}
 
-      {!isLoading && !error && filteredKeys.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
-      )}
-
-      {!isLoading && !error && sshKeys?.length === 0 && !searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No SSH keys yet. Upload your first key to get started.
-        </div>
-      )}
-
-      {!isLoading && !error && filteredKeys.length > 0 && (
-        <>
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
-              <span className="text-sm text-slate-300">{selected.size} selected</span>
-              {bulkProgress ? (
-                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkConfirmOpen(true)}
-                  disabled={bulkDeleting}
-                >
-                  Delete Selected
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-            </div>
-          )}
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === filteredKeys.length && filteredKeys.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-600"
-                    />
-                  </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>SSH User</TableHead>
-                  <TableHead>Default</TableHead>
-                  <TableHead>Created At</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredKeys.map((key) => (
-                  <TableRow key={key.id} className="border-slate-700">
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(key.id)}
-                        onChange={() => toggleSelect(key.id)}
-                        className="rounded border-slate-600"
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium text-white">{key.name}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-sm">{key.ssh_user}</TableCell>
-                    <TableCell>
-                      {key.is_default ? (
-                        <Badge className="bg-green-600 text-white">Default</Badge>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-slate-400">
-                      {new Date(key.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => openEdit(key)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(key.id)}
-                          disabled={deleteMutation.isPending}
-                        >
-                          {deleteMutation.isPending ? "..." : "Delete"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </>
+      {!isLoading && !error && (
+        <DataTable<SSHKey>
+          tableId="ssh-keys"
+          data={sshKeys}
+          emptyMessage="No SSH keys yet. Upload your first key to get started."
+          getRowKey={(k) => k.id}
+          columns={[
+            {
+              key: "select",
+              label: "",
+              cell: (k) => (
+                <input
+                  type="checkbox"
+                  checked={selected.has(k.id)}
+                  onChange={() => toggleSelect(k.id)}
+                  className="rounded border-slate-600"
+                />
+              ),
+              defaultWidth: 40,
+              resizable: false,
+              sortable: false,
+            },
+            {
+              key: "name",
+              label: "Name",
+              accessor: (k) => k.name,
+              cell: (k) => <span className="font-medium text-white">{k.name}</span>,
+              defaultWidth: 200,
+              filter: { type: "text" },
+            },
+            {
+              key: "ssh_user",
+              label: "SSH User",
+              accessor: (k) => k.ssh_user,
+              cell: (k) => <span className="font-mono text-slate-300 text-sm">{k.ssh_user}</span>,
+              defaultWidth: 130,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "is_default",
+              label: "Default",
+              accessor: (k) => k.is_default,
+              cell: (k) => k.is_default
+                ? <Badge className="bg-green-600 text-white">Default</Badge>
+                : <span className="text-slate-500">—</span>,
+              defaultWidth: 100,
+              filter: { type: "boolean", trueLabel: "Yes", falseLabel: "No" },
+            },
+            {
+              key: "created_at",
+              label: "Created At",
+              accessor: (k) => k.created_at,
+              cell: (k) => <span className="text-slate-400">{new Date(k.created_at).toLocaleDateString()}</span>,
+              defaultWidth: 120,
+              filter: { type: "dateRange" },
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (k) => (
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(k)}>Edit</Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => handleDelete(k.id)}
+                    disabled={deleteMutation.isPending}
+                  >
+                    {deleteMutation.isPending ? "..." : "Delete"}
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {confirmState && (

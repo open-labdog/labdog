@@ -7,16 +7,16 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function useDelayedLoading(isLoading: boolean, delayMs: number = 200): boolean {
-  const [showLoading, setShowLoading] = useState(false)
+  const [elapsed, setElapsed] = useState(false)
 
   useEffect(() => {
-    if (!isLoading) {
-      setShowLoading(false)
-      return
+    if (!isLoading) return
+    const timer = setTimeout(() => setElapsed(true), delayMs)
+    return () => {
+      clearTimeout(timer)
+      setElapsed(false)
     }
-    const timer = setTimeout(() => setShowLoading(true), delayMs)
-    return () => clearTimeout(timer)
   }, [isLoading, delayMs])
 
-  return showLoading
+  return isLoading && elapsed
 }
