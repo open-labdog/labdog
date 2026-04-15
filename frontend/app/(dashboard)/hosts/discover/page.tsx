@@ -218,7 +218,7 @@ export default function DiscoverHostsPage() {
         </span>
       ),
       defaultWidth: 140,
-      filter: { type: "enum", from: "accessor" },
+      filter: { type: "enum", options: [{label:"SSH Open",value:"open"},{label:"SSH Refused",value:"refused"}] },
     },
   ]
 

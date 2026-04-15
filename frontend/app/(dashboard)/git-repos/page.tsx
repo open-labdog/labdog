@@ -356,7 +356,7 @@ export default function GitReposPage() {
                 </Badge>
               ),
               defaultWidth: 130,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"SSH Key",value:"ssh_key"},{label:"HTTPS Token",value:"https_token"}] },
             },
             {
               key: "last_sync",

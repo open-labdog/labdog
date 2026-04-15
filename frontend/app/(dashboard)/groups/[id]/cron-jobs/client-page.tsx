@@ -310,7 +310,7 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               accessor: (j) => j.state,
               cell: (j) => <StateBadge state={j.state} />,
               defaultWidth: 110,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
             },
             {
               key: "actions",

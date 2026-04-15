@@ -260,7 +260,7 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
               accessor: (c) => c.state,
               cell: (c) => <StateBadge state={c.state} />,
               defaultWidth: 120,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
             },
             {
               key: "actions",
@@ -319,7 +319,7 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
               accessor: (r) => r.status,
               cell: (r) => <StatusBadge status={r.status} />,
               defaultWidth: 120,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"Running",value:"running"},{label:"Success",value:"success"},{label:"Failed",value:"failed"}] },
             },
             {
               key: "started_at",

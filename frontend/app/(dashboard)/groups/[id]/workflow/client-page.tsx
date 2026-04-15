@@ -426,7 +426,7 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
                   accessor: (r) => r.status,
                   cell: (r) => <RunStatusBadge status={r.status} />,
                   defaultWidth: 120,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"Running",value:"running"},{label:"Completed",value:"completed"},{label:"Failed",value:"failed"},{label:"Partial",value:"partial"}] },
                 },
                 {
                   key: "started_at",
@@ -450,7 +450,7 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
                   accessor: (r) => r.triggered_by ? "Manual" : "Scheduled",
                   cell: (r) => <span className="text-slate-400 text-sm">{r.triggered_by ? "Manual" : "Scheduled"}</span>,
                   defaultWidth: 140,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Manual",value:"Manual"},{label:"Scheduled",value:"Scheduled"}] },
                 },
               ]}
             />

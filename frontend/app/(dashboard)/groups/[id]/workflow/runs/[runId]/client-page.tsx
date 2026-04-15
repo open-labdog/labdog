@@ -175,7 +175,7 @@ export default function WorkflowRunDetailPage() {
                   accessor: (hr) => hr.step,
                   cell: (hr) => <StepBadge step={hr.step} />,
                   defaultWidth: 130,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Preflight",value:"preflight"},{label:"Snapshot",value:"snapshot"},{label:"Update",value:"update"},{label:"Reboot",value:"reboot"},{label:"Verify",value:"verify"},{label:"Cleanup",value:"cleanup"},{label:"Rollback",value:"rollback"}] },
                 },
                 {
                   key: "status",
@@ -183,7 +183,7 @@ export default function WorkflowRunDetailPage() {
                   accessor: (hr) => hr.status,
                   cell: (hr) => <HostStatusBadge status={hr.status} />,
                   defaultWidth: 120,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"Running",value:"running"},{label:"Success",value:"success"},{label:"Failed",value:"failed"}] },
                 },
                 {
                   key: "snapshot_name",

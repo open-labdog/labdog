@@ -107,9 +107,9 @@ function ModuleStateView({
         getRowKey={(_, i) => i}
         emptyMessage="No firewall rules."
         columns={[
-          { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
-          { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
-          { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", from: "accessor" } },
+          { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
+          { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
+          { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
           { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
@@ -2668,9 +2668,9 @@ export default function HostDetailPage() {
               emptyMessage="No effective rules."
               columns={[
                 { key: "priority", label: "Priority", accessor: (r) => r.group_priority ?? r.priority, cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.group_priority ?? r.priority}</span>, defaultWidth: 80 },
-                { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
-                { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", from: "accessor" } },
-                { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", from: "accessor" } },
+                { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
+                { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
+                { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
                 { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
                 { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
                 { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{formatPorts(r)}</span>, defaultWidth: 90 },
@@ -2897,7 +2897,7 @@ export default function HostDetailPage() {
               emptyMessage="No services configured."
               columns={[
                 { key: "service_name", label: "Service Name", accessor: (s) => s.service_name, cell: (s) => <span className="font-mono text-white text-sm">{s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
-                { key: "state", label: "State", accessor: (s) => s.state, cell: (s) => <Badge className={s.state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>{s.state.charAt(0).toUpperCase() + s.state.slice(1)}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+                { key: "state", label: "State", accessor: (s) => s.state, cell: (s) => <Badge className={s.state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>{s.state.charAt(0).toUpperCase() + s.state.slice(1)}</Badge>, defaultWidth: 110, filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] } },
                 { key: "enabled", label: "Enabled", accessor: (s) => s.enabled, cell: (s) => s.enabled ? <Badge className="bg-green-700 text-white">Enabled</Badge> : <Badge variant="outline">Disabled</Badge>, defaultWidth: 100, filter: { type: "boolean" } },
                 { key: "source", label: "Source", accessor: (s) => s.source === "group" ? s.source_name : "Host override", cell: (s) => <Badge variant="outline" className="text-xs">{s.source === "group" ? s.source_name : "Host override"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
                 {
@@ -3573,7 +3573,7 @@ export default function HostDetailPage() {
                       </Badge>
                     ),
                     defaultWidth: 110,
-                    filter: { type: "enum", from: "accessor" },
+                    filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                   },
                   {
                     key: "keys",
@@ -3689,7 +3689,7 @@ export default function HostDetailPage() {
                       </Badge>
                     ),
                     defaultWidth: 110,
-                    filter: { type: "enum", from: "accessor" },
+                    filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                   },
                   {
                     key: "source",
@@ -4081,7 +4081,7 @@ export default function HostDetailPage() {
                     </Badge>
                   ),
                   defaultWidth: 110,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                 },
                 {
                   key: "source",
@@ -4393,7 +4393,7 @@ export default function HostDetailPage() {
                     </Badge>
                   ),
                   defaultWidth: 110,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"},{label:"Latest",value:"latest"}] },
                 },
                 {
                   key: "package_manager",
@@ -4401,7 +4401,7 @@ export default function HostDetailPage() {
                   accessor: (pkg) => pkg.package_manager,
                   cell: (pkg) => <Badge variant="outline" className="text-xs font-mono">{pkg.package_manager}</Badge>,
                   defaultWidth: 140,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Auto",value:"auto"},{label:"APT",value:"apt"},{label:"DNF",value:"dnf"},{label:"YUM",value:"yum"}] },
                 },
                 {
                   key: "hold",
@@ -4507,7 +4507,7 @@ export default function HostDetailPage() {
                   accessor: (repo) => repo.repo_type,
                   cell: (repo) => <Badge variant="outline" className="text-xs font-mono">{repo.repo_type}</Badge>,
                   defaultWidth: 80,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"APT",value:"apt"},{label:"YUM",value:"yum"}] },
                 },
                 {
                   key: "distribution",
@@ -4762,7 +4762,7 @@ export default function HostDetailPage() {
                     </Badge>
                   ),
                   defaultWidth: 110,
-                  filter: { type: "enum", from: "accessor" },
+                  filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                 },
                 {
                   key: "source",
@@ -4846,7 +4846,7 @@ export default function HostDetailPage() {
                   return <Badge className={statusClass[r.status] ?? ""}>{r.status}</Badge>
                 },
                 defaultWidth: 110,
-                filter: { type: "enum", from: "accessor" },
+                filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"Running",value:"running"},{label:"Success",value:"success"},{label:"Failed",value:"failed"},{label:"Cancelled",value:"cancelled"}] },
               },
               {
                 key: "started_at",

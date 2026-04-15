@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 export type FilterSpec<T = unknown> =
   | { type: "text"; placeholder?: string }
-  | { type: "enum"; options?: { label: string; value: string }[]; from?: "accessor" }
+  | { type: "enum"; options?: { label: string; value: string }[]; from?: "accessor"; formatOption?: (raw: string) => string }
   | { type: "boolean"; trueLabel?: string; falseLabel?: string }
   | { type: "dateRange" }
   | {

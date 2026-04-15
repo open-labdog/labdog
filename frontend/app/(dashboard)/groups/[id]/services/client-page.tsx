@@ -179,7 +179,7 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
               accessor: (s) => s.state,
               cell: (s) => <StateBadge state={s.state} />,
               defaultWidth: 120,
-              filter: { type: "enum", from: "accessor" },
+              filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] },
             },
             {
               key: "enabled",
