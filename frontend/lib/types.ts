@@ -52,6 +52,33 @@ export interface Host {
   created_at: string; updated_at: string
 }
 
+export interface HostSummary extends Host {
+  override_counts: ModuleCounts
+}
+
+export interface WorkflowLastRun {
+  id: number
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  created_at: string | null
+}
+
+export interface WorkflowSummary {
+  id: number
+  group_id: number
+  group_name: string
+  group_category: string | null
+  batch_size: number
+  schedule_cron: string | null
+  pre_update_snapshot: boolean
+  auto_rollback: boolean
+  auto_reboot: boolean
+  enabled: boolean
+  host_count: number
+  last_run: WorkflowLastRun | null
+}
+
 export interface ModuleCurrentState {
   module_type: string
   sync_status: string

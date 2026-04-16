@@ -2,7 +2,7 @@ import asyncssh
 from fastapi import APIRouter, Depends, HTTPException
 from app.ssh_utils import ssh_connect
 from pydantic import BaseModel
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto.encryption import decrypt_ssh_key
@@ -125,6 +125,87 @@ async def create_host(
     await db.commit()
     await db.refresh(host)
     return host
+
+
+@router.get("/summary")
+async def list_hosts_summary(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all hosts with group memberships and per-module override counts."""
+    from app.models.firewall_rule import FirewallRule
+    from app.hosts_mgmt.models import HostsEntry
+    from app.services.models import ServiceRule
+    from app.user_mgmt.models import LinuxUser, LinuxGroup
+    from app.cron.models import CronJob
+    from app.packages.models import PackageRule
+    from app.resolver.models import ResolverConfig
+    from app.ca_certs.models import CACertRule
+
+    result = await db.execute(select(Host))
+    hosts = result.scalars().all()
+    if not hosts:
+        return []
+
+    host_ids = [h.id for h in hosts]
+
+    memberships = await db.execute(
+        select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id)
+        .where(HostGroupMembership.c.host_id.in_(host_ids))
+    )
+    groups_by_host: dict[int, list[int]] = {}
+    for hid, gid in memberships.all():
+        groups_by_host.setdefault(hid, []).append(gid)
+
+    async def _counts(model):
+        rows = await db.execute(
+            select(model.host_id, func.count())
+            .where(model.host_id.in_(host_ids), model.host_id.is_not(None))
+            .group_by(model.host_id)
+        )
+        return {r[0]: r[1] for r in rows}
+
+    fw = await _counts(FirewallRule)
+    he = await _counts(HostsEntry)
+    svc = await _counts(ServiceRule)
+    lu = await _counts(LinuxUser)
+    lg = await _counts(LinuxGroup)
+    cj = await _counts(CronJob)
+    pkg = await _counts(PackageRule)
+    res = await _counts(ResolverConfig)
+    ca = await _counts(CACertRule)
+
+    out = []
+    for h in hosts:
+        hid = h.id
+        out.append({
+            "id": hid,
+            "hostname": h.hostname,
+            "ip_address": h.ip_address,
+            "ssh_port": h.ssh_port,
+            "ssh_user": h.ssh_user,
+            "firewall_backend": h.firewall_backend.value if hasattr(h.firewall_backend, "value") else h.firewall_backend,
+            "sync_status": h.sync_status.value if hasattr(h.sync_status, "value") else h.sync_status,
+            "barricade_source_ip": h.barricade_source_ip,
+            "drift_check_enabled": h.drift_check_enabled,
+            "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
+            "last_drift_check_at": h.last_drift_check_at.isoformat() if h.last_drift_check_at else None,
+            "ssh_key_id": h.ssh_key_id,
+            "group_ids": groups_by_host.get(hid, []),
+            "created_at": h.created_at.isoformat() if h.created_at else None,
+            "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+            "override_counts": {
+                "firewall": fw.get(hid, 0),
+                "hosts_file": he.get(hid, 0),
+                "services": svc.get(hid, 0),
+                "users": lu.get(hid, 0) + lg.get(hid, 0),
+                "cron": cj.get(hid, 0),
+                "packages": pkg.get(hid, 0),
+                "resolver": res.get(hid, 0),
+                "ca_certs": ca.get(hid, 0),
+            },
+        })
+    return out
 
 
 @router.get("/{host_id}", response_model=HostResponse)
