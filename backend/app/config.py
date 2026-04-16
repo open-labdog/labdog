@@ -87,6 +87,8 @@ class DiscoveryConfig(BaseModel):
     scan_timeout: float = 1.0
     max_concurrent: int = 100
     max_bulk_add: int = 50
+    rediscovery_enabled: bool = False
+    rediscovery_interval_minutes: int = 60
 
 
 class CeleryConfig(BaseModel):
@@ -96,6 +98,10 @@ class CeleryConfig(BaseModel):
 
 class DriftConfig(BaseModel):
     check_interval_minutes: int = 30
+
+
+class HostsConfig(BaseModel):
+    ip_recheck_on_drift: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +120,7 @@ class Settings(BaseModel):
     discovery: DiscoveryConfig = DiscoveryConfig()
     celery: CeleryConfig = CeleryConfig()
     drift: DriftConfig = DriftConfig()
+    hosts: HostsConfig = HostsConfig()
 
     @model_validator(mode="before")
     @classmethod

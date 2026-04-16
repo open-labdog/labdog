@@ -51,7 +51,8 @@ def merge_group_rules(
         for rule in group["rules"]:
             # Signature: (protocol, direction, port_start, port_end, source_cidr, dest_cidr)
             sig = (rule.protocol, rule.direction, rule.port_start, rule.port_end,
-                   rule.source_cidr, rule.destination_cidr)
+                   rule.source_cidr, rule.destination_cidr,
+                   rule.source_host_id, rule.destination_host_id)
             if sig not in seen_signatures:
                 seen_signatures.add(sig)
                 rule.group_priority = group["priority"]
@@ -62,11 +63,13 @@ def merge_group_rules(
     if host_rules:
         for rule in host_rules:
             sig = (rule.protocol, rule.direction, rule.port_start, rule.port_end,
-                   rule.source_cidr, rule.destination_cidr)
+                   rule.source_cidr, rule.destination_cidr,
+                   rule.source_host_id, rule.destination_host_id)
             if sig in seen_signatures:
                 # Replace existing group rule with host override
                 merged = [r for r in merged if (r.protocol, r.direction, r.port_start, r.port_end,
-                          r.source_cidr, r.destination_cidr) != sig]
+                          r.source_cidr, r.destination_cidr,
+                          r.source_host_id, r.destination_host_id) != sig]
             seen_signatures.add(sig)
             merged.append(rule)
 

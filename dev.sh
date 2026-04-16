@@ -116,8 +116,9 @@ start_backend() {
   (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" upgrade head)
 
   # Barricade (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
+  # BARRICADE_DEV_MODE disables static frontend serving so the Next.js dev server on :3000 is used.
   log "Starting barricade..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/python" -m app --reload --no-celery --skip-migrate \
+  (cd "${SCRIPT_DIR}/backend" && BARRICADE_DEV_MODE=1 "${VENV}/python" -m app --reload --no-celery --skip-migrate \
     >"${logdir}/barricade.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/barricade.pid"
 

@@ -8,11 +8,37 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.firewall_rule import FirewallRule
-from app.models.host import HostGroupMembership
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.rules.converter import firewall_rules_to_specs
 from app.rules.merge import merge_group_policies, merge_group_rules
 from app.rules.model import ChainPolicies, FirewallRuleSpec
+from app.rules.resolver import collect_referenced_host_ids, resolve_host_refs
+
+
+async def load_host_ip_lookup(
+    db: AsyncSession, host_ids: set[int]
+) -> dict[int, str | None]:
+    """Fetch {host_id: ip_address} for the given host IDs."""
+    if not host_ids:
+        return {}
+    rows = await db.execute(
+        select(Host.id, Host.ip_address).where(Host.id.in_(host_ids))
+    )
+    return {row.id: row.ip_address for row in rows}
+
+
+async def resolve_specs(
+    db: AsyncSession, specs: list[FirewallRuleSpec]
+) -> list[FirewallRuleSpec]:
+    """Replace source/destination host refs on specs with concrete CIDRs.
+
+    Fetches the current IP for every referenced host. Raises if a referenced
+    host is missing or has no IP (see resolver.HostRefResolutionError).
+    """
+    ids = collect_referenced_host_ids(specs)
+    lookup = await load_host_ip_lookup(db, ids)
+    return resolve_host_refs(specs, lookup)
 
 
 async def get_desired_state(

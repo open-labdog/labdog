@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -447,7 +448,13 @@ def _resolve_dynamic_route(
 
 
 def _resolve_static_dir() -> Path | None:
-    """Return the frontend static directory, or None if not available."""
+    """Return the frontend static directory, or None if not available.
+
+    Skipped when BARRICADE_DEV_MODE=1 (set by dev.sh) so the Next.js dev
+    server on :3000 is used instead of a stale static export.
+    """
+    if os.environ.get("BARRICADE_DEV_MODE"):
+        return None
     configured = settings.server.static_dir
     if configured:
         p = Path(configured)

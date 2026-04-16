@@ -67,11 +67,12 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                         f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
-                # Get merged rules for this host
-                from app.rules.desired_state import get_desired_state
+                # Get merged rules for this host, then resolve host-ref FKs to CIDRs
+                from app.rules.desired_state import get_desired_state, resolve_specs
                 merged_rules, merged_policies = await get_desired_state(
                     host_id, db, host_source_ip=host.barricade_source_ip
                 )
+                merged_rules = await resolve_specs(db, merged_rules)
 
                 # Generate playbook and inventory
                 backend = (

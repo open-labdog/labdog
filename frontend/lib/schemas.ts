@@ -39,8 +39,12 @@ export const ruleSchema = z.object({
   action: z.enum(["allow", "deny", "reject"]),
   protocol: z.enum(["tcp", "udp", "icmp", "any"]),
   direction: z.enum(["input", "output"]),
+  source_mode: z.enum(["cidr", "host"]),
+  destination_mode: z.enum(["cidr", "host"]),
   source_cidr: cidrOrEmpty,
   destination_cidr: cidrOrEmpty,
+  source_host_id: z.number().int().nullable().optional(),
+  destination_host_id: z.number().int().nullable().optional(),
   port_start: z.number().int().min(1).max(65535).optional().nullable(),
   port_end: z.number().int().min(1).max(65535).optional().nullable(),
   comment: z.string().optional(),
@@ -61,11 +65,26 @@ export type ServiceInput = z.infer<typeof serviceSchema>
 
 // Hosts entry schema
 export const hostsEntrySchema = z.object({
-  ip_address: ipAddress,
-  hostname: z.string().min(1, "Hostname is required"),
+  mode: z.enum(["literal", "host"]),
+  ip_address: z.string().optional(),
+  hostname: z.string().optional(),
+  host_ref_id: z.number().int().nullable().optional(),
   aliases: z.string().optional(),
   comment: z.string().optional(),
   priority: z.number().int().min(0, "Priority must be non-negative"),
+}).superRefine((v, ctx) => {
+  if (v.mode === "literal") {
+    if (!v.ip_address || !ipRegex.test(v.ip_address)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid IP address format", path: ["ip_address"] })
+    }
+    if (!v.hostname || v.hostname.length === 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Hostname is required", path: ["hostname"] })
+    }
+  } else if (v.mode === "host") {
+    if (v.host_ref_id == null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Pick a host", path: ["host_ref_id"] })
+    }
+  }
 })
 export type HostsEntryInput = z.infer<typeof hostsEntrySchema>
 

@@ -19,6 +19,7 @@ import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { ruleSchema, type RuleInput } from "@/lib/schemas"
 import type { FirewallRule } from "@/lib/types"
+import { HostCombobox } from "@/components/host-combobox"
 
 interface RuleDialogProps {
   open: boolean
@@ -31,8 +32,12 @@ const defaultValues: RuleInput = {
   action: "allow",
   protocol: "tcp",
   direction: "input",
+  source_mode: "cidr",
+  destination_mode: "cidr",
   source_cidr: "",
   destination_cidr: "",
+  source_host_id: null,
+  destination_host_id: null,
   port_start: null,
   port_end: null,
   comment: "",
@@ -43,13 +48,75 @@ function ruleToFormValues(rule: FirewallRule): RuleInput {
     action: rule.action as RuleInput["action"],
     protocol: rule.protocol as RuleInput["protocol"],
     direction: rule.direction as RuleInput["direction"],
+    source_mode: rule.source_host_id != null ? "host" : "cidr",
+    destination_mode: rule.destination_host_id != null ? "host" : "cidr",
     source_cidr: rule.source_cidr ?? "",
     destination_cidr: rule.destination_cidr ?? "",
+    source_host_id: rule.source_host_id,
+    destination_host_id: rule.destination_host_id,
     port_start: rule.port_start ?? null,
     port_end: rule.port_end ?? null,
     comment: rule.comment ?? "",
   }
 }
+
+function SideField({
+  label,
+  mode,
+  onModeChange,
+  cidrValue,
+  onCidrChange,
+  hostId,
+  onHostChange,
+  cidrError,
+}: {
+  label: string
+  mode: "cidr" | "host"
+  onModeChange: (m: "cidr" | "host") => void
+  cidrValue: string
+  onCidrChange: (v: string) => void
+  hostId: number | null
+  onHostChange: (id: number | null) => void
+  cidrError?: string
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <Label className="text-slate-300">{label}</Label>
+        <div className="flex gap-1 text-xs">
+          <button
+            type="button"
+            onClick={() => onModeChange("cidr")}
+            className={`px-2 py-0.5 rounded ${mode === "cidr" ? "bg-slate-700 text-white" : "text-slate-400"}`}
+          >
+            CIDR
+          </button>
+          <button
+            type="button"
+            onClick={() => onModeChange("host")}
+            className={`px-2 py-0.5 rounded ${mode === "host" ? "bg-slate-700 text-white" : "text-slate-400"}`}
+          >
+            Host
+          </button>
+        </div>
+      </div>
+      {mode === "cidr" ? (
+        <>
+          <Input
+            placeholder="0.0.0.0/0"
+            value={cidrValue}
+            onChange={(e) => onCidrChange(e.target.value)}
+            className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
+          />
+          {cidrError && <p className="text-sm text-red-400">{cidrError}</p>}
+        </>
+      ) : (
+        <HostCombobox value={hostId} onChange={onHostChange} />
+      )}
+    </div>
+  )
+}
+
 
 export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProps) {
   const form = useForm<RuleInput>({
@@ -85,8 +152,10 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
       action: data.action,
       protocol: data.protocol,
       direction: data.direction,
-      source_cidr: data.source_cidr || null,
-      destination_cidr: data.destination_cidr || null,
+      source_cidr: data.source_mode === "cidr" ? (data.source_cidr || null) : null,
+      source_host_id: data.source_mode === "host" ? (data.source_host_id ?? null) : null,
+      destination_cidr: data.destination_mode === "cidr" ? (data.destination_cidr || null) : null,
+      destination_host_id: data.destination_mode === "host" ? (data.destination_host_id ?? null) : null,
       port_start: showPorts ? data.port_start : null,
       port_end: showPorts ? data.port_end : null,
       comment: data.comment || null,
@@ -153,36 +222,26 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
 
            {/* Source / Dest */}
            <div className="grid grid-cols-2 gap-4">
-             <div className="space-y-1">
-               <div className="flex items-center gap-1.5">
-                 <Label htmlFor="source_cidr" className="text-slate-300">Source CIDR</Label>
-                 <Tooltip content="IP range in CIDR notation, e.g., 10.0.0.0/8 or 192.168.1.0/24">
-                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                 </Tooltip>
-               </div>
-               <Input
-                 id="source_cidr"
-                 placeholder="0.0.0.0/0"
-                 {...form.register("source_cidr")}
-                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-               />
-               {errors.source_cidr?.message && <p className="text-sm text-red-400">{errors.source_cidr.message}</p>}
-             </div>
-             <div className="space-y-1">
-               <div className="flex items-center gap-1.5">
-                 <Label htmlFor="destination_cidr" className="text-slate-300">Dest CIDR</Label>
-                 <Tooltip content="IP range in CIDR notation, e.g., 10.0.0.0/8 or 192.168.1.0/24">
-                   <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                 </Tooltip>
-               </div>
-               <Input
-                 id="destination_cidr"
-                 placeholder="0.0.0.0/0"
-                 {...form.register("destination_cidr")}
-                 className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-               />
-               {errors.destination_cidr?.message && <p className="text-sm text-red-400">{errors.destination_cidr.message}</p>}
-             </div>
+             <SideField
+               label="Source"
+               mode={form.watch("source_mode")}
+               onModeChange={(m) => form.setValue("source_mode", m)}
+               cidrValue={form.watch("source_cidr") ?? ""}
+               onCidrChange={(v) => form.setValue("source_cidr", v)}
+               hostId={form.watch("source_host_id") ?? null}
+               onHostChange={(id) => form.setValue("source_host_id", id)}
+               cidrError={errors.source_cidr?.message}
+             />
+             <SideField
+               label="Destination"
+               mode={form.watch("destination_mode")}
+               onModeChange={(m) => form.setValue("destination_mode", m)}
+               cidrValue={form.watch("destination_cidr") ?? ""}
+               onCidrChange={(v) => form.setValue("destination_cidr", v)}
+               hostId={form.watch("destination_host_id") ?? null}
+               onHostChange={(id) => form.setValue("destination_host_id", id)}
+               cidrError={errors.destination_cidr?.message}
+             />
            </div>
 
            {/* Ports - only shown for tcp/udp */}

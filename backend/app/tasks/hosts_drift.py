@@ -1,6 +1,29 @@
 from app.tasks import celery_app
 
 
+async def _maybe_update_host_ip(conn, host, db):
+    """If primary IP on the host differs from stored, update it and invalidate dependents."""
+    from app.config import settings
+    from app.hosts.dependents import invalidate_host_ref_dependents
+
+    if not getattr(settings.hosts, "ip_recheck_on_drift", True):
+        return
+    try:
+        # Probe the host's outbound-facing IP in the family we connected over.
+        family = "-4" if ":" not in (host.ip_address or "") else "-6"
+        cmd = f"ip {family} -o route get 1.1.1.1 2>/dev/null | awk '{{for(i=1;i<=NF;i++) if($i==\"src\") print $(i+1)}}' | head -n1"
+        if family == "-6":
+            cmd = "ip -6 -o route get 2606:4700:4700::1111 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i==\"src\") print $(i+1)}' | head -n1"
+        result = await conn.run(cmd, check=False, timeout=10)
+        new_ip = (result.stdout or "").strip()
+    except Exception:
+        return
+    if not new_ip or new_ip == host.ip_address:
+        return
+    host.ip_address = new_ip
+    await invalidate_host_ref_dependents(db, host.id)
+
+
 @celery_app.task(name="app.tasks.hosts_drift.check_all_hosts_drift", queue="long_running")
 def check_all_hosts_drift():
     """Periodic task: check hosts file drift for all hosts with hosts_file drift enabled."""
@@ -67,13 +90,14 @@ def check_all_hosts_drift():
                     hms.collected_at = datetime.now(timezone.utc)
                     hms.error_message = None
 
-                    if not host.barricade_source_ip:
-                        try:
-                            imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
+                    try:
+                        imported_key = asyncssh.import_private_key(private_key_pem)
+                        async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
+                            if not host.barricade_source_ip:
                                 host.barricade_source_ip = await get_source_ip(probe)
-                        except Exception:
-                            pass
+                            await _maybe_update_host_ip(probe, host, db)
+                    except Exception:
+                        pass
                 except (OSError, asyncssh.Error, TimeoutError) as e:
                     hms.sync_status = "unknown"
                     hms.last_drift_check_at = datetime.now(timezone.utc)

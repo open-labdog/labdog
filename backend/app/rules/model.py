@@ -33,6 +33,8 @@ class FirewallRuleSpec:
     direction: str  # "input" | "output"
     source_cidr: Optional[str] = None  # IPv4 or IPv6 CIDR
     destination_cidr: Optional[str] = None
+    source_host_id: Optional[int] = None  # FK to hosts.id; resolved to CIDR at render time
+    destination_host_id: Optional[int] = None
     port_start: Optional[int] = None  # single port or range start
     port_end: Optional[int] = None  # range end (None = single port)
     comment: Optional[str] = None
@@ -58,6 +60,8 @@ class FirewallRuleSpec:
             self.direction,
             _normalize_cidr(self.source_cidr),
             _normalize_cidr(self.destination_cidr),
+            self.source_host_id,
+            self.destination_host_id,
             self.port_start,
             _normalize_port_end(self.port_start, self.port_end),
         )

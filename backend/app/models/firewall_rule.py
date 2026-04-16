@@ -32,6 +32,14 @@ class FirewallRule(Base):
             "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_firewall_rules_scope",
         ),
+        CheckConstraint(
+            "NOT (source_cidr IS NOT NULL AND source_host_id IS NOT NULL)",
+            name="ck_firewall_rules_source_ref",
+        ),
+        CheckConstraint(
+            "NOT (destination_cidr IS NOT NULL AND destination_host_id IS NOT NULL)",
+            name="ck_firewall_rules_destination_ref",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -54,6 +62,14 @@ class FirewallRule(Base):
     )
     source_cidr: Mapped[str | None] = mapped_column(String(50), nullable=True)
     destination_cidr: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    source_host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    destination_host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     port_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     port_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=0)
