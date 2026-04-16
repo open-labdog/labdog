@@ -204,16 +204,52 @@ async def update_host(
     return host
 
 
+@router.get("/{host_id}/dependents")
+async def get_host_dependents_endpoint(
+    host_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return rules and hosts entries that reference this host.
+
+    UIs should call this before deleting a host — a non-empty response means
+    the delete will fail at the DB level (FK RESTRICT).
+    """
+    from app.hosts.dependents import get_host_dependents
+
+    host_row = await db.execute(select(Host).where(Host.id == host_id))
+    if host_row.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+    deps = await get_host_dependents(db, host_id)
+    return {
+        "rule_ids": deps.rule_ids,
+        "hosts_entry_ids": deps.hosts_entry_ids,
+    }
+
+
 @router.delete("/{host_id}", status_code=204)
 async def delete_host(
     host_id: int,
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.hosts.dependents import get_host_dependents
+
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
+
+    deps = await get_host_dependents(db, host_id)
+    if not deps.empty:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Host is referenced by firewall rules or /etc/hosts entries",
+                "rule_ids": deps.rule_ids,
+                "hosts_entry_ids": deps.hosts_entry_ids,
+            },
+        )
 
     await db.delete(host)
     await db.commit()

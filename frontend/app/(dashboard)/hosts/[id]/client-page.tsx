@@ -23,6 +23,7 @@ import {
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { GroupMultiSelect } from "@/components/group-multi-select"
+import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
@@ -900,6 +901,8 @@ export default function HostDetailPage() {
   const [hostsPreviewLoading, setHostsPreviewLoading] = useState(false)
   const [hostsPreviewError, setHostsPreviewError] = useState<string | null>(null)
 
+  const [hostsMode, setHostsMode] = useState<"literal" | "host">("literal")
+  const [hostsRefId, setHostsRefId] = useState<number | null>(null)
   const [hostsIp, setHostsIp] = useState("")
   const [hostsHostname, setHostsHostname] = useState("")
   const [hostsAliases, setHostsAliases] = useState("")
@@ -1520,6 +1523,8 @@ export default function HostDetailPage() {
   }
 
   function openHostsDialog() {
+    setHostsMode("literal")
+    setHostsRefId(null)
     setHostsIp("")
     setHostsHostname("")
     setHostsAliases("")
@@ -1535,6 +1540,8 @@ export default function HostDetailPage() {
     const override = entry.source === "host"
       ? hostHostsOverrides?.find((o) => o.hostname === entry.hostname && o.ip_address === entry.ip_address)
       : null
+    setHostsMode(override?.host_ref_id != null ? "host" : "literal")
+    setHostsRefId(override?.host_ref_id ?? null)
     setHostsIp(entry.ip_address)
     setHostsHostname(entry.hostname)
     setHostsAliases(entry.aliases.join(", "))
@@ -1553,8 +1560,11 @@ export default function HostDetailPage() {
 
   function handleHostsSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const payload = {
-      ip_address: hostsIp, hostname: hostsHostname,
+    const isRef = hostsMode === "host"
+    const payload: Record<string, unknown> = {
+      ip_address: isRef ? null : hostsIp,
+      hostname: isRef ? null : hostsHostname,
+      host_ref_id: isRef ? hostsRefId : null,
       aliases: hostsAliases.split(",").map((a) => a.trim()).filter(Boolean),
       comment: hostsComment || null, priority: hostsPriority,
     }
@@ -1627,8 +1637,12 @@ export default function HostDetailPage() {
   const [fwAction, setFwAction] = useState("allow")
   const [fwProtocol, setFwProtocol] = useState("tcp")
   const [fwDirection, setFwDirection] = useState("input")
+  const [fwSourceMode, setFwSourceMode] = useState<"cidr" | "host">("cidr")
+  const [fwDestMode, setFwDestMode] = useState<"cidr" | "host">("cidr")
   const [fwSourceCidr, setFwSourceCidr] = useState("")
   const [fwDestCidr, setFwDestCidr] = useState("")
+  const [fwSourceHostId, setFwSourceHostId] = useState<number | null>(null)
+  const [fwDestHostId, setFwDestHostId] = useState<number | null>(null)
   const [fwPortStart, setFwPortStart] = useState("")
   const [fwPortEnd, setFwPortEnd] = useState("")
   const [fwPriority, setFwPriority] = useState("0")
@@ -1659,8 +1673,12 @@ export default function HostDetailPage() {
     setFwAction("allow")
     setFwProtocol("tcp")
     setFwDirection("input")
+    setFwSourceMode("cidr")
+    setFwDestMode("cidr")
     setFwSourceCidr("")
     setFwDestCidr("")
+    setFwSourceHostId(null)
+    setFwDestHostId(null)
     setFwPortStart("")
     setFwPortEnd("")
     setFwPriority("0")
@@ -1675,8 +1693,12 @@ export default function HostDetailPage() {
     setFwAction(rule.action)
     setFwProtocol(rule.protocol)
     setFwDirection(rule.direction)
+    setFwSourceMode(rule.source_host_id != null ? "host" : "cidr")
+    setFwDestMode(rule.destination_host_id != null ? "host" : "cidr")
     setFwSourceCidr(rule.source_cidr ?? "")
     setFwDestCidr(rule.destination_cidr ?? "")
+    setFwSourceHostId(rule.source_host_id ?? null)
+    setFwDestHostId(rule.destination_host_id ?? null)
     setFwPortStart(rule.port_start != null ? String(rule.port_start) : "")
     setFwPortEnd(rule.port_end != null ? String(rule.port_end) : "")
     setFwPriority(String(rule.priority))
@@ -1698,8 +1720,10 @@ export default function HostDetailPage() {
       action: fwAction,
       protocol: fwProtocol,
       direction: fwDirection,
-      source_cidr: fwSourceCidr || null,
-      destination_cidr: fwDestCidr || null,
+      source_cidr: fwSourceMode === "cidr" ? (fwSourceCidr || null) : null,
+      source_host_id: fwSourceMode === "host" ? fwSourceHostId : null,
+      destination_cidr: fwDestMode === "cidr" ? (fwDestCidr || null) : null,
+      destination_host_id: fwDestMode === "host" ? fwDestHostId : null,
       port_start: fwPortStart ? Number(fwPortStart) : null,
       port_end: fwPortEnd ? Number(fwPortEnd) : null,
       priority: Number(fwPriority),
@@ -2671,8 +2695,8 @@ export default function HostDetailPage() {
                 { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
                 { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
                 { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-                { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
-                { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+                { key: "source", label: "Source", accessor: (r) => r.source_host_name ?? r.source_cidr ?? "any", cell: (r) => r.source_host_name ? <span className="text-sky-400 text-xs">{r.source_host_name} <span className="text-slate-500">({r.source_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 160, filter: { type: "text" } },
+                { key: "destination", label: "Destination", accessor: (r) => r.destination_host_name ?? r.destination_cidr ?? "any", cell: (r) => r.destination_host_name ? <span className="text-sky-400 text-xs">{r.destination_host_name} <span className="text-slate-500">({r.destination_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 160, filter: { type: "text" } },
                 { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{formatPorts(r)}</span>, defaultWidth: 90 },
                 { key: "group", label: "Group", accessor: (r) => r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "", cell: (r) => <Badge variant="outline" className="text-xs font-mono">{r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "—"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
                 { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs max-w-[140px] truncate">{r.comment ?? "—"}</span>, defaultWidth: 140 },
@@ -2752,25 +2776,33 @@ export default function HostDetailPage() {
                   </select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fw-source-cidr">Source CIDR</Label>
-                    <Input
-                      id="fw-source-cidr"
-                      type="text"
-                      placeholder="e.g. 10.0.0.0/24"
-                      value={fwSourceCidr}
-                      onChange={(e) => setFwSourceCidr(e.target.value)}
-                    />
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label>Source</Label>
+                      <div className="flex gap-1 text-xs">
+                        <button type="button" onClick={() => setFwSourceMode("cidr")} className={`px-2 py-0.5 rounded ${fwSourceMode === "cidr" ? "bg-slate-700 text-white" : "text-slate-400"}`}>CIDR</button>
+                        <button type="button" onClick={() => setFwSourceMode("host")} className={`px-2 py-0.5 rounded ${fwSourceMode === "host" ? "bg-slate-700 text-white" : "text-slate-400"}`}>Host</button>
+                      </div>
+                    </div>
+                    {fwSourceMode === "cidr" ? (
+                      <Input type="text" placeholder="e.g. 10.0.0.0/24" value={fwSourceCidr} onChange={(e) => setFwSourceCidr(e.target.value)} />
+                    ) : (
+                      <HostCombobox value={fwSourceHostId} onChange={setFwSourceHostId} />
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="fw-dest-cidr">Destination CIDR</Label>
-                    <Input
-                      id="fw-dest-cidr"
-                      type="text"
-                      placeholder="e.g. 0.0.0.0/0"
-                      value={fwDestCidr}
-                      onChange={(e) => setFwDestCidr(e.target.value)}
-                    />
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label>Destination</Label>
+                      <div className="flex gap-1 text-xs">
+                        <button type="button" onClick={() => setFwDestMode("cidr")} className={`px-2 py-0.5 rounded ${fwDestMode === "cidr" ? "bg-slate-700 text-white" : "text-slate-400"}`}>CIDR</button>
+                        <button type="button" onClick={() => setFwDestMode("host")} className={`px-2 py-0.5 rounded ${fwDestMode === "host" ? "bg-slate-700 text-white" : "text-slate-400"}`}>Host</button>
+                      </div>
+                    </div>
+                    {fwDestMode === "cidr" ? (
+                      <Input type="text" placeholder="e.g. 0.0.0.0/0" value={fwDestCidr} onChange={(e) => setFwDestCidr(e.target.value)} />
+                    ) : (
+                      <HostCombobox value={fwDestHostId} onChange={setFwDestHostId} />
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -3404,29 +3436,48 @@ export default function HostDetailPage() {
                 <DialogTitle>{hostsEditingId != null ? "Edit Hosts Entry Override" : "Add Hosts Entry Override"}</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleHostsSubmit} className="space-y-4 mt-2">
-                <div className="space-y-2">
-                  <Label htmlFor="hosts-ip">IP Address</Label>
-                  <Input
-                    id="hosts-ip"
-                    type="text"
-                    placeholder="e.g. 192.168.1.10"
-                    value={hostsIp}
-                    onChange={(e) => setHostsIp(e.target.value)}
-                    required
-                  />
+                <div className="flex gap-2 text-xs">
+                  <button type="button" onClick={() => setHostsMode("literal")} className={`px-3 py-1 rounded ${hostsMode === "literal" ? "bg-slate-700 text-white" : "text-slate-400 border border-slate-700"}`}>
+                    Literal IP + hostname
+                  </button>
+                  <button type="button" onClick={() => setHostsMode("host")} className={`px-3 py-1 rounded ${hostsMode === "host" ? "bg-slate-700 text-white" : "text-slate-400 border border-slate-700"}`}>
+                    Registered host
+                  </button>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="hosts-hostname">Hostname</Label>
-                  <Input
-                    id="hosts-hostname"
-                    type="text"
-                    placeholder="e.g. myserver.local"
-                    value={hostsHostname}
-                    onChange={(e) => setHostsHostname(e.target.value)}
-                    required
-                  />
-                </div>
+                {hostsMode === "literal" ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="hosts-ip">IP Address</Label>
+                      <Input
+                        id="hosts-ip"
+                        type="text"
+                        placeholder="e.g. 192.168.1.10"
+                        value={hostsIp}
+                        onChange={(e) => setHostsIp(e.target.value)}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="hosts-hostname">Hostname</Label>
+                      <Input
+                        id="hosts-hostname"
+                        type="text"
+                        placeholder="e.g. myserver.local"
+                        value={hostsHostname}
+                        onChange={(e) => setHostsHostname(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>Host</Label>
+                    <HostCombobox value={hostsRefId} onChange={setHostsRefId} />
+                    <p className="text-xs text-slate-500">Uses the host&apos;s current IP and hostname at sync time.</p>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="hosts-aliases">Aliases (comma-separated)</Label>

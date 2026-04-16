@@ -1,7 +1,14 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Optional
 import ipaddress
+
+
+def _validate_side(cidr: Optional[str], host_id: Optional[int], side: str) -> None:
+    has_cidr = cidr is not None and cidr != ""
+    has_host = host_id is not None
+    if has_cidr and has_host:
+        raise ValueError(f"{side} cannot set both CIDR and host reference")
 
 
 class RuleCreate(BaseModel):
@@ -10,10 +17,18 @@ class RuleCreate(BaseModel):
     direction: str       # input | output
     source_cidr: Optional[str] = None
     destination_cidr: Optional[str] = None
+    source_host_id: Optional[int] = None
+    destination_host_id: Optional[int] = None
     port_start: Optional[int] = None
     port_end: Optional[int] = None
     comment: Optional[str] = None
     priority: int = Field(default=0, ge=0, le=10000)
+
+    @model_validator(mode="after")
+    def _validate_sides(self):
+        _validate_side(self.source_cidr, self.source_host_id, "source")
+        _validate_side(self.destination_cidr, self.destination_host_id, "destination")
+        return self
 
     @field_validator("action")
     @classmethod
@@ -63,6 +78,8 @@ class RuleUpdate(BaseModel):
     direction: Optional[str] = None
     source_cidr: Optional[str] = None
     destination_cidr: Optional[str] = None
+    source_host_id: Optional[int] = None
+    destination_host_id: Optional[int] = None
     port_start: Optional[int] = None
     port_end: Optional[int] = None
     comment: Optional[str] = None
@@ -119,6 +136,8 @@ class RuleResponse(BaseModel):
     direction: str
     source_cidr: Optional[str]
     destination_cidr: Optional[str]
+    source_host_id: Optional[int] = None
+    destination_host_id: Optional[int] = None
     port_start: Optional[int]
     port_end: Optional[int]
     comment: Optional[str]
@@ -140,6 +159,10 @@ class EffectiveRuleResponse(BaseModel):
     direction: str
     source_cidr: Optional[str]
     destination_cidr: Optional[str]
+    source_host_id: Optional[int] = None
+    destination_host_id: Optional[int] = None
+    source_host_name: Optional[str] = None
+    destination_host_name: Optional[str] = None
     port_start: Optional[int]
     port_end: Optional[int]
     comment: Optional[str]

@@ -107,6 +107,8 @@ export interface FirewallRule {
   direction: string
   source_cidr: string | null
   destination_cidr: string | null
+  source_host_id: number | null
+  destination_host_id: number | null
   port_start: number | null
   port_end: number | null
   comment: string | null
@@ -122,6 +124,10 @@ export interface EffectiveFirewallRule {
   direction: string
   source_cidr: string | null
   destination_cidr: string | null
+  source_host_id: number | null
+  destination_host_id: number | null
+  source_host_name: string | null
+  destination_host_name: string | null
   port_start: number | null
   port_end: number | null
   comment: string | null
@@ -174,8 +180,9 @@ export interface EffectiveService {
 
 export interface HostsEntry {
   id: number
-  ip_address: string
-  hostname: string
+  ip_address: string | null
+  hostname: string | null
+  host_ref_id: number | null
   aliases: string[]
   comment: string | null
   priority: number

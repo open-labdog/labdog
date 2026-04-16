@@ -1,6 +1,6 @@
 import ipaddress
 import re
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from datetime import datetime
 from typing import Literal, Optional
 
@@ -8,15 +8,28 @@ HOSTNAME_RE = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-
 
 
 class HostsEntryCreate(BaseModel):
-    ip_address: str
-    hostname: str
+    ip_address: Optional[str] = None
+    hostname: Optional[str] = None
+    host_ref_id: Optional[int] = None
     aliases: list[str] = []
     comment: Optional[str] = None
     priority: int = Field(default=0, ge=0, le=10000)
 
+    @model_validator(mode="after")
+    def _validate_ref_or_literal(self):
+        if self.host_ref_id is not None:
+            if self.ip_address or self.hostname:
+                raise ValueError("ip_address and hostname must be empty when host_ref_id is set")
+        else:
+            if not self.ip_address or not self.hostname:
+                raise ValueError("ip_address and hostname are required when host_ref_id is not set")
+        return self
+
     @field_validator("ip_address")
     @classmethod
-    def validate_ip(cls, v: str) -> str:
+    def validate_ip(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
         try:
             ipaddress.ip_address(v)
         except ValueError:
@@ -25,7 +38,9 @@ class HostsEntryCreate(BaseModel):
 
     @field_validator("hostname")
     @classmethod
-    def validate_hostname(cls, v: str) -> str:
+    def validate_hostname(cls, v: Optional[str]) -> Optional[str]:
+        if v is None or v == "":
+            return None
         if len(v) > 253:
             raise ValueError("Hostname must be 253 characters or less")
         if not HOSTNAME_RE.match(v):
@@ -48,6 +63,7 @@ class HostsEntryCreate(BaseModel):
 class HostsEntryUpdate(BaseModel):
     ip_address: Optional[str] = None
     hostname: Optional[str] = None
+    host_ref_id: Optional[int] = None
     aliases: Optional[list[str]] = None
     comment: Optional[str] = None
     priority: Optional[int] = Field(default=None, ge=0, le=10000)
@@ -90,8 +106,9 @@ class HostsEntryUpdate(BaseModel):
 
 class HostsEntryResponse(BaseModel):
     id: int
-    ip_address: str
-    hostname: str
+    ip_address: Optional[str]
+    hostname: Optional[str]
+    host_ref_id: Optional[int] = None
     aliases: list[str]
     comment: Optional[str]
     priority: int
