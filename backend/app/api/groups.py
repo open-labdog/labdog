@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import delete, insert, select
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import get_db
 from app.models.host import HostGroupMembership
@@ -47,6 +47,97 @@ async def create_group(
     await db.commit()
     await db.refresh(group)
     return group
+
+
+@router.get("/summary")
+async def list_groups_summary(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all groups with per-module rule counts and host counts.
+
+    Single endpoint for the groups list page — avoids N+1 queries.
+    """
+    from app.models.firewall_rule import FirewallRule
+    from app.hosts_mgmt.models import HostsEntry
+    from app.services.models import ServiceRule
+    from app.user_mgmt.models import LinuxUser, LinuxGroup
+    from app.cron.models import CronJob
+    from app.packages.models import PackageRule
+    from app.resolver.models import ResolverConfig
+    from app.ca_certs.models import CACertRule
+
+    groups_result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
+    groups = groups_result.scalars().all()
+    group_ids = [g.id for g in groups]
+    if not group_ids:
+        return []
+
+    async def _counts(model, col_name="group_id"):
+        col = getattr(model, col_name)
+        rows = await db.execute(
+            select(col, func.count()).where(col.in_(group_ids)).group_by(col)
+        )
+        return {r[0]: r[1] for r in rows}
+
+    fw = await _counts(FirewallRule)
+    he = await _counts(HostsEntry)
+    svc = await _counts(ServiceRule)
+    lu = await _counts(LinuxUser)
+    lg = await _counts(LinuxGroup)
+    cj = await _counts(CronJob)
+    pkg = await _counts(PackageRule)
+    res = await _counts(ResolverConfig)
+    ca = await _counts(CACertRule)
+
+    host_rows = await db.execute(
+        select(HostGroupMembership.c.group_id, func.count())
+        .where(HostGroupMembership.c.group_id.in_(group_ids))
+        .group_by(HostGroupMembership.c.group_id)
+    )
+    host_counts = {r[0]: r[1] for r in host_rows}
+
+    # Groups that share at least one host with another group
+    shared_hosts = await db.execute(
+        select(HostGroupMembership.c.group_id)
+        .where(
+            HostGroupMembership.c.host_id.in_(
+                select(HostGroupMembership.c.host_id)
+                .group_by(HostGroupMembership.c.host_id)
+                .having(func.count(HostGroupMembership.c.group_id) > 1)
+            )
+        )
+        .distinct()
+    )
+    conflict_group_ids = {r[0] for r in shared_hosts}
+
+    result = []
+    for g in groups:
+        gid = g.id
+        result.append({
+            "id": gid,
+            "name": g.name,
+            "description": g.description,
+            "category": g.category,
+            "priority": g.priority,
+            "gitops_enabled": g.gitops_enabled,
+            "gitops_status": g.gitops_status.value if g.gitops_status else None,
+            "created_at": g.created_at.isoformat() if g.created_at else None,
+            "updated_at": g.updated_at.isoformat() if g.updated_at else None,
+            "host_count": host_counts.get(gid, 0),
+            "has_shared_hosts": gid in conflict_group_ids,
+            "module_counts": {
+                "firewall": fw.get(gid, 0),
+                "hosts_file": he.get(gid, 0),
+                "services": svc.get(gid, 0),
+                "users": lu.get(gid, 0) + lg.get(gid, 0),
+                "cron": cj.get(gid, 0),
+                "packages": pkg.get(gid, 0),
+                "resolver": res.get(gid, 0),
+                "ca_certs": ca.get(gid, 0),
+            },
+        })
+    return result
 
 
 @router.get("/{group_id}", response_model=GroupResponse)

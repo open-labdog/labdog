@@ -14,6 +14,26 @@ export interface HostGroup {
   git_repository_id: number | null
 }
 
+export interface ModuleCounts {
+  firewall: number
+  hosts_file: number
+  services: number
+  users: number
+  cron: number
+  packages: number
+  resolver: number
+  ca_certs: number
+}
+
+export interface GroupSummary {
+  id: number; name: string; description: string | null; category: string | null; priority: number
+  gitops_enabled: boolean; gitops_status: string | null
+  created_at: string | null; updated_at: string | null
+  host_count: number
+  has_shared_hosts: boolean
+  module_counts: ModuleCounts
+}
+
 export interface ChainPolicies {
   input: "accept" | "drop"
   output: "accept" | "drop"
