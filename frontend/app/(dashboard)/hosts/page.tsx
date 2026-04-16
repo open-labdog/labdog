@@ -5,32 +5,55 @@ import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { cn, useDelayedLoading } from "@/lib/utils"
+import { cn, useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { DataTable } from "@/components/ui/data-table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
-import type { Host, HostGroup } from "@/lib/types"
+import { Tooltip } from "@/components/ui/tooltip"
+import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
+import type { Host, HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
 
-function formatRelativeTime(dateStr: string | null): string {
-  if (!dateStr) return "Never"
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const seconds = Math.floor(diff / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} min ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours !== 1 ? "s" : ""} ago`
-  const days = Math.floor(hours / 24)
-  if (days < 30) return `${days} day${days !== 1 ? "s" : ""} ago`
-  const months = Math.floor(days / 30)
-  if (months < 12) return `${months} month${months !== 1 ? "s" : ""} ago`
-  const years = Math.floor(months / 12)
-  return `${years} year${years !== 1 ? "s" : ""} ago`
+const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
+  { key: "firewall", icon: ShieldIcon, label: "Firewall" },
+  { key: "hosts_file", icon: FileTextIcon, label: "Hosts file" },
+  { key: "services", icon: ServerIcon, label: "Services" },
+  { key: "users", icon: UsersIcon, label: "Users" },
+  { key: "cron", icon: ClockIcon, label: "Cron" },
+  { key: "packages", icon: PackageIcon, label: "Packages" },
+  { key: "resolver", icon: GlobeIcon, label: "Resolver" },
+  { key: "ca_certs", icon: ShieldCheckIcon, label: "CA certs" },
+]
+
+function OverrideBadges({ counts }: { counts: ModuleCounts }) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  if (total === 0) return <span className="text-slate-700 text-xs">—</span>
+  return (
+    <div className="flex items-center gap-1">
+      {MODULE_ICONS.map(({ key, icon: Icon, label }) => {
+        const count = counts[key]
+        if (count === 0) return null
+        return (
+          <Tooltip key={key} content={`${label}: ${count} override${count !== 1 ? "s" : ""}`}>
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-amber-400">
+              <Icon className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )
+      })}
+    </div>
+  )
+}
+
+const ROW_BORDER: Record<SyncStatus, string> = {
+  in_sync: "border-l-2 border-l-green-500/60",
+  out_of_sync: "border-l-2 border-l-amber-500/60",
+  pending: "border-l-2 border-l-blue-500/60",
+  unknown: "border-l-2 border-l-slate-600/60",
+  error: "border-l-2 border-l-red-500/60",
 }
 
 export default function HostsPage() {
@@ -61,9 +84,9 @@ export default function HostsPage() {
     }
   }, [groupDropdownOpen])
 
-  const { data: hosts, isLoading, error } = useQuery<Host[]>({
-    queryKey: ["hosts"],
-    queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  const { data: hosts, isLoading, error } = useQuery<HostSummary[]>({
+    queryKey: ["hosts-summary"],
+    queryFn: () => apiFetch<HostSummary[]>("/api/hosts/summary"),
   })
   const { data: groups } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -109,7 +132,7 @@ export default function HostsPage() {
     setBulkDeleting(false)
     setBulkProgress(null)
     setSelected(new Set())
-    await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+    await queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
     if (failed === 0) {
       showSuccess(`Deleted ${success} host${success !== 1 ? "s" : ""}`)
     } else {
@@ -138,7 +161,7 @@ export default function HostsPage() {
     setBulkDriftUpdating(false)
     setBulkDriftProgress(null)
     setSelected(new Set())
-    await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+    await queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
     const label = bulkDriftTarget ? "enabled" : "disabled"
     if (failed === 0) {
       showSuccess(`Drift check ${label} for ${success} host${success !== 1 ? "s" : ""}`)
@@ -266,15 +289,15 @@ export default function HostsPage() {
         </div>
       )}
 
-      {showLoading && <TableSkeleton rows={5} columns={4} />}
+      {showLoading && <TableSkeleton rows={5} columns={6} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts</div>
       )}
 
       {!isLoading && !error && (
-        <DataTable<Host>
-          tableId="hosts"
+        <DataTable<HostSummary>
+          tableId="hosts-v3"
           data={filteredHosts}
           emptyMessage={
             hosts?.length === 0
@@ -282,6 +305,7 @@ export default function HostsPage() {
               : "No hosts match the current filter."
           }
           getRowKey={(h) => h.id}
+          rowClassName={(h) => ROW_BORDER[h.sync_status] ?? ROW_BORDER.unknown}
           columns={[
             {
               key: "select",
@@ -304,47 +328,74 @@ export default function HostsPage() {
               label: "Hostname",
               accessor: (h) => h.hostname,
               cell: (h) => (
-                <Link href={`/hosts/${h.id}`} className="text-white hover:text-blue-400 transition-colors font-medium">
+                <Link href={`/hosts/${h.id}`} className="text-sm text-white hover:text-blue-400 transition-colors font-medium truncate">
                   {h.hostname}
                 </Link>
               ),
-              defaultWidth: 200,
+              defaultWidth: 180,
               filter: { type: "text", placeholder: "e.g. web-01" },
             },
             {
               key: "ip_address",
               label: "IP Address",
               accessor: (h) => h.ip_address,
-              cell: (h) => <span className="font-mono text-slate-300">{h.ip_address}</span>,
+              cell: (h) => <span className="font-mono text-slate-300 text-sm">{h.ip_address}</span>,
               defaultWidth: 140,
               filter: { type: "text", placeholder: "e.g. 10.0.1" },
             },
             {
-              key: "drift_check_enabled",
-              label: "Drift Check",
-              accessor: (h) => h.drift_check_enabled,
+              key: "groups",
+              label: "Groups",
+              accessor: (h) => h.group_ids.map(id => groupMap.get(id)?.name ?? "").join(" "),
               cell: (h) => (
-                <Badge variant={h.drift_check_enabled ? "default" : "secondary"} className="text-xs">
-                  {h.drift_check_enabled ? "Enabled" : "Disabled"}
-                </Badge>
+                h.group_ids.length === 0
+                  ? <span className="text-slate-600 text-xs italic">ungrouped</span>
+                  : <div className="flex items-center gap-1.5 overflow-hidden">
+                      {h.group_ids.slice(0, 2).map((gid, i) => (
+                        <span key={gid} className="text-sm text-slate-300 flex items-center gap-1.5 shrink-0">
+                          {i > 0 && <span className="w-px h-3 bg-slate-600" />}
+                          {groupMap.get(gid)?.name ?? `#${gid}`}
+                        </span>
+                      ))}
+                      {h.group_ids.length > 2 && (
+                        <span className="text-xs text-slate-400 shrink-0">+{h.group_ids.length - 2}</span>
+                      )}
+                    </div>
               ),
-              defaultWidth: 120,
-              filter: { type: "boolean", trueLabel: "Enabled", falseLabel: "Disabled" },
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "group name" },
             },
             {
-              key: "last_drift_check_at",
-              label: "Last Drift Check",
-              accessor: (h) => h.last_drift_check_at ?? "",
-              cell: (h) => <span className="text-slate-400 text-sm">{formatRelativeTime(h.last_drift_check_at)}</span>,
+              key: "overrides",
+              label: "Overrides",
+              cell: (h) => <OverrideBadges counts={h.override_counts} />,
               defaultWidth: 160,
-              filter: { type: "dateRange" },
+              sortable: false,
+            },
+            {
+              key: "sync_drift",
+              label: "Sync / Drift",
+              accessor: (h) => h.last_sync_at ?? "",
+              cell: (h) => (
+                <div className="leading-relaxed">
+                  <div className="text-sm text-slate-300">
+                    {h.last_sync_at ? formatRelativeTime(h.last_sync_at) : <span className="text-xs text-slate-500">Never synced</span>}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {h.drift_check_enabled
+                      ? (h.last_drift_check_at ? `drift ${formatRelativeTime(h.last_drift_check_at)}` : "drift: never")
+                      : "drift off"}
+                  </div>
+                </div>
+              ),
+              defaultWidth: 130,
             },
             {
               key: "firewall_backend",
               label: "Firewall",
               accessor: (h) => h.firewall_backend,
               cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
-              defaultWidth: 120,
+              defaultWidth: 100,
               filter: { type: "enum", options: [{label:"nftables",value:"nftables"},{label:"iptables",value:"iptables"},{label:"Unknown",value:"unknown"}] },
             },
             {
@@ -352,7 +403,7 @@ export default function HostsPage() {
               label: "Status",
               accessor: (h) => h.sync_status,
               cell: (h) => <SyncStatusBadge status={h.sync_status} />,
-              defaultWidth: 130,
+              defaultWidth: 120,
               filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"In Sync",value:"in_sync"},{label:"Out of Sync",value:"out_of_sync"},{label:"Unknown",value:"unknown"},{label:"Error",value:"error"}] },
             },
           ]}

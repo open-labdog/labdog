@@ -23,11 +23,11 @@ import { DataTable } from "@/components/ui/data-table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
+import { useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { showSuccess, showError } from "@/lib/toast"
 import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
-import type { SSHKey } from "@/lib/types"
+import type { SSHKey, Host } from "@/lib/types"
 
 export default function SSHKeysPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -55,6 +55,14 @@ export default function SSHKeysPage() {
   const { data: sshKeys, isLoading, error } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
+  })
+  const { data: hosts } = useQuery<Host[]>({
+    queryKey: ["hosts"],
+    queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  })
+  const hostCountByKey = new Map<number, number>()
+  hosts?.forEach(h => {
+    if (h.ssh_key_id != null) hostCountByKey.set(h.ssh_key_id, (hostCountByKey.get(h.ssh_key_id) ?? 0) + 1)
   })
   const showLoading = useDelayedLoading(isLoading)
 
@@ -323,53 +331,71 @@ export default function SSHKeysPage() {
               key: "name",
               label: "Name",
               accessor: (k) => k.name,
-              cell: (k) => <span className="font-medium text-white">{k.name}</span>,
-              defaultWidth: 200,
+              cell: (k) => (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-white">{k.name}</span>
+                    {k.is_default && <Badge className="bg-green-600 text-white text-[10px] px-1.5 py-0">Default</Badge>}
+                  </div>
+                  {k.public_key && (
+                    <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate max-w-[280px]" title={k.public_key}>
+                      {k.public_key.split(" ").slice(0, 2).join(" ").substring(0, 48)}...
+                    </div>
+                  )}
+                </div>
+              ),
+              defaultWidth: 300,
               filter: { type: "text" },
             },
             {
               key: "ssh_user",
               label: "SSH User",
               accessor: (k) => k.ssh_user,
-              cell: (k) => <span className="font-mono text-slate-300 text-sm">{k.ssh_user}</span>,
-              defaultWidth: 130,
+              cell: (k) => <span className="font-mono text-sm text-slate-300">{k.ssh_user}</span>,
+              defaultWidth: 120,
               filter: { type: "enum", from: "accessor" },
             },
             {
-              key: "is_default",
-              label: "Default",
-              accessor: (k) => k.is_default,
-              cell: (k) => k.is_default
-                ? <Badge className="bg-green-600 text-white">Default</Badge>
-                : <span className="text-slate-500">—</span>,
-              defaultWidth: 100,
-              filter: { type: "boolean", trueLabel: "Yes", falseLabel: "No" },
+              key: "hosts",
+              label: "Hosts",
+              accessor: (k) => hostCountByKey.get(k.id) ?? 0,
+              cell: (k) => {
+                const count = hostCountByKey.get(k.id) ?? 0
+                return count > 0
+                  ? <span className="text-sm tabular-nums text-slate-300">{count}</span>
+                  : <span className="text-sm text-slate-600">0</span>
+              },
+              defaultWidth: 70,
             },
             {
               key: "created_at",
-              label: "Created At",
+              label: "Created",
               accessor: (k) => k.created_at,
-              cell: (k) => <span className="text-slate-400">{new Date(k.created_at).toLocaleDateString()}</span>,
-              defaultWidth: 120,
-              filter: { type: "dateRange" },
+              cell: (k) => (
+                <span className="text-sm text-slate-300" title={new Date(k.created_at).toLocaleString()}>
+                  {formatRelativeTime(k.created_at)}
+                </span>
+              ),
+              defaultWidth: 100,
             },
             {
               key: "actions",
-              label: "Actions",
+              label: "",
               cell: (k) => (
                 <div className="flex gap-1">
                   <Button variant="ghost" size="sm" onClick={() => openEdit(k)}>Edit</Button>
                   <Button
-                    variant="destructive"
+                    variant="ghost"
                     size="sm"
                     onClick={() => handleDelete(k.id)}
                     disabled={deleteMutation.isPending}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
                   >
-                    {deleteMutation.isPending ? "..." : "Delete"}
+                    Delete
                   </Button>
                 </div>
               ),
-              defaultWidth: 160,
+              defaultWidth: 140,
               resizable: false,
               sortable: false,
             },

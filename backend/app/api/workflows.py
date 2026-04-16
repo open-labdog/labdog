@@ -1,7 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,72 @@ from app.workflows.schemas import (
 from app.audit.logger import log_action
 
 router = APIRouter(tags=["workflows"])
+
+
+@router.get("/workflows/summary")
+async def list_workflows_summary(
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all workflows with group info, last run status, and host counts."""
+    from app.models.host import HostGroupMembership
+    from app.models.host_group import HostGroup
+
+    wf_result = await db.execute(
+        select(UpdateWorkflow, HostGroup.name, HostGroup.category)
+        .join(HostGroup, UpdateWorkflow.group_id == HostGroup.id)
+        .order_by(HostGroup.name)
+    )
+    rows = wf_result.all()
+    if not rows:
+        return []
+
+    group_ids = [wf.group_id for wf, _, _ in rows]
+    workflow_ids = [wf.id for wf, _, _ in rows]
+
+    # Host counts per group
+    hc_result = await db.execute(
+        select(HostGroupMembership.c.group_id, func.count())
+        .where(HostGroupMembership.c.group_id.in_(group_ids))
+        .group_by(HostGroupMembership.c.group_id)
+    )
+    host_counts = {r[0]: r[1] for r in hc_result}
+
+    # Latest run per workflow (single query using DISTINCT ON)
+    latest_runs_q = await db.execute(
+        select(WorkflowRun)
+        .where(WorkflowRun.workflow_id.in_(workflow_ids))
+        .order_by(WorkflowRun.workflow_id, WorkflowRun.created_at.desc())
+        .distinct(WorkflowRun.workflow_id)
+    )
+    latest_by_wf: dict[int, WorkflowRun] = {
+        r.workflow_id: r for r in latest_runs_q.scalars().all()
+    }
+
+    out = []
+    for wf, group_name, group_category in rows:
+        last_run = latest_by_wf.get(wf.id)
+        out.append({
+            "id": wf.id,
+            "group_id": wf.group_id,
+            "group_name": group_name,
+            "group_category": group_category,
+            "batch_size": wf.batch_size,
+            "schedule_cron": wf.schedule_cron,
+            "pre_update_snapshot": wf.pre_update_snapshot,
+            "auto_rollback": wf.auto_rollback,
+            "auto_reboot": wf.auto_reboot,
+            "enabled": wf.enabled,
+            "host_count": host_counts.get(wf.group_id, 0),
+            "last_run": {
+                "id": last_run.id,
+                "status": last_run.status.value if hasattr(last_run.status, "value") else last_run.status,
+                "started_at": last_run.started_at.isoformat() if last_run.started_at else None,
+                "completed_at": last_run.completed_at.isoformat() if last_run.completed_at else None,
+                "created_at": last_run.created_at.isoformat() if last_run.created_at else None,
+            } if last_run else None,
+        })
+    return out
 
 
 @router.get("/groups/{group_id}/workflow", response_model=UpdateWorkflowResponse)
