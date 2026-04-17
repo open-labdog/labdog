@@ -107,6 +107,7 @@ build-image:
     - docker:24-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_OPTS: "--insecure-registry gitlab.lan.tyresson.se:5050"
   before_script:
     - *docker-login
   script:
@@ -137,6 +138,7 @@ trivy-scan:
     TRIVY_CACHE_DIR: ".trivycache/"
     TRIVY_USERNAME: $CI_REGISTRY_USER
     TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+    TRIVY_INSECURE: "true"
   cache:
     key: trivy-db
     paths:
