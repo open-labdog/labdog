@@ -114,13 +114,14 @@ class TestDrift:
     async def test_check_drift_with_rules_out_of_sync(self, db: AsyncSession, superuser_client):
         """Host with rules, drift check → out_of_sync (stub returns [])."""
         from app.models.host import FirewallBackend
+
         # Setup: create SSH key, group, host, and add a rule
         ssh_key = await create_ssh_key(db)
         group = await create_group(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
         host.firewall_backend = FirewallBackend.nftables
         await db.flush()
-        
+
         # Add a rule to the group
         await create_rule(
             db,
@@ -135,8 +136,9 @@ class TestDrift:
         )
 
         # Mock fetch_current_firewall_state to return empty state (no rules on host)
-        from app.sync.collector import CollectedFirewallState
         from app.rules.model import ChainPolicies
+        from app.sync.collector import CollectedFirewallState
+
         empty_state = CollectedFirewallState(rules=[], policies=ChainPolicies())
         with patch(
             "app.drift.detector.fetch_current_firewall_state",

@@ -1,11 +1,14 @@
 import yaml
+
 from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.rules.renderers.nftables import render_nftables_config
 from app.rules.renderers.iptables import render_iptables_rules
+from app.rules.renderers.nftables import render_nftables_config
 
 
 def generate_nftables_playbook(
-    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    host_ip: str,
+    rules: list[FirewallRuleSpec],
+    ssh_key_path: str,
     policies: ChainPolicies | None = None,
 ) -> str:
     """Generate playbook that writes nftables.conf and reloads with safe rollback.
@@ -25,7 +28,10 @@ def generate_nftables_playbook(
     tasks = [
         {
             "name": "Backup current nftables ruleset",
-            "ansible.builtin.shell": "/usr/sbin/nft list table inet filter > /tmp/nftables-backup.conf 2>/dev/null || touch /tmp/nftables-backup.conf",
+            "ansible.builtin.shell": (
+                "/usr/sbin/nft list table inet filter > /tmp/nftables-backup.conf"
+                " 2>/dev/null || touch /tmp/nftables-backup.conf"
+            ),
         },
         {
             "name": "Schedule automatic revert in 60 seconds (deadman switch)",
@@ -105,7 +111,9 @@ def generate_nftables_playbook(
 
 
 def generate_iptables_playbook(
-    host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    host_ip: str,
+    rules: list[FirewallRuleSpec],
+    ssh_key_path: str,
     policies: ChainPolicies | None = None,
 ) -> str:
     """Generate playbook that writes iptables rules and applies with safe rollback.
@@ -126,11 +134,17 @@ def generate_iptables_playbook(
     tasks = [
         {
             "name": "Backup current iptables ruleset",
-            "ansible.builtin.shell": "iptables-save > /tmp/iptables-backup.rules 2>/dev/null || touch /tmp/iptables-backup.rules",
+            "ansible.builtin.shell": (
+                "iptables-save > /tmp/iptables-backup.rules"
+                " 2>/dev/null || touch /tmp/iptables-backup.rules"
+            ),
         },
         {
             "name": "Backup current ip6tables ruleset",
-            "ansible.builtin.shell": "ip6tables-save > /tmp/ip6tables-backup.rules 2>/dev/null || touch /tmp/ip6tables-backup.rules",
+            "ansible.builtin.shell": (
+                "ip6tables-save > /tmp/ip6tables-backup.rules"
+                " 2>/dev/null || touch /tmp/ip6tables-backup.rules"
+            ),
         },
         {
             "name": "Schedule automatic revert in 60 seconds (deadman switch)",
@@ -262,7 +276,10 @@ def generate_iptables_playbook(
 
 
 def generate_playbook(
-    backend: str, host_ip: str, rules: list[FirewallRuleSpec], ssh_key_path: str,
+    backend: str,
+    host_ip: str,
+    rules: list[FirewallRuleSpec],
+    ssh_key_path: str,
     policies: ChainPolicies | None = None,
 ) -> str:
     """Dispatch to backend-specific generator."""

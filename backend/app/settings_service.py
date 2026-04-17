@@ -1,6 +1,5 @@
 """Database-backed application settings with validation and caching."""
 
-import asyncio
 import logging
 import time
 from typing import Any
@@ -15,44 +14,72 @@ logger = logging.getLogger(__name__)
 # Setting definitions: type, default, constraints, description
 SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "drift.check_interval_minutes": {
-        "type": "int", "default": 30, "min": 1, "max": 1440,
+        "type": "int",
+        "default": 30,
+        "min": 1,
+        "max": 1440,
         "description": "Minutes between automatic drift checks",
     },
     "ssh.connect_timeout": {
-        "type": "int", "default": 10, "min": 1, "max": 120,
+        "type": "int",
+        "default": 10,
+        "min": 1,
+        "max": 120,
         "description": "SSH connection timeout in seconds",
     },
     "ansible.playbook_timeout": {
-        "type": "int", "default": 300, "min": 30, "max": 3600,
+        "type": "int",
+        "default": 300,
+        "min": 30,
+        "max": 3600,
         "description": "Ansible playbook execution timeout in seconds",
     },
     "discovery.scan_timeout": {
-        "type": "float", "default": 1.0, "min": 0.1, "max": 30.0,
+        "type": "float",
+        "default": 1.0,
+        "min": 0.1,
+        "max": 30.0,
         "description": "Per-host TCP scan timeout during discovery (seconds)",
     },
     "discovery.max_concurrent": {
-        "type": "int", "default": 100, "min": 1, "max": 1000,
+        "type": "int",
+        "default": 100,
+        "min": 1,
+        "max": 1000,
         "description": "Maximum concurrent connections during network scan",
     },
     "ssh.idle_timeout_seconds": {
-        "type": "int", "default": 1800, "min": 60, "max": 86400,
+        "type": "int",
+        "default": 1800,
+        "min": 60,
+        "max": 86400,
         "description": "SSH terminal idle timeout before auto-disconnect (seconds)",
     },
     "logging.audit_retention_days": {
-        "type": "int", "default": 90, "min": 1, "max": 3650,
+        "type": "int",
+        "default": 90,
+        "min": 1,
+        "max": 3650,
         "description": "Days to retain audit log entries (0 = keep forever)",
     },
     "logging.level": {
-        "type": "string", "default": "info",
+        "type": "string",
+        "default": "info",
         "choices": ["debug", "info", "warning", "error", "critical"],
         "description": "Application log level",
     },
     "workflow.schedule_check_interval_seconds": {
-        "type": "int", "default": 60, "min": 10, "max": 300,
+        "type": "int",
+        "default": 60,
+        "min": 10,
+        "max": 300,
         "description": "How often to check for scheduled workflows (seconds)",
     },
     "workflow.snapshot_max_age_hours": {
-        "type": "int", "default": 24, "min": 1, "max": 168,
+        "type": "int",
+        "default": 24,
+        "min": 1,
+        "max": 168,
         "description": "Max age in hours before orphaned snapshots are cleaned up",
     },
 }
@@ -127,9 +154,7 @@ async def get_setting(key: str, db: AsyncSession) -> str:
         if time.time() - ts < _CACHE_TTL:
             return val
 
-    result = await db.execute(
-        select(AppSetting.value).where(AppSetting.key == key)
-    )
+    result = await db.execute(select(AppSetting.value).where(AppSetting.key == key))
     row = result.scalar_one_or_none()
     value = row if row is not None else get_default(key)
     _cache[key] = (value, time.time())
@@ -150,17 +175,21 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
     settings = []
     for key, defn in SETTING_DEFINITIONS.items():
         db_row = db_settings.get(key)
-        settings.append({
-            "key": key,
-            "value": db_row.value if db_row else str(defn["default"]),
-            "value_type": defn["type"],
-            "description": defn["description"],
-            "default": str(defn["default"]),
-            "min": defn.get("min"),
-            "max": defn.get("max"),
-            "choices": defn.get("choices"),
-            "updated_at": db_row.updated_at.isoformat() if db_row and db_row.updated_at else None,
-        })
+        settings.append(
+            {
+                "key": key,
+                "value": db_row.value if db_row else str(defn["default"]),
+                "value_type": defn["type"],
+                "description": defn["description"],
+                "default": str(defn["default"]),
+                "min": defn.get("min"),
+                "max": defn.get("max"),
+                "choices": defn.get("choices"),
+                "updated_at": db_row.updated_at.isoformat()
+                if db_row and db_row.updated_at
+                else None,
+            }
+        )
     return settings
 
 
@@ -168,9 +197,7 @@ async def update_setting(key: str, value: str, user_id: int, db: AsyncSession) -
     """Validate and update a setting. Returns the normalized value."""
     normalized = _validate(key, value)
 
-    result = await db.execute(
-        select(AppSetting).where(AppSetting.key == key)
-    )
+    result = await db.execute(select(AppSetting).where(AppSetting.key == key))
     setting = result.scalar_one_or_none()
     if setting:
         setting.value = normalized
@@ -206,7 +233,10 @@ def get_setting_sync(key: str) -> str:
 
     try:
         from sqlalchemy import create_engine
-        sync_url = app_config.database.url.replace("+asyncpg", "+psycopg2").replace("postgresql+psycopg2", "postgresql")
+
+        sync_url = app_config.database.url.replace("+asyncpg", "+psycopg2").replace(
+            "postgresql+psycopg2", "postgresql"
+        )
         engine = create_engine(sync_url)
         with engine.connect() as conn:
             row = conn.execute(

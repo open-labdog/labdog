@@ -1,13 +1,13 @@
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
 
-class WorkflowRunStatus(str, enum.Enum):
+class WorkflowRunStatus(enum.StrEnum):
     pending = "pending"
     running = "running"
     completed = "completed"
@@ -15,7 +15,7 @@ class WorkflowRunStatus(str, enum.Enum):
     partial = "partial"
 
 
-class WorkflowHostStatus(str, enum.Enum):
+class WorkflowHostStatus(enum.StrEnum):
     pending = "pending"
     running = "running"
     success = "success"
@@ -23,7 +23,7 @@ class WorkflowHostStatus(str, enum.Enum):
     skipped = "skipped"
 
 
-class WorkflowStep(str, enum.Enum):
+class WorkflowStep(enum.StrEnum):
     preflight = "preflight"
     snapshot = "snapshot"
     update = "update"
@@ -49,12 +49,12 @@ class UpdateWorkflow(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -62,25 +62,19 @@ class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    workflow_id: Mapped[int] = mapped_column(
-        ForeignKey("update_workflows.id", ondelete="CASCADE")
-    )
+    workflow_id: Mapped[int] = mapped_column(ForeignKey("update_workflows.id", ondelete="CASCADE"))
     status: Mapped[WorkflowRunStatus] = mapped_column(
         Enum(WorkflowRunStatus, name="workflowrunstatus"),
         default=WorkflowRunStatus.pending,
     )
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     triggered_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
 
 
@@ -88,12 +82,8 @@ class WorkflowHostRun(Base):
     __tablename__ = "workflow_host_runs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    run_id: Mapped[int] = mapped_column(
-        ForeignKey("workflow_runs.id", ondelete="CASCADE")
-    )
-    host_id: Mapped[int] = mapped_column(
-        ForeignKey("hosts.id", ondelete="CASCADE")
-    )
+    run_id: Mapped[int] = mapped_column(ForeignKey("workflow_runs.id", ondelete="CASCADE"))
+    host_id: Mapped[int] = mapped_column(ForeignKey("hosts.id", ondelete="CASCADE"))
     step: Mapped[WorkflowStep] = mapped_column(
         Enum(WorkflowStep, name="workflowstep"),
         default=WorkflowStep.preflight,
@@ -105,9 +95,5 @@ class WorkflowHostRun(Base):
     snapshot_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
     step_output: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -26,6 +26,7 @@ def generate_master_key() -> str:
 def validate_ssh_key_no_passphrase(private_key_text: str) -> None:
     """Raise ValueError if SSH key has a passphrase. V1 limitation."""
     from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
     try:
         load_pem_private_key(private_key_text.encode(), password=None)
     except TypeError:

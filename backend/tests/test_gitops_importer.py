@@ -74,15 +74,11 @@ class TestImporter:
         assert result.rules_added == 2
         assert result.error_message is None
 
-        db_rules = await db.execute(
-            select(FirewallRule).where(FirewallRule.group_id == group.id)
-        )
+        db_rules = await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id))
         rules = db_rules.scalars().all()
         assert len(rules) == 2
 
-        refreshed = await db.execute(
-            select(HostGroup).where(HostGroup.id == group.id)
-        )
+        refreshed = await db.execute(select(HostGroup).where(HostGroup.id == group.id))
         grp = refreshed.scalar_one()
         assert grp.gitops_status == GitOpsStatus.synced
         assert grp.gitops_last_import_at is not None
@@ -100,9 +96,7 @@ class TestImporter:
         assert result.success is False
         assert result.error_message is not None
 
-        refreshed = await db.execute(
-            select(HostGroup).where(HostGroup.id == group.id)
-        )
+        refreshed = await db.execute(select(HostGroup).where(HostGroup.id == group.id))
         grp = refreshed.scalar_one()
         assert grp.gitops_status == GitOpsStatus.error
         assert grp.gitops_error_message is not None
@@ -130,9 +124,7 @@ class TestImporter:
         assert result2.rules_added == 1
         assert result2.rules_removed == 2
 
-        db_rules = await db.execute(
-            select(FirewallRule).where(FirewallRule.group_id == group.id)
-        )
+        db_rules = await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id))
         rules = db_rules.scalars().all()
         assert len(rules) == 1
         assert rules[0].port_start == 8080

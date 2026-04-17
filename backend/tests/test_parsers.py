@@ -1,10 +1,7 @@
 import json
 
-import pytest
-
-from app.sync.parsers.nftables import parse_nftables_json
 from app.sync.parsers.iptables import parse_iptables_save
-
+from app.sync.parsers.nftables import parse_nftables_json
 
 # ---------------------------------------------------------------------------
 # nftables
@@ -205,7 +202,14 @@ class TestNftablesParser:
         data = json.dumps(
             {
                 "nftables": [
-                    {"chain": {"family": "inet", "table": "filter", "name": "input", "hook": "input"}},
+                    {
+                        "chain": {
+                            "family": "inet",
+                            "table": "filter",
+                            "name": "input",
+                            "hook": "input",
+                        }
+                    },
                     {
                         "rule": {
                             "family": "inet",
@@ -235,7 +239,14 @@ class TestNftablesParser:
         data = json.dumps(
             {
                 "nftables": [
-                    {"chain": {"family": "inet", "table": "filter", "name": "input", "hook": "input"}},
+                    {
+                        "chain": {
+                            "family": "inet",
+                            "table": "filter",
+                            "name": "input",
+                            "hook": "input",
+                        }
+                    },
                     {
                         "rule": {
                             "family": "inet",

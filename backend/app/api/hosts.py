@@ -1,20 +1,20 @@
 import asyncssh
 from fastapi import APIRouter, Depends, HTTPException
-from app.ssh_utils import ssh_connect
 from pydantic import BaseModel
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_active_user, current_superuser
+from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
-from app.models.host import Host, HostGroupMembership
 from app.models.firewall_rule import FirewallRule
+from app.models.host import Host, HostGroupMembership
 from app.models.ssh_key import SSHKey
 from app.models.user import User
-from app.auth.users import current_active_user, current_superuser
-from app.ca_certs.actions import auto_enqueue_for_new_membership
-from app.schemas.hosts import HostCreate, HostUpdate, HostResponse
+from app.schemas.hosts import HostCreate, HostResponse, HostUpdate
+from app.ssh_utils import ssh_connect
 
 
 class ImportRulesRequest(BaseModel):
@@ -62,9 +62,7 @@ async def create_host(
     ssh_user = body.ssh_user
     ssh_key = None
     if body.ssh_key_id:
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == body.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == body.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if ssh_key:
             ssh_user = ssh_key.ssh_user
@@ -74,9 +72,7 @@ async def create_host(
     if not hostname and ssh_key:
         try:
             master_key = get_master_key()
-            private_pem = decrypt_ssh_key(
-                ssh_key.encrypted_private_key, master_key
-            )
+            private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
             imported_key = asyncssh.import_private_key(private_pem)
             async with ssh_connect(
                 body.ip_address,
@@ -87,6 +83,7 @@ async def create_host(
                 result = await conn.run("hostname", check=True)
                 hostname = result.stdout.strip()
                 from app.ssh_utils import get_source_ip
+
                 source_ip = await get_source_ip(conn)
         except Exception:
             raise HTTPException(
@@ -118,9 +115,7 @@ async def create_host(
         )
         await db.flush()
         for gid in body.group_ids:
-            await auto_enqueue_for_new_membership(
-                host.id, gid, db, triggered_by_user_id=user.id
-            )
+            await auto_enqueue_for_new_membership(host.id, gid, db, triggered_by_user_id=user.id)
 
     await db.commit()
     await db.refresh(host)
@@ -133,14 +128,14 @@ async def list_hosts_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Return all hosts with group memberships and per-module override counts."""
-    from app.models.firewall_rule import FirewallRule
-    from app.hosts_mgmt.models import HostsEntry
-    from app.services.models import ServiceRule
-    from app.user_mgmt.models import LinuxUser, LinuxGroup
+    from app.ca_certs.models import CACertRule
     from app.cron.models import CronJob
+    from app.hosts_mgmt.models import HostsEntry
+    from app.models.firewall_rule import FirewallRule
     from app.packages.models import PackageRule
     from app.resolver.models import ResolverConfig
-    from app.ca_certs.models import CACertRule
+    from app.services.models import ServiceRule
+    from app.user_mgmt.models import LinuxGroup, LinuxUser
 
     result = await db.execute(select(Host))
     hosts = result.scalars().all()
@@ -150,8 +145,9 @@ async def list_hosts_summary(
     host_ids = [h.id for h in hosts]
 
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id.in_(host_ids))
+        select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id).where(
+            HostGroupMembership.c.host_id.in_(host_ids)
+        )
     )
     groups_by_host: dict[int, list[int]] = {}
     for hid, gid in memberships.all():
@@ -178,33 +174,41 @@ async def list_hosts_summary(
     out = []
     for h in hosts:
         hid = h.id
-        out.append({
-            "id": hid,
-            "hostname": h.hostname,
-            "ip_address": h.ip_address,
-            "ssh_port": h.ssh_port,
-            "ssh_user": h.ssh_user,
-            "firewall_backend": h.firewall_backend.value if hasattr(h.firewall_backend, "value") else h.firewall_backend,
-            "sync_status": h.sync_status.value if hasattr(h.sync_status, "value") else h.sync_status,
-            "barricade_source_ip": h.barricade_source_ip,
-            "drift_check_enabled": h.drift_check_enabled,
-            "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
-            "last_drift_check_at": h.last_drift_check_at.isoformat() if h.last_drift_check_at else None,
-            "ssh_key_id": h.ssh_key_id,
-            "group_ids": groups_by_host.get(hid, []),
-            "created_at": h.created_at.isoformat() if h.created_at else None,
-            "updated_at": h.updated_at.isoformat() if h.updated_at else None,
-            "override_counts": {
-                "firewall": fw.get(hid, 0),
-                "hosts_file": he.get(hid, 0),
-                "services": svc.get(hid, 0),
-                "users": lu.get(hid, 0) + lg.get(hid, 0),
-                "cron": cj.get(hid, 0),
-                "packages": pkg.get(hid, 0),
-                "resolver": res.get(hid, 0),
-                "ca_certs": ca.get(hid, 0),
-            },
-        })
+        out.append(
+            {
+                "id": hid,
+                "hostname": h.hostname,
+                "ip_address": h.ip_address,
+                "ssh_port": h.ssh_port,
+                "ssh_user": h.ssh_user,
+                "firewall_backend": h.firewall_backend.value
+                if hasattr(h.firewall_backend, "value")
+                else h.firewall_backend,
+                "sync_status": h.sync_status.value
+                if hasattr(h.sync_status, "value")
+                else h.sync_status,
+                "barricade_source_ip": h.barricade_source_ip,
+                "drift_check_enabled": h.drift_check_enabled,
+                "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
+                "last_drift_check_at": h.last_drift_check_at.isoformat()
+                if h.last_drift_check_at
+                else None,
+                "ssh_key_id": h.ssh_key_id,
+                "group_ids": groups_by_host.get(hid, []),
+                "created_at": h.created_at.isoformat() if h.created_at else None,
+                "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+                "override_counts": {
+                    "firewall": fw.get(hid, 0),
+                    "hosts_file": he.get(hid, 0),
+                    "services": svc.get(hid, 0),
+                    "users": lu.get(hid, 0) + lg.get(hid, 0),
+                    "cron": cj.get(hid, 0),
+                    "packages": pkg.get(hid, 0),
+                    "resolver": res.get(hid, 0),
+                    "ca_certs": ca.get(hid, 0),
+                },
+            }
+        )
     return out
 
 
@@ -220,9 +224,7 @@ async def get_host(
         raise HTTPException(status_code=404, detail="Host not found")
 
     memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(
-            HostGroupMembership.c.host_id == host_id
-        )
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     setattr(host, "group_ids", [r[0] for r in memberships.all()])
     return host
@@ -251,9 +253,7 @@ async def update_host(
         # Determine which memberships are *new* so we only enqueue
         # actions for hosts joining a group, not for existing memberships.
         existing = await db.execute(
-            select(HostGroupMembership.c.group_id).where(
-                HostGroupMembership.c.host_id == host_id
-            )
+            select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
         )
         existing_set = {r[0] for r in existing.all()}
         new_group_ids = [gid for gid in group_ids if gid not in existing_set]
@@ -269,17 +269,13 @@ async def update_host(
         await db.flush()
 
         for gid in new_group_ids:
-            await auto_enqueue_for_new_membership(
-                host_id, gid, db, triggered_by_user_id=user.id
-            )
+            await auto_enqueue_for_new_membership(host_id, gid, db, triggered_by_user_id=user.id)
 
     await db.commit()
     await db.refresh(host)
 
     memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(
-            HostGroupMembership.c.host_id == host_id
-        )
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     setattr(host, "group_ids", [r[0] for r in memberships.all()])
     return host

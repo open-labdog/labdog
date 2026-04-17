@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.sync import SyncJobResponse
 from app.auth.users import current_superuser
+from app.cron.collector import collect_cron_jobs
+from app.cron.diff import diff_cron_jobs
+from app.cron.merge import get_effective_cron_jobs
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
@@ -15,9 +18,6 @@ from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.cron.collector import collect_cron_jobs
-from app.cron.diff import diff_cron_jobs
-from app.cron.merge import get_effective_cron_jobs
 
 router = APIRouter(prefix="/cron", tags=["cron-sync"])
 
@@ -52,30 +52,20 @@ async def plan_cron_sync(
 
     effective_jobs = await get_effective_cron_jobs(host_id, db)
     if not effective_jobs:
-        raise HTTPException(
-            status_code=400, detail="No cron job rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No cron job rules defined for this host")
 
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
-    private_key_pem = decrypt_ssh_key(
-        ssh_key.encrypted_private_key, get_master_key()
-    )
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
     desired = [j.model_dump() for j in effective_jobs]
 
     users = list({j["user"] for j in desired})
-    actual = await collect_cron_jobs(
-        host.ip_address, host.ssh_port, private_key_pem, users
-    )
+    actual = await collect_cron_jobs(host.ip_address, host.ssh_port, private_key_pem, users)
 
     diff = diff_cron_jobs(desired, actual)
 
-    has_changes = bool(
-        diff.jobs_to_add or diff.jobs_to_remove or diff.jobs_to_update
-    )
+    has_changes = bool(diff.jobs_to_add or diff.jobs_to_remove or diff.jobs_to_update)
 
     return CronSyncPlan(
         host_id=host_id,
@@ -90,9 +80,7 @@ async def plan_cron_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_cron_sync(
     host_id: int,
     user: User = Depends(current_superuser),
@@ -121,9 +109,7 @@ async def trigger_cron_sync(
 
     effective_jobs = await get_effective_cron_jobs(host_id, db)
     if not effective_jobs:
-        raise HTTPException(
-            status_code=400, detail="No cron job rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No cron job rules defined for this host")
 
     job = SyncJob(
         host_id=host_id,
@@ -149,9 +135,7 @@ async def trigger_group_cron_sync(
     db: AsyncSession = Depends(get_db),
 ):
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:
@@ -237,24 +221,18 @@ async def check_cron_drift(
         hms = HostModuleStatus(host_id=host_id, module_type="cron")
         db.add(hms)
 
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     try:
         if not host.ssh_key_id:
-            raise HTTPException(
-                status_code=400, detail="Host has no SSH key assigned"
-            )
+            raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
 
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if not ssh_key:
             raise ValueError("SSH key not found")
 
-        private_key_pem = decrypt_ssh_key(
-            ssh_key.encrypted_private_key, get_master_key()
-        )
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         effective = await get_effective_cron_jobs(host_id, db)
         desired_dicts = [
@@ -269,22 +247,19 @@ async def check_cron_drift(
 
         users = list({j.user for j in effective})
 
-        actual = await collect_cron_jobs(
-            host.ip_address, host.ssh_port, private_key_pem, users
-        )
+        actual = await collect_cron_jobs(host.ip_address, host.ssh_port, private_key_pem, users)
 
         cron_diff = diff_cron_jobs(desired_dicts, actual)
 
         drifted = bool(
-            cron_diff.jobs_to_add
-            or cron_diff.jobs_to_remove
-            or cron_diff.jobs_to_update
+            cron_diff.jobs_to_add or cron_diff.jobs_to_remove or cron_diff.jobs_to_update
         )
 
         hms.sync_status = "drifted" if drifted else "in_sync"
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status
+
         await refresh_host_sync_status(host, db)
         await db.commit()
 
@@ -305,6 +280,7 @@ async def check_cron_drift(
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status
+
         await refresh_host_sync_status(host, db)
         await db.commit()
 

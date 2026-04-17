@@ -1,16 +1,17 @@
 """Tests for host-reference support on firewall rules and /etc/hosts entries."""
+
 import pytest
 from pydantic import ValidationError
 
+from app.hosts_mgmt.schemas import HostsEntryCreate
+from app.rules.merge import merge_group_rules
 from app.rules.model import FirewallRuleSpec
 from app.rules.resolver import (
     HostRefResolutionError,
     collect_referenced_host_ids,
     resolve_host_refs,
 )
-from app.rules.merge import merge_group_rules
 from app.schemas.rules import RuleCreate
-from app.hosts_mgmt.schemas import HostsEntryCreate
 
 
 class TestRuleResolver:
@@ -21,13 +22,17 @@ class TestRuleResolver:
         assert out[0].source_host_id == 7  # preserved
 
     def test_ipv6_resolved_to_slash_128(self):
-        spec = FirewallRuleSpec(action="allow", protocol="tcp", direction="output", destination_host_id=3)
+        spec = FirewallRuleSpec(
+            action="allow", protocol="tcp", direction="output", destination_host_id=3
+        )
         out = resolve_host_refs([spec], {3: "2001:db8::1"})
         assert out[0].destination_cidr == "2001:db8::1/128"
 
     def test_literal_cidr_untouched(self):
         spec = FirewallRuleSpec(
-            action="allow", protocol="tcp", direction="input",
+            action="allow",
+            protocol="tcp",
+            direction="input",
             source_cidr="10.0.0.0/8",
         )
         out = resolve_host_refs([spec], {})
@@ -46,8 +51,12 @@ class TestRuleResolver:
     def test_collect_ids(self):
         specs = [
             FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=1),
-            FirewallRuleSpec(action="allow", protocol="tcp", direction="output", destination_host_id=2),
-            FirewallRuleSpec(action="deny", protocol="tcp", direction="input", source_cidr="10.0.0.0/8"),
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="output", destination_host_id=2
+            ),
+            FirewallRuleSpec(
+                action="deny", protocol="tcp", direction="input", source_cidr="10.0.0.0/8"
+            ),
         ]
         assert collect_referenced_host_ids(specs) == {1, 2}
 
@@ -55,8 +64,12 @@ class TestRuleResolver:
 class TestMergeWithHostRefs:
     def test_same_host_ref_is_deduped(self):
         specs = [
-            FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22),
-            FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22),
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22
+            ),
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22
+            ),
         ]
         merged = merge_group_rules(
             [{"id": 1, "priority": 100, "rules": specs}],
@@ -67,8 +80,12 @@ class TestMergeWithHostRefs:
 
     def test_different_host_refs_not_deduped(self):
         specs = [
-            FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22),
-            FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=6, port_start=22),
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="input", source_host_id=5, port_start=22
+            ),
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="input", source_host_id=6, port_start=22
+            ),
         ]
         merged = merge_group_rules(
             [{"id": 1, "priority": 100, "rules": specs}],
@@ -81,8 +98,11 @@ class TestSchemaValidation:
     def test_rule_cidr_and_host_mutually_exclusive(self):
         with pytest.raises(ValidationError):
             RuleCreate(
-                action="allow", protocol="tcp", direction="input",
-                source_cidr="1.2.3.4/32", source_host_id=1,
+                action="allow",
+                protocol="tcp",
+                direction="input",
+                source_cidr="1.2.3.4/32",
+                source_host_id=1,
             )
 
     def test_rule_accepts_neither_source_nor_dest(self):

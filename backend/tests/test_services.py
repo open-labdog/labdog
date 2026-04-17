@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
-from app.services.schemas import ServiceRuleCreate, ServiceRuleUpdate
-from app.services.constants import PROTECTED_SERVICES
-from app.services.diff import compute_service_diff
+
 from app.services.collector import ServiceCurrentState
+from app.services.diff import compute_service_diff
+from app.services.schemas import ServiceRuleCreate, ServiceRuleUpdate
 
 
 class TestServiceSchemas:
@@ -32,6 +32,7 @@ class TestServiceDiff:
     def _make_desired(self, name, state, enabled):
         class D:
             pass
+
         d = D()
         d.service_name = name
         d.state = state
@@ -81,6 +82,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_create_group_service(self, superuser_client, db):
         from tests.conftest import create_group
+
         group = await create_group(db)
         await db.commit()
         resp = await superuser_client.post(
@@ -93,6 +95,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_protected_rejected_by_api(self, superuser_client, db):
         from tests.conftest import create_group
+
         group = await create_group(db)
         await db.commit()
         resp = await superuser_client.post(
@@ -104,6 +107,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_effective_services(self, superuser_client, db):
         from tests.conftest import create_group, create_host, create_ssh_key
+
         group = await create_group(db)
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
@@ -130,6 +134,7 @@ class TestServicePlaybook:
 
     def test_override_mode_tasks_are_gated_on_unit_existence(self):
         import yaml
+
         from app.services.generator import generate_service_playbook
 
         playbook_yaml, _ = generate_service_playbook(
@@ -154,6 +159,7 @@ class TestServicePlaybook:
 
     def test_full_mode_tasks_unconditional(self):
         import yaml
+
         from app.services.generator import generate_service_playbook
 
         playbook_yaml, _ = generate_service_playbook(
@@ -162,7 +168,9 @@ class TestServicePlaybook:
                     "service_name": "myapp",
                     "state": "running",
                     "enabled": True,
-                    "unit_content": "[Unit]\nDescription=My App\n\n[Service]\nExecStart=/usr/bin/myapp",
+                    "unit_content": (
+                        "[Unit]\nDescription=My App\n\n[Service]\nExecStart=/usr/bin/myapp"
+                    ),
                     "deploy_mode": "full",
                 },
             ],
@@ -178,6 +186,7 @@ class TestServicePlaybook:
 
     def test_mixed_override_and_full(self):
         import yaml
+
         from app.services.generator import generate_service_playbook
 
         playbook_yaml, _ = generate_service_playbook(

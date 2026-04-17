@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -7,20 +7,20 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
-class RuleAction(str, enum.Enum):
+class RuleAction(enum.StrEnum):
     allow = "allow"
     deny = "deny"
     reject = "reject"
 
 
-class RuleProtocol(str, enum.Enum):
+class RuleProtocol(enum.StrEnum):
     tcp = "tcp"
     udp = "udp"
     icmp = "icmp"
     any = "any"
 
 
-class RuleDirection(str, enum.Enum):
+class RuleDirection(enum.StrEnum):
     input = "input"
     output = "output"
 
@@ -29,7 +29,8 @@ class FirewallRule(Base):
     __tablename__ = "firewall_rules"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_firewall_rules_scope",
         ),
         CheckConstraint(
@@ -77,10 +78,10 @@ class FirewallRule(Base):
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )

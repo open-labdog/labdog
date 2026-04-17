@@ -10,6 +10,7 @@ intentionally reuse the SyncJob table for action-run tracking, since
 the schema (status, output, timestamps, triggered_by) is identical to
 what we need.
 """
+
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -24,21 +25,19 @@ CA_CERT_MODULE_TYPE = "ca_cert"
 
 async def group_has_ca_certs(group_id: int, db: AsyncSession) -> bool:
     """Return True if the group has at least one CA cert rule defined."""
-    result = await db.execute(
-        select(CACertRule.id).where(CACertRule.group_id == group_id).limit(1)
-    )
+    result = await db.execute(select(CACertRule.id).where(CACertRule.group_id == group_id).limit(1))
     return result.scalar_one_or_none() is not None
 
 
-async def host_has_running_ca_cert_action(
-    host_id: int, db: AsyncSession
-) -> bool:
+async def host_has_running_ca_cert_action(host_id: int, db: AsyncSession) -> bool:
     result = await db.execute(
-        select(SyncJob.id).where(
+        select(SyncJob.id)
+        .where(
             SyncJob.host_id == host_id,
             SyncJob.module_type == CA_CERT_MODULE_TYPE,
             SyncJob.status.in_(["pending", "running"]),
-        ).limit(1)
+        )
+        .limit(1)
     )
     return result.scalar_one_or_none() is not None
 
@@ -56,9 +55,7 @@ async def enqueue_ca_cert_action_for_host(
     enqueued (host missing SSH key, or another action already running).
     The caller is responsible for committing the surrounding transaction.
     """
-    host = (await db.execute(
-        select(Host).where(Host.id == host_id)
-    )).scalar_one_or_none()
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
     if not host or not host.ssh_key_id:
         return None
 
@@ -77,6 +74,7 @@ async def enqueue_ca_cert_action_for_host(
 
     # Dispatch after flush so the task sees a valid job_id.
     from app.tasks.ca_cert_action import run_ca_cert_action
+
     run_ca_cert_action.delay(job_id=job.id, host_id=host_id)
 
     return job

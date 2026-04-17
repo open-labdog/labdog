@@ -34,9 +34,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
 
     try:
         async with task_session() as db:
-            result = await db.execute(
-                select(GitRepository).where(GitRepository.id == repo_id)
-            )
+            result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
             repo = result.scalar_one_or_none()
             if not repo:
                 logger.error("GitOps: repo %d not found", repo_id)
@@ -52,17 +50,13 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
 
             encrypted_ssh_key = None
             if repo.auth_type == GitAuthType.ssh_key and repo.ssh_key_id:
-                key_result = await db.execute(
-                    select(SSHKey).where(SSHKey.id == repo.ssh_key_id)
-                )
+                key_result = await db.execute(select(SSHKey).where(SSHKey.id == repo.ssh_key_id))
                 ssh_key = key_result.scalar_one_or_none()
                 if ssh_key:
                     encrypted_ssh_key = ssh_key.encrypted_private_key
 
             try:
-                _git_repo, repo_dir = clone_repo(
-                    repo, encrypted_ssh_key=encrypted_ssh_key
-                )
+                _git_repo, repo_dir = clone_repo(repo, encrypted_ssh_key=encrypted_ssh_key)
             except Exception as e:
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
@@ -76,9 +70,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             groups = groups_result.scalars().all()
 
             if not groups:
-                logger.info(
-                    "GitOps: no gitops-enabled groups for repo %s", repo.name
-                )
+                logger.info("GitOps: no gitops-enabled groups for repo %s", repo.name)
                 repo.last_commit_sha = commit_sha
                 repo.last_sync_at = datetime.now(UTC)
                 await db.commit()
@@ -92,9 +84,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                         )
                     except FileNotFoundError:
                         group.gitops_status = GitOpsStatus.error
-                        group.gitops_error_message = (
-                            f"File not found: {group.gitops_file_path}"
-                        )
+                        group.gitops_error_message = f"File not found: {group.gitops_file_path}"
                         await db.flush()
                         logger.warning(
                             "GitOps: file %s not found for group %s",
@@ -122,9 +112,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                         await _trigger_group_sync(group.id, db)
 
                 except Exception as e:
-                    logger.error(
-                        "GitOps: error processing group %s: %s", group.name, e
-                    )
+                    logger.error("GitOps: error processing group %s: %s", group.name, e)
                     group.gitops_status = GitOpsStatus.error
                     group.gitops_error_message = str(e)
                     await db.flush()
@@ -153,9 +141,7 @@ async def _trigger_group_sync(group_id: int, db):
     from app.tasks.sync import run_sync_playbook
 
     host_result = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [row[0] for row in host_result.all()]
 
@@ -172,9 +158,7 @@ async def _trigger_group_sync(group_id: int, db):
             )
         )
         if running.scalar_one_or_none():
-            logger.info(
-                "GitOps: skipping host %d (sync already in progress)", host_id
-            )
+            logger.info("GitOps: skipping host %d (sync already in progress)", host_id)
             continue
 
         # triggered_by_user_id=None distinguishes gitops-triggered from user-triggered
@@ -191,6 +175,4 @@ async def _trigger_group_sync(group_id: int, db):
         dispatched += 1
         logger.info("GitOps: dispatched sync job %d for host %d", job.id, host_id)
 
-    logger.info(
-        "GitOps: dispatched %d sync tasks for group %d", dispatched, group_id
-    )
+    logger.info("GitOps: dispatched %d sync tasks for group %d", dispatched, group_id)

@@ -2,9 +2,9 @@
 
 import asyncio
 import shlex
+from dataclasses import dataclass
 
 import asyncssh
-from dataclasses import dataclass
 
 from app.ssh_utils import ssh_connect
 
@@ -44,7 +44,9 @@ async def collect_service_states(
             for name in service_names:
                 try:
                     # Check active state
-                    active_result = await conn.run(f"systemctl is-active {shlex.quote(name)}", check=False)
+                    active_result = await conn.run(
+                        f"systemctl is-active {shlex.quote(name)}", check=False
+                    )
                     active_stdout = active_result.stdout.strip()
                     exit_code = active_result.exit_status
 
@@ -62,7 +64,9 @@ async def collect_service_states(
                     active_state = "running" if active_stdout == "active" else "stopped"
 
                     # Check enabled state
-                    enabled_result = await conn.run(f"systemctl is-enabled {shlex.quote(name)}", check=False)
+                    enabled_result = await conn.run(
+                        f"systemctl is-enabled {shlex.quote(name)}", check=False
+                    )
                     enabled_stdout = enabled_result.stdout.strip()
                     enabled = enabled_stdout == "enabled"
 
@@ -197,7 +201,7 @@ async def execute_service_command(
                 }
 
         return await asyncio.wait_for(_run(), timeout=30.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {
             "success": False,
             "exit_code": -1,
@@ -243,7 +247,7 @@ async def collect_unit_file_content(
                 return result.stdout or ""
 
         return await asyncio.wait_for(_run(), timeout=30.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return None
     except Exception:
         return None

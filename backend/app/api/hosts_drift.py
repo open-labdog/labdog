@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -9,13 +9,13 @@ from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
-from app.models.host import Host, SyncStatus
-from app.models.host_module_status import HostModuleStatus
-from app.models.ssh_key import SSHKey
-from app.models.user import User
 from app.hosts_mgmt.collector import collect_hosts_file
 from app.hosts_mgmt.diff import compute_hosts_diff
 from app.hosts_mgmt.merge import get_effective_hosts_entries
+from app.models.host import Host
+from app.models.host_module_status import HostModuleStatus
+from app.models.ssh_key import SSHKey
+from app.models.user import User
 
 router = APIRouter(prefix="/hosts-mgmt", tags=["hosts-drift"])
 
@@ -67,31 +67,25 @@ async def check_hosts_drift(
         hms = HostModuleStatus(host_id=host_id, module_type="hosts_file")
         db.add(hms)
 
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     try:
         # Need SSH key for remote collection
         if not host.ssh_key_id:
             raise ValueError("Host has no SSH key configured")
 
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if not ssh_key:
             raise ValueError("SSH key not found")
 
-        private_key_pem = decrypt_ssh_key(
-            ssh_key.encrypted_private_key, get_master_key()
-        )
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         # Get desired hosts entries config
         desired = await get_effective_hosts_entries(host_id, db)
 
         # Collect current /etc/hosts from host
-        current = await collect_hosts_file(
-            host.ip_address, host.ssh_port, private_key_pem
-        )
+        current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem)
 
         # Compute diff
         diff = compute_hosts_diff(current, desired)
@@ -100,6 +94,7 @@ async def check_hosts_drift(
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status
+
         await refresh_host_sync_status(host, db)
         await db.commit()
 

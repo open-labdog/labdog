@@ -5,17 +5,18 @@ Revises: c3e5f9b20d1a
 Create Date: 2026-04-04 12:00:00.000000
 
 """
-from typing import Sequence, Union
 
-from alembic import op
+from collections.abc import Sequence
+
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = 'e4f6a1c83b2d'
-down_revision: Union[str, Sequence[str], None] = 'c3e5f9b20d1a'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+revision: str = "e4f6a1c83b2d"
+down_revision: str | Sequence[str] | None = "c3e5f9b20d1a"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -23,14 +24,17 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # 1. Clamp out-of-range values
-    conn.execute(sa.text(
-        "UPDATE host_groups SET priority = LEAST(GREATEST(priority, 1), 1000) "
-        "WHERE priority < 1 OR priority > 1000"
-    ))
+    conn.execute(
+        sa.text(
+            "UPDATE host_groups SET priority = LEAST(GREATEST(priority, 1), 1000) "
+            "WHERE priority < 1 OR priority > 1000"
+        )
+    )
 
     # 2. Resolve collisions created by clamping — reassign duplicates
     # to the nearest available slot within 1-1000
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         WITH duplicates AS (
             SELECT id, priority,
                    ROW_NUMBER() OVER (PARTITION BY priority ORDER BY id) AS rn
@@ -61,7 +65,8 @@ def upgrade() -> None:
         FROM to_fix t
         JOIN slots s ON s.slot_rn = t.fix_rn
         WHERE host_groups.id = t.id
-    """))
+    """)
+    )
 
     # 3. Add CHECK constraint
     op.create_check_constraint(

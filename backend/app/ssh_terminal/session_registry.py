@@ -1,8 +1,8 @@
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
 import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 
 @dataclass
@@ -39,12 +39,10 @@ class SessionRegistry:
         async with self._lock:
             if len(self._sessions) >= self._max_total:
                 return False
-            user_count = sum(
-                1 for s in self._sessions.values() if s.user_id == user_id
-            )
+            user_count = sum(1 for s in self._sessions.values() if s.user_id == user_id)
             if user_count >= self._max_per_user:
                 return False
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             self._sessions[session_id] = SessionInfo(
                 session_id=session_id,
                 user_id=user_id,
@@ -64,7 +62,7 @@ class SessionRegistry:
     async def touch(self, session_id: str) -> None:
         async with self._lock:
             if session_id in self._sessions:
-                self._sessions[session_id].last_activity = datetime.now(timezone.utc)
+                self._sessions[session_id].last_activity = datetime.now(UTC)
 
     def get_user_session_count(self, user_id: int) -> int:
         return sum(1 for s in self._sessions.values() if s.user_id == user_id)
@@ -73,7 +71,7 @@ class SessionRegistry:
         return len(self._sessions)
 
     def get_idle_sessions(self, timeout_seconds: int) -> list[str]:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return [
             sid
             for sid, info in self._sessions.items()
@@ -104,6 +102,7 @@ class SessionRegistry:
 # Singleton instance — uses settings from config
 def _create_registry() -> SessionRegistry:
     from app.config import settings
+
     return SessionRegistry(
         max_per_user=settings.ssh.max_sessions_per_user,
         max_total=settings.ssh.max_total_sessions,

@@ -61,9 +61,7 @@ async def rollback_to_snapshot(
             pve_node,
             snapshot_name,
         )
-        upid: str = await proxmox_client.rollback_snapshot(
-            pve_node, vmid, snapshot_name
-        )
+        upid: str = await proxmox_client.rollback_snapshot(pve_node, vmid, snapshot_name)
         await proxmox_client.wait_for_task(pve_node, upid)
         logger.info(
             "rollback: rollback task completed for vmid %d on %s",

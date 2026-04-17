@@ -21,7 +21,7 @@ import {
 import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading, formatRelativeTime, cn } from "@/lib/utils"
+import { useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { gitRepoSchema, type GitRepoInput } from "@/lib/schemas"
 import type { GitRepository, GitRepoCreate, GitRepoUpdate, SSHKey, HostGroup } from "@/lib/types"

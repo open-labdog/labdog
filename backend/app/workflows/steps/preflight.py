@@ -87,9 +87,7 @@ async def run_preflight(
     # ------------------------------------------------------------------
     if ssh_conn is not None:
         try:
-            result = await ssh_conn.run(
-                "df --output=avail / | tail -1", check=True
-            )
+            result = await ssh_conn.run("df --output=avail / | tail -1", check=True)
             avail_kb = int(result.stdout.strip())
             disk_gb = avail_kb / 1_048_576  # KB -> GB
             checks["disk_gb"] = round(disk_gb, 2)
@@ -134,9 +132,7 @@ async def run_preflight(
         # QEMU guest agent check
         # ---------------------------------------------------------------
         try:
-            await proxmox_client.get_vm_agent_interfaces(
-                vm_mapping.pve_node_name, vm_mapping.vmid
-            )
+            await proxmox_client.get_vm_agent_interfaces(vm_mapping.pve_node_name, vm_mapping.vmid)
             checks["agent_ok"] = True
             logger.debug(
                 "preflight: agent responded for vmid %d on %s",
@@ -154,11 +150,6 @@ async def run_preflight(
     # Aggregate result
     # ------------------------------------------------------------------
     disk_ok = checks["disk_gb"] >= (_MIN_DISK_KB / 1_048_576)
-    success = (
-        checks["ssh"]
-        and disk_ok
-        and checks["vm_found"]
-        and checks["agent_ok"]
-    )
+    success = checks["ssh"] and disk_ok and checks["vm_found"] and checks["agent_ok"]
 
     return {"success": success, "checks": checks}

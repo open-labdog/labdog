@@ -11,6 +11,7 @@ sync. This module exposes:
 
 Action runs are stored as ``SyncJob`` rows with ``module_type='ca_cert'``.
 """
+
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -79,28 +80,20 @@ async def deploy_ca_certs_to_host(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    host = (await db.execute(
-        select(Host).where(Host.id == host_id)
-    )).scalar_one_or_none()
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     if not host.ssh_key_id:
-        raise HTTPException(
-            status_code=400, detail="Host has no SSH key assigned"
-        )
+        raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
     if await host_has_running_ca_cert_action(host_id, db):
         raise HTTPException(
             status_code=409,
             detail="A CA cert deploy is already in progress for this host",
         )
 
-    job = await enqueue_ca_cert_action_for_host(
-        host_id, db, triggered_by_user_id=user.id
-    )
+    job = await enqueue_ca_cert_action_for_host(host_id, db, triggered_by_user_id=user.id)
     if job is None:
-        raise HTTPException(
-            status_code=400, detail="Could not enqueue CA cert deploy"
-        )
+        raise HTTPException(status_code=400, detail="Could not enqueue CA cert deploy")
 
     await db.commit()
     await db.refresh(job)
@@ -113,16 +106,14 @@ async def deploy_ca_certs_to_group(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    group = (await db.execute(
-        select(HostGroup).where(HostGroup.id == group_id)
-    )).scalar_one_or_none()
+    group = (
+        await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    ).scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
 
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:
@@ -210,14 +201,16 @@ async def get_ca_cert_run(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    row = (await db.execute(
-        select(SyncJob, Host.hostname)
-        .join(Host, Host.id == SyncJob.host_id)
-        .where(
-            SyncJob.id == run_id,
-            SyncJob.module_type == CA_CERT_MODULE_TYPE,
+    row = (
+        await db.execute(
+            select(SyncJob, Host.hostname)
+            .join(Host, Host.id == SyncJob.host_id)
+            .where(
+                SyncJob.id == run_id,
+                SyncJob.module_type == CA_CERT_MODULE_TYPE,
+            )
         )
-    )).first()
+    ).first()
     if not row:
         raise HTTPException(status_code=404, detail="CA cert action run not found")
     job, hostname = row

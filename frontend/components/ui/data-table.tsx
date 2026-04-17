@@ -77,8 +77,7 @@ export function DataTable<T>({
 
   useEffect(() => {
     if (!openFilterKey) return
-    computePos(openFilterKey)
-    // Recompute once after the popover has rendered so we use its actual size.
+    // Defer so the popover has rendered and we can use its actual size.
     const raf = requestAnimationFrame(() => computePos(openFilterKey))
     function onReposition() { computePos(openFilterKey!) }
     window.addEventListener("resize", onReposition)

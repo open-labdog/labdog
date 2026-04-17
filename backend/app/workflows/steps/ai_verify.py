@@ -1,7 +1,7 @@
 """AI verification step using the claude CLI."""
 
-import subprocess
 import logging
+import subprocess
 from typing import Any
 
 logger = logging.getLogger(__name__)

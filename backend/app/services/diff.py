@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 
-
 NORMALIZE_TO_RUNNING = {"running", "restarted", "reloaded"}
 
 

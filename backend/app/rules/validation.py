@@ -1,4 +1,5 @@
 import ipaddress
+
 from app.rules.model import FirewallRuleSpec
 
 
@@ -35,18 +36,25 @@ def validate_rule(rule: FirewallRuleSpec) -> list[str]:
     if rule.port_end is not None:
         validate_port(rule.port_end)
         if rule.port_start is not None and rule.port_end < rule.port_start:
-            raise RuleValidationError(f"port_end ({rule.port_end}) must be >= port_start ({rule.port_start})")
+            raise RuleValidationError(
+                f"port_end ({rule.port_end}) must be >= port_start ({rule.port_start})"
+            )
 
     # ICMP rules must not have ports
     if rule.protocol == "icmp" and rule.port_start is not None:
         raise RuleValidationError("ICMP rules cannot specify ports")
 
     # Warn on overly permissive rules
-    if (rule.action == "allow"
-            and rule.source_cidr in (None, "0.0.0.0/0", "::/0")
-            and rule.port_start is None
-            and rule.protocol == "any"):
-        warnings.append("Rule allows all traffic from any source on any port — this effectively disables the firewall")
+    if (
+        rule.action == "allow"
+        and rule.source_cidr in (None, "0.0.0.0/0", "::/0")
+        and rule.port_start is None
+        and rule.protocol == "any"
+    ):
+        warnings.append(
+            "Rule allows all traffic from any source on any port"
+            " — this effectively disables the firewall"
+        )
 
     return warnings
 

@@ -90,9 +90,7 @@ class TestSync:
             f"got {mock_celery_tasks.call_count} calls"
         )
 
-    async def test_get_job_status(
-        self, superuser_client, db: AsyncSession, mock_celery_tasks
-    ):
+    async def test_get_job_status(self, superuser_client, db: AsyncSession, mock_celery_tasks):
         """
         Trigger sync to create a job, then GET /api/sync/jobs/{id} → 200.
         """

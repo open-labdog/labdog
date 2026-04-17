@@ -35,9 +35,7 @@ async def get_host_vm_mapping(
 
     Raises 404 if no mapping has been discovered yet.
     """
-    result = await db.execute(
-        select(VMMapping).where(VMMapping.host_id == host_id)
-    )
+    result = await db.execute(select(VMMapping).where(VMMapping.host_id == host_id))
     mapping = result.scalar_one_or_none()
     if mapping is None:
         raise HTTPException(status_code=404, detail="No VM mapping found for this host")
@@ -55,6 +53,7 @@ async def discover_host_vm_mapping(
     Raises 404 if the host is not found or no VM claims its IP.
     """
     from app.models.host import Host
+
     host_result = await db.execute(select(Host).where(Host.id == host_id))
     host = host_result.scalar_one_or_none()
     if host is None:

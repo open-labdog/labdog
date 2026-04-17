@@ -2,19 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db import get_db
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
-from app.models.git_repository import GitRepository, GitOpsStatus
-from app.models.user import User
+
 from app.auth.users import current_active_user, current_superuser
 from app.ca_certs.actions import auto_enqueue_for_new_membership
-from app.schemas.groups import GroupCreate, GroupUpdate, GroupResponse
+from app.db import get_db
+from app.models.git_repository import GitOpsStatus, GitRepository
+from app.models.host import HostGroupMembership
+from app.models.host_group import HostGroup
+from app.models.user import User
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
+from app.schemas.groups import GroupCreate, GroupResponse, GroupUpdate
 
 
 class BulkAddHostsRequest(BaseModel):
     host_ids: list[int]
+
 
 router = APIRouter(prefix="/groups", tags=["groups"])
 
@@ -58,14 +60,14 @@ async def list_groups_summary(
 
     Single endpoint for the groups list page — avoids N+1 queries.
     """
-    from app.models.firewall_rule import FirewallRule
-    from app.hosts_mgmt.models import HostsEntry
-    from app.services.models import ServiceRule
-    from app.user_mgmt.models import LinuxUser, LinuxGroup
+    from app.ca_certs.models import CACertRule
     from app.cron.models import CronJob
+    from app.hosts_mgmt.models import HostsEntry
+    from app.models.firewall_rule import FirewallRule
     from app.packages.models import PackageRule
     from app.resolver.models import ResolverConfig
-    from app.ca_certs.models import CACertRule
+    from app.services.models import ServiceRule
+    from app.user_mgmt.models import LinuxGroup, LinuxUser
 
     groups_result = await db.execute(select(HostGroup).order_by(HostGroup.priority.desc()))
     groups = groups_result.scalars().all()
@@ -75,9 +77,7 @@ async def list_groups_summary(
 
     async def _counts(model, col_name="group_id"):
         col = getattr(model, col_name)
-        rows = await db.execute(
-            select(col, func.count()).where(col.in_(group_ids)).group_by(col)
-        )
+        rows = await db.execute(select(col, func.count()).where(col.in_(group_ids)).group_by(col))
         return {r[0]: r[1] for r in rows}
 
     fw = await _counts(FirewallRule)
@@ -114,29 +114,31 @@ async def list_groups_summary(
     result = []
     for g in groups:
         gid = g.id
-        result.append({
-            "id": gid,
-            "name": g.name,
-            "description": g.description,
-            "category": g.category,
-            "priority": g.priority,
-            "gitops_enabled": g.gitops_enabled,
-            "gitops_status": g.gitops_status.value if g.gitops_status else None,
-            "created_at": g.created_at.isoformat() if g.created_at else None,
-            "updated_at": g.updated_at.isoformat() if g.updated_at else None,
-            "host_count": host_counts.get(gid, 0),
-            "has_shared_hosts": gid in conflict_group_ids,
-            "module_counts": {
-                "firewall": fw.get(gid, 0),
-                "hosts_file": he.get(gid, 0),
-                "services": svc.get(gid, 0),
-                "users": lu.get(gid, 0) + lg.get(gid, 0),
-                "cron": cj.get(gid, 0),
-                "packages": pkg.get(gid, 0),
-                "resolver": res.get(gid, 0),
-                "ca_certs": ca.get(gid, 0),
-            },
-        })
+        result.append(
+            {
+                "id": gid,
+                "name": g.name,
+                "description": g.description,
+                "category": g.category,
+                "priority": g.priority,
+                "gitops_enabled": g.gitops_enabled,
+                "gitops_status": g.gitops_status.value if g.gitops_status else None,
+                "created_at": g.created_at.isoformat() if g.created_at else None,
+                "updated_at": g.updated_at.isoformat() if g.updated_at else None,
+                "host_count": host_counts.get(gid, 0),
+                "has_shared_hosts": gid in conflict_group_ids,
+                "module_counts": {
+                    "firewall": fw.get(gid, 0),
+                    "hosts_file": he.get(gid, 0),
+                    "services": svc.get(gid, 0),
+                    "users": lu.get(gid, 0) + lg.get(gid, 0),
+                    "cron": cj.get(gid, 0),
+                    "packages": pkg.get(gid, 0),
+                    "resolver": res.get(gid, 0),
+                    "ca_certs": ca.get(gid, 0),
+                },
+            }
+        )
     return result
 
 
@@ -214,10 +216,11 @@ async def get_group_host_count(
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import func
+
     result = await db.execute(
-        select(func.count()).select_from(HostGroupMembership).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(func.count())
+        .select_from(HostGroupMembership)
+        .where(HostGroupMembership.c.group_id == group_id)
     )
     return {"count": result.scalar()}
 
@@ -254,9 +257,7 @@ async def add_hosts_to_group(
         # Auto-enqueue CA cert deploy for newly-added hosts (no-op if the
         # group has no certs or the host has no SSH key).
         for hid in to_add:
-            await auto_enqueue_for_new_membership(
-                hid, group_id, db, triggered_by_user_id=user.id
-            )
+            await auto_enqueue_for_new_membership(hid, group_id, db, triggered_by_user_id=user.id)
 
         await db.commit()
 

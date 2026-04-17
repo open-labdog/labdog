@@ -2,10 +2,10 @@ import asyncio
 import ipaddress
 
 BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),       # loopback
-    ipaddress.ip_network("169.254.0.0/16"),     # link-local / cloud metadata (169.254.169.254!)
-    ipaddress.ip_network("224.0.0.0/4"),        # multicast
-    ipaddress.ip_network("240.0.0.0/4"),        # reserved
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata (169.254.169.254!)
+    ipaddress.ip_network("224.0.0.0/4"),  # multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # reserved
 ]
 
 
@@ -28,7 +28,7 @@ async def check_port(
                 timeout=timeout,
             )
             writer.close()
-            await writer.wait_closed()   # CRITICAL: prevents fd leaks under load
+            await writer.wait_closed()  # CRITICAL: prevents fd leaks under load
             return (host, "open")
         except ConnectionResetError:
             # Port was open; service reset connection immediately (treat as open)

@@ -1,5 +1,5 @@
 import enum
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Enum, Integer, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
@@ -7,12 +7,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
-class GitAuthType(str, enum.Enum):
+class GitAuthType(enum.StrEnum):
     ssh_key = "ssh_key"
     https_token = "https_token"
 
 
-class GitOpsStatus(str, enum.Enum):
+class GitOpsStatus(enum.StrEnum):
     disconnected = "disconnected"
     synced = "synced"
     error = "error"
@@ -34,19 +34,21 @@ class GitRepository(Base):
         nullable=True,
     )
     encrypted_https_token: Mapped[bytes | None] = mapped_column(
-        LargeBinary, nullable=True,
+        LargeBinary,
+        nullable=True,
     )
     webhook_secret: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True,
+        DateTime(timezone=True),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
     )

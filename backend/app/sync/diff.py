@@ -1,6 +1,6 @@
-import asyncio
 import logging
 from dataclasses import dataclass, field
+
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -84,11 +84,12 @@ async def fetch_current_firewall_state(host_id: int, db):
     state if the host has no SSH key or unknown backend.
     """
     from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
-    from app.crypto import decrypt_ssh_key, get_master_key
-    from app.sync.collector import CollectedFirewallState, collect_firewall_state
     from app.rules.model import ChainPolicies
+    from app.sync.collector import CollectedFirewallState, collect_firewall_state
 
     host_result = await db.execute(select(Host).where(Host.id == host_id))
     host = host_result.scalar_one_or_none()
@@ -140,9 +141,10 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
     - Host firewall backend is "unknown"
     """
     from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
-    from app.crypto import decrypt_ssh_key, get_master_key
     from app.sync.collector import collect_current_rules
 
     host_result = await db.execute(select(Host).where(Host.id == host_id))

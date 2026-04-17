@@ -2,28 +2,30 @@
 
 import asyncssh
 from sqlalchemy import select
-
-from app.ssh_utils import ssh_connect
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crypto.key_management import get_master_key
 from app.crypto.encryption import decrypt_ssh_key
+from app.crypto.key_management import get_master_key
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
+from app.ssh_utils import ssh_connect
 
 
 class HostNotFoundError(Exception):
     """Raised when host is not found in database."""
+
     pass
 
 
 class NoSSHKeyError(Exception):
     """Raised when host has no SSH key assigned."""
+
     pass
 
 
 class SSHConnectionError(Exception):
     """Raised when SSH connection fails."""
+
     pass
 
 

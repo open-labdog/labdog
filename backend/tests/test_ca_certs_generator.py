@@ -1,11 +1,9 @@
 """Unit tests for the CA cert Ansible playbook generator."""
-import pytest
 
 from app.ca_certs.generator import (
     cert_filename,
     generate_ca_cert_playbook,
 )
-
 
 PEM_FAKE_A = "-----BEGIN CERTIFICATE-----\nFAKE_A\n-----END CERTIFICATE-----\n"
 PEM_FAKE_B = "-----BEGIN CERTIFICATE-----\nFAKE_B\n-----END CERTIFICATE-----\n"
@@ -20,9 +18,13 @@ def _present(name: str, fp: str, pem: str) -> dict:
         "fingerprint_sha256": fp,
         "pem_content": pem,
         "state": "present",
-        "subject": None, "issuer": None,
-        "not_before": None, "not_after": None,
-        "source": "group", "source_id": 1, "source_name": "g",
+        "subject": None,
+        "issuer": None,
+        "not_before": None,
+        "not_after": None,
+        "source": "group",
+        "source_id": 1,
+        "source_name": "g",
     }
 
 
@@ -32,9 +34,13 @@ def _absent(name: str, fp: str) -> dict:
         "fingerprint_sha256": fp,
         "pem_content": "",
         "state": "absent",
-        "subject": None, "issuer": None,
-        "not_before": None, "not_after": None,
-        "source": "host", "source_id": 1, "source_name": "host override",
+        "subject": None,
+        "issuer": None,
+        "not_before": None,
+        "not_after": None,
+        "source": "host",
+        "source_id": 1,
+        "source_name": "host override",
     }
 
 
@@ -108,7 +114,8 @@ class TestGenerateCACertPlaybook:
         certs = [_absent("Removed CA", FP_B)]
         play = self._gen(certs)["playbook"][0]
         explicit_removes = [
-            t for t in play["tasks"]
+            t
+            for t in play["tasks"]
             if "ansible.builtin.file" in t
             and t["ansible.builtin.file"].get("state") == "absent"
             and "Remove CA cert (explicit absent)" in t.get("name", "")
@@ -122,7 +129,9 @@ class TestGenerateCACertPlaybook:
         play = self._gen([])["playbook"][0]
         handler_names = {h["name"] for h in play["handlers"]}
         assert handler_names == {
-            "update-ca-debian", "update-ca-redhat", "update-ca-suse",
+            "update-ca-debian",
+            "update-ca-redhat",
+            "update-ca-suse",
         }
         # Each handler runs a command
         for h in play["handlers"]:
@@ -134,10 +143,7 @@ class TestGenerateCACertPlaybook:
             _present("B", FP_B, PEM_FAKE_B),
         ]
         play = self._gen(certs)["playbook"][0]
-        reconcile_tasks = [
-            t for t in play["tasks"]
-            if "Remove orphaned" in t.get("name", "")
-        ]
+        reconcile_tasks = [t for t in play["tasks"] if "Remove orphaned" in t.get("name", "")]
         assert len(reconcile_tasks) == 3  # one per OS family
         for t in reconcile_tasks:
             loop_expr = t["loop"]

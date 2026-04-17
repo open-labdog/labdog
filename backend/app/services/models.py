@@ -4,11 +4,13 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     Text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -16,12 +18,12 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 
-class ServiceState(str, enum.Enum):
+class ServiceState(enum.StrEnum):
     running = "running"
     stopped = "stopped"
 
 
-class DeployMode(str, enum.Enum):
+class DeployMode(enum.StrEnum):
     full = "full"
     override = "override"
 
@@ -30,7 +32,8 @@ class ServiceRule(Base):
     __tablename__ = "service_rules"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_service_rules_scope",
         ),
     )

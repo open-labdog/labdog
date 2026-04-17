@@ -1,24 +1,23 @@
 import pytest
 from pydantic import ValidationError
 
-from app.resolver.schemas import ResolverConfigCreate
-from app.resolver.renderer import (
-    render_resolv_conf,
-    render_systemd_resolved,
-    render_networkmanager_conf,
-)
 from app.resolver.collector import (
+    parse_networkmanager_conf,
     parse_resolv_conf,
     parse_resolvectl_output,
     parse_resolved_conf,
-    parse_networkmanager_conf,
 )
-from app.resolver.diff import compute_resolver_diff, ResolverDiff
+from app.resolver.diff import compute_resolver_diff
 from app.resolver.generator import (
     CLOUD_INIT_DISABLE_PATH,
     generate_resolver_playbook,
 )
-
+from app.resolver.renderer import (
+    render_networkmanager_conf,
+    render_resolv_conf,
+    render_systemd_resolved,
+)
+from app.resolver.schemas import ResolverConfigCreate
 
 # ---------------------------------------------------------------------------
 # Schema validation tests (pure unit tests, no DB)
@@ -50,9 +49,7 @@ class TestResolverSchemas:
     def test_too_many_nameservers_rejected(self):
         """Reject more than 3 nameservers."""
         with pytest.raises(ValidationError, match="Maximum 3 nameservers"):
-            ResolverConfigCreate(
-                nameservers=["8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"]
-            )
+            ResolverConfigCreate(nameservers=["8.8.8.8", "8.8.4.4", "1.1.1.1", "1.0.0.1"])
 
     def test_unknown_options_rejected(self):
         """Reject unknown options keys."""
@@ -94,9 +91,7 @@ class TestResolverSchemas:
 class TestResolverRenderer:
     def test_render_resolv_conf(self):
         """Correct resolv.conf format."""
-        result = render_resolv_conf(
-            ["8.8.8.8", "1.1.1.1"], ["example.com"], {"ndots": 5}
-        )
+        result = render_resolv_conf(["8.8.8.8", "1.1.1.1"], ["example.com"], {"ndots": 5})
         assert "nameserver 8.8.8.8" in result
         assert "nameserver 1.1.1.1" in result
         assert "search example.com" in result
@@ -109,9 +104,7 @@ class TestResolverRenderer:
 
     def test_render_systemd_resolved(self):
         """Correct systemd-resolved.conf INI format."""
-        result = render_systemd_resolved(
-            ["8.8.8.8"], ["example.com"], True
-        )
+        result = render_systemd_resolved(["8.8.8.8"], ["example.com"], True)
         assert "[Resolve]" in result
         assert "DNS=8.8.8.8" in result
         assert "Domains=example.com" in result
@@ -191,11 +184,7 @@ class TestResolverCollectorParsers:
 
     def test_parse_networkmanager_conf(self):
         """Parse NetworkManager conf."""
-        text = (
-            "# Managed by Barricade\n"
-            "[global-dns-domain-*]\n"
-            "servers=8.8.8.8,1.1.1.1\n"
-        )
+        text = "# Managed by Barricade\n[global-dns-domain-*]\nservers=8.8.8.8,1.1.1.1\n"
         result = parse_networkmanager_conf(text)
         assert result["nameservers"] == ["8.8.8.8", "1.1.1.1"]
         assert result["search_domains"] == []

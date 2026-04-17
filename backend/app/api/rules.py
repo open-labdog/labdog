@@ -1,17 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
-from app.auth.users import current_active_user, current_superuser
-from app.schemas.rules import RuleCreate, RuleUpdate, RuleResponse, RuleReorder, EffectiveRuleResponse, ChainPoliciesResponse
-from app.schemas.groups import GroupPoliciesUpdate
-from app.rules.model import FirewallRuleSpec
-from app.rules.merge import merge_group_rules, merge_group_policies
 from app.rules.converter import firewall_rules_to_specs
+from app.rules.merge import merge_group_policies, merge_group_rules
+from app.schemas.groups import GroupPoliciesUpdate
+from app.schemas.rules import (
+    ChainPoliciesResponse,
+    EffectiveRuleResponse,
+    RuleCreate,
+    RuleReorder,
+    RuleResponse,
+    RuleUpdate,
+)
 
 router = APIRouter(tags=["rules"])
 
@@ -49,9 +56,7 @@ async def _validate_host_refs(db: AsyncSession, body) -> None:
     found = {r[0] for r in rows.all()}
     missing = [i for i in ids if i not in found]
     if missing:
-        raise HTTPException(
-            status_code=400, detail=f"Referenced host(s) not found: {missing}"
-        )
+        raise HTTPException(status_code=400, detail=f"Referenced host(s) not found: {missing}")
 
 
 @router.post("/groups/{group_id}/rules", response_model=RuleResponse, status_code=201)
@@ -145,9 +150,7 @@ async def _apply_rule_update(db: AsyncSession, rule: FirewallRule, body: RuleUpd
         found = {r[0] for r in rows.all()}
         missing = [i for i in host_ids if i not in found]
         if missing:
-            raise HTTPException(
-                status_code=400, detail=f"Referenced host(s) not found: {missing}"
-            )
+            raise HTTPException(status_code=400, detail=f"Referenced host(s) not found: {missing}")
 
     for field, value in data.items():
         setattr(rule, field, value)
@@ -283,7 +286,9 @@ async def get_effective_rules(
 
     # Build a lookup of referenced-host names for UI display
     async def _host_name_lookup(specs):
-        ref_ids = {i for s in specs for i in (s.source_host_id, s.destination_host_id) if i is not None}
+        ref_ids = {
+            i for s in specs for i in (s.source_host_id, s.destination_host_id) if i is not None
+        }
         if not ref_ids:
             return {}
         rows = await db.execute(select(Host.id, Host.hostname).where(Host.id.in_(ref_ids)))
@@ -295,31 +300,38 @@ async def get_effective_rules(
             select(FirewallRule).where(FirewallRule.host_id == host_id)
         )
         host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
-        merged_specs = merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs)
+        merged_specs = merge_group_rules(
+            [], host_source_ip=host_source_ip, host_rules=host_rule_specs
+        )
         host_names = await _host_name_lookup(merged_specs)
-        return [EffectiveRuleResponse(
-            action=r.action,
-            protocol=r.protocol,
-            direction=r.direction,
-            source_cidr=r.source_cidr,
-            destination_cidr=r.destination_cidr,
-            source_host_id=r.source_host_id,
-            destination_host_id=r.destination_host_id,
-            source_host_name=host_names.get(r.source_host_id) if r.source_host_id else None,
-            destination_host_name=host_names.get(r.destination_host_id) if r.destination_host_id else None,
-            port_start=r.port_start,
-            port_end=r.port_end,
-            comment=r.comment,
-            priority=r.priority,
-            is_system=r.is_system,
-            group_id=r.group_id,
-            group_name=None,
-            rule_id=r.rule_id,
-            group_priority=r.group_priority,
-            source="system" if r.is_system else ("host" if r.host_id else "group"),
-            source_id=r.host_id if r.host_id else r.group_id,
-            source_name="System" if r.is_system else ("Host override" if r.host_id else ""),
-        ) for r in merged_specs]
+        return [
+            EffectiveRuleResponse(
+                action=r.action,
+                protocol=r.protocol,
+                direction=r.direction,
+                source_cidr=r.source_cidr,
+                destination_cidr=r.destination_cidr,
+                source_host_id=r.source_host_id,
+                destination_host_id=r.destination_host_id,
+                source_host_name=host_names.get(r.source_host_id) if r.source_host_id else None,
+                destination_host_name=host_names.get(r.destination_host_id)
+                if r.destination_host_id
+                else None,
+                port_start=r.port_start,
+                port_end=r.port_end,
+                comment=r.comment,
+                priority=r.priority,
+                is_system=r.is_system,
+                group_id=r.group_id,
+                group_name=None,
+                rule_id=r.rule_id,
+                group_priority=r.group_priority,
+                source="system" if r.is_system else ("host" if r.host_id else "group"),
+                source_id=r.host_id if r.host_id else r.group_id,
+                source_name="System" if r.is_system else ("Host override" if r.host_id else ""),
+            )
+            for r in merged_specs
+        ]
 
     # Build groups_data with FirewallRuleSpec objects (same pattern as sync.py)
     groups_data = []
@@ -330,10 +342,15 @@ async def get_effective_rules(
         group_names[gid] = group.name
         rules_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == gid))
         rules = firewall_rules_to_specs(rules_result.scalars().all())
-        groups_data.append({
-            "id": gid, "priority": group.priority, "rules": rules,
-            "input_policy": group.input_policy, "output_policy": group.output_policy,
-        })
+        groups_data.append(
+            {
+                "id": gid,
+                "priority": group.priority,
+                "rules": rules,
+                "input_policy": group.input_policy,
+                "output_policy": group.output_policy,
+            }
+        )
 
     # Fetch host-level rule overrides
     host_rules_result = await db.execute(
@@ -342,7 +359,9 @@ async def get_effective_rules(
     host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
 
     # Call merge_group_rules to get merged rules WITH SSH lockout rule
-    merged_specs = merge_group_rules(groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs)
+    merged_specs = merge_group_rules(
+        groups_data, host_source_ip=host_source_ip, host_rules=host_rule_specs
+    )
 
     # Convert FirewallRuleSpec objects to EffectiveRuleResponse
     host_names = await _host_name_lookup(merged_specs)
@@ -356,7 +375,9 @@ async def get_effective_rules(
             source_host_id=spec.source_host_id,
             destination_host_id=spec.destination_host_id,
             source_host_name=host_names.get(spec.source_host_id) if spec.source_host_id else None,
-            destination_host_name=host_names.get(spec.destination_host_id) if spec.destination_host_id else None,
+            destination_host_name=host_names.get(spec.destination_host_id)
+            if spec.destination_host_id
+            else None,
             port_start=spec.port_start,
             port_end=spec.port_end,
             comment=spec.comment,
@@ -368,7 +389,9 @@ async def get_effective_rules(
             group_priority=spec.group_priority,
             source="system" if spec.is_system else ("host" if spec.host_id else "group"),
             source_id=spec.host_id if spec.host_id else spec.group_id,
-            source_name="System" if spec.is_system else ("Host override" if spec.host_id else group_names.get(spec.group_id, "")),
+            source_name="System"
+            if spec.is_system
+            else ("Host override" if spec.host_id else group_names.get(spec.group_id, "")),
         )
         for spec in merged_specs
     ]
@@ -430,10 +453,16 @@ async def get_effective_policies(
     for gid in group_ids:
         group_result = await db.execute(select(HostGroup).where(HostGroup.id == gid))
         group = group_result.scalar_one()
-        groups_data.append({
-            "id": gid, "name": group.name, "priority": group.priority, "rules": [],
-            "input_policy": group.input_policy, "output_policy": group.output_policy,
-        })
+        groups_data.append(
+            {
+                "id": gid,
+                "name": group.name,
+                "priority": group.priority,
+                "rules": [],
+                "input_policy": group.input_policy,
+                "output_policy": group.output_policy,
+            }
+        )
 
     policies = merge_group_policies(groups_data)
     return ChainPoliciesResponse(

@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -24,6 +23,7 @@ class ProxmoxNodeCreate(BaseModel):
     @classmethod
     def validate_api_url(cls, v: str) -> str:
         return _validate_proxmox_url(v)
+
     token_id: str
     token_secret: str
     verify_ssl: bool = True
@@ -39,6 +39,7 @@ class ProxmoxNodeUpdate(BaseModel):
         if v is not None:
             return _validate_proxmox_url(v)
         return v
+
     token_id: str | None = None
     token_secret: str | None = None
     verify_ssl: bool | None = None

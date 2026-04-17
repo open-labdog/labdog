@@ -69,6 +69,7 @@ def _reregister_drift_schedules(interval_minutes: int):
     try:
         from celery.schedules import schedule
         from redbeat import RedBeatSchedulerEntry
+
         from app.tasks import celery_app
 
         interval = schedule(run_every=interval_minutes * 60)

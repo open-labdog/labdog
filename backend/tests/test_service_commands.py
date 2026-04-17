@@ -5,12 +5,12 @@ import inspect
 import pytest
 from pydantic import ValidationError
 
+from app.services.collector import execute_service_command, list_all_services
 from app.services.live_schemas import (
     ServiceCommandRequest,
     ServiceCommandResponse,
     ServiceInventoryItem,
 )
-from app.services.collector import list_all_services, execute_service_command
 
 
 class TestCommandSchemas:

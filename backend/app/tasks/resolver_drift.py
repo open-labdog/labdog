@@ -1,3 +1,5 @@
+from datetime import UTC
+
 from app.tasks import celery_app
 
 
@@ -9,8 +11,9 @@ from app.tasks import celery_app
 def run_resolver_drift_check(self, host_id: int) -> dict:
     """Check DNS resolver drift on a single host via SSH."""
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
+    import asyncssh
     from sqlalchemy import select
 
     from app.crypto.encryption import decrypt_ssh_key
@@ -19,7 +22,6 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    import asyncssh
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
@@ -27,23 +29,17 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 
     async def _run():
         async with task_session() as db:
-            host = (
-                await db.execute(select(Host).where(Host.id == host_id))
-            ).scalar_one()
+            host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one()
             effective = await get_effective_resolver(host_id, db)
 
             if not effective:
                 return {"host_id": host_id, "status": "unmanaged", "has_drift": False}
 
             ssh_key = (
-                await db.execute(
-                    select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                )
+                await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
             ).scalar_one()
             master_key = get_master_key()
-            private_key_pem = decrypt_ssh_key(
-                ssh_key.encrypted_private_key, master_key
-            )
+            private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
             actual = await collect_resolver_state(
                 host.ip_address,
@@ -69,23 +65,27 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
                 )
             ).scalar_one_or_none()
             if hms is None:
-                hms = HostModuleStatus(
-                    host_id=host_id, module_type="resolver"
-                )
+                hms = HostModuleStatus(host_id=host_id, module_type="resolver")
                 db.add(hms)
 
             hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
-            hms.last_drift_check_at = datetime.now(timezone.utc)
+            hms.last_drift_check_at = datetime.now(UTC)
             hms.collected_state = actual
-            hms.collected_at = datetime.now(timezone.utc)
+            hms.collected_at = datetime.now(UTC)
 
             from app.api.host_state import refresh_host_sync_status
+
             await refresh_host_sync_status(host, db)
 
             if not host.barricade_source_ip:
                 try:
                     imported_key = asyncssh.import_private_key(private_key_pem)
-                    async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
+                    async with ssh_connect(
+                        host.ip_address,
+                        port=host.ssh_port,
+                        username=ssh_key.ssh_user,
+                        client_keys=[imported_key],
+                    ) as probe:
                         host.barricade_source_ip = await get_source_ip(probe)
                 except Exception:
                     pass
@@ -112,8 +112,9 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 def check_all_resolver_drift():
     """Periodic task: check resolver drift for all hosts with resolver drift enabled."""
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
+    import asyncssh
     from sqlalchemy import select
 
     from app.crypto.encryption import decrypt_ssh_key
@@ -122,7 +123,6 @@ def check_all_resolver_drift():
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    import asyncssh
     from app.resolver.collector import collect_resolver_state
     from app.resolver.diff import compute_resolver_diff
     from app.resolver.merge import get_effective_resolver
@@ -140,9 +140,7 @@ def check_all_resolver_drift():
 
             for hms in statuses:
                 try:
-                    host_result = await db.execute(
-                        select(Host).where(Host.id == hms.host_id)
-                    )
+                    host_result = await db.execute(select(Host).where(Host.id == hms.host_id))
                     host = host_result.scalar_one_or_none()
                     if not host or not host.ssh_key_id:
                         continue
@@ -174,28 +172,31 @@ def check_all_resolver_drift():
                     }
                     diff = compute_resolver_diff(actual, desired)
 
-                    hms.sync_status = (
-                        "in_sync" if not diff.has_changes else "out_of_sync"
-                    )
-                    hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+                    hms.last_drift_check_at = datetime.now(UTC)
                     hms.collected_state = actual
-                    hms.collected_at = datetime.now(timezone.utc)
+                    hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
 
                     if not host.barricade_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(host.ip_address, port=host.ssh_port, username=ssh_key.ssh_user, client_keys=[imported_key]) as probe:
+                            async with ssh_connect(
+                                host.ip_address,
+                                port=host.ssh_port,
+                                username=ssh_key.ssh_user,
+                                client_keys=[imported_key],
+                            ) as probe:
                                 host.barricade_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
                 except (OSError, asyncssh.Error, TimeoutError) as e:
                     hms.sync_status = "unknown"
-                    hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.last_drift_check_at = datetime.now(UTC)
                     hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
                 except Exception as e:
                     hms.sync_status = "error"
-                    hms.last_drift_check_at = datetime.now(timezone.utc)
+                    hms.last_drift_check_at = datetime.now(UTC)
                     hms.error_message = str(e)
 
             await db.commit()
@@ -207,7 +208,6 @@ def check_all_resolver_drift():
 
 def _register_resolver_drift_schedule():
     from celery.schedules import schedule
-
     from redbeat import RedBeatSchedulerEntry
 
     from app.config import settings

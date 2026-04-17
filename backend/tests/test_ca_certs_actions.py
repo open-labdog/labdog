@@ -1,5 +1,6 @@
 """Integration tests for CA cert action endpoints and auto-enqueue."""
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -22,8 +23,8 @@ def _make_pem(common_name: str = "Test CA") -> str:
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=365))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(private_key=key, algorithm=hashes.SHA256())
     )
@@ -46,9 +47,7 @@ class TestManualDeploy:
         host = await create_host(db, ssh_key_id=key.id, group_ids=[group.id])
 
         with patch("app.tasks.ca_cert_action.run_ca_cert_action.delay") as mock_delay:
-            resp = await superuser_client.post(
-                f"/api/ca-certs/hosts/{host.id}/deploy"
-            )
+            resp = await superuser_client.post(f"/api/ca-certs/hosts/{host.id}/deploy")
         assert resp.status_code == 201, resp.text
         data = resp.json()
         assert data["host_id"] == host.id
@@ -57,9 +56,7 @@ class TestManualDeploy:
 
     async def test_deploy_rejects_host_without_ssh_key(self, superuser_client, db):
         host = await create_host(db, ssh_key_id=None)
-        resp = await superuser_client.post(
-            f"/api/ca-certs/hosts/{host.id}/deploy"
-        )
+        resp = await superuser_client.post(f"/api/ca-certs/hosts/{host.id}/deploy")
         assert resp.status_code == 400
 
     async def test_deploy_to_unknown_host_404(self, superuser_client):
@@ -77,9 +74,7 @@ class TestManualDeploy:
         await create_host(db, ssh_key_id=key.id, group_ids=[group.id], ip="10.0.0.2")
 
         with patch("app.tasks.ca_cert_action.run_ca_cert_action.delay") as mock_delay:
-            resp = await superuser_client.post(
-                f"/api/ca-certs/groups/{group.id}/deploy"
-            )
+            resp = await superuser_client.post(f"/api/ca-certs/groups/{group.id}/deploy")
         assert resp.status_code == 201
         data = resp.json()
         assert data["triggered"] == 2
@@ -93,9 +88,7 @@ class TestManualDeploy:
 
 
 class TestAutoEnqueue:
-    async def test_adding_host_to_group_with_certs_enqueues_action(
-        self, superuser_client, db
-    ):
+    async def test_adding_host_to_group_with_certs_enqueues_action(self, superuser_client, db):
         key = await create_ssh_key(db)
         group = await create_group(db, priority=100)
         await superuser_client.post(
@@ -112,9 +105,7 @@ class TestAutoEnqueue:
         assert resp.status_code == 200
         mock_delay.assert_called_once()
 
-    async def test_adding_host_to_group_without_certs_does_not_enqueue(
-        self, superuser_client, db
-    ):
+    async def test_adding_host_to_group_without_certs_does_not_enqueue(self, superuser_client, db):
         key = await create_ssh_key(db)
         group = await create_group(db, priority=100)
         # No certs in this group
@@ -128,9 +119,7 @@ class TestAutoEnqueue:
         assert resp.status_code == 200
         mock_delay.assert_not_called()
 
-    async def test_adding_host_already_in_group_skips_enqueue(
-        self, superuser_client, db
-    ):
+    async def test_adding_host_already_in_group_skips_enqueue(self, superuser_client, db):
         key = await create_ssh_key(db)
         group = await create_group(db, priority=100)
         await superuser_client.post(
@@ -148,9 +137,7 @@ class TestAutoEnqueue:
         # Already a member — no new action should fire
         mock_delay.assert_not_called()
 
-    async def test_host_without_ssh_key_does_not_enqueue(
-        self, superuser_client, db
-    ):
+    async def test_host_without_ssh_key_does_not_enqueue(self, superuser_client, db):
         group = await create_group(db, priority=100)
         await superuser_client.post(
             f"/api/groups/{group.id}/ca-certs",
@@ -209,9 +196,7 @@ class TestRunHistory:
         host = await create_host(db, ssh_key_id=key.id, group_ids=[group.id])
 
         with patch("app.tasks.ca_cert_action.run_ca_cert_action.delay"):
-            create_resp = await superuser_client.post(
-                f"/api/ca-certs/hosts/{host.id}/deploy"
-            )
+            create_resp = await superuser_client.post(f"/api/ca-certs/hosts/{host.id}/deploy")
         run_id = create_resp.json()["id"]
 
         resp = await superuser_client.get(f"/api/ca-certs/runs/{run_id}")

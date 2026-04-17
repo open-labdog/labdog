@@ -22,35 +22,41 @@ def generate_package_playbook(
     for repo in repos:
         if repo.get("state", "present") == "absent":
             if repo.get("repo_type") == "apt":
-                tasks.append({
-                    "name": f"Remove apt repository: {repo['name']}",
-                    "ansible.builtin.apt_repository": {
-                        "repo": _build_apt_repo_string(repo),
-                        "state": "absent",
-                        "update_cache": True,
-                    },
-                    "when": "ansible_facts['os_family'] == 'Debian'",
-                })
+                tasks.append(
+                    {
+                        "name": f"Remove apt repository: {repo['name']}",
+                        "ansible.builtin.apt_repository": {
+                            "repo": _build_apt_repo_string(repo),
+                            "state": "absent",
+                            "update_cache": True,
+                        },
+                        "when": "ansible_facts['os_family'] == 'Debian'",
+                    }
+                )
             else:
-                tasks.append({
-                    "name": f"Remove yum repository: {repo['name']}",
-                    "ansible.builtin.yum_repository": {
-                        "name": repo["name"],
-                        "state": "absent",
-                    },
-                    "when": "ansible_facts['os_family'] == 'RedHat'",
-                })
+                tasks.append(
+                    {
+                        "name": f"Remove yum repository: {repo['name']}",
+                        "ansible.builtin.yum_repository": {
+                            "name": repo["name"],
+                            "state": "absent",
+                        },
+                        "when": "ansible_facts['os_family'] == 'RedHat'",
+                    }
+                )
         else:
             if repo.get("repo_type") == "apt":
-                tasks.append({
-                    "name": f"Add apt repository: {repo['name']}",
-                    "ansible.builtin.apt_repository": {
-                        "repo": _build_apt_repo_string(repo),
-                        "state": "present",
-                        "update_cache": True,
-                    },
-                    "when": "ansible_facts['os_family'] == 'Debian'",
-                })
+                tasks.append(
+                    {
+                        "name": f"Add apt repository: {repo['name']}",
+                        "ansible.builtin.apt_repository": {
+                            "repo": _build_apt_repo_string(repo),
+                            "state": "present",
+                            "update_cache": True,
+                        },
+                        "when": "ansible_facts['os_family'] == 'Debian'",
+                    }
+                )
             else:
                 yum_repo_config: dict = {
                     "name": repo["name"],
@@ -61,11 +67,13 @@ def generate_package_playbook(
                 if repo.get("key_url"):
                     yum_repo_config["gpgkey"] = repo["key_url"]
                     yum_repo_config["gpgcheck"] = True
-                tasks.append({
-                    "name": f"Add yum repository: {repo['name']}",
-                    "ansible.builtin.yum_repository": yum_repo_config,
-                    "when": "ansible_facts['os_family'] == 'RedHat'",
-                })
+                tasks.append(
+                    {
+                        "name": f"Add yum repository: {repo['name']}",
+                        "ansible.builtin.yum_repository": yum_repo_config,
+                        "when": "ansible_facts['os_family'] == 'RedHat'",
+                    }
+                )
 
     # STEP 2: Package tasks (after repos are configured)
     for pkg in packages:
@@ -74,74 +82,96 @@ def generate_package_playbook(
         version = pkg.get("version")
 
         if state == "absent":
-            tasks.append({
-                "name": f"Remove package: {name}",
-                "ansible.builtin.package": {
-                    "name": name,
-                    "state": "absent",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Remove package: {name}",
+                    "ansible.builtin.package": {
+                        "name": name,
+                        "state": "absent",
+                    },
+                }
+            )
         elif state == "latest":
-            tasks.append({
-                "name": f"Ensure latest: {name}",
-                "ansible.builtin.package": {
-                    "name": name,
-                    "state": "latest",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Ensure latest: {name}",
+                    "ansible.builtin.package": {
+                        "name": name,
+                        "state": "latest",
+                    },
+                }
+            )
         else:
             if version:
                 pkg_name_versioned = _format_package_name_with_version(
-                    name, version, pkg.get("package_manager", "auto"),
+                    name,
+                    version,
+                    pkg.get("package_manager", "auto"),
                 )
-                tasks.append({
-                    "name": f"Install package: {name} version {version}",
-                    "ansible.builtin.package": {
-                        "name": pkg_name_versioned,
-                        "state": "present",
-                    },
-                })
+                tasks.append(
+                    {
+                        "name": f"Install package: {name} version {version}",
+                        "ansible.builtin.package": {
+                            "name": pkg_name_versioned,
+                            "state": "present",
+                        },
+                    }
+                )
             else:
-                tasks.append({
-                    "name": f"Ensure present: {name}",
-                    "ansible.builtin.package": {
-                        "name": name,
-                        "state": "present",
-                    },
-                })
+                tasks.append(
+                    {
+                        "name": f"Ensure present: {name}",
+                        "ansible.builtin.package": {
+                            "name": name,
+                            "state": "present",
+                        },
+                    }
+                )
 
     # STEP 3: Hold/unhold tasks (after packages are installed)
-    hold_pkgs = [p["package_name"] for p in packages if p.get("hold") and p.get("state") != "absent"]
-    unhold_pkgs = [p["package_name"] for p in packages if not p.get("hold") and p.get("state") != "absent"]
+    hold_pkgs = [
+        p["package_name"] for p in packages if p.get("hold") and p.get("state") != "absent"
+    ]
+    unhold_pkgs = [
+        p["package_name"] for p in packages if not p.get("hold") and p.get("state") != "absent"
+    ]
 
     if hold_pkgs:
-        tasks.append({
-            "name": f"Hold packages: {', '.join(hold_pkgs)}",
-            "ansible.builtin.command": f"apt-mark hold {' '.join(hold_pkgs)}",
-            "when": "ansible_facts['os_family'] == 'Debian'",
-            "changed_when": True,
-        })
-        tasks.append({
-            "name": f"Hold packages (dnf): {', '.join(hold_pkgs)}",
-            "ansible.builtin.command": f"dnf versionlock add {' '.join(hold_pkgs)}",
-            "when": "ansible_facts['os_family'] == 'RedHat'",
-            "changed_when": True,
-        })
+        tasks.append(
+            {
+                "name": f"Hold packages: {', '.join(hold_pkgs)}",
+                "ansible.builtin.command": f"apt-mark hold {' '.join(hold_pkgs)}",
+                "when": "ansible_facts['os_family'] == 'Debian'",
+                "changed_when": True,
+            }
+        )
+        tasks.append(
+            {
+                "name": f"Hold packages (dnf): {', '.join(hold_pkgs)}",
+                "ansible.builtin.command": f"dnf versionlock add {' '.join(hold_pkgs)}",
+                "when": "ansible_facts['os_family'] == 'RedHat'",
+                "changed_when": True,
+            }
+        )
 
     if unhold_pkgs:
-        tasks.append({
-            "name": f"Unhold packages: {', '.join(unhold_pkgs)}",
-            "ansible.builtin.command": f"apt-mark unhold {' '.join(unhold_pkgs)}",
-            "when": "ansible_facts['os_family'] == 'Debian'",
-            "changed_when": False,
-        })
-        tasks.append({
-            "name": f"Unhold packages (dnf): {', '.join(unhold_pkgs)}",
-            "ansible.builtin.command": f"dnf versionlock delete {' '.join(unhold_pkgs)}",
-            "when": "ansible_facts['os_family'] == 'RedHat'",
-            "failed_when": False,
-            "changed_when": False,
-        })
+        tasks.append(
+            {
+                "name": f"Unhold packages: {', '.join(unhold_pkgs)}",
+                "ansible.builtin.command": f"apt-mark unhold {' '.join(unhold_pkgs)}",
+                "when": "ansible_facts['os_family'] == 'Debian'",
+                "changed_when": False,
+            }
+        )
+        tasks.append(
+            {
+                "name": f"Unhold packages (dnf): {', '.join(unhold_pkgs)}",
+                "ansible.builtin.command": f"dnf versionlock delete {' '.join(unhold_pkgs)}",
+                "when": "ansible_facts['os_family'] == 'RedHat'",
+                "failed_when": False,
+                "changed_when": False,
+            }
+        )
 
     playbook = [
         {
@@ -166,7 +196,9 @@ def _build_apt_repo_string(repo: dict) -> str:
 
 
 def _format_package_name_with_version(
-    name: str, version: str, package_manager: str,
+    name: str,
+    version: str,
+    package_manager: str,
 ) -> str:
     if package_manager in ("yum", "dnf"):
         return f"{name}-{version}"

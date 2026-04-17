@@ -5,12 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.sync import SyncJobResponse
 from app.auth.users import current_active_user
+from app.crypto import decrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.crypto import decrypt_ssh_key, get_master_key
 from app.services.collector import collect_service_states
 from app.services.diff import compute_service_diff
 from app.services.merge import get_effective_services
@@ -54,14 +54,10 @@ async def plan_service_sync(
     # Get desired services
     effective = await get_effective_services(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No service rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No service rules defined for this host")
 
     # Decrypt SSH key for collection
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
     master_key = get_master_key()
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
@@ -95,9 +91,7 @@ async def plan_service_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_service_sync(
     host_id: int,
     user: User = Depends(current_active_user),
@@ -130,9 +124,7 @@ async def trigger_service_sync(
     # Check host has service rules
     effective = await get_effective_services(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No service rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No service rules defined for this host")
 
     # Create sync job
     job = SyncJob(
@@ -162,9 +154,7 @@ async def trigger_group_service_sync(
     """Trigger service sync for all hosts in a group."""
     # Get hosts in group
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:

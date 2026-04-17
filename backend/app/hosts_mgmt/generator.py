@@ -1,4 +1,5 @@
 import yaml
+
 from app.ansible.inventory import generate_inventory
 
 
@@ -11,10 +12,10 @@ def generate_hosts_file_playbook(
 ) -> tuple[str, str]:
     """
     Generate Ansible playbook to deploy /etc/hosts via atomic copy.
-    
+
     Uses ansible.builtin.copy with content parameter (not template).
     Validates result contains '127.0.0.1 localhost' before committing.
-    
+
     Returns (playbook_yaml, inventory_json) tuple.
     """
     tasks = [

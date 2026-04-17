@@ -45,19 +45,24 @@ def _run_migrations() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Barricade API Server")
     parser.add_argument(
-        "--workers", type=int, default=1,
+        "--workers",
+        type=int,
+        default=1,
         help="Number of uvicorn worker processes (default: 1)",
     )
     parser.add_argument(
-        "--reload", action="store_true",
+        "--reload",
+        action="store_true",
         help="Enable auto-reload (development only)",
     )
     parser.add_argument(
-        "--skip-migrate", action="store_true",
+        "--skip-migrate",
+        action="store_true",
         help="Skip automatic database migrations on startup",
     )
     parser.add_argument(
-        "--no-celery", action="store_true",
+        "--no-celery",
+        action="store_true",
         help="Do not start Celery worker+beat subprocess (development only)",
     )
     args = parser.parse_args()

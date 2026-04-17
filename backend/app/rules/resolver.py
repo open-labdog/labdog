@@ -5,11 +5,12 @@ A rule may reference a registered Host instead of a literal CIDR via
 those FKs by looking up the host's current `ip_address` and substituting it as
 a /32 (IPv4) or /128 (IPv6) CIDR on the spec.
 """
+
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
-from typing import Iterable, Mapping
 
 from app.rules.model import FirewallRuleSpec
 

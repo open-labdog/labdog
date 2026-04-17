@@ -3,11 +3,13 @@ import enum
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     Text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,7 +18,7 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 
-class CronState(str, enum.Enum):
+class CronState(enum.StrEnum):
     present = "present"
     absent = "absent"
 
@@ -25,7 +27,8 @@ class CronJob(Base):
     __tablename__ = "cron_jobs"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_cron_jobs_scope",
         ),
     )
@@ -41,9 +44,7 @@ class CronJob(Base):
     user: Mapped[str] = mapped_column(String(32), nullable=False, default="root")
     schedule: Mapped[str] = mapped_column(String(100), nullable=False)
     command: Mapped[str] = mapped_column(Text, nullable=False)
-    environment: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, default=dict
-    )
+    environment: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     state: Mapped[CronState] = mapped_column(
         SAEnum(CronState, name="cronstate"),
         nullable=False,
