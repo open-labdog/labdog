@@ -107,9 +107,7 @@ async def delete_git_repo(
         raise HTTPException(status_code=404, detail="Git repository not found")
 
     # Check if any groups linked
-    linked = await db.execute(
-        select(HostGroup).where(HostGroup.git_repository_id == repo_id)
-    )
+    linked = await db.execute(select(HostGroup).where(HostGroup.git_repository_id == repo_id))
     if linked.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Cannot delete repository with linked groups")
 

@@ -1,5 +1,4 @@
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -18,7 +17,7 @@ from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.packages.collector import collect_package_states
 from app.packages.diff import compute_diff
-from app.packages.merge import get_effective_packages, get_effective_repos
+from app.packages.merge import get_effective_packages
 
 router = APIRouter(prefix="/packages", tags=["package-sync"])
 
@@ -26,9 +25,9 @@ router = APIRouter(prefix="/packages", tags=["package-sync"])
 class PackageDiffEntry(BaseModel):
     package_name: str
     desired_state: str
-    desired_version: Optional[str] = None
+    desired_version: str | None = None
     actual_state: str
-    actual_version: Optional[str] = None
+    actual_version: str | None = None
 
 
 class PackageDiffResponse(BaseModel):
@@ -71,17 +70,11 @@ async def plan_package_sync(
 
     effective_packages = await get_effective_packages(host_id, db)
     if not effective_packages:
-        raise HTTPException(
-            status_code=400, detail="No package rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No package rules defined for this host")
 
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
-    private_key_pem = decrypt_ssh_key(
-        ssh_key.encrypted_private_key, get_master_key()
-    )
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
     desired_dicts = [p.model_dump() for p in effective_packages]
     package_names = [p.package_name for p in effective_packages]
@@ -105,9 +98,7 @@ async def plan_package_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_package_sync(
     host_id: int,
     user: User = Depends(current_superuser),
@@ -136,9 +127,7 @@ async def trigger_package_sync(
 
     effective_packages = await get_effective_packages(host_id, db)
     if not effective_packages:
-        raise HTTPException(
-            status_code=400, detail="No package rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No package rules defined for this host")
 
     job = SyncJob(
         host_id=host_id,
@@ -164,9 +153,7 @@ async def trigger_group_package_sync(
     db: AsyncSession = Depends(get_db),
 ):
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:
@@ -222,7 +209,7 @@ class PackageDriftCheckResponse(BaseModel):
     to_remove: list[PackageDiffEntry]
     to_upgrade: list[PackageDiffEntry]
     in_sync: list[PackageDiffEntry]
-    error_message: Optional[str] = None
+    error_message: str | None = None
     checked_at: str
 
 
@@ -252,24 +239,18 @@ async def check_package_drift(
         hms = HostModuleStatus(host_id=host_id, module_type="package")
         db.add(hms)
 
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     try:
         if not host.ssh_key_id:
-            raise HTTPException(
-                status_code=400, detail="Host has no SSH key assigned"
-            )
+            raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
 
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if not ssh_key:
             raise ValueError("SSH key not found")
 
-        private_key_pem = decrypt_ssh_key(
-            ssh_key.encrypted_private_key, get_master_key()
-        )
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         effective = await get_effective_packages(host_id, db)
         desired_dicts = [p.model_dump() for p in effective]
@@ -283,6 +264,10 @@ async def check_package_drift(
 
         hms.sync_status = "drifted" if pkg_diff.has_drift else "in_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return PackageDriftCheckResponse(
@@ -300,6 +285,10 @@ async def check_package_drift(
     except Exception as e:
         hms.sync_status = "error"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return PackageDriftCheckResponse(

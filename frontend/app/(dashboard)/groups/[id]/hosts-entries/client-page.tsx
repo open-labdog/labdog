@@ -13,26 +13,21 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { hostsEntrySchema, type HostsEntryInput } from "@/lib/schemas"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import type { HostsEntry, HostGroup } from "@/lib/types"
+import type { HostsEntry, HostGroup, Host } from "@/lib/types"
+import { HostCombobox } from "@/components/host-combobox"
 
-export default function GroupHostsEntriesPage() {
+export default function GroupHostsEntriesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -42,7 +37,7 @@ export default function GroupHostsEntriesPage() {
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
 
-  const entryDefaults: HostsEntryInput = { ip_address: "", hostname: "", aliases: "", comment: "", priority: 100 }
+  const entryDefaults: HostsEntryInput = { mode: "literal", ip_address: "", hostname: "", host_ref_id: null, aliases: "", comment: "", priority: 100 }
 
   const form = useForm<HostsEntryInput>({
     resolver: zodResolver(hostsEntrySchema),
@@ -61,6 +56,13 @@ export default function GroupHostsEntriesPage() {
     queryFn: () => apiFetch<HostsEntry[]>(`/api/groups/${id}/hosts-entries`),
     enabled: !!id,
   })
+  const { data: allHosts = [] } = useQuery<Host[]>({
+    queryKey: ["hosts"],
+    queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  })
+  const hostById = new Map(allHosts.map((h) => [h.id, h]))
+  const entryDisplayIp = (e: HostsEntry) => e.host_ref_id != null ? (hostById.get(e.host_ref_id)?.ip_address ?? "…") : (e.ip_address ?? "")
+  const entryDisplayHostname = (e: HostsEntry) => e.host_ref_id != null ? (hostById.get(e.host_ref_id)?.hostname ?? "…") : (e.hostname ?? "")
   const showLoading = useDelayedLoading(isLoading)
 
   const saveMutation = useApiMutation({
@@ -96,8 +98,10 @@ export default function GroupHostsEntriesPage() {
   useEffect(() => {
     if (dialogOpen && editingEntry) {
       form.reset({
-        ip_address: editingEntry.ip_address,
-        hostname: editingEntry.hostname,
+        mode: editingEntry.host_ref_id != null ? "host" : "literal",
+        ip_address: editingEntry.ip_address ?? "",
+        hostname: editingEntry.hostname ?? "",
+        host_ref_id: editingEntry.host_ref_id ?? null,
         aliases: editingEntry.aliases.join(", "),
         comment: editingEntry.comment ?? "",
         priority: editingEntry.priority,
@@ -106,9 +110,11 @@ export default function GroupHostsEntriesPage() {
   }, [dialogOpen, editingEntry, form])
 
   const onSubmit = form.handleSubmit((data) => {
-    const payload = {
-      ip_address: data.ip_address,
-      hostname: data.hostname,
+    const isRef = data.mode === "host"
+    const payload: Record<string, unknown> = {
+      ip_address: isRef ? null : data.ip_address,
+      hostname: isRef ? null : data.hostname,
+      host_ref_id: isRef ? data.host_ref_id : null,
       aliases: (data.aliases ?? "").split(",").map((a: string) => a.trim()).filter(Boolean),
       comment: data.comment || null,
       priority: data.priority,
@@ -120,7 +126,7 @@ export default function GroupHostsEntriesPage() {
     setConfirmState({
       open: true,
       title: "Delete Hosts Entry",
-      description: `Delete hosts entry "${entry.ip_address} ${entry.hostname}"? This action cannot be undone.`,
+      description: `Delete hosts entry "${entryDisplayIp(entry)} ${entryDisplayHostname(entry)}"? This action cannot be undone.`,
       action: async () => {
         setConfirmState((prev) => prev ? { ...prev, loading: true } : null)
         try {
@@ -134,11 +140,10 @@ export default function GroupHostsEntriesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Hosts Entries" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Hosts File" }]} />}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Hosts File Entries</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
+          <h1 className="text-2xl font-bold text-white">Hosts File</h1>
         </div>
         <Button onClick={openCreateDialog}>Add Entry</Button>
       </div>
@@ -149,64 +154,83 @@ export default function GroupHostsEntriesPage() {
         <div className="text-red-400 py-8 text-center">Failed to load hosts entries</div>
       )}
 
-      {!isLoading && !error && entries && entries.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">
-          No hosts file entries yet. Click <strong>Add Entry</strong> to create one.
-        </div>
-      )}
-
-      {!isLoading && !error && entries && entries.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>IP Address</TableHead>
-                <TableHead>Hostname</TableHead>
-                <TableHead>Aliases</TableHead>
-                <TableHead>Comment</TableHead>
-                <TableHead className="w-40">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow key={entry.id} className="border-slate-700">
-                  <TableCell className="font-mono text-white text-sm">{entry.ip_address}</TableCell>
-                  <TableCell className="font-mono text-slate-300 text-sm">{entry.hostname}</TableCell>
-                  <TableCell className="text-slate-300 text-xs max-w-[200px] truncate">
-                    {entry.aliases.length > 0 ? entry.aliases.join(", ") : "—"}
-                  </TableCell>
-                  <TableCell className="text-slate-400 text-xs max-w-[160px] truncate">{entry.comment ?? "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {entry.is_system ? (
-                        <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
-                      ) : (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => openEditDialog(entry)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            disabled={deleteMutation.isPending}
-                            onClick={() => handleDelete(entry)}
-                            className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                          >
-                            {deleteMutation.isPending ? "…" : "Delete"}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<HostsEntry>
+          tableId="group-hosts-entries"
+          data={entries}
+          emptyMessage={<>No hosts file entries yet. Click <strong>Add Entry</strong> to create one.</>}
+          getRowKey={(e) => e.id}
+          columns={[
+            {
+              key: "ip_address",
+              label: "IP Address",
+              accessor: (e) => entryDisplayIp(e),
+              cell: (e) => (
+                <span className="font-mono text-white text-sm">
+                  {entryDisplayIp(e)}
+                  {e.host_ref_id != null && <span className="ml-1 text-xs text-sky-400">(host)</span>}
+                </span>
+              ),
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "e.g. 10.0.1" },
+            },
+            {
+              key: "hostname",
+              label: "Hostname",
+              accessor: (e) => entryDisplayHostname(e),
+              cell: (e) => <span className="font-mono text-slate-300 text-sm">{entryDisplayHostname(e)}</span>,
+              defaultWidth: 200,
+              filter: { type: "text", placeholder: "e.g. web-01" },
+            },
+            {
+              key: "aliases",
+              label: "Aliases",
+              accessor: (e) => e.aliases.join(", "),
+              cell: (e) => (
+                <span className="text-slate-300 text-xs">
+                  {e.aliases.length > 0 ? e.aliases.join(", ") : "—"}
+                </span>
+              ),
+              defaultWidth: 200,
+            },
+            {
+              key: "comment",
+              label: "Comment",
+              accessor: (e) => e.comment ?? "",
+              cell: (e) => <span className="text-slate-400 text-xs">{e.comment ?? "—"}</span>,
+              defaultWidth: 180,
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (entry) => (
+                <div className="flex gap-1">
+                  {entry.is_system ? (
+                    <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => openEditDialog(entry)}>
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={deleteMutation.isPending}
+                        onClick={() => handleDelete(entry)}
+                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                      >
+                        {deleteMutation.isPending ? "…" : "Delete"}
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {/* Create/Edit Dialog */}
@@ -216,27 +240,58 @@ export default function GroupHostsEntriesPage() {
             <DialogTitle>{editingEntry ? "Edit Hosts Entry" : "Add Hosts Entry"}</DialogTitle>
           </DialogHeader>
           <form onSubmit={onSubmit} className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="entry-ip">IP Address</Label>
-              <Input
-                id="entry-ip"
-                type="text"
-                placeholder="e.g. 192.168.1.10"
-                {...form.register("ip_address")}
-              />
-              {form.formState.errors.ip_address?.message && <p className="text-sm text-red-400">{form.formState.errors.ip_address.message}</p>}
+            <div className="flex gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => form.setValue("mode", "literal")}
+                className={`px-3 py-1 rounded ${form.watch("mode") === "literal" ? "bg-slate-700 text-white" : "text-slate-400 border border-slate-700"}`}
+              >
+                Literal IP + hostname
+              </button>
+              <button
+                type="button"
+                onClick={() => form.setValue("mode", "host")}
+                className={`px-3 py-1 rounded ${form.watch("mode") === "host" ? "bg-slate-700 text-white" : "text-slate-400 border border-slate-700"}`}
+              >
+                Registered host
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="entry-hostname">Hostname</Label>
-              <Input
-                id="entry-hostname"
-                type="text"
-                placeholder="e.g. myserver.local"
-                {...form.register("hostname")}
-              />
-              {form.formState.errors.hostname?.message && <p className="text-sm text-red-400">{form.formState.errors.hostname.message}</p>}
-            </div>
+            {form.watch("mode") === "literal" ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="entry-ip">IP Address</Label>
+                  <Input
+                    id="entry-ip"
+                    type="text"
+                    placeholder="e.g. 192.168.1.10"
+                    {...form.register("ip_address")}
+                  />
+                  {form.formState.errors.ip_address?.message && <p className="text-sm text-red-400">{form.formState.errors.ip_address.message}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="entry-hostname">Hostname</Label>
+                  <Input
+                    id="entry-hostname"
+                    type="text"
+                    placeholder="e.g. myserver.local"
+                    {...form.register("hostname")}
+                  />
+                  {form.formState.errors.hostname?.message && <p className="text-sm text-red-400">{form.formState.errors.hostname.message}</p>}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label>Host</Label>
+                <HostCombobox
+                  value={form.watch("host_ref_id") ?? null}
+                  onChange={(id) => form.setValue("host_ref_id", id)}
+                />
+                <p className="text-xs text-slate-500">The entry will use the host&apos;s current IP and hostname at sync time.</p>
+                {form.formState.errors.host_ref_id?.message && <p className="text-sm text-red-400">{form.formState.errors.host_ref_id.message}</p>}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="entry-aliases">Aliases (comma-separated)</Label>
@@ -273,10 +328,7 @@ export default function GroupHostsEntriesPage() {
               <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -284,7 +336,10 @@ export default function GroupHostsEntriesPage() {
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editingEntry ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

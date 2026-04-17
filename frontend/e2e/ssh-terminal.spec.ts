@@ -16,10 +16,6 @@ test.describe("SSH Terminal UI", () => {
   test("terminal shows connecting state initially", async ({ page }) => {
     await page.goto("/hosts/1/terminal", { waitUntil: "domcontentloaded" })
 
-    // When connecting, should show "Connecting to..." message
-    const connectingText = page.locator("text=/Connecting to/")
-    const terminalContainer = page.locator("[data-testid='ssh-terminal']")
-
     // Either connecting message or terminal container should be visible
     const connectingOrTerminal = page.locator(
       "[data-testid='ssh-terminal'], text=/Connecting to/"

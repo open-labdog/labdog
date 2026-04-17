@@ -5,15 +5,16 @@ Revises: 0002
 Create Date: 2026-03-16
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = "0003_drop_rbac"
 down_revision: str = "0002"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -29,7 +30,14 @@ def downgrade() -> None:
     # Recreate the table
     op.create_table(
         "user_group_permissions",
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("group_id", sa.Integer(), sa.ForeignKey("host_groups.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column(
+            "user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+        ),
+        sa.Column(
+            "group_id",
+            sa.Integer(),
+            sa.ForeignKey("host_groups.id", ondelete="CASCADE"),
+            primary_key=True,
+        ),
         sa.Column("role", grouprole, nullable=False),
     )

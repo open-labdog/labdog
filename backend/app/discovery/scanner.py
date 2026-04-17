@@ -2,10 +2,10 @@ import asyncio
 import ipaddress
 
 BLOCKED_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),       # loopback
-    ipaddress.ip_network("169.254.0.0/16"),     # link-local / cloud metadata (169.254.169.254!)
-    ipaddress.ip_network("224.0.0.0/4"),        # multicast
-    ipaddress.ip_network("240.0.0.0/4"),        # reserved
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata (169.254.169.254!)
+    ipaddress.ip_network("224.0.0.0/4"),  # multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # reserved
 ]
 
 
@@ -14,8 +14,13 @@ async def check_port(
     port: int,
     semaphore: asyncio.Semaphore,
     timeout: float = 1.0,
-) -> str | None:
-    """Check if TCP port is open. Returns host IP if open, None otherwise."""
+) -> tuple[str, str] | None:
+    """
+    Check if a host is reachable on the given TCP port.
+
+    Returns (ip, status) where status is "open" or "refused", or None if
+    the host is unreachable (timeout / network-unreachable).
+    """
     async with semaphore:
         try:
             reader, writer = await asyncio.wait_for(
@@ -23,12 +28,15 @@ async def check_port(
                 timeout=timeout,
             )
             writer.close()
-            await writer.wait_closed()   # CRITICAL: prevents fd leaks under load
-            return host
+            await writer.wait_closed()  # CRITICAL: prevents fd leaks under load
+            return (host, "open")
         except ConnectionResetError:
             # Port was open; service reset connection immediately (treat as open)
-            return host
-        except (TimeoutError, ConnectionRefusedError, OSError):
+            return (host, "open")
+        except ConnectionRefusedError:
+            # Host is alive but port is closed — exclude from discovery results
+            return None
+        except (TimeoutError, OSError):
             return None
 
 
@@ -37,17 +45,17 @@ async def scan_network(
     port: int = 22,
     timeout: float = 1.0,
     max_concurrent: int = 100,
-) -> list[str]:
+) -> list[tuple[str, str]]:
     """
     Scan all hosts in CIDR range for open port.
-    Returns list of IPs with port open.
+    Returns list of (ip, status) tuples for reachable hosts.
     """
     network = ipaddress.ip_network(cidr, strict=False)
     hosts = [str(ip) for ip in network.hosts()]
     semaphore = asyncio.Semaphore(max_concurrent)
     tasks = [check_port(h, port, semaphore, timeout) for h in hosts]
     results = await asyncio.gather(*tasks)
-    return [ip for ip in results if ip is not None]
+    return [r for r in results if r is not None]
 
 
 def validate_cidr(cidr: str, min_prefix: int = 20) -> ipaddress.IPv4Network:

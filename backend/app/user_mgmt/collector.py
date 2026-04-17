@@ -4,6 +4,8 @@ import asyncio
 
 import asyncssh
 
+from app.ssh_utils import ssh_connect
+
 
 async def collect_user_states(
     host_ip: str,
@@ -18,12 +20,11 @@ async def collect_user_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 for username in usernames:
                     try:
@@ -55,9 +56,7 @@ async def _collect_single_user(
     home_dir = fields[5]
     shell = fields[6]
 
-    ak_result = await conn.run(
-        f"cat {home_dir}/.ssh/authorized_keys 2>/dev/null", check=False
-    )
+    ak_result = await conn.run(f"cat {home_dir}/.ssh/authorized_keys 2>/dev/null", check=False)
     authorized_keys: list[str] = []
     if ak_result.exit_status == 0 and ak_result.stdout:
         for line in ak_result.stdout.splitlines():
@@ -65,16 +64,15 @@ async def _collect_single_user(
             if stripped and not stripped.startswith("#"):
                 authorized_keys.append(stripped)
 
-    sudo_result = await conn.run(
-        f"cat /etc/sudoers.d/{username} 2>/dev/null", check=False
-    )
+    sudo_result = await conn.run(f"cat /etc/sudoers.d/{username} 2>/dev/null", check=False)
     sudo_rule: str | None = None
     if sudo_result.exit_status == 0 and sudo_result.stdout:
         content = sudo_result.stdout.strip()
         if content:
             sudo_rule = content
 
-    # groups output format: "username : primary group1 group2" - first is primary, rest supplementary
+    # groups output format: "username : primary group1 group2"
+    # first is primary, rest supplementary
     groups_result = await conn.run(f"groups {username} 2>/dev/null", check=False)
     supplementary_groups: list[str] = []
     if groups_result.exit_status == 0 and groups_result.stdout:
@@ -123,18 +121,15 @@ async def collect_group_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 for groupname in groupnames:
                     try:
-                        result = await conn.run(
-                            f"getent group {groupname}", check=False
-                        )
+                        result = await conn.run(f"getent group {groupname}", check=False)
                         if result.exit_status != 0:
                             results.append(_absent_group(groupname))
                             continue

@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -17,21 +17,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { cn, useDelayedLoading } from "@/lib/utils"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 import { CardSkeleton, TableSkeleton } from "@/components/ui/skeleton"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -41,13 +36,31 @@ import { Label } from "@/components/ui/label"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { groupSchema, type GroupInput } from "@/lib/schemas"
+import GroupRulesPage from "./rules/client-page"
+import GroupServicesPage from "./services/client-page"
+import GroupHostsEntriesPage from "./hosts-entries/client-page"
+import GroupUsersPage from "./users/client-page"
+import GroupCronJobsPage from "./cron-jobs/client-page"
+import GroupPackagesPage from "./packages/client-page"
+import GroupCACertsPage from "./ca-certs/client-page"
+import GroupResolverPage from "./resolver/client-page"
+import GroupSyncPage from "./sync/client-page"
+import WorkflowConfigPage from "./workflow/client-page"
+
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow"
 
 export default function GroupDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get("tab") as Tab) || "overview"
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab)
   const [enableDialogOpen, setEnableDialogOpen] = useState(false)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [addHostsOpen, setAddHostsOpen] = useState(false)
+  const [addHostsSearch, setAddHostsSearch] = useState("")
+  const [addHostsSelected, setAddHostsSelected] = useState<Set<number>>(new Set())
   const [selectedRepoId, setSelectedRepoId] = useState<number | null>(null)
   const [filePath, setFilePath] = useState("")
   const [confirmState, setConfirmState] = useState<{
@@ -57,6 +70,9 @@ export default function GroupDetailPage() {
     action: () => void | Promise<void>
     loading?: boolean
   } | null>(null)
+  const [removeSelected, setRemoveSelected] = useState<Set<number>>(new Set())
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false)
+  const [removeLoading, setRemoveLoading] = useState(false)
 
   const editForm = useForm<GroupInput>({
     resolver: zodResolver(groupSchema),
@@ -107,6 +123,61 @@ export default function GroupDetailPage() {
   const group = groups?.find((g) => g.id === id)
 
   const groupHosts = hosts?.filter((h) => h.group_ids?.includes(id)) ?? []
+
+  const availableHosts = useMemo(() => {
+    const notInGroup = hosts?.filter((h) => !h.group_ids?.includes(id)) ?? []
+    const q = addHostsSearch.toLowerCase()
+    if (!q) return notInGroup
+    return notInGroup.filter(
+      (h) => h.hostname.toLowerCase().includes(q) || h.ip_address.includes(q)
+    )
+  }, [hosts, id, addHostsSearch])
+
+  const addHostsMutation = useApiMutation<unknown, { host_ids: number[] }, Host>({
+    mutationFn: (data) =>
+      apiFetch(`/api/groups/${id}/hosts`, { method: "POST", body: JSON.stringify(data) }),
+    invalidateKeys: [["hosts"]],
+    onSuccess: () => {
+      setAddHostsOpen(false)
+      setAddHostsSelected(new Set())
+      setAddHostsSearch("")
+    },
+    successMessage: "Hosts added to group",
+  })
+
+  function toggleRemoveHost(hostId: number) {
+    setRemoveSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(hostId)) next.delete(hostId)
+      else next.add(hostId)
+      return next
+    })
+  }
+
+  async function handleBulkRemove() {
+    const ids = Array.from(removeSelected)
+    setRemoveLoading(true)
+    try {
+      await apiFetch(`/api/groups/${id}/hosts`, {
+        method: "DELETE",
+        body: JSON.stringify({ host_ids: ids }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+      setRemoveSelected(new Set())
+    } finally {
+      setRemoveLoading(false)
+      setRemoveConfirmOpen(false)
+    }
+  }
+
+  function toggleAddHost(hostId: number) {
+    setAddHostsSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(hostId)) next.delete(hostId)
+      else next.add(hostId)
+      return next
+    })
+  }
 
   // Update form when group loads
   useEffect(() => {
@@ -196,17 +267,19 @@ export default function GroupDetailPage() {
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group" }]} />
        {/* Header */}
-       <div>
-         <div className="flex items-center gap-3">
-           <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
-           {group?.gitops_enabled && (
-             <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+       <div className="flex items-center justify-between">
+         <div>
+           <div className="flex items-center gap-3">
+             <h1 className="text-2xl font-bold text-white">{group?.name}</h1>
+             {group?.gitops_enabled && (
+               <Badge className="bg-indigo-600 text-white">Managed by GitOps</Badge>
+             )}
+           </div>
+           {group?.description && (
+             <p className="text-slate-400 text-sm mt-1">{group.description}</p>
            )}
          </div>
-         {group?.description && (
-           <p className="text-slate-400 text-sm mt-1">{group.description}</p>
-         )}
-         <div className="mt-3">
+         <div className="flex items-center gap-2">
            <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
              <DialogTrigger render={<Button variant="outline" size="sm" />}>
                Edit Group
@@ -253,7 +326,8 @@ export default function GroupDetailPage() {
                      id="edit-priority"
                      type="number"
                      {...editForm.register("priority", { valueAsNumber: true })}
-                     min={0}
+                     min={1}
+                     max={1000}
                    />
                    {editForm.formState.errors.priority && (
                      <p className="text-sm text-red-400">{editForm.formState.errors.priority.message}</p>
@@ -262,14 +336,14 @@ export default function GroupDetailPage() {
                  {editMutation.error && (
                    <p className="text-sm text-red-400">{editMutation.error.message}</p>
                  )}
-                 <div className="flex gap-3 pt-2">
-                   <Button type="submit" disabled={editMutation.isPending}>
-                     {editMutation.isPending ? "Saving..." : "Save Changes"}
-                   </Button>
+                 <DialogFooter>
                    <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
                      Cancel
                    </Button>
-                 </div>
+                   <Button type="submit" disabled={editMutation.isPending}>
+                     {editMutation.isPending ? "Saving..." : "Save Changes"}
+                   </Button>
+                 </DialogFooter>
                </form>
              </DialogContent>
            </Dialog>
@@ -316,7 +390,7 @@ export default function GroupDetailPage() {
                 <div className="flex flex-col gap-2">
                   <GitOpsStatusBadge status={group.gitops_status} />
                   {group.gitops_file_path && (
-                    <div className="text-xs text-slate-500 font-mono truncate" title={group.gitops_file_path}>
+                    <div className="text-xs text-slate-400 font-mono truncate" title={group.gitops_file_path}>
                       {group.gitops_file_path}
                     </div>
                   )}
@@ -339,34 +413,34 @@ export default function GroupDetailPage() {
           return (
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-base font-semibold text-white">Sync Status — {group?.name}</h2>
-                <Link
-                  href={`/groups/${id}/sync`}
-                  className={cn(buttonVariants({ size: "sm" }))}
+                <h2 className="text-base font-semibold text-white">Sync Status</h2>
+                <Button
+                  size="sm"
+                  onClick={() => setActiveTab("sync")}
                 >
                   Sync
-                </Link>
+                </Button>
               </div>
               {total > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                   <div>
-                    <div className="text-xs text-slate-500">Hosts</div>
+                    <div className="text-xs text-slate-400">Hosts</div>
                     <div className="text-xl font-bold text-white">{total}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">In Sync</div>
+                    <div className="text-xs text-slate-400">In Sync</div>
                     <div className="text-xl font-bold text-green-400">{synced}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Out of Sync</div>
+                    <div className="text-xs text-slate-400">Out of Sync</div>
                     <div className="text-xl font-bold text-amber-400">{outOfSync}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Error</div>
+                    <div className="text-xs text-slate-400">Error</div>
                     <div className="text-xl font-bold text-red-400">{errored}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500">Unknown</div>
+                    <div className="text-xs text-slate-400">Unknown</div>
                     <div className="text-xl font-bold text-slate-400">{unknown}</div>
                   </div>
                 </div>
@@ -424,14 +498,14 @@ export default function GroupDetailPage() {
                       {enableGitopsMutation.error && (
                         <p className="text-sm text-red-400">{enableGitopsMutation.error.message}</p>
                       )}
-                      <div className="flex gap-3 pt-2">
-                        <Button type="submit" disabled={enableGitopsMutation.isPending}>
-                          {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
-                        </Button>
+                      <DialogFooter>
                         <Button type="button" variant="outline" onClick={() => setEnableDialogOpen(false)}>
                           Cancel
                         </Button>
-                      </div>
+                        <Button type="submit" disabled={enableGitopsMutation.isPending}>
+                          {enableGitopsMutation.isPending ? "Enabling..." : "Enable"}
+                        </Button>
+                      </DialogFooter>
                     </form>
                   </DialogContent>
                 </Dialog>
@@ -440,21 +514,21 @@ export default function GroupDetailPage() {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Status</div>
+                    <div className="text-xs text-slate-400 mb-1">Status</div>
                     <GitOpsStatusBadge status={group.gitops_status!} />
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Repository</div>
+                    <div className="text-xs text-slate-400 mb-1">Repository</div>
                     <div className="text-sm text-slate-300 truncate">
                       {gitRepos?.find((r) => r.id === group.git_repository_id)?.name ?? "Unknown"}
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">File Path</div>
+                    <div className="text-xs text-slate-400 mb-1">File Path</div>
                     <div className="text-sm text-slate-300 font-mono truncate">{group.gitops_file_path ?? "—"}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">Last Import</div>
+                    <div className="text-xs text-slate-400 mb-1">Last Sync</div>
                     <div className="text-sm text-slate-300">{relativeTime(group.gitops_last_import_at)}</div>
                   </div>
                 </div>
@@ -479,112 +553,254 @@ export default function GroupDetailPage() {
         )}
       </div>
 
-      {/* Navigation */}
-      <div className="flex gap-3 flex-wrap">
-        <Link
-          href={`/groups/${id}/rules`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Rules
-        </Link>
-        <Link
-          href={`/groups/${id}/services`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Services
-        </Link>
-        <Link
-          href={`/groups/${id}/hosts-entries`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Hosts File
-        </Link>
-        <Link
-          href={`/groups/${id}/users`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Users
-        </Link>
-        <Link
-          href={`/groups/${id}/cron-jobs`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Cron Jobs
-        </Link>
-        <Link
-          href={`/groups/${id}/packages`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Manage Packages
-        </Link>
-        <Link
-          href={`/groups/${id}/resolver`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          DNS Resolver
-        </Link>
+      {/* Tabs */}
+      <div role="tablist" className="flex gap-1 border-b border-slate-700 flex-wrap">
+        {([
+          ["overview", "Overview"],
+          ["rules", "Rules"],
+          ["services", "Services"],
+          ["hosts-file", "Hosts File"],
+          ["users", "Users"],
+          ["cron-jobs", "Cron Jobs"],
+          ["packages", "Packages"],
+          ["ca-certs", "CA Certs"],
+          ["dns", "DNS Resolver"],
+          ["sync", "Sync"],
+          ["workflow", "Workflow"],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={activeTab === key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2 text-sm font-medium transition-colors ${
+              activeTab === key
+                ? "text-white border-b-2 border-white"
+                : "text-slate-400 hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
-      {/* Hosts section */}
-      <div>
-        <h2 className="text-lg font-semibold text-white mb-3">Hosts</h2>
-        <p className="text-slate-400 text-sm mb-4">
-          All hosts that may be affected by this group&apos;s rules.
-        </p>
+      {activeTab === "overview" && (
+        <>
+          {/* Hosts section */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white">Hosts</h2>
+                <p className="text-slate-400 text-sm mt-1">
+                  All hosts that may be affected by this group&apos;s rules.
+                </p>
+              </div>
+              <Button size="sm" onClick={() => { setAddHostsOpen(true); setAddHostsSelected(new Set()); setAddHostsSearch("") }}>
+                Add Hosts
+              </Button>
+            </div>
 
-        {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
+            {showHostsLoading && <TableSkeleton rows={3} columns={4} />}
 
-        {!hostsLoading && groupHosts.length === 0 && (
-          <div className="text-slate-400 py-4 text-center">
-            No hosts configured.{" "}
-            <Link href="/hosts/new" className="underline hover:text-white">
-              Add a host
-            </Link>
+            {!hostsLoading && groupHosts.length === 0 && (
+              <div className="text-slate-400 py-4 text-center">
+                No hosts in this group.
+              </div>
+            )}
+
+            {!hostsLoading && groupHosts.length > 0 && (
+              <>
+                {removeSelected.size > 0 && (
+                  <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
+                    <span className="text-sm text-slate-300">{removeSelected.size} selected</span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => setRemoveConfirmOpen(true)}
+                      disabled={removeLoading}
+                    >
+                      Remove Selected
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setRemoveSelected(new Set())}>
+                      Clear
+                    </Button>
+                  </div>
+                )}
+                <DataTable<Host>
+                  tableId="group-hosts"
+                  data={groupHosts}
+                  getRowKey={(h) => h.id}
+                  emptyMessage="No hosts in this group."
+                  columns={[
+                    {
+                      key: "select",
+                      label: "",
+                      cell: (host) => (
+                        <input
+                          type="checkbox"
+                          checked={removeSelected.has(host.id)}
+                          onChange={() => toggleRemoveHost(host.id)}
+                          className="rounded border-slate-600"
+                          aria-label={`Select ${host.hostname}`}
+                        />
+                      ),
+                      defaultWidth: 40,
+                      resizable: false,
+                      sortable: false,
+                    },
+                    {
+                      key: "hostname",
+                      label: "Hostname",
+                      accessor: (h) => h.hostname,
+                      cell: (h) => (
+                        <Link href={`/hosts/${h.id}`} className="text-white hover:text-blue-400 transition-colors font-medium">
+                          {h.hostname}
+                        </Link>
+                      ),
+                      defaultWidth: 200,
+                      filter: { type: "text", placeholder: "e.g. web-01" },
+                    },
+                    {
+                      key: "ip_address",
+                      label: "IP Address",
+                      accessor: (h) => h.ip_address,
+                      cell: (h) => <span className="font-mono text-slate-300 text-xs">{h.ip_address}</span>,
+                      defaultWidth: 160,
+                      filter: { type: "text", placeholder: "e.g. 10.0.1" },
+                    },
+                    {
+                      key: "firewall",
+                      label: "Firewall",
+                      accessor: (h) => h.firewall_backend,
+                      cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+                      defaultWidth: 120,
+                      filter: { type: "enum", options: [{label:"nftables",value:"nftables"},{label:"iptables",value:"iptables"},{label:"Unknown",value:"unknown"}] },
+                    },
+                    {
+                      key: "sync_status",
+                      label: "Sync Status",
+                      accessor: (h) => h.sync_status,
+                      cell: (h) => <SyncStatusBadge status={h.sync_status} />,
+                      defaultWidth: 140,
+                      filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"In Sync",value:"in_sync"},{label:"Out of Sync",value:"out_of_sync"},{label:"Unknown",value:"unknown"},{label:"Error",value:"error"}] },
+                    },
+                    {
+                      key: "actions",
+                      label: "Actions",
+                      cell: (h) => (
+                        <Link href={`/hosts/${h.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>
+                          View
+                        </Link>
+                      ),
+                      defaultWidth: 100,
+                      resizable: false,
+                      sortable: false,
+                    },
+                  ] satisfies ColumnDef<Host>[]}
+                />
+              </>
+            )}
           </div>
-        )}
 
-        {!hostsLoading && groupHosts.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Hostname</TableHead>
-                  <TableHead>IP Address</TableHead>
-                  <TableHead>Firewall</TableHead>
-                  <TableHead>Sync Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {groupHosts.map((host) => (
-                  <TableRow key={host.id} className="border-slate-700">
-                    <TableCell className="font-medium text-white">
-                      {host.hostname}
-                    </TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">
-                      {host.ip_address}
-                    </TableCell>
-                    <TableCell>
-                      <FirewallBadge backend={host.firewall_backend} />
-                    </TableCell>
-                    <TableCell>
-                      <SyncStatusBadge status={host.sync_status} />
-                    </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/hosts/${host.id}`}
-                        className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-                      >
-                        View
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </div>
+          {/* Add Hosts Dialog */}
+          <Dialog open={addHostsOpen} onOpenChange={setAddHostsOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add Hosts to {group?.name}</DialogTitle>
+              </DialogHeader>
+              <div className="mt-2 space-y-3">
+                <Input
+                  placeholder="Search by hostname or IP..."
+                  value={addHostsSearch}
+                  onChange={(e) => setAddHostsSearch(e.target.value)}
+                />
+
+                {availableHosts.length === 0 ? (
+                  <p className="text-slate-400 text-sm py-4 text-center">
+                    {addHostsSearch ? "No matching hosts found." : "All hosts are already in this group."}
+                  </p>
+                ) : (
+                  <div className="max-h-[360px] overflow-y-auto">
+                    <DataTable<Host>
+                      tableId="group-add-hosts-picker"
+                      data={availableHosts}
+                      getRowKey={(h) => h.id}
+                      emptyMessage="No available hosts."
+                      onRowClick={(host) => toggleAddHost(host.id)}
+                      rowClassName={() => "cursor-pointer"}
+                      columns={[
+                        {
+                          key: "select",
+                          label: "",
+                          cell: (host) => (
+                            <input
+                              type="checkbox"
+                              checked={addHostsSelected.has(host.id)}
+                              onChange={(e) => e.stopPropagation()}
+                              className="rounded border-slate-600"
+                              aria-label={`Select ${host.hostname}`}
+                            />
+                          ),
+                          defaultWidth: 40,
+                          resizable: false,
+                          sortable: false,
+                        },
+                        {
+                          key: "hostname",
+                          label: "Hostname",
+                          accessor: (h) => h.hostname,
+                          cell: (h) => <span className="font-medium text-white">{h.hostname}</span>,
+                          defaultWidth: 200,
+                          filter: { type: "text", placeholder: "e.g. web-01" },
+                        },
+                        {
+                          key: "ip_address",
+                          label: "IP Address",
+                          accessor: (h) => h.ip_address,
+                          cell: (h) => <span className="font-mono text-slate-300 text-xs">{h.ip_address}</span>,
+                          defaultWidth: 160,
+                          filter: { type: "text", placeholder: "e.g. 10.0.1" },
+                        },
+                        {
+                          key: "firewall",
+                          label: "Firewall",
+                          accessor: (h) => h.firewall_backend,
+                          cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+                          defaultWidth: 120,
+                          filter: { type: "enum", options: [{label:"nftables",value:"nftables"},{label:"iptables",value:"iptables"},{label:"Unknown",value:"unknown"}] },
+                        },
+                      ] satisfies ColumnDef<Host>[]}
+                    />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-slate-400 text-sm">
+                    {addHostsSelected.size} host{addHostsSelected.size !== 1 ? "s" : ""} selected
+                  </span>
+                  <Button
+                    disabled={addHostsSelected.size === 0 || addHostsMutation.isPending}
+                    onClick={() => addHostsMutation.mutate({ host_ids: Array.from(addHostsSelected) })}
+                  >
+                    {addHostsMutation.isPending ? "Adding..." : "Add to Group"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </>
+      )}
+
+      {activeTab === "rules" && <GroupRulesPage embedded />}
+      {activeTab === "services" && <GroupServicesPage embedded />}
+      {activeTab === "hosts-file" && <GroupHostsEntriesPage embedded />}
+      {activeTab === "users" && <GroupUsersPage embedded />}
+      {activeTab === "cron-jobs" && <GroupCronJobsPage embedded />}
+      {activeTab === "packages" && <GroupPackagesPage embedded />}
+      {activeTab === "ca-certs" && <GroupCACertsPage embedded />}
+      {activeTab === "dns" && <GroupResolverPage embedded />}
+      {activeTab === "sync" && <GroupSyncPage embedded />}
+      {activeTab === "workflow" && <WorkflowConfigPage embedded />}
 
       {confirmState && (
         <ConfirmDialog
@@ -598,6 +814,17 @@ export default function GroupDetailPage() {
           onConfirm={confirmState.action}
         />
       )}
+
+      <ConfirmDialog
+        open={removeConfirmOpen}
+        onOpenChange={(open) => { if (!open) setRemoveConfirmOpen(false) }}
+        title={`Remove ${removeSelected.size} ${removeSelected.size === 1 ? "host" : "hosts"} from group?`}
+        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from Barricade.`}
+        confirmLabel="Remove"
+        variant="destructive"
+        loading={removeLoading}
+        onConfirm={handleBulkRemove}
+      />
 
     </div>
   )

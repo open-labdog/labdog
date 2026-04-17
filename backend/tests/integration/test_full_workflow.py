@@ -8,15 +8,13 @@ Run with:
     pytest tests/integration/test_full_workflow.py -v -m integration
 """
 
-import pytest
 import httpx
-from httpx import ASGITransport
-
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+import pytest
 from cryptography.hazmat.primitives import serialization
-
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from httpx import ASGITransport
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 pytestmark = pytest.mark.integration
 
@@ -56,8 +54,8 @@ class TestFullWorkflow:
             )
 
             # Run Alembic migrations against the test DB
-            import subprocess
             import os
+            import subprocess
 
             env = os.environ.copy()
             env["BARRICADE_DATABASE__URL"] = async_url
@@ -119,7 +117,7 @@ class TestFullWorkflow:
         user_data = r.json()
         assert "id" in user_data
         assert user_data["email"] == "integ@barricade.test"
-        admin_user_id = user_data["id"]
+        user_data["id"]
 
         # Promote to superuser directly in DB
         await _promote_to_superuser(self.async_url, "integ@barricade.test")
@@ -193,7 +191,7 @@ class TestFullWorkflow:
             },
         )
         assert r.status_code == 201, r.text
-        rule_ssh_id = r.json()["id"]
+        r.json()["id"]
 
         r = await client.post(
             rules_url,

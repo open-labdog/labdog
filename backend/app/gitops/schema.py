@@ -16,6 +16,8 @@ class FirewallRuleYAML(BaseModel):
 
 class FirewallModuleYAML(BaseModel):
     rules: list[FirewallRuleYAML] = []
+    input_policy: Literal["accept", "drop"] | None = None
+    output_policy: Literal["accept", "drop"] | None = None
 
 
 class BarricadeGroupYAML(BaseModel):

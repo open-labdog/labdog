@@ -4,12 +4,14 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
     Text,
     UniqueConstraint,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -17,20 +19,20 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 
-class PackageState(str, enum.Enum):
+class PackageState(enum.StrEnum):
     present = "present"
     absent = "absent"
     latest = "latest"
 
 
-class PackageManager(str, enum.Enum):
+class PackageManager(enum.StrEnum):
     apt = "apt"
     dnf = "dnf"
     yum = "yum"
     auto = "auto"
 
 
-class RepoType(str, enum.Enum):
+class RepoType(enum.StrEnum):
     apt = "apt"
     yum = "yum"
 
@@ -39,7 +41,8 @@ class PackageRule(Base):
     __tablename__ = "package_rules"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_package_rules_scope",
         ),
         UniqueConstraint("group_id", "package_name", name="uq_package_rules_group_pkg"),
@@ -81,9 +84,7 @@ class PackageRule(Base):
 
 class PackageRepository(Base):
     __tablename__ = "package_repositories"
-    __table_args__ = (
-        UniqueConstraint("group_id", "name", name="uq_package_repos_group_name"),
-    )
+    __table_args__ = (UniqueConstraint("group_id", "name", name="uq_package_repos_group_name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     group_id: Mapped[int] = mapped_column(

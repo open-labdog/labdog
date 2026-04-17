@@ -25,7 +25,8 @@ def clone_repo(
 ) -> tuple[git.Repo, Path]:
     """Clone a Git repository to a temp directory.
 
-    For SSH auth: decrypts key -> writes to /dev/shm/ -> sets GIT_SSH_COMMAND -> clones -> cleans key
+    For SSH auth: decrypts key -> writes to /dev/shm/ -> sets GIT_SSH_COMMAND
+    -> clones -> cleans key
     For HTTPS auth: decrypts token -> constructs URL -> clones -> never persists token
 
     Args:
@@ -63,10 +64,12 @@ def _clone_ssh(
     """
     if not encrypted_ssh_key:
         raise ValueError(
-            f"encrypted_ssh_key required for SSH auth (repo '{repo.name}', ssh_key_id={repo.ssh_key_id})"
+            f"encrypted_ssh_key required for SSH auth"
+            f" (repo '{repo.name}', ssh_key_id={repo.ssh_key_id})"
         )
 
-    ssh_key_path = f"/dev/shm/barricade-git-{repo.id}.key"
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    os.close(fd)
     try:
         master_key = get_master_key()
         private_key = decrypt_ssh_key(encrypted_ssh_key, master_key)
@@ -78,14 +81,12 @@ def _clone_ssh(
 
         ssh_cmd = (
             f"ssh -i {ssh_key_path} "
-            "-o StrictHostKeyChecking=no "
+            "-o StrictHostKeyChecking=accept-new "
             "-o UserKnownHostsFile=/dev/null"
         )
         env = {**os.environ, "GIT_SSH_COMMAND": ssh_cmd}
 
-        cloned = git.Repo.clone_from(
-            repo.url, str(target_dir), branch=repo.branch, env=env
-        )
+        cloned = git.Repo.clone_from(repo.url, str(target_dir), branch=repo.branch, env=env)
         return cloned, target_dir
     finally:
         # Always clean up SSH key from tmpfs
@@ -117,9 +118,7 @@ def _clone_https(repo: GitRepository, target_dir: Path) -> tuple[git.Repo, Path]
     return cloned, target_dir
 
 
-def clone_repo_local(
-    url: str, target_dir: Path, branch: str = "main"
-) -> tuple[git.Repo, Path]:
+def clone_repo_local(url: str, target_dir: Path, branch: str = "main") -> tuple[git.Repo, Path]:
     """Clone a local/public repo without auth. For testing."""
     cloned = git.Repo.clone_from(url, str(target_dir), branch=branch)
     return cloned, target_dir
@@ -138,9 +137,7 @@ def read_file_at_sha(repo_path: Path, file_path: str, sha: str) -> str:
         blob = repo.commit(sha).tree / file_path
         return blob.data_stream.read().decode("utf-8")
     except (KeyError, git.exc.GitCommandError) as e:
-        raise FileNotFoundError(
-            f"File '{file_path}' not found at commit {sha[:8]}"
-        ) from e
+        raise FileNotFoundError(f"File '{file_path}' not found at commit {sha[:8]}") from e
 
 
 def get_current_sha(repo_path: Path) -> str:

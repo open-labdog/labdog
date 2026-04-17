@@ -1,7 +1,9 @@
 import json
 
 
-def generate_inventory(host_ip: str, ssh_port: int, ssh_key_path: str, ssh_user: str = "root") -> str:
+def generate_inventory(
+    host_ip: str, ssh_port: int, ssh_key_path: str, ssh_user: str = "root"
+) -> str:
     """Generate Ansible inventory JSON for a single host."""
     inventory = {
         "all": {

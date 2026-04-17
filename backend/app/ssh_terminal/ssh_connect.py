@@ -4,24 +4,28 @@ import asyncssh
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crypto.key_management import get_master_key
 from app.crypto.encryption import decrypt_ssh_key
+from app.crypto.key_management import get_master_key
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
+from app.ssh_utils import ssh_connect
 
 
 class HostNotFoundError(Exception):
     """Raised when host is not found in database."""
+
     pass
 
 
 class NoSSHKeyError(Exception):
     """Raised when host has no SSH key assigned."""
+
     pass
 
 
 class SSHConnectionError(Exception):
     """Raised when SSH connection fails."""
+
     pass
 
 
@@ -70,16 +74,16 @@ async def open_ssh_shell(
 
     # Connect to remote host and open PTY shell
     try:
-        conn = await asyncssh.connect(
+        conn = await ssh_connect(
             host.ip_address,
             port=host.ssh_port,
-            username=host.ssh_user,
+            username=ssh_key.ssh_user,
             client_keys=[imported_key],
-            known_hosts=None,
         )
         process = await conn.create_process(
             term_type="xterm-256color",
             term_size=(initial_cols, initial_rows),
+            encoding=None,
         )
     except (asyncssh.Error, OSError) as e:
         raise SSHConnectionError(f"Failed to connect to {host.hostname}: {e}")

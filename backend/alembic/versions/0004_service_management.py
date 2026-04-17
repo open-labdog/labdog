@@ -5,15 +5,16 @@ Revises: 0003_drop_rbac
 Create Date: 2026-03-17
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
-import sqlalchemy as sa
 
 revision: str = "0004"
 down_revision: str = "0003_drop_rbac"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -56,7 +57,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_service_rules_scope",
         ),
     )
@@ -72,12 +74,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("module_type", sa.String(50), nullable=False),
-        sa.Column(
-            "sync_status", sa.String(20), nullable=False, server_default="unknown"
-        ),
-        sa.Column(
-            "drift_check_enabled", sa.Boolean, nullable=False, server_default="false"
-        ),
+        sa.Column("sync_status", sa.String(20), nullable=False, server_default="unknown"),
+        sa.Column("drift_check_enabled", sa.Boolean, nullable=False, server_default="false"),
         sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_drift_check_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint(

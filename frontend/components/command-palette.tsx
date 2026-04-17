@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { label: "Hosts", href: "/hosts" },
   { label: "SSH Keys", href: "/ssh-keys" },
   { label: "Git Repos", href: "/git-repos" },
+  { label: "Schedules", href: "/schedules" },
+  { label: "Hypervisors", href: "/hypervisors" },
   { label: "Audit Log", href: "/audit" },
   { label: "Users", href: "/users" },
 ]

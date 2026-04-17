@@ -1,15 +1,13 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
 from app.cron.models import CronJob
 from app.cron.schemas import EffectiveCronJobResponse
+from app.models.host import HostGroupMembership
+from app.models.host_group import HostGroup
 
 
-async def get_effective_cron_jobs(
-    host_id: int, db: AsyncSession
-) -> list[EffectiveCronJobResponse]:
+async def get_effective_cron_jobs(host_id: int, db: AsyncSession) -> list[EffectiveCronJobResponse]:
     """Merge group-level CronJob rules + host-level overrides.
 
     Merge key: (name, user) composite. Higher priority group wins.
@@ -30,9 +28,7 @@ async def get_effective_cron_jobs(
     merged: dict[tuple[str, str], EffectiveCronJobResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(CronJob).where(CronJob.group_id == group_id)
-        )
+        result = await db.execute(select(CronJob).where(CronJob.group_id == group_id))
         for rule in result.scalars().all():
             key = (rule.name, rule.user)
             if key not in merged:
@@ -50,9 +46,7 @@ async def get_effective_cron_jobs(
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(
-        select(CronJob).where(CronJob.host_id == host_id)
-    )
+    host_result = await db.execute(select(CronJob).where(CronJob.host_id == host_id))
     for rule in host_result.scalars().all():
         key = (rule.name, rule.user)
         merged[key] = EffectiveCronJobResponse(

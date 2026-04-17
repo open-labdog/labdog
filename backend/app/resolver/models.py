@@ -4,10 +4,12 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Index,
     text,
+)
+from sqlalchemy import (
+    Enum as SAEnum,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,7 +18,7 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 
-class ResolverType(str, enum.Enum):
+class ResolverType(enum.StrEnum):
     resolv_conf = "resolv_conf"
     systemd_resolved = "systemd_resolved"
     networkmanager = "networkmanager"
@@ -26,7 +28,8 @@ class ResolverConfig(Base):
     __tablename__ = "resolver_configs"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_resolver_configs_scope",
         ),
         # Partial unique indexes: one config per group, one per host
@@ -52,9 +55,7 @@ class ResolverConfig(Base):
         ForeignKey("hosts.id", ondelete="CASCADE"), nullable=True
     )
     nameservers: Mapped[list] = mapped_column(JSONB, nullable=False)
-    search_domains: Mapped[list] = mapped_column(
-        JSONB, nullable=False, server_default="[]"
-    )
+    search_domains: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     options: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     resolver_type: Mapped[ResolverType] = mapped_column(
         SAEnum(ResolverType, name="resolvertype"),

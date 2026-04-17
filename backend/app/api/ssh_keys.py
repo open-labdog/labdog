@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_active_user, current_superuser
+from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
 from app.models.user import User
-from app.auth.users import current_active_user, current_superuser
-from app.crypto import encrypt_ssh_key, get_master_key
-from app.schemas.ssh_keys import SSHKeyCreate, SSHKeyResponse
+from app.schemas.ssh_keys import SSHKeyCreate, SSHKeyResponse, SSHKeyUpdate
 
 router = APIRouter(prefix="/ssh-keys", tags=["ssh-keys"])
 
@@ -46,9 +46,43 @@ async def create_ssh_key(
     key = SSHKey(
         name=body.name,
         encrypted_private_key=encrypted,
+        ssh_user=body.ssh_user,
         is_default=body.is_default,
     )
     db.add(key)
+    await db.commit()
+    await db.refresh(key)
+    return key
+
+
+@router.put("/{key_id}", response_model=SSHKeyResponse)
+async def update_ssh_key(
+    key_id: int,
+    body: SSHKeyUpdate,
+    _: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
+    key = result.scalar_one_or_none()
+    if not key:
+        raise HTTPException(status_code=404, detail="SSH key not found")
+
+    if body.name is not None and body.name != key.name:
+        existing = await db.execute(select(SSHKey).where(SSHKey.name == body.name))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=409, detail="SSH key name already exists")
+        key.name = body.name
+
+    if body.ssh_user is not None:
+        key.ssh_user = body.ssh_user
+
+    if body.is_default is not None and body.is_default and not key.is_default:
+        await db.execute(text("SELECT pg_advisory_xact_lock(1)"))
+        await db.execute(update(SSHKey).values(is_default=False))
+        key.is_default = True
+    elif body.is_default is not None and not body.is_default:
+        key.is_default = False
+
     await db.commit()
     await db.refresh(key)
     return key

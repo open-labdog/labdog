@@ -5,16 +5,18 @@ Revises: 0001
 Create Date: 2026-03-16 00:00:00.000000
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
 from alembic import op
 
 revision: str = "0002"
-down_revision: Union[str, None] = "0001"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0001"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -22,7 +24,10 @@ def upgrade() -> None:
     gitauthtype.create(op.get_bind(), checkfirst=True)
 
     gitopsstatus = postgresql.ENUM(
-        "disconnected", "synced", "error", "importing",
+        "disconnected",
+        "synced",
+        "error",
+        "importing",
         name="gitopsstatus",
     )
     gitopsstatus.create(op.get_bind(), checkfirst=True)
@@ -43,10 +48,15 @@ def upgrade() -> None:
         sa.Column("webhook_secret", sa.String(200), nullable=True),
         sa.Column("last_commit_sha", sa.String(64), nullable=True),
         sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
+        sa.Column(
+            "updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+        ),
         sa.ForeignKeyConstraint(
-            ["ssh_key_id"], ["ssh_keys.id"],
+            ["ssh_key_id"],
+            ["ssh_keys.id"],
             name=op.f("fk_git_repositories_ssh_key_id_ssh_keys"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_git_repositories")),
@@ -54,19 +64,31 @@ def upgrade() -> None:
     )
 
     op.add_column("host_groups", sa.Column("git_repository_id", sa.Integer(), nullable=True))
-    op.add_column("host_groups", sa.Column("gitops_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")))
+    op.add_column(
+        "host_groups",
+        sa.Column("gitops_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    )
     op.add_column("host_groups", sa.Column("gitops_file_path", sa.String(500), nullable=True))
     op.add_column(
         "host_groups",
         sa.Column(
             "gitops_status",
-            postgresql.ENUM("disconnected", "synced", "error", "importing", name="gitopsstatus", create_type=False),
+            postgresql.ENUM(
+                "disconnected",
+                "synced",
+                "error",
+                "importing",
+                name="gitopsstatus",
+                create_type=False,
+            ),
             nullable=False,
             server_default="disconnected",
         ),
     )
     op.add_column("host_groups", sa.Column("gitops_error_message", sa.Text(), nullable=True))
-    op.add_column("host_groups", sa.Column("gitops_last_import_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "host_groups", sa.Column("gitops_last_import_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.create_foreign_key(
         op.f("fk_host_groups_git_repository_id_git_repositories"),
         "host_groups",

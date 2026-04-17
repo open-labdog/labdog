@@ -1,5 +1,8 @@
-import asyncssh
 from dataclasses import dataclass
+
+import asyncssh
+
+from app.ssh_utils import ssh_connect
 
 
 @dataclass
@@ -23,12 +26,11 @@ async def collect_hosts_file(
     results = []
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             result = await conn.run("cat /etc/hosts", check=True)
             content = result.stdout
@@ -40,7 +42,7 @@ async def collect_hosts_file(
                     continue
                 # Strip inline comments
                 if "#" in line:
-                    line = line[:line.index("#")].strip()
+                    line = line[: line.index("#")].strip()
                 # Split on whitespace (handles tabs and multiple spaces)
                 parts = line.split()
                 if len(parts) < 2:
@@ -48,11 +50,13 @@ async def collect_hosts_file(
                 ip = parts[0]
                 hostname = parts[1]
                 aliases = parts[2:] if len(parts) > 2 else []
-                results.append(ParsedHostsEntry(
-                    ip_address=ip,
-                    hostname=hostname,
-                    aliases=aliases,
-                ))
+                results.append(
+                    ParsedHostsEntry(
+                        ip_address=ip,
+                        hostname=hostname,
+                        aliases=aliases,
+                    )
+                )
     except Exception:
         # Connection failure — return empty list (caller handles error)
         pass

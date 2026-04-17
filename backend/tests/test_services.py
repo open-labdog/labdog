@@ -1,9 +1,9 @@
 import pytest
 from pydantic import ValidationError
-from app.services.schemas import ServiceRuleCreate, ServiceRuleUpdate
-from app.services.constants import PROTECTED_SERVICES
-from app.services.diff import compute_service_diff
+
 from app.services.collector import ServiceCurrentState
+from app.services.diff import compute_service_diff
+from app.services.schemas import ServiceRuleCreate, ServiceRuleUpdate
 
 
 class TestServiceSchemas:
@@ -32,6 +32,7 @@ class TestServiceDiff:
     def _make_desired(self, name, state, enabled):
         class D:
             pass
+
         d = D()
         d.service_name = name
         d.state = state
@@ -81,6 +82,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_create_group_service(self, superuser_client, db):
         from tests.conftest import create_group
+
         group = await create_group(db)
         await db.commit()
         resp = await superuser_client.post(
@@ -93,6 +95,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_protected_rejected_by_api(self, superuser_client, db):
         from tests.conftest import create_group
+
         group = await create_group(db)
         await db.commit()
         resp = await superuser_client.post(
@@ -104,6 +107,7 @@ class TestServiceAPI:
     @pytest.mark.asyncio
     async def test_effective_services(self, superuser_client, db):
         from tests.conftest import create_group, create_host, create_ssh_key
+
         group = await create_group(db)
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
@@ -118,3 +122,95 @@ class TestServiceAPI:
         nginx = [s for s in data if s["service_name"] == "nginx"]
         assert len(nginx) == 1
         assert nginx[0]["source"] == "group"
+
+
+class TestServicePlaybook:
+    def _base_args(self):
+        return {
+            "host_ip": "10.0.0.1",
+            "ssh_port": 22,
+            "ssh_key_path": "/tmp/key",
+        }
+
+    def test_override_mode_tasks_are_gated_on_unit_existence(self):
+        import yaml
+
+        from app.services.generator import generate_service_playbook
+
+        playbook_yaml, _ = generate_service_playbook(
+            services=[
+                {
+                    "service_name": "cron",
+                    "state": "running",
+                    "enabled": True,
+                    "unit_content": "[Service]\nMemoryLimit=512M",
+                    "deploy_mode": "override",
+                },
+            ],
+            **self._base_args(),
+        )
+        play = yaml.safe_load(playbook_yaml)[0]
+        tasks = play["tasks"]
+        assert tasks[0]["ansible.builtin.service_facts"] == {}
+        svc_tasks = [t for t in tasks if "cron" in t.get("name", "")]
+        assert len(svc_tasks) >= 3
+        for t in svc_tasks:
+            assert t.get("when") == "'cron.service' in ansible_facts.services"
+
+    def test_full_mode_tasks_unconditional(self):
+        import yaml
+
+        from app.services.generator import generate_service_playbook
+
+        playbook_yaml, _ = generate_service_playbook(
+            services=[
+                {
+                    "service_name": "myapp",
+                    "state": "running",
+                    "enabled": True,
+                    "unit_content": (
+                        "[Unit]\nDescription=My App\n\n[Service]\nExecStart=/usr/bin/myapp"
+                    ),
+                    "deploy_mode": "full",
+                },
+            ],
+            **self._base_args(),
+        )
+        play = yaml.safe_load(playbook_yaml)[0]
+        tasks = play["tasks"]
+        assert tasks[0]["ansible.builtin.service_facts"] == {}
+        svc_tasks = [t for t in tasks if "myapp" in t.get("name", "")]
+        assert len(svc_tasks) >= 3
+        for t in svc_tasks:
+            assert "when" not in t
+
+    def test_mixed_override_and_full(self):
+        import yaml
+
+        from app.services.generator import generate_service_playbook
+
+        playbook_yaml, _ = generate_service_playbook(
+            services=[
+                {
+                    "service_name": "cron",
+                    "state": "running",
+                    "enabled": True,
+                    "unit_content": "[Service]\nMemoryLimit=512M",
+                    "deploy_mode": "override",
+                },
+                {
+                    "service_name": "myapp",
+                    "state": "running",
+                    "enabled": True,
+                    "unit_content": "[Unit]\nDescription=My App",
+                    "deploy_mode": "full",
+                },
+            ],
+            **self._base_args(),
+        )
+        play = yaml.safe_load(playbook_yaml)[0]
+        tasks = play["tasks"]
+        cron_tasks = [t for t in tasks if "cron" in t.get("name", "")]
+        myapp_tasks = [t for t in tasks if "myapp" in t.get("name", "")]
+        assert all(t.get("when") == "'cron.service' in ansible_facts.services" for t in cron_tasks)
+        assert all("when" not in t for t in myapp_tasks)

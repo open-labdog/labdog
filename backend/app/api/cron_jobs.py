@@ -4,20 +4,20 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.models.user import User
-from app.models.host_group import HostGroup
-from app.models.host import Host
+from app.cron.merge import get_effective_cron_jobs
 from app.cron.models import CronJob
 from app.cron.schemas import (
     CronJobCreate,
-    CronJobUpdate,
     CronJobResponse,
+    CronJobUpdate,
     EffectiveCronJobResponse,
 )
-from app.cron.merge import get_effective_cron_jobs
-from app.audit.logger import log_action
+from app.db import get_db
+from app.models.host import Host
+from app.models.host_group import HostGroup
+from app.models.user import User
 
 router = APIRouter(tags=["cron-jobs"])
 

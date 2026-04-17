@@ -1,3 +1,4 @@
+import asyncssh
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import insert as sa_insert
@@ -6,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.users import current_superuser
 from app.config import settings
+from app.crypto.encryption import decrypt_ssh_key
+from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.discovery.scanner import validate_cidr
 from app.models.host import Host, HostGroupMembership
@@ -16,10 +19,12 @@ from app.schemas.discovery import (
     BulkAddRequest,
     BulkAddResponse,
     DiscoveredHost,
+    FailedHost,
     ScanRequest,
     ScanStatus,
 )
 from app.schemas.hosts import HostResponse
+from app.ssh_utils import ssh_connect
 from app.tasks import celery_app
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -85,7 +90,9 @@ async def get_scan_status(
     elif state == "SUCCESS":
         data = result.result or {}
         hosts_found = [
-            DiscoveredHost(ip=h["ip"], hostname=h.get("hostname"))
+            DiscoveredHost(
+                ip=h["ip"], hostname=h.get("hostname"), ssh_status=h.get("ssh_status", "open")
+            )
             for h in data.get("hosts_found", [])
         ]
         return ScanStatus(
@@ -94,7 +101,7 @@ async def get_scan_status(
             hosts_found=hosts_found,
             total=data.get("total_scanned", 0),
             progress=data.get("total_scanned", 0),
-         )
+        )
     else:  # FAILURE or other
         error_msg = "Scan failed"
         if result.info and isinstance(result.info, Exception):
@@ -120,13 +127,20 @@ async def add_discovered_hosts(
             detail=(
                 f"Too many hosts. Maximum is {settings.discovery.max_bulk_add}, "
                 f"got {len(body.ips)}."
-            )
+            ),
         )
 
-    # Validate SSH key exists
+    # Validate SSH key exists and load it for hostname detection
     key_result = await db.execute(select(SSHKey).where(SSHKey.id == body.ssh_key_id))
-    if not key_result.scalar_one_or_none():
+    ssh_key = key_result.scalar_one_or_none()
+    if not ssh_key:
         raise HTTPException(status_code=404, detail="SSH key not found")
+
+    # Prepare SSH key for hostname lookups
+    ssh_user = ssh_key.ssh_user
+    master_key = get_master_key()
+    private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
+    imported_key = asyncssh.import_private_key(private_pem)
 
     # Validate all group_ids exist
     for gid in body.group_ids:
@@ -140,17 +154,51 @@ async def add_discovered_hosts(
 
     added = []
     skipped = 0
+    failed: list[FailedHost] = []
 
     for ip in body.ips:
         if ip in existing_ips:
             skipped += 1
             continue
 
-        # Attempt reverse DNS for hostname
+        # SSH verification is mandatory — we must be able to connect
+        hostname = None
+        source_ip = None
         try:
-            fqdn = _socket.getfqdn(ip)
-            hostname = ip if fqdn == ip else fqdn
-        except Exception:
+            async with ssh_connect(
+                ip,
+                port=body.ssh_port,
+                username=ssh_user,
+                client_keys=[imported_key],
+            ) as conn:
+                result = await conn.run("hostname", check=True)
+                hostname = result.stdout.strip()
+                from app.ssh_utils import get_source_ip
+
+                source_ip = await get_source_ip(conn)
+        except Exception as e:
+            error_msg = str(e)
+            if "Permission denied" in error_msg or "Auth" in error_msg:
+                error_msg = f"SSH auth failed for {ssh_user}@{ip}"
+            elif "refused" in error_msg.lower():
+                error_msg = f"SSH connection refused on {ip}:{body.ssh_port}"
+            elif "timed out" in error_msg.lower() or "Timeout" in error_msg:
+                error_msg = f"SSH connection timed out for {ip}"
+            else:
+                error_msg = f"SSH failed: {error_msg[:120]}"
+            failed.append(FailedHost(ip=ip, error=error_msg))
+            continue
+
+        # Fall back to reverse DNS if SSH returned empty hostname
+        if not hostname:
+            try:
+                fqdn = _socket.getfqdn(ip)
+                if fqdn != ip:
+                    hostname = fqdn
+            except Exception:
+                pass
+
+        if not hostname:
             hostname = ip
 
         # Ensure hostname uniqueness
@@ -167,7 +215,9 @@ async def add_discovered_hosts(
             hostname=hostname,
             ip_address=ip,
             ssh_port=body.ssh_port,
+            ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
+            barricade_source_ip=source_ip,
         )
         db.add(host)
         await db.flush()  # get host.id
@@ -188,5 +238,6 @@ async def add_discovered_hosts(
     return BulkAddResponse(
         added=len(added),
         skipped=skipped,
+        failed=failed,
         hosts=[HostResponse.model_validate(h) for h in added],
     )

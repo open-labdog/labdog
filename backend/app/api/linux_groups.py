@@ -2,20 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.models.user import User
-from app.models.host_group import HostGroup
+from app.db import get_db
 from app.models.host import Host
+from app.models.host_group import HostGroup
+from app.models.user import User
+from app.user_mgmt.merge import get_effective_groups
 from app.user_mgmt.models import LinuxGroup
 from app.user_mgmt.schemas import (
-    LinuxGroupCreate,
-    LinuxGroupUpdate,
-    LinuxGroupResponse,
     EffectiveLinuxGroupResponse,
+    LinuxGroupCreate,
+    LinuxGroupResponse,
+    LinuxGroupUpdate,
 )
-from app.user_mgmt.merge import get_effective_groups
-from app.audit.logger import log_action
 
 router = APIRouter(tags=["linux-groups"])
 

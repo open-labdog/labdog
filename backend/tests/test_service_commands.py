@@ -5,12 +5,12 @@ import inspect
 import pytest
 from pydantic import ValidationError
 
+from app.services.collector import execute_service_command, list_all_services
 from app.services.live_schemas import (
     ServiceCommandRequest,
     ServiceCommandResponse,
     ServiceInventoryItem,
 )
-from app.services.collector import list_all_services, execute_service_command
 
 
 class TestCommandSchemas:
@@ -87,9 +87,11 @@ class TestCommandSchemas:
             description="A high performance web server",
             is_managed=True,
             is_protected=False,
+            is_system=False,
         )
         assert item.unit == "nginx"
         assert item.is_managed is True
+        assert item.is_system is False
 
 
 class TestSSHFunctions:

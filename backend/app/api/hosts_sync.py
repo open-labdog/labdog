@@ -46,22 +46,16 @@ async def plan_hosts_sync(
     # Get desired hosts entries
     effective = await get_effective_hosts_entries(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No hosts entries defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No hosts entries defined for this host")
 
     # Decrypt SSH key for collection
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
     master_key = get_master_key()
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
     # Collect current /etc/hosts from remote host
-    current = await collect_hosts_file(
-        host.ip_address, host.ssh_port, private_key_pem
-    )
+    current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem)
 
     # Compute diff
     diff = compute_hosts_diff(current, effective)
@@ -101,9 +95,7 @@ async def plan_hosts_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_hosts_sync(
     host_id: int,
     user: User = Depends(current_active_user),
@@ -136,9 +128,7 @@ async def trigger_hosts_sync(
     # Check host has hosts entries
     effective = await get_effective_hosts_entries(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No hosts entries defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No hosts entries defined for this host")
 
     # Create sync job
     job = SyncJob(
@@ -168,9 +158,7 @@ async def trigger_group_hosts_sync(
     """Trigger /etc/hosts sync for all hosts in a group."""
     # Get hosts in group
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:

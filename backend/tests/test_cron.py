@@ -1,11 +1,10 @@
 import pytest
 from pydantic import ValidationError
 
-from app.cron.validators import validate_cron_expression
-from app.cron.schemas import CronJobCreate
-from app.cron.diff import diff_cron_jobs
 from app.cron.collector import _parse_crontab
-
+from app.cron.diff import diff_cron_jobs
+from app.cron.schemas import CronJobCreate
+from app.cron.validators import validate_cron_expression
 
 # ---------------------------------------------------------------------------
 # Validator tests (pure function, no DB)
@@ -155,7 +154,9 @@ class TestCronCollector:
 
 class TestCronDiff:
     def test_job_to_add(self):
-        desired = [{"name": "backup", "user": "root", "schedule": "0 2 * * *", "command": "/bin/backup"}]
+        desired = [
+            {"name": "backup", "user": "root", "schedule": "0 2 * * *", "command": "/bin/backup"}
+        ]
         actual = []
         result = diff_cron_jobs(desired, actual)
         assert "backup|root" in result.jobs_to_add
@@ -164,28 +165,55 @@ class TestCronDiff:
 
     def test_job_to_remove(self):
         desired = []
-        actual = [{"name": "old-job", "user": "root", "schedule": "0 0 * * *", "command": "/bin/old"}]
+        actual = [
+            {"name": "old-job", "user": "root", "schedule": "0 0 * * *", "command": "/bin/old"}
+        ]
         result = diff_cron_jobs(desired, actual)
         assert "old-job|root" in result.jobs_to_remove
         assert not result.jobs_to_add
 
     def test_job_in_sync(self):
-        entry = {"name": "sync-job", "user": "root", "schedule": "0 3 * * *", "command": "/bin/sync"}
+        entry = {
+            "name": "sync-job",
+            "user": "root",
+            "schedule": "0 3 * * *",
+            "command": "/bin/sync",
+        }
         result = diff_cron_jobs([entry], [entry])
         assert "sync-job|root" in result.jobs_in_sync
         assert not result.jobs_to_add
         assert not result.jobs_to_update
 
     def test_job_to_update_schedule(self):
-        desired = {"name": "rotate", "user": "root", "schedule": "0 4 * * *", "command": "/bin/rotate"}
-        actual = {"name": "rotate", "user": "root", "schedule": "0 2 * * *", "command": "/bin/rotate"}
+        desired = {
+            "name": "rotate",
+            "user": "root",
+            "schedule": "0 4 * * *",
+            "command": "/bin/rotate",
+        }
+        actual = {
+            "name": "rotate",
+            "user": "root",
+            "schedule": "0 2 * * *",
+            "command": "/bin/rotate",
+        }
         result = diff_cron_jobs([desired], [actual])
         assert "rotate|root" in result.jobs_to_update
         assert not result.jobs_in_sync
 
     def test_job_to_update_command(self):
-        desired = {"name": "task", "user": "root", "schedule": "0 0 * * *", "command": "/bin/new-task"}
-        actual = {"name": "task", "user": "root", "schedule": "0 0 * * *", "command": "/bin/old-task"}
+        desired = {
+            "name": "task",
+            "user": "root",
+            "schedule": "0 0 * * *",
+            "command": "/bin/new-task",
+        }
+        actual = {
+            "name": "task",
+            "user": "root",
+            "schedule": "0 0 * * *",
+            "command": "/bin/old-task",
+        }
         result = diff_cron_jobs([desired], [actual])
         assert "task|root" in result.jobs_to_update
 
@@ -193,7 +221,12 @@ class TestCronDiff:
         """Same name, different user = two separate jobs, not merged."""
         desired = [
             {"name": "cleanup", "user": "root", "schedule": "0 1 * * *", "command": "/bin/cleanup"},
-            {"name": "cleanup", "user": "deploy", "schedule": "0 2 * * *", "command": "/bin/cleanup"},
+            {
+                "name": "cleanup",
+                "user": "deploy",
+                "schedule": "0 2 * * *",
+                "command": "/bin/cleanup",
+            },
         ]
         actual = []
         result = diff_cron_jobs(desired, actual)

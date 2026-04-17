@@ -3,7 +3,7 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: barricade
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-barricade}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-barricade_test_pw}
       POSTGRES_DB: barricade
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -28,16 +28,14 @@ services:
     restart: unless-stopped
 
   barricade:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    container_name: barricade
+    image: barricade:latest
     environment:
-      BARRICADE_CONFIG: /etc/barricade/barricade.toml
-      # Override localhost URLs to use Docker service hostnames
-      BARRICADE_DATABASE__URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade}@postgres:5432/barricade
+      BARRICADE_DATABASE__URL: postgresql+asyncpg://barricade:${POSTGRES_PASSWORD:-barricade_test_pw}@postgres:5432/barricade
       BARRICADE_REDIS__URL: redis://redis:6379/0
-    volumes:
-      - ./barricade.toml:/etc/barricade/barricade.toml:ro
+      BARRICADE_SECURITY__SECRET_KEY: "${BARRICADE_SECURITY__SECRET_KEY}"
+      BARRICADE_SECURITY__ENCRYPTION_KEY: "${BARRICADE_SECURITY__ENCRYPTION_KEY}"
+      BARRICADE_SECURITY__BARRICADE_SERVER_IP: ${BARRICADE_SECURITY__BARRICADE_SERVER_IP:-127.0.0.1}
     ports:
       - "8000:8000"
     depends_on:

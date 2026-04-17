@@ -4,21 +4,19 @@ import logging
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
+from app.audit.logger import log_action
 from app.auth.ws_auth import get_ws_user
 from app.db import AsyncSessionLocal
+from app.models.host import Host
 from app.ssh_terminal.session_registry import registry
 from app.ssh_terminal.ssh_connect import (
-    open_ssh_shell,
     HostNotFoundError,
     NoSSHKeyError,
     SSHConnectionError,
+    open_ssh_shell,
 )
-from app.config import settings
-from app.audit.logger import log_action
-from app.models.host import Host
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -42,22 +40,34 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             host_id=host_id,
         )
         if not can_register:
-            await websocket.close(code=4429, reason="Session limit exceeded")
+            try:
+                await websocket.close(code=4429, reason="Session limit exceeded")
+            except Exception:
+                pass
             return
 
         try:
             conn, process = await open_ssh_shell(host_id, db)
         except HostNotFoundError:
             await registry.deregister(session_id)
-            await websocket.close(code=4404, reason="Host not found")
+            try:
+                await websocket.close(code=4404, reason="Host not found")
+            except Exception:
+                pass
             return
         except NoSSHKeyError:
             await registry.deregister(session_id)
-            await websocket.close(code=4400, reason="Host has no SSH key")
+            try:
+                await websocket.close(code=4400, reason="Host has no SSH key")
+            except Exception:
+                pass
             return
         except SSHConnectionError as e:
             await registry.deregister(session_id)
-            await websocket.close(code=4502, reason=str(e)[:120])
+            try:
+                await websocket.close(code=4502, reason=str(e)[:120])
+            except Exception:
+                pass
             return
 
         host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -93,9 +103,9 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             while not process.stdout.at_eof():
                 data = await process.stdout.read(65536)
                 if data:
-                    await websocket.send_bytes(data.encode() if isinstance(data, str) else data)
+                    await websocket.send_bytes(data)
         except Exception:
-            pass
+            logger.exception("ssh_to_ws error for session %s", session_id)
 
     async def ws_to_ssh():
         nonlocal disconnect_reason
@@ -106,6 +116,7 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
                     break
                 if "bytes" in message and message["bytes"]:
                     process.stdin.write(message["bytes"])
+                    await process.stdin.drain()
                     await registry.touch(session_id)
                 elif "text" in message and message["text"]:
                     try:
@@ -121,13 +132,17 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         except WebSocketDisconnect:
             disconnect_reason = "client_disconnect"
         except Exception:
+            logger.exception("ws_to_ssh error for session %s", session_id)
             disconnect_reason = "error"
 
     async def idle_checker():
         nonlocal disconnect_reason
         while True:
             await asyncio.sleep(60)
-            idle = registry.get_idle_sessions(settings.ssh.idle_timeout_seconds)
+            from app.settings_service import get_setting_sync_typed
+
+            idle_timeout = int(get_setting_sync_typed("ssh.idle_timeout_seconds"))
+            idle = registry.get_idle_sessions(idle_timeout)
             if session_id in idle:
                 disconnect_reason = "idle_timeout"
                 try:

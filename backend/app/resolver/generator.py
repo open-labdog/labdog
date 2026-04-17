@@ -1,5 +1,12 @@
 from app.ansible.inventory import generate_inventory
 
+CLOUD_INIT_DISABLE_PATH = "/etc/cloud/cloud.cfg.d/99-barricade-disable-network-config.cfg"
+CLOUD_INIT_DISABLE_CONTENT = (
+    "# Managed by Barricade. Prevents cloud-init from re-applying network/DNS\n"
+    "# config on boot, which would overwrite the Barricade resolver sync.\n"
+    "network: {config: disabled}\n"
+)
+
 
 def generate_resolver_playbook(
     host_ip: str,
@@ -37,19 +44,48 @@ def generate_resolver_playbook(
 
 
 def _build_tasks(resolver_type: str, rendered_content: str) -> list[dict]:
-
     if resolver_type == "resolv_conf":
-        return _tasks_resolv_conf(rendered_content)
+        backend_tasks = _tasks_resolv_conf(rendered_content)
     elif resolver_type == "systemd_resolved":
-        return _tasks_systemd_resolved(rendered_content)
+        backend_tasks = _tasks_systemd_resolved(rendered_content)
     elif resolver_type == "networkmanager":
-        return _tasks_networkmanager(rendered_content)
+        backend_tasks = _tasks_networkmanager(rendered_content)
     else:
         raise ValueError(f"Unsupported resolver type: {resolver_type}")
+    return _disable_cloud_init_network_tasks() + backend_tasks
+
+
+def _disable_cloud_init_network_tasks() -> list[dict]:
+    return [
+        {
+            "name": "Check for cloud-init",
+            "ansible.builtin.stat": {"path": "/etc/cloud/cloud.cfg.d"},
+            "register": "barricade_cloud_init_dir",
+        },
+        {
+            "name": "Disable cloud-init network config (if cloud-init present)",
+            "ansible.builtin.copy": {
+                "content": CLOUD_INIT_DISABLE_CONTENT,
+                "dest": CLOUD_INIT_DISABLE_PATH,
+                "mode": "0644",
+            },
+            "when": "barricade_cloud_init_dir.stat.exists",
+        },
+    ]
 
 
 def _tasks_resolv_conf(content: str) -> list[dict]:
     return [
+        {
+            "name": "Stat /etc/resolv.conf",
+            "ansible.builtin.stat": {"path": "/etc/resolv.conf"},
+            "register": "barricade_resolv_stat",
+        },
+        {
+            "name": "Replace /etc/resolv.conf symlink",
+            "ansible.builtin.file": {"path": "/etc/resolv.conf", "state": "absent"},
+            "when": "barricade_resolv_stat.stat.islnk | default(false)",
+        },
         {
             "name": "Write /etc/resolv.conf",
             "ansible.builtin.copy": {

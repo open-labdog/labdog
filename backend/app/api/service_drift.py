@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -66,23 +66,19 @@ async def check_service_drift(
         hms = HostModuleStatus(host_id=host_id, module_type="service")
         db.add(hms)
 
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     try:
         # Need SSH key for remote collection
         if not host.ssh_key_id:
             raise ValueError("Host has no SSH key configured")
 
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if not ssh_key:
             raise ValueError("SSH key not found")
 
-        private_key_pem = decrypt_ssh_key(
-            ssh_key.encrypted_private_key, get_master_key()
-        )
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         # Get desired service config
         desired = await get_effective_services(host_id, db)
@@ -98,6 +94,10 @@ async def check_service_drift(
 
         hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return ServiceDriftResponse(

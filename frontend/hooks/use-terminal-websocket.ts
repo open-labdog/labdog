@@ -14,7 +14,7 @@ export function useTerminalWebSocket({ hostId, onData, onDisconnect }: UseTermin
   const [closeReason, setCloseReason] = useState<string>("")
 
   const connect = useCallback(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${window.location.protocol}//${window.location.host}`
     const wsUrl = apiUrl.replace(/^http/, "ws") + `/api/ssh-terminal/ws/${hostId}`
 
     setState("connecting")

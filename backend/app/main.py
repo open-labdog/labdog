@@ -1,5 +1,6 @@
 import logging
 import logging.config
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -7,18 +8,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
+from app.api.ca_cert_actions import router as ca_cert_actions_router
+from app.api.ca_certs import router as ca_certs_router
 from app.api.cron_jobs import router as cron_jobs_router
 from app.api.cron_sync import router as cron_sync_router
 from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api.git_repos import router as git_repos_router
 from app.api.groups import router as groups_router
+from app.api.host_state import router as host_state_router
 from app.api.hosts import router as hosts_router
 from app.api.hosts_drift import router as hosts_drift_router
 from app.api.hosts_entries import router as hosts_entries_router
@@ -27,6 +30,8 @@ from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
+from app.api.proxmox_discovery import router as proxmox_discovery_router
+from app.api.proxmox_nodes import router as proxmox_nodes_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
 from app.api.rules import router as rules_router
@@ -34,11 +39,13 @@ from app.api.service_drift import router as service_drift_router
 from app.api.service_live import router as service_live_router
 from app.api.service_sync import router as service_sync_router
 from app.api.services import router as services_router
+from app.api.settings import router as settings_router
 from app.api.ssh_keys import router as ssh_keys_router
 from app.api.ssh_terminal import router as ssh_terminal_router
 from app.api.sync import router as sync_router
 from app.api.user_sync import router as user_sync_router
 from app.api.webhooks import router as webhooks_router
+from app.api.workflows import router as workflows_router
 from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.config import settings
@@ -46,6 +53,7 @@ from app.config import settings
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+
 
 def _configure_logging() -> None:
     """Set up application-wide logging from config."""
@@ -59,40 +67,43 @@ def _configure_logging() -> None:
     else:
         fmt = "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
 
-    logging.config.dictConfig({
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": fmt,
-                "datefmt": "%Y-%m-%dT%H:%M:%S",
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": fmt,
+                    "datefmt": "%Y-%m-%dT%H:%M:%S",
+                },
             },
-        },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "formatter": "default",
-                "stream": "ext://sys.stderr",
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "stream": "ext://sys.stderr",
+                },
             },
-        },
-        "root": {
-            "level": level,
-            "handlers": ["console"],
-        },
-        "loggers": {
-            "uvicorn": {"level": level},
-            "uvicorn.access": {"level": level},
-            "celery": {"level": level},
-            "sqlalchemy.engine": {
-                "level": "WARNING" if level != "DEBUG" else "INFO",
+            "root": {
+                "level": level,
+                "handlers": ["console"],
             },
-        },
-    })
+            "loggers": {
+                "uvicorn": {"level": level},
+                "uvicorn.access": {"level": level},
+                "celery": {"level": level},
+                "sqlalchemy.engine": {
+                    "level": "WARNING" if level != "DEBUG" else "INFO",
+                },
+            },
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
+
 
 def _get_client_ip(request: Request) -> str:
     """Extract real client IP, respecting trusted proxies."""
@@ -113,6 +124,7 @@ def _get_client_ip(request: Request) -> str:
 # ---------------------------------------------------------------------------
 # Login rate limiter (uses limits library directly)
 # ---------------------------------------------------------------------------
+
 
 def _build_login_limiter():
     """Build a standalone rate limiter for login endpoints.
@@ -142,38 +154,85 @@ def _build_login_limiter():
 # Security headers middleware
 # ---------------------------------------------------------------------------
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response: Response = await call_next(request)
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Permissions-Policy"] = (
-            "camera=(), microphone=(), geolocation=(), payment=()"
-        )
-        if settings.tls.force_https or settings.security.cookie_secure:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=63072000; includeSubDomains"
-            )
-        return response
+
+class SecurityHeadersMiddleware:
+    """Pure ASGI middleware that adds security headers to HTTP responses.
+
+    Uses the raw ASGI interface instead of BaseHTTPMiddleware to avoid
+    breaking WebSocket connections (BaseHTTPMiddleware wraps responses
+    in a way that prevents WebSocket upgrade handshakes).
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                dict(message.get("headers", []))
+                extra = [
+                    (b"x-content-type-options", b"nosniff"),
+                    (b"x-frame-options", b"DENY"),
+                    (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                    (b"x-xss-protection", b"1; mode=block"),
+                    (
+                        b"permissions-policy",
+                        b"camera=(), microphone=(), geolocation=(), payment=()",
+                    ),
+                    (
+                        b"content-security-policy",
+                        b"default-src 'self'; script-src 'self' 'unsafe-inline';"
+                        b" style-src 'self' 'unsafe-inline'",
+                    ),
+                ]
+                if settings.tls.force_https or settings.security.cookie_secure:
+                    extra.append(
+                        (
+                            b"strict-transport-security",
+                            b"max-age=63072000; includeSubDomains",
+                        )
+                    )
+                message = {
+                    **message,
+                    "headers": list(message.get("headers", [])) + extra,
+                }
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
 
 
 # ---------------------------------------------------------------------------
 # HTTPS redirect middleware
 # ---------------------------------------------------------------------------
 
-class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        if request.url.scheme == "http":
-            url = request.url.replace(scheme="https")
-            return RedirectResponse(url=str(url), status_code=301)
-        return await call_next(request)
+
+class HTTPSRedirectMiddleware:
+    """Pure ASGI middleware for HTTPS redirect that skips WebSocket connections."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            from starlette.datastructures import URL
+
+            url = URL(scope=scope)
+            if url.scheme == "http":
+                redirect_url = url.replace(scheme="https")
+                response = RedirectResponse(url=str(redirect_url), status_code=301)
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
 
 
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
 
 def create_app() -> FastAPI:
     _configure_logging()
@@ -206,26 +265,51 @@ def create_app() -> FastAPI:
             storage_uri=settings.redis.url,
         )
         app.state.limiter = limiter
-        app.add_middleware(SlowAPIMiddleware)
+
+        # Wrap SlowAPIMiddleware so it skips WebSocket connections
+        # (SlowAPIMiddleware extends BaseHTTPMiddleware which breaks WS)
+        class _WSafeSlowAPI:
+            def __init__(self, app):
+                self._ws_app = app
+                self._http_app = SlowAPIMiddleware(app)
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    await self._ws_app(scope, receive, send)
+                else:
+                    await self._http_app(scope, receive, send)
+
+        app.add_middleware(_WSafeSlowAPI)
 
         # Stricter limit on auth endpoints (login, register)
+        # Uses pure ASGI middleware to avoid BaseHTTPMiddleware breaking WS
         _login_limiter = _build_login_limiter()
 
-        @app.middleware("http")
-        async def login_rate_limit(request: Request, call_next):
-            if request.method == "POST" and request.url.path in (
-                "/api/auth/jwt/login",
-                "/api/auth/register",
-            ):
-                client_ip = _get_client_ip(request)
-                if not _login_limiter.test(client_ip):
-                    return Response(
-                        content='{"detail":"Too many login attempts. Try again later."}',
-                        status_code=429,
-                        media_type="application/json",
-                    )
-                _login_limiter.hit(client_ip)
-            return await call_next(request)
+        class _LoginRateLimitMiddleware:
+            def __init__(self, app):
+                self.app = app
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    await self.app(scope, receive, send)
+                    return
+                request = Request(scope, receive)
+                if request.method == "POST" and request.url.path in (
+                    "/api/auth/jwt/login",
+                    "/api/auth/register",
+                ):
+                    client_ip = _get_client_ip(request)
+                    if not _login_limiter.hit(client_ip):
+                        response = Response(
+                            content='{"detail":"Too many login attempts. Try again later."}',
+                            status_code=429,
+                            media_type="application/json",
+                        )
+                        await response(scope, receive, send)
+                        return
+                await self.app(scope, receive, send)
+
+        app.add_middleware(_LoginRateLimitMiddleware)
 
         @app.exception_handler(RateLimitExceeded)
         async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
@@ -238,7 +322,8 @@ def create_app() -> FastAPI:
 
         logger.info(
             "Rate limiting enabled — login: %s, api: %s",
-            settings.rate_limit.login, settings.rate_limit.api,
+            settings.rate_limit.login,
+            settings.rate_limit.api,
         )
 
     # -- Auth routes --
@@ -258,6 +343,7 @@ def create_app() -> FastAPI:
 
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
+    app.include_router(host_state_router, prefix="/api")
     app.include_router(ssh_keys_router, prefix="/api")
     app.include_router(rules_router, prefix="/api")
     app.include_router(sync_router, prefix="/api")
@@ -266,6 +352,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
     app.include_router(admin_users_router, prefix="/api")
+    app.include_router(settings_router, prefix="/api")
     app.include_router(services_router, prefix="/api")
     app.include_router(service_drift_router, prefix="/api")
     app.include_router(service_sync_router, prefix="/api")
@@ -280,8 +367,13 @@ def create_app() -> FastAPI:
     app.include_router(cron_sync_router, prefix="/api")
     app.include_router(packages_router, prefix="/api")
     app.include_router(package_sync_router, prefix="/api")
+    app.include_router(ca_certs_router, prefix="/api")
+    app.include_router(ca_cert_actions_router, prefix="/api")
     app.include_router(resolver_router, prefix="/api")
     app.include_router(resolver_sync_router, prefix="/api")
+    app.include_router(proxmox_nodes_router, prefix="/api")
+    app.include_router(proxmox_discovery_router, prefix="/api")
+    app.include_router(workflows_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 
     app.include_router(webhooks_router)
@@ -296,23 +388,80 @@ def create_app() -> FastAPI:
         logger.info("Serving frontend static files from %s", static_dir)
         index_html = static_dir / "index.html"
 
-        @app.get("/{full_path:path}", include_in_schema=False)
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa_fallback(full_path: str):
             """Serve static files; fall back to index.html for SPA routes."""
             file_path = static_dir / full_path
+            if full_path and not file_path.resolve().is_relative_to(static_dir.resolve()):
+                return FileResponse(index_html)
             if full_path and file_path.is_file():
                 return FileResponse(file_path)
+            # Support trailingSlash: true exports (e.g. /login/ → login/index.html)
+            if full_path and file_path.is_dir():
+                dir_index = file_path / "index.html"
+                if dir_index.is_file():
+                    return FileResponse(dir_index)
+            # Support dynamic routes: /hosts/123/ → hosts/placeholder/index.html
+            result = _resolve_dynamic_route(static_dir, full_path)
+            if result:
+                resolved_file, dynamic_value = result
+                if dynamic_value:
+                    # Rewrite the RSC flight data so the baked-in route
+                    # params match the actual URL instead of "placeholder".
+                    content = resolved_file.read_text(encoding="utf-8")
+                    # HTML has escaped quotes (\"), .txt has plain quotes
+                    content = content.replace('\\"placeholder\\"', f'\\"{dynamic_value}\\"')
+                    content = content.replace('"placeholder"', f'"{dynamic_value}"')
+                    media_type = "text/html" if resolved_file.suffix == ".html" else "text/plain"
+                    return Response(content=content, media_type=media_type)
+                return FileResponse(resolved_file)
             return FileResponse(index_html)
     else:
-        logger.warning(
-            "No frontend static directory found — running in API-only mode"
-        )
+        logger.warning("No frontend static directory found — running in API-only mode")
 
     return app
 
 
+def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str | None] | None:
+    """Resolve a Next.js dynamic route by substituting missing path segments
+    with the generateStaticParams placeholder directory.
+
+    Returns ``(resolved_file, dynamic_value)`` where *dynamic_value* is the
+    original URL segment that was substituted (e.g. ``"1"`` for
+    ``/groups/1/``), or ``None`` when no substitution was needed.
+    """
+    parts = Path(full_path).parts
+    if not parts:
+        return None
+    current = static_dir
+    dynamic_value: str | None = None
+    for part in parts:
+        candidate = current / part
+        if candidate.is_dir():
+            current = candidate
+        elif candidate.is_file():
+            return (candidate, dynamic_value)
+        else:
+            placeholder = current / "placeholder"
+            if placeholder.is_dir():
+                dynamic_value = part
+                current = placeholder
+            else:
+                return None
+    index = current / "index.html"
+    if index.is_file():
+        return (index, dynamic_value)
+    return None
+
+
 def _resolve_static_dir() -> Path | None:
-    """Return the frontend static directory, or None if not available."""
+    """Return the frontend static directory, or None if not available.
+
+    Skipped when BARRICADE_DEV_MODE=1 (set by dev.sh) so the Next.js dev
+    server on :3000 is used instead of a stale static export.
+    """
+    if os.environ.get("BARRICADE_DEV_MODE"):
+        return None
     configured = settings.server.static_dir
     if configured:
         p = Path(configured)

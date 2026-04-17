@@ -1,11 +1,12 @@
-from pydantic import BaseModel, field_validator
-from datetime import datetime
-from typing import Literal, Optional
 import re
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field, field_validator
 
 from app.user_mgmt.constants import (
-    PROTECTED_USERS,
     PROTECTED_GROUPS,
+    PROTECTED_USERS,
     SUDO_FORBIDDEN_PATTERN,
     VALID_KEY_TYPES,
 )
@@ -15,15 +16,15 @@ _USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]*$")
 
 class LinuxUserCreate(BaseModel):
     username: str
-    uid: Optional[int] = None
+    uid: int | None = None
     shell: str = "/bin/bash"
-    home_dir: Optional[str] = None
+    home_dir: str | None = None
     state: Literal["present", "absent"] = "present"
-    comment: Optional[str] = None
-    sudo_rule: Optional[str] = None
+    comment: str | None = None
+    sudo_rule: str | None = None
     authorized_keys: list[str] = []
     supplementary_groups: list[str] = []
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("username")
     @classmethod
@@ -38,7 +39,7 @@ class LinuxUserCreate(BaseModel):
 
     @field_validator("uid")
     @classmethod
-    def validate_uid(cls, v: Optional[int]) -> Optional[int]:
+    def validate_uid(cls, v: int | None) -> int | None:
         if v is not None and v < 1000:
             raise ValueError("uid must be >= 1000 (system UIDs are reserved)")
         return v
@@ -52,11 +53,9 @@ class LinuxUserCreate(BaseModel):
 
     @field_validator("sudo_rule")
     @classmethod
-    def validate_sudo_rule(cls, v: Optional[str]) -> Optional[str]:
+    def validate_sudo_rule(cls, v: str | None) -> str | None:
         if v is not None and SUDO_FORBIDDEN_PATTERN.search(v):
-            raise ValueError(
-                "sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >"
-            )
+            raise ValueError("sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >")
         return v
 
     @field_validator("authorized_keys")
@@ -71,20 +70,20 @@ class LinuxUserCreate(BaseModel):
 
 
 class LinuxUserUpdate(BaseModel):
-    username: Optional[str] = None
-    uid: Optional[int] = None
-    shell: Optional[str] = None
-    home_dir: Optional[str] = None
-    state: Optional[Literal["present", "absent"]] = None
-    comment: Optional[str] = None
-    sudo_rule: Optional[str] = None
-    authorized_keys: Optional[list[str]] = None
-    supplementary_groups: Optional[list[str]] = None
-    priority: Optional[int] = None
+    username: str | None = None
+    uid: int | None = None
+    shell: str | None = None
+    home_dir: str | None = None
+    state: Literal["present", "absent"] | None = None
+    comment: str | None = None
+    sudo_rule: str | None = None
+    authorized_keys: list[str] | None = None
+    supplementary_groups: list[str] | None = None
+    priority: int | None = Field(default=None, ge=0, le=10000)
 
     @field_validator("username")
     @classmethod
-    def validate_username(cls, v: Optional[str]) -> Optional[str]:
+    def validate_username(cls, v: str | None) -> str | None:
         if v is None:
             return v
         if v in PROTECTED_USERS:
@@ -97,30 +96,28 @@ class LinuxUserUpdate(BaseModel):
 
     @field_validator("uid")
     @classmethod
-    def validate_uid(cls, v: Optional[int]) -> Optional[int]:
+    def validate_uid(cls, v: int | None) -> int | None:
         if v is not None and v < 1000:
             raise ValueError("uid must be >= 1000 (system UIDs are reserved)")
         return v
 
     @field_validator("shell")
     @classmethod
-    def validate_shell(cls, v: Optional[str]) -> Optional[str]:
+    def validate_shell(cls, v: str | None) -> str | None:
         if v is not None and not v.startswith("/"):
             raise ValueError("shell must be an absolute path starting with '/'")
         return v
 
     @field_validator("sudo_rule")
     @classmethod
-    def validate_sudo_rule(cls, v: Optional[str]) -> Optional[str]:
+    def validate_sudo_rule(cls, v: str | None) -> str | None:
         if v is not None and SUDO_FORBIDDEN_PATTERN.search(v):
-            raise ValueError(
-                "sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >"
-            )
+            raise ValueError("sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >")
         return v
 
     @field_validator("authorized_keys")
     @classmethod
-    def validate_authorized_keys(cls, v: Optional[list[str]]) -> Optional[list[str]]:
+    def validate_authorized_keys(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             for key in v:
                 if not key.startswith(tuple(VALID_KEY_TYPES)):
@@ -133,17 +130,17 @@ class LinuxUserUpdate(BaseModel):
 class LinuxUserResponse(BaseModel):
     id: int
     username: str
-    uid: Optional[int]
+    uid: int | None
     shell: str
-    home_dir: Optional[str]
+    home_dir: str | None
     state: str
-    comment: Optional[str]
-    sudo_rule: Optional[str]
+    comment: str | None
+    sudo_rule: str | None
     authorized_keys: list[str]
     supplementary_groups: list[str]
     priority: int
-    group_id: Optional[int]
-    host_id: Optional[int]
+    group_id: int | None
+    host_id: int | None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -151,9 +148,9 @@ class LinuxUserResponse(BaseModel):
 
 class LinuxGroupCreate(BaseModel):
     groupname: str
-    gid: Optional[int] = None
+    gid: int | None = None
     state: Literal["present", "absent"] = "present"
-    priority: int = 0
+    priority: int = Field(default=0, ge=0, le=10000)
 
     @field_validator("groupname")
     @classmethod
@@ -162,40 +159,42 @@ class LinuxGroupCreate(BaseModel):
             raise ValueError(f"'{v}' is a protected system group and cannot be managed")
         if not _USERNAME_RE.match(v) or len(v) > 32:
             raise ValueError(
-                f"Invalid groupname '{v}': must match [a-z_][a-z0-9_-]* and be at most 32 characters"
+                f"Invalid groupname '{v}': must match [a-z_][a-z0-9_-]*"
+                " and be at most 32 characters"
             )
         return v
 
     @field_validator("gid")
     @classmethod
-    def validate_gid(cls, v: Optional[int]) -> Optional[int]:
+    def validate_gid(cls, v: int | None) -> int | None:
         if v is not None and v < 1000:
             raise ValueError("gid must be >= 1000 (system GIDs are reserved)")
         return v
 
 
 class LinuxGroupUpdate(BaseModel):
-    groupname: Optional[str] = None
-    gid: Optional[int] = None
-    state: Optional[Literal["present", "absent"]] = None
-    priority: Optional[int] = None
+    groupname: str | None = None
+    gid: int | None = None
+    state: Literal["present", "absent"] | None = None
+    priority: int | None = Field(default=None, ge=0, le=10000)
 
     @field_validator("groupname")
     @classmethod
-    def validate_groupname(cls, v: Optional[str]) -> Optional[str]:
+    def validate_groupname(cls, v: str | None) -> str | None:
         if v is None:
             return v
         if v in PROTECTED_GROUPS:
             raise ValueError(f"'{v}' is a protected system group and cannot be managed")
         if not _USERNAME_RE.match(v) or len(v) > 32:
             raise ValueError(
-                f"Invalid groupname '{v}': must match [a-z_][a-z0-9_-]* and be at most 32 characters"
+                f"Invalid groupname '{v}': must match [a-z_][a-z0-9_-]*"
+                " and be at most 32 characters"
             )
         return v
 
     @field_validator("gid")
     @classmethod
-    def validate_gid(cls, v: Optional[int]) -> Optional[int]:
+    def validate_gid(cls, v: int | None) -> int | None:
         if v is not None and v < 1000:
             raise ValueError("gid must be >= 1000 (system GIDs are reserved)")
         return v
@@ -204,11 +203,11 @@ class LinuxGroupUpdate(BaseModel):
 class LinuxGroupResponse(BaseModel):
     id: int
     groupname: str
-    gid: Optional[int]
+    gid: int | None
     state: str
     priority: int
-    group_id: Optional[int]
-    host_id: Optional[int]
+    group_id: int | None
+    host_id: int | None
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}
@@ -216,11 +215,11 @@ class LinuxGroupResponse(BaseModel):
 
 class EffectiveLinuxUserResponse(BaseModel):
     username: str
-    uid: Optional[int]
+    uid: int | None
     shell: str
-    home_dir: Optional[str]
+    home_dir: str | None
     state: str
-    sudo_rule: Optional[str]
+    sudo_rule: str | None
     authorized_keys: list[str]
     supplementary_groups: list[str]
     source: Literal["group", "host"]
@@ -231,7 +230,7 @@ class EffectiveLinuxUserResponse(BaseModel):
 
 class EffectiveLinuxGroupResponse(BaseModel):
     groupname: str
-    gid: Optional[int]
+    gid: int | None
     state: str
     source: Literal["group", "host"]
     source_id: int

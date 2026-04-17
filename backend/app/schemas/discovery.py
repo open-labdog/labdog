@@ -12,6 +12,7 @@ class ScanRequest(BaseModel):
 class DiscoveredHost(BaseModel):
     ip: str
     hostname: str | None = None  # reverse DNS result, None if lookup failed
+    ssh_status: str = "open"  # "open" or "refused"
 
 
 class ScanStatus(BaseModel):
@@ -30,7 +31,13 @@ class BulkAddRequest(BaseModel):
     ssh_port: int = 22
 
 
+class FailedHost(BaseModel):
+    ip: str
+    error: str
+
+
 class BulkAddResponse(BaseModel):
     added: int
     skipped: int  # already existed (race condition safety)
+    failed: list[FailedHost] = []  # hosts that failed SSH verification
     hosts: list[HostResponse]  # created host details

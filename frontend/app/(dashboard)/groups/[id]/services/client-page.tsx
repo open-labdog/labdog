@@ -13,18 +13,12 @@ import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { serviceSchema, type ServiceInput } from "@/lib/schemas"
@@ -48,7 +42,7 @@ function EnabledBadge({ enabled }: { enabled: boolean }) {
   )
 }
 
-export default function GroupServicesPage() {
+export default function GroupServicesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -58,7 +52,7 @@ export default function GroupServicesPage() {
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
   } | null>(null)
 
-  const serviceDefaults: ServiceInput = { service_name: "", state: "running", enabled: true, priority: 100, comment: "" }
+  const serviceDefaults: ServiceInput = { service_name: "", state: "running", enabled: true, unit_content: "", deploy_mode: "override", priority: 100, comment: "" }
 
   const form = useForm<ServiceInput>({
     resolver: zodResolver(serviceSchema),
@@ -115,6 +109,8 @@ export default function GroupServicesPage() {
         service_name: editingService.service_name,
         state: editingService.state,
         enabled: editingService.enabled,
+        unit_content: editingService.unit_content ?? "",
+        deploy_mode: (editingService.deploy_mode as "full" | "override") ?? "override",
         priority: editingService.priority,
         comment: editingService.comment ?? "",
       })
@@ -122,7 +118,11 @@ export default function GroupServicesPage() {
   }, [dialogOpen, editingService, form])
 
   const onSubmit = form.handleSubmit((data) => {
-    const payload = { ...data, comment: data.comment || null }
+    const payload = {
+      ...data,
+      comment: data.comment || null,
+      unit_content: data.unit_content || null,
+    }
     saveMutation.mutate({ serviceId: editingService?.id, payload })
   })
 
@@ -144,11 +144,10 @@ export default function GroupServicesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Services" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Services" }]} />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Service Rules</h1>
-          <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
         </div>
         <Button onClick={openCreateDialog}>Add Service</Button>
       </div>
@@ -159,67 +158,81 @@ export default function GroupServicesPage() {
         <div className="text-red-400 py-8 text-center">Failed to load services</div>
       )}
 
-      {!isLoading && !error && services && services.length === 0 && (
-        <div className="text-slate-400 py-8 text-center">
-          No service rules yet. Click <strong>Add Service</strong> to create one.
-        </div>
-      )}
-
-      {!isLoading && !error && services && services.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Service Name</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead className="w-16">Priority</TableHead>
-                <TableHead>Comment</TableHead>
-                <TableHead className="w-40">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((service) => (
-                <TableRow key={service.id} className="border-slate-700">
-                  <TableCell className="font-mono text-white text-sm">{service.service_name}</TableCell>
-                  <TableCell>
-                    <StateBadge state={service.state} />
-                  </TableCell>
-                  <TableCell>
-                    <EnabledBadge enabled={service.enabled} />
-                  </TableCell>
-                  <TableCell className="font-mono text-slate-300 text-xs">{service.priority}</TableCell>
-                  <TableCell className="text-slate-400 text-xs max-w-[160px] truncate">{service.comment ?? "—"}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEditDialog(service)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={deleteMutation.isPending}
-                        onClick={() => handleDelete(service)}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                      >
-                        {deleteMutation.isPending ? "…" : "Delete"}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {!isLoading && !error && (
+        <DataTable<ServiceRule>
+          tableId="group-services"
+          data={services}
+          emptyMessage={<>No service rules yet. Click <strong>Add Service</strong> to create one.</>}
+          getRowKey={(s) => s.id}
+          columns={[
+            {
+              key: "service_name",
+              label: "Service Name",
+              accessor: (s) => s.service_name,
+              cell: (s) => <span className="font-mono text-white text-sm">{s.service_name}</span>,
+              defaultWidth: 200,
+              filter: { type: "text", placeholder: "e.g. nginx" },
+            },
+            {
+              key: "state",
+              label: "State",
+              accessor: (s) => s.state,
+              cell: (s) => <StateBadge state={s.state} />,
+              defaultWidth: 120,
+              filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] },
+            },
+            {
+              key: "enabled",
+              label: "Enabled",
+              accessor: (s) => s.enabled,
+              cell: (s) => <EnabledBadge enabled={s.enabled} />,
+              defaultWidth: 110,
+              filter: { type: "boolean" },
+            },
+            {
+              key: "priority",
+              label: "Priority",
+              accessor: (s) => s.priority,
+              cell: (s) => <span className="font-mono text-slate-300 text-xs">{s.priority}</span>,
+              defaultWidth: 90,
+            },
+            {
+              key: "comment",
+              label: "Comment",
+              accessor: (s) => s.comment ?? "",
+              cell: (s) => <span className="text-slate-400 text-xs">{s.comment ?? "—"}</span>,
+              defaultWidth: 200,
+            },
+            {
+              key: "actions",
+              label: "Actions",
+              cell: (service) => (
+                <div className="flex gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(service)}>
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={deleteMutation.isPending}
+                    onClick={() => handleDelete(service)}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                  >
+                    {deleteMutation.isPending ? "…" : "Delete"}
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 160,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingService ? "Edit Service Rule" : "Add Service Rule"}</DialogTitle>
           </DialogHeader>
@@ -233,6 +246,48 @@ export default function GroupServicesPage() {
                 {...form.register("service_name")}
               />
               {form.formState.errors.service_name?.message && <p className="text-sm text-red-400">{form.formState.errors.service_name.message}</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Deploy Mode</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.watch("deploy_mode") === "override" ? "default" : "outline"}
+                  onClick={() => form.setValue("deploy_mode", "override", { shouldDirty: true })}
+                >
+                  Override existing
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.watch("deploy_mode") === "full" ? "default" : "outline"}
+                  onClick={() => form.setValue("deploy_mode", "full", { shouldDirty: true })}
+                >
+                  New Service (full file)
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="service-unit-content">Unit file content</Label>
+              <textarea
+                id="service-unit-content"
+                rows={8}
+                placeholder={
+                  form.watch("deploy_mode") === "full"
+                    ? "[Unit]\nDescription=My Service\n\n[Service]\nExecStart=/usr/bin/myapp\nRestart=always\n\n[Install]\nWantedBy=multi-user.target"
+                    : "[Service]\nMemoryLimit=512M"
+                }
+                {...form.register("unit_content")}
+                className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
+              />
+              <p className="text-xs text-slate-500">
+                {form.watch("deploy_mode") === "full"
+                  ? "Full unit file — will be deployed to /etc/systemd/system/<name>.service on every host in the group."
+                  : "Drop-in override — applied only on hosts where the service already exists. Skipped silently if missing."}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -282,10 +337,7 @@ export default function GroupServicesPage() {
               <p className="text-sm text-red-400">{saveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving..." : editingService ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -293,7 +345,10 @@ export default function GroupServicesPage() {
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : editingService ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

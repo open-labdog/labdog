@@ -1,23 +1,74 @@
 """Collect current firewall state from remote hosts via SSH."""
 
+from dataclasses import dataclass
+
 import asyncssh
-from app.rules.model import FirewallRuleSpec
-from app.sync.parsers.nftables import parse_nftables_json
-from app.sync.parsers.firewalld import parse_firewalld_output
-from app.sync.parsers.ufw import parse_ufw_rules
+
+from app.rules.model import ChainPolicies, FirewallRuleSpec
+from app.ssh_utils import ssh_connect
+from app.sync.parsers.iptables import parse_iptables_policies, parse_iptables_save
+from app.sync.parsers.nftables import parse_nftables_json, parse_nftables_policies
 
 # Commands per firewall backend
 _COMMANDS = {
-    "nftables": "nft -j list ruleset",
-    "firewalld": "firewall-cmd --list-all",
-    "ufw": "cat /etc/ufw/user.rules",
+    "nftables": "sudo /usr/sbin/nft -j list ruleset",
+    "iptables": "sudo iptables-save",
 }
 
-_PARSERS = {
+_RULE_PARSERS = {
     "nftables": parse_nftables_json,
-    "firewalld": parse_firewalld_output,
-    "ufw": parse_ufw_rules,
+    "iptables": parse_iptables_save,
 }
+
+_POLICY_PARSERS = {
+    "nftables": parse_nftables_policies,
+    "iptables": parse_iptables_policies,
+}
+
+
+@dataclass
+class CollectedFirewallState:
+    """Rules and chain policies collected from a host."""
+
+    rules: list[FirewallRuleSpec]
+    policies: ChainPolicies
+
+
+async def collect_firewall_state(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+    firewall_backend: str,
+    ssh_user: str = "root",
+) -> CollectedFirewallState:
+    """SSH into a host and collect its current firewall rules and chain policies.
+
+    Returns:
+        CollectedFirewallState with parsed rules and policies.
+
+    Raises:
+        ValueError: If firewall_backend is "unknown" or unsupported
+        asyncssh.Error: If SSH connection fails
+    """
+    if firewall_backend not in _COMMANDS:
+        raise ValueError(f"Unsupported firewall backend: {firewall_backend}")
+
+    command = _COMMANDS[firewall_backend]
+    rule_parser = _RULE_PARSERS[firewall_backend]
+    policy_parser = _POLICY_PARSERS[firewall_backend]
+
+    key = asyncssh.import_private_key(private_key_pem)
+    async with ssh_connect(
+        host_ip,
+        port=ssh_port,
+        username=ssh_user,
+        client_keys=[key],
+    ) as conn:
+        result = await conn.run(command, check=True)
+        return CollectedFirewallState(
+            rules=rule_parser(result.stdout),
+            policies=policy_parser(result.stdout),
+        )
 
 
 async def collect_current_rules(
@@ -29,34 +80,13 @@ async def collect_current_rules(
 ) -> list[FirewallRuleSpec]:
     """SSH into a host and collect its current firewall rules.
 
-    Args:
-        host_ip: Target host IP address
-        ssh_port: SSH port
-        private_key_pem: Decrypted PEM-encoded private key
-        firewall_backend: One of "nftables", "firewalld", "ufw"
-        ssh_user: SSH username (default: root)
-
-    Returns:
-        List of parsed firewall rules currently active on the host.
-
-    Raises:
-        ValueError: If firewall_backend is "unknown" or unsupported
-        asyncssh.Error: If SSH connection fails
+    Backward-compatible wrapper around collect_firewall_state.
     """
-    if firewall_backend not in _COMMANDS:
-        raise ValueError(f"Unsupported firewall backend: {firewall_backend}")
-
-    command = _COMMANDS[firewall_backend]
-    parser = _PARSERS[firewall_backend]
-
-    key = asyncssh.import_private_key(private_key_pem)
-    async with asyncssh.connect(
+    state = await collect_firewall_state(
         host_ip,
-        port=ssh_port,
-        username=ssh_user,
-        client_keys=[key],
-        # Accept unknown host keys on first connect, reject changed keys
-        known_hosts=None,
-    ) as conn:
-        result = await conn.run(command, check=True)
-        return parser(result.stdout)
+        ssh_port,
+        private_key_pem,
+        firewall_backend,
+        ssh_user,
+    )
+    return state.rules
