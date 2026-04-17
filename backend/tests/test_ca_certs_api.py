@@ -1,5 +1,6 @@
 """Integration tests for CA cert API endpoints and merge engine."""
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography import x509
@@ -14,17 +15,19 @@ pytestmark = pytest.mark.integration
 
 def _make_pem(common_name: str = "Test CA") -> str:
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    name = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-    ])
+    name = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+        ]
+    )
     cert = (
         x509.CertificateBuilder()
         .subject_name(name)
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-        .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+        .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=365))
         .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
         .sign(private_key=key, algorithm=hashes.SHA256())
     )
@@ -124,9 +127,7 @@ class TestGroupCACertCRUD:
         )
         rule_id = create_resp.json()["id"]
 
-        resp = await superuser_client.delete(
-            f"/api/groups/{group.id}/ca-certs/{rule_id}"
-        )
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/ca-certs/{rule_id}")
         assert resp.status_code == 204
 
         list_resp = await superuser_client.get(f"/api/groups/{group.id}/ca-certs")
@@ -220,9 +221,7 @@ class TestEffectiveCACerts:
         data = resp.json()
         assert len(data) == 2
 
-    async def test_host_override_can_mark_inherited_cert_absent(
-        self, superuser_client, db
-    ):
+    async def test_host_override_can_mark_inherited_cert_absent(self, superuser_client, db):
         key = await create_ssh_key(db)
         group = await create_group(db, priority=100)
         pem = _make_pem("Shared CA")
@@ -244,9 +243,7 @@ class TestEffectiveCACerts:
         assert hresp.status_code == 201
 
         # Effective merge: should show 1 entry, source=host, state=absent
-        eff_resp = await superuser_client.get(
-            f"/api/hosts/{host.id}/effective-ca-certs"
-        )
+        eff_resp = await superuser_client.get(f"/api/hosts/{host.id}/effective-ca-certs")
         assert eff_resp.status_code == 200
         data = eff_resp.json()
         assert len(data) == 1

@@ -5,6 +5,7 @@ A rule or entry can reference a host either via direct scope (host_id) or
 group membership — e.g. a rule on group G with source_host_id=H affects
 every host that belongs to G.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -38,9 +39,7 @@ async def get_host_dependents(db: AsyncSession, host_id: int) -> HostDependents:
             )
         )
     )
-    entry_rows = await db.execute(
-        select(HostsEntry.id).where(HostsEntry.host_ref_id == host_id)
-    )
+    entry_rows = await db.execute(select(HostsEntry.id).where(HostsEntry.host_ref_id == host_id))
     return HostDependents(
         rule_ids=[r[0] for r in rule_rows.all()],
         hosts_entry_ids=[r[0] for r in entry_rows.all()],

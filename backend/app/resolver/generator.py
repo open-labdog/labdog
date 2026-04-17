@@ -1,6 +1,5 @@
 from app.ansible.inventory import generate_inventory
 
-
 CLOUD_INIT_DISABLE_PATH = "/etc/cloud/cloud.cfg.d/99-barricade-disable-network-config.cfg"
 CLOUD_INIT_DISABLE_CONTENT = (
     "# Managed by Barricade. Prevents cloud-init from re-applying network/DNS\n"

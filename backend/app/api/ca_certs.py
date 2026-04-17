@@ -6,6 +6,7 @@ do not affect the host's ``sync_status`` badge. The deploy/remove
 execution is handled by the Actions surface (see ``api/actions.py``)
 plus the ``ca_cert_action`` Celery task.
 """
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -145,12 +146,14 @@ async def update_group_ca_cert(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (await db.execute(
-        select(CACertRule).where(
-            CACertRule.id == rule_id,
-            CACertRule.group_id == group_id,
+    rule = (
+        await db.execute(
+            select(CACertRule).where(
+                CACertRule.id == rule_id,
+                CACertRule.group_id == group_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="CA certificate rule not found")
 
@@ -180,12 +183,14 @@ async def delete_group_ca_cert(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (await db.execute(
-        select(CACertRule).where(
-            CACertRule.id == rule_id,
-            CACertRule.group_id == group_id,
+    rule = (
+        await db.execute(
+            select(CACertRule).where(
+                CACertRule.id == rule_id,
+                CACertRule.group_id == group_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="CA certificate rule not found")
 
@@ -285,12 +290,14 @@ async def update_host_ca_cert(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (await db.execute(
-        select(CACertRule).where(
-            CACertRule.id == rule_id,
-            CACertRule.host_id == host_id,
+    rule = (
+        await db.execute(
+            select(CACertRule).where(
+                CACertRule.id == rule_id,
+                CACertRule.host_id == host_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="CA certificate rule not found")
 
@@ -320,12 +327,14 @@ async def delete_host_ca_cert(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    rule = (await db.execute(
-        select(CACertRule).where(
-            CACertRule.id == rule_id,
-            CACertRule.host_id == host_id,
+    rule = (
+        await db.execute(
+            select(CACertRule).where(
+                CACertRule.id == rule_id,
+                CACertRule.host_id == host_id,
+            )
         )
-    )).scalar_one_or_none()
+    ).scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="CA certificate rule not found")
 

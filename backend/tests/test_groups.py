@@ -124,7 +124,8 @@ class TestGroups:
 
         # Create group, SSH key, and host in that group
         group = await create_group(
-            db, name=f"group-{uuid.uuid4().hex[:8]}",
+            db,
+            name=f"group-{uuid.uuid4().hex[:8]}",
             priority=int(uuid.uuid4().int % 1000) + 1,
         )
         ssh_key = await create_ssh_key(db)

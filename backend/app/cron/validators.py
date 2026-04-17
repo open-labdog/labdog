@@ -3,7 +3,7 @@ _FIELD_RANGES = [
     (0, 23),  # hour
     (1, 31),  # day of month
     (1, 12),  # month
-    (0, 7),   # day of week (0 and 7 both = Sunday)
+    (0, 7),  # day of week (0 and 7 both = Sunday)
 ]
 
 
@@ -32,20 +32,16 @@ def validate_cron_expression(expr: str) -> tuple[str, str, str, str, str]:
     """
     if expr.startswith("@"):
         raise ValueError(
-            f"Special schedules like '{expr}' are not supported. "
-            "Use standard 5-field cron format."
+            f"Special schedules like '{expr}' are not supported. Use standard 5-field cron format."
         )
     fields = expr.split()
     if len(fields) != 5:
-        raise ValueError(
-            f"Cron expression must have exactly 5 fields, got {len(fields)}: '{expr}'"
-        )
+        raise ValueError(f"Cron expression must have exactly 5 fields, got {len(fields)}: '{expr}'")
     field_names = ["minute", "hour", "day-of-month", "month", "day-of-week"]
     for i, (field, (min_v, max_v)) in enumerate(zip(fields, _FIELD_RANGES)):
         if not _validate_field(field, min_v, max_v):
             raise ValueError(
-                f"Invalid {field_names[i]} field '{field}' "
-                f"in cron expression '{expr}'"
+                f"Invalid {field_names[i]} field '{field}' in cron expression '{expr}'"
             )
     minute, hour, dom, month, dow = fields
     return minute, hour, dom, month, dow

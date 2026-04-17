@@ -1,4 +1,5 @@
 import yaml
+
 from app.ansible.inventory import generate_inventory
 
 
@@ -67,7 +68,10 @@ def generate_cleanup_tasks(desired_services: list[dict]) -> tuple[list[dict], li
         {
             "name": "Find Barricade-managed unit files",
             "ansible.builtin.shell": {
-                "cmd": "grep -rl '# Managed by Barricade' /etc/systemd/system/*.service 2>/dev/null || true",
+                "cmd": (
+                    "grep -rl '# Managed by Barricade'"
+                    " /etc/systemd/system/*.service 2>/dev/null || true"
+                ),
             },
             "register": "barricade_units",
             "changed_when": False,
@@ -158,58 +162,78 @@ def generate_service_playbook(
 
         if unit_content is not None:
             if deploy_mode == "full":
-                deploy_tasks.append({
-                    "name": f"Deploy unit file for {service_name}",
-                    "ansible.builtin.copy": {
-                        "dest": f"/etc/systemd/system/{service_name}.service",
-                        "content": f"# Managed by Barricade\n{unit_content}",
-                        "owner": "root",
-                        "group": "root",
-                        "mode": "0644",
-                    },
-                })
+                deploy_tasks.append(
+                    {
+                        "name": f"Deploy unit file for {service_name}",
+                        "ansible.builtin.copy": {
+                            "dest": f"/etc/systemd/system/{service_name}.service",
+                            "content": f"# Managed by Barricade\n{unit_content}",
+                            "owner": "root",
+                            "group": "root",
+                            "mode": "0644",
+                        },
+                    }
+                )
                 file_deployed = True
 
             elif deploy_mode == "override":
-                deploy_tasks.append(_with_when({
-                    "name": f"Create override directory for {service_name}",
-                    "ansible.builtin.file": {
-                        "path": f"/etc/systemd/system/{service_name}.service.d",
-                        "state": "directory",
-                        "owner": "root",
-                        "group": "root",
-                        "mode": "0755",
-                    },
-                }))
-                deploy_tasks.append(_with_when({
-                    "name": f"Deploy override file for {service_name}",
-                    "ansible.builtin.copy": {
-                        "dest": f"/etc/systemd/system/{service_name}.service.d/barricade.conf",
-                        "content": unit_content,
-                        "owner": "root",
-                        "group": "root",
-                        "mode": "0644",
-                    },
-                }))
+                deploy_tasks.append(
+                    _with_when(
+                        {
+                            "name": f"Create override directory for {service_name}",
+                            "ansible.builtin.file": {
+                                "path": f"/etc/systemd/system/{service_name}.service.d",
+                                "state": "directory",
+                                "owner": "root",
+                                "group": "root",
+                                "mode": "0755",
+                            },
+                        }
+                    )
+                )
+                deploy_tasks.append(
+                    _with_when(
+                        {
+                            "name": f"Deploy override file for {service_name}",
+                            "ansible.builtin.copy": {
+                                "dest": (
+                                    f"/etc/systemd/system/{service_name}.service.d/barricade.conf"
+                                ),
+                                "content": unit_content,
+                                "owner": "root",
+                                "group": "root",
+                                "mode": "0644",
+                            },
+                        }
+                    )
+                )
                 file_deployed = True
 
         if file_deployed:
-            deploy_tasks.append(_with_when({
-                "name": f"Reload systemd after deploying {service_name}",
-                "ansible.builtin.systemd": {
-                    "daemon_reload": True,
-                },
-            }))
+            deploy_tasks.append(
+                _with_when(
+                    {
+                        "name": f"Reload systemd after deploying {service_name}",
+                        "ansible.builtin.systemd": {
+                            "daemon_reload": True,
+                        },
+                    }
+                )
+            )
 
         state_str = svc["state"].value if hasattr(svc["state"], "value") else str(svc["state"])
-        deploy_tasks.append(_with_when({
-            "name": f"Manage service {service_name}",
-            "ansible.builtin.service": {
-                "name": service_name,
-                "state": STATE_MAP.get(state_str, "started"),
-                "enabled": svc["enabled"],
-            },
-        }))
+        deploy_tasks.append(
+            _with_when(
+                {
+                    "name": f"Manage service {service_name}",
+                    "ansible.builtin.service": {
+                        "name": service_name,
+                        "state": STATE_MAP.get(state_str, "started"),
+                        "enabled": svc["enabled"],
+                    },
+                }
+            )
+        )
 
     playbook = [
         {

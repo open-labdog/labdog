@@ -68,7 +68,6 @@ function SortableRow({
 }) {
   const {
     attributes,
-    listeners,
     setNodeRef,
     transform,
     transition,
@@ -119,7 +118,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
     })
   )
 
-  const { data: group, isLoading: groupLoading } = useQuery<HostGroup>({
+  const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
     queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
@@ -151,7 +150,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
     invalidateKeys: [["rules", id]],
   })
 
-  const { data: policies } = useQuery<ChainPolicies>({
+  useQuery<ChainPolicies>({
     queryKey: ["policies", id],
     queryFn: () => apiFetch<ChainPolicies>(`/api/groups/${id}/policies`),
     enabled: !!id,
@@ -252,7 +251,6 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         // component rendered inside the cell.
         cell: (rule: FirewallRule) => {
           const isDragDisabled = rule.is_system || gitopsEnabled
-          // eslint-disable-next-line react-hooks/rules-of-hooks -- this is a stable per-row render component
           return <DragHandleCell rule={rule} isDragDisabled={isDragDisabled} />
         },
         defaultWidth: 40,

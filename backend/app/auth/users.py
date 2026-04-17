@@ -75,9 +75,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
     ):
         logger.info("User %d forgot password.", user.id)
 
-    async def on_after_request_verify(
-        self, user: User, token: str, request: Request | None = None
-    ):
+    async def on_after_request_verify(self, user: User, token: str, request: Request | None = None):
         logger.info("Verification requested for user %d.", user.id)
 
 

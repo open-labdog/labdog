@@ -84,7 +84,7 @@ export default function GroupsPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
-  const allGroups = groups ?? []
+  const allGroups = useMemo(() => groups ?? [], [groups])
 
   const { minPriority, maxPriority } = useMemo(() => {
     if (allGroups.length === 0) return { minPriority: 0, maxPriority: 1000 }
@@ -328,7 +328,6 @@ export default function GroupsPage() {
       resizable: false,
       sortable: false,
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [selected, syncingGroup, minPriority, maxPriority])
 
   const displayLabel = (cat: string) => cat === "__uncategorized__" ? "Other" : cat

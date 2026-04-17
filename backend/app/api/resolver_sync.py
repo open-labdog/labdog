@@ -1,4 +1,4 @@
-from typing import Optional
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,8 +26,8 @@ class ResolverDiffResponse(BaseModel):
     nameservers_changed: bool
     search_domains_changed: bool
     options_changed: bool
-    current: Optional[dict] = None
-    desired: Optional[dict] = None
+    current: dict | None = None
+    desired: dict | None = None
 
 
 class ResolverSyncPlan(BaseModel):
@@ -53,17 +53,11 @@ async def plan_resolver_sync(
 
     effective = await get_effective_resolver(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No resolver config defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No resolver config defined for this host")
 
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
-    private_key_pem = decrypt_ssh_key(
-        ssh_key.encrypted_private_key, get_master_key()
-    )
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
     actual = await collect_resolver_state(
         host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type
@@ -90,9 +84,7 @@ async def plan_resolver_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_resolver_sync(
     host_id: int,
     user: User = Depends(current_superuser),
@@ -121,9 +113,7 @@ async def trigger_resolver_sync(
 
     effective = await get_effective_resolver(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=400, detail="No resolver config defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No resolver config defined for this host")
 
     job = SyncJob(
         host_id=host_id,
@@ -149,9 +139,7 @@ async def trigger_group_resolver_sync(
     db: AsyncSession = Depends(get_db),
 ):
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:
@@ -210,9 +198,7 @@ async def check_resolver_drift(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_superuser),
 ):
-    host = (
-        await db.execute(select(Host).where(Host.id == host_id))
-    ).scalar_one_or_none()
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     if not host.ssh_key_id:
@@ -220,16 +206,10 @@ async def check_resolver_drift(
 
     effective = await get_effective_resolver(host_id, db)
     if not effective:
-        raise HTTPException(
-            status_code=404, detail="No resolver config applies to this host"
-        )
+        raise HTTPException(status_code=404, detail="No resolver config applies to this host")
 
-    ssh_key = (
-        await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-    ).scalar_one()
-    private_key_pem = decrypt_ssh_key(
-        ssh_key.encrypted_private_key, get_master_key()
-    )
+    ssh_key = (await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))).scalar_one()
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
     actual = await collect_resolver_state(
         host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type
@@ -254,11 +234,12 @@ async def check_resolver_drift(
         db.add(hms)
     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
 
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    hms.last_drift_check_at = datetime.now(timezone.utc)
+    hms.last_drift_check_at = datetime.now(UTC)
 
     from app.api.host_state import refresh_host_sync_status
+
     await refresh_host_sync_status(host, db)
     await db.commit()
 

@@ -15,8 +15,8 @@ not in the current desired set. This means deleting a cert from the
 group config and re-running the action removes it from hosts, without
 Barricade needing to remember what was previously deployed.
 """
-from app.ansible.inventory import generate_inventory
 
+from app.ansible.inventory import generate_inventory
 
 # Per-OS-family configuration: drop-in directory + update command.
 _OS_CONFIG: list[tuple[str, str, str, str]] = [
@@ -57,98 +57,97 @@ def generate_ca_cert_playbook(
     ``{"playbook": [...], "inventory": "..."}`` ready for ansible-runner.
     """
     present_certs = [c for c in certs if c.get("state", "present") == "present"]
-    absent_fps = {
-        c["fingerprint_sha256"] for c in certs if c.get("state") == "absent"
-    }
+    absent_fps = {c["fingerprint_sha256"] for c in certs if c.get("state") == "absent"}
 
     # Filenames the host should retain at the end of the run.
-    keep_filenames = {
-        cert_filename(c["fingerprint_sha256"]) for c in present_certs
-    }
+    keep_filenames = {cert_filename(c["fingerprint_sha256"]) for c in present_certs}
 
     tasks: list[dict] = []
 
     for label, os_family, drop_in_dir, update_cmd in _OS_CONFIG:
         os_when = f"ansible_facts['os_family'] == '{os_family}'"
 
-        tasks.append({
-            "name": f"[{label}] Ensure trust-anchor directory exists",
-            "ansible.builtin.file": {
-                "path": drop_in_dir,
-                "state": "directory",
-                "mode": "0755",
-            },
-            "when": os_when,
-        })
+        tasks.append(
+            {
+                "name": f"[{label}] Ensure trust-anchor directory exists",
+                "ansible.builtin.file": {
+                    "path": drop_in_dir,
+                    "state": "directory",
+                    "mode": "0755",
+                },
+                "when": os_when,
+            }
+        )
 
         # Write/copy desired (present) certs
         for cert in present_certs:
             fname = cert_filename(cert["fingerprint_sha256"])
-            tasks.append({
-                "name": (
-                    f"[{label}] Install CA cert: {cert.get('name', fname)} "
-                    f"({fname})"
-                ),
-                "ansible.builtin.copy": {
-                    "content": cert["pem_content"],
-                    "dest": f"{drop_in_dir}/{fname}",
-                    "owner": "root",
-                    "group": "root",
-                    "mode": "0644",
-                },
-                "when": os_when,
-                "notify": f"update-ca-{label.lower()}",
-            })
+            tasks.append(
+                {
+                    "name": (f"[{label}] Install CA cert: {cert.get('name', fname)} ({fname})"),
+                    "ansible.builtin.copy": {
+                        "content": cert["pem_content"],
+                        "dest": f"{drop_in_dir}/{fname}",
+                        "owner": "root",
+                        "group": "root",
+                        "mode": "0644",
+                    },
+                    "when": os_when,
+                    "notify": f"update-ca-{label.lower()}",
+                }
+            )
 
         # Explicit removals (host-level state=absent overrides)
         for fp in sorted(absent_fps):
             fname = cert_filename(fp)
-            tasks.append({
-                "name": f"[{label}] Remove CA cert (explicit absent): {fname}",
-                "ansible.builtin.file": {
-                    "path": f"{drop_in_dir}/{fname}",
-                    "state": "absent",
-                },
-                "when": os_when,
-                "notify": f"update-ca-{label.lower()}",
-            })
+            tasks.append(
+                {
+                    "name": f"[{label}] Remove CA cert (explicit absent): {fname}",
+                    "ansible.builtin.file": {
+                        "path": f"{drop_in_dir}/{fname}",
+                        "state": "absent",
+                    },
+                    "when": os_when,
+                    "notify": f"update-ca-{label.lower()}",
+                }
+            )
 
         # Reconcile: discover any barricade-*.crt files and remove
         # those not in the desired set.
-        keep_full_paths = sorted(
-            f"{drop_in_dir}/{fname}" for fname in keep_filenames
-        )
-        keep_paths_jinja = (
-            "[" + ", ".join(f"'{p}'" for p in keep_full_paths) + "]"
+        keep_full_paths = sorted(f"{drop_in_dir}/{fname}" for fname in keep_filenames)
+        keep_paths_jinja = "[" + ", ".join(f"'{p}'" for p in keep_full_paths) + "]"
+
+        tasks.append(
+            {
+                "name": f"[{label}] Discover existing Barricade-managed certs",
+                "ansible.builtin.find": {
+                    "paths": drop_in_dir,
+                    "patterns": "barricade-*.crt",
+                    "file_type": "file",
+                },
+                "register": f"barricade_existing_{label.lower()}",
+                "when": os_when,
+            }
         )
 
-        tasks.append({
-            "name": f"[{label}] Discover existing Barricade-managed certs",
-            "ansible.builtin.find": {
-                "paths": drop_in_dir,
-                "patterns": "barricade-*.crt",
-                "file_type": "file",
-            },
-            "register": f"barricade_existing_{label.lower()}",
-            "when": os_when,
-        })
-
-        tasks.append({
-            "name": f"[{label}] Remove orphaned Barricade-managed certs",
-            "ansible.builtin.file": {
-                "path": "{{ item.path }}",
-                "state": "absent",
-            },
-            "loop": (
-                "{{ "
-                f"barricade_existing_{label.lower()}.files | default([]) "
-                f"| rejectattr('path', 'in', {keep_paths_jinja}) "
-                "| list "
-                "}}"
-            ),
-            "when": os_when,
-            "notify": f"update-ca-{label.lower()}",
-        })
+        tasks.append(
+            {
+                "name": f"[{label}] Remove orphaned Barricade-managed certs",
+                "ansible.builtin.file": {
+                    "path": "{{ item.path }}",
+                    "state": "absent",
+                },
+                "loop": (
+                    "{{ "
+                    f"barricade_existing_{label.lower()}.files | default([]) "
+                    f"| rejectattr('path', 'in', {keep_paths_jinja}) "
+                    "| list "
+                    "}}"
+                ),
+                "when": os_when,
+                "notify": f"update-ca-{label.lower()}",
+            }
+        )
 
     # Handlers run once at the end if notified, ensuring the trust store
     # is only rebuilt when something actually changed.

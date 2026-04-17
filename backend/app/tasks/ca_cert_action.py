@@ -6,10 +6,11 @@ mutate the host's ``sync_status`` badge. Execution status is recorded
 solely on the ``SyncJob`` row, which is reused as the action-run record
 (distinguished by ``module_type='ca_cert'``).
 """
+
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.tasks import celery_app
 
@@ -24,9 +25,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     import ansible_runner
 
     private_data_dir = tempfile.mkdtemp(prefix="barricade-ca-")
-    fd, ssh_key_path = tempfile.mkstemp(
-        dir="/dev/shm", prefix="barricade-ca-", suffix=".key"
-    )
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-ca-", suffix=".key")
     os.close(fd)
 
     try:
@@ -45,24 +44,18 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
 
         async def _prepare():
             async with task_session() as db:
-                job = (await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )).scalar_one()
+                job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
                 job.status = "running"
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now(UTC)
                 await db.commit()
 
-                host = (await db.execute(
-                    select(Host).where(Host.id == host_id)
-                )).scalar_one()
+                host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one()
 
-                ssh_key = (await db.execute(
-                    select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                )).scalar_one()
+                ssh_key = (
+                    await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+                ).scalar_one()
                 master_key = get_master_key()
-                private_key_text = decrypt_ssh_key(
-                    ssh_key.encrypted_private_key, master_key
-                )
+                private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
@@ -93,6 +86,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         asyncio.run(_prepare())
 
         from app.settings_service import get_setting_sync_typed
+
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         runner = ansible_runner.run(
             private_data_dir=private_data_dir,
@@ -102,20 +96,14 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
 
         async def _record_result():
             async with task_session() as db:
-                job = (await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )).scalar_one()
+                job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now(UTC)
                 job.ansible_output = (
-                    runner.stdout.read()
-                    if hasattr(runner.stdout, "read")
-                    else str(runner.stdout)
+                    runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
                 if runner.status != "successful":
-                    job.error_message = (
-                        f"Ansible runner status: {runner.status}, rc: {runner.rc}"
-                    )
+                    job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
                 await db.commit()
 
         asyncio.run(_record_result())
@@ -138,12 +126,12 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
 
         async def _mark_failed():
             async with task_session() as db:
-                job = (await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )).scalar_one_or_none()
+                job = (
+                    await db.execute(select(SyncJob).where(SyncJob.id == job_id))
+                ).scalar_one_or_none()
                 if job:
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.completed_at = datetime.now(UTC)
                     job.error_message = error_msg
                     await db.commit()
 

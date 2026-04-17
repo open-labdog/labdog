@@ -5,16 +5,17 @@ Revises: 0006
 Create Date: 2026-03-18
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "0007"
 down_revision: str = "0006"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -65,7 +66,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_cron_jobs_scope",
         ),
     )
@@ -91,6 +93,4 @@ def downgrade() -> None:
     op.drop_index("uq_cron_jobs_host_name_user", table_name="cron_jobs")
     op.drop_index("uq_cron_jobs_group_name_user", table_name="cron_jobs")
     op.drop_table("cron_jobs")
-    sa.Enum("present", "absent", name="cronstate").drop(
-        op.get_bind(), checkfirst=True
-    )
+    sa.Enum("present", "absent", name="cronstate").drop(op.get_bind(), checkfirst=True)

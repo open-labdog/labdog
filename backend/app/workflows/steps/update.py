@@ -90,9 +90,7 @@ def run_system_update(
             }
         ]
 
-        inventory_content = generate_inventory(
-            host_ip, ssh_port, ssh_key_path, ssh_user
-        )
+        inventory_content = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
 
         project_dir = os.path.join(temp_dir, "project")
         inventory_dir = os.path.join(temp_dir, "inventory")

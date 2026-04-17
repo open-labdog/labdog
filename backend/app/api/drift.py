@@ -1,19 +1,17 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
-from app.db import get_db
-from app.models.host import Host, HostGroupMembership
-from app.models.host_group import HostGroup
-from app.models.firewall_rule import FirewallRule
-from app.models.user import User
+
 from app.auth.users import current_active_user, current_superuser
+from app.db import get_db
 from app.drift.detector import check_drift
-from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.rules.merge import merge_group_rules, merge_group_policies
-from app.rules.converter import firewall_rules_to_specs
+from app.models.host import Host, HostGroupMembership
+from app.models.user import User
 from app.rules.desired_state import get_desired_state
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 router = APIRouter(prefix="/drift", tags=["drift"])
 
@@ -50,7 +48,9 @@ def _drift_result_to_response(host_id: int, result) -> DriftResponse:
 
 
 async def _get_desired_state_for_host(
-    host_id: int, db: AsyncSession, host_source_ip: str | None = None,
+    host_id: int,
+    db: AsyncSession,
+    host_source_ip: str | None = None,
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Return (merged_rules, merged_policies) for a host."""
     return await get_desired_state(host_id, db, host_source_ip=host_source_ip)
@@ -66,11 +66,16 @@ async def check_host_drift(
     host = host_result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-    backend = host.firewall_backend.value if hasattr(host.firewall_backend, "value") else host.firewall_backend
+    backend = (
+        host.firewall_backend.value
+        if hasattr(host.firewall_backend, "value")
+        else host.firewall_backend
+    )
     if backend == "unknown":
         from app.models.host import SyncStatus
+
         host.sync_status = SyncStatus.unknown
-        host.last_drift_check_at = datetime.now(timezone.utc)
+        host.last_drift_check_at = datetime.now(UTC)
         await db.commit()
         return DriftResponse(
             host_id=host_id,
@@ -79,12 +84,14 @@ async def check_host_drift(
             add_count=0,
             remove_count=0,
             error_message="Firewall backend not detected",
-            checked_at=datetime.now(timezone.utc).isoformat(),
+            checked_at=datetime.now(UTC).isoformat(),
         )
-    desired, policies = await _get_desired_state_for_host(host_id, db, host_source_ip=host.barricade_source_ip)
+    desired, policies = await _get_desired_state_for_host(
+        host_id, db, host_source_ip=host.barricade_source_ip
+    )
     result = await check_drift(host_id, desired, db, desired_policies=policies)
     host.sync_status = result.status
-    host.last_drift_check_at = datetime.now(timezone.utc)
+    host.last_drift_check_at = datetime.now(UTC)
     await db.commit()
     return _drift_result_to_response(host_id, result)
 
@@ -105,10 +112,14 @@ async def check_group_drift(
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
-        backend = host.firewall_backend.value if hasattr(host.firewall_backend, "value") else host.firewall_backend
+        backend = (
+            host.firewall_backend.value
+            if hasattr(host.firewall_backend, "value")
+            else host.firewall_backend
+        )
         if backend == "unknown":
             host.sync_status = SyncStatus.unknown
-            host.last_drift_check_at = datetime.now(timezone.utc)
+            host.last_drift_check_at = datetime.now(UTC)
             await db.commit()
             results.append(
                 DriftResponse(
@@ -118,14 +129,16 @@ async def check_group_drift(
                     add_count=0,
                     remove_count=0,
                     error_message="Firewall backend not detected",
-                    checked_at=datetime.now(timezone.utc).isoformat(),
+                    checked_at=datetime.now(UTC).isoformat(),
                 )
             )
             continue
-        desired, policies = await _get_desired_state_for_host(hid, db, host_source_ip=host.barricade_source_ip)
+        desired, policies = await _get_desired_state_for_host(
+            hid, db, host_source_ip=host.barricade_source_ip
+        )
         result = await check_drift(hid, desired, db, desired_policies=policies)
         host.sync_status = result.status
-        host.last_drift_check_at = datetime.now(timezone.utc)
+        host.last_drift_check_at = datetime.now(UTC)
         await db.commit()
         results.append(_drift_result_to_response(hid, result))
     return results

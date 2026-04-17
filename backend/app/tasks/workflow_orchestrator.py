@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.tasks import celery_app
 
@@ -57,12 +57,10 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             workflow: UpdateWorkflow = wf_result.scalar_one()
 
             # Mark run as started
-            run_result = await db.execute(
-                select(WorkflowRun).where(WorkflowRun.id == run_id)
-            )
+            run_result = await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))
             run: WorkflowRun = run_result.scalar_one()
             run.status = WorkflowRunStatus.running
-            run.started_at = datetime.now(timezone.utc)
+            run.started_at = datetime.now(UTC)
             await db.flush()
 
             # Resolve group → hosts
@@ -83,7 +81,7 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
                     workflow_id,
                 )
                 run.status = WorkflowRunStatus.completed
-                run.completed_at = datetime.now(timezone.utc)
+                run.completed_at = datetime.now(UTC)
                 await db.commit()
                 return
 
@@ -107,9 +105,7 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
 
     except Exception as exc:
         error_msg = str(exc)
-        logger.exception(
-            "workflow_orchestrator: failed during initialisation of run %d", run_id
-        )
+        logger.exception("workflow_orchestrator: failed during initialisation of run %d", run_id)
         await _mark_run_failed(run_id, error_msg)
         return
 
@@ -120,8 +116,7 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
 
     try:
         batches = [
-            host_run_ids[i : i + batch_size]
-            for i in range(0, len(host_run_ids), batch_size)
+            host_run_ids[i : i + batch_size] for i in range(0, len(host_run_ids), batch_size)
         ]
 
         for batch_index, batch in enumerate(batches):
@@ -187,13 +182,9 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             )
             host_runs = list(host_runs_result.scalars().all())
 
-            statuses = {hr.status for hr in host_runs}
-            success_count = sum(
-                1 for hr in host_runs if hr.status == WorkflowHostStatus.success
-            )
-            failed_count = sum(
-                1 for hr in host_runs if hr.status == WorkflowHostStatus.failed
-            )
+            {hr.status for hr in host_runs}
+            success_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.success)
+            failed_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.failed)
             total = len(host_runs)
 
             if failed_count == 0:
@@ -203,17 +194,14 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             else:
                 final_status = WorkflowRunStatus.partial
 
-            run_result = await db.execute(
-                select(WorkflowRun).where(WorkflowRun.id == run_id)
-            )
+            run_result = await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))
             run = run_result.scalar_one()
             run.status = final_status
-            run.completed_at = datetime.now(timezone.utc)
+            run.completed_at = datetime.now(UTC)
             await db.commit()
 
             logger.info(
-                "workflow_orchestrator: run %d finished — %s "
-                "(%d/%d hosts succeeded)",
+                "workflow_orchestrator: run %d finished — %s (%d/%d hosts succeeded)",
                 run_id,
                 final_status.value,
                 success_count,
@@ -238,17 +226,13 @@ async def _mark_run_failed(run_id: int, error_message: str) -> None:
         from app.workflows.models import WorkflowRun, WorkflowRunStatus
 
         async with task_session() as db:
-            result = await db.execute(
-                select(WorkflowRun).where(WorkflowRun.id == run_id)
-            )
+            result = await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))
             run = result.scalar_one_or_none()
             if run is not None:
                 run.status = WorkflowRunStatus.failed
-                run.completed_at = datetime.now(timezone.utc)
+                run.completed_at = datetime.now(UTC)
                 # WorkflowRun has no error_message column; store in step_output
                 # of the run itself via a log entry only.
                 await db.commit()
     except Exception:
-        logger.exception(
-            "workflow_orchestrator: could not mark run %d as failed", run_id
-        )
+        logger.exception("workflow_orchestrator: could not mark run %d as failed", run_id)

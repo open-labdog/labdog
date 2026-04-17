@@ -1,20 +1,19 @@
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
-from app.models.host import Host, HostGroupMembership
-from app.models.host_group import HostGroup
 from app.models.firewall_rule import FirewallRule
+from app.models.host import Host, HostGroupMembership
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.auth.users import current_active_user, current_superuser
-from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.rules.merge import merge_group_rules, merge_group_policies
-from app.rules.converter import firewall_rules_to_specs
 from app.rules.desired_state import get_desired_state
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.sync.diff import SSHFetchError, compute_diff, fetch_current_firewall_state
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -58,7 +57,9 @@ def _spec_to_diff_item(spec: FirewallRuleSpec) -> RuleDiffItem:
 
 
 async def _get_desired_state(
-    host_id: int, db: AsyncSession, host_source_ip: str | None = None,
+    host_id: int,
+    db: AsyncSession,
+    host_source_ip: str | None = None,
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Get merged desired rules and policies for a host from DB."""
     return await get_desired_state(host_id, db, host_source_ip=host_source_ip)
@@ -76,14 +77,18 @@ async def plan_host(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    desired, desired_policies = await _get_desired_state(host_id, db, host_source_ip=host.barricade_source_ip)
+    desired, desired_policies = await _get_desired_state(
+        host_id, db, host_source_ip=host.barricade_source_ip
+    )
     try:
         state = await fetch_current_firewall_state(host_id, db)
     except SSHFetchError as exc:
         raise HTTPException(
             status_code=502, detail=f"Cannot reach host {exc.hostname}: {exc.detail}"
         ) from exc
-    diff = compute_diff(state.rules, desired, current_policies=state.policies, desired_policies=desired_policies)
+    diff = compute_diff(
+        state.rules, desired, current_policies=state.policies, desired_policies=desired_policies
+    )
     policy_changes = {k: list(v) for k, v in diff.policy_changes.items()}
 
     return HostDiff(
@@ -113,7 +118,9 @@ async def plan_group(
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
-        desired, desired_policies = await _get_desired_state(hid, db, host_source_ip=host.barricade_source_ip)
+        desired, desired_policies = await _get_desired_state(
+            hid, db, host_source_ip=host.barricade_source_ip
+        )
         try:
             state = await fetch_current_firewall_state(hid, db)
         except SSHFetchError as exc:
@@ -129,7 +136,9 @@ async def plan_group(
                 )
             )
             continue
-        diff = compute_diff(state.rules, desired, current_policies=state.policies, desired_policies=desired_policies)
+        diff = compute_diff(
+            state.rules, desired, current_policies=state.policies, desired_policies=desired_policies
+        )
         policy_changes = {k: list(v) for k, v in diff.policy_changes.items()}
         results.append(
             HostDiff(

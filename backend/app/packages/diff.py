@@ -2,16 +2,15 @@
 
 import fnmatch
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
 class PackageEntry:
     package_name: str
     desired_state: str  # "present", "absent", "latest"
-    desired_version: Optional[str]
+    desired_version: str | None
     actual_state: str  # "present" or "absent"
-    actual_version: Optional[str]
+    actual_version: str | None
     desired_hold: bool = False
     actual_hold: bool = False
 
@@ -41,9 +40,7 @@ def compute_diff(
         desired_state = desired_pkg.get("state", "present")
         desired_version = desired_pkg.get("version")
 
-        actual_pkg = actual_by_name.get(
-            name, {"name": name, "state": "absent", "version": None}
-        )
+        actual_pkg = actual_by_name.get(name, {"name": name, "state": "absent", "version": None})
         actual_state = actual_pkg.get("state", "absent")
         actual_version = actual_pkg.get("version")
 
@@ -82,7 +79,7 @@ def compute_diff(
     return diff
 
 
-def _version_matches(actual_version: Optional[str], desired_version: str) -> bool:
+def _version_matches(actual_version: str | None, desired_version: str) -> bool:
     """Supports exact match and shell glob patterns (e.g. '1.24.*'). No >= operators."""
     if actual_version is None:
         return False

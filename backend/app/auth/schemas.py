@@ -1,5 +1,5 @@
-from pydantic import field_validator
 from fastapi_users import schemas
+from pydantic import field_validator
 
 
 class UserRead(schemas.BaseUser[int]):

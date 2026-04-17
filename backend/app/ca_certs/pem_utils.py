@@ -4,6 +4,7 @@ Used by the API layer to extract metadata (fingerprint, subject, issuer,
 validity dates) from PEM content provided by users when defining CA cert
 rules. Metadata is stored alongside the PEM in the database for display.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -66,8 +67,7 @@ def parse_pem_certificate(pem_content: str) -> CertMetadata:
 
     if not is_ca:
         raise ValueError(
-            "Certificate is not a CA certificate "
-            "(basicConstraints extension missing or CA:FALSE)"
+            "Certificate is not a CA certificate (basicConstraints extension missing or CA:FALSE)"
         )
 
     fingerprint = _format_fingerprint(cert.fingerprint(hashes.SHA256()))

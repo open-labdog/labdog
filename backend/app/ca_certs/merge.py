@@ -5,6 +5,7 @@ merge as a pure union by fingerprint. A host-level rule with the same
 fingerprint as a group-inherited cert overrides it (used for
 ``state=absent`` to opt out of an inherited cert).
 """
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,9 +19,7 @@ def _state_str(state) -> str:
     return state.value if hasattr(state, "value") else str(state)
 
 
-async def get_effective_ca_certs(
-    host_id: int, db: AsyncSession
-) -> list[EffectiveCACertResponse]:
+async def get_effective_ca_certs(host_id: int, db: AsyncSession) -> list[EffectiveCACertResponse]:
     """Return the effective CA cert set for a host.
 
     Group certs are unioned by fingerprint (no priority — duplicates across
@@ -41,9 +40,7 @@ async def get_effective_ca_certs(
     merged: dict[str, EffectiveCACertResponse] = {}
 
     for group_id, group_name in groups:
-        result = await db.execute(
-            select(CACertRule).where(CACertRule.group_id == group_id)
-        )
+        result = await db.execute(select(CACertRule).where(CACertRule.group_id == group_id))
         for rule in result.scalars().all():
             if rule.fingerprint_sha256 not in merged:
                 merged[rule.fingerprint_sha256] = EffectiveCACertResponse(
@@ -60,9 +57,7 @@ async def get_effective_ca_certs(
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(
-        select(CACertRule).where(CACertRule.host_id == host_id)
-    )
+    host_result = await db.execute(select(CACertRule).where(CACertRule.host_id == host_id))
     for rule in host_result.scalars().all():
         merged[rule.fingerprint_sha256] = EffectiveCACertResponse(
             name=rule.name,

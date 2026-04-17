@@ -1,12 +1,13 @@
 import asyncio
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from app.models import Base, import_all_models  # noqa: F401
-import_all_models()  # Register all external models on Base.metadata
+from alembic import context
 from app.config import settings
+from app.models import Base, import_all_models  # noqa: F401
+
+import_all_models()  # Register all external models on Base.metadata
 
 config = context.config
 if config.config_file_name is not None:
@@ -44,4 +45,3 @@ if context.is_offline_mode():
     run_migrations_offline()
 else:
     asyncio.run(run_migrations_online())
-

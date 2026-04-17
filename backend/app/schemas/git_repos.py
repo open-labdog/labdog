@@ -10,15 +10,10 @@ class GitRepoCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url_scheme(cls, v: str) -> str:
-        if not (
-            v.startswith("https://")
-            or v.startswith("ssh://")
-            or v.startswith("git@")
-        ):
-            raise ValueError(
-                "Repository URL must use https://, ssh://, or git@ scheme"
-            )
+        if not (v.startswith("https://") or v.startswith("ssh://") or v.startswith("git@")):
+            raise ValueError("Repository URL must use https://, ssh://, or git@ scheme")
         return v
+
     branch: str = "main"
     auth_type: str  # "ssh_key" | "https_token"
     ssh_key_id: int | None = None

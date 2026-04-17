@@ -6,7 +6,7 @@ target IP address (or all known host IPs for a full scan).
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -92,13 +92,19 @@ async def _scan_pve_node(
         except ProxmoxError as exc:
             logger.warning(
                 "Agent not available on %s/%s vmid=%s: %s",
-                node.name, pve_node_name, vmid, exc,
+                node.name,
+                pve_node_name,
+                vmid,
+                exc,
             )
             continue
         except Exception as exc:
             logger.warning(
                 "Unexpected error querying agent on %s/%s vmid=%s: %s",
-                node.name, pve_node_name, vmid, exc,
+                node.name,
+                pve_node_name,
+                vmid,
+                exc,
             )
             continue
 
@@ -110,9 +116,7 @@ async def _scan_pve_node(
     try:
         containers = await client.list_containers(pve_node_name)
     except ProxmoxError as exc:
-        logger.warning(
-            "Failed to list containers on %s/%s: %s", node.name, pve_node_name, exc
-        )
+        logger.warning("Failed to list containers on %s/%s: %s", node.name, pve_node_name, exc)
         containers = []
 
     for ct in containers:
@@ -126,13 +130,19 @@ async def _scan_pve_node(
         except ProxmoxError as exc:
             logger.warning(
                 "Cannot get interfaces for container %s/%s vmid=%s: %s",
-                node.name, pve_node_name, vmid, exc,
+                node.name,
+                pve_node_name,
+                vmid,
+                exc,
             )
             continue
         except Exception as exc:
             logger.warning(
                 "Unexpected error querying container %s/%s vmid=%s: %s",
-                node.name, pve_node_name, vmid, exc,
+                node.name,
+                pve_node_name,
+                vmid,
+                exc,
             )
             continue
 
@@ -197,7 +207,13 @@ async def discover_vm_by_ip(ip: str, db: AsyncSession) -> VMMapping | None:
                 )
                 logger.info(
                     "Mapped host %s (id=%s, ip=%s) -> Proxmox %s/%s vmid=%s name=%s",
-                    host.hostname, host.id, ip, node.name, pve_name, vmid, vm_name,
+                    host.hostname,
+                    host.id,
+                    ip,
+                    node.name,
+                    pve_name,
+                    vmid,
+                    vm_name,
                 )
                 return mapping
 
@@ -267,7 +283,11 @@ async def discover_all_vms(db: AsyncSession) -> list[VMMapping]:
                     upserted.append(mapping)
                     logger.info(
                         "Mapped host %s (id=%s) -> %s/%s vmid=%s",
-                        host.hostname, host.id, node.name, pve_name, vmid,
+                        host.hostname,
+                        host.id,
+                        node.name,
+                        pve_name,
+                        vmid,
                     )
                     # Each host maps to at most one VM; stop searching IPs once matched
                     break
@@ -276,9 +296,7 @@ async def discover_all_vms(db: AsyncSession) -> list[VMMapping]:
     all_host_ids = {h.id for h in hosts}
     stale_host_ids = all_host_ids - found_host_ids
     if stale_host_ids:
-        await db.execute(
-            delete(VMMapping).where(VMMapping.host_id.in_(stale_host_ids))
-        )
+        await db.execute(delete(VMMapping).where(VMMapping.host_id.in_(stale_host_ids)))
         logger.info("Removed stale VM mappings for host_ids=%s", stale_host_ids)
 
     await db.commit()
@@ -294,7 +312,7 @@ async def _upsert_mapping(
     vm_name: str,
 ) -> VMMapping:
     """Insert or update a VMMapping row and return the refreshed object."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     stmt = (
         pg_insert(VMMapping)

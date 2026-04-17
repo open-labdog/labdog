@@ -24,6 +24,7 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
     # Scan in batches, reporting progress every ~50 hosts
     async def _scan_with_progress():
         from app.settings_service import get_setting_sync_typed
+
         max_concurrent = int(get_setting_sync_typed("discovery.max_concurrent"))
         semaphore = asyncio.Semaphore(max_concurrent)
 
@@ -40,8 +41,8 @@ def scan_network_task(self, cidr: str, port: int, timeout: float, exclude_ips: l
             # Update progress every 50 hosts
             if completed % 50 == 0 or completed == total:
                 self.update_state(
-                    state='PROGRESS',
-                    meta={'progress': completed, 'total': total, 'found': len(found)}
+                    state="PROGRESS",
+                    meta={"progress": completed, "total": total, "found": len(found)},
                 )
         return found
 

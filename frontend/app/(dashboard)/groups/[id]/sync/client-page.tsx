@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
 import { CardSkeleton } from "@/components/ui/skeleton"
 import type { HostGroup } from "@/lib/types"
 import {
@@ -218,7 +217,7 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
         syncMutation.reset()
       }
     }
-  }, [])
+  }, [syncMutation])
 
   useEffect(() => {
     if (!jobId) return
@@ -226,9 +225,8 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
     if (terminal || pollError) return
 
     const interval = setInterval(() => pollJob(jobId), 3000)
-    // Poll immediately
-    pollJob(jobId)
-    return () => clearInterval(interval)
+    const raf = requestAnimationFrame(() => pollJob(jobId))
+    return () => { clearInterval(interval); cancelAnimationFrame(raf) }
   }, [jobId, jobStatus?.status, pollError, pollJob])
 
   const hasChanges = plan && plan.some((h) => h.has_changes)

@@ -2,7 +2,6 @@
 
 import asyncio
 import shlex
-from typing import Optional
 
 import asyncssh
 
@@ -42,12 +41,11 @@ async def collect_package_states(
                     try:
                         if use_dpkg:
                             result = await conn.run(
-                                f"dpkg -l {shlex.quote(pkg_name)} 2>/dev/null | grep -E '^ii|^rc|^un' | head -1",
+                                f"dpkg -l {shlex.quote(pkg_name)} 2>/dev/null"
+                                " | grep -E '^ii|^rc|^un' | head -1",
                                 check=False,
                             )
-                            state, version = _parse_dpkg_output(
-                                result.stdout.strip(), pkg_name
-                            )
+                            state, version = _parse_dpkg_output(result.stdout.strip(), pkg_name)
                         elif use_rpm:
                             result = await conn.run(
                                 f"rpm -q {shlex.quote(pkg_name)} 2>/dev/null",
@@ -59,13 +57,9 @@ async def collect_package_states(
                         else:
                             state, version = "absent", None
 
-                        results.append(
-                            {"name": pkg_name, "state": state, "version": version}
-                        )
+                        results.append({"name": pkg_name, "state": state, "version": version})
                     except Exception:
-                        results.append(
-                            {"name": pkg_name, "state": "absent", "version": None}
-                        )
+                        results.append({"name": pkg_name, "state": "absent", "version": None})
 
             return results
 
@@ -77,7 +71,7 @@ async def collect_package_states(
         return results
 
 
-def _parse_dpkg_output(output: str, pkg_name: str) -> tuple[str, Optional[str]]:
+def _parse_dpkg_output(output: str, pkg_name: str) -> tuple[str, str | None]:
     if not output:
         return "absent", None
     parts = output.split()
@@ -91,16 +85,14 @@ def _parse_dpkg_output(output: str, pkg_name: str) -> tuple[str, Optional[str]]:
     return "absent", None
 
 
-def _parse_rpm_output(
-    output: str, exit_status: int, pkg_name: str
-) -> tuple[str, Optional[str]]:
+def _parse_rpm_output(output: str, exit_status: int, pkg_name: str) -> tuple[str, str | None]:
     if exit_status != 0 or not output or "not installed" in output:
         return "absent", None
     try:
         # rpm -q format: "name-version-release.arch" e.g. "nginx-1.24.0-1.el9.x86_64"
         prefix = f"{pkg_name}-"
         if output.startswith(prefix):
-            version_part = output[len(prefix):]
+            version_part = output[len(prefix) :]
             return "present", version_part.rsplit(".", 1)[0]
         return "present", output.strip()
     except Exception:
@@ -176,15 +168,17 @@ def _parse_apt_sources(output: str) -> list[dict]:
             continue
         url = parts[idx]
         distribution = parts[idx + 1] if idx + 1 < len(parts) else None
-        components = " ".join(parts[idx + 2:]) if idx + 2 < len(parts) else None
-        repos.append({
-            "name": distribution or url.split("/")[-1] or url,
-            "type": "apt",
-            "url": url,
-            "distribution": distribution,
-            "components": components,
-            "enabled": True,
-        })
+        components = " ".join(parts[idx + 2 :]) if idx + 2 < len(parts) else None
+        repos.append(
+            {
+                "name": distribution or url.split("/")[-1] or url,
+                "type": "apt",
+                "url": url,
+                "distribution": distribution,
+                "components": components,
+                "enabled": True,
+            }
+        )
     return repos
 
 

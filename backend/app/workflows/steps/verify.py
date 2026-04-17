@@ -52,7 +52,10 @@ async def run_verification(
                 "passed": bool,
                 "hard_checks": {
                     "services": [{"name": str, "expected": str, "actual": str, "ok": bool}, ...],
-                    "packages": [{"name": str, "expected": str, "installed": bool, "ok": bool}, ...],
+                    "packages": [
+                        {"name": str, "expected": str, "installed": bool, "ok": bool},
+                        ...,
+                    ],
                     "load": float,
                     "disk_pct": int,
                     "journal_errors": str,
@@ -80,18 +83,15 @@ async def run_verification(
     # EffectiveServiceResponse uses .state, not .desired_state — handle both
     if not services_to_check:
         services_to_check = [
-            s for s in effective_services
-            if getattr(s, "state", None) == "running"
+            s for s in effective_services if getattr(s, "state", None) == "running"
         ]
 
     packages_to_check = [
-        p for p in effective_packages
-        if getattr(p, "desired_state", None) in ("present", "latest")
+        p for p in effective_packages if getattr(p, "desired_state", None) in ("present", "latest")
     ]
     if not packages_to_check:
         packages_to_check = [
-            p for p in effective_packages
-            if getattr(p, "state", None) in ("present", "latest")
+            p for p in effective_packages if getattr(p, "state", None) in ("present", "latest")
         ]
 
     # ------------------------------------------------------------------
@@ -109,9 +109,7 @@ async def run_verification(
             timeout=30,
         )
     except Exception as exc:
-        logger.error(
-            "verify: SSH connection failed to %s: %s", host.ip_address, exc
-        )
+        logger.error("verify: SSH connection failed to %s: %s", host.ip_address, exc)
         # Cannot run any checks — return a failed result immediately
         return {
             "passed": False,
@@ -132,9 +130,7 @@ async def run_verification(
         for svc in services_to_check:
             svc_name = svc.service_name
             try:
-                result = await conn.run(
-                    f"systemctl is-active {svc_name}", check=False
-                )
+                result = await conn.run(f"systemctl is-active {svc_name}", check=False)
                 actual = result.stdout.strip()
             except Exception as exc:
                 logger.warning("verify: service check failed for %s: %s", svc_name, exc)
@@ -168,9 +164,7 @@ async def run_verification(
                     installed = True
                 else:
                     # RHEL/CentOS: rpm -q (exit 0 = installed)
-                    rpm_result = await conn.run(
-                        f"rpm -q {pkg_name}", check=False
-                    )
+                    rpm_result = await conn.run(f"rpm -q {pkg_name}", check=False)
                     installed = rpm_result.exit_status == 0
             except Exception as exc:
                 logger.warning("verify: package check failed for %s: %s", pkg_name, exc)
@@ -195,9 +189,7 @@ async def run_verification(
             raw_load = load_result.stdout.strip()
             load_avg = float(raw_load.split()[0])
             if load_avg > _LOAD_WARN_THRESHOLD:
-                logger.warning(
-                    "verify: high load average %.2f on %s", load_avg, host.ip_address
-                )
+                logger.warning("verify: high load average %.2f on %s", load_avg, host.ip_address)
         except Exception as exc:
             logger.warning("verify: load average check failed on %s: %s", host.ip_address, exc)
 
@@ -205,14 +197,10 @@ async def run_verification(
         # System health: disk usage
         # ------------------------------------------------------------------
         try:
-            disk_result = await conn.run(
-                "df --output=pcent / | tail -1", check=False
-            )
+            disk_result = await conn.run("df --output=pcent / | tail -1", check=False)
             disk_pct = int(disk_result.stdout.strip().rstrip("%"))
             if disk_pct > _DISK_WARN_THRESHOLD:
-                logger.warning(
-                    "verify: disk usage %d%% on %s", disk_pct, host.ip_address
-                )
+                logger.warning("verify: disk usage %d%% on %s", disk_pct, host.ip_address)
         except Exception as exc:
             logger.warning("verify: disk check failed on %s: %s", host.ip_address, exc)
 
@@ -237,9 +225,7 @@ async def run_verification(
                 "systemctl list-units --type=service --state=active --no-pager --plain --no-legend",
                 check=False,
             )
-            managed_names = {
-                s.service_name for s in effective_services
-            }
+            managed_names = {s.service_name for s in effective_services}
             for line in (active_result.stdout or "").splitlines():
                 parts = line.strip().split(maxsplit=4)
                 if len(parts) >= 1:
@@ -292,7 +278,10 @@ async def run_verification(
             ai_result = run_ai_verification(system_state, prompt)
         except Exception as exc:
             logger.warning("verify: AI verification raised an exception: %s", exc)
-            ai_result = {"passed": True, "output": f"AI verification error (treated as pass): {exc}"}
+            ai_result = {
+                "passed": True,
+                "output": f"AI verification error (treated as pass): {exc}",
+            }
 
     overall_passed = hard_passed and (ai_result is None or ai_result.get("passed", True))
 

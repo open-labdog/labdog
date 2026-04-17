@@ -1,6 +1,6 @@
 import ipaddress
 import re
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -30,9 +30,7 @@ class ResolverConfigCreate(BaseModel):
     nameservers: list[str]
     search_domains: list[str] = []
     options: dict[str, int | str] = {}
-    resolver_type: Literal[
-        "resolv_conf", "systemd_resolved", "networkmanager"
-    ] = "resolv_conf"
+    resolver_type: Literal["resolv_conf", "systemd_resolved", "networkmanager"] = "resolv_conf"
     dns_over_tls: bool = False
 
     @field_validator("nameservers")
@@ -53,20 +51,15 @@ class ResolverConfigCreate(BaseModel):
 
     @field_validator("options")
     @classmethod
-    def validate_options(
-        cls, v: dict[str, int | str]
-    ) -> dict[str, int | str]:
+    def validate_options(cls, v: dict[str, int | str]) -> dict[str, int | str]:
         for key, val in v.items():
             if key not in ALLOWED_OPTIONS:
                 raise ValueError(
-                    f"Unknown option '{key}'. "
-                    f"Allowed: {', '.join(sorted(ALLOWED_OPTIONS))}"
+                    f"Unknown option '{key}'. Allowed: {', '.join(sorted(ALLOWED_OPTIONS))}"
                 )
             if key in ("ndots", "timeout", "attempts"):
                 if not isinstance(val, int) or val < 0 or val > 15:
-                    raise ValueError(
-                        f"Option '{key}' must be int 0-15, got {val}"
-                    )
+                    raise ValueError(f"Option '{key}' must be int 0-15, got {val}")
         return v
 
     @model_validator(mode="after")
@@ -77,19 +70,15 @@ class ResolverConfigCreate(BaseModel):
 
 
 class ResolverConfigUpdate(BaseModel):
-    nameservers: Optional[list[str]] = None
-    search_domains: Optional[list[str]] = None
-    options: Optional[dict[str, int | str]] = None
-    resolver_type: Optional[
-        Literal["resolv_conf", "systemd_resolved", "networkmanager"]
-    ] = None
-    dns_over_tls: Optional[bool] = None
+    nameservers: list[str] | None = None
+    search_domains: list[str] | None = None
+    options: dict[str, int | str] | None = None
+    resolver_type: Literal["resolv_conf", "systemd_resolved", "networkmanager"] | None = None
+    dns_over_tls: bool | None = None
 
     @field_validator("nameservers")
     @classmethod
-    def validate_nameservers(
-        cls, v: Optional[list[str]]
-    ) -> Optional[list[str]]:
+    def validate_nameservers(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             if not v:
                 raise ValueError("At least one nameserver is required")
@@ -100,9 +89,7 @@ class ResolverConfigUpdate(BaseModel):
 
     @field_validator("search_domains")
     @classmethod
-    def validate_search_domains(
-        cls, v: Optional[list[str]]
-    ) -> Optional[list[str]]:
+    def validate_search_domains(cls, v: list[str] | None) -> list[str] | None:
         if v is not None:
             if len(v) > 6:
                 raise ValueError("Maximum 6 search domains allowed")
@@ -111,18 +98,14 @@ class ResolverConfigUpdate(BaseModel):
 
     @field_validator("options")
     @classmethod
-    def validate_options(
-        cls, v: Optional[dict[str, int | str]]
-    ) -> Optional[dict[str, int | str]]:
+    def validate_options(cls, v: dict[str, int | str] | None) -> dict[str, int | str] | None:
         if v is not None:
             for key, val in v.items():
                 if key not in ALLOWED_OPTIONS:
                     raise ValueError(f"Unknown option '{key}'")
                 if key in ("ndots", "timeout", "attempts"):
                     if not isinstance(val, int) or val < 0 or val > 15:
-                        raise ValueError(
-                            f"Option '{key}' must be int 0-15"
-                        )
+                        raise ValueError(f"Option '{key}' must be int 0-15")
             return v
         return v
 
@@ -131,8 +114,8 @@ class ResolverConfigResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    group_id: Optional[int] = None
-    host_id: Optional[int] = None
+    group_id: int | None = None
+    host_id: int | None = None
     nameservers: list[str]
     search_domains: list[str]
     options: dict[str, int | str]

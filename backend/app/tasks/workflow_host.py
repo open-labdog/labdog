@@ -8,17 +8,17 @@ task per host inside a batch, waits for the whole batch, then moves on.
 import asyncio
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.tasks import celery_app
+from app.workflows.steps.cleanup import delete_snapshot
 from app.workflows.steps.preflight import run_preflight
+from app.workflows.steps.reboot import check_and_reboot
+from app.workflows.steps.rollback import rollback_to_snapshot
 from app.workflows.steps.snapshot import create_snapshot
 from app.workflows.steps.update import run_system_update
-from app.workflows.steps.reboot import check_and_reboot
 from app.workflows.steps.verify import run_verification
-from app.workflows.steps.cleanup import delete_snapshot
-from app.workflows.steps.rollback import rollback_to_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -86,45 +86,33 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
             )
             host_run: WorkflowHostRun = host_run_result.scalar_one()
 
-            host_result = await db.execute(
-                select(Host).where(Host.id == host_run.host_id)
-            )
+            host_result = await db.execute(select(Host).where(Host.id == host_run.host_id))
             host: Host = host_result.scalar_one()
 
-            run_result = await db.execute(
-                select(WorkflowRun).where(WorkflowRun.id == run_id)
-            )
+            run_result = await db.execute(select(WorkflowRun).where(WorkflowRun.id == run_id))
             workflow_run: WorkflowRun = run_result.scalar_one()
 
             workflow_result = await db.execute(
-                select(UpdateWorkflow).where(
-                    UpdateWorkflow.id == workflow_run.workflow_id
-                )
+                select(UpdateWorkflow).where(UpdateWorkflow.id == workflow_run.workflow_id)
             )
             workflow: UpdateWorkflow = workflow_result.scalar_one()
 
             # Mark host run as started
             host_run.status = WorkflowHostStatus.running
-            host_run.started_at = datetime.now(timezone.utc)
+            host_run.started_at = datetime.now(UTC)
             await db.flush()
 
             # -------------------------------------------------------------- #
             # Decrypt and write SSH key to tmpfs                              #
             # -------------------------------------------------------------- #
             if host.ssh_key_id is None:
-                raise RuntimeError(
-                    f"Host {host.id} ({host.hostname}) has no SSH key configured"
-                )
+                raise RuntimeError(f"Host {host.id} ({host.hostname}) has no SSH key configured")
 
-            key_result = await db.execute(
-                select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-            )
+            key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
             ssh_key: SSHKey = key_result.scalar_one()
 
             master_key = get_master_key()
-            private_key_text = decrypt_ssh_key(
-                ssh_key.encrypted_private_key, master_key
-            )
+            private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
             with open(ssh_key_path, "w") as fh:
                 fh.write(private_key_text)
@@ -142,14 +130,12 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
 
             if workflow.pre_update_snapshot:
                 try:
-                    from app.proxmox.vm_mapping import VMMapping  # type: ignore[import]
-                    from app.proxmox.models import ProxmoxNode  # type: ignore[import]
                     from app.proxmox.client import ProxmoxClient  # type: ignore[import]
+                    from app.proxmox.models import ProxmoxNode  # type: ignore[import]
+                    from app.proxmox.vm_mapping import VMMapping  # type: ignore[import]
 
                     vm_map_result = await db.execute(
-                        select(VMMapping).where(
-                            VMMapping.host_id == host.id
-                        )
+                        select(VMMapping).where(VMMapping.host_id == host.id)
                     )
                     vm_mapping = vm_map_result.scalar_one_or_none()
 
@@ -158,9 +144,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         vmid = vm_mapping.vmid
 
                         node_result = await db.execute(
-                            select(ProxmoxNode).where(
-                                ProxmoxNode.id == vm_mapping.proxmox_node_id
-                            )
+                            select(ProxmoxNode).where(ProxmoxNode.id == vm_mapping.proxmox_node_id)
                         )
                         proxmox_node = node_result.scalar_one()
 
@@ -216,8 +200,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                 # Skip reboot when auto_reboot is disabled
                 if step_enum == WorkflowStep.reboot and not workflow.auto_reboot:
                     logger.debug(
-                        "workflow_host: skipping reboot step for host %d "
-                        "(auto_reboot=False)",
+                        "workflow_host: skipping reboot step for host %d (auto_reboot=False)",
                         host.id,
                     )
                     continue
@@ -241,15 +224,11 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         step_output[step_enum.value] = result
 
                     elif step_enum == WorkflowStep.snapshot:
-                        snap = await _step_snapshot(
-                            proxmox_client, pve_node, vmid, run_id
-                        )
+                        snap = await _step_snapshot(proxmox_client, pve_node, vmid, run_id)
                         snapshot_name = snap
                         host_run.snapshot_name = snapshot_name
                         await db.flush()
-                        step_output[step_enum.value] = {
-                            "snapshot_name": snapshot_name
-                        }
+                        step_output[step_enum.value] = {"snapshot_name": snapshot_name}
 
                     elif step_enum == WorkflowStep.update:
                         result = await _step_update(host, ssh_key_path)
@@ -260,15 +239,11 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         step_output[step_enum.value] = result
 
                     elif step_enum == WorkflowStep.verify:
-                        result = await _step_verify(
-                            host, ssh_key_path, workflow, db
-                        )
+                        result = await _step_verify(host, ssh_key_path, workflow, db)
                         step_output[step_enum.value] = result
 
                     elif step_enum == WorkflowStep.cleanup:
-                        result = await _step_cleanup(
-                            proxmox_client, pve_node, vmid, snapshot_name
-                        )
+                        result = await _step_cleanup(proxmox_client, pve_node, vmid, snapshot_name)
                         step_output[step_enum.value] = result
 
                 except Exception as exc:
@@ -325,7 +300,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
             # -------------------------------------------------------------- #
             host_run.status = final_status
             host_run.step_output = step_output
-            host_run.completed_at = datetime.now(timezone.utc)
+            host_run.completed_at = datetime.now(UTC)
             await db.commit()
 
             logger.info(
@@ -477,8 +452,8 @@ async def _step_verify(
     Returns:
         Step result dict including a ``passed`` boolean.
     """
-    from app.services.merge import get_effective_services
     from app.packages.merge import get_effective_packages
+    from app.services.merge import get_effective_services
 
     effective_services = await get_effective_services(host.id, db)
     effective_packages = await get_effective_packages(host.id, db)

@@ -7,9 +7,7 @@ from app.services.models import ServiceRule
 from app.services.schemas import EffectiveServiceResponse
 
 
-async def get_effective_services(
-    host_id: int, db: AsyncSession
-) -> list[EffectiveServiceResponse]:
+async def get_effective_services(host_id: int, db: AsyncSession) -> list[EffectiveServiceResponse]:
     """
     Merge group-level service rules + host-level overrides into an effective list.
 
@@ -37,9 +35,7 @@ async def get_effective_services(
     merged: dict[str, EffectiveServiceResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group_id)
-        )
+        result = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group_id))
         for rule in result.scalars().all():
             if rule.service_name not in merged:
                 merged[rule.service_name] = EffectiveServiceResponse(
@@ -47,16 +43,16 @@ async def get_effective_services(
                     state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
                     enabled=rule.enabled,
                     unit_content=rule.unit_content,
-                    deploy_mode=rule.deploy_mode.value if hasattr(rule.deploy_mode, "value") else str(rule.deploy_mode),
+                    deploy_mode=rule.deploy_mode.value
+                    if hasattr(rule.deploy_mode, "value")
+                    else str(rule.deploy_mode),
                     source="group",
                     source_id=group_id,
                     source_name=group_name,
                 )
 
     # 3. Query host-level overrides
-    host_result = await db.execute(
-        select(ServiceRule).where(ServiceRule.host_id == host_id)
-    )
+    host_result = await db.execute(select(ServiceRule).where(ServiceRule.host_id == host_id))
     host_overrides = host_result.scalars().all()
 
     # 4. Host overrides REPLACE group entries entirely
@@ -66,7 +62,9 @@ async def get_effective_services(
             state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
             enabled=rule.enabled,
             unit_content=rule.unit_content,
-            deploy_mode=rule.deploy_mode.value if hasattr(rule.deploy_mode, "value") else str(rule.deploy_mode),
+            deploy_mode=rule.deploy_mode.value
+            if hasattr(rule.deploy_mode, "value")
+            else str(rule.deploy_mode),
             source="host",
             source_id=host_id,
             source_name="host override",

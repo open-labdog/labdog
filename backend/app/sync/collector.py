@@ -3,10 +3,11 @@
 from dataclasses import dataclass
 
 import asyncssh
+
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.ssh_utils import ssh_connect
+from app.sync.parsers.iptables import parse_iptables_policies, parse_iptables_save
 from app.sync.parsers.nftables import parse_nftables_json, parse_nftables_policies
-from app.sync.parsers.iptables import parse_iptables_save, parse_iptables_policies
 
 # Commands per firewall backend
 _COMMANDS = {
@@ -28,6 +29,7 @@ _POLICY_PARSERS = {
 @dataclass
 class CollectedFirewallState:
     """Rules and chain policies collected from a host."""
+
     rules: list[FirewallRuleSpec]
     policies: ChainPolicies
 
@@ -81,6 +83,10 @@ async def collect_current_rules(
     Backward-compatible wrapper around collect_firewall_state.
     """
     state = await collect_firewall_state(
-        host_ip, ssh_port, private_key_pem, firewall_backend, ssh_user,
+        host_ip,
+        ssh_port,
+        private_key_pem,
+        firewall_backend,
+        ssh_user,
     )
     return state.rules

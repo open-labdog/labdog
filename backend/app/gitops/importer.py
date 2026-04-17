@@ -99,8 +99,7 @@ async def import_group_from_yaml(
         new_input_policy = parsed.firewall.input_policy if parsed.firewall else None
         new_output_policy = parsed.firewall.output_policy if parsed.firewall else None
         policies_changed = (
-            group.input_policy != new_input_policy
-            or group.output_policy != new_output_policy
+            group.input_policy != new_input_policy or group.output_policy != new_output_policy
         )
 
         if diff.has_changes or policies_changed:

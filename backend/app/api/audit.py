@@ -1,12 +1,14 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+
+from app.auth.users import current_superuser
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
-from app.auth.users import current_superuser
 
 router = APIRouter(prefix="/audit-log", tags=["audit"])
 

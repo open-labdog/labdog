@@ -30,7 +30,9 @@ def firewall_rules_to_specs(rules: Sequence[FirewallRule]) -> list[FirewallRuleS
     return [firewall_rule_to_spec(r) for r in rules]
 
 
-def spec_to_firewall_rule(spec: FirewallRuleSpec, group_id: int | None = None, host_id: int | None = None) -> FirewallRule:
+def spec_to_firewall_rule(
+    spec: FirewallRuleSpec, group_id: int | None = None, host_id: int | None = None
+) -> FirewallRule:
     """Convert FirewallRuleSpec to a new FirewallRule ORM instance."""
     return FirewallRule(
         group_id=group_id,

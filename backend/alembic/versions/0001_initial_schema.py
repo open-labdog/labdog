@@ -5,58 +5,79 @@ Revises:
 Create Date: 2026-03-14 00:00:00.000000
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
+
 from alembic import op
 
 revision: str = "0001"
-down_revision: Union[str, None] = None
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     # --- Enum types ---
     firewallbackend = postgresql.ENUM(
-        "nftables", "firewalld", "ufw", "unknown",
+        "nftables",
+        "firewalld",
+        "ufw",
+        "unknown",
         name="firewallbackend",
     )
     firewallbackend.create(op.get_bind(), checkfirst=True)
 
     syncstatus = postgresql.ENUM(
-        "pending", "in_sync", "out_of_sync", "unknown", "error",
+        "pending",
+        "in_sync",
+        "out_of_sync",
+        "unknown",
+        "error",
         name="syncstatus",
     )
     syncstatus.create(op.get_bind(), checkfirst=True)
 
     ruleaction = postgresql.ENUM(
-        "allow", "deny", "reject",
+        "allow",
+        "deny",
+        "reject",
         name="ruleaction",
     )
     ruleaction.create(op.get_bind(), checkfirst=True)
 
     ruleprotocol = postgresql.ENUM(
-        "tcp", "udp", "icmp", "any",
+        "tcp",
+        "udp",
+        "icmp",
+        "any",
         name="ruleprotocol",
     )
     ruleprotocol.create(op.get_bind(), checkfirst=True)
 
     ruledirection = postgresql.ENUM(
-        "input", "output",
+        "input",
+        "output",
         name="ruledirection",
     )
     ruledirection.create(op.get_bind(), checkfirst=True)
 
     jobstatus = postgresql.ENUM(
-        "pending", "running", "success", "failed", "cancelled",
+        "pending",
+        "running",
+        "success",
+        "failed",
+        "cancelled",
         name="jobstatus",
     )
     jobstatus.create(op.get_bind(), checkfirst=True)
 
     grouprole = postgresql.ENUM(
-        "admin", "editor", "viewer",
+        "admin",
+        "editor",
+        "viewer",
         name="grouprole",
     )
     grouprole.create(op.get_bind(), checkfirst=True)
@@ -114,24 +135,37 @@ def upgrade() -> None:
         sa.Column("ssh_port", sa.Integer(), nullable=False, server_default=sa.text("22")),
         sa.Column(
             "firewall_backend",
-            postgresql.ENUM("nftables", "firewalld", "ufw", "unknown", name="firewallbackend", create_type=False),
+            postgresql.ENUM(
+                "nftables", "firewalld", "ufw", "unknown", name="firewallbackend", create_type=False
+            ),
             nullable=False,
             server_default="unknown",
         ),
         sa.Column("ssh_key_id", sa.Integer(), nullable=True),
         sa.Column(
             "sync_status",
-            postgresql.ENUM("pending", "in_sync", "out_of_sync", "unknown", "error", name="syncstatus", create_type=False),
+            postgresql.ENUM(
+                "pending",
+                "in_sync",
+                "out_of_sync",
+                "unknown",
+                "error",
+                name="syncstatus",
+                create_type=False,
+            ),
             nullable=False,
             server_default="unknown",
         ),
-        sa.Column("drift_check_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+        sa.Column(
+            "drift_check_enabled", sa.Boolean(), nullable=False, server_default=sa.text("false")
+        ),
         sa.Column("last_sync_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_drift_check_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["ssh_key_id"], ["ssh_keys.id"],
+            ["ssh_key_id"],
+            ["ssh_keys.id"],
             name=op.f("fk_hosts_ssh_key_id_ssh_keys"),
             ondelete="SET NULL",
         ),
@@ -146,12 +180,14 @@ def upgrade() -> None:
         sa.Column("host_id", sa.Integer(), nullable=False),
         sa.Column("group_id", sa.Integer(), nullable=False),
         sa.ForeignKeyConstraint(
-            ["host_id"], ["hosts.id"],
+            ["host_id"],
+            ["hosts.id"],
             name=op.f("fk_host_group_memberships_host_id_hosts"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["group_id"], ["host_groups.id"],
+            ["group_id"],
+            ["host_groups.id"],
             name=op.f("fk_host_group_memberships_group_id_host_groups"),
             ondelete="CASCADE",
         ),
@@ -169,12 +205,14 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"],
+            ["user_id"],
+            ["users.id"],
             name=op.f("fk_user_group_permissions_user_id_users"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["group_id"], ["host_groups.id"],
+            ["group_id"],
+            ["host_groups.id"],
             name=op.f("fk_user_group_permissions_group_id_host_groups"),
             ondelete="CASCADE",
         ),
@@ -211,7 +249,8 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["group_id"], ["host_groups.id"],
+            ["group_id"],
+            ["host_groups.id"],
             name=op.f("fk_firewall_rules_group_id_host_groups"),
             ondelete="CASCADE",
         ),
@@ -226,7 +265,15 @@ def upgrade() -> None:
         sa.Column("group_id", sa.Integer(), nullable=True),
         sa.Column(
             "status",
-            postgresql.ENUM("pending", "running", "success", "failed", "cancelled", name="jobstatus", create_type=False),
+            postgresql.ENUM(
+                "pending",
+                "running",
+                "success",
+                "failed",
+                "cancelled",
+                name="jobstatus",
+                create_type=False,
+            ),
             nullable=False,
             server_default="pending",
         ),
@@ -237,17 +284,20 @@ def upgrade() -> None:
         sa.Column("triggered_by_user_id", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["host_id"], ["hosts.id"],
+            ["host_id"],
+            ["hosts.id"],
             name=op.f("fk_sync_jobs_host_id_hosts"),
             ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["group_id"], ["host_groups.id"],
+            ["group_id"],
+            ["host_groups.id"],
             name=op.f("fk_sync_jobs_group_id_host_groups"),
             ondelete="SET NULL",
         ),
         sa.ForeignKeyConstraint(
-            ["triggered_by_user_id"], ["users.id"],
+            ["triggered_by_user_id"],
+            ["users.id"],
             name=op.f("fk_sync_jobs_triggered_by_user_id_users"),
             ondelete="SET NULL",
         ),
@@ -267,7 +317,8 @@ def upgrade() -> None:
         sa.Column("ip_address", sa.String(50), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
-            ["user_id"], ["users.id"],
+            ["user_id"],
+            ["users.id"],
             name=op.f("fk_audit_log_user_id_users"),
             ondelete="SET NULL",
         ),

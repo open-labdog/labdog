@@ -10,7 +10,8 @@ class HostsEntry(Base):
     __tablename__ = "hosts_entries"
     __table_args__ = (
         CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_hosts_entries_scope",
         ),
         CheckConstraint(

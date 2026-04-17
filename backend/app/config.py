@@ -24,6 +24,7 @@ from pydantic import BaseModel, model_validator
 # Section models
 # ---------------------------------------------------------------------------
 
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
@@ -108,6 +109,7 @@ class HostsConfig(BaseModel):
 # Root settings
 # ---------------------------------------------------------------------------
 
+
 class Settings(BaseModel):
     server: ServerConfig = ServerConfig()
     database: DatabaseConfig = DatabaseConfig()
@@ -133,7 +135,7 @@ class Settings(BaseModel):
         for key, raw in os.environ.items():
             if not key.startswith(prefix):
                 continue
-            parts = key[len(prefix):].lower().split("__")
+            parts = key[len(prefix) :].lower().split("__")
             if len(parts) < 2:
                 continue
             section = parts[0]
@@ -190,7 +192,8 @@ def _validate_required(s: Settings) -> None:
         errors.append(
             "security.encryption_key is not set. "
             "Generate one with: python -m app.crypto.key_management "
-            "and set BARRICADE_SECURITY__ENCRYPTION_KEY or [security] encryption_key in barricade.toml."
+            "and set BARRICADE_SECURITY__ENCRYPTION_KEY"
+            " or [security] encryption_key in barricade.toml."
         )
     if errors:
         raise SystemExit("FATAL: Barricade cannot start:\n  - " + "\n  - ".join(errors))

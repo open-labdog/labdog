@@ -16,21 +16,15 @@ from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.resolver import collect_referenced_host_ids, resolve_host_refs
 
 
-async def load_host_ip_lookup(
-    db: AsyncSession, host_ids: set[int]
-) -> dict[int, str | None]:
+async def load_host_ip_lookup(db: AsyncSession, host_ids: set[int]) -> dict[int, str | None]:
     """Fetch {host_id: ip_address} for the given host IDs."""
     if not host_ids:
         return {}
-    rows = await db.execute(
-        select(Host.id, Host.ip_address).where(Host.id.in_(host_ids))
-    )
+    rows = await db.execute(select(Host.id, Host.ip_address).where(Host.id.in_(host_ids)))
     return {row.id: row.ip_address for row in rows}
 
 
-async def resolve_specs(
-    db: AsyncSession, specs: list[FirewallRuleSpec]
-) -> list[FirewallRuleSpec]:
+async def resolve_specs(db: AsyncSession, specs: list[FirewallRuleSpec]) -> list[FirewallRuleSpec]:
     """Replace source/destination host refs on specs with concrete CIDRs.
 
     Fetches the current IP for every referenced host. Raises if a referenced
@@ -51,9 +45,7 @@ async def get_desired_state(
     Returns (merged_rules, merged_policies).
     """
     memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(
-            HostGroupMembership.c.host_id == host_id
-        )
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     group_ids = [r[0] for r in memberships.all()]
 
@@ -67,16 +59,12 @@ async def get_desired_state(
         if not host_rule_specs:
             return [], ChainPolicies()
         return (
-            merge_group_rules(
-                [], host_source_ip=host_source_ip, host_rules=host_rule_specs
-            ),
+            merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs),
             ChainPolicies(),
         )
 
     # 1 query for all groups (replaces N individual SELECTs)
-    groups_result = await db.execute(
-        select(HostGroup).where(HostGroup.id.in_(group_ids))
-    )
+    groups_result = await db.execute(select(HostGroup).where(HostGroup.id.in_(group_ids)))
     groups_by_id = {g.id: g for g in groups_result.scalars().all()}
 
     # 1 query for all rules across all groups (replaces N individual SELECTs)

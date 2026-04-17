@@ -3,26 +3,26 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-logger = logging.getLogger(__name__)
 from starlette.responses import Response
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.models.user import User
+from app.db import get_db
 from app.models.host import Host
+from app.models.user import User
 from app.packages.models import PackageRule
-from app.workflows.models import UpdateWorkflow, WorkflowRun, WorkflowHostRun, WorkflowRunStatus
+from app.workflows.models import UpdateWorkflow, WorkflowHostRun, WorkflowRun, WorkflowRunStatus
 from app.workflows.schemas import (
     UpdateWorkflowCreate,
-    UpdateWorkflowUpdate,
     UpdateWorkflowResponse,
-    WorkflowRunResponse,
-    WorkflowRunDetailResponse,
+    UpdateWorkflowUpdate,
     WorkflowHostRunResponse,
+    WorkflowRunDetailResponse,
+    WorkflowRunResponse,
     WorkflowTriggerResponse,
 )
-from app.audit.logger import log_action
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["workflows"])
 
@@ -63,33 +63,39 @@ async def list_workflows_summary(
         .order_by(WorkflowRun.workflow_id, WorkflowRun.created_at.desc())
         .distinct(WorkflowRun.workflow_id)
     )
-    latest_by_wf: dict[int, WorkflowRun] = {
-        r.workflow_id: r for r in latest_runs_q.scalars().all()
-    }
+    latest_by_wf: dict[int, WorkflowRun] = {r.workflow_id: r for r in latest_runs_q.scalars().all()}
 
     out = []
     for wf, group_name, group_category in rows:
         last_run = latest_by_wf.get(wf.id)
-        out.append({
-            "id": wf.id,
-            "group_id": wf.group_id,
-            "group_name": group_name,
-            "group_category": group_category,
-            "batch_size": wf.batch_size,
-            "schedule_cron": wf.schedule_cron,
-            "pre_update_snapshot": wf.pre_update_snapshot,
-            "auto_rollback": wf.auto_rollback,
-            "auto_reboot": wf.auto_reboot,
-            "enabled": wf.enabled,
-            "host_count": host_counts.get(wf.group_id, 0),
-            "last_run": {
-                "id": last_run.id,
-                "status": last_run.status.value if hasattr(last_run.status, "value") else last_run.status,
-                "started_at": last_run.started_at.isoformat() if last_run.started_at else None,
-                "completed_at": last_run.completed_at.isoformat() if last_run.completed_at else None,
-                "created_at": last_run.created_at.isoformat() if last_run.created_at else None,
-            } if last_run else None,
-        })
+        out.append(
+            {
+                "id": wf.id,
+                "group_id": wf.group_id,
+                "group_name": group_name,
+                "group_category": group_category,
+                "batch_size": wf.batch_size,
+                "schedule_cron": wf.schedule_cron,
+                "pre_update_snapshot": wf.pre_update_snapshot,
+                "auto_rollback": wf.auto_rollback,
+                "auto_reboot": wf.auto_reboot,
+                "enabled": wf.enabled,
+                "host_count": host_counts.get(wf.group_id, 0),
+                "last_run": {
+                    "id": last_run.id,
+                    "status": last_run.status.value
+                    if hasattr(last_run.status, "value")
+                    else last_run.status,
+                    "started_at": last_run.started_at.isoformat() if last_run.started_at else None,
+                    "completed_at": last_run.completed_at.isoformat()
+                    if last_run.completed_at
+                    else None,
+                    "created_at": last_run.created_at.isoformat() if last_run.created_at else None,
+                }
+                if last_run
+                else None,
+            }
+        )
     return out
 
 
@@ -99,9 +105,7 @@ async def get_group_workflow(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    workflow = await db.scalar(
-        select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
-    )
+    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     return workflow
@@ -121,9 +125,7 @@ async def upsert_group_workflow(
         if not croniter.is_valid(body.schedule_cron):
             raise HTTPException(status_code=422, detail="Invalid cron expression")
 
-    workflow = await db.scalar(
-        select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
-    )
+    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
 
     if workflow is None:
         # Create with defaults from UpdateWorkflowCreate, then apply body
@@ -200,9 +202,7 @@ async def delete_group_workflow(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    workflow = await db.scalar(
-        select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
-    )
+    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
@@ -228,9 +228,7 @@ async def trigger_workflow_run(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    workflow = await db.scalar(
-        select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
-    )
+    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
@@ -261,6 +259,7 @@ async def trigger_workflow_run(
     # Dispatch Celery task
     try:
         from app.tasks import celery_app
+
         celery_app.send_task(
             "app.tasks.workflow_orchestrator.run_group_workflow",
             args=[workflow.id, run.id],
@@ -279,9 +278,7 @@ async def list_workflow_runs(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    workflow = await db.scalar(
-        select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id)
-    )
+    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 

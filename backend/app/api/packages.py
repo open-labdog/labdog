@@ -4,23 +4,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.models.user import User
-from app.models.host_group import HostGroup
+from app.db import get_db
 from app.models.host import Host
-from app.packages.models import PackageRule, PackageRepository
+from app.models.host_group import HostGroup
+from app.models.user import User
+from app.packages.merge import get_effective_packages, get_effective_repos
+from app.packages.models import PackageRepository, PackageRule
 from app.packages.schemas import (
-    PackageRuleCreate,
-    PackageRuleUpdate,
-    PackageRuleResponse,
     EffectivePackageResponse,
     PackageRepositoryCreate,
-    PackageRepositoryUpdate,
     PackageRepositoryResponse,
+    PackageRepositoryUpdate,
+    PackageRuleCreate,
+    PackageRuleResponse,
+    PackageRuleUpdate,
 )
-from app.packages.merge import get_effective_packages, get_effective_repos
-from app.audit.logger import log_action
 
 router = APIRouter(tags=["packages"])
 
@@ -200,9 +200,7 @@ async def delete_group_package(
         await db.flush()
 
         memberships = await db.execute(
-            select(HostGroupMembership.c.host_id).where(
-                HostGroupMembership.c.group_id == group_id
-            )
+            select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
         )
         host_ids = [r[0] for r in memberships.all()]
 
@@ -219,9 +217,7 @@ async def delete_group_package(
             if running.scalar_one_or_none():
                 continue
 
-            host_result = await db.execute(
-                select(Host).where(Host.id == hid)
-            )
+            host_result = await db.execute(select(Host).where(Host.id == hid))
             host = host_result.scalar_one_or_none()
             if not host or not host.ssh_key_id:
                 continue

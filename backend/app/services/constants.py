@@ -1,14 +1,16 @@
-PROTECTED_SERVICES: frozenset[str] = frozenset({
-    "sshd",
-    "ssh",
-    "networking",
-    "NetworkManager",
-    "systemd-journald",
-    "systemd-logind",
-    "systemd-udevd",
-    "systemd-resolved",
-    "dbus",
-})
+PROTECTED_SERVICES: frozenset[str] = frozenset(
+    {
+        "sshd",
+        "ssh",
+        "networking",
+        "NetworkManager",
+        "systemd-journald",
+        "systemd-logind",
+        "systemd-udevd",
+        "systemd-resolved",
+        "dbus",
+    }
+)
 
 # Prefixes for services considered system/internal (not typically user-managed).
 SYSTEM_SERVICE_PREFIXES: tuple[str, ...] = (
@@ -24,42 +26,44 @@ SYSTEM_SERVICE_PREFIXES: tuple[str, ...] = (
 )
 
 # Exact names for services considered system/internal.
-SYSTEM_SERVICE_NAMES: frozenset[str] = frozenset({
-    "dbus",
-    "dbus-broker",
-    "emergency",
-    "rescue",
-    "console-setup",
-    "keyboard-setup",
-    "kmod-static-nodes",
-    "ldconfig",
-    "proc-sys-fs-binfmt_misc",
-    "sys-fs-fuse-connections",
-    "sys-kernel-config",
-    "sys-kernel-debug",
-    "sys-kernel-tracing",
-    "tmp",
-    "rc-local",
-    "lvm2-monitor",
-    "dm-event",
-    "multipathd",
-    "blk-availability",
-    "finalrd",
-    "apparmor",
-    "snapd",
-    "snap",
-    "polkit",
-    "rtkit-daemon",
-    "udisks2",
-    "accounts-daemon",
-    "switcheroo-control",
-    "power-profiles-daemon",
-    "thermald",
-    "bolt",
-    "fwupd",
-    "packagekit",
-    "colord",
-})
+SYSTEM_SERVICE_NAMES: frozenset[str] = frozenset(
+    {
+        "dbus",
+        "dbus-broker",
+        "emergency",
+        "rescue",
+        "console-setup",
+        "keyboard-setup",
+        "kmod-static-nodes",
+        "ldconfig",
+        "proc-sys-fs-binfmt_misc",
+        "sys-fs-fuse-connections",
+        "sys-kernel-config",
+        "sys-kernel-debug",
+        "sys-kernel-tracing",
+        "tmp",
+        "rc-local",
+        "lvm2-monitor",
+        "dm-event",
+        "multipathd",
+        "blk-availability",
+        "finalrd",
+        "apparmor",
+        "snapd",
+        "snap",
+        "polkit",
+        "rtkit-daemon",
+        "udisks2",
+        "accounts-daemon",
+        "switcheroo-control",
+        "power-profiles-daemon",
+        "thermald",
+        "bolt",
+        "fwupd",
+        "packagekit",
+        "colord",
+    }
+)
 
 
 def is_system_service(unit: str) -> bool:

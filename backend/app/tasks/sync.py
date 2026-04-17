@@ -1,7 +1,8 @@
 import os
-import tempfile
 import shutil
-from datetime import datetime, timezone
+import tempfile
+from datetime import UTC, datetime
+
 from app.tasks import celery_app
 
 
@@ -27,19 +28,16 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
     try:
         # Import DB dependencies inside task (not at module level)
         import asyncio
+
         from sqlalchemy import select
-        from app.db import task_session
-        from app.models.sync_job import SyncJob
-        from app.models.host import Host, HostGroupMembership
-        from app.models.host_group import HostGroup
-        from app.models.ssh_key import SSHKey
-        from app.models.firewall_rule import FirewallRule
-        from app.crypto import decrypt_ssh_key, get_master_key
+
         from app.ansible.generator import generate_playbook
         from app.ansible.inventory import generate_inventory
-        from app.rules.model import FirewallRuleSpec
-        from app.rules.merge import merge_group_rules
-        from app.rules.converter import firewall_rules_to_specs
+        from app.crypto import decrypt_ssh_key, get_master_key
+        from app.db import task_session
+        from app.models.host import Host
+        from app.models.ssh_key import SSHKey
+        from app.models.sync_job import SyncJob
 
         async def _run():
             async with task_session() as db:
@@ -47,7 +45,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "running"
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now(UTC)
                 await db.commit()
 
                 # Get host details
@@ -69,6 +67,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
                 # Get merged rules for this host, then resolve host-ref FKs to CIDRs
                 from app.rules.desired_state import get_desired_state, resolve_specs
+
                 merged_rules, merged_policies = await get_desired_state(
                     host_id, db, host_source_ip=host.barricade_source_ip
                 )
@@ -82,15 +81,22 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 )
                 if backend == "unknown":
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc)
-                    job.error_message = "Cannot sync firewall: backend not detected. Run 'Collect State' first."
+                    job.completed_at = datetime.now(UTC)
+                    job.error_message = (
+                        "Cannot sync firewall: backend not detected. Run 'Collect State' first."
+                    )
                     await db.commit()
                     return None, None, None, None
                 playbook_yaml = generate_playbook(
-                    backend, host.ip_address, merged_rules, ssh_key_path,
+                    backend,
+                    host.ip_address,
+                    merged_rules,
+                    ssh_key_path,
                     policies=merged_policies,
                 )
-                inventory_json = generate_inventory(host.ip_address, host.ssh_port, ssh_key_path, ssh_user=ssh_key.ssh_user)
+                inventory_json = generate_inventory(
+                    host.ip_address, host.ssh_port, ssh_key_path, ssh_user=ssh_key.ssh_user
+                )
 
                 # Write to private_data_dir
                 os.makedirs(f"{private_data_dir}/project", exist_ok=True)
@@ -110,6 +116,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
         # Run ansible-runner (synchronous in Celery worker)
         from app.settings_service import get_setting_sync_typed
+
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         runner = ansible_runner.run(
             private_data_dir=private_data_dir,
@@ -121,12 +128,13 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         async def _update_status():
             async with task_session() as db:
                 from dataclasses import asdict
+
                 from app.models.host_module_status import HostModuleStatus
 
                 job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now(UTC)
                 job.ansible_output = (
                     runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
@@ -136,26 +144,31 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 # Update host sync status
                 host_result = await db.execute(select(Host).where(Host.id == host_id))
                 host = host_result.scalar_one()
-                host.last_sync_at = datetime.now(timezone.utc)
+                host.last_sync_at = datetime.now(UTC)
 
                 # Collect actual state from host so it matches what collect-state returns
                 if runner.status == "successful":
                     from app.sync.collector import collect_current_rules
 
-                    now = datetime.now(timezone.utc)
+                    now = datetime.now(UTC)
                     backend_str = (
                         host.firewall_backend.value
                         if hasattr(host.firewall_backend, "value")
                         else str(host.firewall_backend)
                     )
-                    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+                    key_result = await db.execute(
+                        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
+                    )
                     ssh_key = key_result.scalar_one()
                     private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
                     try:
                         collected = await collect_current_rules(
-                            host.ip_address, host.ssh_port, private_pem,
-                            backend_str, ssh_user=ssh_key.ssh_user,
+                            host.ip_address,
+                            host.ssh_port,
+                            private_pem,
+                            backend_str,
+                            ssh_user=ssh_key.ssh_user,
                         )
                         collected_state = [asdict(r) for r in collected]
                     except Exception:
@@ -189,6 +202,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                         hms.sync_status = "error"
 
                 from app.api.host_state import refresh_host_sync_status
+
                 await refresh_host_sync_status(host, db)
                 await db.commit()
 
@@ -206,7 +220,9 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
         # Update job as failed
         import asyncio
+
         from sqlalchemy import select
+
         from app.db import task_session
         from app.models.sync_job import SyncJob
 
@@ -216,7 +232,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 job = job_result.scalar_one_or_none()
                 if job:
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.completed_at = datetime.now(UTC)
                     job.error_message = error_msg
                     await db.commit()
 

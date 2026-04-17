@@ -65,9 +65,7 @@ class TestScanner:
             "app.discovery.scanner.asyncio.open_connection",
             new=AsyncMock(return_value=(MagicMock(), mock_writer)),
         ):
-            results = await scan_network(
-                "10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10
-            )
+            results = await scan_network("10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10)
         # /30 has 2 usable hosts: 10.0.0.1, 10.0.0.2
         assert len(results) == 2
 
@@ -77,9 +75,7 @@ class TestScanner:
             "app.discovery.scanner.asyncio.open_connection",
             new=AsyncMock(side_effect=asyncio.TimeoutError),
         ):
-            results = await scan_network(
-                "10.0.0.0/30", port=22, timeout=0.01, max_concurrent=10
-            )
+            results = await scan_network("10.0.0.0/30", port=22, timeout=0.01, max_concurrent=10)
         assert results == []
 
     async def test_connection_refused_excluded(self):
@@ -88,9 +84,7 @@ class TestScanner:
             "app.discovery.scanner.asyncio.open_connection",
             new=AsyncMock(side_effect=ConnectionRefusedError),
         ):
-            results = await scan_network(
-                "10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10
-            )
+            results = await scan_network("10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10)
         assert results == []
 
     async def test_connection_reset_included(self):
@@ -99,9 +93,7 @@ class TestScanner:
             "app.discovery.scanner.asyncio.open_connection",
             new=AsyncMock(side_effect=ConnectionResetError),
         ):
-            results = await scan_network(
-                "10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10
-            )
+            results = await scan_network("10.0.0.0/30", port=22, timeout=0.1, max_concurrent=10)
         assert len(results) == 2
 
 
@@ -111,25 +103,19 @@ class TestDiscoveryAPI:
     async def test_scan_endpoint_accepts_valid_cidr(self, superuser_client):
         with patch("app.api.discovery.celery_app.send_task") as mock_task:
             mock_task.return_value.id = "test-job-id-123"
-            resp = await superuser_client.post(
-                "/api/discovery/scan", json={"cidr": "10.0.0.0/28"}
-            )
+            resp = await superuser_client.post("/api/discovery/scan", json={"cidr": "10.0.0.0/28"})
         assert resp.status_code == 200
         data = resp.json()
         assert "job_id" in data
         assert data["status"] == "pending"
 
     async def test_scan_endpoint_rejects_too_large(self, superuser_client):
-        resp = await superuser_client.post(
-            "/api/discovery/scan", json={"cidr": "10.0.0.0/8"}
-        )
+        resp = await superuser_client.post("/api/discovery/scan", json={"cidr": "10.0.0.0/8"})
         assert resp.status_code == 422
         assert "too large" in resp.json()["detail"].lower()
 
     async def test_scan_endpoint_rejects_blocked_range(self, superuser_client):
-        resp = await superuser_client.post(
-            "/api/discovery/scan", json={"cidr": "127.0.0.0/24"}
-        )
+        resp = await superuser_client.post("/api/discovery/scan", json={"cidr": "127.0.0.0/24"})
         assert resp.status_code == 422
         assert "blocked" in resp.json()["detail"].lower()
 
@@ -139,8 +125,10 @@ class TestDiscoveryAPI:
         mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn.__aexit__ = AsyncMock(return_value=False)
-        with patch("app.api.discovery.ssh_connect", return_value=mock_conn), \
-             patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")):
+        with (
+            patch("app.api.discovery.ssh_connect", return_value=mock_conn),
+            patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")),
+        ):
             resp = await superuser_client.post(
                 "/api/discovery/add-hosts",
                 json={"ips": ["10.77.77.1", "10.77.77.2"], "ssh_key_id": key.id},
@@ -157,8 +145,10 @@ class TestDiscoveryAPI:
         mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn.__aexit__ = AsyncMock(return_value=False)
-        with patch("app.api.discovery.ssh_connect", return_value=mock_conn), \
-             patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")):
+        with (
+            patch("app.api.discovery.ssh_connect", return_value=mock_conn),
+            patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")),
+        ):
             # First add
             resp1 = await superuser_client.post(
                 "/api/discovery/add-hosts",
@@ -191,9 +181,7 @@ class TestDiscoveryAPI:
         assert resp.status_code == 404
 
     async def test_non_superuser_scan_rejected(self, regular_user_client):
-        resp = await regular_user_client.post(
-            "/api/discovery/scan", json={"cidr": "10.0.0.0/28"}
-        )
+        resp = await regular_user_client.post("/api/discovery/scan", json={"cidr": "10.0.0.0/28"})
         assert resp.status_code == 403
 
     async def test_non_superuser_add_rejected(self, regular_user_client):

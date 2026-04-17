@@ -15,7 +15,7 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
-import type { Host, HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
+import type { HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
 
 const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
   { key: "firewall", icon: ShieldIcon, label: "Firewall" },

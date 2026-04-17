@@ -1,5 +1,7 @@
 """Periodic task that checks for scheduled workflows and dispatches runs."""
 
+from datetime import UTC
+
 from app.tasks import celery_app
 
 
@@ -7,7 +9,7 @@ from app.tasks import celery_app
 def check_scheduled_workflows():
     """Check all enabled workflows with a cron schedule and dispatch runs if due."""
     import asyncio
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from croniter import croniter
     from sqlalchemy import select
@@ -17,7 +19,7 @@ def check_scheduled_workflows():
 
     async def _check_async() -> int:
         dispatched = 0
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
 
         async with task_session() as db:
             result = await db.execute(
@@ -58,13 +60,13 @@ def check_scheduled_workflows():
 
                     # Ensure reference_dt is timezone-aware
                     if reference_dt.tzinfo is None:
-                        reference_dt = reference_dt.replace(tzinfo=timezone.utc)
+                        reference_dt = reference_dt.replace(tzinfo=UTC)
 
                     # Determine if the cron expression is due since the reference time
                     cron = croniter(workflow.schedule_cron, reference_dt)
                     next_run_dt = cron.get_next(datetime)
                     if next_run_dt.tzinfo is None:
-                        next_run_dt = next_run_dt.replace(tzinfo=timezone.utc)
+                        next_run_dt = next_run_dt.replace(tzinfo=UTC)
 
                     if now < next_run_dt:
                         continue
@@ -99,7 +101,6 @@ def check_scheduled_workflows():
 # Register periodic schedule check via RedBeat (prevents duplicate schedules on restart)
 def _register_beat_schedule() -> None:
     from celery.schedules import schedule
-
     from redbeat import RedBeatSchedulerEntry
 
     entry = RedBeatSchedulerEntry(

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
+
 from app.models.host import SyncStatus
 from app.rules.model import ChainPolicies
 from app.sync.diff import RulesetDiff, compute_diff, fetch_current_firewall_state
@@ -10,13 +10,13 @@ from app.sync.diff import RulesetDiff, compute_diff, fetch_current_firewall_stat
 class DriftResult:
     host_id: int
     status: SyncStatus
-    diff: Optional[RulesetDiff] = None
+    diff: RulesetDiff | None = None
     checked_at: datetime = None
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     def __post_init__(self):
         if self.checked_at is None:
-            self.checked_at = datetime.now(timezone.utc)
+            self.checked_at = datetime.now(UTC)
 
 
 async def check_drift(
@@ -34,7 +34,8 @@ async def check_drift(
     try:
         state = current_state or await fetch_current_firewall_state(host_id, db)
         diff = compute_diff(
-            state.rules, desired_rules,
+            state.rules,
+            desired_rules,
             current_policies=state.policies,
             desired_policies=desired_policies,
         )

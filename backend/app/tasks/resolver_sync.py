@@ -1,14 +1,12 @@
 import os
 import shutil
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.tasks import celery_app
 
 
-@celery_app.task(
-    bind=True, name="app.tasks.resolver_sync.run_resolver_sync", queue="long_running"
-)
+@celery_app.task(bind=True, name="app.tasks.resolver_sync.run_resolver_sync", queue="long_running")
 def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
     """Sync DNS resolver config to host via Ansible."""
     import ansible_runner
@@ -35,27 +33,19 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
 
         async def _run():
             async with task_session() as db:
-                job_result = await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )
+                job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "running"
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = datetime.now(UTC)
                 await db.commit()
 
-                host_result = await db.execute(
-                    select(Host).where(Host.id == host_id)
-                )
+                host_result = await db.execute(select(Host).where(Host.id == host_id))
                 host = host_result.scalar_one()
 
-                key_result = await db.execute(
-                    select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                )
+                key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
                 ssh_key = key_result.scalar_one()
                 master_key = get_master_key()
-                private_key_text = decrypt_ssh_key(
-                    ssh_key.encrypted_private_key, master_key
-                )
+                private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
                 with open(ssh_key_path, "w") as f:
                     f.write(private_key_text)
@@ -92,6 +82,7 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
         host, job, db, desired_state = asyncio.run(_run())
 
         from app.settings_service import get_setting_sync_typed
+
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         runner = ansible_runner.run(
             private_data_dir=private_data_dir,
@@ -101,35 +92,25 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
 
         async def _update_status():
             async with task_session() as db:
-                job_result = await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )
+                job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one()
                 job.status = "success" if runner.status == "successful" else "failed"
-                job.completed_at = datetime.now(timezone.utc)
+                job.completed_at = datetime.now(UTC)
                 job.ansible_output = (
-                    runner.stdout.read()
-                    if hasattr(runner.stdout, "read")
-                    else str(runner.stdout)
+                    runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
                 if runner.status != "successful":
-                    job.error_message = (
-                        f"Ansible runner status: {runner.status}, rc: {runner.rc}"
-                    )
+                    job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
 
                 # Update host-level sync status
                 from app.models.host import SyncStatus
 
-                host_result = await db.execute(
-                    select(Host).where(Host.id == host_id)
-                )
+                host_result = await db.execute(select(Host).where(Host.id == host_id))
                 host_obj = host_result.scalar_one()
                 host_obj.sync_status = (
-                    SyncStatus.in_sync
-                    if runner.status == "successful"
-                    else SyncStatus.error
+                    SyncStatus.in_sync if runner.status == "successful" else SyncStatus.error
                 )
-                host_obj.last_sync_at = datetime.now(timezone.utc)
+                host_obj.last_sync_at = datetime.now(UTC)
 
                 status_result = await db.execute(
                     select(HostModuleStatus).where(
@@ -139,17 +120,13 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
                 )
                 hms = status_result.scalar_one_or_none()
                 if hms is None:
-                    hms = HostModuleStatus(
-                        host_id=host_id, module_type="resolver"
-                    )
+                    hms = HostModuleStatus(host_id=host_id, module_type="resolver")
                     db.add(hms)
-                hms.sync_status = (
-                    "in_sync" if runner.status == "successful" else "error"
-                )
-                hms.last_sync_at = datetime.now(timezone.utc)
+                hms.sync_status = "in_sync" if runner.status == "successful" else "error"
+                hms.last_sync_at = datetime.now(UTC)
                 if runner.status == "successful" and desired_state:
                     hms.collected_state = desired_state
-                    hms.collected_at = datetime.now(timezone.utc)
+                    hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
 
                 await db.commit()
@@ -175,13 +152,11 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
 
         async def _mark_failed():
             async with task_session() as db:
-                job_result = await db.execute(
-                    select(SyncJob).where(SyncJob.id == job_id)
-                )
+                job_result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
                 job = job_result.scalar_one_or_none()
                 if job:
                     job.status = "failed"
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.completed_at = datetime.now(UTC)
                     job.error_message = error_msg
 
                 status_result = await db.execute(
@@ -192,12 +167,10 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
                 )
                 hms = status_result.scalar_one_or_none()
                 if hms is None:
-                    hms = HostModuleStatus(
-                        host_id=host_id, module_type="resolver"
-                    )
+                    hms = HostModuleStatus(host_id=host_id, module_type="resolver")
                     db.add(hms)
                 hms.sync_status = "error"
-                hms.last_sync_at = datetime.now(timezone.utc)
+                hms.last_sync_at = datetime.now(UTC)
 
                 await db.commit()
 

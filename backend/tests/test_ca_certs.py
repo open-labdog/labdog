@@ -3,7 +3,8 @@
 These tests are pure-unit (no DB). Merge engine tests live in
 test_ca_certs_merge.py because they require an async DB session.
 """
-from datetime import datetime, timedelta, timezone
+
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography import x509
@@ -19,7 +20,6 @@ from app.ca_certs.pem_utils import (
 )
 from app.ca_certs.schemas import CACertRuleCreate, CACertRuleUpdate
 
-
 # ---------------------------------------------------------------------------
 # Test certificate fixtures (generated in-memory; no fixtures on disk)
 # ---------------------------------------------------------------------------
@@ -33,12 +33,14 @@ def _make_ca_cert(
 ) -> str:
     """Generate a self-signed cert (CA or leaf) and return its PEM."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Barricade Test"),
-    ])
-    nb = not_before or datetime.now(timezone.utc) - timedelta(days=1)
-    na = not_after or datetime.now(timezone.utc) + timedelta(days=365)
+    subject = issuer = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Barricade Test"),
+        ]
+    )
+    nb = not_before or datetime.now(UTC) - timedelta(days=1)
+    na = not_after or datetime.now(UTC) + timedelta(days=365)
     builder = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -146,9 +148,7 @@ class TestCACertRuleCreate:
 
     def test_non_ca_pem_rejected(self):
         with pytest.raises(ValidationError):
-            CACertRuleCreate(
-                name="X", pem_content=_make_ca_cert(is_ca=False)
-            )
+            CACertRuleCreate(name="X", pem_content=_make_ca_cert(is_ca=False))
 
     def test_empty_name_rejected(self):
         with pytest.raises(ValidationError, match="empty"):
@@ -159,9 +159,7 @@ class TestCACertRuleCreate:
             CACertRuleCreate(name="x" * 201, pem_content=_make_ca_cert())
 
     def test_name_is_stripped(self):
-        rule = CACertRuleCreate(
-            name="  My CA  ", pem_content=_make_ca_cert()
-        )
+        rule = CACertRuleCreate(name="  My CA  ", pem_content=_make_ca_cert())
         assert rule.name == "My CA"
 
 

@@ -5,20 +5,22 @@ Revises: 6738a0f7215e
 Create Date: 2026-03-28
 
 """
-from typing import Sequence, Union
+
+from collections.abc import Sequence
 
 from alembic import op
 
-
 revision: str = "0009"
-down_revision: Union[str, Sequence[str], None] = "6738a0f7215e"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "6738a0f7215e"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
     # Migrate rows first while the old enum is still in place
-    op.execute("UPDATE hosts SET firewall_backend = 'nftables' WHERE firewall_backend = 'firewalld'")
+    op.execute(
+        "UPDATE hosts SET firewall_backend = 'nftables' WHERE firewall_backend = 'firewalld'"
+    )
     op.execute("UPDATE hosts SET firewall_backend = 'unknown' WHERE firewall_backend = 'ufw'")
 
     # Recreate enum: rename old, create new, swap column type, drop old
@@ -30,7 +32,9 @@ def upgrade() -> None:
         "ALTER COLUMN firewall_backend TYPE firewallbackend "
         "USING firewall_backend::text::firewallbackend"
     )
-    op.execute("ALTER TABLE hosts ALTER COLUMN firewall_backend SET DEFAULT 'unknown'::firewallbackend")
+    op.execute(
+        "ALTER TABLE hosts ALTER COLUMN firewall_backend SET DEFAULT 'unknown'::firewallbackend"
+    )
     op.execute("DROP TYPE firewallbackend_old")
 
 
@@ -45,5 +49,7 @@ def downgrade() -> None:
         "ALTER COLUMN firewall_backend TYPE firewallbackend "
         "USING firewall_backend::text::firewallbackend"
     )
-    op.execute("ALTER TABLE hosts ALTER COLUMN firewall_backend SET DEFAULT 'unknown'::firewallbackend")
+    op.execute(
+        "ALTER TABLE hosts ALTER COLUMN firewall_backend SET DEFAULT 'unknown'::firewallbackend"
+    )
     op.execute("DROP TYPE firewallbackend_old")

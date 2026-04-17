@@ -3,20 +3,20 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_active_user
-from app.models.user import User
-from app.models.host_group import HostGroup
-from app.models.host import Host
+from app.db import get_db
+from app.hosts_mgmt.merge import get_effective_hosts_entries, render_hosts_file
 from app.hosts_mgmt.models import HostsEntry
 from app.hosts_mgmt.schemas import (
-    HostsEntryCreate,
-    HostsEntryUpdate,
-    HostsEntryResponse,
     EffectiveHostsEntryResponse,
+    HostsEntryCreate,
+    HostsEntryResponse,
+    HostsEntryUpdate,
 )
-from app.hosts_mgmt.merge import get_effective_hosts_entries, render_hosts_file
-from app.audit.logger import log_action
+from app.models.host import Host
+from app.models.host_group import HostGroup
+from app.models.user import User
 
 router = APIRouter(tags=["hosts-entries"])
 
@@ -96,7 +96,11 @@ async def create_group_hosts_entry(
         entity_type="hosts_entry",
         entity_id=entry.id,
         user_id=user.id,
-        after_state={"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id},
+        after_state={
+            "ip_address": entry.ip_address,
+            "hostname": entry.hostname,
+            "host_ref_id": entry.host_ref_id,
+        },
     )
     await db.commit()
     await db.refresh(entry)
@@ -124,7 +128,11 @@ async def update_group_hosts_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Hosts entry not found")
 
-    before = {"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id}
+    before = {
+        "ip_address": entry.ip_address,
+        "hostname": entry.hostname,
+        "host_ref_id": entry.host_ref_id,
+    }
 
     await _apply_entry_update(db, entry, body)
 
@@ -137,7 +145,11 @@ async def update_group_hosts_entry(
         entity_id=entry.id,
         user_id=user.id,
         before_state=before,
-        after_state={"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id},
+        after_state={
+            "ip_address": entry.ip_address,
+            "hostname": entry.hostname,
+            "host_ref_id": entry.host_ref_id,
+        },
     )
     await db.commit()
     await db.refresh(entry)
@@ -233,7 +245,11 @@ async def create_host_hosts_entry(
         entity_type="hosts_entry",
         entity_id=entry.id,
         user_id=user.id,
-        after_state={"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id},
+        after_state={
+            "ip_address": entry.ip_address,
+            "hostname": entry.hostname,
+            "host_ref_id": entry.host_ref_id,
+        },
     )
     await db.commit()
     await db.refresh(entry)
@@ -261,7 +277,11 @@ async def update_host_hosts_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Hosts entry not found")
 
-    before = {"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id}
+    before = {
+        "ip_address": entry.ip_address,
+        "hostname": entry.hostname,
+        "host_ref_id": entry.host_ref_id,
+    }
 
     await _apply_entry_update(db, entry, body)
 
@@ -274,7 +294,11 @@ async def update_host_hosts_entry(
         entity_id=entry.id,
         user_id=user.id,
         before_state=before,
-        after_state={"ip_address": entry.ip_address, "hostname": entry.hostname, "host_ref_id": entry.host_ref_id},
+        after_state={
+            "ip_address": entry.ip_address,
+            "hostname": entry.hostname,
+            "host_ref_id": entry.host_ref_id,
+        },
     )
     await db.commit()
     await db.refresh(entry)

@@ -2,19 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
+from app.crypto import decrypt_ssh_key, encrypt_ssh_key, get_master_key
+from app.db import get_db
 from app.models.user import User
+from app.proxmox.client import ProxmoxClient, ProxmoxError
 from app.proxmox.models import ProxmoxNode
 from app.proxmox.schemas import (
     ProxmoxNodeCreate,
-    ProxmoxNodeUpdate,
     ProxmoxNodeResponse,
+    ProxmoxNodeUpdate,
     ProxmoxTestResponse,
 )
-from app.proxmox.client import ProxmoxClient, ProxmoxError
-from app.crypto import encrypt_ssh_key, decrypt_ssh_key, get_master_key
-from app.audit.logger import log_action
 from app.workflows.snapshot_cleanup import cleanup_orphaned_snapshots
 
 router = APIRouter(prefix="/proxmox/nodes", tags=["proxmox"])
@@ -35,9 +35,7 @@ async def create_proxmox_node(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    existing = await db.execute(
-        select(ProxmoxNode).where(ProxmoxNode.name == body.name)
-    )
+    existing = await db.execute(select(ProxmoxNode).where(ProxmoxNode.name == body.name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Proxmox node name already exists")
 
@@ -82,9 +80,7 @@ async def get_proxmox_node(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(ProxmoxNode).where(ProxmoxNode.id == node_id)
-    )
+    result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Proxmox node not found")
@@ -98,9 +94,7 @@ async def update_proxmox_node(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(ProxmoxNode).where(ProxmoxNode.id == node_id)
-    )
+    result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Proxmox node not found")
@@ -108,9 +102,7 @@ async def update_proxmox_node(
     before = {"name": node.name, "api_url": node.api_url, "token_id": node.token_id}
 
     if body.name is not None and body.name != node.name:
-        existing = await db.execute(
-            select(ProxmoxNode).where(ProxmoxNode.name == body.name)
-        )
+        existing = await db.execute(select(ProxmoxNode).where(ProxmoxNode.name == body.name))
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Proxmox node name already exists")
         node.name = body.name
@@ -148,9 +140,7 @@ async def delete_proxmox_node(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(ProxmoxNode).where(ProxmoxNode.id == node_id)
-    )
+    result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Proxmox node not found")
@@ -173,9 +163,7 @@ async def test_proxmox_node(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(
-        select(ProxmoxNode).where(ProxmoxNode.id == node_id)
-    )
+    result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Proxmox node not found")
@@ -213,5 +201,3 @@ async def test_proxmox_node(
             success=False,
             message=f"Unexpected error: {exc}",
         )
-
-

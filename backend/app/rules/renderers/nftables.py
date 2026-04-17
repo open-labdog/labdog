@@ -1,4 +1,5 @@
 import ipaddress
+
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 

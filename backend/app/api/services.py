@@ -2,20 +2,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
-from app.models.user import User
-from app.models.host_group import HostGroup
+from app.db import get_db
 from app.models.host import Host
+from app.models.host_group import HostGroup
+from app.models.user import User
+from app.services.merge import get_effective_services
 from app.services.models import ServiceRule
 from app.services.schemas import (
-    ServiceRuleCreate,
-    ServiceRuleUpdate,
-    ServiceRuleResponse,
     EffectiveServiceResponse,
+    ServiceRuleCreate,
+    ServiceRuleResponse,
+    ServiceRuleUpdate,
 )
-from app.services.merge import get_effective_services
-from app.audit.logger import log_action
 
 router = APIRouter(tags=["services"])
 

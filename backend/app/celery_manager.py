@@ -58,9 +58,7 @@ class CeleryManager:
             self._process.wait(timeout=timeout)
             logger.info("Celery subprocess exited gracefully")
         except subprocess.TimeoutExpired:
-            logger.warning(
-                "Celery subprocess did not exit within %ds, sending SIGKILL", timeout
-            )
+            logger.warning("Celery subprocess did not exit within %ds, sending SIGKILL", timeout)
             self._process.kill()
             self._process.wait()
             logger.info("Celery subprocess killed")

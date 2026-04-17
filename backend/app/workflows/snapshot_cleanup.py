@@ -10,7 +10,7 @@ A snapshot is considered orphaned when:
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,7 +44,7 @@ def _parse_snapshot_timestamp(snapshot_name: str) -> datetime | None:
         return None
     try:
         ts = int(parts[-1])
-        return datetime.fromtimestamp(ts, tz=timezone.utc)
+        return datetime.fromtimestamp(ts, tz=UTC)
     except (ValueError, OSError):
         return None
 
@@ -77,7 +77,7 @@ async def find_orphaned_snapshots(
         - ``age_hours`` (float): Age of the snapshot in hours.
         - ``proxmox_node_id`` (int): Database ID of the :class:`ProxmoxNode`.
     """
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
 
     # Collect all snapshot_names that belong to active host runs.
     active_result = await db.execute(
@@ -208,9 +208,7 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
         - ``deleted`` (int): Number of snapshots successfully deleted.
         - ``errors`` (list[str]): Descriptions of any deletion failures.
     """
-    max_age_hours = int(
-        await get_setting_typed("workflow.snapshot_max_age_hours", db)
-    )
+    max_age_hours = int(await get_setting_typed("workflow.snapshot_max_age_hours", db))
 
     orphans = await find_orphaned_snapshots(db, max_age_hours=max_age_hours)
     logger.info("Found %d orphaned snapshots (max_age=%dh)", len(orphans), max_age_hours)
@@ -220,9 +218,7 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
 
     # Build a map of proxmox_node_id -> ProxmoxClient to avoid re-decrypting.
     nodes_result = await db.execute(select(ProxmoxNode))
-    proxmox_nodes_by_id: dict[int, ProxmoxNode] = {
-        pn.id: pn for pn in nodes_result.scalars().all()
-    }
+    proxmox_nodes_by_id: dict[int, ProxmoxNode] = {pn.id: pn for pn in nodes_result.scalars().all()}
 
     master_key = get_master_key()
     clients: dict[int, ProxmoxClient] = {}
@@ -273,8 +269,7 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
             deleted += 1
         except ProxmoxError as exc:
             msg = (
-                f"Failed to delete snapshot {snap_name!r} "
-                f"vmid={vmid} pve_node={pve_node!r}: {exc}"
+                f"Failed to delete snapshot {snap_name!r} vmid={vmid} pve_node={pve_node!r}: {exc}"
             )
             logger.error(msg)
             errors.append(msg)

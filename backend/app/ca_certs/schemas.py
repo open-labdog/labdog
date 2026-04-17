@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -10,7 +10,7 @@ class CACertRuleCreate(BaseModel):
     name: str
     pem_content: str
     state: Literal["present", "absent"] = "present"
-    comment: Optional[str] = None
+    comment: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -33,13 +33,13 @@ class CACertRuleUpdate(BaseModel):
     """Update only mutable fields. PEM content is immutable —
     a different cert means a different fingerprint, which is a new entry."""
 
-    name: Optional[str] = None
-    state: Optional[Literal["present", "absent"]] = None
-    comment: Optional[str] = None
+    name: str | None = None
+    state: Literal["present", "absent"] | None = None
+    comment: str | None = None
 
     @field_validator("name")
     @classmethod
-    def _validate_name(cls, v: Optional[str]) -> Optional[str]:
+    def _validate_name(cls, v: str | None) -> str | None:
         if v is None:
             return v
         v = v.strip()
@@ -54,25 +54,25 @@ class CACertRuleResponse(BaseModel):
     model_config = {"from_attributes": True}
 
     id: int
-    group_id: Optional[int] = None
-    host_id: Optional[int] = None
+    group_id: int | None = None
+    host_id: int | None = None
     name: str
     fingerprint_sha256: str
-    subject: Optional[str] = None
-    issuer: Optional[str] = None
-    not_before: Optional[datetime] = None
-    not_after: Optional[datetime] = None
+    subject: str | None = None
+    issuer: str | None = None
+    not_before: datetime | None = None
+    not_after: datetime | None = None
     state: str
-    comment: Optional[str] = None
+    comment: str | None = None
 
 
 class EffectiveCACertResponse(BaseModel):
     name: str
     fingerprint_sha256: str
-    subject: Optional[str] = None
-    issuer: Optional[str] = None
-    not_before: Optional[datetime] = None
-    not_after: Optional[datetime] = None
+    subject: str | None = None
+    issuer: str | None = None
+    not_before: datetime | None = None
+    not_after: datetime | None = None
     state: str
     pem_content: str  # included so the deploy task can write it to disk
     source: str  # "group" or "host"

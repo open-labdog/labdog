@@ -11,11 +11,10 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
 from app.api.admin_users import router as admin_users_router
-from app.api.proxmox_nodes import router as proxmox_nodes_router
-from app.api.proxmox_discovery import router as proxmox_discovery_router
-from app.api.settings import router as settings_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
+from app.api.ca_cert_actions import router as ca_cert_actions_router
+from app.api.ca_certs import router as ca_certs_router
 from app.api.cron_jobs import router as cron_jobs_router
 from app.api.cron_sync import router as cron_sync_router
 from app.api.discovery import router as discovery_router
@@ -31,8 +30,8 @@ from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
-from app.api.ca_certs import router as ca_certs_router
-from app.api.ca_cert_actions import router as ca_cert_actions_router
+from app.api.proxmox_discovery import router as proxmox_discovery_router
+from app.api.proxmox_nodes import router as proxmox_nodes_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
 from app.api.rules import router as rules_router
@@ -40,6 +39,7 @@ from app.api.service_drift import router as service_drift_router
 from app.api.service_live import router as service_live_router
 from app.api.service_sync import router as service_sync_router
 from app.api.services import router as services_router
+from app.api.settings import router as settings_router
 from app.api.ssh_keys import router as ssh_keys_router
 from app.api.ssh_terminal import router as ssh_terminal_router
 from app.api.sync import router as sync_router
@@ -54,6 +54,7 @@ from app.config import settings
 # Logging
 # ---------------------------------------------------------------------------
 
+
 def _configure_logging() -> None:
     """Set up application-wide logging from config."""
     level = settings.logging.level.upper()
@@ -66,40 +67,43 @@ def _configure_logging() -> None:
     else:
         fmt = "%(asctime)s %(levelname)-8s %(name)s — %(message)s"
 
-    logging.config.dictConfig({
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "default": {
-                "format": fmt,
-                "datefmt": "%Y-%m-%dT%H:%M:%S",
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": fmt,
+                    "datefmt": "%Y-%m-%dT%H:%M:%S",
+                },
             },
-        },
-        "handlers": {
-            "console": {
-                "class": "logging.StreamHandler",
-                "formatter": "default",
-                "stream": "ext://sys.stderr",
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "stream": "ext://sys.stderr",
+                },
             },
-        },
-        "root": {
-            "level": level,
-            "handlers": ["console"],
-        },
-        "loggers": {
-            "uvicorn": {"level": level},
-            "uvicorn.access": {"level": level},
-            "celery": {"level": level},
-            "sqlalchemy.engine": {
-                "level": "WARNING" if level != "DEBUG" else "INFO",
+            "root": {
+                "level": level,
+                "handlers": ["console"],
             },
-        },
-    })
+            "loggers": {
+                "uvicorn": {"level": level},
+                "uvicorn.access": {"level": level},
+                "celery": {"level": level},
+                "sqlalchemy.engine": {
+                    "level": "WARNING" if level != "DEBUG" else "INFO",
+                },
+            },
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
+
 
 def _get_client_ip(request: Request) -> str:
     """Extract real client IP, respecting trusted proxies."""
@@ -120,6 +124,7 @@ def _get_client_ip(request: Request) -> str:
 # ---------------------------------------------------------------------------
 # Login rate limiter (uses limits library directly)
 # ---------------------------------------------------------------------------
+
 
 def _build_login_limiter():
     """Build a standalone rate limiter for login endpoints.
@@ -149,6 +154,7 @@ def _build_login_limiter():
 # Security headers middleware
 # ---------------------------------------------------------------------------
 
+
 class SecurityHeadersMiddleware:
     """Pure ASGI middleware that adds security headers to HTTP responses.
 
@@ -167,20 +173,29 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
-                headers = dict(message.get("headers", []))
+                dict(message.get("headers", []))
                 extra = [
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
                     (b"x-xss-protection", b"1; mode=block"),
-                    (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=()"),
-                    (b"content-security-policy", b"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"),
+                    (
+                        b"permissions-policy",
+                        b"camera=(), microphone=(), geolocation=(), payment=()",
+                    ),
+                    (
+                        b"content-security-policy",
+                        b"default-src 'self'; script-src 'self' 'unsafe-inline';"
+                        b" style-src 'self' 'unsafe-inline'",
+                    ),
                 ]
                 if settings.tls.force_https or settings.security.cookie_secure:
-                    extra.append((
-                        b"strict-transport-security",
-                        b"max-age=63072000; includeSubDomains",
-                    ))
+                    extra.append(
+                        (
+                            b"strict-transport-security",
+                            b"max-age=63072000; includeSubDomains",
+                        )
+                    )
                 message = {
                     **message,
                     "headers": list(message.get("headers", [])) + extra,
@@ -194,6 +209,7 @@ class SecurityHeadersMiddleware:
 # HTTPS redirect middleware
 # ---------------------------------------------------------------------------
 
+
 class HTTPSRedirectMiddleware:
     """Pure ASGI middleware for HTTPS redirect that skips WebSocket connections."""
 
@@ -203,6 +219,7 @@ class HTTPSRedirectMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             from starlette.datastructures import URL
+
             url = URL(scope=scope)
             if url.scheme == "http":
                 redirect_url = url.replace(scheme="https")
@@ -215,6 +232,7 @@ class HTTPSRedirectMiddleware:
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
+
 
 def create_app() -> FastAPI:
     _configure_logging()
@@ -304,7 +322,8 @@ def create_app() -> FastAPI:
 
         logger.info(
             "Rate limiting enabled — login: %s, api: %s",
-            settings.rate_limit.login, settings.rate_limit.api,
+            settings.rate_limit.login,
+            settings.rate_limit.api,
         )
 
     # -- Auth routes --
@@ -391,31 +410,19 @@ def create_app() -> FastAPI:
                     # params match the actual URL instead of "placeholder".
                     content = resolved_file.read_text(encoding="utf-8")
                     # HTML has escaped quotes (\"), .txt has plain quotes
-                    content = content.replace(
-                        '\\"placeholder\\"', f'\\"{dynamic_value}\\"'
-                    )
-                    content = content.replace(
-                        '"placeholder"', f'"{dynamic_value}"'
-                    )
-                    media_type = (
-                        "text/html"
-                        if resolved_file.suffix == ".html"
-                        else "text/plain"
-                    )
+                    content = content.replace('\\"placeholder\\"', f'\\"{dynamic_value}\\"')
+                    content = content.replace('"placeholder"', f'"{dynamic_value}"')
+                    media_type = "text/html" if resolved_file.suffix == ".html" else "text/plain"
                     return Response(content=content, media_type=media_type)
                 return FileResponse(resolved_file)
             return FileResponse(index_html)
     else:
-        logger.warning(
-            "No frontend static directory found — running in API-only mode"
-        )
+        logger.warning("No frontend static directory found — running in API-only mode")
 
     return app
 
 
-def _resolve_dynamic_route(
-    static_dir: Path, full_path: str
-) -> tuple[Path, str | None] | None:
+def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str | None] | None:
     """Resolve a Next.js dynamic route by substituting missing path segments
     with the generateStaticParams placeholder directory.
 

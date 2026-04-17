@@ -4,21 +4,19 @@ import logging
 import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
+from app.audit.logger import log_action
 from app.auth.ws_auth import get_ws_user
 from app.db import AsyncSessionLocal
+from app.models.host import Host
 from app.ssh_terminal.session_registry import registry
 from app.ssh_terminal.ssh_connect import (
-    open_ssh_shell,
     HostNotFoundError,
     NoSSHKeyError,
     SSHConnectionError,
+    open_ssh_shell,
 )
-from app.config import settings
-from app.audit.logger import log_action
-from app.models.host import Host
-from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +140,7 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         while True:
             await asyncio.sleep(60)
             from app.settings_service import get_setting_sync_typed
+
             idle_timeout = int(get_setting_sync_typed("ssh.idle_timeout_seconds"))
             idle = registry.get_idle_sessions(idle_timeout)
             if session_id in idle:

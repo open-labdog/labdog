@@ -1,14 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.users import current_active_user, current_superuser
+from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
 from app.models.user import User
-from app.auth.users import current_active_user, current_superuser
-from app.crypto import encrypt_ssh_key, get_master_key
-from app.schemas.ssh_keys import SSHKeyCreate, SSHKeyUpdate, SSHKeyResponse
+from app.schemas.ssh_keys import SSHKeyCreate, SSHKeyResponse, SSHKeyUpdate
 
 router = APIRouter(prefix="/ssh-keys", tags=["ssh-keys"])
 

@@ -7,13 +7,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 
 def pytest_configure(config):
     """Set test-safe security values before any app modules are imported."""
     import os
+
     os.environ.setdefault("BARRICADE_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
     os.environ.setdefault(
         "BARRICADE_SECURITY__ENCRYPTION_KEY", "dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz"
@@ -40,7 +40,9 @@ def pg_url():
         alembic_path = str(Path(sys.executable).parent / "alembic")
         result = subprocess.run(
             [alembic_path, "upgrade", "head"],
-            capture_output=True, text=True, env=env,
+            capture_output=True,
+            text=True,
+            env=env,
             cwd=str(Path(__file__).parent.parent),
         )
         assert result.returncode == 0, f"Alembic failed: {result.stderr}"
@@ -51,10 +53,8 @@ def pg_url():
 
         with PostgresContainer("postgres:16-alpine") as pg:
             sync_url = pg.get_connection_url()
-            async_url = (
-                sync_url
-                .replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-                .replace("postgresql://", "postgresql+asyncpg://")
+            async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://").replace(
+                "postgresql://", "postgresql+asyncpg://"
             )
             settings.database.url = async_url
             settings.security.encryption_key = generate_master_key()
@@ -63,7 +63,9 @@ def pg_url():
             alembic_path = str(Path(sys.executable).parent / "alembic")
             result = subprocess.run(
                 [alembic_path, "upgrade", "head"],
-                capture_output=True, text=True, env=env,
+                capture_output=True,
+                text=True,
+                env=env,
                 cwd=str(Path(__file__).parent.parent),
             )
             assert result.returncode == 0, f"Alembic failed: {result.stderr}"
@@ -73,20 +75,26 @@ def pg_url():
 @pytest.fixture(scope="session")
 def app(pg_url):
     from app.main import app as fastapi_app
+
     return fastapi_app
 
 
 @pytest.fixture
 async def db(pg_url, app):
     from app.db import get_db
+
     engine = create_async_engine(pg_url)
     conn = await engine.connect()
     await conn.begin()
     session = AsyncSession(
-        bind=conn, join_transaction_mode="create_savepoint", expire_on_commit=False,
+        bind=conn,
+        join_transaction_mode="create_savepoint",
+        expire_on_commit=False,
     )
+
     async def override_get_db():
         yield session
+
     app.dependency_overrides[get_db] = override_get_db
     yield session
     await session.close()
@@ -100,18 +108,23 @@ async def db(pg_url, app):
 async def client(app, db):
     import httpx
     from httpx import ASGITransport
+
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(
-        transport=transport, base_url="http://testserver", follow_redirects=True,
+        transport=transport,
+        base_url="http://testserver",
+        follow_redirects=True,
     ) as c:
         yield c
 
 
 async def _make_superuser(app, db):
     import httpx
-    from httpx import ASGITransport
     from fastapi_users.password import PasswordHelper
+    from httpx import ASGITransport
+
     from app.models.user import User as UserModel
+
     email = f"superuser_{uuid.uuid4().hex[:8]}@test.com"
     password = "TestPass1!"
     ph = PasswordHelper()
@@ -141,9 +154,11 @@ async def superuser_client(app, db):
 @pytest.fixture
 async def regular_user_client(app, db):
     import httpx
-    from httpx import ASGITransport
     from fastapi_users.password import PasswordHelper
+    from httpx import ASGITransport
+
     from app.models.user import User as UserModel
+
     email = f"regular_{uuid.uuid4().hex[:8]}@test.com"
     password = "TestPass1!"
     ph = PasswordHelper()
@@ -164,9 +179,6 @@ async def regular_user_client(app, db):
     await c.aclose()
 
 
-
-
-
 @pytest.fixture
 def mock_celery_tasks():
     mock = MagicMock()
@@ -176,6 +188,7 @@ def mock_celery_tasks():
 
 async def create_group(db, name=None, priority=None, description=None):
     from app.models.host_group import HostGroup
+
     group = HostGroup(
         name=name or f"group-{uuid.uuid4().hex[:8]}",
         priority=priority if priority is not None else int(uuid.uuid4().int % 1000) + 1,
@@ -193,16 +206,21 @@ async def create_ssh_key(db, name=None):
     from app.crypto.encryption import encrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.models.ssh_key import SSHKey
+
     key = Ed25519PrivateKey.generate()
     pem = key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.OpenSSH,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode()
-    pub = key.public_key().public_bytes(
-        encoding=serialization.Encoding.OpenSSH,
-        format=serialization.PublicFormat.OpenSSH,
-    ).decode()
+    pub = (
+        key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        )
+        .decode()
+    )
     encrypted = encrypt_ssh_key(pem, get_master_key())
     ssh_key = SSHKey(
         name=name or f"key-{uuid.uuid4().hex[:8]}",
@@ -218,6 +236,7 @@ async def create_host(db, hostname=None, ip="10.0.0.1", ssh_key_id=None, group_i
     from sqlalchemy import insert as sa_insert
 
     from app.models.host import Host, HostGroupMembership
+
     host = Host(
         hostname=hostname or f"host-{uuid.uuid4().hex[:8]}.test",
         ip_address=ip,
@@ -233,12 +252,21 @@ async def create_host(db, hostname=None, ip="10.0.0.1", ssh_key_id=None, group_i
 
 
 async def create_rule(
-    db, group_id, action="allow", protocol="tcp", direction="input", **kwargs,
+    db,
+    group_id,
+    action="allow",
+    protocol="tcp",
+    direction="input",
+    **kwargs,
 ):
     from app.models.firewall_rule import FirewallRule
+
     rule = FirewallRule(
-        group_id=group_id, action=action, protocol=protocol,
-        direction=direction, **kwargs,
+        group_id=group_id,
+        action=action,
+        protocol=protocol,
+        direction=direction,
+        **kwargs,
     )
     db.add(rule)
     await db.flush()

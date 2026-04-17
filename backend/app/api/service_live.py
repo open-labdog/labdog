@@ -8,14 +8,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user
+from app.crypto import decrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
-from app.ssh_utils import ssh_connect
 from app.models.user import User
-from app.crypto import decrypt_ssh_key, get_master_key
-from app.services.collector import list_all_services, execute_service_command
+from app.services.collector import execute_service_command, list_all_services
 from app.services.constants import PROTECTED_SERVICES, is_system_service
 from app.services.live_schemas import (
     ServiceCommandRequest,
@@ -23,7 +23,7 @@ from app.services.live_schemas import (
     ServiceInventoryItem,
 )
 from app.services.merge import get_effective_services
-from app.audit.logger import log_action
+from app.ssh_utils import ssh_connect
 
 router = APIRouter(prefix="/services", tags=["service-live"])
 
@@ -50,7 +50,9 @@ async def get_service_inventory(
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
     # Fetch inventory via SSH
-    raw_services = await list_all_services(host.ip_address, host.ssh_port, private_key_pem, ssh_user=host.ssh_user)
+    raw_services = await list_all_services(
+        host.ip_address, host.ssh_port, private_key_pem, ssh_user=host.ssh_user
+    )
 
     # Get managed service names for this host
     effective = await get_effective_services(host_id, db)

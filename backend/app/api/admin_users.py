@@ -10,7 +10,6 @@ from app.auth.users import current_superuser
 from app.db import get_db
 from app.models.user import User
 
-
 # ── Schemas ──────────────────────────────────────────────────────────────────
 
 
@@ -100,9 +99,7 @@ async def update_user(
         )
         other_superusers = count_result.scalar()
         if other_superusers == 0:
-            raise HTTPException(
-                status_code=400, detail="Cannot demote the last superuser"
-            )
+            raise HTTPException(status_code=400, detail="Cannot demote the last superuser")
 
     update_data = body.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -135,9 +132,7 @@ async def delete_user(
         )
         other_superusers = count_result.scalar()
         if other_superusers == 0:
-            raise HTTPException(
-                status_code=400, detail="Cannot delete the last superuser"
-            )
+            raise HTTPException(status_code=400, detail="Cannot delete the last superuser")
 
     await db.delete(user)
     await db.commit()
