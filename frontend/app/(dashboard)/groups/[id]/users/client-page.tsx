@@ -5,23 +5,17 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { DataTable } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -37,7 +31,7 @@ function UserStateBadge({ state }: { state: string }) {
   )
 }
 
-export default function GroupUsersPage() {
+export default function GroupUsersPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
   const id = Number(params.id)
 
@@ -215,13 +209,12 @@ export default function GroupUsersPage() {
 
   return (
     <div className="space-y-8">
-      <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />}
       {/* Linux Users Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Linux Users</h1>
-            <p className="text-slate-400 text-sm mt-1">Group ID: {id}</p>
           </div>
           <Button onClick={openCreateUserDialog}>Add User</Button>
         </div>
@@ -232,74 +225,105 @@ export default function GroupUsersPage() {
           <div className="text-red-400 py-8 text-center">Failed to load users</div>
         )}
 
-        {!usersLoading && !usersError && linuxUsers && linuxUsers.length === 0 && (
-          <div className="text-slate-400 py-8 text-center">
-            No Linux users yet. Click <strong>Add User</strong> to create one.
-          </div>
-        )}
-
-        {!usersLoading && !usersError && linuxUsers && linuxUsers.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Username</TableHead>
-                  <TableHead>UID</TableHead>
-                  <TableHead>Shell</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead>Keys</TableHead>
-                  <TableHead>Sudo</TableHead>
-                  <TableHead className="w-16">Priority</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {linuxUsers.map((user) => (
-                  <TableRow key={user.id} className="border-slate-700">
-                    <TableCell className="font-mono text-white text-sm">{user.username}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{user.shell}</TableCell>
-                    <TableCell>
-                      <UserStateBadge state={user.state} />
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-xs">
-                        {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {user.sudo_rule ? (
-                        <Badge className="bg-amber-600 text-white">Yes</Badge>
-                      ) : (
-                        <span className="text-slate-600 text-xs">No</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{user.priority}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openEditUserDialog(user)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={userDeleteMutation.isPending}
-                          onClick={() => handleUserDelete(user)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        >
-                          {userDeleteMutation.isPending ? "…" : "Delete"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+        {!usersLoading && !usersError && (
+          <DataTable<LinuxUser>
+            tableId="group-linux-users"
+            data={linuxUsers}
+            emptyMessage={
+              <div className="text-slate-400 py-8 text-center">
+                No Linux users yet. Click <strong>Add User</strong> to create one.
+              </div>
+            }
+            getRowKey={(user) => user.id}
+            columns={[
+              {
+                key: "username",
+                label: "Username",
+                accessor: (user) => user.username,
+                cell: (user) => <span className="font-mono text-white text-sm">{user.username}</span>,
+                defaultWidth: 160,
+                filter: { type: "text", placeholder: "e.g. deploy" },
+              },
+              {
+                key: "uid",
+                label: "UID",
+                accessor: (user) => user.uid ?? "auto",
+                cell: (user) => <span className="font-mono text-slate-300 text-xs">{user.uid ?? "auto"}</span>,
+                defaultWidth: 80,
+                filter: { type: "text" },
+              },
+              {
+                key: "shell",
+                label: "Shell",
+                accessor: (user) => user.shell,
+                cell: (user) => <span className="font-mono text-slate-300 text-xs">{user.shell}</span>,
+                defaultWidth: 140,
+                filter: { type: "text" },
+              },
+              {
+                key: "state",
+                label: "State",
+                accessor: (user) => user.state,
+                cell: (user) => <UserStateBadge state={user.state} />,
+                defaultWidth: 120,
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
+              },
+              {
+                key: "keys",
+                label: "Keys",
+                accessor: (user) => user.authorized_keys.length,
+                cell: (user) => (
+                  <Badge variant="outline" className="text-xs">
+                    {user.authorized_keys.length} {user.authorized_keys.length === 1 ? "key" : "keys"}
+                  </Badge>
+                ),
+                defaultWidth: 80,
+              },
+              {
+                key: "sudo",
+                label: "Sudo",
+                accessor: (user) => !!user.sudo_rule,
+                cell: (user) => user.sudo_rule ? (
+                  <Badge className="bg-amber-600 text-white">Yes</Badge>
+                ) : (
+                  <span className="text-slate-600 text-xs">No</span>
+                ),
+                defaultWidth: 80,
+                filter: { type: "boolean" },
+              },
+              {
+                key: "priority",
+                label: "Priority",
+                accessor: (user) => user.priority,
+                cell: (user) => <span className="font-mono text-slate-300 text-xs">{user.priority}</span>,
+                defaultWidth: 64,
+                filter: { type: "text" },
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                cell: (user) => (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEditUserDialog(user)}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={userDeleteMutation.isPending}
+                      onClick={() => handleUserDelete(user)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                    >
+                      {userDeleteMutation.isPending ? "…" : "Delete"}
+                    </Button>
+                  </div>
+                ),
+                defaultWidth: 160,
+                resizable: false,
+                sortable: false,
+              },
+            ]}
+          />
         )}
       </div>
 
@@ -319,58 +343,74 @@ export default function GroupUsersPage() {
           <div className="text-red-400 py-8 text-center">Failed to load groups</div>
         )}
 
-        {!groupsLoading && !groupsError && linuxGroups && linuxGroups.length === 0 && (
-          <div className="text-slate-400 py-8 text-center">
-            No Linux groups yet. Click <strong>Add Group</strong> to create one.
-          </div>
-        )}
-
-        {!groupsLoading && !groupsError && linuxGroups && linuxGroups.length > 0 && (
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead>Group Name</TableHead>
-                  <TableHead>GID</TableHead>
-                  <TableHead>State</TableHead>
-                  <TableHead className="w-16">Priority</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {linuxGroups.map((group) => (
-                  <TableRow key={group.id} className="border-slate-700">
-                    <TableCell className="font-mono text-white text-sm">{group.groupname}</TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{group.gid ?? "auto"}</TableCell>
-                    <TableCell>
-                      <UserStateBadge state={group.state} />
-                    </TableCell>
-                    <TableCell className="font-mono text-slate-300 text-xs">{group.priority}</TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => openEditGroupDialog(group)}
-                        >
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={groupDeleteMutation.isPending}
-                          onClick={() => handleGroupDelete(group)}
-                          className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        >
-                          {groupDeleteMutation.isPending ? "…" : "Delete"}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+        {!groupsLoading && !groupsError && (
+          <DataTable<LinuxGroup>
+            tableId="group-linux-groups"
+            data={linuxGroups}
+            emptyMessage={
+              <div className="text-slate-400 py-8 text-center">
+                No Linux groups yet. Click <strong>Add Group</strong> to create one.
+              </div>
+            }
+            getRowKey={(g) => g.id}
+            columns={[
+              {
+                key: "groupname",
+                label: "Group Name",
+                accessor: (g) => g.groupname,
+                cell: (g) => <span className="font-mono text-white text-sm">{g.groupname}</span>,
+                defaultWidth: 180,
+                filter: { type: "text" },
+              },
+              {
+                key: "gid",
+                label: "GID",
+                accessor: (g) => g.gid ?? "auto",
+                cell: (g) => <span className="font-mono text-slate-300 text-xs">{g.gid ?? "auto"}</span>,
+                defaultWidth: 80,
+                filter: { type: "text" },
+              },
+              {
+                key: "state",
+                label: "State",
+                accessor: (g) => g.state,
+                cell: (g) => <UserStateBadge state={g.state} />,
+                defaultWidth: 120,
+                filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
+              },
+              {
+                key: "priority",
+                label: "Priority",
+                accessor: (g) => g.priority,
+                cell: (g) => <span className="font-mono text-slate-300 text-xs">{g.priority}</span>,
+                defaultWidth: 64,
+                filter: { type: "text" },
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                cell: (g) => (
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEditGroupDialog(g)}>
+                      Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={groupDeleteMutation.isPending}
+                      onClick={() => handleGroupDelete(g)}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                    >
+                      {groupDeleteMutation.isPending ? "…" : "Delete"}
+                    </Button>
+                  </div>
+                ),
+                defaultWidth: 160,
+                resizable: false,
+                sortable: false,
+              },
+            ]}
+          />
         )}
       </div>
 
@@ -503,10 +543,7 @@ export default function GroupUsersPage() {
               <p className="text-sm text-red-400">{userSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={userSaveMutation.isPending}>
-                {userSaveMutation.isPending ? "Saving..." : editingUser ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -514,7 +551,10 @@ export default function GroupUsersPage() {
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={userSaveMutation.isPending}>
+                {userSaveMutation.isPending ? "Saving..." : editingUser ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
@@ -592,10 +632,7 @@ export default function GroupUsersPage() {
               <p className="text-sm text-red-400">{groupSaveMutation.error.message}</p>
             )}
 
-            <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={groupSaveMutation.isPending}>
-                {groupSaveMutation.isPending ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
-              </Button>
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -603,7 +640,10 @@ export default function GroupUsersPage() {
               >
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={groupSaveMutation.isPending}>
+                {groupSaveMutation.isPending ? "Saving..." : editingGroup ? "Save Changes" : "Create"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

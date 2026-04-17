@@ -16,27 +16,31 @@ def _serialize_state(state: Any) -> str:
 
 
 def _add_absent_cron_task(tasks: list, name: str, user: str) -> None:
-    tasks.append({
-        "name": f"Remove cron job {name} for {user}",
-        "ansible.builtin.cron": {
-            "name": name,
-            "user": user,
-            "state": "absent",
+    tasks.append(
+        {
+            "name": f"Remove cron job {name} for {user}",
+            "ansible.builtin.cron": {
+                "name": name,
+                "user": user,
+                "state": "absent",
+            },
         }
-    })
+    )
 
 
 def _add_environment_tasks(tasks: list, name: str, user: str, environment: dict) -> None:
     for env_key, env_val in environment.items():
-        tasks.append({
-            "name": f"Set env {env_key} for cron job {name}",
-            "ansible.builtin.cron": {
-                "name": env_key,
-                "user": user,
-                "env": True,
-                "value": env_val,
+        tasks.append(
+            {
+                "name": f"Set env {env_key} for cron job {name}",
+                "ansible.builtin.cron": {
+                    "name": env_key,
+                    "user": user,
+                    "env": True,
+                    "value": env_val,
+                },
             }
-        })
+        )
 
 
 def _add_present_cron_task(
@@ -47,25 +51,27 @@ def _add_present_cron_task(
     command: str,
 ) -> None:
     minute, hour, dom, month, dow = validate_cron_expression(schedule)
-    tasks.append({
-        "name": f"Manage cron job {name} for {user}",
-        "ansible.builtin.cron": {
-            "name": name,
-            "user": user,
-            "minute": minute,
-            "hour": hour,
-            "day": dom,
-            "month": month,
-            "weekday": dow,
-            "job": command,
-            "state": "present",
+    tasks.append(
+        {
+            "name": f"Manage cron job {name} for {user}",
+            "ansible.builtin.cron": {
+                "name": name,
+                "user": user,
+                "minute": minute,
+                "hour": hour,
+                "day": dom,
+                "month": month,
+                "weekday": dow,
+                "job": command,
+                "state": "present",
+            },
         }
-    })
+    )
 
 
 def generate_cron_playbook(host_ip: str, cron_jobs: list, ssh_key_path: str) -> dict:
     tasks = []
-    
+
     for job in cron_jobs:
         name = _get(job, "name")
         user = _get(job, "user")
@@ -73,13 +79,13 @@ def generate_cron_playbook(host_ip: str, cron_jobs: list, ssh_key_path: str) -> 
         command = _get(job, "command")
         state = _serialize_state(_get(job, "state"))
         environment = _get(job, "environment", {})
-        
+
         if state == "absent":
             _add_absent_cron_task(tasks, name, user)
         else:
             _add_environment_tasks(tasks, name, user, environment)
             _add_present_cron_task(tasks, name, user, schedule, command)
-    
+
     return {
         "name": "Barricade Cron Job Management",
         "hosts": host_ip,

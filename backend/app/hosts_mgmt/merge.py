@@ -3,13 +3,49 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.hosts_mgmt.models import HostsEntry
 from app.hosts_mgmt.schemas import EffectiveHostsEntryResponse
-from app.models.host import HostGroupMembership
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
+
+
+class HostRefUnresolved(ValueError):
+    """Raised when a hosts-entry host_ref_id cannot be resolved."""
+
+
+async def _build_host_ref_lookup(
+    db: AsyncSession, entries: list[HostsEntry]
+) -> dict[int, tuple[str, str]]:
+    """Return {host_id: (ip_address, hostname)} for every referenced host."""
+    ref_ids = {e.host_ref_id for e in entries if e.host_ref_id is not None}
+    if not ref_ids:
+        return {}
+    rows = await db.execute(
+        select(Host.id, Host.ip_address, Host.hostname).where(Host.id.in_(ref_ids))
+    )
+    return {row.id: (row.ip_address, row.hostname) for row in rows}
+
+
+def _resolve_entry(entry: HostsEntry, ref_lookup: dict[int, tuple[str, str]]) -> tuple[str, str]:
+    """Return (effective_ip, effective_hostname) for a HostsEntry."""
+    if entry.host_ref_id is not None:
+        pair = ref_lookup.get(entry.host_ref_id)
+        if not pair or not pair[0] or not pair[1]:
+            raise HostRefUnresolved(
+                f"hosts entry {entry.id} references host {entry.host_ref_id} "
+                "which has no ip or hostname"
+            )
+        return pair
+    return (entry.ip_address or "", entry.hostname or "")
+
 
 # System entries always injected
 SYSTEM_ENTRIES = [
     {"ip_address": "127.0.0.1", "hostname": "localhost", "aliases": [], "comment": None},
-    {"ip_address": "::1", "hostname": "localhost", "aliases": ["ip6-localhost", "ip6-loopback"], "comment": None},
+    {
+        "ip_address": "::1",
+        "hostname": "localhost",
+        "aliases": ["ip6-localhost", "ip6-loopback"],
+        "comment": None,
+    },
 ]
 
 
@@ -50,31 +86,40 @@ async def get_effective_hosts_entries(
     groups = memberships.all()
 
     # 3. For each group (highest priority first), collect entries
+    all_group_entries: list[tuple[int, str, HostsEntry]] = []
     for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group_id)
-        )
+        result = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group_id))
         for entry in result.scalars().all():
-            if entry.ip_address not in merged:
-                merged[entry.ip_address] = EffectiveHostsEntryResponse(
-                    ip_address=entry.ip_address,
-                    hostname=entry.hostname,
-                    aliases=entry.aliases or [],
-                    comment=entry.comment,
-                    is_system=False,
-                    source="group",
-                    source_id=group_id,
-                    source_name=group_name,
-                )
+            all_group_entries.append((group_id, group_name, entry))
 
-    # 4. Host overrides replace group entries
-    host_result = await db.execute(
-        select(HostsEntry).where(HostsEntry.host_id == host_id)
+    # 4. Host overrides
+    host_result = await db.execute(select(HostsEntry).where(HostsEntry.host_id == host_id))
+    host_entries = list(host_result.scalars().all())
+
+    # Batch-resolve host_ref_id → (ip, hostname)
+    ref_lookup = await _build_host_ref_lookup(
+        db, [e for _, _, e in all_group_entries] + host_entries
     )
-    for entry in host_result.scalars().all():
-        merged[entry.ip_address] = EffectiveHostsEntryResponse(
-            ip_address=entry.ip_address,
-            hostname=entry.hostname,
+
+    for group_id, group_name, entry in all_group_entries:
+        ip, hostname = _resolve_entry(entry, ref_lookup)
+        if ip not in merged:
+            merged[ip] = EffectiveHostsEntryResponse(
+                ip_address=ip,
+                hostname=hostname,
+                aliases=entry.aliases or [],
+                comment=entry.comment,
+                is_system=False,
+                source="group",
+                source_id=group_id,
+                source_name=group_name,
+            )
+
+    for entry in host_entries:
+        ip, hostname = _resolve_entry(entry, ref_lookup)
+        merged[ip] = EffectiveHostsEntryResponse(
+            ip_address=ip,
+            hostname=hostname,
             aliases=entry.aliases or [],
             comment=entry.comment,
             is_system=False,

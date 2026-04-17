@@ -2,9 +2,11 @@
 
 import asyncio
 import shlex
+from dataclasses import dataclass
 
 import asyncssh
-from dataclasses import dataclass
+
+from app.ssh_utils import ssh_connect
 
 
 @dataclass
@@ -33,17 +35,18 @@ async def collect_service_states(
 
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with asyncssh.connect(
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             for name in service_names:
                 try:
                     # Check active state
-                    active_result = await conn.run(f"systemctl is-active {name}", check=False)
+                    active_result = await conn.run(
+                        f"systemctl is-active {shlex.quote(name)}", check=False
+                    )
                     active_stdout = active_result.stdout.strip()
                     exit_code = active_result.exit_status
 
@@ -61,7 +64,9 @@ async def collect_service_states(
                     active_state = "running" if active_stdout == "active" else "stopped"
 
                     # Check enabled state
-                    enabled_result = await conn.run(f"systemctl is-enabled {name}", check=False)
+                    enabled_result = await conn.run(
+                        f"systemctl is-enabled {shlex.quote(name)}", check=False
+                    )
                     enabled_stdout = enabled_result.stdout.strip()
                     enabled = enabled_stdout == "enabled"
 
@@ -110,12 +115,11 @@ async def list_all_services(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run(
                     "systemctl list-units --type=service --all --no-pager --plain",
@@ -135,6 +139,8 @@ async def list_all_services(
                         continue
                     parts = stripped.split(maxsplit=4)
                     if len(parts) < 4:
+                        continue
+                    if not parts[0].endswith(".service"):
                         continue
                     unit = parts[0].removesuffix(".service")
                     load_state = parts[1]
@@ -180,12 +186,11 @@ async def execute_service_command(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> dict:
-            async with asyncssh.connect(
+            async with ssh_connect(
                 host_ip,
                 port=ssh_port,
                 username=ssh_user,
                 client_keys=[private_key],
-                known_hosts=None,
             ) as conn:
                 result = await conn.run(cmd, check=False)
                 return {
@@ -196,7 +201,7 @@ async def execute_service_command(
                 }
 
         return await asyncio.wait_for(_run(), timeout=30.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return {
             "success": False,
             "exit_code": -1,
@@ -210,3 +215,39 @@ async def execute_service_command(
             "stdout": "",
             "stderr": str(e),
         }
+
+
+async def collect_unit_file_content(
+    host_ip: str,
+    ssh_port: int,
+    private_key_pem: str,
+    service_name: str,
+    deploy_mode: str,
+    ssh_user: str = "root",
+) -> str | None:
+    quoted = shlex.quote(service_name)
+    if deploy_mode == "override":
+        cmd = f"cat /etc/systemd/system/{quoted}.service.d/barricade.conf"
+    else:
+        cmd = f"cat /etc/systemd/system/{quoted}.service"
+
+    try:
+        private_key = asyncssh.import_private_key(private_key_pem)
+
+        async def _run() -> str | None:
+            async with ssh_connect(
+                host_ip,
+                port=ssh_port,
+                username=ssh_user,
+                client_keys=[private_key],
+            ) as conn:
+                result = await conn.run(cmd, check=False)
+                if result.exit_status != 0:
+                    return None
+                return result.stdout or ""
+
+        return await asyncio.wait_for(_run(), timeout=30.0)
+    except TimeoutError:
+        return None
+    except Exception:
+        return None

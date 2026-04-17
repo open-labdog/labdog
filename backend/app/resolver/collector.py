@@ -2,9 +2,10 @@
 
 import asyncio
 import re
-from typing import Optional
 
 import asyncssh
+
+from app.ssh_utils import ssh_connect
 
 
 def _stdout(result: asyncssh.SSHCompletedProcess) -> str:
@@ -20,38 +21,31 @@ async def collect_resolver_state(
     private_key_pem: str,
     resolver_type: str,
     ssh_user: str = "root",
-) -> Optional[dict]:
+) -> dict | None:
     """Return {"nameservers", "search_domains", "options"} or None if unmanaged."""
     private_key = asyncssh.import_private_key(private_key_pem)
 
-    async def _run() -> Optional[dict]:
-        async with asyncssh.connect(
+    async def _run() -> dict | None:
+        async with ssh_connect(
             host_ip,
             port=ssh_port,
             username=ssh_user,
             client_keys=[private_key],
-            known_hosts=None,
         ) as conn:
             if resolver_type == "resolv_conf":
-                result = await conn.run(
-                    "cat /etc/resolv.conf 2>/dev/null", check=False
-                )
+                result = await conn.run("cat /etc/resolv.conf 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status != 0 or not output.strip():
                     return None
                 return parse_resolv_conf(output)
 
             elif resolver_type == "systemd_resolved":
-                result = await conn.run(
-                    "resolvectl status 2>/dev/null", check=False
-                )
+                result = await conn.run("resolvectl status 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status == 0 and output.strip():
                     return parse_resolvectl_output(output)
 
-                result = await conn.run(
-                    "cat /etc/systemd/resolved.conf 2>/dev/null", check=False
-                )
+                result = await conn.run("cat /etc/systemd/resolved.conf 2>/dev/null", check=False)
                 output = _stdout(result)
                 if result.exit_status != 0 or not output.strip():
                     return None
@@ -74,7 +68,6 @@ async def collect_resolver_state(
         return await asyncio.wait_for(_run(), timeout=30.0)
     except Exception:
         return None
-
 
 
 def parse_resolv_conf(text: str) -> dict:
@@ -128,9 +121,7 @@ def parse_resolvectl_output(text: str) -> dict:
     for line in text.splitlines():
         stripped = line.strip()
 
-        dns_match = re.match(
-            r"(?:Current\s+)?DNS\s+Servers?:\s*(.+)", stripped, re.IGNORECASE
-        )
+        dns_match = re.match(r"(?:Current\s+)?DNS\s+Servers?:\s*(.+)", stripped, re.IGNORECASE)
         if dns_match:
             ips = dns_match.group(1).split()
             for ip in ips:

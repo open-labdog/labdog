@@ -58,10 +58,12 @@ def _user_tasks(users: list) -> list[dict]:
         if state == "absent":
             user_params["remove"] = True
 
-        tasks.append({
-            "name": f"Manage user {username}",
-            "ansible.builtin.user": user_params,
-        })
+        tasks.append(
+            {
+                "name": f"Manage user {username}",
+                "ansible.builtin.user": user_params,
+            }
+        )
     return tasks
 
 
@@ -76,25 +78,29 @@ def _authorized_key_tasks(users: list) -> list[dict]:
         keys = _get(u, "authorized_keys", [])
 
         if keys:
-            tasks.append({
-                "name": f"Authorized keys for {username}",
-                "ansible.posix.authorized_key": {
-                    "user": username,
-                    "key": "\n".join(keys),
-                    "exclusive": True,
-                    "state": "present",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Authorized keys for {username}",
+                    "ansible.posix.authorized_key": {
+                        "user": username,
+                        "key": "\n".join(keys),
+                        "exclusive": True,
+                        "state": "present",
+                    },
+                }
+            )
         else:
-            tasks.append({
-                "name": f"Authorized keys for {username}",
-                "ansible.posix.authorized_key": {
-                    "user": username,
-                    "key": "",
-                    "exclusive": True,
-                    "state": "absent",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Authorized keys for {username}",
+                    "ansible.posix.authorized_key": {
+                        "user": username,
+                        "key": "",
+                        "exclusive": True,
+                        "state": "absent",
+                    },
+                }
+            )
     return tasks
 
 
@@ -106,23 +112,27 @@ def _sudoers_tasks(users: list) -> list[dict]:
         sudo_rule = _get(u, "sudo_rule")
 
         if state == "present" and sudo_rule is not None:
-            tasks.append({
-                "name": f"Sudo rule for {username}",
-                "ansible.builtin.copy": {
-                    "content": f"{username} {sudo_rule}\n",
-                    "dest": f"/etc/sudoers.d/{username}",
-                    "mode": "0440",
-                    "validate": "visudo -cf %s",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Sudo rule for {username}",
+                    "ansible.builtin.copy": {
+                        "content": f"{username} {sudo_rule}\n",
+                        "dest": f"/etc/sudoers.d/{username}",
+                        "mode": "0440",
+                        "validate": "visudo -cf %s",
+                    },
+                }
+            )
         else:
-            tasks.append({
-                "name": f"Remove sudo rule for {username}",
-                "ansible.builtin.file": {
-                    "path": f"/etc/sudoers.d/{username}",
-                    "state": "absent",
-                },
-            })
+            tasks.append(
+                {
+                    "name": f"Remove sudo rule for {username}",
+                    "ansible.builtin.file": {
+                        "path": f"/etc/sudoers.d/{username}",
+                        "state": "absent",
+                    },
+                }
+            )
     return tasks
 
 
@@ -138,11 +148,18 @@ def generate_user_playbook(
     Task order: groups -> users -> authorized_keys -> sudoers.
     Returns a single play dict (caller wraps in a list for ansible-runner).
     """
+    # Split groups into present/absent — absent groups must come AFTER
+    # absent users, since a user's primary group cannot be removed while
+    # the user still exists.
+    groups_present = [g for g in groups if _get(g, "state", "present") != "absent"]
+    groups_absent = [g for g in groups if _get(g, "state", "present") == "absent"]
+
     tasks: list[dict] = []
-    tasks.extend(_group_tasks(groups))
+    tasks.extend(_group_tasks(groups_present))
     tasks.extend(_user_tasks(users))
     tasks.extend(_authorized_key_tasks(users))
     tasks.extend(_sudoers_tasks(users))
+    tasks.extend(_group_tasks(groups_absent))
 
     return {
         "name": "Barricade Linux User Management",

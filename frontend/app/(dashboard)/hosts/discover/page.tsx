@@ -11,20 +11,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { GroupMultiSelect } from "@/components/group-multi-select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
+import type { ColumnDef } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import type { SSHKey, HostGroup } from "@/lib/types"
 
 interface DiscoveredHost {
   ip: string
   hostname: string | null
+  ssh_status: "open" | "refused"
 }
 
 interface ScanStatus {
@@ -36,9 +31,15 @@ interface ScanStatus {
   error?: string
 }
 
+interface FailedHost {
+  ip: string
+  error: string
+}
+
 interface AddResult {
   added: number
   skipped: number
+  failed: FailedHost[]
 }
 
 const cidrSchema = z.object({
@@ -81,7 +82,7 @@ export default function DiscoverHostsPage() {
   })
 
   useEffect(() => {
-    if (!scanStatus || phase !== "scanning") return
+    if (!jobId || !scanStatus || phase !== "scanning") return
     if (scanStatus.status === "done") {
       setPhase("done")
     } else if (scanStatus.status === "error") {
@@ -89,7 +90,7 @@ export default function DiscoverHostsPage() {
       setPhase("idle")
       setJobId(null)
     }
-  }, [scanStatus, phase])
+  }, [jobId, scanStatus, phase])
 
   const { data: sshKeys } = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -106,6 +107,7 @@ export default function DiscoverHostsPage() {
     setAddResult(null)
     setAddError(null)
     setSelectedHosts(new Set())
+    setJobId(null)
     setPhase("scanning")
     try {
       const status = await apiFetch<ScanStatus>("/api/discovery/scan", {
@@ -168,6 +170,57 @@ export default function DiscoverHostsPage() {
   const progressPct = scanStatus && scanStatus.total > 0
     ? Math.round((scanStatus.progress / scanStatus.total) * 100)
     : 0
+
+  const discoveryColumns: ColumnDef<DiscoveredHost>[] = [
+    {
+      key: "select",
+      label: "",
+      cell: (host) => (
+        <input
+          type="checkbox"
+          checked={selectedHosts.has(host.ip)}
+          onChange={() => toggleHost(host.ip)}
+          disabled={phase === "adding"}
+          className="rounded border-input"
+        />
+      ),
+      defaultWidth: 40,
+      resizable: false,
+      sortable: false,
+    },
+    {
+      key: "ip",
+      label: "IP Address",
+      accessor: (h) => h.ip,
+      cell: (h) => <span className="font-mono text-slate-300">{h.ip}</span>,
+      defaultWidth: 160,
+      filter: { type: "text", placeholder: "e.g. 10.0.1" },
+    },
+    {
+      key: "hostname",
+      label: "Hostname",
+      accessor: (h) => h.hostname ?? "",
+      cell: (h) => <span className="text-white">{h.hostname ?? "—"}</span>,
+      defaultWidth: 200,
+      filter: { type: "text", placeholder: "e.g. web-01" },
+    },
+    {
+      key: "ssh_status",
+      label: "Status",
+      accessor: (h) => h.ssh_status,
+      cell: (h) => h.ssh_status === "open" ? (
+        <span className="inline-flex items-center rounded-full bg-green-500/10 px-2 py-0.5 text-xs font-medium text-green-400 ring-1 ring-green-500/20">
+          SSH Open
+        </span>
+      ) : (
+        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-400 ring-1 ring-amber-500/20">
+          SSH Refused
+        </span>
+      ),
+      defaultWidth: 140,
+      filter: { type: "enum", options: [{label:"SSH Open",value:"open"},{label:"SSH Refused",value:"refused"}] },
+    },
+  ]
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -255,48 +308,27 @@ export default function DiscoverHostsPage() {
       )}
 
       {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead className="w-10">
-                  <input
-                    type="checkbox"
-                    checked={selectedHosts.size === hostsFound.length && hostsFound.length > 0}
-                    onChange={toggleAll}
-                    disabled={phase === "adding"}
-                    className="rounded border-input"
-                  />
-                </TableHead>
-                <TableHead>IP Address</TableHead>
-                <TableHead>Hostname</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {hostsFound.map((host) => (
-                <TableRow key={host.ip} className="border-slate-700">
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      checked={selectedHosts.has(host.ip)}
-                      onChange={() => toggleHost(host.ip)}
-                      disabled={phase === "adding"}
-                      className="rounded border-input"
-                    />
-                  </TableCell>
-                  <TableCell className="font-mono text-slate-300">{host.ip}</TableCell>
-                  <TableCell className="text-white">{host.hostname ?? "—"}</TableCell>
-                  <TableCell>
-                    <span className="inline-flex items-center rounded-full bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-400 ring-1 ring-blue-500/20">
-                      New
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <>
+          {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
+            <div className="flex items-center gap-2 mb-1">
+              <input
+                type="checkbox"
+                checked={selectedHosts.size === hostsFound.length && hostsFound.length > 0}
+                onChange={toggleAll}
+                disabled={phase === "adding"}
+                className="rounded border-input"
+              />
+              <span className="text-sm text-slate-400">Select all</span>
+            </div>
+          )}
+          <DataTable<DiscoveredHost>
+            tableId="discovery-results"
+            columns={discoveryColumns}
+            data={hostsFound}
+            getRowKey={(h) => h.ip}
+            emptyMessage="No hosts found."
+          />
+        </>
       )}
 
       {(phase === "done" || phase === "adding") && selectedHosts.size > 0 && !addResult && (
@@ -348,18 +380,42 @@ export default function DiscoverHostsPage() {
       )}
 
       {addResult && (
-        <div className="rounded-lg border border-green-800 bg-green-950/30 px-4 py-4 space-y-2">
-          <p className="text-green-400 text-sm font-medium">
-            {addResult.added} host{addResult.added !== 1 ? "s" : ""} added
-            {addResult.skipped > 0 && (
-              <span className="text-slate-400 font-normal">
-                {" "}({addResult.skipped} skipped)
-              </span>
-            )}
-          </p>
-          <Link href="/hosts" className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2">
-            View all hosts →
-          </Link>
+        <div className="space-y-3">
+          {addResult.added > 0 && (
+            <div className="rounded-lg border border-green-800 bg-green-950/30 px-4 py-4 space-y-2">
+              <p className="text-green-400 text-sm font-medium">
+                {addResult.added} host{addResult.added !== 1 ? "s" : ""} added
+                {addResult.skipped > 0 && (
+                  <span className="text-slate-400 font-normal">
+                    {" "}({addResult.skipped} already existed)
+                  </span>
+                )}
+              </p>
+              <Link href="/hosts" className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2">
+                View all hosts →
+              </Link>
+            </div>
+          )}
+          {addResult.failed.length > 0 && (
+            <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-4 space-y-2">
+              <p className="text-red-400 text-sm font-medium">
+                {addResult.failed.length} host{addResult.failed.length !== 1 ? "s" : ""} failed SSH verification
+              </p>
+              <ul className="space-y-1">
+                {addResult.failed.map((f) => (
+                  <li key={f.ip} className="text-sm text-slate-400">
+                    <span className="font-mono text-slate-300">{f.ip}</span>
+                    {" — "}{f.error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {addResult.added === 0 && addResult.failed.length === 0 && addResult.skipped > 0 && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-4">
+              <p className="text-slate-400 text-sm">All {addResult.skipped} hosts already existed.</p>
+            </div>
+          )}
         </div>
       )}
     </div>

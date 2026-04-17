@@ -101,7 +101,8 @@ export default function NewGroupPage() {
                id="priority"
                type="number"
                {...form.register("priority", { valueAsNumber: true })}
-               min={0}
+               min={1}
+               max={1000}
              />
              {form.formState.errors.priority && (
                <p className="text-sm text-red-400">{form.formState.errors.priority.message}</p>
@@ -113,15 +114,15 @@ export default function NewGroupPage() {
           )}
 
           <div className="flex gap-3 pt-2">
-            <Button type="submit" disabled={loading}>
-              {loading ? "Creating..." : "Create Group"}
-            </Button>
             <Button
               type="button"
               variant="outline"
               onClick={() => router.push("/groups")}
             >
               Cancel
+            </Button>
+            <Button type="submit" disabled={loading}>
+              {loading ? "Creating..." : "Create Group"}
             </Button>
           </div>
         </form>

@@ -17,7 +17,9 @@ def render_resolv_conf(nameservers: list[str], search_domains: list[str], option
     return "\n".join(lines)
 
 
-def render_systemd_resolved(nameservers: list[str], search_domains: list[str], dns_over_tls: bool) -> str:
+def render_systemd_resolved(
+    nameservers: list[str], search_domains: list[str], dns_over_tls: bool
+) -> str:
     """Render /etc/systemd/resolved.conf content."""
     lines = [
         "# Managed by Barricade — do not edit manually",

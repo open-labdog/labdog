@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
@@ -32,14 +33,34 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     mode: "onSubmit",
   })
 
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard" },
-    { href: "/groups", label: "Groups" },
-    { href: "/hosts", label: "Hosts" },
-    { href: "/ssh-keys", label: "SSH Keys" },
-    ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
-    { href: "/git-repos", label: "Git Repos" },
-    { href: "/audit", label: "Audit Log" },
+  const navGroups: { label?: string; items: { href: string; label: string }[] }[] = [
+    {
+      items: [{ href: "/dashboard", label: "Dashboard" }],
+    },
+    {
+      label: "MANAGE",
+      items: [
+        { href: "/hosts", label: "Hosts" },
+        { href: "/groups", label: "Groups" },
+        { href: "/schedules", label: "Update Workflows" },
+      ],
+    },
+    {
+      label: "INTEGRATIONS",
+      items: [
+        { href: "/ssh-keys", label: "SSH Keys" },
+        { href: "/git-repos", label: "Git Repos" },
+        { href: "/hypervisors", label: "Proxmox" },
+      ],
+    },
+    {
+      label: "ADMIN",
+      items: [
+        ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
+        { href: "/audit", label: "Audit Log" },
+        ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
+      ],
+    },
   ]
 
   const onPasswordSubmit = form.handleSubmit(async (data) => {
@@ -69,37 +90,50 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         <p className="text-sm text-slate-400">Firewall Management</p>
       </div>
 
-      <nav className="space-y-2">
-        {navItems.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigation}
-            className={cn(
-              "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
-              (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
-                ? "bg-slate-800 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+      <nav className="space-y-4">
+        {navGroups.map((group, gi) => (
+          <div key={gi}>
+            {group.label && (
+              <p className="px-4 mb-1 text-[10px] font-semibold tracking-widest text-slate-500 uppercase">
+                {group.label}
+              </p>
             )}
-          >
-            {item.label}
-          </Link>
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigation}
+                  className={cn(
+                    "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                    (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
+                      ? "bg-slate-800 text-white"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </div>
+          </div>
         ))}
       </nav>
 
-      <div className="mt-auto border-t border-slate-700 pt-4">
-        <div className="text-sm text-slate-300 truncate">{user?.email}</div>
-        <div className="flex gap-2 mt-2">
-           <Button size="sm" variant="outline" onClick={() => {
-            form.reset()
-            setPasswordDialogOpen(true)
-          }}>
+      <div className="mt-auto border-t border-slate-700 pt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-slate-300 truncate">{user?.email}</div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => { form.reset(); setPasswordDialogOpen(true) }}
+            className="shrink-0"
+          >
             Change Password
           </Button>
-          <Button size="sm" variant="ghost" onClick={logout}>
-            Log Out
-          </Button>
         </div>
+        <Button size="sm" variant="destructive" className="w-full" onClick={logout}>
+          Log Out
+        </Button>
       </div>
 
       <Dialog open={passwordDialogOpen} onOpenChange={(open) => {
@@ -121,14 +155,14 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
                <Input id="confirm-password" type="password" {...form.register("confirm_password")} />
                {form.formState.errors.confirm_password?.message && <p className="text-sm text-red-400">{form.formState.errors.confirm_password.message}</p>}
              </div>
-             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
-              </Button>
+             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)}>
                 Cancel
               </Button>
-            </div>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
+              </Button>
+            </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>

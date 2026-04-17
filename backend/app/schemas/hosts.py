@@ -6,7 +6,7 @@ from app.models.host import FirewallBackend, SyncStatus
 
 
 class HostCreate(BaseModel):
-    hostname: str
+    hostname: str | None = None
     ip_address: str
     ssh_port: int = 22
     ssh_user: str = "root"
@@ -22,6 +22,7 @@ class HostUpdate(BaseModel):
     ssh_key_id: int | None = None
     firewall_backend: FirewallBackend | None = None
     group_ids: list[int] | None = None
+    drift_check_enabled: bool | None = None
 
 
 class HostResponse(BaseModel):
@@ -32,6 +33,7 @@ class HostResponse(BaseModel):
     ssh_user: str
     firewall_backend: FirewallBackend
     sync_status: SyncStatus
+    barricade_source_ip: str | None
     drift_check_enabled: bool
     last_sync_at: datetime | None
     last_drift_check_at: datetime | None

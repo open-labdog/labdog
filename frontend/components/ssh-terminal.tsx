@@ -17,7 +17,7 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const xtermRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
-  const [initialized, setInitialized] = useState(false)
+  const [connectKey, setConnectKey] = useState(0)
 
   const onData = useCallback((data: Uint8Array) => {
     xtermRef.current?.write(data)
@@ -29,7 +29,7 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
   })
 
   useEffect(() => {
-    if (!terminalRef.current || initialized) return
+    if (!terminalRef.current) return
 
     const term = new Terminal({
       cursorBlink: true,
@@ -64,7 +64,6 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
 
     xtermRef.current = term
     fitAddonRef.current = fitAddon
-    setInitialized(true)
 
     connect()
 
@@ -81,7 +80,8 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  }, [initialized, connect, sendData, sendResize, close])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectKey])
 
   return (
     <div className="flex flex-col h-full">
@@ -99,9 +99,9 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
             size="sm"
             variant="outline"
             onClick={() => {
-              setInitialized(false)
               xtermRef.current?.dispose()
               xtermRef.current = null
+              setConnectKey(k => k + 1)
             }}
           >
             Reconnect

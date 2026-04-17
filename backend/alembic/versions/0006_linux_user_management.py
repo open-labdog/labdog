@@ -5,16 +5,17 @@ Revises: 0005
 Create Date: 2026-03-18
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 revision: str = "0006"
 down_revision: str = "0005"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -36,9 +37,7 @@ def upgrade() -> None:
         ),
         sa.Column("username", sa.String(32), nullable=False),
         sa.Column("uid", sa.Integer, nullable=True),
-        sa.Column(
-            "shell", sa.String(100), nullable=False, server_default="/bin/bash"
-        ),
+        sa.Column("shell", sa.String(100), nullable=False, server_default="/bin/bash"),
         sa.Column("home_dir", sa.String(200), nullable=True),
         sa.Column(
             "state",
@@ -74,7 +73,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_linux_users_scope",
         ),
     )
@@ -117,7 +117,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "(group_id IS NOT NULL AND host_id IS NULL) OR (group_id IS NULL AND host_id IS NOT NULL)",
+            "(group_id IS NOT NULL AND host_id IS NULL)"
+            " OR (group_id IS NULL AND host_id IS NOT NULL)",
             name="ck_linux_groups_scope",
         ),
     )
@@ -126,6 +127,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("linux_groups")
     op.drop_table("linux_users")
-    sa.Enum("present", "absent", name="userstate").drop(
-        op.get_bind(), checkfirst=True
-    )
+    sa.Enum("present", "absent", name="userstate").drop(op.get_bind(), checkfirst=True)

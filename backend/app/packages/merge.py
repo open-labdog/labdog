@@ -7,9 +7,7 @@ from app.packages.models import PackageRepository, PackageRule
 from app.packages.schemas import EffectivePackageResponse, PackageRepositoryResponse
 
 
-async def get_effective_packages(
-    host_id: int, db: AsyncSession
-) -> list[EffectivePackageResponse]:
+async def get_effective_packages(host_id: int, db: AsyncSession) -> list[EffectivePackageResponse]:
     """
     Merge group-level package rules + host-level overrides into an effective list.
 
@@ -34,34 +32,34 @@ async def get_effective_packages(
     merged: dict[str, EffectivePackageResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group_id)
-        )
+        result = await db.execute(select(PackageRule).where(PackageRule.group_id == group_id))
         for rule in result.scalars().all():
             if rule.package_name not in merged:
                 merged[rule.package_name] = EffectivePackageResponse(
                     package_name=rule.package_name,
                     version=rule.version,
                     state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-                    package_manager=rule.package_manager.value if hasattr(rule.package_manager, "value") else str(rule.package_manager),
+                    package_manager=rule.package_manager.value
+                    if hasattr(rule.package_manager, "value")
+                    else str(rule.package_manager),
                     priority=rule.priority,
-                    hold=rule.hold if hasattr(rule, 'hold') else False,
+                    hold=rule.hold if hasattr(rule, "hold") else False,
                     source="group",
                     source_id=group_id,
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(
-        select(PackageRule).where(PackageRule.host_id == host_id)
-    )
+    host_result = await db.execute(select(PackageRule).where(PackageRule.host_id == host_id))
     for rule in host_result.scalars().all():
         merged[rule.package_name] = EffectivePackageResponse(
             package_name=rule.package_name,
             version=rule.version,
             state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-            package_manager=rule.package_manager.value if hasattr(rule.package_manager, "value") else str(rule.package_manager),
+            package_manager=rule.package_manager.value
+            if hasattr(rule.package_manager, "value")
+            else str(rule.package_manager),
             priority=rule.priority,
-            hold=rule.hold if hasattr(rule, 'hold') else False,
+            hold=rule.hold if hasattr(rule, "hold") else False,
             source="host",
             source_id=host_id,
             source_name="host override",
@@ -70,9 +68,7 @@ async def get_effective_packages(
     return sorted(merged.values(), key=lambda p: p.package_name)
 
 
-async def get_effective_repos(
-    host_id: int, db: AsyncSession
-) -> list[PackageRepositoryResponse]:
+async def get_effective_repos(host_id: int, db: AsyncSession) -> list[PackageRepositoryResponse]:
     """
     Collect repos from all groups the host belongs to.
 
@@ -80,9 +76,7 @@ async def get_effective_repos(
     (url, repo_type, distribution) not just url.
     """
     memberships = await db.execute(
-        select(HostGroupMembership.c.group_id).where(
-            HostGroupMembership.c.host_id == host_id
-        )
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
     group_ids = [row[0] for row in memberships.all()]
 
@@ -107,7 +101,9 @@ async def get_effective_repos(
             name=repo.name,
             url=repo.url,
             key_url=repo.key_url,
-            repo_type=repo.repo_type.value if hasattr(repo.repo_type, "value") else str(repo.repo_type),
+            repo_type=repo.repo_type.value
+            if hasattr(repo.repo_type, "value")
+            else str(repo.repo_type),
             distribution=repo.distribution,
             components=repo.components,
             state=repo.state.value if hasattr(repo.state, "value") else str(repo.state),

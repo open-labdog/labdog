@@ -1,19 +1,52 @@
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel, Field, field_validator
+
+_VALID_POLICIES = {"accept", "drop"}
+
+
+def _validate_policy(v: str | None) -> str | None:
+    if v is not None and v not in _VALID_POLICIES:
+        raise ValueError(f"Policy must be 'accept' or 'drop', got '{v}'")
+    return v
 
 
 class GroupCreate(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
-    priority: int
+    priority: int = Field(ge=1, le=1000)
+    input_policy: str | None = None
+    output_policy: str | None = None
+
+    @field_validator("input_policy", "output_policy")
+    @classmethod
+    def check_policy(cls, v: str | None) -> str | None:
+        return _validate_policy(v)
 
 
 class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     category: str | None = None
-    priority: int | None = None
+    priority: int | None = Field(default=None, ge=1, le=1000)
+    input_policy: str | None = None
+    output_policy: str | None = None
+
+    @field_validator("input_policy", "output_policy")
+    @classmethod
+    def check_policy(cls, v: str | None) -> str | None:
+        return _validate_policy(v)
+
+
+class GroupPoliciesUpdate(BaseModel):
+    input_policy: str | None = None
+    output_policy: str | None = None
+
+    @field_validator("input_policy", "output_policy")
+    @classmethod
+    def check_policy(cls, v: str | None) -> str | None:
+        return _validate_policy(v)
 
 
 class GroupResponse(BaseModel):
@@ -22,6 +55,8 @@ class GroupResponse(BaseModel):
     description: str | None
     category: str | None
     priority: int
+    input_policy: str | None = None
+    output_policy: str | None = None
     created_at: datetime
     updated_at: datetime
     gitops_enabled: bool = False

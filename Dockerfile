@@ -24,6 +24,8 @@ RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
 FROM python:3.12-slim
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client && rm -rf /var/lib/apt/lists/*
+
 RUN useradd -m -u 1000 barricade
 
 # Python packages from builder
@@ -36,7 +38,7 @@ COPY --chown=barricade:barricade backend/alembic/ alembic/
 COPY --chown=barricade:barricade backend/alembic.ini alembic.ini
 
 # Frontend static files
-COPY --from=frontend-builder --chown=barricade:barricade /app/out/ /app/frontend/out/
+COPY --from=frontend-builder --chown=barricade:barricade /app/out/ /usr/lib/barricade/frontend/out/
 
 USER barricade
 EXPOSE 8000

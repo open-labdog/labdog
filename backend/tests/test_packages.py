@@ -1,10 +1,9 @@
 import pytest
 from pydantic import ValidationError
 
-from app.packages.schemas import PackageRuleCreate
 from app.packages.diff import compute_diff
 from app.packages.generator import generate_package_playbook
-
+from app.packages.schemas import PackageRuleCreate
 
 # ---------------------------------------------------------------------------
 # Schema validation tests (pure unit tests, no DB)
@@ -120,16 +119,25 @@ class TestPackageGenerator:
     def test_repos_before_packages(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "nginx", "state": "present", "version": None, "package_manager": "auto"}],
-            repos=[{
-                "name": "nginx-stable",
-                "url": "https://nginx.org/packages/ubuntu",
-                "repo_type": "apt",
-                "distribution": "jammy",
-                "components": "nginx",
-                "state": "present",
-                "key_url": None,
-            }],
+            packages=[
+                {
+                    "package_name": "nginx",
+                    "state": "present",
+                    "version": None,
+                    "package_manager": "auto",
+                }
+            ],
+            repos=[
+                {
+                    "name": "nginx-stable",
+                    "url": "https://nginx.org/packages/ubuntu",
+                    "repo_type": "apt",
+                    "distribution": "jammy",
+                    "components": "nginx",
+                    "state": "present",
+                    "key_url": None,
+                }
+            ],
             ssh_key_path="/tmp/test.key",
         )
         tasks = result["playbook"][0]["tasks"]
@@ -140,7 +148,14 @@ class TestPackageGenerator:
     def test_gather_facts_true(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "nginx", "state": "present", "version": None, "package_manager": "auto"}],
+            packages=[
+                {
+                    "package_name": "nginx",
+                    "state": "present",
+                    "version": None,
+                    "package_manager": "auto",
+                }
+            ],
             repos=[],
             ssh_key_path="/tmp/test.key",
         )
@@ -149,7 +164,14 @@ class TestPackageGenerator:
     def test_become_true(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "nginx", "state": "latest", "version": None, "package_manager": "auto"}],
+            packages=[
+                {
+                    "package_name": "nginx",
+                    "state": "latest",
+                    "version": None,
+                    "package_manager": "auto",
+                }
+            ],
             repos=[],
             ssh_key_path="/tmp/test.key",
         )
@@ -158,7 +180,14 @@ class TestPackageGenerator:
     def test_versioned_package_apt_format(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "nginx", "state": "present", "version": "1.24.0", "package_manager": "apt"}],
+            packages=[
+                {
+                    "package_name": "nginx",
+                    "state": "present",
+                    "version": "1.24.0",
+                    "package_manager": "apt",
+                }
+            ],
             repos=[],
             ssh_key_path="/tmp/test.key",
         )
@@ -169,7 +198,14 @@ class TestPackageGenerator:
     def test_versioned_package_yum_format(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "nginx", "state": "present", "version": "1.24.0", "package_manager": "yum"}],
+            packages=[
+                {
+                    "package_name": "nginx",
+                    "state": "present",
+                    "version": "1.24.0",
+                    "package_manager": "yum",
+                }
+            ],
             repos=[],
             ssh_key_path="/tmp/test.key",
         )
@@ -180,7 +216,14 @@ class TestPackageGenerator:
     def test_absent_package_state(self):
         result = generate_package_playbook(
             host_ip="1.2.3.4",
-            packages=[{"package_name": "telnet", "state": "absent", "version": None, "package_manager": "auto"}],
+            packages=[
+                {
+                    "package_name": "telnet",
+                    "state": "absent",
+                    "version": None,
+                    "package_manager": "auto",
+                }
+            ],
             repos=[],
             ssh_key_path="/tmp/test.key",
         )
@@ -197,23 +240,33 @@ class TestPackageGenerator:
 @pytest.mark.asyncio
 class TestPackageMerge:
     async def test_group_package_merge_priority(self, db):
-        from tests.conftest import create_group, create_host, create_ssh_key
-        from app.packages.models import PackageRule, PackageState, PackageManager
         from app.packages.merge import get_effective_packages
+        from app.packages.models import PackageManager, PackageRule, PackageState
+        from tests.conftest import create_group, create_host, create_ssh_key
 
         group_low = await create_group(db, name="low-prio", priority=10)
         group_high = await create_group(db, name="high-prio", priority=100)
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group_low.id, group_high.id])
 
-        db.add(PackageRule(
-            group_id=group_low.id, package_name="nginx",
-            state=PackageState.absent, package_manager=PackageManager.auto, priority=0,
-        ))
-        db.add(PackageRule(
-            group_id=group_high.id, package_name="nginx",
-            state=PackageState.present, package_manager=PackageManager.auto, priority=0,
-        ))
+        db.add(
+            PackageRule(
+                group_id=group_low.id,
+                package_name="nginx",
+                state=PackageState.absent,
+                package_manager=PackageManager.auto,
+                priority=0,
+            )
+        )
+        db.add(
+            PackageRule(
+                group_id=group_high.id,
+                package_name="nginx",
+                state=PackageState.present,
+                package_manager=PackageManager.auto,
+                priority=0,
+            )
+        )
         await db.flush()
 
         effective = await get_effective_packages(host.id, db)
@@ -224,22 +277,32 @@ class TestPackageMerge:
         assert nginx[0].source_id == group_high.id
 
     async def test_host_override_replaces_group(self, db):
-        from tests.conftest import create_group, create_host, create_ssh_key
-        from app.packages.models import PackageRule, PackageState, PackageManager
         from app.packages.merge import get_effective_packages
+        from app.packages.models import PackageManager, PackageRule, PackageState
+        from tests.conftest import create_group, create_host, create_ssh_key
 
         group = await create_group(db, priority=50)
         ssh_key = await create_ssh_key(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
 
-        db.add(PackageRule(
-            group_id=group.id, package_name="nginx",
-            state=PackageState.present, package_manager=PackageManager.auto, priority=0,
-        ))
-        db.add(PackageRule(
-            host_id=host.id, package_name="nginx",
-            state=PackageState.absent, package_manager=PackageManager.auto, priority=0,
-        ))
+        db.add(
+            PackageRule(
+                group_id=group.id,
+                package_name="nginx",
+                state=PackageState.present,
+                package_manager=PackageManager.auto,
+                priority=0,
+            )
+        )
+        db.add(
+            PackageRule(
+                host_id=host.id,
+                package_name="nginx",
+                state=PackageState.absent,
+                package_manager=PackageManager.auto,
+                priority=0,
+            )
+        )
         await db.flush()
 
         effective = await get_effective_packages(host.id, db)
@@ -249,9 +312,9 @@ class TestPackageMerge:
         assert nginx[0].source == "host"
 
     async def test_repo_dedup_by_url_type_distribution(self, db):
-        from tests.conftest import create_group, create_host, create_ssh_key
-        from app.packages.models import PackageRepository, RepoType, PackageState
         from app.packages.merge import get_effective_repos
+        from app.packages.models import PackageRepository, PackageState, RepoType
+        from tests.conftest import create_group, create_host, create_ssh_key
 
         group_a = await create_group(db, priority=10)
         group_b = await create_group(db, priority=20)
@@ -259,27 +322,37 @@ class TestPackageMerge:
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group_a.id, group_b.id])
 
         # Same URL but different distribution → should NOT be deduplicated
-        db.add(PackageRepository(
-            group_id=group_a.id, name="nginx-jammy",
-            url="https://nginx.org/packages/ubuntu",
-            repo_type=RepoType.apt, distribution="jammy",
-            components="nginx", state=PackageState.present,
-        ))
-        db.add(PackageRepository(
-            group_id=group_b.id, name="nginx-focal",
-            url="https://nginx.org/packages/ubuntu",
-            repo_type=RepoType.apt, distribution="focal",
-            components="nginx", state=PackageState.present,
-        ))
+        db.add(
+            PackageRepository(
+                group_id=group_a.id,
+                name="nginx-jammy",
+                url="https://nginx.org/packages/ubuntu",
+                repo_type=RepoType.apt,
+                distribution="jammy",
+                components="nginx",
+                state=PackageState.present,
+            )
+        )
+        db.add(
+            PackageRepository(
+                group_id=group_b.id,
+                name="nginx-focal",
+                url="https://nginx.org/packages/ubuntu",
+                repo_type=RepoType.apt,
+                distribution="focal",
+                components="nginx",
+                state=PackageState.present,
+            )
+        )
         await db.flush()
 
         repos = await get_effective_repos(host.id, db)
         assert len(repos) == 2
 
     async def test_repo_dedup_same_key(self, db):
-        from tests.conftest import create_group, create_host, create_ssh_key
-        from app.packages.models import PackageRepository, RepoType, PackageState
         from app.packages.merge import get_effective_repos
+        from app.packages.models import PackageRepository, PackageState, RepoType
+        from tests.conftest import create_group, create_host, create_ssh_key
 
         group_a = await create_group(db, priority=10)
         group_b = await create_group(db, priority=20)
@@ -287,18 +360,28 @@ class TestPackageMerge:
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group_a.id, group_b.id])
 
         # Same URL, same type, same distribution → should be deduplicated to 1
-        db.add(PackageRepository(
-            group_id=group_a.id, name="nginx-a",
-            url="https://nginx.org/packages/ubuntu",
-            repo_type=RepoType.apt, distribution="jammy",
-            components="nginx", state=PackageState.present,
-        ))
-        db.add(PackageRepository(
-            group_id=group_b.id, name="nginx-b",
-            url="https://nginx.org/packages/ubuntu",
-            repo_type=RepoType.apt, distribution="jammy",
-            components="nginx", state=PackageState.present,
-        ))
+        db.add(
+            PackageRepository(
+                group_id=group_a.id,
+                name="nginx-a",
+                url="https://nginx.org/packages/ubuntu",
+                repo_type=RepoType.apt,
+                distribution="jammy",
+                components="nginx",
+                state=PackageState.present,
+            )
+        )
+        db.add(
+            PackageRepository(
+                group_id=group_b.id,
+                name="nginx-b",
+                url="https://nginx.org/packages/ubuntu",
+                repo_type=RepoType.apt,
+                distribution="jammy",
+                components="nginx",
+                state=PackageState.present,
+            )
+        )
         await db.flush()
 
         repos = await get_effective_repos(host.id, db)
@@ -409,9 +492,7 @@ class TestPackageAPI:
         )
         rule_id = create_resp.json()["id"]
 
-        del_resp = await superuser_client.delete(
-            f"/api/groups/{group.id}/packages/{rule_id}"
-        )
+        del_resp = await superuser_client.delete(f"/api/groups/{group.id}/packages/{rule_id}")
         assert del_resp.status_code == 204
 
         list_resp = await superuser_client.get(f"/api/groups/{group.id}/packages")

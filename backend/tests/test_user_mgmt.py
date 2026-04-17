@@ -1,8 +1,8 @@
 import pytest
 from pydantic import ValidationError
 
-from app.user_mgmt.schemas import LinuxUserCreate, LinuxGroupCreate
 from app.user_mgmt.diff import diff_users
+from app.user_mgmt.schemas import LinuxGroupCreate, LinuxUserCreate
 
 
 class TestUserSchemas:

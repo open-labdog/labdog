@@ -1,5 +1,7 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.audit_log import AuditLog
 
 
@@ -22,7 +24,7 @@ async def log_action(
         before_state=before_state,
         after_state=after_state,
         ip_address=ip_address,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     db.add(entry)
     # Don't commit here — let the caller's transaction handle it

@@ -1,6 +1,8 @@
 import base64
+
 import pytest
-from app.crypto.encryption import encrypt_ssh_key, decrypt_ssh_key
+
+from app.crypto.encryption import decrypt_ssh_key, encrypt_ssh_key
 from app.crypto.key_management import generate_master_key
 
 
@@ -10,7 +12,9 @@ def _make_key() -> bytes:
 
 def test_encrypt_decrypt_roundtrip():
     key = _make_key()
-    original = "-----BEGIN OPENSSH PRIVATE KEY-----\ntest key content\n-----END OPENSSH PRIVATE KEY-----"
+    original = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\ntest key content\n-----END OPENSSH PRIVATE KEY-----"
+    )
     encrypted = encrypt_ssh_key(original, key)
     decrypted = decrypt_ssh_key(encrypted, key)
     assert decrypted == original

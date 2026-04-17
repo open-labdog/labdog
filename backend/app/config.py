@@ -24,6 +24,7 @@ from pydantic import BaseModel, model_validator
 # Section models
 # ---------------------------------------------------------------------------
 
+
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
@@ -41,6 +42,9 @@ class DatabaseConfig(BaseModel):
 
 class RedisConfig(BaseModel):
     url: str = "redis://localhost:6379/0"
+
+
+_INSECURE_DEFAULTS = {"change-me-in-production", "change-me-32-bytes-base64-encoded"}
 
 
 class SecurityConfig(BaseModel):
@@ -84,15 +88,27 @@ class DiscoveryConfig(BaseModel):
     scan_timeout: float = 1.0
     max_concurrent: int = 100
     max_bulk_add: int = 50
+    rediscovery_enabled: bool = False
+    rediscovery_interval_minutes: int = 60
+
+
+class CeleryConfig(BaseModel):
+    concurrency: int = 4
+    max_tasks_per_child: int = 100
 
 
 class DriftConfig(BaseModel):
     check_interval_minutes: int = 30
 
 
+class HostsConfig(BaseModel):
+    ip_recheck_on_drift: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Root settings
 # ---------------------------------------------------------------------------
+
 
 class Settings(BaseModel):
     server: ServerConfig = ServerConfig()
@@ -104,7 +120,9 @@ class Settings(BaseModel):
     logging: LoggingConfig = LoggingConfig()
     ssh: SSHConfig = SSHConfig()
     discovery: DiscoveryConfig = DiscoveryConfig()
+    celery: CeleryConfig = CeleryConfig()
     drift: DriftConfig = DriftConfig()
+    hosts: HostsConfig = HostsConfig()
 
     @model_validator(mode="before")
     @classmethod
@@ -117,7 +135,7 @@ class Settings(BaseModel):
         for key, raw in os.environ.items():
             if not key.startswith(prefix):
                 continue
-            parts = key[len(prefix):].lower().split("__")
+            parts = key[len(prefix) :].lower().split("__")
             if len(parts) < 2:
                 continue
             section = parts[0]
@@ -162,11 +180,32 @@ def _load_toml(path: Path | None) -> dict:
         return tomllib.load(f)
 
 
+def _validate_required(s: Settings) -> None:
+    """Raise on insecure or missing required settings at startup."""
+    errors: list[str] = []
+    if s.security.secret_key in _INSECURE_DEFAULTS:
+        errors.append(
+            "security.secret_key is not set. "
+            "Set BARRICADE_SECURITY__SECRET_KEY or [security] secret_key in barricade.toml."
+        )
+    if s.security.encryption_key in _INSECURE_DEFAULTS:
+        errors.append(
+            "security.encryption_key is not set. "
+            "Generate one with: python -m app.crypto.key_management "
+            "and set BARRICADE_SECURITY__ENCRYPTION_KEY"
+            " or [security] encryption_key in barricade.toml."
+        )
+    if errors:
+        raise SystemExit("FATAL: Barricade cannot start:\n  - " + "\n  - ".join(errors))
+
+
 def load_settings() -> Settings:
     """Build a Settings instance from the TOML file + env overrides."""
     path = _find_config_path()
     data = _load_toml(path)
-    return Settings(**data)
+    s = Settings(**data)
+    _validate_required(s)
+    return s
 
 
 settings = load_settings()

@@ -17,7 +17,7 @@ function Tooltip({ content, children, side = "top" }: TooltipProps) {
       </TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
         <TooltipPrimitive.Positioner side={side}>
-          <TooltipPrimitive.Popup className="bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-3 py-1.5 text-xs shadow-lg z-50">
+          <TooltipPrimitive.Popup className="bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-3 py-1.5 text-xs shadow-lg z-[100]">
             {content}
           </TooltipPrimitive.Popup>
         </TooltipPrimitive.Positioner>

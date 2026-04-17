@@ -1,42 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TAG="barricade-local"
-IMAGES=("barricade-backend" "barricade-frontend")
+TAG="latest"
+IMAGE="barricade"
 
 echo "=== Barricade Local Build ==="
 echo ""
 
-# Remove previous images
-for img in "${IMAGES[@]}"; do
-  if docker image inspect "${img}:${TAG}" &>/dev/null; then
-    echo "Removing old ${img}:${TAG}"
-    docker rmi "${img}:${TAG}" 2>/dev/null || true
-  fi
-done
+# Remove previous image
+if docker image inspect "${IMAGE}:${TAG}" &>/dev/null; then
+  echo "Removing old ${IMAGE}:${TAG}"
+  docker rmi "${IMAGE}:${TAG}" 2>/dev/null || true
+fi
 
-# Build backend
+# Build AIO image
 echo ""
-echo "--- Building backend ---"
+echo "--- Building barricade ---"
 docker build \
-  --tag "barricade-backend:${TAG}" \
-  --file backend/Dockerfile \
-  backend/
+  --tag "${IMAGE}:${TAG}" \
+  --file Dockerfile \
+  .
 
-# Build frontend
-echo ""
-echo "--- Building frontend ---"
-docker build \
-  --tag "barricade-frontend:${TAG}" \
-  --file frontend/Dockerfile \
-  frontend/
-
-# Prune build cache and dangling images
-echo ""
-echo "--- Cleaning up ---"
-docker builder prune -f 2>/dev/null || true
-docker image prune -f 2>/dev/null || true
+# Prune build cache and dangling images (only when --clean is passed)
+if [[ "${1:-}" == "--clean" ]]; then
+  echo ""
+  echo "--- Cleaning up ---"
+  docker builder prune -f 2>/dev/null || true
+  docker image prune -f 2>/dev/null || true
+fi
 
 echo ""
 echo "=== Done ==="
-docker images --filter "reference=barricade-*:${TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+docker images --filter "reference=${IMAGE}:${TAG}" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"

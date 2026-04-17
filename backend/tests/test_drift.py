@@ -5,6 +5,7 @@ Tests the /api/drift endpoints for checking host drift and updating drift settin
 """
 
 import uuid
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,11 +113,15 @@ class TestDrift:
     @pytest.mark.asyncio
     async def test_check_drift_with_rules_out_of_sync(self, db: AsyncSession, superuser_client):
         """Host with rules, drift check → out_of_sync (stub returns [])."""
+        from app.models.host import FirewallBackend
+
         # Setup: create SSH key, group, host, and add a rule
         ssh_key = await create_ssh_key(db)
         group = await create_group(db)
         host = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
-        
+        host.firewall_backend = FirewallBackend.nftables
+        await db.flush()
+
         # Add a rule to the group
         await create_rule(
             db,
@@ -130,12 +135,20 @@ class TestDrift:
             port_end=22,
         )
 
-        # Check drift via API
-        resp = await superuser_client.post(f"/api/drift/hosts/{host.id}/check")
+        # Mock fetch_current_firewall_state to return empty state (no rules on host)
+        from app.rules.model import ChainPolicies
+        from app.sync.collector import CollectedFirewallState
+
+        empty_state = CollectedFirewallState(rules=[], policies=ChainPolicies())
+        with patch(
+            "app.drift.detector.fetch_current_firewall_state",
+            new=AsyncMock(return_value=empty_state),
+        ):
+            resp = await superuser_client.post(f"/api/drift/hosts/{host.id}/check")
 
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
         data = resp.json()
-        # Since the stub returns [], and we have rules, status should be out_of_sync
+        # Since current state is [], and we have rules, status should be out_of_sync
         assert data["status"] == "out_of_sync"
         assert data["has_changes"] is True
         assert data["add_count"] > 0

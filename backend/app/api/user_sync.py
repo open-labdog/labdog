@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,9 +15,9 @@ from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import SyncJob
 from app.models.user import User
-from app.user_mgmt.collector import collect_user_states, collect_group_states
-from app.user_mgmt.diff import diff_users, diff_groups
-from app.user_mgmt.merge import get_effective_users, get_effective_groups
+from app.user_mgmt.collector import collect_group_states, collect_user_states
+from app.user_mgmt.diff import diff_groups, diff_users
+from app.user_mgmt.merge import get_effective_groups, get_effective_users
 
 router = APIRouter(prefix="/linux-users", tags=["linux-user-sync"])
 
@@ -63,24 +63,18 @@ async def check_user_drift(
         hms = HostModuleStatus(host_id=host_id, module_type="linux_user")
         db.add(hms)
 
-    checked_at = datetime.now(timezone.utc)
+    checked_at = datetime.now(UTC)
 
     try:
         if not host.ssh_key_id:
-            raise HTTPException(
-                status_code=400, detail="Host has no SSH key assigned"
-            )
+            raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
 
-        key_result = await db.execute(
-            select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-        )
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
         ssh_key = key_result.scalar_one_or_none()
         if not ssh_key:
             raise ValueError("SSH key not found")
 
-        private_key_pem = decrypt_ssh_key(
-            ssh_key.encrypted_private_key, get_master_key()
-        )
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
         desired_users = await get_effective_users(host_id, db)
         desired_groups = await get_effective_groups(host_id, db)
@@ -102,18 +96,18 @@ async def check_user_drift(
         group_diff = diff_groups(desired_group_dicts, actual_groups)
 
         users_drifted = bool(
-            user_diff.users_to_add
-            or user_diff.users_to_remove
-            or user_diff.users_to_update
+            user_diff.users_to_add or user_diff.users_to_remove or user_diff.users_to_update
         )
         groups_drifted = bool(
-            group_diff.groups_to_add
-            or group_diff.groups_to_remove
-            or group_diff.groups_to_update
+            group_diff.groups_to_add or group_diff.groups_to_remove or group_diff.groups_to_update
         )
 
         hms.sync_status = "drifted" if users_drifted or groups_drifted else "in_sync"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return UserDriftResponse(
@@ -135,6 +129,10 @@ async def check_user_drift(
     except Exception as e:
         hms.sync_status = "error"
         hms.last_drift_check_at = checked_at
+
+        from app.api.host_state import refresh_host_sync_status
+
+        await refresh_host_sync_status(host, db)
         await db.commit()
 
         return UserDriftResponse(
@@ -222,17 +220,11 @@ async def plan_user_sync(
     effective_groups = await get_effective_groups(host_id, db)
 
     if not effective_users and not effective_groups:
-        raise HTTPException(
-            status_code=400, detail="No user or group rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No user or group rules defined for this host")
 
-    key_result = await db.execute(
-        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-    )
+    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     ssh_key = key_result.scalar_one()
-    private_key_pem = decrypt_ssh_key(
-        ssh_key.encrypted_private_key, get_master_key()
-    )
+    private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
     desired_users = [u.model_dump() for u in effective_users]
     desired_groups = [g.model_dump() for g in effective_groups]
@@ -281,9 +273,7 @@ async def plan_user_sync(
     )
 
 
-@router.post(
-    "/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201
-)
+@router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_user_sync(
     host_id: int,
     user: User = Depends(current_superuser),
@@ -313,9 +303,7 @@ async def trigger_user_sync(
     effective_users = await get_effective_users(host_id, db)
     effective_groups = await get_effective_groups(host_id, db)
     if not effective_users and not effective_groups:
-        raise HTTPException(
-            status_code=400, detail="No user or group rules defined for this host"
-        )
+        raise HTTPException(status_code=400, detail="No user or group rules defined for this host")
 
     job = SyncJob(
         host_id=host_id,
@@ -341,9 +329,7 @@ async def trigger_group_user_sync(
     db: AsyncSession = Depends(get_db),
 ):
     memberships = await db.execute(
-        select(HostGroupMembership.c.host_id).where(
-            HostGroupMembership.c.group_id == group_id
-        )
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
     host_ids = [r[0] for r in memberships.all()]
     if not host_ids:

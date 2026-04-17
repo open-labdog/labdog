@@ -3,36 +3,69 @@
 import { useState, useMemo, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, XIcon, LayoutListIcon, TableIcon, ChevronDownIcon } from "lucide-react"
+import { ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { cn, useDelayedLoading } from "@/lib/utils"
+import { cn, useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
-import type { Host, HostGroup } from "@/lib/types"
+import { Tooltip } from "@/components/ui/tooltip"
+import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
+import type { HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
+
+const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
+  { key: "firewall", icon: ShieldIcon, label: "Firewall" },
+  { key: "hosts_file", icon: FileTextIcon, label: "Hosts file" },
+  { key: "services", icon: ServerIcon, label: "Services" },
+  { key: "users", icon: UsersIcon, label: "Users" },
+  { key: "cron", icon: ClockIcon, label: "Cron" },
+  { key: "packages", icon: PackageIcon, label: "Packages" },
+  { key: "resolver", icon: GlobeIcon, label: "Resolver" },
+  { key: "ca_certs", icon: ShieldCheckIcon, label: "CA certs" },
+]
+
+function OverrideBadges({ counts }: { counts: ModuleCounts }) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0)
+  if (total === 0) return <span className="text-slate-700 text-xs">—</span>
+  return (
+    <div className="flex items-center gap-1">
+      {MODULE_ICONS.map(({ key, icon: Icon, label }) => {
+        const count = counts[key]
+        if (count === 0) return null
+        return (
+          <Tooltip key={key} content={`${label}: ${count} override${count !== 1 ? "s" : ""}`}>
+            <span className="inline-flex items-center justify-center w-5 h-5 rounded text-amber-400">
+              <Icon className="w-3.5 h-3.5" />
+            </span>
+          </Tooltip>
+        )
+      })}
+    </div>
+  )
+}
+
+const ROW_BORDER: Record<SyncStatus, string> = {
+  in_sync: "border-l-2 border-l-green-500/60",
+  out_of_sync: "border-l-2 border-l-amber-500/60",
+  pending: "border-l-2 border-l-blue-500/60",
+  unknown: "border-l-2 border-l-slate-600/60",
+  error: "border-l-2 border-l-red-500/60",
+}
 
 export default function HostsPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<"flat" | "grouped">(() =>
-    typeof window !== "undefined" && localStorage.getItem("barricade-hosts-view") === "grouped" ? "grouped" : "flat"
-  )
+  const [bulkDriftConfirmOpen, setBulkDriftConfirmOpen] = useState(false)
+  const [bulkDriftTarget, setBulkDriftTarget] = useState<boolean>(true)
+  const [bulkDriftUpdating, setBulkDriftUpdating] = useState(false)
+  const [bulkDriftProgress, setBulkDriftProgress] = useState<{ done: number; total: number } | null>(null)
   const [groupDropdownOpen, setGroupDropdownOpen] = useState(false)
   const [groupSearch, setGroupSearch] = useState("")
   const groupDropdownRef = useRef<HTMLDivElement>(null)
@@ -51,9 +84,9 @@ export default function HostsPage() {
     }
   }, [groupDropdownOpen])
 
-  const { data: hosts, isLoading, error } = useQuery<Host[]>({
-    queryKey: ["hosts"],
-    queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  const { data: hosts, isLoading, error } = useQuery<HostSummary[]>({
+    queryKey: ["hosts-summary"],
+    queryFn: () => apiFetch<HostSummary[]>("/api/hosts/summary"),
   })
   const { data: groups } = useQuery<HostGroup[]>({
     queryKey: ["groups"],
@@ -66,41 +99,12 @@ export default function HostsPage() {
   }, [groups])
   const showLoading = useDelayedLoading(isLoading)
 
-  useEffect(() => {
-    localStorage.setItem("barricade-hosts-view", viewMode)
-  }, [viewMode])
-
   const filteredHosts = hosts?.filter(h => {
-    const q = searchQuery.toLowerCase()
-    const matchesSearch = h.hostname.toLowerCase().includes(q) || h.ip_address.toLowerCase().includes(q)
     const matchesGroup = filterGroup === null ? true
       : filterGroup === "ungrouped" ? h.group_ids.length === 0
       : h.group_ids.includes(filterGroup)
-    return matchesSearch && matchesGroup
+    return matchesGroup
   }) ?? []
-
-  const groupedHosts = useMemo(() => {
-    const sections = new Map<string, { group: HostGroup | null; hosts: Host[] }>()
-    for (const host of filteredHosts) {
-      if (host.group_ids.length === 0) {
-        const key = "__ungrouped__"
-        if (!sections.has(key)) sections.set(key, { group: null, hosts: [] })
-        sections.get(key)!.hosts.push(host)
-      } else {
-        for (const gid of host.group_ids) {
-          const g = groupMap.get(gid)
-          const key = String(gid)
-          if (!sections.has(key)) sections.set(key, { group: g ?? null, hosts: [] })
-          sections.get(key)!.hosts.push(host)
-        }
-      }
-    }
-    return [...sections.entries()].sort(([a, av], [b, bv]) => {
-      if (a === "__ungrouped__") return 1
-      if (b === "__ungrouped__") return -1
-      return (bv.group?.priority ?? 0) - (av.group?.priority ?? 0)
-    })
-  }, [filteredHosts, groupMap])
 
   const toggleSelect = (id: number) => {
     setSelected(prev => {
@@ -109,14 +113,6 @@ export default function HostsPage() {
       else next.add(id)
       return next
     })
-  }
-
-  const toggleSelectAll = () => {
-    if (selected.size === filteredHosts.length && filteredHosts.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredHosts.map(h => h.id)))
-    }
   }
 
   async function handleBulkDelete() {
@@ -136,7 +132,7 @@ export default function HostsPage() {
     setBulkDeleting(false)
     setBulkProgress(null)
     setSelected(new Set())
-    await queryClient.invalidateQueries({ queryKey: ["hosts"] })
+    await queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
     if (failed === 0) {
       showSuccess(`Deleted ${success} host${success !== 1 ? "s" : ""}`)
     } else {
@@ -145,13 +141,43 @@ export default function HostsPage() {
     setBulkConfirmOpen(false)
   }
 
+  async function handleBulkDriftToggle() {
+    const ids = Array.from(selected)
+    setBulkDriftUpdating(true)
+    setBulkDriftProgress({ done: 0, total: ids.length })
+    let success = 0, failed = 0
+    for (const id of ids) {
+      try {
+        await apiFetch(`/api/hosts/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({ drift_check_enabled: bulkDriftTarget }),
+        })
+        success++
+      } catch {
+        failed++
+      }
+      setBulkDriftProgress({ done: success + failed, total: ids.length })
+    }
+    setBulkDriftUpdating(false)
+    setBulkDriftProgress(null)
+    setSelected(new Set())
+    await queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
+    const label = bulkDriftTarget ? "enabled" : "disabled"
+    if (failed === 0) {
+      showSuccess(`Drift check ${label} for ${success} host${success !== 1 ? "s" : ""}`)
+    } else {
+      showError(`Updated ${success} of ${ids.length}. ${failed} failed.`)
+    }
+    setBulkDriftConfirmOpen(false)
+  }
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Hosts" }]} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Hosts</h1>
-          <p className="text-slate-400 text-sm mt-1">Manage firewall hosts</p>
+          <p className="text-slate-400 text-sm mt-1">Manage hosts, configurations, and sync status</p>
         </div>
         <div className="flex gap-2">
           <Link href="/hosts/discover" className={cn(buttonVariants({ variant: "outline" }))}>
@@ -162,31 +188,14 @@ export default function HostsPage() {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search by hostname or IP..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
-            >
-              <XIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
         <div className="relative" ref={groupDropdownRef}>
-          <button
+          <Button
+            variant="outline"
             onClick={() => { setGroupDropdownOpen(!groupDropdownOpen); setGroupSearch("") }}
-            className="flex items-center gap-1.5 h-9 rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
           >
             {filterGroup === null ? "All Groups" : filterGroup === "ungrouped" ? "Ungrouped" : groupMap.get(filterGroup as number)?.name ?? "Unknown"}
             <ChevronDownIcon className="w-4 h-4" />
-          </button>
+          </Button>
           {groupDropdownOpen && (
             <div className="absolute top-full left-0 z-50 mt-1 w-56 rounded-md border border-slate-700 bg-slate-900 shadow-lg">
               <div className="p-2 border-b border-slate-700">
@@ -232,193 +241,182 @@ export default function HostsPage() {
             </div>
           )}
         </div>
-        <button
-          onClick={() => setViewMode(viewMode === "flat" ? "grouped" : "flat")}
-          className="flex items-center gap-1.5 h-9 px-3 rounded-md border border-slate-700 bg-slate-900 text-sm text-slate-300 hover:text-white hover:border-slate-600 transition-colors"
-        >
-          {viewMode === "flat" ? <LayoutListIcon className="w-4 h-4" /> : <TableIcon className="w-4 h-4" />}
-          {viewMode === "flat" ? "Group View" : "Flat View"}
-        </button>
-        {(searchQuery || filterGroup !== null) && (
+        {filterGroup !== null && (
           <span className="text-sm text-slate-400">
             Showing {filteredHosts.length} of {hosts?.length ?? 0} hosts
           </span>
         )}
       </div>
 
-      {showLoading && <TableSkeleton rows={5} columns={4} />}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+          <span className="text-sm text-slate-300">{selected.size} selected</span>
+          {bulkProgress ? (
+            <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+          ) : bulkDriftProgress ? (
+            <span className="text-sm text-slate-400">Updating drift check {bulkDriftProgress.done}/{bulkDriftProgress.total}...</span>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setBulkDriftTarget(true); setBulkDriftConfirmOpen(true) }}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Enable Drift Check
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setBulkDriftTarget(false); setBulkDriftConfirmOpen(true) }}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Disable Drift Check
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setBulkConfirmOpen(true)}
+                disabled={bulkDeleting || bulkDriftUpdating}
+              >
+                Delete Selected
+              </Button>
+            </>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      {showLoading && <TableSkeleton rows={5} columns={6} />}
 
       {error && (
         <div className="text-red-400 py-8 text-center">Failed to load hosts</div>
       )}
 
-      {!isLoading && !error && filteredHosts.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
+      {!isLoading && !error && (
+        <DataTable<HostSummary>
+          tableId="hosts-v3"
+          data={filteredHosts}
+          emptyMessage={
+            hosts?.length === 0
+              ? undefined
+              : "No hosts match the current filter."
+          }
+          getRowKey={(h) => h.id}
+          rowClassName={(h) => ROW_BORDER[h.sync_status] ?? ROW_BORDER.unknown}
+          columns={[
+            {
+              key: "select",
+              label: "",
+              cell: (h) => (
+                <input
+                  type="checkbox"
+                  checked={selected.has(h.id)}
+                  onChange={() => toggleSelect(h.id)}
+                  className="rounded border-slate-600"
+                  aria-label={`Select ${h.hostname}`}
+                />
+              ),
+              defaultWidth: 40,
+              resizable: false,
+              sortable: false,
+            },
+            {
+              key: "hostname",
+              label: "Hostname",
+              accessor: (h) => h.hostname,
+              cell: (h) => (
+                <Link href={`/hosts/${h.id}`} className="text-sm text-white hover:text-blue-400 transition-colors font-medium truncate">
+                  {h.hostname}
+                </Link>
+              ),
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "e.g. web-01" },
+            },
+            {
+              key: "ip_address",
+              label: "IP Address",
+              accessor: (h) => h.ip_address,
+              cell: (h) => <span className="font-mono text-slate-300 text-sm">{h.ip_address}</span>,
+              defaultWidth: 140,
+              filter: { type: "text", placeholder: "e.g. 10.0.1" },
+            },
+            {
+              key: "groups",
+              label: "Groups",
+              accessor: (h) => h.group_ids.map(id => groupMap.get(id)?.name ?? "").join(" "),
+              cell: (h) => (
+                h.group_ids.length === 0
+                  ? <span className="text-slate-600 text-xs italic">ungrouped</span>
+                  : <div className="flex items-center gap-1.5 overflow-hidden">
+                      {h.group_ids.slice(0, 2).map((gid, i) => (
+                        <span key={gid} className="text-sm text-slate-300 flex items-center gap-1.5 shrink-0">
+                          {i > 0 && <span className="w-px h-3 bg-slate-600" />}
+                          {groupMap.get(gid)?.name ?? `#${gid}`}
+                        </span>
+                      ))}
+                      {h.group_ids.length > 2 && (
+                        <span className="text-xs text-slate-400 shrink-0">+{h.group_ids.length - 2}</span>
+                      )}
+                    </div>
+              ),
+              defaultWidth: 180,
+              filter: { type: "text", placeholder: "group name" },
+            },
+            {
+              key: "overrides",
+              label: "Overrides",
+              cell: (h) => <OverrideBadges counts={h.override_counts} />,
+              defaultWidth: 160,
+              sortable: false,
+            },
+            {
+              key: "sync_drift",
+              label: "Sync / Drift",
+              accessor: (h) => h.last_sync_at ?? "",
+              cell: (h) => (
+                <div className="leading-relaxed">
+                  <div className="text-sm text-slate-300">
+                    {h.last_sync_at ? formatRelativeTime(h.last_sync_at) : <span className="text-xs text-slate-500">Never synced</span>}
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {h.drift_check_enabled
+                      ? (h.last_drift_check_at ? `drift ${formatRelativeTime(h.last_drift_check_at)}` : "drift: never")
+                      : "drift off"}
+                  </div>
+                </div>
+              ),
+              defaultWidth: 130,
+            },
+            {
+              key: "firewall_backend",
+              label: "Firewall",
+              accessor: (h) => h.firewall_backend,
+              cell: (h) => <FirewallBadge backend={h.firewall_backend} />,
+              defaultWidth: 100,
+              filter: { type: "enum", options: [{label:"nftables",value:"nftables"},{label:"iptables",value:"iptables"},{label:"Unknown",value:"unknown"}] },
+            },
+            {
+              key: "sync_status",
+              label: "Status",
+              accessor: (h) => h.sync_status,
+              cell: (h) => <SyncStatusBadge status={h.sync_status} />,
+              defaultWidth: 120,
+              filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"In Sync",value:"in_sync"},{label:"Out of Sync",value:"out_of_sync"},{label:"Unknown",value:"unknown"},{label:"Error",value:"error"}] },
+            },
+          ]}
+        />
       )}
 
-      {!isLoading && !error && hosts?.length === 0 && !searchQuery && (
+      {!isLoading && !error && hosts?.length === 0 && (
         <div className="text-slate-400 py-8 text-center">
           No hosts yet.{" "}
           <Link href="/hosts/new" className="underline hover:text-white">
             Add your first host
           </Link>
         </div>
-      )}
-
-      {!isLoading && !error && filteredHosts.length > 0 && (
-        <>
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
-              <span className="text-sm text-slate-300">{selected.size} selected</span>
-              {bulkProgress ? (
-                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkConfirmOpen(true)}
-                  disabled={bulkDeleting}
-                >
-                  Delete Selected
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-            </div>
-          )}
-          {viewMode === "flat" ? (
-            <div className="rounded-lg border border-slate-700 bg-slate-900">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-slate-700">
-                    <TableHead className="w-10">
-                      <input
-                        type="checkbox"
-                        checked={selected.size === filteredHosts.length && filteredHosts.length > 0}
-                        onChange={toggleSelectAll}
-                        className="rounded border-slate-600"
-                      />
-                    </TableHead>
-                    <TableHead>Hostname</TableHead>
-                    <TableHead>IP Address</TableHead>
-                    <TableHead>Groups</TableHead>
-                    <TableHead>Firewall</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredHosts.map((host) => (
-                    <TableRow key={host.id} className="border-slate-700">
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(host.id)}
-                          onChange={() => toggleSelect(host.id)}
-                          className="rounded border-slate-600"
-                        />
-                      </TableCell>
-                      <TableCell className="font-medium text-white">{host.hostname}</TableCell>
-                      <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {host.group_ids.length > 0 ? (
-                            host.group_ids.map(gid => {
-                              const g = groupMap.get(gid)
-                              return g ? (
-                                <Link key={gid} href={`/groups/${gid}`} className="text-xs px-2 py-0.5 rounded-full bg-slate-700 text-slate-300 hover:bg-slate-600 hover:text-white transition-colors">
-                                  {g.name}
-                                </Link>
-                              ) : null
-                            })
-                          ) : (
-                            <span className="text-xs text-slate-500">&mdash;</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <FirewallBadge backend={host.firewall_backend} />
-                      </TableCell>
-                      <TableCell>
-                        <SyncStatusBadge status={host.sync_status} />
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {groupedHosts.map(([key, { group, hosts: sectionHosts }]) => (
-                <details key={key} open className="group">
-                  <summary className="cursor-pointer flex items-center gap-2 py-2 px-1 text-sm font-medium text-slate-300 hover:text-white select-none">
-                    <span className="transition-transform group-open:rotate-90">▶</span>
-                    <span>{group?.name ?? "Ungrouped"}</span>
-                    <span className="text-slate-500 font-normal">({sectionHosts.length})</span>
-                    {group && (
-                      <span className="text-xs text-slate-600 font-normal">priority {group.priority}</span>
-                    )}
-                  </summary>
-                  <div className="rounded-lg border border-slate-700 bg-slate-900 mt-1">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="border-slate-700">
-                          <TableHead className="w-10">
-                            <input
-                              type="checkbox"
-                              checked={sectionHosts.every(h => selected.has(h.id)) && sectionHosts.length > 0}
-                              onChange={() => {
-                                const allSelected = sectionHosts.every(h => selected.has(h.id))
-                                setSelected(prev => {
-                                  const next = new Set(prev)
-                                  sectionHosts.forEach(h => allSelected ? next.delete(h.id) : next.add(h.id))
-                                  return next
-                                })
-                              }}
-                              className="rounded border-slate-600"
-                            />
-                          </TableHead>
-                          <TableHead>Hostname</TableHead>
-                          <TableHead>IP Address</TableHead>
-                          <TableHead>Firewall</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {sectionHosts.map((host) => (
-                          <TableRow key={host.id} className="border-slate-700">
-                            <TableCell>
-                              <input
-                                type="checkbox"
-                                checked={selected.has(host.id)}
-                                onChange={() => toggleSelect(host.id)}
-                                className="rounded border-slate-600"
-                              />
-                            </TableCell>
-                            <TableCell className="font-medium text-white">{host.hostname}</TableCell>
-                            <TableCell className="font-mono text-slate-300">{host.ip_address}</TableCell>
-                            <TableCell><FirewallBadge backend={host.firewall_backend} /></TableCell>
-                            <TableCell><SyncStatusBadge status={host.sync_status} /></TableCell>
-                            <TableCell>
-                              <Link href={`/hosts/${host.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}>View</Link>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </details>
-              ))}
-            </div>
-          )}
-        </>
       )}
 
       <ConfirmDialog
@@ -430,6 +428,17 @@ export default function HostsPage() {
         variant="destructive"
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
+      />
+      <ConfirmDialog
+        open={bulkDriftConfirmOpen}
+        onOpenChange={setBulkDriftConfirmOpen}
+        title={`${bulkDriftTarget ? "Enable" : "Disable"} drift check for ${selected.size} ${selected.size === 1 ? "host" : "hosts"}?`}
+        description={bulkDriftTarget
+          ? "Drift checking will be scheduled for the selected hosts."
+          : "Drift checking will be stopped for the selected hosts."}
+        confirmLabel={bulkDriftTarget ? "Enable" : "Disable"}
+        loading={bulkDriftUpdating}
+        onConfirm={handleBulkDriftToggle}
       />
     </div>
   )

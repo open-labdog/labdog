@@ -95,27 +95,43 @@ async def import_group_from_yaml(
             diff=diff,
         )
 
-        if diff.has_changes:
-            await db.execute(
-                delete(FirewallRule).where(
-                    FirewallRule.group_id == group_id,
-                    FirewallRule.is_system == False,  # noqa: E712
-                )
-            )
+        # Update chain policies from YAML
+        new_input_policy = parsed.firewall.input_policy if parsed.firewall else None
+        new_output_policy = parsed.firewall.output_policy if parsed.firewall else None
+        policies_changed = (
+            group.input_policy != new_input_policy or group.output_policy != new_output_policy
+        )
 
-            for i, spec in enumerate(desired_specs):
-                rule = spec_to_firewall_rule(spec, group_id)
-                rule.priority = i
-                db.add(rule)
+        if diff.has_changes or policies_changed:
+            if diff.has_changes:
+                await db.execute(
+                    delete(FirewallRule).where(
+                        FirewallRule.group_id == group_id,
+                        FirewallRule.is_system == False,  # noqa: E712
+                    )
+                )
+
+                for i, spec in enumerate(desired_specs):
+                    rule = spec_to_firewall_rule(spec, group_id)
+                    rule.priority = i
+                    db.add(rule)
+
+            # Update chain policies
+            group.input_policy = new_input_policy
+            group.output_policy = new_output_policy
 
             # Create audit log entry
             before_state = {
                 "rules": [asdict(s) for s in current_specs],
                 "count": len(current_specs),
+                "input_policy": group.input_policy,
+                "output_policy": group.output_policy,
             }
             after_state = {
                 "rules": [asdict(s) for s in desired_specs],
                 "count": len(desired_specs),
+                "input_policy": new_input_policy,
+                "output_policy": new_output_policy,
                 "commit_sha": commit_sha,
                 "file_path": group.gitops_file_path,
             }

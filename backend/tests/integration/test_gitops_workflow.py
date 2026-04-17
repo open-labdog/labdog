@@ -123,7 +123,6 @@ def _push_yaml(clone_dir: Path, content: str, message: str) -> None:
 
 
 class TestGitOpsWorkflow:
-
     async def test_full_gitops_lifecycle(self, superuser_client, db):
 
         bare_dir, clone_dir = _setup_bare_repo()
@@ -131,7 +130,7 @@ class TestGitOpsWorkflow:
 
         try:
             # -- STEP 1: Create group with GitOps enabled --
-            group = await create_group(db, name="web-servers-gitops", priority=9990)
+            group = await create_group(db, name="web-servers-gitops", priority=999)
             group.gitops_enabled = True
             group.gitops_file_path = "groups/web-servers.yaml"
             group.gitops_status = GitOpsStatus.disconnected
@@ -172,7 +171,10 @@ class TestGitOpsWorkflow:
             _push_yaml(clone_dir, INVALID_YAML, "Break rules")
 
             subprocess.run(
-                ["git", "pull"], cwd=str(import_dir), capture_output=True, check=True,
+                ["git", "pull"],
+                cwd=str(import_dir),
+                capture_output=True,
+                check=True,
             )
             sha2 = get_current_sha(import_dir)
             content2 = read_file_at_sha(import_dir, "groups/web-servers.yaml", sha2)
@@ -201,7 +203,10 @@ class TestGitOpsWorkflow:
             _push_yaml(clone_dir, UPDATED_YAML, "Fix rules")
 
             subprocess.run(
-                ["git", "pull"], cwd=str(import_dir), capture_output=True, check=True,
+                ["git", "pull"],
+                cwd=str(import_dir),
+                capture_output=True,
+                check=True,
             )
             sha3 = get_current_sha(import_dir)
             content3 = read_file_at_sha(import_dir, "groups/web-servers.yaml", sha3)

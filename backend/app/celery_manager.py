@@ -33,7 +33,8 @@ class CeleryManager:
             "--beat",
             "--scheduler",
             "redbeat.RedBeatScheduler",
-            "--max-tasks-per-child=100",
+            f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",
+            f"--concurrency={settings.celery.concurrency}",
             "-Q",
             "default,long_running",
             f"--loglevel={settings.logging.level}",
@@ -57,9 +58,7 @@ class CeleryManager:
             self._process.wait(timeout=timeout)
             logger.info("Celery subprocess exited gracefully")
         except subprocess.TimeoutExpired:
-            logger.warning(
-                "Celery subprocess did not exit within %ds, sending SIGKILL", timeout
-            )
+            logger.warning("Celery subprocess did not exit within %ds, sending SIGKILL", timeout)
             self._process.kill()
             self._process.wait()
             logger.info("Celery subprocess killed")

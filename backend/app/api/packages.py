@@ -4,23 +4,23 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
-from app.db import get_db
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.models.user import User
-from app.models.host_group import HostGroup
+from app.db import get_db
 from app.models.host import Host
-from app.packages.models import PackageRule, PackageRepository
+from app.models.host_group import HostGroup
+from app.models.user import User
+from app.packages.merge import get_effective_packages, get_effective_repos
+from app.packages.models import PackageRepository, PackageRule
 from app.packages.schemas import (
-    PackageRuleCreate,
-    PackageRuleUpdate,
-    PackageRuleResponse,
     EffectivePackageResponse,
     PackageRepositoryCreate,
-    PackageRepositoryUpdate,
     PackageRepositoryResponse,
+    PackageRepositoryUpdate,
+    PackageRuleCreate,
+    PackageRuleResponse,
+    PackageRuleUpdate,
 )
-from app.packages.merge import get_effective_packages, get_effective_repos
-from app.audit.logger import log_action
 
 router = APIRouter(tags=["packages"])
 
@@ -148,10 +148,11 @@ async def update_group_package(
     return rule
 
 
-@router.delete("/groups/{group_id}/packages/{rule_id}", status_code=204)
+@router.delete("/groups/{group_id}/packages/{rule_id}")
 async def delete_group_package(
     group_id: int,
     rule_id: int,
+    uninstall: bool = False,
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
@@ -170,21 +171,85 @@ async def delete_group_package(
         "state": str(rule.state),
         "version": rule.version,
     }
-    rule_id_for_log = rule.id
 
-    await db.delete(rule)
-    await db.flush()
+    if uninstall:
+        # Change state to "absent" so the normal sync pipeline removes the
+        # package.  The rule stays in the DB — drift detection will flag any
+        # host that still has the package installed, and the user can retry
+        # the sync if it fails.
+        from app.models.host import HostGroupMembership
+        from app.models.sync_job import SyncJob
+        from app.packages.models import PackageState
+        from app.tasks.package_sync import run_package_sync
 
-    await log_action(
-        db=db,
-        action="delete",
-        entity_type="package_rule",
-        entity_id=rule_id_for_log,
-        user_id=user.id,
-        before_state=before,
-    )
-    await db.commit()
-    return Response(status_code=204)
+        rule.state = PackageState.absent
+
+        await log_action(
+            db=db,
+            action="update",
+            entity_type="package_rule",
+            entity_id=rule.id,
+            user_id=user.id,
+            before_state=before,
+            after_state={
+                "package_name": rule.package_name,
+                "state": str(rule.state),
+                "version": rule.version,
+            },
+        )
+        await db.flush()
+
+        memberships = await db.execute(
+            select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
+        )
+        host_ids = [r[0] for r in memberships.all()]
+
+        sync_jobs = 0
+        for hid in host_ids:
+            # Skip hosts that already have a pending/running package sync
+            running = await db.execute(
+                select(SyncJob).where(
+                    SyncJob.host_id == hid,
+                    SyncJob.module_type == "package",
+                    SyncJob.status.in_(["pending", "running"]),
+                )
+            )
+            if running.scalar_one_or_none():
+                continue
+
+            host_result = await db.execute(select(Host).where(Host.id == hid))
+            host = host_result.scalar_one_or_none()
+            if not host or not host.ssh_key_id:
+                continue
+
+            job = SyncJob(
+                host_id=hid,
+                group_id=group_id,
+                module_type="package",
+                status="pending",
+                triggered_by_user_id=user.id,
+            )
+            db.add(job)
+            await db.flush()
+            run_package_sync.delay(job_id=job.id, host_id=hid)
+            sync_jobs += 1
+
+        await db.commit()
+        return {"sync_jobs": sync_jobs}
+    else:
+        await db.delete(rule)
+        await db.flush()
+
+        await log_action(
+            db=db,
+            action="delete",
+            entity_type="package_rule",
+            entity_id=rule.id,
+            user_id=user.id,
+            before_state=before,
+        )
+        await db.commit()
+        return Response(status_code=204)
 
 
 # ---------------------------------------------------------------------------

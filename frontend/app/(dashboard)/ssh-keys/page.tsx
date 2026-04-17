@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { SearchIcon, XIcon, InfoIcon } from "lucide-react"
+import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -14,29 +14,22 @@ import { Tooltip } from "@/components/ui/tooltip"
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { DataTable } from "@/components/ui/data-table"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
+import { useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { showSuccess, showError } from "@/lib/toast"
 import { sshKeySchema, type SshKeyInput } from "@/lib/schemas"
-import type { SSHKey } from "@/lib/types"
+import type { SSHKey, Host } from "@/lib/types"
 
 export default function SSHKeysPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean; title: string; description: string; action: () => void | Promise<void>; loading?: boolean
@@ -45,11 +38,17 @@ export default function SSHKeysPage() {
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
+  const [editingKey, setEditingKey] = useState<SSHKey | null>(null)
+  const [editName, setEditName] = useState("")
+  const [editSshUser, setEditSshUser] = useState("")
+  const [editIsDefault, setEditIsDefault] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
   const queryClient = useQueryClient()
 
   const form = useForm<SshKeyInput>({
     resolver: zodResolver(sshKeySchema),
-    defaultValues: { name: "", private_key: "", is_default: false },
+    defaultValues: { name: "", private_key: "", ssh_user: "root", is_default: false },
     mode: "onSubmit",
   })
 
@@ -57,11 +56,15 @@ export default function SSHKeysPage() {
     queryKey: ["ssh-keys"],
     queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
   })
+  const { data: hosts } = useQuery<Host[]>({
+    queryKey: ["hosts"],
+    queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  })
+  const hostCountByKey = new Map<number, number>()
+  hosts?.forEach(h => {
+    if (h.ssh_key_id != null) hostCountByKey.set(h.ssh_key_id, (hostCountByKey.get(h.ssh_key_id) ?? 0) + 1)
+  })
   const showLoading = useDelayedLoading(isLoading)
-
-  const filteredKeys = sshKeys?.filter(k =>
-    k.name.toLowerCase().includes(searchQuery.toLowerCase())
-  ) ?? []
 
   const uploadMutation = useApiMutation({
     mutationFn: (data: SshKeyInput) =>
@@ -70,6 +73,7 @@ export default function SSHKeysPage() {
         body: JSON.stringify({
           name: data.name,
           private_key: data.private_key,
+          ssh_user: data.ssh_user,
           is_default: data.is_default ?? false,
         }),
       }),
@@ -120,14 +124,6 @@ export default function SSHKeysPage() {
     })
   }
 
-  const toggleSelectAll = () => {
-    if (selected.size === filteredKeys.length && filteredKeys.length > 0) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(filteredKeys.map(k => k.id)))
-    }
-  }
-
   async function handleBulkDelete() {
     const ids = Array.from(selected)
     setBulkDeleting(true)
@@ -152,6 +148,37 @@ export default function SSHKeysPage() {
       showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
     }
     setBulkConfirmOpen(false)
+  }
+
+  function openEdit(key: SSHKey) {
+    setEditingKey(key)
+    setEditName(key.name)
+    setEditSshUser(key.ssh_user)
+    setEditIsDefault(key.is_default)
+    setEditError(null)
+  }
+
+  async function handleEditSave() {
+    if (!editingKey) return
+    setEditSaving(true)
+    setEditError(null)
+    try {
+      await apiFetch(`/api/ssh-keys/${editingKey.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: editName !== editingKey.name ? editName : undefined,
+          ssh_user: editSshUser !== editingKey.ssh_user ? editSshUser : undefined,
+          is_default: editIsDefault !== editingKey.is_default ? editIsDefault : undefined,
+        }),
+      })
+      await queryClient.invalidateQueries({ queryKey: ["ssh-keys"] })
+      showSuccess("SSH key updated")
+      setEditingKey(null)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to update")
+    } finally {
+      setEditSaving(false)
+    }
   }
 
   return (
@@ -206,6 +233,20 @@ export default function SSHKeysPage() {
                  )}
                </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="ssh-user">SSH User</Label>
+                <Input
+                  id="ssh-user"
+                  type="text"
+                  placeholder="root"
+                  {...form.register("ssh_user")}
+                  className="font-mono"
+                />
+                {form.formState.errors.ssh_user && (
+                  <p className="text-sm text-red-400">{form.formState.errors.ssh_user.message}</p>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <input
                   id="is-default"
@@ -220,10 +261,7 @@ export default function SSHKeysPage() {
                 <p className="text-sm text-red-400">{uploadMutation.error.message}</p>
               )}
 
-              <div className="flex gap-3 pt-2">
-                <Button type="submit" disabled={uploadMutation.isPending}>
-                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
-                </Button>
+              <DialogFooter>
                 <Button
                   type="button"
                   variant="outline"
@@ -231,36 +269,35 @@ export default function SSHKeysPage() {
                 >
                   Cancel
                 </Button>
-              </div>
+                <Button type="submit" disabled={uploadMutation.isPending}>
+                  {uploadMutation.isPending ? "Uploading..." : "Upload Key"}
+                </Button>
+              </DialogFooter>
             </form>
           </DialogContent>
         </Dialog>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-          <Input
-            placeholder="Search SSH keys..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 pr-8"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+          <span className="text-sm text-slate-300">{selected.size} selected</span>
+          {bulkProgress ? (
+            <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+          ) : (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={() => setBulkConfirmOpen(true)}
+              disabled={bulkDeleting}
             >
-              <XIcon className="w-4 h-4" />
-            </button>
+              Delete Selected
+            </Button>
           )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
         </div>
-        {searchQuery && (
-          <span className="text-sm text-slate-400">
-            Showing {filteredKeys.length} of {sshKeys?.length ?? 0} keys
-          </span>
-        )}
-      </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={3} />}
 
@@ -268,96 +305,102 @@ export default function SSHKeysPage() {
         <div className="text-red-400 py-8 text-center">Failed to load SSH keys</div>
       )}
 
-      {!isLoading && !error && filteredKeys.length === 0 && searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No results matching &apos;{searchQuery}&apos;
-        </div>
-      )}
-
-      {!isLoading && !error && sshKeys?.length === 0 && !searchQuery && (
-        <div className="text-slate-400 py-8 text-center">
-          No SSH keys yet. Upload your first key to get started.
-        </div>
-      )}
-
-      {!isLoading && !error && filteredKeys.length > 0 && (
-        <>
-          {selected.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700 mb-2">
-              <span className="text-sm text-slate-300">{selected.size} selected</span>
-              {bulkProgress ? (
-                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkConfirmOpen(true)}
-                  disabled={bulkDeleting}
-                >
-                  Delete Selected
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
-            </div>
-          )}
-          <div className="rounded-lg border border-slate-700 bg-slate-900">
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-700">
-                  <TableHead className="w-10">
-                    <input
-                      type="checkbox"
-                      checked={selected.size === filteredKeys.length && filteredKeys.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-slate-600"
-                    />
-                  </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Default</TableHead>
-                  <TableHead>Created At</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredKeys.map((key) => (
-                  <TableRow key={key.id} className="border-slate-700">
-                    <TableCell>
-                      <input
-                        type="checkbox"
-                        checked={selected.has(key.id)}
-                        onChange={() => toggleSelect(key.id)}
-                        className="rounded border-slate-600"
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium text-white">{key.name}</TableCell>
-                    <TableCell>
-                      {key.is_default ? (
-                        <Badge className="bg-green-600 text-white">Default</Badge>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-slate-400">
-                      {new Date(key.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="destructive"
-                        size="sm"
-                        onClick={() => handleDelete(key.id)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </>
+      {!isLoading && !error && (
+        <DataTable<SSHKey>
+          tableId="ssh-keys"
+          data={sshKeys}
+          emptyMessage="No SSH keys yet. Upload your first key to get started."
+          getRowKey={(k) => k.id}
+          columns={[
+            {
+              key: "select",
+              label: "",
+              cell: (k) => (
+                <input
+                  type="checkbox"
+                  checked={selected.has(k.id)}
+                  onChange={() => toggleSelect(k.id)}
+                  className="rounded border-slate-600"
+                />
+              ),
+              defaultWidth: 40,
+              resizable: false,
+              sortable: false,
+            },
+            {
+              key: "name",
+              label: "Name",
+              accessor: (k) => k.name,
+              cell: (k) => (
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-white">{k.name}</span>
+                    {k.is_default && <Badge className="bg-green-600 text-white text-[10px] px-1.5 py-0">Default</Badge>}
+                  </div>
+                  {k.public_key && (
+                    <div className="font-mono text-[11px] text-slate-500 mt-0.5 truncate max-w-[280px]" title={k.public_key}>
+                      {k.public_key.split(" ").slice(0, 2).join(" ").substring(0, 48)}...
+                    </div>
+                  )}
+                </div>
+              ),
+              defaultWidth: 300,
+              filter: { type: "text" },
+            },
+            {
+              key: "ssh_user",
+              label: "SSH User",
+              accessor: (k) => k.ssh_user,
+              cell: (k) => <span className="font-mono text-sm text-slate-300">{k.ssh_user}</span>,
+              defaultWidth: 120,
+              filter: { type: "enum", from: "accessor" },
+            },
+            {
+              key: "hosts",
+              label: "Hosts",
+              accessor: (k) => hostCountByKey.get(k.id) ?? 0,
+              cell: (k) => {
+                const count = hostCountByKey.get(k.id) ?? 0
+                return count > 0
+                  ? <span className="text-sm tabular-nums text-slate-300">{count}</span>
+                  : <span className="text-sm text-slate-600">0</span>
+              },
+              defaultWidth: 70,
+            },
+            {
+              key: "created_at",
+              label: "Created",
+              accessor: (k) => k.created_at,
+              cell: (k) => (
+                <span className="text-sm text-slate-300" title={new Date(k.created_at).toLocaleString()}>
+                  {formatRelativeTime(k.created_at)}
+                </span>
+              ),
+              defaultWidth: 100,
+            },
+            {
+              key: "actions",
+              label: "",
+              cell: (k) => (
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => openEdit(k)}>Edit</Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(k.id)}
+                    disabled={deleteMutation.isPending}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                  >
+                    Delete
+                  </Button>
+                </div>
+              ),
+              defaultWidth: 140,
+              resizable: false,
+              sortable: false,
+            },
+          ]}
+        />
       )}
 
       {confirmState && (
@@ -383,6 +426,35 @@ export default function SSHKeysPage() {
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
       />
+
+      <Dialog open={!!editingKey} onOpenChange={(open) => { if (!open) setEditingKey(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit SSH Key</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-ssh-user">SSH User</Label>
+              <Input id="edit-ssh-user" value={editSshUser} onChange={(e) => setEditSshUser(e.target.value)} className="font-mono" />
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="edit-default" type="checkbox" checked={editIsDefault} onChange={(e) => setEditIsDefault(e.target.checked)} className="rounded border-input" />
+              <Label htmlFor="edit-default">Set as default key</Label>
+            </div>
+            {editError && <p className="text-sm text-red-400">{editError}</p>}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingKey(null)}>Cancel</Button>
+              <Button onClick={handleEditSave} disabled={editSaving}>
+                {editSaving ? "Saving..." : "Save"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

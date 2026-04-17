@@ -17,18 +17,27 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 
 
 def _verify_github_signature(
-    body: bytes, secret: str, signature_header: str | None,
+    body: bytes,
+    secret: str,
+    signature_header: str | None,
 ) -> bool:
     if not signature_header or not signature_header.startswith("sha256="):
         return False
-    expected = "sha256=" + hmac.new(
-        secret.encode(), body, hashlib.sha256,
-    ).hexdigest()
+    expected = (
+        "sha256="
+        + hmac.new(
+            secret.encode(),
+            body,
+            hashlib.sha256,
+        ).hexdigest()
+    )
     return hmac.compare_digest(expected, signature_header)
 
 
 def _verify_gitea_signature(
-    body: bytes, secret: str, signature_header: str | None,
+    body: bytes,
+    secret: str,
+    signature_header: str | None,
 ) -> bool:
     if not signature_header:
         return False
@@ -49,7 +58,7 @@ async def _find_repo_by_url(url: str, db: AsyncSession) -> GitRepository | None:
     if repo:
         return repo
     # Try stripping .git suffix or adding it
-    alt_url = url.rstrip(".git") if url.endswith(".git") else url + ".git"
+    alt_url = url.removesuffix(".git") if url.endswith(".git") else url + ".git"
     result = await db.execute(
         select(GitRepository).where(GitRepository.url == alt_url),
     )
@@ -57,7 +66,9 @@ async def _find_repo_by_url(url: str, db: AsyncSession) -> GitRepository | None:
 
 
 async def _dispatch_webhook(
-    repo: GitRepository, commit_sha: str, db: AsyncSession,
+    repo: GitRepository,
+    commit_sha: str,
+    db: AsyncSession,
 ) -> None:
     """Find all groups linked to this repo with gitops enabled and dispatch."""
     result = await db.execute(
@@ -76,31 +87,33 @@ async def _dispatch_webhook(
         kwargs={"repo_id": repo.id, "commit_sha": commit_sha},
     )
     logger.info(
-        f"Dispatched gitops webhook task for repo {repo.name}, "
-        f"SHA {commit_sha[:8]}",
+        f"Dispatched gitops webhook task for repo {repo.name}, SHA {commit_sha[:8]}",
     )
 
 
 @router.post("/github")
 async def github_webhook(
-    request: Request, db: AsyncSession = Depends(get_db),
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
     body = await request.body()
     payload = await request.json()
 
     # Find repo by URL
     repo_url = payload.get("repository", {}).get("clone_url", "") or payload.get(
-        "repository", {},
+        "repository",
+        {},
     ).get("ssh_url", "")
     repo = await _find_repo_by_url(repo_url, db)
     if not repo:
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify signature
-    if repo.webhook_secret:
-        sig = request.headers.get("X-Hub-Signature-256")
-        if not _verify_github_signature(body, repo.webhook_secret, sig):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    sig = request.headers.get("X-Hub-Signature-256")
+    if not _verify_github_signature(body, repo.webhook_secret, sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     # Check event type
     event = request.headers.get("X-GitHub-Event", "")
@@ -125,22 +138,25 @@ async def github_webhook(
 
 @router.post("/gitlab")
 async def gitlab_webhook(
-    request: Request, db: AsyncSession = Depends(get_db),
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
     payload = await request.json()
 
     repo_url = payload.get("project", {}).get(
-        "git_http_url", "",
+        "git_http_url",
+        "",
     ) or payload.get("project", {}).get("git_ssh_url", "")
     repo = await _find_repo_by_url(repo_url, db)
     if not repo:
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify token
-    if repo.webhook_secret:
-        token = request.headers.get("X-Gitlab-Token")
-        if not _verify_gitlab_token(repo.webhook_secret, token):
-            raise HTTPException(status_code=401, detail="Invalid token")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    token = request.headers.get("X-Gitlab-Token")
+    if not _verify_gitlab_token(repo.webhook_secret, token):
+        raise HTTPException(status_code=401, detail="Invalid token")
 
     # Check for branch deletion
     after = payload.get("checkout_sha") or payload.get("after", "")
@@ -158,22 +174,25 @@ async def gitlab_webhook(
 
 @router.post("/gitea")
 async def gitea_webhook(
-    request: Request, db: AsyncSession = Depends(get_db),
+    request: Request,
+    db: AsyncSession = Depends(get_db),
 ):
     body = await request.body()
     payload = await request.json()
 
     repo_url = payload.get("repository", {}).get("clone_url", "") or payload.get(
-        "repository", {},
+        "repository",
+        {},
     ).get("ssh_url", "")
     repo = await _find_repo_by_url(repo_url, db)
     if not repo:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    if repo.webhook_secret:
-        sig = request.headers.get("X-Gitea-Signature")
-        if not _verify_gitea_signature(body, repo.webhook_secret, sig):
-            raise HTTPException(status_code=401, detail="Invalid signature")
+    if not repo.webhook_secret:
+        raise HTTPException(status_code=401, detail="Webhook secret not configured")
+    sig = request.headers.get("X-Gitea-Signature")
+    if not _verify_gitea_signature(body, repo.webhook_secret, sig):
+        raise HTTPException(status_code=401, detail="Invalid signature")
 
     ref = payload.get("ref", "")
     after = payload.get("after", "")

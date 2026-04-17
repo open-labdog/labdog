@@ -8,6 +8,8 @@ import type {
   Host,
   HostGroup,
   SSHKey,
+  ChainPolicies,
+  EffectiveFirewallRule,
   FirewallRule,
   EffectiveService,
   ServiceRule,
@@ -21,15 +23,16 @@ import type {
   CronJob,
   EffectivePackage,
   PackageRule,
+  PackageRepository,
   EffectiveResolverConfig,
   ResolverConfig,
+  ModuleCurrentState,
+  CACertRule,
+  EffectiveCACert,
+  CACertActionRun,
 } from "@/lib/types"
 
-interface EffectiveRule extends FirewallRule {
-  group_id: number
-}
-
-type ActiveTab = "overview" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "dns"
+type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
   const host = useQuery<Host>({
@@ -38,12 +41,18 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id,
   })
 
-  const effectiveRules = useQuery<EffectiveRule[]>({
+  const effectiveRules = useQuery<EffectiveFirewallRule[]>({
     queryKey: ["host-effective-rules", id],
-    queryFn: () => apiFetch<EffectiveRule[]>(`/api/hosts/${id}/effective-rules`),
+    queryFn: () => apiFetch<EffectiveFirewallRule[]>(`/api/hosts/${id}/effective-rules`),
     enabled: !!id,
   })
   const showRulesLoading = useDelayedLoading(effectiveRules.isLoading)
+
+  const effectivePolicies = useQuery<ChainPolicies>({
+    queryKey: ["host-effective-policies", id],
+    queryFn: () => apiFetch<ChainPolicies>(`/api/hosts/${id}/effective-policies`),
+    enabled: !!id && activeTab === "rules",
+  })
 
   const sshKeys = useQuery<SSHKey[]>({
     queryKey: ["ssh-keys"],
@@ -67,6 +76,12 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     queryKey: ["host-service-overrides", id],
     queryFn: () => apiFetch<ServiceRule[]>(`/api/hosts/${id}/services`),
     enabled: !!id && activeTab === "services",
+  })
+
+  const hostFirewallOverrides = useQuery<FirewallRule[]>({
+    queryKey: ["host-firewall-overrides", id],
+    queryFn: () => apiFetch<FirewallRule[]>(`/api/hosts/${id}/firewall-rules`),
+    enabled: !!id && activeTab === "rules",
   })
 
   // Hosts file tab
@@ -138,6 +153,33 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     enabled: !!id && activeTab === "packages",
   })
 
+  const effectiveRepos = useQuery<PackageRepository[]>({
+    queryKey: ["host-effective-repos", id],
+    queryFn: () => apiFetch<PackageRepository[]>(`/api/hosts/${id}/effective-repos`),
+    enabled: !!id && activeTab === "packages",
+  })
+
+  // CA certs tab
+  const effectiveCACerts = useQuery<EffectiveCACert[]>({
+    queryKey: ["host-effective-ca-certs", id],
+    queryFn: () => apiFetch<EffectiveCACert[]>(`/api/hosts/${id}/effective-ca-certs`),
+    enabled: !!id && activeTab === "ca-certs",
+  })
+  const showCACertsLoading = useDelayedLoading(effectiveCACerts.isLoading)
+
+  const hostCACertOverrides = useQuery<CACertRule[]>({
+    queryKey: ["host-ca-cert-overrides", id],
+    queryFn: () => apiFetch<CACertRule[]>(`/api/hosts/${id}/ca-certs`),
+    enabled: !!id && activeTab === "ca-certs",
+  })
+
+  const hostCACertRuns = useQuery<CACertActionRun[]>({
+    queryKey: ["host-ca-cert-runs", id],
+    queryFn: () => apiFetch<CACertActionRun[]>(`/api/ca-certs/hosts/${id}/runs`),
+    enabled: !!id && activeTab === "ca-certs",
+    refetchInterval: 5000,
+  })
+
   const effectiveResolver = useQuery<EffectiveResolverConfig>({
     queryKey: ["host-effective-resolver", id],
     queryFn: () => apiFetch<EffectiveResolverConfig>(`/api/hosts/${id}/effective-resolver`),
@@ -159,15 +201,23 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     },
   })
 
+  const currentState = useQuery<ModuleCurrentState[]>({
+    queryKey: ["host-current-state", id],
+    queryFn: () => apiFetch<ModuleCurrentState[]>(`/api/hosts/${id}/current-state`),
+    enabled: !!id,
+  })
+
   return {
     host,
     effectiveRules,
+    effectivePolicies,
     showRulesLoading,
     sshKeys,
     groups,
     effectiveServices,
     showServicesLoading,
     hostOverrides,
+    hostFirewallOverrides,
     effectiveHosts,
     showHostsEntriesLoading,
     hostHostsOverrides,
@@ -183,30 +233,40 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     effectivePackages,
     showPackagesLoading,
     hostPackageOverrides,
+    effectiveRepos,
+    effectiveCACerts,
+    showCACertsLoading,
+    hostCACertOverrides,
+    hostCACertRuns,
     effectiveResolver,
     showResolverLoading,
     hostResolverOverride,
+    currentState,
   }
 }
 
 export function useHostDialogs() {
   const [editOpen, setEditOpen] = useState(false)
+  const [fwDialogOpen, setFwDialogOpen] = useState(false)
   const [svcDialogOpen, setSvcDialogOpen] = useState(false)
   const [hostsDialogOpen, setHostsDialogOpen] = useState(false)
   const [luDialogOpen, setLuDialogOpen] = useState(false)
   const [lgDialogOpen, setLgDialogOpen] = useState(false)
   const [cjDialogOpen, setCjDialogOpen] = useState(false)
   const [ppDialogOpen, setPpDialogOpen] = useState(false)
+  const [caDialogOpen, setCaDialogOpen] = useState(false)
   const [protectedConfirmOpen, setProtectedConfirmOpen] = useState(false)
 
   return {
     editOpen, setEditOpen,
+    fwDialogOpen, setFwDialogOpen,
     svcDialogOpen, setSvcDialogOpen,
     hostsDialogOpen, setHostsDialogOpen,
     luDialogOpen, setLuDialogOpen,
     lgDialogOpen, setLgDialogOpen,
     cjDialogOpen, setCjDialogOpen,
     ppDialogOpen, setPpDialogOpen,
+    caDialogOpen, setCaDialogOpen,
     protectedConfirmOpen, setProtectedConfirmOpen,
   }
 }
