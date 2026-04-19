@@ -104,10 +104,10 @@ build-image:
   stage: build
   image: docker:24
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      command: ["--insecure-registry", "gitlab.lan.tyresson.se:5050"]
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
-    DOCKER_OPTS: "--insecure-registry gitlab.lan.tyresson.se:5050"
+    DOCKER_TLS_CERTDIR: ""
   before_script:
     - *docker-login
   script:
