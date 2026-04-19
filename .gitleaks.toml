@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+paths = [
+    '''\.gitlab-ci\.yml$''',
+    '''^backend/tests/''',
+    '''^frontend/e2e/''',
+    '''^barricade\.toml$''',
+]
