@@ -23,6 +23,7 @@ backend-lint:
     paths:
       - .cache/pip
   script:
+    - pip install -U pip -q
     - pip install uv -q
     - uv pip install --system ruff -q
     - cd backend
@@ -72,6 +73,7 @@ backend-test:
   script:
     - apt-get update -qq && apt-get install -y -qq git
     - cd backend
+    - pip install -U pip -q
     - pip install uv -q
     - uv pip install --system '.[dev]'
     - python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
@@ -186,6 +188,7 @@ backend-audit:
     paths:
       - .cache/pip
   script:
+    - pip install -U pip -q
     - pip install uv -q
     - uv pip install --system pip-audit -q
     - cd backend
