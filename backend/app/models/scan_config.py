@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
@@ -34,9 +34,7 @@ class ScanConfig(Base):
     ssh_user: Mapped[str] = mapped_column(String(32), nullable=False, default="root")
 
     # Default groups to join when a host is added.
-    default_group_ids: Mapped[list] = mapped_column(
-        JSONB, nullable=False, server_default="[]"
-    )
+    default_group_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
 
     # Schedule — exactly one of the two must be set.
     interval_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -48,16 +46,10 @@ class ScanConfig(Base):
     auto_add: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     # Last-run tracking.
-    last_run_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    last_run_hosts_added: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
-    last_run_hosts_pending: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    last_run_hosts_added: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_run_hosts_pending: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     last_run_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
@@ -95,6 +87,4 @@ class PendingHost(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (
-        UniqueConstraint("scan_config_id", "ip_address", name="uq_pending_scan_ip"),
-    )
+    __table_args__ = (UniqueConstraint("scan_config_id", "ip_address", name="uq_pending_scan_ip"),)

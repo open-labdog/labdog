@@ -160,7 +160,7 @@ class TestAutoAddTrue:
         ):
             result = await _run_task(config_id, db)
 
-        assert result["hosts_added"] == 1   # 10.0.1.1 verified -> Host row
+        assert result["hosts_added"] == 1  # 10.0.1.1 verified -> Host row
         assert result["hosts_pending"] == 1  # 10.0.1.2 SSH fail -> pending
 
         from app.models.host import Host, HostGroupMembership
@@ -182,9 +182,7 @@ class TestAutoAddTrue:
         assert mem is not None
 
     async def test_last_run_status_ok_when_no_hits(self, db, ssh_key):
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=True
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=True)
         config_id = config.id
 
         with (
@@ -202,17 +200,13 @@ class TestAutoAddTrue:
 
         from app.models.scan_config import ScanConfig
 
-        cfg = (
-            await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))
-        ).scalar_one()
+        cfg = (await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))).scalar_one()
         assert cfg.last_run_status == "ok"
         assert cfg.last_run_error is None
 
     async def test_no_host_created_for_unverified_ip(self, db, ssh_key):
         """IP that fails SSH verify must NOT produce a Host row."""
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=True
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=True)
 
         with (
             patch(
@@ -246,9 +240,7 @@ class TestAutoAddFalse:
     """auto_add=False -> PendingHost rows; idempotent on second run."""
 
     async def test_creates_pending_rows_for_all_hits(self, db, ssh_key):
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=False
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=False)
         config_id = config.id
 
         with (
@@ -270,10 +262,10 @@ class TestAutoAddFalse:
         from app.models.scan_config import PendingHost
 
         rows = (
-            await db.execute(
-                select(PendingHost).where(PendingHost.scan_config_id == config_id)
-            )
-        ).scalars().all()
+            (await db.execute(select(PendingHost).where(PendingHost.scan_config_id == config_id)))
+            .scalars()
+            .all()
+        )
         by_ip = {r.ip_address: r for r in rows}
         assert set(by_ip) == {"10.0.1.1", "10.0.1.2"}
         assert by_ip["10.0.1.1"].ssh_verified is True
@@ -282,9 +274,7 @@ class TestAutoAddFalse:
 
     async def test_second_run_does_not_create_duplicates(self, db, ssh_key):
         """Running the task twice must not create duplicate PendingHost rows."""
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=False
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=False)
         config_id = config.id
 
         scan_mock = AsyncMock(return_value=FAKE_HITS)
@@ -301,10 +291,10 @@ class TestAutoAddFalse:
         from app.models.scan_config import PendingHost
 
         rows = (
-            await db.execute(
-                select(PendingHost).where(PendingHost.scan_config_id == config_id)
-            )
-        ).scalars().all()
+            (await db.execute(select(PendingHost).where(PendingHost.scan_config_id == config_id)))
+            .scalars()
+            .all()
+        )
         assert len(rows) == 2  # exactly 2 -- upsert, not insert
 
 
@@ -328,9 +318,7 @@ class TestDedup:
         db.add(existing)
         await db.flush()
 
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=False
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=False)
         config_id = config.id
 
         verify_mock = AsyncMock(side_effect=_mock_verify_mixed)
@@ -360,9 +348,7 @@ class TestErrorPath:
     """Scanner raises -> last_run_status ends as "error"."""
 
     async def test_scanner_exception_marks_config_error(self, db, ssh_key):
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, auto_add=False
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=False)
         config_id = config.id
 
         with (
@@ -377,9 +363,7 @@ class TestErrorPath:
 
         from app.models.scan_config import ScanConfig
 
-        cfg = (
-            await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))
-        ).scalar_one()
+        cfg = (await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))).scalar_one()
         assert cfg.last_run_status == "error"
         assert "network unreachable" in (cfg.last_run_error or "")
 
@@ -391,9 +375,7 @@ class TestErrorPath:
 
 class TestEarlyExit:
     async def test_disabled_config_returns_skipped(self, db, ssh_key):
-        config = await _create_scan_config(
-            db, ssh_key_id=ssh_key.id, enabled=False
-        )
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, enabled=False)
         scan_mock = AsyncMock(return_value=[])
 
         with patch("app.discovery.scanner.scan_network", new=scan_mock):

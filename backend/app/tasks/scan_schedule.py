@@ -78,10 +78,14 @@ async def _check() -> int:
 
     async with task_session() as db:
         configs = (
-            await db.execute(
-                select(ScanConfig).where(ScanConfig.enabled == True)  # noqa: E712
+            (
+                await db.execute(
+                    select(ScanConfig).where(ScanConfig.enabled == True)  # noqa: E712
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for config in configs:
             try:
@@ -102,6 +106,7 @@ async def _check() -> int:
 # Wrapped in try/except so tests (and import-time checks without Redis) do
 # not blow up.
 # ---------------------------------------------------------------------------
+
 
 def _register_beat_schedule() -> None:
     from celery.schedules import schedule
