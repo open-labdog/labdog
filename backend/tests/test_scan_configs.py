@@ -5,13 +5,13 @@ All tests that touch the DB are marked as integration tests.
 Schema-validation tests are pure unit tests (no DB, no async).
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from app.models.scan_config import PendingHost, ScanConfig
+from app.models.scan_config import PendingHost
 from app.schemas.scans import ScanConfigCreate, ScanConfigUpdate
 from tests.conftest import create_ssh_key
 
@@ -137,7 +137,11 @@ class TestScanConfigSchemaValidation:
         # /8 = 16,777,216 / 60 (cron proxy) = 279,620 IPs/min
         with pytest.raises(ValidationError, match="Scan footprint too large"):
             ScanConfigCreate(
-                **self._base(cidrs=["10.0.0.0/8"], interval_minutes=None, cron_expression="0 * * * *")
+                **self._base(
+                    cidrs=["10.0.0.0/8"],
+                    interval_minutes=None,
+                    cron_expression="0 * * * *",
+                )
             )
 
     def test_rate_limit_just_under_threshold_accepted(self):

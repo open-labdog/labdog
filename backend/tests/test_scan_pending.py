@@ -35,22 +35,13 @@ def _bypass_login_rate_limit():
 
 
 # ---------------------------------------------------------------------------
-# Autouse: suppress login rate-limiter (same pattern as test_scan_configs.py)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(autouse=True)
-def _bypass_login_rate_limit():
-    with patch("limits.strategies.MovingWindowRateLimiter.hit", return_value=True):
-        yield
-
-
-# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
-async def _create_scan_config(db: AsyncSession, ssh_key_id: int, group_ids: list[int]) -> ScanConfig:
+async def _create_scan_config(
+    db: AsyncSession, ssh_key_id: int, group_ids: list[int]
+) -> ScanConfig:
     config = ScanConfig(
         name="test-scan",
         cidrs=["10.0.0.0/24"],
@@ -92,7 +83,7 @@ class TestApprove:
     async def test_approve_subset_inserts_hosts_and_memberships(
         self, superuser_client, db: AsyncSession
     ):
-        """Approve 2 of 3 pending rows: 2 Hosts, 2×group memberships, 2 pending deleted, 1 remains."""
+        """Approve 2 of 3 pending rows: 2 Hosts, 2× memberships, 2 deleted, 1 remains."""
         ssh_key = await create_ssh_key(db)
         group1 = await create_group(db)
         group2 = await create_group(db)
@@ -197,9 +188,7 @@ class TestApprove:
         assert "10.0.0.5" in data["skipped_ips"]
 
         # Pending row was deleted even though it was skipped.
-        remaining = await db.execute(
-            select(PendingHost).where(PendingHost.id == p.id)
-        )
+        remaining = await db.execute(select(PendingHost).where(PendingHost.id == p.id))
         assert remaining.scalar_one_or_none() is None
 
     @pytest.mark.asyncio
@@ -237,9 +226,7 @@ class TestApprove:
         assert data["skipped"] == 0
 
         # config_b's pending row must still exist — we didn't touch it.
-        still_there = await db.execute(
-            select(PendingHost).where(PendingHost.id == p_b.id)
-        )
+        still_there = await db.execute(select(PendingHost).where(PendingHost.id == p_b.id))
         assert still_there.scalar_one_or_none() is not None
 
     @pytest.mark.asyncio
@@ -334,9 +321,7 @@ class TestDismiss:
         assert remaining[0].id == p3.id
 
     @pytest.mark.asyncio
-    async def test_dismiss_does_not_affect_other_configs(
-        self, superuser_client, db: AsyncSession
-    ):
+    async def test_dismiss_does_not_affect_other_configs(self, superuser_client, db: AsyncSession):
         """Dismiss request scoped to config_a must not delete config_b's pending rows."""
         ssh_key = await create_ssh_key(db)
         config_a = await _create_scan_config(db, ssh_key.id, [])
@@ -366,9 +351,7 @@ class TestDismiss:
         assert data["dismissed"] == 1
 
         # config_b's row survives.
-        still_there = await db.execute(
-            select(PendingHost).where(PendingHost.id == p_b.id)
-        )
+        still_there = await db.execute(select(PendingHost).where(PendingHost.id == p_b.id))
         assert still_there.scalar_one_or_none() is not None
 
     @pytest.mark.asyncio

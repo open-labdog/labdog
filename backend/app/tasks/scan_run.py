@@ -15,7 +15,6 @@ import hashlib
 from app.db import task_session
 from app.tasks import celery_app
 
-
 # ---------------------------------------------------------------------------
 # Advisory-lock key derivation
 # ---------------------------------------------------------------------------
@@ -82,9 +81,9 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
         Dict with ``hosts_added``, ``hosts_pending``, and optionally
         ``skipped`` (True) if the config was missing or disabled.
     """
-    import asyncssh
     from datetime import UTC, datetime
 
+    import asyncssh
     from sqlalchemy import insert as sa_insert
     from sqlalchemy import select, text
 
@@ -94,7 +93,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
     from app.discovery.scanner import scan_network
     from app.discovery.verify import verify_ssh
     from app.models.host import Host, HostGroupMembership
-    from app.models.scan_config import PendingHost, ScanConfig
+    from app.models.scan_config import ScanConfig
     from app.models.ssh_key import SSHKey
 
     lock_key = _advisory_lock_key(config_id)
@@ -102,9 +101,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
     try:
         async with task_session() as db:
             # ---- a. Load config -----------------------------------------
-            cfg_result = await db.execute(
-                select(ScanConfig).where(ScanConfig.id == config_id)
-            )
+            cfg_result = await db.execute(select(ScanConfig).where(ScanConfig.id == config_id))
             config = cfg_result.scalar_one_or_none()
             if config is None or not config.enabled:
                 return {"hosts_added": 0, "hosts_pending": 0, "skipped": True}
@@ -113,9 +110,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             # SQLAlchemy autobegin starts a transaction on the first execute,
             # making pg_advisory_xact_lock valid here.  The lock is released
             # when the session's transaction commits at the end of the block.
-            await db.execute(
-                text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=lock_key)
-            )
+            await db.execute(text("SELECT pg_advisory_xact_lock(:key)").bindparams(key=lock_key))
 
             # ---- c. Mark running ----------------------------------------
             config.last_run_status = "running"
@@ -151,8 +146,8 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             new_ips = [ip for ip in hit_ips if ip not in existing_ips]
 
             # ---- g. SSH-verify remaining hits ---------------------------
-            verified: list[tuple[str, str]] = []    # (ip, hostname)
-            unverified: list[tuple[str, str]] = []   # (ip, ssh_error)
+            verified: list[tuple[str, str]] = []  # (ip, hostname)
+            unverified: list[tuple[str, str]] = []  # (ip, ssh_error)
 
             for ip in new_ips:
                 ok, hostname, _source_ip, ssh_err = await verify_ssh(
@@ -166,9 +161,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                     base_hn = hostname
                     suffix = 1
                     while True:
-                        hn_check = await db.execute(
-                            select(Host).where(Host.hostname == hostname)
-                        )
+                        hn_check = await db.execute(select(Host).where(Host.hostname == hostname))
                         if not hn_check.scalar_one_or_none():
                             break
                         hostname = f"{base_hn}-{suffix}"
@@ -288,9 +281,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             from app.models.scan_config import ScanConfig
 
             err_cfg = (
-                await err_db.execute(
-                    select(ScanConfig).where(ScanConfig.id == config_id)
-                )
+                await err_db.execute(select(ScanConfig).where(ScanConfig.id == config_id))
             ).scalar_one_or_none()
             if err_cfg is not None:
                 err_cfg.last_run_status = "error"

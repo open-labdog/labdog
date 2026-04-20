@@ -92,7 +92,8 @@ class ScanConfigCreate(BaseModel):
         has_cron = self.cron_expression is not None
         if has_interval == has_cron:
             raise ValueError(
-                "Exactly one of interval_minutes or cron_expression must be set, not both or neither"
+                "Exactly one of interval_minutes or cron_expression must be set, "
+                "not both or neither"
             )
         _check_rate_limit(self.cidrs, self.interval_minutes)
         return self

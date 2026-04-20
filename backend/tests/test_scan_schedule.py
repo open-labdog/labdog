@@ -37,7 +37,6 @@ def make_config(
 # Import under test — must come after env vars are set (conftest handles that)
 from app.tasks.scan_schedule import _is_due  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # _is_due parametrized tests
 # ---------------------------------------------------------------------------
