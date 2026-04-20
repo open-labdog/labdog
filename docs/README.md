@@ -30,6 +30,21 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barrica
 
 ## Documentation index
 
+### UI Guide
+
+| Section | What it covers |
+|---|---|
+| [ui/](./ui/README.md) | Overview of every page in the Barricade web interface |
+| [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Check All |
+| [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
+| [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, sync) |
+| [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
+| [ui/workflows.md](./ui/workflows.md) | Update Workflows — Linux and Kubernetes upgrade automation |
+| [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
+| [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
+
+### Configuration Examples
+
 | Section | What it covers |
 |---|---|
 | [examples/gitops/](./examples/gitops/README.md) | End-to-end GitOps guide — webhook setup, YAML schema reference for every module, missing-section semantics, idempotency rules, error taxonomy, mutation-lock behaviour, multi-group repo layouts, break-glass recovery. |
@@ -41,6 +56,8 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barrica
 
 ### Where to start
 
+- **New to Barricade?** → [ui/README.md](./ui/README.md) for a tour of the interface
+- **Configuring operational settings?** → [ui/settings.md](./ui/settings.md)
 - **Setting up GitOps for the first time?** → [examples/gitops/README.md](./examples/gitops/README.md)
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
 - **Trying to reason about multi-group hosts?** → [examples/precedence/README.md](./examples/precedence/README.md)
