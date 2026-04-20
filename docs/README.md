@@ -1,7 +1,7 @@
 # Barricade Documentation
 
 Guides and reference material for running Barricade. For a project
-summary see the [top-level README](../README.md).
+summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barricade/-/blob/dev/README.md).
 
 ## Contents
 
@@ -49,9 +49,9 @@ summary see the [top-level README](../README.md).
 
 The YAML examples in this tree parse cleanly against the live Pydantic
 schema; the schema itself lives in
-[`../backend/app/gitops/schema.py`](../backend/app/gitops/schema.py) and
-is the source of truth. Per-module handlers are in
-[`../backend/app/gitops/importers/`](../backend/app/gitops/importers/).
+[`backend/app/gitops/schema.py`](https://gitlab.lan.tyresson.se/dennis/barricade/-/blob/dev/backend/app/gitops/schema.py)
+and is the source of truth. Per-module handlers are in
+[`backend/app/gitops/importers/`](https://gitlab.lan.tyresson.se/dennis/barricade/-/tree/dev/backend/app/gitops/importers/).
 
 ## How Configuration Is Applied
 
@@ -128,7 +128,7 @@ When you sync, Barricade computes the full effective configuration and pushes it
 
 ### From Package (Recommended)
 
-Pre-built packages are available on the [Releases](../../../releases) page for each tagged version.
+Pre-built packages are available on the [Releases](https://gitlab.lan.tyresson.se/dennis/barricade/-/releases) page for each tagged version.
 
 **Debian / Ubuntu (.deb)**
 
