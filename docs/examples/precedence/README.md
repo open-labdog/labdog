@@ -1,5 +1,7 @@
 # Precedence & Merge Examples
 
+← [Back to docs/examples](../README.md)
+
 Concrete examples showing how Barricade merges group-level and host-level
 configurations when a host belongs to multiple groups.
 
