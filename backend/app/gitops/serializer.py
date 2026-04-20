@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, HostsEntryYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
+from app.gitops.schema import BarricadeGroupYAML, CronJobYAML, FirewallRuleYAML, HostsEntryYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -246,6 +246,40 @@ def hosts_entry_specs_to_yaml(specs: list[HostsEntryYAML]) -> list[dict[str, Any
             entry["comment"] = spec.comment
         if spec.priority != 0:
             entry["priority"] = spec.priority
+        result.append(entry)
+    return result
+
+
+def cron_job_specs_to_yaml(specs: list[CronJobYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``CronJobYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``user="root"``, ``environment={}``,
+    ``state="present"``, ``priority=0``, ``comment=None``.
+
+    Args:
+        specs: Validated ``CronJobYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "name": spec.name,
+            "schedule": spec.schedule,
+            "command": spec.command,
+        }
+        if spec.user != "root":
+            entry["user"] = spec.user
+        if spec.environment:
+            entry["environment"] = dict(spec.environment)
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
         result.append(entry)
     return result
 

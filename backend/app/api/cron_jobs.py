@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
+from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
 from app.auth.users import current_superuser
 from app.cron.merge import get_effective_cron_jobs
@@ -56,6 +57,7 @@ async def create_group_cron_job(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_gitops_lock(group_id, db)
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -95,6 +97,7 @@ async def update_group_cron_job(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_gitops_lock(group_id, db)
     result = await db.execute(
         select(CronJob).where(
             CronJob.id == rule_id,
@@ -140,6 +143,7 @@ async def delete_group_cron_job(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_gitops_lock(group_id, db)
     result = await db.execute(
         select(CronJob).where(
             CronJob.id == rule_id,

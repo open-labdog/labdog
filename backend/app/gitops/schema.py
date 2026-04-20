@@ -24,9 +24,12 @@ top-level keys are silently ignored.  This lets future module phases add new
 sections to YAML files without breaking older importer versions.
 """
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+_USER_RE = re.compile(r"^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$")
 
 
 class FirewallRuleYAML(BaseModel):
@@ -112,6 +115,29 @@ class HostsEntryYAML(BaseModel):
         return self
 
 
+class CronJobYAML(BaseModel):
+    name: str
+    user: str = "root"
+    schedule: str
+    command: str
+    environment: dict[str, str] = {}
+    state: Literal["present", "absent"] = "present"
+    priority: int = Field(default=0, ge=0, le=10000)
+    comment: str | None = None
+
+    @field_validator("user")
+    @classmethod
+    def validate_user(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("user must not be empty")
+        if not _USER_RE.match(v) or len(v) > 32:
+            raise ValueError(
+                f"Invalid user '{v}': must match [a-zA-Z0-9_][a-zA-Z0-9_.-]* "
+                "and be at most 32 characters (no shell metacharacters)"
+            )
+        return v
+
+
 class BarricadeGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
@@ -120,4 +146,5 @@ class BarricadeGroupYAML(BaseModel):
     packages: list[PackageYAML] | None = None
     package_repositories: list[PackageRepositoryYAML] | None = None
     hosts_entries: list[HostsEntryYAML] | None = None
+    cron_jobs: list[CronJobYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys

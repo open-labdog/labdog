@@ -4,6 +4,12 @@ import pytest
 
 from tests.conftest import create_group, create_host, create_ssh_key
 
+_CRON_JOB_BODY = {
+    "name": "lock-test-job",
+    "schedule": "0 * * * *",
+    "command": "/usr/local/bin/lock-test.sh",
+}
+
 _HOSTS_ENTRY_BODY = {
     "ip_address": "192.168.99.1",
     "hostname": "lock-test.internal",
@@ -440,6 +446,107 @@ class TestHostsEntriesLockdown:
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/hosts-entries",
             json=_HOSTS_ENTRY_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 201
+
+
+class TestCronJobsLockdown:
+    """GitOps lock applied to group-level cron-jobs endpoints only.
+
+    Host-level cron-job endpoints (/hosts/{id}/cron-jobs) remain unlocked —
+    they are per-host overrides, not group-scoped GitOps configuration.
+    """
+
+    async def test_post_group_cron_job_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/cron-jobs returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gcj-lock-{uuid.uuid4().hex[:6]}", priority=940)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/cron-jobs",
+            json=_CRON_JOB_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_cron_job_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/cron-jobs/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gcj-upd-{uuid.uuid4().hex[:6]}", priority=941)
+
+        # Create the job before locking.
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/cron-jobs",
+            json=_CRON_JOB_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/cron-jobs/{rule_id}",
+            json={"comment": "updated via API"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_cron_job_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """DELETE /groups/{id}/cron-jobs/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gcj-del-{uuid.uuid4().hex[:6]}", priority=942)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/cron-jobs",
+            json=_CRON_JOB_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/cron-jobs/{rule_id}")
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_post_group_cron_job_allowed_when_gitops_disabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/cron-jobs returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"gcj-ok-{uuid.uuid4().hex[:6]}", priority=943)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/cron-jobs",
+            json=_CRON_JOB_BODY,
+        )
+        assert resp.status_code == 201
+
+    async def test_post_host_cron_job_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/cron-jobs returns 201 even when host's group has gitops.
+
+        Host-level cron-job overrides are NOT locked — they are per-host, not
+        group-scoped GitOps configuration.
+        """
+        group = await create_group(db, name=f"gcj-host-{uuid.uuid4().hex[:6]}", priority=944)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(
+            db, ip="10.99.3.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
+        )
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/cron-jobs",
+            json=_CRON_JOB_BODY,
         )
         # Host-level endpoints are NOT locked.
         assert resp.status_code == 201
