@@ -492,3 +492,50 @@ export interface CACertActionRun {
   triggered_by_user_id: number | null
   created_at: string
 }
+
+export interface ScanConfig {
+  id: number
+  name: string
+  cidrs: string[]
+  ssh_key_id: number
+  ssh_port: number
+  ssh_user: string
+  default_group_ids: number[]
+  interval_minutes: number | null
+  cron_expression: string | null
+  enabled: boolean
+  auto_add: boolean
+  last_run_at: string | null
+  last_run_status: string | null
+  last_run_hosts_added: number
+  last_run_hosts_pending: number
+  last_run_error: string | null
+  created_at: string
+  updated_at: string
+  pending_count: number | null
+}
+
+export interface PendingSummary {
+  total: number
+}
+
+export interface PendingHost {
+  id: number
+  scan_config_id: number
+  ip_address: string
+  hostname: string | null
+  ssh_verified: boolean
+  ssh_error: string | null
+  discovered_at: string
+}
+
+export interface PendingHostFleet {
+  id: number
+  scan_config_id: number
+  scan_config_name: string
+  ip_address: string
+  hostname: string | null
+  ssh_verified: boolean
+  ssh_error: string | null
+  discovered_at: string
+}

@@ -143,6 +143,54 @@ export const packageSchema = z.object({
   package_manager: z.enum(["auto", "apt", "dnf", "yum"]).default("auto"),
   comment: z.string().optional(),
 })
+// 5-field cron: each field may be *, a digit run, range, list, or step.
+const cronFieldPat = /^(\*|(\d+(-\d+)?(,\d+(-\d+)?)*)(\/\d+)?|\*\/\d+)$/
+const fullCronRegex = new RegExp(
+  `^${Array(5).fill(cronFieldPat.source).join("\\s+")}$`
+)
+
+// CIDR — accept both strict (192.168.0.0/24) and host-in-network (192.168.0.5/24)
+const cidrNetworkRegex =
+  /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$|^([0-9a-fA-F:]+)\/\d{1,3}$/
+
+export const scanConfigSchema = z.object({
+  name: z.string().min(1, "Name is required").max(100, "Name must be 100 chars or fewer"),
+  cidrs: z
+    .array(z.string())
+    .min(1, "At least one CIDR is required"),
+  ssh_key_id: z
+    .number({ error: "SSH key is required" })
+    .int()
+    .min(1, "SSH key is required"),
+  ssh_user: z
+    .string()
+    .min(1, "SSH user is required")
+    .max(32, "SSH user must be 32 chars or fewer"),
+  ssh_port: z
+    .number({ error: "SSH port is required" })
+    .int()
+    .min(1, "Port must be between 1 and 65535")
+    .max(65535, "Port must be between 1 and 65535"),
+  default_group_ids: z.array(z.number().int()).default([]),
+  schedule_type: z.enum(["interval", "cron"]),
+  interval_value: z.number().int().min(1).max(10080).nullable().optional(),
+  interval_unit: z.enum(["minutes", "hours", "days"]).optional(),
+  cron_expression: z
+    .string()
+    .nullable()
+    .optional()
+    .refine(
+      (v) => !v || fullCronRegex.test(v.trim()),
+      "Invalid cron expression (5 space-separated fields required)"
+    ),
+  enabled: z.boolean().default(true),
+  auto_add: z.boolean().default(false),
+})
+export type ScanConfigInput = z.input<typeof scanConfigSchema>
+export type ScanConfigOutput = z.output<typeof scanConfigSchema>
+
+export { cidrNetworkRegex }
+
 // Linux user schema
 export const linuxUserSchema = z.object({
   username: z.string().min(1, "Username is required"),

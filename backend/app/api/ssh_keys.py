@@ -6,6 +6,7 @@ from app.auth.users import current_active_user, current_superuser
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.host import Host
+from app.models.scan_config import ScanConfig
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.ssh_keys import SSHKeyCreate, SSHKeyResponse, SSHKeyUpdate
@@ -103,6 +104,16 @@ async def delete_ssh_key(
     hosts = await db.execute(select(Host.id).where(Host.ssh_key_id == key_id).limit(1))
     if hosts.scalar_one_or_none() is not None:
         raise HTTPException(status_code=400, detail="Cannot delete key referenced by hosts")
+
+    # Check no scan configs reference this key (T6 rate-limit safety guard)
+    scan_configs = await db.execute(
+        select(ScanConfig.id).where(ScanConfig.ssh_key_id == key_id).limit(1)
+    )
+    if scan_configs.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot delete key referenced by scan configs",
+        )
 
     await db.delete(key)
     await db.commit()
