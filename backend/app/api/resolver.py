@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
@@ -42,6 +43,7 @@ async def upsert_group_resolver(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
+    await check_gitops_lock(group_id, db)
     grp = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
     if not grp:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -88,6 +90,7 @@ async def delete_group_resolver(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
+    await check_gitops_lock(group_id, db)
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
     config = result.scalar_one_or_none()
     if not config:

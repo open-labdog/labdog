@@ -5,6 +5,7 @@ from typing import Any
 import yaml
 
 from app.gitops.schema import BarricadeGroupYAML, CronJobYAML, FirewallRuleYAML, HostsEntryYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
+from app.resolver.models import ResolverConfig
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -282,6 +283,32 @@ def cron_job_specs_to_yaml(specs: list[CronJobYAML]) -> list[dict[str, Any]]:
             entry["comment"] = spec.comment
         result.append(entry)
     return result
+
+
+def resolver_spec_to_yaml(config: ResolverConfig) -> dict[str, Any]:
+    """Convert a ``ResolverConfig`` ORM instance to a YAML-ready dict.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Defaults are: ``search_domains=[]``, ``options={}``,
+    ``resolver_type="resolv_conf"``, ``dns_over_tls=False``.
+
+    Args:
+        config: A ``ResolverConfig`` instance with ``group_id`` set.
+
+    Returns:
+        A dict suitable for embedding under the ``resolver:`` key of a
+        group YAML document.
+    """
+    entry: dict[str, Any] = {"nameservers": list(config.nameservers)}
+    if config.search_domains:
+        entry["search_domains"] = list(config.search_domains)
+    if config.options:
+        entry["options"] = dict(config.options)
+    if str(config.resolver_type) != "resolv_conf":
+        entry["resolver_type"] = str(config.resolver_type)
+    if config.dns_over_tls:
+        entry["dns_over_tls"] = config.dns_over_tls
+    return entry
 
 
 def service_specs_to_yaml(specs: list[ServiceYAML]) -> list[dict[str, Any]]:
