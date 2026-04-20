@@ -5,7 +5,9 @@ test.describe("Breadcrumb navigation UX", () => {
     await page.goto("/groups")
     await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible()
 
-    const breadcrumbNav = page.locator("nav").filter({ hasText: "Groups" })
+    // Scope to main content area to avoid matching sidebar nav
+    const main = page.locator("main")
+    const breadcrumbNav = main.locator("nav").filter({ hasText: "Groups" })
     await expect(breadcrumbNav).toBeVisible()
   })
 
@@ -17,7 +19,9 @@ test.describe("Breadcrumb navigation UX", () => {
       page.getByRole("heading", { name: "New Group" })
     ).toBeVisible()
 
-    const breadcrumbNav = page.locator("nav").filter({ hasText: "Groups" })
+    // Scope to main content area to avoid matching sidebar nav
+    const main = page.locator("main")
+    const breadcrumbNav = main.locator("nav").filter({ hasText: "Groups" })
     await expect(breadcrumbNav).toBeVisible()
     await expect(breadcrumbNav.getByText("New Group")).toBeVisible()
 
@@ -25,6 +29,6 @@ test.describe("Breadcrumb navigation UX", () => {
     await expect(groupsLink).toBeVisible()
     await groupsLink.click()
 
-    await expect(page).toHaveURL(/\/groups$/)
+    await expect(page).toHaveURL(/\/groups\/?$/)
   })
 })

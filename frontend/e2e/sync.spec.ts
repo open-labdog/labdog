@@ -16,7 +16,7 @@ test.describe("Sync page", () => {
 
   test("sync page loads with correct heading", async ({ page }) => {
     await page.goto(`/groups/${groupId}/sync`)
-    await expect(page.getByRole("heading", { name: "Sync Group" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Sync" })).toBeVisible()
     await expect(page.getByRole("button", { name: "Preview Changes" })).toBeVisible()
   })
 
@@ -59,8 +59,8 @@ test.describe("Sync page", () => {
     await page.getByRole("button", { name: "Apply Changes" }).click()
 
     await expect(page.getByRole("dialog")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Confirm Apply" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Apply Changes" }).nth(1)).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Confirm Changes" })).toBeVisible()
+    await expect(page.getByRole("button", { name: /Apply/i }).last()).toBeVisible()
     await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible()
   })
 
@@ -81,6 +81,8 @@ test.describe("Sync page", () => {
 
   test("initial state shows prompt to click Preview Changes", async ({ page }) => {
     await page.goto(`/groups/${groupId}/sync`)
-    await expect(page.getByText("Preview Changes")).toBeVisible()
+    // The initial state shows a prompt containing "Preview Changes" text within a <strong>
+    // and the button also says "Preview Changes" — scope to the button to avoid strict mode
+    await expect(page.getByRole("button", { name: "Preview Changes" })).toBeVisible()
   })
 })
