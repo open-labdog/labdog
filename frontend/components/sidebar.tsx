@@ -87,7 +87,6 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     <aside className="w-64 border-r border-slate-700 bg-slate-950 p-6 flex flex-col h-full">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Barricade</h1>
-        <p className="text-sm text-slate-400">Firewall Management</p>
       </div>
 
       <nav className="space-y-4">
