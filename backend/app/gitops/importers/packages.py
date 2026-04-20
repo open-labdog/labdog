@@ -15,7 +15,13 @@ from app.gitops.importers.firewall import ModuleImportResult
 from app.gitops.schema import BarricadeGroupYAML, PackageRepositoryYAML, PackageYAML
 from app.models.host_group import HostGroup
 from app.packages.constants import is_protected
-from app.packages.models import PackageManager, PackageRepository, PackageRule, PackageState, RepoType
+from app.packages.models import (
+    PackageManager,
+    PackageRepository,
+    PackageRule,
+    PackageState,
+    RepoType,
+)
 
 logger = logging.getLogger(__name__)
 

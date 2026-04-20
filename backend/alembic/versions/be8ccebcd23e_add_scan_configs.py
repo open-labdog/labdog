@@ -5,17 +5,18 @@ Revises: c5d8e2f49a1b
 Create Date: 2026-04-20 21:05:56.864257
 
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+from alembic import op
+
 # revision identifiers, used by Alembic.
 revision: str = 'be8ccebcd23e'
-down_revision: Union[str, Sequence[str], None] = 'c5d8e2f49a1b'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = 'c5d8e2f49a1b'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -24,11 +25,13 @@ def upgrade() -> None:
         'scan_configs',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('name', sa.String(length=100), nullable=False),
-        sa.Column('cidrs', postgresql.JSONB(astext_type=sa.Text()), server_default='[]', nullable=False),
+        sa.Column('cidrs', postgresql.JSONB(astext_type=sa.Text()), server_default='[]',
+                  nullable=False),
         sa.Column('ssh_key_id', sa.Integer(), nullable=False),
         sa.Column('ssh_port', sa.Integer(), nullable=False),
         sa.Column('ssh_user', sa.String(length=32), nullable=False),
-        sa.Column('default_group_ids', postgresql.JSONB(astext_type=sa.Text()), server_default='[]', nullable=False),
+        sa.Column('default_group_ids', postgresql.JSONB(astext_type=sa.Text()), server_default='[]',
+                  nullable=False),
         sa.Column('interval_minutes', sa.Integer(), nullable=True),
         sa.Column('cron_expression', sa.String(length=100), nullable=True),
         sa.Column('enabled', sa.Boolean(), nullable=False),
@@ -38,8 +41,10 @@ def upgrade() -> None:
         sa.Column('last_run_hosts_added', sa.Integer(), nullable=False),
         sa.Column('last_run_hosts_pending', sa.Integer(), nullable=False),
         sa.Column('last_run_error', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'),
+                  nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'),
+                  nullable=False),
         sa.CheckConstraint(
             '(interval_minutes IS NOT NULL) <> (cron_expression IS NOT NULL)',
             name='ck_scan_configs_schedule_one_of',
@@ -60,7 +65,8 @@ def upgrade() -> None:
         sa.Column('hostname', sa.String(length=253), nullable=True),
         sa.Column('ssh_verified', sa.Boolean(), nullable=False),
         sa.Column('ssh_error', sa.Text(), nullable=True),
-        sa.Column('discovered_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+        sa.Column('discovered_at', sa.DateTime(timezone=True), server_default=sa.text('now()'),
+                  nullable=False),
         sa.ForeignKeyConstraint(
             ['scan_config_id'], ['scan_configs.id'],
             name=op.f('fk_pending_hosts_scan_config_id_scan_configs'),

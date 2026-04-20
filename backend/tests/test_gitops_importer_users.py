@@ -552,7 +552,8 @@ class TestUsersImporter:
 
         users_result = next(m for m in result.modules if m.module == "users")
         assert users_result.error_message is not None
-        assert "root" in users_result.error_message.lower() or "protected" in users_result.error_message.lower()
+        msg = users_result.error_message.lower()
+        assert "root" in msg or "protected" in msg
 
         db_rows = await db.execute(
             select(LinuxUser).where(LinuxUser.group_id == group.id)
@@ -599,7 +600,8 @@ class TestUsersImporter:
 
         users_result = next(m for m in result.modules if m.module == "users")
         assert users_result.error_message is not None
-        assert "sudo" in users_result.error_message.lower() or "forbidden" in users_result.error_message.lower() or "metachar" in users_result.error_message.lower()
+        msg = users_result.error_message.lower()
+        assert "sudo" in msg or "forbidden" in msg or "metachar" in msg
 
     async def test_uid_below_1000_returns_error(self, db):
         """YAML with uid < 1000 returns a clean error_message."""

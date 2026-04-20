@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
 from app.auth.users import current_superuser
-from app.api._gitops_lock import check_gitops_lock
 from app.db import get_db
 from app.models.host import Host
 from app.models.host_group import HostGroup

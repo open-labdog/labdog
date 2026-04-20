@@ -4,7 +4,17 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, CronJobYAML, FirewallRuleYAML, HostsEntryYAML, LinuxGroupYAML, LinuxUserYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
+from app.gitops.schema import (
+    BarricadeGroupYAML,
+    CronJobYAML,
+    FirewallRuleYAML,
+    HostsEntryYAML,
+    LinuxGroupYAML,
+    LinuxUserYAML,
+    PackageRepositoryYAML,
+    PackageYAML,
+    ServiceYAML,
+)
 from app.resolver.models import ResolverConfig
 from app.rules.model import FirewallRuleSpec
 
