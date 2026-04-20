@@ -22,6 +22,13 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 - **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
 - **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
 
+## Documentation
+
+- **[docs/README.md](docs/README.md)** — documentation index.
+- **[docs/examples/gitops/README.md](docs/examples/gitops/README.md)** — comprehensive GitOps guide: webhook setup, full YAML schema for every module, error handling, recovery.
+- **[docs/examples/gitops/](docs/examples/gitops/)** — ready-to-use YAML examples, including one [minimal.yaml](docs/examples/gitops/minimal.yaml), two full-tier examples ([web-servers.yaml](docs/examples/gitops/web-servers.yaml), [database.yaml](docs/examples/gitops/database.yaml)), and a per-module reference under [modules/](docs/examples/gitops/modules/).
+- **[docs/examples/precedence/README.md](docs/examples/precedence/README.md)** — how group and host configurations merge when a host belongs to multiple groups.
+
 ## How Configuration Is Applied
 
 Barricade organizes configuration through **host groups**. You define rules at the group level, assign hosts to one or more groups, and Barricade merges everything into a single effective configuration per host.
@@ -430,6 +437,8 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/git-repos` | Manage Git repository connections |
 | `POST` | `/api/webhooks/git/{repo_id}` | Webhook endpoint for Git push events |
 
+See [docs/examples/gitops/README.md](docs/examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
+
 ## Project Structure
 
 ```
@@ -474,7 +483,7 @@ barricade/
 │   └── package.json
 ├── barricade-lint/           # CLI tool for YAML rule validation
 ├── packaging/               # Linux package build system (deb/rpm/tarball)
-├── docs/                    # Docs + configuration examples (GitOps, precedence)
+├── docs/                    # Documentation index + GitOps and precedence examples (see docs/README.md)
 ├── dev.sh                   # Dev environment management script
 ├── build.sh                 # Local Docker build script
 ├── docker-compose.yml       # Full stack
