@@ -3,6 +3,8 @@ import { test, expect } from "@playwright/test"
 test.describe("Command palette (Ctrl+K)", () => {
   test("opens with Ctrl+K keyboard shortcut", async ({ page }) => {
     await page.goto("/dashboard")
+    // Click body to ensure the page has keyboard focus before dispatching shortcut
+    await page.click("body")
     await page.keyboard.press("Control+k")
 
     await expect(page.getByPlaceholder("Search pages...")).toBeVisible()
@@ -10,6 +12,7 @@ test.describe("Command palette (Ctrl+K)", () => {
 
   test("closes with Escape key", async ({ page }) => {
     await page.goto("/dashboard")
+    await page.click("body")
     await page.keyboard.press("Control+k")
 
     const paletteInput = page.getByPlaceholder("Search pages...")
@@ -21,6 +24,7 @@ test.describe("Command palette (Ctrl+K)", () => {
 
   test("filters navigation items by search query", async ({ page }) => {
     await page.goto("/dashboard")
+    await page.click("body")
     await page.keyboard.press("Control+k")
 
     const paletteInput = page.getByPlaceholder("Search pages...")

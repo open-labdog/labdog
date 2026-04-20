@@ -45,17 +45,21 @@ test.describe("Rules page", () => {
     await page.goto(`/groups/${groupId}/rules`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
-    await page.locator("#action").selectOption("allow")
-    await page.locator("#protocol").selectOption("tcp")
-    await page.locator("#direction").selectOption("input")
-    await page.locator("#source_cidr").fill("0.0.0.0/0")
-    await page.locator("#port_start").fill("80")
-    await page.locator("#port_end").fill("80")
-    await page.locator("#comment").fill("Allow HTTP")
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
 
-    await page.getByRole("button", { name: "Add Rule" }).click()
+    await dialog.locator("#action").selectOption("allow")
+    await dialog.locator("#protocol").selectOption("tcp")
+    await dialog.locator("#direction").selectOption("input")
+    // Source CIDR field has no id — locate by placeholder inside dialog
+    await dialog.getByPlaceholder("0.0.0.0/0").first().fill("0.0.0.0/0")
+    await dialog.locator("#port_start").fill("80")
+    await dialog.locator("#port_end").fill("80")
+    await dialog.locator("#comment").fill("Allow HTTP")
 
-    await expect(page.getByRole("dialog")).not.toBeVisible()
+    await dialog.getByRole("button", { name: "Add Rule" }).click()
+
+    await expect(dialog).not.toBeVisible()
     await expect(page.getByText("Allow HTTP")).toBeVisible()
   })
 
@@ -63,14 +67,20 @@ test.describe("Rules page", () => {
     await page.goto(`/groups/${groupId}/rules`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
-    await page.locator("#action").selectOption("deny")
-    await page.locator("#protocol").selectOption("tcp")
-    await page.locator("#direction").selectOption("input")
-    await page.locator("#comment").fill("E2E deny rule")
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
 
-    await page.getByRole("button", { name: "Add Rule" }).click()
+    await dialog.locator("#action").selectOption("deny")
+    await dialog.locator("#protocol").selectOption("tcp")
+    await dialog.locator("#direction").selectOption("input")
+    // Fill port fields to avoid NaN validation errors from empty number inputs
+    await dialog.locator("#port_start").fill("443")
+    await dialog.locator("#port_end").fill("443")
+    await dialog.locator("#comment").fill("E2E deny rule")
 
-    await expect(page.getByRole("dialog")).not.toBeVisible()
+    await dialog.getByRole("button", { name: "Add Rule" }).click()
+
+    await expect(dialog).not.toBeVisible()
     await expect(page.getByText("E2E deny rule")).toBeVisible()
   })
 
@@ -78,10 +88,12 @@ test.describe("Rules page", () => {
     await page.goto(`/groups/${groupId}/rules`)
     await page.getByRole("button", { name: "Add Rule" }).click()
 
-    await page.locator("#comment").fill("Should not be saved")
-    await page.getByRole("button", { name: "Cancel" }).click()
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
+    await dialog.locator("#comment").fill("Should not be saved")
+    await dialog.getByRole("button", { name: "Cancel" }).click()
 
-    await expect(page.getByRole("dialog")).not.toBeVisible()
+    await expect(dialog).not.toBeVisible()
     await expect(page.getByText("Should not be saved")).not.toBeVisible()
   })
 
@@ -103,12 +115,13 @@ test.describe("Rules page", () => {
 
     await page.goto(`/groups/${groupId}/rules`)
 
-    // Find the row with the system rule comment
-    const systemRow = page.getByRole("row").filter({ hasText: "system-rule-e2e" })
+    // The SortableRow renders <tr> with role="button" (from dnd-kit useSortable attributes).
+    // Scope by the comment text in a table cell and find the containing row element.
+    const systemRow = page.locator("tr").filter({ hasText: "system-rule-e2e" })
     await expect(systemRow).toBeVisible()
 
-    const editBtn = systemRow.getByRole("button", { name: "Edit" })
-    const deleteBtn = systemRow.getByRole("button", { name: "Delete" })
+    const editBtn = systemRow.locator("button", { hasText: "Edit" })
+    const deleteBtn = systemRow.locator("button", { hasText: "Delete" })
 
     await expect(editBtn).toBeDisabled()
     await expect(deleteBtn).toBeDisabled()
@@ -132,8 +145,9 @@ test.describe("Rules page", () => {
 
     await page.goto(`/groups/${groupId}/rules`)
 
-    const ruleRow = page.getByRole("row").filter({ hasText: "original-comment" })
-    await ruleRow.getByRole("button", { name: "Edit" }).click()
+    // SortableRow renders <tr> with role="button" via dnd-kit — use tr locator
+    const ruleRow = page.locator("tr").filter({ hasText: "original-comment" })
+    await ruleRow.locator("button", { hasText: "Edit" }).click()
 
     await expect(page.getByRole("dialog")).toBeVisible()
     await expect(page.getByRole("heading", { name: "Edit Rule" })).toBeVisible()
