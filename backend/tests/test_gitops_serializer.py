@@ -92,12 +92,14 @@ firewall:
             parse_yaml(yaml_str)
 
     def test_unknown_keys_ignored(self):
-        """Extra top-level keys like 'services' are silently ignored."""
+        """Extra top-level keys for future modules are silently ignored."""
         yaml_str = """\
 group: test
-services:
+packages:
   - name: nginx
-    port: 80
+    version: 1.24
+users:
+  - login: deploy
 firewall:
   rules:
     - action: allow

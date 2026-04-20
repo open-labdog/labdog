@@ -6,6 +6,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.gitops.importers.firewall import ModuleImportResult, import_firewall
+from app.gitops.importers.services import import_services
 from app.gitops.serializer import YAMLParseError, parse_yaml
 from app.models.git_repository import GitOpsStatus
 from app.models.host_group import HostGroup
@@ -86,6 +87,9 @@ async def import_group_from_yaml(
 
         firewall_result = await import_firewall(group, parsed, commit_sha, db)
         module_results.append(firewall_result)
+
+        services_result = await import_services(group, parsed, commit_sha, db)
+        module_results.append(services_result)
 
         # If any handler reported an error, abort with error status.
         failed = [m for m in module_results if m.error_message]
