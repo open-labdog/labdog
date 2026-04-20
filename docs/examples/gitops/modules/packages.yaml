@@ -1,0 +1,115 @@
+# Managed by Barricade — Packages module reference
+#
+# Packages module covers TWO related sections: `packages:` (individual
+# package rules) and `package_repositories:` (declarative repo entries).
+# Both are managed by the same `gitops.import.packages` audit event and
+# lock step in the same transaction — flipping either section wipes the
+# corresponding table.
+#
+# Protected packages — attempting to manage any of these via YAML
+# raises a parse error:
+#   openssh-server, openssh-client, sshd, systemd, systemd-sysv,
+#   linux-image*, linux-headers*, kernel, kernel-*, glibc, libc6,
+#   coreutils, bash, init, sysvinit-core, grub, grub2.
+
+group: packages-reference
+priority: 100
+
+# -----------------------------------------------------------------------------
+# Package rules
+# -----------------------------------------------------------------------------
+# Fields:
+#   package_name      string  — required; matches [a-zA-Z0-9][a-zA-Z0-9._+:-]*
+#   version           string  — optional; pin a specific version (apt syntax)
+#   state             enum    — present | absent | latest.  Default: present.
+#   package_manager   enum    — auto | apt | dnf | yum.  Default: auto
+#                               (detects from the host's OS family).
+#   priority          int     — 0..10000, default 0.
+#   hold              bool    — default false.  When true, Ansible pins the
+#                               package so apt/dnf won't upgrade it even
+#                               during an `apt upgrade`.  Only meaningful
+#                               when state=present.
+#   comment           string  — optional free-text.
+#
+# Merge identity key: `package_name`.
+
+packages:
+  # Install (latest stable from repo)
+  - package_name: nginx
+    state: present
+    package_manager: apt
+
+  # Pin a specific version (apt-style epoch:version-release)
+  - package_name: curl
+    version: "7.88.1-10+deb12u5"
+    state: present
+    hold: true
+    comment: "Pinned — CI depends on exact version"
+
+  # Keep at upstream latest — `apt-get upgrade` equivalent on every sync
+  - package_name: ca-certificates
+    state: latest
+    comment: "Always refresh CA bundle"
+
+  # Explicit uninstall
+  - package_name: apache2
+    state: absent
+    comment: "Replaced by nginx on this tier"
+
+  # RHEL/Fedora — force dnf even if the module can't autodetect
+  - package_name: httpd-tools
+    state: absent
+    package_manager: dnf
+
+  # Priority is useful when you want a higher-priority group to enforce
+  # a different state than a lower-priority one.  Example:
+  #   base-security (priority 10):    curl state=present
+  #   production    (priority 100):   curl version pinned
+  # The merge engine picks the production entry (see ../../precedence).
+
+# -----------------------------------------------------------------------------
+# Package repositories
+# -----------------------------------------------------------------------------
+# Fields:
+#   name           string  — required; unique within the group.
+#   url            string  — required; MUST start with http:// or https://.
+#   key_url        string  — optional; URL of the GPG key used to verify
+#                            the repository.
+#   repo_type      enum    — apt | yum.  Required.
+#   distribution   string  — apt-only; the "dist" in `deb <url> <dist> main`.
+#   components     string  — apt-only; whitespace-separated component list
+#                            (e.g. "main contrib non-free").
+#   state          enum    — present | absent.  Default: present.
+#
+# Merge identity key: (group_id, name).
+
+package_repositories:
+  # PostgreSQL apt repository
+  - name: pgdg
+    url: "https://apt.postgresql.org/pub/repos/apt"
+    key_url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+    repo_type: apt
+    distribution: "bookworm-pgdg"
+    components: main
+    state: present
+
+  # Docker apt repository
+  - name: docker
+    url: "https://download.docker.com/linux/debian"
+    key_url: "https://download.docker.com/linux/debian/gpg"
+    repo_type: apt
+    distribution: bookworm
+    components: stable
+    state: present
+
+  # Remove a previously-managed repo
+  - name: old-vendor-repo
+    url: "https://old.example.com/repo"
+    repo_type: apt
+    state: absent
+
+  # RHEL/Fedora (yum/dnf) repo
+  - name: epel
+    url: "https://dl.fedoraproject.org/pub/epel/9/Everything/$basearch/"
+    repo_type: yum
+    state: present

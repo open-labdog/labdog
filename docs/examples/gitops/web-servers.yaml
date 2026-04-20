@@ -1,0 +1,206 @@
+# Managed by Barricade
+#
+# Full example for a web-tier group covering all seven modules.
+# Point a git repo at this file via the UI:
+#   Groups → web-servers → Enable GitOps → file path: docs/examples/gitops/web-servers.yaml
+#
+# This file assumes:
+#   • The group is named "web-servers" in Barricade.
+#   • The group's priority in the UI matches (or is higher than) any
+#     competing group you want to be overridden by this file.
+#   • The hosts in this group run Debian/Ubuntu (see the package_manager
+#     field in the `packages:` section — change to `dnf` on Fedora/RHEL).
+
+group: web-servers
+priority: 100           # informational; real priority lives in the UI
+
+# -----------------------------------------------------------------------------
+# Firewall
+# -----------------------------------------------------------------------------
+firewall:
+  rules:
+    # Inbound
+    - action: allow
+      protocol: tcp
+      direction: input
+      source: "10.0.0.0/8"
+      port: 22
+      comment: "SSH — internal network only"
+
+    - action: allow
+      protocol: tcp
+      direction: input
+      port: 80
+      comment: "HTTP"
+
+    - action: allow
+      protocol: tcp
+      direction: input
+      port: 443
+      comment: "HTTPS"
+
+    - action: allow
+      protocol: icmp
+      direction: input
+      comment: "Ping"
+
+    - action: deny
+      protocol: any
+      direction: input
+      comment: "Default deny inbound"
+
+    # Outbound
+    - action: allow
+      protocol: udp
+      direction: output
+      port: 53
+      comment: "DNS"
+
+    - action: allow
+      protocol: tcp
+      direction: output
+      port: 443
+      comment: "HTTPS outbound (updates, APIs)"
+
+    - action: allow
+      protocol: udp
+      direction: output
+      port: 123
+      comment: "NTP"
+
+    - action: deny
+      protocol: any
+      direction: output
+      comment: "Default deny outbound"
+
+# -----------------------------------------------------------------------------
+# Systemd services
+# -----------------------------------------------------------------------------
+services:
+  - service_name: nginx
+    state: running
+    enabled: true
+    comment: "Reverse proxy + static assets"
+
+  - service_name: fail2ban
+    state: running
+    enabled: true
+    comment: "Intrusion prevention"
+
+  - service_name: unattended-upgrades
+    state: running
+    enabled: true
+    comment: "Security updates"
+
+# -----------------------------------------------------------------------------
+# Packages + package repositories
+# -----------------------------------------------------------------------------
+packages:
+  - package_name: nginx
+    state: present
+    package_manager: apt
+
+  - package_name: fail2ban
+    state: present
+
+  - package_name: unattended-upgrades
+    state: present
+
+  - package_name: curl
+    state: latest
+    comment: "Always keep curl up to date for CI scripts"
+
+  - package_name: apache2
+    state: absent
+    comment: "Nginx replaces Apache on this tier"
+
+package_repositories: []   # none required for this tier; wipe any stragglers
+
+# -----------------------------------------------------------------------------
+# /etc/hosts entries
+# -----------------------------------------------------------------------------
+hosts_entries:
+  - ip_address: "10.0.1.10"
+    hostname: "db.internal"
+    aliases: [db, primary-db]
+    comment: "Primary database"
+    priority: 100
+
+  - ip_address: "10.0.1.11"
+    hostname: "cache.internal"
+    aliases: [redis, cache]
+    comment: "Redis cache"
+    priority: 100
+
+# -----------------------------------------------------------------------------
+# Cron jobs
+# -----------------------------------------------------------------------------
+cron_jobs:
+  - name: rotate-nginx-logs
+    user: root
+    schedule: "0 2 * * *"
+    command: "/usr/sbin/logrotate /etc/logrotate.d/nginx"
+    state: present
+    comment: "Nightly log rotation"
+
+  - name: cert-renew
+    user: root
+    schedule: "0 3 * * 0"
+    command: "/usr/bin/certbot renew --quiet"
+    environment:
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    state: present
+    comment: "Weekly ACME cert renewal"
+
+# -----------------------------------------------------------------------------
+# DNS resolver  (singleton — omit to leave alone, include to fully replace)
+# -----------------------------------------------------------------------------
+resolver:
+  resolver_type: systemd_resolved
+  nameservers:
+    - "10.0.0.2"
+    - "10.0.0.3"
+  search_domains:
+    - "internal.corp"
+    - "prod.internal.corp"
+  options:
+    timeout: 2
+    attempts: 3
+  dns_over_tls: true
+
+# -----------------------------------------------------------------------------
+# Linux groups (import BEFORE users — supplementary_groups resolves forward)
+# -----------------------------------------------------------------------------
+linux_groups:
+  - groupname: deploy
+    gid: 2000
+    state: present
+
+  - groupname: monitoring
+    gid: 2001
+    state: present
+
+# -----------------------------------------------------------------------------
+# Linux users
+# -----------------------------------------------------------------------------
+users:
+  - username: deploy
+    uid: 2000
+    shell: /bin/bash
+    home_dir: /home/deploy
+    state: present
+    comment: "CI deploy user"
+    sudo_rule: "ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart nginx"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... deploy@ci"
+    supplementary_groups: [deploy]
+    priority: 100
+
+  - username: monitoring
+    uid: 2001
+    shell: /usr/sbin/nologin
+    state: present
+    comment: "Prometheus node exporter"
+    authorized_keys: []
+    supplementary_groups: [monitoring]
+    priority: 100

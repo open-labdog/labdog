@@ -1,0 +1,89 @@
+# Managed by Barricade — /etc/hosts entries reference
+#
+# Two variants per entry:
+#   1. LITERAL entry — supply both `ip_address` and `hostname`.
+#   2. REFERENCE entry — supply `host_ref_id` (numeric id of a host in
+#      Barricade's own hosts table). Barricade resolves the IP/hostname
+#      at sync time, so if the referenced host's primary IP changes the
+#      /etc/hosts lines follow automatically.
+#
+# Mixing the two in one YAML file is fine — each entry is independent.
+#
+# Fields (common):
+#   aliases    list[str]  — optional; extra hostnames on the same line
+#   comment    string     — optional; shown in the UI
+#   priority   int        — 0..10000; controls emission order on the
+#                          rendered /etc/hosts file.  Higher = earlier.
+#
+# Literal-only fields:
+#   ip_address string   — required when not a ref; validated as IPv4 or
+#                        IPv6 address.
+#   hostname   string   — required when not a ref; RFC 952/1123 hostname.
+#
+# Reference-only field:
+#   host_ref_id int     — required when not a literal; must be the id of a
+#                        host that exists in Barricade's hosts table.
+#                        Missing refs fail the import cleanly with
+#                        "Referenced host id N does not exist".
+#
+# Merge identity key: `ip_address` (literal variant).
+#
+# System entries (127.0.0.1 localhost, ::1 localhost, etc.) are ALWAYS
+# emitted and are NEVER touched by GitOps imports. Do not try to
+# redeclare them here.
+
+group: hosts-entries-reference
+priority: 100
+
+hosts_entries:
+  # ─────────────────────────────────────────────────────────────
+  # Literal entries — fixed IPs for infrastructure that isn't in
+  # Barricade's own hosts table.
+  # ─────────────────────────────────────────────────────────────
+  - ip_address: "10.0.1.10"
+    hostname: "primary-db.internal"
+    aliases: [db, primary]
+    comment: "Primary database — static IP on VLAN 10"
+    priority: 100
+
+  - ip_address: "10.0.1.11"
+    hostname: "replica-db.internal"
+    aliases: [replica]
+    comment: "Read replica"
+    priority: 90
+
+  # ─────────────────────────────────────────────────────────────
+  # IPv6 literal
+  # ─────────────────────────────────────────────────────────────
+  - ip_address: "fd00:abcd::10"
+    hostname: "primary-db.internal"
+    aliases: [db6]
+    comment: "IPv6 address for the same primary"
+    priority: 100
+
+  # ─────────────────────────────────────────────────────────────
+  # Reference entry — track a host already in Barricade.  Replace
+  # 42 with the actual host id from the hosts list (or /api/hosts).
+  # ─────────────────────────────────────────────────────────────
+  - host_ref_id: 42
+    aliases: [cache, redis]
+    comment: "Points at whatever IP host 42 reports as primary"
+    priority: 50
+
+  # ─────────────────────────────────────────────────────────────
+  # Reference with NO aliases is fine — a bare hostname-for-IP
+  # passthrough based on the registered host's own fields.
+  # ─────────────────────────────────────────────────────────────
+  - host_ref_id: 43
+    comment: "Monitoring endpoint — tracked by Barricade"
+    priority: 50
+
+  # ─────────────────────────────────────────────────────────────
+  # Priority example: emission order on the rendered file is
+  # determined by `priority` DESCENDING (higher first), then
+  # insertion order.  YAML list order is informational only.
+  # ─────────────────────────────────────────────────────────────
+  - ip_address: "10.0.2.1"
+    hostname: "gateway.internal"
+    priority: 1000     # emitted at the top of the custom block
+    comment: "Default route"
