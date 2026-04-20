@@ -474,7 +474,7 @@ barricade/
 │   └── package.json
 ├── barricade-lint/           # CLI tool for YAML rule validation
 ├── packaging/               # Linux package build system (deb/rpm/tarball)
-├── examples/                # Configuration examples
+├── docs/                    # Docs + configuration examples (GitOps, precedence)
 ├── dev.sh                   # Dev environment management script
 ├── build.sh                 # Local Docker build script
 ├── docker-compose.yml       # Full stack

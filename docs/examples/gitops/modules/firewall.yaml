@@ -1,0 +1,107 @@
+# Managed by Barricade — Firewall module reference
+#
+# Exhaustive per-field example.  Rule semantics (iptables / nftables):
+#   • action:    allow | deny | reject
+#       - allow  = ACCEPT
+#       - deny   = DROP (packets silently discarded)
+#       - reject = REJECT (sends ICMP port-unreachable / RST)
+#   • protocol:  tcp | udp | icmp | any
+#   • direction: input | output
+#   • source:    CIDR string (IPv4 or IPv6). Omit = any source.
+#   • dest:      CIDR string. Omit = any destination.
+#   • port:      integer, OR "start-end" for a range.  Omitted or null = any port.
+#                ICMP rules MUST NOT set port — parse error if they do.
+#   • comment:   free-text, shown in the UI.  Optional.
+#
+# Merge semantics: two rules with the same
+#   (protocol, direction, port range, source CIDR, destination CIDR)
+# tuple are considered the same "identity". When they conflict between
+# groups, the higher-priority group wins and the lower-priority one is
+# silently dropped. See ../precedence/README.md for worked examples.
+#
+# System rules (e.g. the SSH-lockout prevention rule) are NEVER touched
+# by GitOps imports. You cannot delete them through YAML.
+
+group: firewall-reference
+priority: 100
+
+firewall:
+  rules:
+    # ────────────────────────────────────────────────────────────────
+    # Inbound TCP
+    # ────────────────────────────────────────────────────────────────
+    - action: allow
+      protocol: tcp
+      direction: input
+      source: "10.0.0.0/8"
+      port: 22
+      comment: "SSH from internal"
+
+    # Port range (string with dash). Quotes required because YAML would
+    # otherwise treat "80-81" as a literal scalar — safer to always quote.
+    - action: allow
+      protocol: tcp
+      direction: input
+      port: "8000-8999"
+      comment: "Dev HTTP ports"
+
+    # ────────────────────────────────────────────────────────────────
+    # Inbound UDP
+    # ────────────────────────────────────────────────────────────────
+    - action: allow
+      protocol: udp
+      direction: input
+      port: 51820
+      comment: "WireGuard VPN"
+
+    # ────────────────────────────────────────────────────────────────
+    # Inbound ICMP — NEVER set `port` on ICMP rules.
+    # ────────────────────────────────────────────────────────────────
+    - action: allow
+      protocol: icmp
+      direction: input
+      comment: "Ping"
+
+    # ────────────────────────────────────────────────────────────────
+    # Reject vs deny — reject sends ICMP unreachable, deny silently drops.
+    # Choose reject for faster upstream failover; deny for stealth.
+    # ────────────────────────────────────────────────────────────────
+    - action: reject
+      protocol: tcp
+      direction: input
+      port: 25
+      comment: "SMTP — reject so senders fail fast"
+
+    # ────────────────────────────────────────────────────────────────
+    # IPv6 — CIDR format identical, just use IPv6 notation.
+    # ────────────────────────────────────────────────────────────────
+    - action: allow
+      protocol: tcp
+      direction: input
+      source: "fd00::/8"
+      port: 22
+      comment: "SSH over IPv6 ULA"
+
+    # ────────────────────────────────────────────────────────────────
+    # Destination CIDR — useful for egress filtering.
+    # ────────────────────────────────────────────────────────────────
+    - action: allow
+      protocol: tcp
+      direction: output
+      dest: "10.0.1.0/24"
+      port: 5432
+      comment: "Postgres subnet only"
+
+    # ────────────────────────────────────────────────────────────────
+    # protocol: any — no port, matches everything at that direction.
+    # Typically used for a default-deny at the end of the chain.
+    # ────────────────────────────────────────────────────────────────
+    - action: deny
+      protocol: any
+      direction: input
+      comment: "Default deny inbound"
+
+    - action: deny
+      protocol: any
+      direction: output
+      comment: "Default deny outbound"
