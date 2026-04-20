@@ -2,7 +2,7 @@ import uuid
 
 import pytest
 
-from tests.conftest import create_group
+from tests.conftest import create_group, create_host, create_ssh_key
 
 pytestmark = pytest.mark.integration
 
@@ -98,3 +98,92 @@ class TestGitOpsLockdown:
         )
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
+
+
+class TestServicesLockdown:
+    """GitOps lock applied to group-level service endpoints only."""
+
+    _SERVICE_BODY = {
+        "service_name": "nginx",
+        "state": "running",
+        "enabled": True,
+    }
+
+    async def test_post_group_service_blocked_when_gitops_enabled(self, superuser_client, db):
+        """POST /groups/{id}/services returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gs-lock-{uuid.uuid4().hex[:6]}", priority=910)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/services",
+            json=self._SERVICE_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_service_blocked_when_gitops_enabled(self, superuser_client, db):
+        """PUT /groups/{id}/services/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gs-upd-{uuid.uuid4().hex[:6]}", priority=911)
+
+        # Create the rule before locking.
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/services",
+            json=self._SERVICE_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/services/{rule_id}",
+            json={"comment": "updated via API"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_service_blocked_when_gitops_enabled(self, superuser_client, db):
+        """DELETE /groups/{id}/services/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gs-del-{uuid.uuid4().hex[:6]}", priority=912)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/services",
+            json=self._SERVICE_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/services/{rule_id}")
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_post_group_service_allowed_when_gitops_disabled(self, superuser_client, db):
+        """POST /groups/{id}/services returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"gs-ok-{uuid.uuid4().hex[:6]}", priority=913)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/services",
+            json=self._SERVICE_BODY,
+        )
+        assert resp.status_code == 201
+
+    async def test_post_host_service_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/services returns 201 even when the host's group has gitops."""
+        group = await create_group(db, name=f"gs-host-{uuid.uuid4().hex[:6]}", priority=914)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(db, ip="10.99.0.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/services",
+            json=self._SERVICE_BODY,
+        )
+        # Host-level endpoints are NOT locked — they're per-host, not group-scoped.
+        assert resp.status_code == 201

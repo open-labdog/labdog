@@ -26,7 +26,7 @@ sections to YAML files without breaking older importer versions.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FirewallRuleYAML(BaseModel):
@@ -46,8 +46,19 @@ class FirewallModuleYAML(BaseModel):
     output_policy: Literal["accept", "drop"] | None = None
 
 
+class ServiceYAML(BaseModel):
+    service_name: str
+    state: Literal["running", "stopped"]
+    enabled: bool = True
+    priority: int = Field(default=0, ge=0, le=10000)
+    comment: str | None = None
+    unit_content: str | None = None
+    deploy_mode: Literal["full", "override"] = "override"
+
+
 class BarricadeGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
     firewall: FirewallModuleYAML | None = None
+    services: list[ServiceYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys

@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML
+from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, ServiceYAML
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -147,3 +147,36 @@ def specs_to_yaml(
         "firewall": firewall,
     }
     return f"# Managed by Barricade\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
+
+
+def service_specs_to_yaml(specs: list[ServiceYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``ServiceYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``enabled=True``, ``priority=0``, ``comment=None``,
+    ``unit_content=None``, ``deploy_mode="override"``.
+
+    Args:
+        specs: Validated ``ServiceYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "service_name": spec.service_name,
+            "state": spec.state,
+        }
+        if not spec.enabled:
+            entry["enabled"] = spec.enabled
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.unit_content is not None:
+            entry["unit_content"] = spec.unit_content
+        if spec.deploy_mode != "override":
+            entry["deploy_mode"] = spec.deploy_mode
+        result.append(entry)
+    return result
