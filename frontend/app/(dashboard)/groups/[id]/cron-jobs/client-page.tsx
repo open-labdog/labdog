@@ -5,7 +5,7 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { InfoIcon } from "lucide-react"
+import { InfoIcon, GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -139,6 +139,8 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
     enabled: !!id,
   })
 
+  const gitopsEnabled = !!group?.gitops_enabled
+
   const { data: cronJobs, isLoading, error } = useQuery<CronJob[]>({
     queryKey: ["cron-jobs", id],
     queryFn: () => apiFetch<CronJob[]>(`/api/groups/${id}/cron-jobs`),
@@ -245,8 +247,18 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
         <div>
           <h1 className="text-2xl font-bold text-white">Cron Jobs</h1>
         </div>
-        <Button onClick={openCreateDialog}>Add Cron Job</Button>
+        {!gitopsEnabled && <Button onClick={openCreateDialog}>Add Cron Job</Button>}
       </div>
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Cron jobs are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
@@ -317,14 +329,21 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               label: "Actions",
               cell: (job) => (
                 <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(job)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={gitopsEnabled}
+                    onClick={() => openEditDialog(job)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                  >
                     Edit
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={deleteMutation.isPending}
+                    disabled={deleteMutation.isPending || gitopsEnabled}
                     onClick={() => handleDelete(job)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="text-red-400 hover:text-red-300 hover:bg-red-950"
                   >
                     {deleteMutation.isPending ? "..." : "Delete"}
