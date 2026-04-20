@@ -4,6 +4,11 @@ import pytest
 
 from tests.conftest import create_group, create_host, create_ssh_key
 
+_RESOLVER_BODY = {
+    "nameservers": ["1.1.1.1"],
+    "resolver_type": "resolv_conf",
+}
+
 _CRON_JOB_BODY = {
     "name": "lock-test-job",
     "schedule": "0 * * * *",
@@ -550,3 +555,80 @@ class TestCronJobsLockdown:
         )
         # Host-level endpoints are NOT locked.
         assert resp.status_code == 201
+
+
+class TestResolverLockdown:
+    """GitOps lock applied to group-level resolver endpoints only.
+
+    Host-level resolver endpoints (/hosts/{id}/resolver) remain unlocked —
+    they are per-host overrides, not group-scoped GitOps configuration.
+    """
+
+    async def test_put_group_resolver_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/resolver returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gres-lock-{uuid.uuid4().hex[:6]}", priority=950)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/resolver",
+            json=_RESOLVER_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_resolver_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """DELETE /groups/{id}/resolver returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gres-del-{uuid.uuid4().hex[:6]}", priority=951)
+
+        # Create a resolver row before locking.
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/resolver",
+            json=_RESOLVER_BODY,
+        )
+        assert resp.status_code == 200
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/resolver")
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_resolver_allowed_when_gitops_disabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/resolver returns 200 for non-gitops group."""
+        group = await create_group(db, name=f"gres-ok-{uuid.uuid4().hex[:6]}", priority=952)
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/resolver",
+            json=_RESOLVER_BODY,
+        )
+        assert resp.status_code == 200
+
+    async def test_put_host_resolver_not_locked_by_gitops(self, superuser_client, db):
+        """PUT /hosts/{id}/resolver returns 200 even when host's group has gitops.
+
+        Host-level resolver overrides are NOT locked — they are per-host, not
+        group-scoped GitOps configuration.
+        """
+        group = await create_group(db, name=f"gres-host-{uuid.uuid4().hex[:6]}", priority=953)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(
+            db, ip="10.99.4.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
+        )
+
+        resp = await superuser_client.put(
+            f"/api/hosts/{host.id}/resolver",
+            json=_RESOLVER_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 200
