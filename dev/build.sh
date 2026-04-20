@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="${SCRIPT_DIR}/.."
+
 TAG="latest"
 IMAGE="barricade"
 
@@ -18,8 +21,8 @@ echo ""
 echo "--- Building barricade ---"
 docker build \
   --tag "${IMAGE}:${TAG}" \
-  --file Dockerfile \
-  .
+  --file "${ROOT_DIR}/Dockerfile" \
+  "${ROOT_DIR}"
 
 # Prune build cache and dangling images (only when --clean is passed)
 if [[ "${1:-}" == "--clean" ]]; then
