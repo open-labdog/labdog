@@ -97,7 +97,7 @@ firewall:
 group: test
 future_module:
   - some_field: value
-users:
+another_future_module:
   - login: deploy
 firewall:
   rules:

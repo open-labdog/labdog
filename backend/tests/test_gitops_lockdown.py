@@ -632,3 +632,220 @@ class TestResolverLockdown:
         )
         # Host-level endpoints are NOT locked.
         assert resp.status_code == 200
+
+
+class TestUsersLockdown:
+    """GitOps lock applied to group-level linux-users and linux-groups endpoints.
+
+    Host-level endpoints (/hosts/{id}/linux-users and /hosts/{id}/linux-groups)
+    remain unlocked — they are per-host overrides, not group-scoped GitOps
+    configuration.
+    """
+
+    _USER_BODY = {
+        "username": "locktest",
+        "uid": 1099,
+        "shell": "/bin/bash",
+    }
+
+    _GROUP_BODY = {
+        "groupname": "locktestgroup",
+        "gid": 2099,
+    }
+
+    # ------------------------------------------------------------------
+    # linux-users group-level lockdown
+    # ------------------------------------------------------------------
+
+    async def test_post_group_linux_user_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/linux-users returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glu-lock-{uuid.uuid4().hex[:6]}", priority=960)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-users",
+            json=self._USER_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_linux_user_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/linux-users/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glu-upd-{uuid.uuid4().hex[:6]}", priority=961)
+
+        # Create the rule before locking.
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-users",
+            json=self._USER_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/linux-users/{rule_id}",
+            json={"comment": "updated via API"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_linux_user_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """DELETE /groups/{id}/linux-users/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glu-del-{uuid.uuid4().hex[:6]}", priority=962)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-users",
+            json=self._USER_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(
+            f"/api/groups/{group.id}/linux-users/{rule_id}"
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    # ------------------------------------------------------------------
+    # linux-groups group-level lockdown
+    # ------------------------------------------------------------------
+
+    async def test_post_group_linux_group_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/linux-groups returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glg-lock-{uuid.uuid4().hex[:6]}", priority=963)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-groups",
+            json=self._GROUP_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_linux_group_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/linux-groups/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glg-upd-{uuid.uuid4().hex[:6]}", priority=964)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-groups",
+            json=self._GROUP_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/linux-groups/{rule_id}",
+            json={"gid": 2100},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_linux_group_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """DELETE /groups/{id}/linux-groups/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"glg-del-{uuid.uuid4().hex[:6]}", priority=965)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-groups",
+            json=self._GROUP_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(
+            f"/api/groups/{group.id}/linux-groups/{rule_id}"
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    # ------------------------------------------------------------------
+    # Non-gitops group: writes allowed
+    # ------------------------------------------------------------------
+
+    async def test_post_group_linux_user_allowed_when_gitops_disabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/linux-users returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"glu-ok-{uuid.uuid4().hex[:6]}", priority=966)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-users",
+            json=self._USER_BODY,
+        )
+        assert resp.status_code == 201
+
+    async def test_post_group_linux_group_allowed_when_gitops_disabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/linux-groups returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"glg-ok-{uuid.uuid4().hex[:6]}", priority=967)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/linux-groups",
+            json=self._GROUP_BODY,
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # Host-level endpoints: NOT locked
+    # ------------------------------------------------------------------
+
+    async def test_post_host_linux_user_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/linux-users returns 201 even when host's group has gitops."""
+        group = await create_group(db, name=f"glu-host-{uuid.uuid4().hex[:6]}", priority=968)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(
+            db, ip="10.99.5.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
+        )
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/linux-users",
+            json=self._USER_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 201
+
+    async def test_post_host_linux_group_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/linux-groups returns 201 even when host's group has gitops."""
+        group = await create_group(db, name=f"glg-host-{uuid.uuid4().hex[:6]}", priority=969)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(
+            db, ip="10.99.5.2", ssh_key_id=ssh_key.id, group_ids=[group.id]
+        )
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/linux-groups",
+            json=self._GROUP_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 201

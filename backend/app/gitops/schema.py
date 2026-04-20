@@ -195,6 +195,41 @@ class CronJobYAML(BaseModel):
         return v
 
 
+class LinuxGroupYAML(BaseModel):
+    """YAML model for a single Linux group entry.
+
+    Structural shape only — full validation is delegated to
+    ``LinuxGroupCreate.model_validate()`` in the handler so we don't duplicate
+    logic (protected-name check, gid range, username regex).
+    """
+
+    groupname: str
+    gid: int | None = None
+    state: Literal["present", "absent"] = "present"
+    priority: int = Field(default=0, ge=0, le=10000)
+
+
+class LinuxUserYAML(BaseModel):
+    """YAML model for a single Linux user entry.
+
+    Structural shape only — full validation is delegated to
+    ``LinuxUserCreate.model_validate()`` in the handler so we don't duplicate
+    logic (protected-name check, uid range, SSH key validation, sudo_rule
+    metacharacter check).
+    """
+
+    username: str
+    uid: int | None = None
+    shell: str = "/bin/bash"
+    home_dir: str | None = None
+    state: Literal["present", "absent"] = "present"
+    comment: str | None = None
+    sudo_rule: str | None = None
+    authorized_keys: list[str] = []
+    supplementary_groups: list[str] = []
+    priority: int = Field(default=0, ge=0, le=10000)
+
+
 class BarricadeGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
@@ -205,4 +240,6 @@ class BarricadeGroupYAML(BaseModel):
     hosts_entries: list[HostsEntryYAML] | None = None
     cron_jobs: list[CronJobYAML] | None = None
     resolver: ResolverYAML | None = None
+    users: list[LinuxUserYAML] | None = None
+    linux_groups: list[LinuxGroupYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys
