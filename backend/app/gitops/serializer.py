@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
+from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, HostsEntryYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -210,6 +210,42 @@ def package_repo_specs_to_yaml(specs: list[PackageRepositoryYAML]) -> list[dict[
             entry["components"] = spec.components
         if spec.state != "present":
             entry["state"] = spec.state
+        result.append(entry)
+    return result
+
+
+def hosts_entry_specs_to_yaml(specs: list[HostsEntryYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``HostsEntryYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``host_ref_id=None``, ``ip_address=None``,
+    ``hostname=None``, ``aliases=[]``, ``comment=None``, ``priority=0``.
+
+    The two variants (literal and reference) are handled transparently — for
+    literal entries ``ip_address`` and ``hostname`` are always emitted; for
+    reference entries ``host_ref_id`` is emitted and the literal fields are
+    omitted (they are ``None``).
+
+    Args:
+        specs: Validated ``HostsEntryYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {}
+        if spec.host_ref_id is not None:
+            entry["host_ref_id"] = spec.host_ref_id
+        else:
+            entry["ip_address"] = spec.ip_address
+            entry["hostname"] = spec.hostname
+        if spec.aliases:
+            entry["aliases"] = list(spec.aliases)
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
         result.append(entry)
     return result
 

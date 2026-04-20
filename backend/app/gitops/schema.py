@@ -26,7 +26,7 @@ sections to YAML files without breaking older importer versions.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class FirewallRuleYAML(BaseModel):
@@ -76,6 +76,42 @@ class PackageRepositoryYAML(BaseModel):
     state: Literal["present", "absent"] = "present"
 
 
+class HostsEntryYAML(BaseModel):
+    """YAML model for a single /etc/hosts entry.
+
+    Two mutually exclusive variants:
+
+    * **Literal** — ``ip_address`` + ``hostname`` are required; ``host_ref_id`` must be absent.
+    * **Reference** — ``host_ref_id`` is required; ``ip_address`` and ``hostname`` must be absent.
+
+    ``aliases`` is an optional list of additional hostnames for the same IP.
+    ``priority`` controls emission order in the rendered ``/etc/hosts`` file (higher = earlier);
+    YAML list order is informational only — the drift detector and emission engine both use
+    priority, not YAML position.
+    """
+
+    ip_address: str | None = None
+    hostname: str | None = None
+    host_ref_id: int | None = None
+    aliases: list[str] = []
+    comment: str | None = None
+    priority: int = Field(default=0, ge=0, le=10000)
+
+    @model_validator(mode="after")
+    def _validate_ref_or_literal(self) -> "HostsEntryYAML":
+        if self.host_ref_id is not None:
+            if self.ip_address or self.hostname:
+                raise ValueError(
+                    "ip_address and hostname must be empty when host_ref_id is set"
+                )
+        else:
+            if not self.ip_address or not self.hostname:
+                raise ValueError(
+                    "ip_address and hostname are required when host_ref_id is not set"
+                )
+        return self
+
+
 class BarricadeGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
@@ -83,4 +119,5 @@ class BarricadeGroupYAML(BaseModel):
     services: list[ServiceYAML] | None = None
     packages: list[PackageYAML] | None = None
     package_repositories: list[PackageRepositoryYAML] | None = None
+    hosts_entries: list[HostsEntryYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys
