@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/ui/data-table"
@@ -65,6 +66,14 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
   const [groupPriority, setGroupPriority] = useState(100)
 
   // Queries
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
+  const gitopsEnabled = !!group?.gitops_enabled
+
   const { data: linuxUsers, isLoading: usersLoading, error: usersError } = useQuery<LinuxUser[]>({
     queryKey: ["linux-users", id],
     queryFn: () => apiFetch<LinuxUser[]>(`/api/groups/${id}/linux-users`),
@@ -201,22 +210,27 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
     })
   }
 
-  const { data: group } = useQuery<HostGroup>({
-    queryKey: ["group", id],
-    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
-    enabled: !!id,
-  })
-
   return (
     <div className="space-y-8">
       {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Users" }]} />}
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Users and groups are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
+
       {/* Linux Users Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Linux Users</h1>
           </div>
-          <Button onClick={openCreateUserDialog}>Add User</Button>
+          {!gitopsEnabled && <Button onClick={openCreateUserDialog}>Add User</Button>}
         </div>
 
         {showUsersLoading && <TableSkeleton rows={5} columns={4} />}
@@ -304,14 +318,21 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 label: "Actions",
                 cell: (user) => (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openEditUserDialog(user)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={gitopsEnabled}
+                      onClick={() => openEditUserDialog(user)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                    >
                       Edit
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={userDeleteMutation.isPending}
+                      disabled={userDeleteMutation.isPending || gitopsEnabled}
                       onClick={() => handleUserDelete(user)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
                       className="text-red-400 hover:text-red-300 hover:bg-red-950"
                     >
                       {userDeleteMutation.isPending ? "…" : "Delete"}
@@ -334,7 +355,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
             <h2 className="text-xl font-bold text-white">Linux Groups</h2>
             <p className="text-slate-400 text-sm mt-1">System groups managed for this host group.</p>
           </div>
-          <Button onClick={openCreateGroupDialog}>Add Group</Button>
+          {!gitopsEnabled && <Button onClick={openCreateGroupDialog}>Add Group</Button>}
         </div>
 
         {showGroupsLoading && <TableSkeleton rows={5} columns={4} />}
@@ -391,14 +412,21 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 label: "Actions",
                 cell: (g) => (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openEditGroupDialog(g)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={gitopsEnabled}
+                      onClick={() => openEditGroupDialog(g)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                    >
                       Edit
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={groupDeleteMutation.isPending}
+                      disabled={groupDeleteMutation.isPending || gitopsEnabled}
                       onClick={() => handleGroupDelete(g)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
                       className="text-red-400 hover:text-red-300 hover:bg-red-950"
                     >
                       {groupDeleteMutation.isPending ? "…" : "Delete"}

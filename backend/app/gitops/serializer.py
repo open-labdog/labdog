@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, CronJobYAML, FirewallRuleYAML, HostsEntryYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
+from app.gitops.schema import BarricadeGroupYAML, CronJobYAML, FirewallRuleYAML, HostsEntryYAML, LinuxGroupYAML, LinuxUserYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
 from app.resolver.models import ResolverConfig
 from app.rules.model import FirewallRuleSpec
 
@@ -281,6 +281,72 @@ def cron_job_specs_to_yaml(specs: list[CronJobYAML]) -> list[dict[str, Any]]:
             entry["priority"] = spec.priority
         if spec.comment is not None:
             entry["comment"] = spec.comment
+        result.append(entry)
+    return result
+
+
+def linux_group_specs_to_yaml(specs: list[LinuxGroupYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``LinuxGroupYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``gid=None``, ``state="present"``, ``priority=0``.
+
+    Args:
+        specs: Validated ``LinuxGroupYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding under the ``linux_groups:`` key
+        of a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"groupname": spec.groupname}
+        if spec.gid is not None:
+            entry["gid"] = spec.gid
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        result.append(entry)
+    return result
+
+
+def linux_user_specs_to_yaml(specs: list[LinuxUserYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``LinuxUserYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``uid=None``, ``shell="/bin/bash"``, ``home_dir=None``,
+    ``state="present"``, ``comment=None``, ``sudo_rule=None``,
+    ``authorized_keys=[]``, ``supplementary_groups=[]``, ``priority=0``.
+
+    Args:
+        specs: Validated ``LinuxUserYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding under the ``users:`` key of a
+        group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"username": spec.username}
+        if spec.uid is not None:
+            entry["uid"] = spec.uid
+        if spec.shell != "/bin/bash":
+            entry["shell"] = spec.shell
+        if spec.home_dir is not None:
+            entry["home_dir"] = spec.home_dir
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.sudo_rule is not None:
+            entry["sudo_rule"] = spec.sudo_rule
+        if spec.authorized_keys:
+            entry["authorized_keys"] = list(spec.authorized_keys)
+        if spec.supplementary_groups:
+            entry["supplementary_groups"] = list(spec.supplementary_groups)
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
         result.append(entry)
     return result
 
