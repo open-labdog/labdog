@@ -4,6 +4,11 @@ import pytest
 
 from tests.conftest import create_group, create_host, create_ssh_key
 
+_HOSTS_ENTRY_BODY = {
+    "ip_address": "192.168.99.1",
+    "hostname": "lock-test.internal",
+}
+
 pytestmark = pytest.mark.integration
 
 
@@ -332,6 +337,109 @@ class TestPackagesLockdown:
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/packages",
             json=self._PKG_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 201
+
+
+class TestHostsEntriesLockdown:
+    """GitOps lock applied to group-level hosts-entries endpoints only.
+
+    Host-level hosts-entries endpoints (/hosts/{id}/hosts-entries) remain
+    unlocked — they are per-host overrides, not group-scoped configuration.
+    """
+
+    async def test_post_group_hosts_entry_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/hosts-entries returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"ghe-lock-{uuid.uuid4().hex[:6]}", priority=930)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/hosts-entries",
+            json=_HOSTS_ENTRY_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_hosts_entry_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """PUT /groups/{id}/hosts-entries/{entry_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"ghe-upd-{uuid.uuid4().hex[:6]}", priority=931)
+
+        # Create the entry before locking.
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/hosts-entries",
+            json=_HOSTS_ENTRY_BODY,
+        )
+        assert resp.status_code == 201
+        entry_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/hosts-entries/{entry_id}",
+            json={"comment": "updated via API"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_hosts_entry_blocked_when_gitops_enabled(
+        self, superuser_client, db
+    ):
+        """DELETE /groups/{id}/hosts-entries/{entry_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"ghe-del-{uuid.uuid4().hex[:6]}", priority=932)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/hosts-entries",
+            json=_HOSTS_ENTRY_BODY,
+        )
+        assert resp.status_code == 201
+        entry_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(
+            f"/api/groups/{group.id}/hosts-entries/{entry_id}"
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_post_group_hosts_entry_allowed_when_gitops_disabled(
+        self, superuser_client, db
+    ):
+        """POST /groups/{id}/hosts-entries returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"ghe-ok-{uuid.uuid4().hex[:6]}", priority=933)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/hosts-entries",
+            json=_HOSTS_ENTRY_BODY,
+        )
+        assert resp.status_code == 201
+
+    async def test_post_host_hosts_entry_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/hosts-entries returns 201 even when host's group has gitops.
+
+        Host-level endpoints are NOT locked — they are per-host overrides,
+        not group-scoped GitOps configuration.
+        """
+        group = await create_group(db, name=f"ghe-host-{uuid.uuid4().hex[:6]}", priority=934)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(
+            db, ip="10.99.2.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
+        )
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/hosts-entries",
+            json=_HOSTS_ENTRY_BODY,
         )
         # Host-level endpoints are NOT locked.
         assert resp.status_code == 201
