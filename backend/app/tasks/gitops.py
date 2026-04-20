@@ -108,7 +108,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                         )
                         continue
 
-                    if import_result.diff and import_result.diff.has_changes:
+                    if import_result.any_changes():
                         await _trigger_group_sync(group.id, db)
 
                 except Exception as e:
