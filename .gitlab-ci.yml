@@ -98,6 +98,21 @@ frontend-build-check:
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
 
+docs-build-check:
+  stage: test
+  image: node:20-alpine
+  cache:
+    key: docs-npm-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/npm
+      - website/node_modules/
+  script:
+    - cd website
+    - npm ci --prefer-offline
+    - npm run build
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+
 
 # --- Build & publish ---
 
@@ -146,6 +161,25 @@ build-test-image:
         .
     - docker push $IMAGE:test
     - docker push $IMAGE:test-$CI_COMMIT_SHORT_SHA
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+
+pages:
+  stage: build
+  image: node:20-alpine
+  cache:
+    key: docs-npm-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/npm
+      - website/node_modules/
+  script:
+    - cd website
+    - npm ci --prefer-offline
+    - npm run build
+    - mv build ../public
+  artifacts:
+    paths:
+      - public
   rules:
     - if: $CI_COMMIT_BRANCH == "dev"
 
