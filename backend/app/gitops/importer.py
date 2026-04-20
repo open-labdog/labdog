@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.gitops.importers.cron_jobs import import_cron_jobs
 from app.gitops.importers.firewall import ModuleImportResult, import_firewall
-from app.gitops.importers.resolver import import_resolver
 from app.gitops.importers.hosts_entries import import_hosts_entries
 from app.gitops.importers.packages import import_packages
+from app.gitops.importers.resolver import import_resolver
 from app.gitops.importers.services import import_services
 from app.gitops.importers.users import import_users
 from app.gitops.serializer import YAMLParseError, parse_yaml
