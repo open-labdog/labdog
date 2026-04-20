@@ -56,9 +56,31 @@ class ServiceYAML(BaseModel):
     deploy_mode: Literal["full", "override"] = "override"
 
 
+class PackageYAML(BaseModel):
+    package_name: str
+    version: str | None = None
+    state: Literal["present", "absent", "latest"] = "present"
+    package_manager: Literal["auto", "apt", "dnf", "yum"] = "auto"
+    priority: int = Field(default=0, ge=0, le=10000)
+    comment: str | None = None
+    hold: bool = False
+
+
+class PackageRepositoryYAML(BaseModel):
+    name: str
+    url: str
+    key_url: str | None = None
+    repo_type: Literal["apt", "yum"]
+    distribution: str | None = None
+    components: str | None = None
+    state: Literal["present", "absent"] = "present"
+
+
 class BarricadeGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
     firewall: FirewallModuleYAML | None = None
     services: list[ServiceYAML] | None = None
+    packages: list[PackageYAML] | None = None
+    package_repositories: list[PackageRepositoryYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys

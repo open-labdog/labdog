@@ -95,9 +95,8 @@ firewall:
         """Extra top-level keys for future modules are silently ignored."""
         yaml_str = """\
 group: test
-packages:
-  - name: nginx
-    version: 1.24
+future_module:
+  - some_field: value
 users:
   - login: deploy
 firewall:

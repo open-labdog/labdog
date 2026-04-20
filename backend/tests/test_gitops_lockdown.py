@@ -187,3 +187,151 @@ class TestServicesLockdown:
         )
         # Host-level endpoints are NOT locked — they're per-host, not group-scoped.
         assert resp.status_code == 201
+
+
+class TestPackagesLockdown:
+    """GitOps lock applied to group-level package and package-repo endpoints."""
+
+    _PKG_BODY = {
+        "package_name": "nginx",
+        "state": "present",
+    }
+
+    _REPO_BODY = {
+        "name": "myrepo",
+        "url": "https://packages.example.com/apt",
+        "repo_type": "apt",
+    }
+
+    async def test_post_group_package_blocked_when_gitops_enabled(self, superuser_client, db):
+        """POST /groups/{id}/packages returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gp-lock-{uuid.uuid4().hex[:6]}", priority=920)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/packages",
+            json=self._PKG_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_package_blocked_when_gitops_enabled(self, superuser_client, db):
+        """PUT /groups/{id}/packages/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gp-upd-{uuid.uuid4().hex[:6]}", priority=921)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/packages",
+            json=self._PKG_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/packages/{rule_id}",
+            json={"comment": "updated via API"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_package_blocked_when_gitops_enabled(self, superuser_client, db):
+        """DELETE /groups/{id}/packages/{rule_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gp-del-{uuid.uuid4().hex[:6]}", priority=922)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/packages",
+            json=self._PKG_BODY,
+        )
+        assert resp.status_code == 201
+        rule_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/packages/{rule_id}")
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_post_group_repo_blocked_when_gitops_enabled(self, superuser_client, db):
+        """POST /groups/{id}/package-repos returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gr-lock-{uuid.uuid4().hex[:6]}", priority=923)
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/package-repos",
+            json=self._REPO_BODY,
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_put_group_repo_blocked_when_gitops_enabled(self, superuser_client, db):
+        """PUT /groups/{id}/package-repos/{repo_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gr-upd-{uuid.uuid4().hex[:6]}", priority=924)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/package-repos",
+            json=self._REPO_BODY,
+        )
+        assert resp.status_code == 201
+        repo_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.put(
+            f"/api/groups/{group.id}/package-repos/{repo_id}",
+            json={"components": "main contrib"},
+        )
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_delete_group_repo_blocked_when_gitops_enabled(self, superuser_client, db):
+        """DELETE /groups/{id}/package-repos/{repo_id} returns 403 for gitops-enabled group."""
+        group = await create_group(db, name=f"gr-del-{uuid.uuid4().hex[:6]}", priority=925)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/package-repos",
+            json=self._REPO_BODY,
+        )
+        assert resp.status_code == 201
+        repo_id = resp.json()["id"]
+
+        group.gitops_enabled = True
+        await db.flush()
+
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/package-repos/{repo_id}")
+        assert resp.status_code == 403
+        assert "GitOps" in resp.json()["detail"]
+
+    async def test_post_group_package_allowed_when_gitops_disabled(self, superuser_client, db):
+        """POST /groups/{id}/packages returns 201 for non-gitops group."""
+        group = await create_group(db, name=f"gp-ok-{uuid.uuid4().hex[:6]}", priority=926)
+
+        resp = await superuser_client.post(
+            f"/api/groups/{group.id}/packages",
+            json=self._PKG_BODY,
+        )
+        assert resp.status_code == 201
+
+    async def test_post_host_package_not_locked_by_gitops(self, superuser_client, db):
+        """POST /hosts/{id}/packages returns 201 even when host's group has gitops.
+
+        Host-level package overrides stay manual and are never locked.
+        """
+        group = await create_group(db, name=f"gp-host-{uuid.uuid4().hex[:6]}", priority=927)
+        group.gitops_enabled = True
+        await db.flush()
+
+        ssh_key = await create_ssh_key(db)
+        host = await create_host(db, ip="10.99.1.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
+
+        resp = await superuser_client.post(
+            f"/api/hosts/{host.id}/packages",
+            json=self._PKG_BODY,
+        )
+        # Host-level endpoints are NOT locked.
+        assert resp.status_code == 201
