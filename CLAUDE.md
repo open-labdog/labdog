@@ -55,7 +55,7 @@ npx playwright test --ui     # interactive mode
 
 ## Configuration
 
-Settings are loaded from `barricade.toml` (project root for dev, `/etc/barricade/barricade.toml` for production). Environment variables override TOML settings using `BARRICADE_` prefix with `__` separators (e.g., `BARRICADE_SECURITY__SECRET_KEY`).
+Settings are loaded from `dev/barricade.toml` (dev — set via `BARRICADE_CONFIG` env var by `dev.sh`), or `/etc/barricade/barricade.toml` (production). Environment variables override TOML settings using `BARRICADE_` prefix with `__` separators (e.g., `BARRICADE_SECURITY__SECRET_KEY`).
 
 **Required secrets** (validated at startup — insecure defaults are rejected):
 - `security.secret_key` — JWT signing key

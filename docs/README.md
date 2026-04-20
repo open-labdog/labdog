@@ -247,7 +247,7 @@ sudo ./uninstall.sh --purge  # removes everything
 1. Clone and configure:
    ```bash
    git clone <repo-url> barricade && cd barricade
-   cp .env.example .env
+   cp .env.example dev/.env
    ```
 
 2. Generate required secrets:
@@ -262,7 +262,7 @@ sudo ./uninstall.sh --purge  # removes everything
 
 3. Start the stack:
    ```bash
-   docker compose up -d
+   docker compose -f dev/docker-compose.yml up -d
    ```
 
 4. Access:
@@ -506,11 +506,17 @@ barricade/
 ├── barricade-lint/           # CLI tool for YAML rule validation
 ├── packaging/               # Linux package build system (deb/rpm/tarball)
 ├── docs/                    # This directory — docs index + examples
-├── dev.sh                   # Dev environment management script
-├── build.sh                 # Local Docker build script
-├── docker-compose.yml       # Full stack
+├── dev/                     # Local development tools
+│   ├── dev.sh               # Dev environment management script
+│   ├── build.sh             # Local Docker build script
+│   ├── deploy.sh            # Local Docker deploy script
+│   ├── docker-compose.yml   # Local dev stack (postgres + redis)
+│   ├── barricade.toml       # Dev configuration
+│   └── .env                 # Local secrets (gitignored — copy from .env.example)
+├── dev.sh                   # Thin wrapper → dev/dev.sh
+├── .env.example             # Environment variable template
 ├── .gitlab-ci.yml           # GitLab CI/CD pipelines
-└── .env.example
+└── Dockerfile
 ```
 
 ## Extension Modules

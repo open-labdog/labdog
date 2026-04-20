@@ -2,7 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PIDFILE_DIR="${SCRIPT_DIR}/.dev-pids"
+ROOT_DIR="${SCRIPT_DIR}/.."
+PIDFILE_DIR="${ROOT_DIR}/.dev-pids"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
 # Seed .env with dev-only secrets on first run. Barricade rejects the insecure
@@ -16,7 +17,7 @@ ensure_dev_env() {
   fi
 
   echo "[dev] Seeding ${ENV_FILE} with generated dev secrets..."
-  local venv_python="${SCRIPT_DIR}/backend/.venv/bin/python"
+  local venv_python="${ROOT_DIR}/backend/.venv/bin/python"
   if [[ ! -x "$venv_python" ]]; then
     echo "[dev] ERROR: backend venv not found at ${venv_python}. Run: cd backend && python -m venv .venv && uv pip install -e '.[dev]'"
     exit 1
@@ -49,7 +50,7 @@ load_dev_env
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <command>
+Usage: dev/$(basename "$0") <command>
 
 Commands:
   start       Start infrastructure (postgres, redis) + backend + frontend
@@ -81,9 +82,9 @@ log() {
 
 start_infra() {
   log "Starting postgres + redis..."
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up -d postgres redis
+  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" up -d postgres redis
   log "Waiting for postgres..."
-  until docker compose -f "${SCRIPT_DIR}/docker-compose.yml" exec -T postgres pg_isready -U barricade &>/dev/null; do
+  until docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" exec -T postgres pg_isready -U barricade &>/dev/null; do
     sleep 1
   done
   log "Postgres ready."
@@ -91,16 +92,16 @@ start_infra() {
 
 stop_infra() {
   log "Stopping postgres + redis..."
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" stop postgres redis 2>/dev/null || true
+  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" stop postgres redis 2>/dev/null || true
 }
 
 #--- Backend ---
 
-VENV="${SCRIPT_DIR}/backend/.venv/bin"
+VENV="${ROOT_DIR}/backend/.venv/bin"
 
 start_backend() {
   ensure_piddir
-  local logdir="${SCRIPT_DIR}/.dev-logs"
+  local logdir="${ROOT_DIR}/.dev-logs"
   mkdir -p "${logdir}"
 
   if [[ ! -x "${VENV}/python" ]]; then
@@ -113,25 +114,25 @@ start_backend() {
 
   # Run migrations
   log "Running migrations..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" upgrade head)
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" upgrade head)
 
   # Barricade (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
   # BARRICADE_DEV_MODE disables static frontend serving so the Next.js dev server on :3000 is used.
   log "Starting barricade..."
-  (cd "${SCRIPT_DIR}/backend" && BARRICADE_DEV_MODE=1 "${VENV}/python" -m app --reload --no-celery --skip-migrate \
+  (cd "${ROOT_DIR}/backend" && BARRICADE_DEV_MODE=1 BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/python" -m app --reload --no-celery --skip-migrate \
     >"${logdir}/barricade.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/barricade.pid"
 
   # Celery worker
   log "Starting celery worker..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/celery" -A app.tasks worker \
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks worker \
     --max-tasks-per-child=100 -Q default,long_running --loglevel=info \
     >"${logdir}/celery-worker.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-worker.pid"
 
   # Celery beat
   log "Starting celery beat..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/celery" -A app.tasks beat \
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks beat \
     --scheduler redbeat.RedBeatScheduler --loglevel=info \
     >"${logdir}/celery-beat.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-beat.pid"
@@ -166,11 +167,11 @@ stop_backend() {
 
 start_frontend() {
   ensure_piddir
-  local logdir="${SCRIPT_DIR}/.dev-logs"
+  local logdir="${ROOT_DIR}/.dev-logs"
   mkdir -p "${logdir}"
 
   log "Starting next dev..."
-  (cd "${SCRIPT_DIR}/frontend" && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev \
+  (cd "${ROOT_DIR}/frontend" && NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev \
     >"${logdir}/frontend.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/frontend.pid"
 
@@ -193,7 +194,7 @@ run_migrate() {
   ensure_dev_env
   load_dev_env
   log "Running migrations..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" upgrade head)
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" upgrade head)
   log "Migrations complete."
 }
 
@@ -203,14 +204,14 @@ run_migrate_down() {
     exit 1
   fi
   log "Rolling back one migration..."
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" downgrade -1)
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" downgrade -1)
   log "Rollback complete."
 }
 
 run_migrate_new() {
   local msg="${1:-}"
   if [[ -z "$msg" ]]; then
-    log "ERROR: Provide a migration message: ./dev.sh migrate-new 'add users table'"
+    log "ERROR: Provide a migration message: ./dev/dev.sh migrate-new 'add users table'"
     exit 1
   fi
   if [[ ! -x "${VENV}/alembic" ]]; then
@@ -218,7 +219,7 @@ run_migrate_new() {
     exit 1
   fi
   log "Generating migration: ${msg}"
-  (cd "${SCRIPT_DIR}/backend" && "${VENV}/alembic" revision --autogenerate -m "$msg")
+  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" revision --autogenerate -m "$msg")
   log "Migration generated."
 }
 
@@ -235,7 +236,7 @@ show_status() {
   echo ""
 
   for svc in postgres redis; do
-    if docker compose -f "${SCRIPT_DIR}/docker-compose.yml" ps --status running "${svc}" 2>/dev/null | grep -q "${svc}"; then
+    if docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" ps --status running "${svc}" 2>/dev/null | grep -q "${svc}"; then
       printf "  %-20s %s\n" "${svc}" "running (docker)"
       running=$((running + 1))
     else
@@ -282,7 +283,7 @@ show_status() {
 #--- Logs ---
 
 tail_logs() {
-  local logdir="${SCRIPT_DIR}/.dev-logs"
+  local logdir="${ROOT_DIR}/.dev-logs"
   if [[ ! -d "$logdir" ]] || [[ -z "$(ls -A "$logdir" 2>/dev/null)" ]]; then
     echo "No logs found. Start the dev server first."
     exit 1
@@ -302,7 +303,7 @@ case "${1:-}" in
     log "  Backend:  http://localhost:8000"
     log "  Frontend: http://localhost:3000"
     log ""
-    log "Run './dev.sh logs' to tail logs, './dev.sh stop' to shut down."
+    log "Run './dev/dev.sh logs' to tail logs, './dev/dev.sh stop' to shut down."
     ;;
   stop)
     stop_frontend
