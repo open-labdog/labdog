@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Loader2Icon } from "lucide-react"
+import { GitBranch, Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/ui/data-table"
@@ -75,6 +75,14 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
   const [repoComponents, setRepoComponents] = useState("")
   const [repoKeyUrl, setRepoKeyUrl] = useState("")
   const [repoState, setRepoState] = useState<"present" | "absent">("present")
+
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
+    enabled: !!id,
+  })
+
+  const gitopsEnabled = !!group?.gitops_enabled
 
   const { data: packages = [], isLoading: pkgLoading, error: pkgError } = useQuery<PackageRule[]>({
     queryKey: ["group-packages", id],
@@ -229,22 +237,27 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
 
   const selectClass = "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
 
-  const { data: group } = useQuery<HostGroup>({
-    queryKey: ["group", id],
-    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
-    enabled: !!id,
-  })
-
   return (
     <div className="space-y-8">
       {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Packages" }]} />}
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Packages are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
+
       {/* Package Rules Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-white">Package Rules</h1>
           </div>
-          <Button onClick={openPkgCreateDialog}>Add Package</Button>
+          {!gitopsEnabled && <Button onClick={openPkgCreateDialog}>Add Package</Button>}
         </div>
 
         {showPkgLoading && <TableSkeleton rows={5} columns={4} />}
@@ -315,14 +328,21 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 label: "Actions",
                 cell: (pkg) => (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openPkgEditDialog(pkg)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={gitopsEnabled}
+                      onClick={() => openPkgEditDialog(pkg)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                    >
                       Edit
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={pkgDeleteMutation.isPending}
+                      disabled={pkgDeleteMutation.isPending || gitopsEnabled}
                       onClick={() => handlePkgDelete(pkg)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
                       className="text-red-400 hover:text-red-300 hover:bg-red-950"
                     >
                       {pkgDeleteMutation.isPending ? "..." : "Delete"}
@@ -347,7 +367,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
             <h2 className="text-xl font-bold text-white">Package Repositories</h2>
             <p className="text-slate-400 text-sm mt-1">Custom package sources for this group</p>
           </div>
-          <Button onClick={openRepoCreateDialog}>Add Repository</Button>
+          {!gitopsEnabled && <Button onClick={openRepoCreateDialog}>Add Repository</Button>}
         </div>
 
         {showRepoLoading && <TableSkeleton rows={5} columns={4} />}
@@ -418,14 +438,21 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 label: "Actions",
                 cell: (repo) => (
                   <div className="flex gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => openRepoEditDialog(repo)}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={gitopsEnabled}
+                      onClick={() => openRepoEditDialog(repo)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                    >
                       Edit
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      disabled={repoDeleteMutation.isPending}
+                      disabled={repoDeleteMutation.isPending || gitopsEnabled}
                       onClick={() => handleRepoDelete(repo)}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
                       className="text-red-400 hover:text-red-300 hover:bg-red-950"
                     >
                       {repoDeleteMutation.isPending ? "..." : "Delete"}

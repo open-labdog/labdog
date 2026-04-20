@@ -4,7 +4,7 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, ServiceYAML
+from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML, PackageRepositoryYAML, PackageYAML, ServiceYAML
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -147,6 +147,71 @@ def specs_to_yaml(
         "firewall": firewall,
     }
     return f"# Managed by Barricade\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
+
+
+def package_specs_to_yaml(specs: list[PackageYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``PackageYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``version=None``, ``state="present"``,
+    ``package_manager="auto"``, ``priority=0``, ``comment=None``,
+    ``hold=False``.
+
+    Args:
+        specs: Validated ``PackageYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"package_name": spec.package_name}
+        if spec.version is not None:
+            entry["version"] = spec.version
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.package_manager != "auto":
+            entry["package_manager"] = spec.package_manager
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.hold:
+            entry["hold"] = spec.hold
+        result.append(entry)
+    return result
+
+
+def package_repo_specs_to_yaml(specs: list[PackageRepositoryYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``PackageRepositoryYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``key_url=None``, ``distribution=None``,
+    ``components=None``, ``state="present"``.
+
+    Args:
+        specs: Validated ``PackageRepositoryYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "name": spec.name,
+            "url": spec.url,
+            "repo_type": spec.repo_type,
+        }
+        if spec.key_url is not None:
+            entry["key_url"] = spec.key_url
+        if spec.distribution is not None:
+            entry["distribution"] = spec.distribution
+        if spec.components is not None:
+            entry["components"] = spec.components
+        if spec.state != "present":
+            entry["state"] = spec.state
+        result.append(entry)
+    return result
 
 
 def service_specs_to_yaml(specs: list[ServiceYAML]) -> list[dict[str, Any]]:
