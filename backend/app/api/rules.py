@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._gitops_lock import check_gitops_lock
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
@@ -21,17 +22,6 @@ from app.schemas.rules import (
 )
 
 router = APIRouter(tags=["rules"])
-
-
-async def _check_gitops_lock(group_id: int, db: AsyncSession):
-    """Block rule mutations on GitOps-managed groups."""
-    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
-    group = result.scalar_one_or_none()
-    if group and group.gitops_enabled:
-        raise HTTPException(
-            status_code=403,
-            detail="This group is managed by GitOps. Rule changes must be made via Git.",
-        )
 
 
 @router.get("/groups/{group_id}/rules", response_model=list[RuleResponse])
@@ -66,7 +56,7 @@ async def create_rule(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    await _check_gitops_lock(group_id, db)
+    await check_gitops_lock(group_id, db)
     if body.protocol == "icmp" and body.port_start is not None:
         raise HTTPException(status_code=400, detail="ICMP rules cannot specify ports")
     # Validate port range
@@ -87,7 +77,7 @@ async def reorder_rules(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    await _check_gitops_lock(group_id, db)
+    await check_gitops_lock(group_id, db)
     for idx, rule_id in enumerate(reversed(body.rule_ids)):
         result = await db.execute(
             select(FirewallRule).where(
@@ -110,7 +100,7 @@ async def update_rule(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    await _check_gitops_lock(group_id, db)
+    await check_gitops_lock(group_id, db)
     result = await db.execute(
         select(FirewallRule).where(
             FirewallRule.id == rule_id,
@@ -163,7 +153,7 @@ async def delete_rule(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    await _check_gitops_lock(group_id, db)
+    await check_gitops_lock(group_id, db)
     result = await db.execute(
         select(FirewallRule).where(
             FirewallRule.id == rule_id,
@@ -420,7 +410,7 @@ async def update_group_policies(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    await _check_gitops_lock(group_id, db)
+    await check_gitops_lock(group_id, db)
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
     group = result.scalar_one_or_none()
     if not group:

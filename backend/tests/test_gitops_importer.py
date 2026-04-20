@@ -71,7 +71,7 @@ class TestImporter:
         )
 
         assert result.success is True
-        assert result.rules_added == 2
+        assert result.modules[0].added == 2
         assert result.error_message is None
 
         db_rules = await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id))
@@ -112,7 +112,7 @@ class TestImporter:
             db=db,
         )
         assert result1.success is True
-        assert result1.rules_added == 2
+        assert result1.modules[0].added == 2
 
         result2 = await import_group_from_yaml(
             group_id=group.id,
@@ -121,8 +121,8 @@ class TestImporter:
             db=db,
         )
         assert result2.success is True
-        assert result2.rules_added == 1
-        assert result2.rules_removed == 2
+        assert result2.modules[0].added == 1
+        assert result2.modules[0].removed == 2
 
         db_rules = await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id))
         rules = db_rules.scalars().all()
