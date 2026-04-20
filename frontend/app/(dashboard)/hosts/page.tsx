@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronDownIcon } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { cn, useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -15,7 +16,8 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
-import type { HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import type { HostGroup, HostSummary, ModuleCounts, SyncStatus, PendingSummary, PendingHostFleet } from "@/lib/types"
 
 const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
   { key: "firewall", icon: ShieldIcon, label: "Firewall" },
@@ -55,6 +57,268 @@ const ROW_BORDER: Record<SyncStatus, string> = {
   unknown: "border-l-2 border-l-slate-600/60",
   error: "border-l-2 border-l-red-500/60",
 }
+
+// ---------------------------------------------------------------------------
+// Pending hosts approval section
+// ---------------------------------------------------------------------------
+
+function PendingSection({ queryClient }: { queryClient: ReturnType<typeof useQueryClient> }) {
+  const [pendingSelected, setPendingSelected] = useState<Set<number>>(new Set())
+  const [actionLoading, setActionLoading] = useState(false)
+
+  const { data: summary } = useQuery<PendingSummary>({
+    queryKey: ["scans", "pending-summary"],
+    queryFn: () => apiFetch<PendingSummary>("/api/scans/pending-summary"),
+    refetchInterval: 30000,
+  })
+
+  const { data: pendingHosts } = useQuery<PendingHostFleet[]>({
+    queryKey: ["scans", "pending"],
+    queryFn: () => apiFetch<PendingHostFleet[]>("/api/scans/pending"),
+    enabled: (summary?.total ?? 0) > 0,
+    refetchInterval: 30000,
+  })
+
+  if (!summary || summary.total === 0) return null
+
+  const uniqueConfigCount = new Set(pendingHosts?.map((h) => h.scan_config_id) ?? []).size
+  const allIds = pendingHosts?.map((h) => h.id) ?? []
+  const allSelected = allIds.length > 0 && allIds.every((id) => pendingSelected.has(id))
+
+  function toggleAll() {
+    if (allSelected) {
+      setPendingSelected(new Set())
+    } else {
+      setPendingSelected(new Set(allIds))
+    }
+  }
+
+  function toggleOne(id: number) {
+    setPendingSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function invalidateAfterAction() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["scans", "pending-summary"] }),
+      queryClient.invalidateQueries({ queryKey: ["scans", "pending"] }),
+      queryClient.invalidateQueries({ queryKey: ["hosts-summary"] }),
+    ])
+  }
+
+  async function handleApprove() {
+    if (pendingSelected.size === 0) return
+    const selectedHosts = pendingHosts?.filter((h) => pendingSelected.has(h.id)) ?? []
+
+    // Group by scan_config_id
+    const byConfig = new Map<number, number[]>()
+    for (const h of selectedHosts) {
+      const existing = byConfig.get(h.scan_config_id) ?? []
+      existing.push(h.id)
+      byConfig.set(h.scan_config_id, existing)
+    }
+
+    setActionLoading(true)
+    let totalApproved = 0
+    let totalSkipped = 0
+    let hadError = false
+
+    const results = await Promise.allSettled(
+      Array.from(byConfig.entries()).map(([configId, ids]) =>
+        apiFetch<{ approved: number; skipped: number; skipped_ips: string[] }>(
+          `/api/scans/${configId}/pending/approve`,
+          { method: "POST", body: JSON.stringify({ ids }) }
+        )
+      )
+    )
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        totalApproved += result.value.approved
+        totalSkipped += result.value.skipped
+      } else {
+        hadError = true
+      }
+    }
+
+    await invalidateAfterAction()
+    setPendingSelected(new Set())
+    setActionLoading(false)
+
+    if (hadError) {
+      showError("Some approvals failed. Please try again.")
+    } else if (totalSkipped > 0) {
+      showSuccess(`Approved ${totalApproved} host${totalApproved !== 1 ? "s" : ""} (${totalSkipped} skipped as duplicate${totalSkipped !== 1 ? "s" : ""})`)
+    } else {
+      showSuccess(`Approved ${totalApproved} host${totalApproved !== 1 ? "s" : ""}`)
+    }
+  }
+
+  async function handleDismiss() {
+    if (pendingSelected.size === 0) return
+    const selectedHosts = pendingHosts?.filter((h) => pendingSelected.has(h.id)) ?? []
+
+    // Group by scan_config_id
+    const byConfig = new Map<number, number[]>()
+    for (const h of selectedHosts) {
+      const existing = byConfig.get(h.scan_config_id) ?? []
+      existing.push(h.id)
+      byConfig.set(h.scan_config_id, existing)
+    }
+
+    setActionLoading(true)
+    let totalDismissed = 0
+    let hadError = false
+
+    const results = await Promise.allSettled(
+      Array.from(byConfig.entries()).map(([configId, ids]) =>
+        apiFetch<{ dismissed: number }>(
+          `/api/scans/${configId}/pending/dismiss`,
+          { method: "POST", body: JSON.stringify({ ids }) }
+        )
+      )
+    )
+
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        totalDismissed += result.value.dismissed
+      } else {
+        hadError = true
+      }
+    }
+
+    await invalidateAfterAction()
+    setPendingSelected(new Set())
+    setActionLoading(false)
+
+    if (hadError) {
+      showError("Some dismissals failed. Please try again.")
+    } else {
+      showSuccess(`Dismissed ${totalDismissed} host${totalDismissed !== 1 ? "s" : ""}`)
+    }
+  }
+
+  return (
+    <details className="group rounded-lg border border-amber-500/40 bg-slate-900">
+      <summary className="flex cursor-pointer select-none list-none items-center gap-2.5 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+        <span className="text-sm font-medium text-amber-400">
+          {summary.total} host{summary.total !== 1 ? "s" : ""} pending review
+          {uniqueConfigCount > 0 && (
+            <> &middot; From {uniqueConfigCount} scan config{uniqueConfigCount !== 1 ? "s" : ""}</>
+          )}
+        </span>
+        <ChevronDownIcon className="ml-auto h-4 w-4 text-slate-400 transition-transform group-open:rotate-180" />
+      </summary>
+
+      <div className="border-t border-amber-500/20 px-4 pb-4 pt-3">
+        {/* Toolbar */}
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-xs text-slate-400">
+            {pendingSelected.size > 0 ? `${pendingSelected.size} selected` : "Select hosts to act"}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pendingSelected.size === 0 || actionLoading}
+            onClick={handleApprove}
+          >
+            {actionLoading ? "Working..." : "Approve selected"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pendingSelected.size === 0 || actionLoading}
+            onClick={handleDismiss}
+          >
+            Dismiss selected
+          </Button>
+        </div>
+
+        {/* Table */}
+        <div className="rounded-lg border border-slate-700 bg-slate-900">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-700">
+                <TableHead className="w-10">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                    className="rounded border-slate-600"
+                    aria-label="Select all pending hosts"
+                  />
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs">IP</TableHead>
+                <TableHead className="text-slate-400 text-xs">Hostname</TableHead>
+                <TableHead className="text-slate-400 text-xs">From config</TableHead>
+                <TableHead className="text-slate-400 text-xs">Discovered</TableHead>
+                <TableHead className="text-slate-400 text-xs">SSH</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pendingHosts && pendingHosts.length > 0 ? (
+                pendingHosts.map((host) => (
+                  <TableRow key={host.id} className="border-slate-700">
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={pendingSelected.has(host.id)}
+                        onChange={() => toggleOne(host.id)}
+                        className="rounded border-slate-600"
+                        aria-label={`Select ${host.ip_address}`}
+                      />
+                    </TableCell>
+                    <TableCell className="font-mono text-slate-300 text-xs">{host.ip_address}</TableCell>
+                    <TableCell className="text-slate-300 text-xs">
+                      {host.hostname ?? <span className="text-slate-500">—</span>}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <Link
+                        href={`/hosts/scans/${host.scan_config_id}/pending`}
+                        className="text-blue-400 hover:underline"
+                      >
+                        {host.scan_config_name}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-slate-400 text-xs">
+                      {formatRelativeTime(host.discovered_at)}
+                    </TableCell>
+                    <TableCell>
+                      {host.ssh_verified ? (
+                        <Badge className="bg-green-600 text-white text-xs">verified</Badge>
+                      ) : host.ssh_error ? (
+                        <Tooltip content={host.ssh_error}>
+                          <Badge className="bg-amber-600 text-white text-xs cursor-help">unverified</Badge>
+                        </Tooltip>
+                      ) : (
+                        <Badge className="bg-amber-600 text-white text-xs">unverified</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-slate-400 text-sm py-4">
+                    Loading...
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </details>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 export default function HostsPage() {
   const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
@@ -186,6 +450,8 @@ export default function HostsPage() {
           <Link href="/hosts/new" className={cn(buttonVariants())}>Add Host</Link>
         </div>
       </div>
+
+      <PendingSection queryClient={queryClient} />
 
       <div className="flex items-center gap-2">
         <div className="relative" ref={groupDropdownRef}>

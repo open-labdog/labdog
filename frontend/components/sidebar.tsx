@@ -3,11 +3,12 @@
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
-import { API_BASE } from "@/lib/api"
+import { API_BASE, apiFetch } from "@/lib/api"
 import { passwordChangeSchema, type PasswordChangeInput } from "@/lib/schemas"
 import { showSuccess, showError } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
@@ -27,6 +28,13 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
 
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false)
 
+  const { data: pendingSummary } = useQuery<{ total: number }>({
+    queryKey: ["scans", "pending-summary"],
+    queryFn: () => apiFetch<{ total: number }>("/api/scans/pending-summary"),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+
   const form = useForm<PasswordChangeInput>({
     resolver: zodResolver(passwordChangeSchema),
     defaultValues: { new_password: "", confirm_password: "" },
@@ -41,6 +49,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       label: "MANAGE",
       items: [
         { href: "/hosts", label: "Hosts" },
+        { href: "/hosts/scans", label: "Scans" },
         { href: "/groups", label: "Groups" },
         { href: "/schedules", label: "Update Workflows" },
       ],
@@ -98,21 +107,34 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
               </p>
             )}
             <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigation}
-                  className={cn(
-                    "block rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                    (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
-                      ? "bg-slate-800 text-white"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {group.items.map((item) => {
+                const pendingTotal = item.href === "/hosts" ? (pendingSummary?.total ?? 0) : 0
+                const showBadge = pendingTotal > 0
+                const badgeCount = pendingTotal >= 100 ? "99+" : String(pendingTotal)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={onNavigation}
+                    className={cn(
+                      "flex items-center justify-between rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                      (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    )}
+                  >
+                    <span>{item.label}</span>
+                    <span className="flex items-center gap-1 w-10 justify-end shrink-0">
+                      {showBadge && (
+                        <>
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                          <span className="text-xs text-amber-500 tabular-nums">{badgeCount}</span>
+                        </>
+                      )}
+                    </span>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         ))}

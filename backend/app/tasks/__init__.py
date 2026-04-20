@@ -35,6 +35,8 @@ celery_app.conf.update(
         "app.tasks.workflow_schedule.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
+        "scans.check_scheduled": {"queue": "default"},
+        "scans.run_config": {"queue": "long_running"},
     },
     worker_max_tasks_per_child=100,
     task_time_limit=1800,
@@ -63,4 +65,6 @@ celery_app.conf.include = [
     "app.tasks.workflow_orchestrator",
     "app.tasks.workflow_host",
     "app.tasks.workflow_schedule",
+    "app.tasks.scan_schedule",
+    "app.tasks.scan_run",
 ]

@@ -13,6 +13,7 @@ from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
 from app.models.host import FirewallBackend, Host, HostGroupMembership, SyncStatus
 from app.models.host_group import HostGroup
 from app.models.host_module_status import HostModuleStatus
+from app.models.scan_config import PendingHost, ScanConfig
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import JobStatus, SyncJob
 from app.models.user import User
@@ -80,6 +81,8 @@ __all__ = [
     "SyncJob",
     "JobStatus",
     "AuditLog",
+    "ScanConfig",
+    "PendingHost",
     "GitRepository",
     "GitAuthType",
     "GitOpsStatus",
