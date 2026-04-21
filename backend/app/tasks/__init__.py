@@ -35,6 +35,7 @@ celery_app.conf.update(
         "app.tasks.workflow_schedule.*": {"queue": "long_running"},
         "app.tasks.action_orchestrator.*": {"queue": "long_running"},
         "app.tasks.action_host.*": {"queue": "long_running"},
+        "app.tasks.facts.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
         "scans.check_scheduled": {"queue": "default"},
@@ -71,4 +72,5 @@ celery_app.conf.include = [
     "app.tasks.action_host",
     "app.tasks.scan_schedule",
     "app.tasks.scan_run",
+    "app.tasks.facts",
 ]

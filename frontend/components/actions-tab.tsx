@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ActionCard } from "@/components/action-card"
 import { ActionRunDialog } from "@/components/action-run-dialog"
@@ -8,13 +8,14 @@ import { RunStatusBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch } from "@/lib/api"
-import type { ActionDefinition, ActionRun } from "@/lib/types"
+import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
 import type { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 
 interface ActionsTabProps {
   scope: "host" | "group"
   targetId: number
+  host?: Host
 }
 
 function formatDuration(run: ActionRun): string {
@@ -25,7 +26,7 @@ function formatDuration(run: ActionRun): string {
   return `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
-export function ActionsTab({ scope, targetId }: ActionsTabProps) {
+export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -46,6 +47,18 @@ export function ActionsTab({ scope, targetId }: ActionsTabProps) {
       return hasActive ? 3000 : false
     },
   })
+
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+  useEffect(() => {
+    if (scope !== "host" || !host) return
+    const stale =
+      !host.os_facts_collected_at ||
+      Date.now() - new Date(host.os_facts_collected_at).getTime() > SEVEN_DAYS_MS
+    if (stale) {
+      apiFetch(`/api/hosts/${targetId}/facts/refresh`, { method: "POST" }).catch(() => {})
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope, host?.id, host?.os_facts_collected_at])
 
   const filteredCatalog = (catalog ?? []).filter((a) =>
     scope === "host" ? a.supports_host : a.supports_group
@@ -148,6 +161,7 @@ export function ActionsTab({ scope, targetId }: ActionsTabProps) {
         targetId={targetId}
         open={dialogOpen}
         onClose={() => { setDialogOpen(false); setSelectedAction(null) }}
+        hostOsCodename={scope === "host" ? host?.os_codename : undefined}
       />
     </div>
   )

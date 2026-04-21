@@ -66,6 +66,11 @@ class Host(Base):
     last_drift_check_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    os_codename: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    os_pretty_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    os_facts_collected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
