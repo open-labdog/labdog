@@ -37,6 +37,26 @@ backend-lint:
       changes:
         - backend/**/*
 
+backend-sast:
+  stage: lint
+  image: python:3.12-slim
+  cache:
+    key: backend-pip-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/pip
+  script:
+    - pip install -U pip -q
+    - pip install uv -q
+    - uv pip install --system "bandit>=1.9" -q
+    - cd backend
+    # Fail only on findings not present in the baseline; run over severity
+    # Low+ so any new issue at any level is caught.
+    - bandit -r app/ -l --baseline bandit-baseline.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
+
 frontend-lint:
   stage: lint
   image: node:20-alpine
