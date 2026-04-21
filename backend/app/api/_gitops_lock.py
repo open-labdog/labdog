@@ -11,9 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.host_group import HostGroup
 
-_GITOPS_LOCK_MESSAGE = (
-    "This group is managed by GitOps. Changes must be made via Git."
-)
+_GITOPS_LOCK_MESSAGE = "This group is managed by GitOps. Changes must be made via Git."
 
 
 async def check_gitops_lock(group_id: int, db: AsyncSession) -> None:

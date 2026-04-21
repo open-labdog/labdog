@@ -108,9 +108,7 @@ class TestHostsEntriesImporter:
         assert he_result.unchanged == 0
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         entries = db_rows.scalars().all()
         assert len(entries) == 2
         hostnames = {e.hostname for e in entries}
@@ -149,9 +147,7 @@ hosts_entries:
         assert he_result.added == 1
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         entries = db_rows.scalars().all()
         assert len(entries) == 1
         entry = entries[0]
@@ -190,9 +186,7 @@ hosts_entries:
         assert he_result.added == 2
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         entries = db_rows.scalars().all()
         assert len(entries) == 2
         ref_entry = next(e for e in entries if e.host_ref_id is not None)
@@ -225,9 +219,7 @@ hosts_entries:
         assert he_result.added == 1
         assert he_result.removed == 2
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         entries = db_rows.scalars().all()
         assert len(entries) == 1
         assert entries[0].hostname == "proxy.internal"
@@ -256,9 +248,7 @@ hosts_entries:
         assert he_result.added == 0
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_null_section_wipes_existing_rows(self, db):
@@ -284,9 +274,7 @@ hosts_entries:
         assert he_result.removed == 2
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_empty_list_wipes_existing_rows(self, db):
@@ -312,9 +300,7 @@ hosts_entries:
         assert he_result.removed == 2
         assert he_result.changed is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_system_entries_preserved_across_import(self, db):
@@ -341,9 +327,7 @@ hosts_entries:
         )
         assert result.success is True
 
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         remaining = db_rows.scalars().all()
         assert len(remaining) == 1
         assert remaining[0].is_system is True
@@ -380,9 +364,7 @@ hosts_entries:
         assert grp.gitops_status == GitOpsStatus.error
 
         # No rows should have been inserted.
-        db_rows = await db.execute(
-            select(HostsEntry).where(HostsEntry.group_id == group.id)
-        )
+        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_alias_reorder_not_flagged_as_drift(self, db):

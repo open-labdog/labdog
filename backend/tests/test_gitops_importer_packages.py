@@ -178,9 +178,7 @@ class TestPackagesImporter:
         assert pkg_result.unchanged == 0
         assert pkg_result.changed is True
 
-        db_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 2
         names = {r.package_name for r in rules}
@@ -231,9 +229,7 @@ class TestPackagesImporter:
         assert pkg_result.added == 3
         assert pkg_result.changed is True
 
-        pkg_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        pkg_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         assert len(pkg_rows.scalars().all()) == 2
 
         repo_rows = await db.execute(
@@ -267,9 +263,7 @@ class TestPackagesImporter:
         assert pkg_result.added == 2
         assert pkg_result.removed == 3
 
-        pkg_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        pkg_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         rules = pkg_rows.scalars().all()
         assert len(rules) == 1
         assert rules[0].package_name == "wget"
@@ -305,9 +299,7 @@ class TestPackagesImporter:
         assert pkg_result.added == 0
         assert pkg_result.changed is True
 
-        db_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_empty_packages_list_wipes_existing_rows(self, db):
@@ -333,9 +325,7 @@ class TestPackagesImporter:
         assert pkg_result.removed == 2
         assert pkg_result.changed is True
 
-        db_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_null_repos_wipes_existing_rows(self, db):
@@ -411,9 +401,7 @@ class TestPackagesImporter:
         assert pkg_result.added == 1
         assert pkg_result.changed is True
 
-        db_rows = await db.execute(
-            select(PackageRule).where(PackageRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(PackageRule).where(PackageRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 1
         assert rules[0].package_name == "nginx"

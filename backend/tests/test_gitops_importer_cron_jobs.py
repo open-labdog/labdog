@@ -170,9 +170,7 @@ class TestCronJobsImporter:
         assert cron_result.unchanged == 0
         assert cron_result.changed is True
 
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         jobs = db_rows.scalars().all()
         assert len(jobs) == 2
         names = {j.name for j in jobs}
@@ -207,9 +205,7 @@ class TestCronJobsImporter:
         assert cron_result.removed == 2
         assert cron_result.changed is True
 
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         jobs = db_rows.scalars().all()
         assert len(jobs) == 1
         assert jobs[0].name == "sync"
@@ -238,9 +234,7 @@ class TestCronJobsImporter:
         assert cron_result.added == 0
         assert cron_result.changed is True
 
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_empty_cron_jobs_list_wipes_existing_rows(self, db):
@@ -266,9 +260,7 @@ class TestCronJobsImporter:
         assert cron_result.removed == 2
         assert cron_result.changed is True
 
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_invalid_cron_schedule_special_returns_error_db_unchanged(self, db):
@@ -297,9 +289,7 @@ class TestCronJobsImporter:
         assert cron_result.error_message is not None
 
         # DB must remain unchanged — original seed row still present.
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         jobs = db_rows.scalars().all()
         assert len(jobs) == 1
         assert jobs[0].name == "idempotent"
@@ -430,9 +420,7 @@ class TestCronJobsImporter:
         )
         assert result.success is True
 
-        db_rows = await db.execute(
-            select(CronJob).where(CronJob.group_id == group.id)
-        )
+        db_rows = await db.execute(select(CronJob).where(CronJob.group_id == group.id))
         jobs = db_rows.scalars().all()
         assert len(jobs) == 1
         assert jobs[0].user == "deploy"

@@ -73,9 +73,7 @@ async def import_resolver(
 
     # --- Leave-alone semantics for missing / null section ---
     if parsed.resolver is None:
-        logger.debug(
-            "Group %d: resolver section absent/null — leaving DB state alone", group_id
-        )
+        logger.debug("Group %d: resolver section absent/null — leaving DB state alone", group_id)
         return ModuleImportResult(
             module="resolver",
             added=0,
@@ -95,9 +93,7 @@ async def import_resolver(
         )
 
     # Fetch existing group-scoped row.
-    result = await db.execute(
-        select(ResolverConfig).where(ResolverConfig.group_id == group_id)
-    )
+    result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
     existing: ResolverConfig | None = result.scalar_one_or_none()
 
     if existing is not None and _configs_equal(existing, desired):
@@ -126,9 +122,7 @@ async def import_resolver(
         # Delete-and-recreate to sidestep unique-index conflicts on in-place
         # update.  A simple attribute update also works but delete+insert is
         # explicit and safe given the partial unique index.
-        await db.execute(
-            delete(ResolverConfig).where(ResolverConfig.group_id == group_id)
-        )
+        await db.execute(delete(ResolverConfig).where(ResolverConfig.group_id == group_id))
         await db.flush()
 
     new_config = ResolverConfig(

@@ -360,9 +360,7 @@ class TestHostsEntriesLockdown:
     unlocked — they are per-host overrides, not group-scoped configuration.
     """
 
-    async def test_post_group_hosts_entry_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_hosts_entry_blocked_when_gitops_enabled(self, superuser_client, db):
         """POST /groups/{id}/hosts-entries returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"ghe-lock-{uuid.uuid4().hex[:6]}", priority=930)
         group.gitops_enabled = True
@@ -375,9 +373,7 @@ class TestHostsEntriesLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_put_group_hosts_entry_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_hosts_entry_blocked_when_gitops_enabled(self, superuser_client, db):
         """PUT /groups/{id}/hosts-entries/{entry_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"ghe-upd-{uuid.uuid4().hex[:6]}", priority=931)
 
@@ -399,9 +395,7 @@ class TestHostsEntriesLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_delete_group_hosts_entry_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_delete_group_hosts_entry_blocked_when_gitops_enabled(self, superuser_client, db):
         """DELETE /groups/{id}/hosts-entries/{entry_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"ghe-del-{uuid.uuid4().hex[:6]}", priority=932)
 
@@ -415,15 +409,11 @@ class TestHostsEntriesLockdown:
         group.gitops_enabled = True
         await db.flush()
 
-        resp = await superuser_client.delete(
-            f"/api/groups/{group.id}/hosts-entries/{entry_id}"
-        )
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/hosts-entries/{entry_id}")
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_post_group_hosts_entry_allowed_when_gitops_disabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_hosts_entry_allowed_when_gitops_disabled(self, superuser_client, db):
         """POST /groups/{id}/hosts-entries returns 201 for non-gitops group."""
         group = await create_group(db, name=f"ghe-ok-{uuid.uuid4().hex[:6]}", priority=933)
 
@@ -444,9 +434,7 @@ class TestHostsEntriesLockdown:
         await db.flush()
 
         ssh_key = await create_ssh_key(db)
-        host = await create_host(
-            db, ip="10.99.2.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
-        )
+        host = await create_host(db, ip="10.99.2.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/hosts-entries",
@@ -463,9 +451,7 @@ class TestCronJobsLockdown:
     they are per-host overrides, not group-scoped GitOps configuration.
     """
 
-    async def test_post_group_cron_job_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_cron_job_blocked_when_gitops_enabled(self, superuser_client, db):
         """POST /groups/{id}/cron-jobs returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"gcj-lock-{uuid.uuid4().hex[:6]}", priority=940)
         group.gitops_enabled = True
@@ -478,9 +464,7 @@ class TestCronJobsLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_put_group_cron_job_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_cron_job_blocked_when_gitops_enabled(self, superuser_client, db):
         """PUT /groups/{id}/cron-jobs/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"gcj-upd-{uuid.uuid4().hex[:6]}", priority=941)
 
@@ -502,9 +486,7 @@ class TestCronJobsLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_delete_group_cron_job_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_delete_group_cron_job_blocked_when_gitops_enabled(self, superuser_client, db):
         """DELETE /groups/{id}/cron-jobs/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"gcj-del-{uuid.uuid4().hex[:6]}", priority=942)
 
@@ -522,9 +504,7 @@ class TestCronJobsLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_post_group_cron_job_allowed_when_gitops_disabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_cron_job_allowed_when_gitops_disabled(self, superuser_client, db):
         """POST /groups/{id}/cron-jobs returns 201 for non-gitops group."""
         group = await create_group(db, name=f"gcj-ok-{uuid.uuid4().hex[:6]}", priority=943)
 
@@ -545,9 +525,7 @@ class TestCronJobsLockdown:
         await db.flush()
 
         ssh_key = await create_ssh_key(db)
-        host = await create_host(
-            db, ip="10.99.3.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
-        )
+        host = await create_host(db, ip="10.99.3.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/cron-jobs",
@@ -564,9 +542,7 @@ class TestResolverLockdown:
     they are per-host overrides, not group-scoped GitOps configuration.
     """
 
-    async def test_put_group_resolver_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_resolver_blocked_when_gitops_enabled(self, superuser_client, db):
         """PUT /groups/{id}/resolver returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"gres-lock-{uuid.uuid4().hex[:6]}", priority=950)
         group.gitops_enabled = True
@@ -579,9 +555,7 @@ class TestResolverLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_delete_group_resolver_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_delete_group_resolver_blocked_when_gitops_enabled(self, superuser_client, db):
         """DELETE /groups/{id}/resolver returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"gres-del-{uuid.uuid4().hex[:6]}", priority=951)
 
@@ -599,9 +573,7 @@ class TestResolverLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_put_group_resolver_allowed_when_gitops_disabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_resolver_allowed_when_gitops_disabled(self, superuser_client, db):
         """PUT /groups/{id}/resolver returns 200 for non-gitops group."""
         group = await create_group(db, name=f"gres-ok-{uuid.uuid4().hex[:6]}", priority=952)
 
@@ -622,9 +594,7 @@ class TestResolverLockdown:
         await db.flush()
 
         ssh_key = await create_ssh_key(db)
-        host = await create_host(
-            db, ip="10.99.4.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
-        )
+        host = await create_host(db, ip="10.99.4.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         resp = await superuser_client.put(
             f"/api/hosts/{host.id}/resolver",
@@ -657,9 +627,7 @@ class TestUsersLockdown:
     # linux-users group-level lockdown
     # ------------------------------------------------------------------
 
-    async def test_post_group_linux_user_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_linux_user_blocked_when_gitops_enabled(self, superuser_client, db):
         """POST /groups/{id}/linux-users returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glu-lock-{uuid.uuid4().hex[:6]}", priority=960)
         group.gitops_enabled = True
@@ -672,9 +640,7 @@ class TestUsersLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_put_group_linux_user_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_linux_user_blocked_when_gitops_enabled(self, superuser_client, db):
         """PUT /groups/{id}/linux-users/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glu-upd-{uuid.uuid4().hex[:6]}", priority=961)
 
@@ -696,9 +662,7 @@ class TestUsersLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_delete_group_linux_user_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_delete_group_linux_user_blocked_when_gitops_enabled(self, superuser_client, db):
         """DELETE /groups/{id}/linux-users/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glu-del-{uuid.uuid4().hex[:6]}", priority=962)
 
@@ -712,9 +676,7 @@ class TestUsersLockdown:
         group.gitops_enabled = True
         await db.flush()
 
-        resp = await superuser_client.delete(
-            f"/api/groups/{group.id}/linux-users/{rule_id}"
-        )
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/linux-users/{rule_id}")
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
@@ -722,9 +684,7 @@ class TestUsersLockdown:
     # linux-groups group-level lockdown
     # ------------------------------------------------------------------
 
-    async def test_post_group_linux_group_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_linux_group_blocked_when_gitops_enabled(self, superuser_client, db):
         """POST /groups/{id}/linux-groups returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glg-lock-{uuid.uuid4().hex[:6]}", priority=963)
         group.gitops_enabled = True
@@ -737,9 +697,7 @@ class TestUsersLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_put_group_linux_group_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_put_group_linux_group_blocked_when_gitops_enabled(self, superuser_client, db):
         """PUT /groups/{id}/linux-groups/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glg-upd-{uuid.uuid4().hex[:6]}", priority=964)
 
@@ -760,9 +718,7 @@ class TestUsersLockdown:
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
-    async def test_delete_group_linux_group_blocked_when_gitops_enabled(
-        self, superuser_client, db
-    ):
+    async def test_delete_group_linux_group_blocked_when_gitops_enabled(self, superuser_client, db):
         """DELETE /groups/{id}/linux-groups/{rule_id} returns 403 for gitops-enabled group."""
         group = await create_group(db, name=f"glg-del-{uuid.uuid4().hex[:6]}", priority=965)
 
@@ -776,9 +732,7 @@ class TestUsersLockdown:
         group.gitops_enabled = True
         await db.flush()
 
-        resp = await superuser_client.delete(
-            f"/api/groups/{group.id}/linux-groups/{rule_id}"
-        )
+        resp = await superuser_client.delete(f"/api/groups/{group.id}/linux-groups/{rule_id}")
         assert resp.status_code == 403
         assert "GitOps" in resp.json()["detail"]
 
@@ -786,9 +740,7 @@ class TestUsersLockdown:
     # Non-gitops group: writes allowed
     # ------------------------------------------------------------------
 
-    async def test_post_group_linux_user_allowed_when_gitops_disabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_linux_user_allowed_when_gitops_disabled(self, superuser_client, db):
         """POST /groups/{id}/linux-users returns 201 for non-gitops group."""
         group = await create_group(db, name=f"glu-ok-{uuid.uuid4().hex[:6]}", priority=966)
 
@@ -798,9 +750,7 @@ class TestUsersLockdown:
         )
         assert resp.status_code == 201
 
-    async def test_post_group_linux_group_allowed_when_gitops_disabled(
-        self, superuser_client, db
-    ):
+    async def test_post_group_linux_group_allowed_when_gitops_disabled(self, superuser_client, db):
         """POST /groups/{id}/linux-groups returns 201 for non-gitops group."""
         group = await create_group(db, name=f"glg-ok-{uuid.uuid4().hex[:6]}", priority=967)
 
@@ -821,9 +771,7 @@ class TestUsersLockdown:
         await db.flush()
 
         ssh_key = await create_ssh_key(db)
-        host = await create_host(
-            db, ip="10.99.5.1", ssh_key_id=ssh_key.id, group_ids=[group.id]
-        )
+        host = await create_host(db, ip="10.99.5.1", ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/linux-users",
@@ -839,9 +787,7 @@ class TestUsersLockdown:
         await db.flush()
 
         ssh_key = await create_ssh_key(db)
-        host = await create_host(
-            db, ip="10.99.5.2", ssh_key_id=ssh_key.id, group_ids=[group.id]
-        )
+        host = await create_host(db, ip="10.99.5.2", ssh_key_id=ssh_key.id, group_ids=[group.id])
 
         resp = await superuser_client.post(
             f"/api/hosts/{host.id}/linux-groups",

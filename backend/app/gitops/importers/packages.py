@@ -155,13 +155,9 @@ async def import_packages(
     desired_packages: list[PackageYAML] = []
 
     if parsed.packages is None:
-        logger.warning(
-            "Group %d: YAML has no packages section — wiping package rules", group_id
-        )
+        logger.warning("Group %d: YAML has no packages section — wiping package rules", group_id)
     elif not parsed.packages:
-        logger.warning(
-            "Group %d: YAML has empty packages list — wiping package rules", group_id
-        )
+        logger.warning("Group %d: YAML has empty packages list — wiping package rules", group_id)
 
     for entry in parsed.packages or []:
         if is_protected(entry.package_name):
@@ -273,9 +269,7 @@ async def import_packages(
 
         # Delete-and-replace packages.
         if pkg_changed:
-            await db.execute(
-                delete(PackageRule).where(PackageRule.group_id == group_id)
-            )
+            await db.execute(delete(PackageRule).where(PackageRule.group_id == group_id))
             for entry in desired_packages:
                 rule = PackageRule(
                     group_id=group_id,

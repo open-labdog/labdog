@@ -189,13 +189,9 @@ async def import_users(
     desired_linux_groups: list[LinuxGroupYAML] = []
 
     if parsed.linux_groups is None:
-        logger.warning(
-            "Group %d: YAML has no linux_groups section — wiping linux groups", group_id
-        )
+        logger.warning("Group %d: YAML has no linux_groups section — wiping linux groups", group_id)
     elif not parsed.linux_groups:
-        logger.warning(
-            "Group %d: YAML has empty linux_groups list — wiping linux groups", group_id
-        )
+        logger.warning("Group %d: YAML has empty linux_groups list — wiping linux groups", group_id)
 
     for entry in parsed.linux_groups or []:
         try:
@@ -203,9 +199,7 @@ async def import_users(
         except ValidationError as exc:
             return ModuleImportResult(
                 module="users",
-                error_message=(
-                    f"Invalid linux_group '{entry.groupname}': {exc}"
-                ),
+                error_message=(f"Invalid linux_group '{entry.groupname}': {exc}"),
             )
         desired_linux_groups.append(entry)
 
@@ -215,13 +209,9 @@ async def import_users(
     desired_users: list[LinuxUserYAML] = []
 
     if parsed.users is None:
-        logger.warning(
-            "Group %d: YAML has no users section — wiping linux users", group_id
-        )
+        logger.warning("Group %d: YAML has no users section — wiping linux users", group_id)
     elif not parsed.users:
-        logger.warning(
-            "Group %d: YAML has empty users list — wiping linux users", group_id
-        )
+        logger.warning("Group %d: YAML has empty users list — wiping linux users", group_id)
 
     # Build the set of group names defined in the YAML (for cross-ref check).
     yaml_group_names: set[str] = {g.groupname for g in desired_linux_groups}
@@ -240,9 +230,7 @@ async def import_users(
         except ValidationError as exc:
             return ModuleImportResult(
                 module="users",
-                error_message=(
-                    f"Invalid user '{entry.username}': {exc}"
-                ),
+                error_message=(f"Invalid user '{entry.username}': {exc}"),
             )
 
         # Cross-reference check: warn when supplementary_groups references a
@@ -264,9 +252,7 @@ async def import_users(
     # ------------------------------------------------------------------
     # 3. Diff linux groups
     # ------------------------------------------------------------------
-    current_lg_result = await db.execute(
-        select(LinuxGroup).where(LinuxGroup.group_id == group_id)
-    )
+    current_lg_result = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group_id))
     current_linux_groups: list[LinuxGroup] = list(current_lg_result.scalars().all())
 
     current_lg_tuples = {_group_orm_to_tuple(r) for r in current_linux_groups}
@@ -280,9 +266,7 @@ async def import_users(
     # ------------------------------------------------------------------
     # 4. Diff linux users
     # ------------------------------------------------------------------
-    current_lu_result = await db.execute(
-        select(LinuxUser).where(LinuxUser.group_id == group_id)
-    )
+    current_lu_result = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group_id))
     current_linux_users: list[LinuxUser] = list(current_lu_result.scalars().all())
 
     current_lu_tuples = {_user_orm_to_tuple(r) for r in current_linux_users}
@@ -334,9 +318,7 @@ async def import_users(
 
         # Delete-and-replace groups first (groups before users).
         if lg_changed:
-            await db.execute(
-                delete(LinuxGroup).where(LinuxGroup.group_id == group_id)
-            )
+            await db.execute(delete(LinuxGroup).where(LinuxGroup.group_id == group_id))
             for entry in desired_linux_groups:
                 row = LinuxGroup(
                     group_id=group_id,
@@ -349,9 +331,7 @@ async def import_users(
 
         # Delete-and-replace users.
         if lu_changed:
-            await db.execute(
-                delete(LinuxUser).where(LinuxUser.group_id == group_id)
-            )
+            await db.execute(delete(LinuxUser).where(LinuxUser.group_id == group_id))
             for entry in desired_users:
                 row = LinuxUser(
                     group_id=group_id,

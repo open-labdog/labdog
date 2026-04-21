@@ -108,13 +108,9 @@ async def import_services(
 
     raw_entries = parsed.services or []  # None → wipe (same as [])
     if parsed.services is None:
-        logger.warning(
-            "Group %d: YAML has no services section — wiping service rules", group_id
-        )
+        logger.warning("Group %d: YAML has no services section — wiping service rules", group_id)
     elif not parsed.services:
-        logger.warning(
-            "Group %d: YAML has empty services list — wiping service rules", group_id
-        )
+        logger.warning("Group %d: YAML has empty services list — wiping service rules", group_id)
 
     for entry in raw_entries:
         if entry.service_name in PROTECTED_SERVICES:
@@ -137,9 +133,7 @@ async def import_services(
         desired_entries.append(entry)
 
     # Fetch current group-scoped rows (host-level rows are not GitOps-managed).
-    current_result = await db.execute(
-        select(ServiceRule).where(ServiceRule.group_id == group_id)
-    )
+    current_result = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group_id))
     current_rules: list[ServiceRule] = list(current_result.scalars().all())
 
     # Diff by comparing sets of field tuples.
@@ -179,9 +173,7 @@ async def import_services(
         }
 
         # Delete-and-replace: remove all existing group-scoped rows.
-        await db.execute(
-            delete(ServiceRule).where(ServiceRule.group_id == group_id)
-        )
+        await db.execute(delete(ServiceRule).where(ServiceRule.group_id == group_id))
 
         # Insert desired entries in list order.
         for entry in desired_entries:

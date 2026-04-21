@@ -135,9 +135,7 @@ class TestResolverImporter:
         assert res_result.unchanged == 0
         assert res_result.changed is True
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert row is not None
         assert row.group_id == group.id
         assert list(row.nameservers) == ["1.1.1.1", "8.8.8.8"]
@@ -174,9 +172,7 @@ class TestResolverImporter:
         assert res_result.removed == 1
         assert res_result.changed is True
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert list(row.nameservers) == ["9.9.9.9"]
         assert list(row.search_domains) == []
 
@@ -213,9 +209,7 @@ class TestResolverImporter:
         assert res_result.unchanged == 0
 
         # Original row must still be there with unchanged nameservers.
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert row is not None
         assert list(row.nameservers) == ["1.1.1.1", "8.8.8.8"]
 
@@ -248,9 +242,7 @@ class TestResolverImporter:
         res_result = next(m for m in r2.modules if m.module == "resolver")
         assert res_result.changed is False
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert row is not None
         assert list(row.nameservers) == ["1.1.1.1", "8.8.8.8"]
 
@@ -323,9 +315,7 @@ class TestResolverImporter:
         )
         assert result.success is True
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert row is not None
         assert row.dns_over_tls is False  # silently normalised
 
@@ -341,9 +331,7 @@ class TestResolverImporter:
         )
         assert result.success is True
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         assert row is not None
         assert row.dns_over_tls is True
         assert str(row.resolver_type) == "systemd_resolved"
@@ -359,8 +347,6 @@ class TestResolverImporter:
             db=db,
         )
 
-        row = await db.scalar(
-            select(ResolverConfig).where(ResolverConfig.group_id == group.id)
-        )
+        row = await db.scalar(select(ResolverConfig).where(ResolverConfig.group_id == group.id))
         # RESOLVER_YAML lists 1.1.1.1 first, then 8.8.8.8 — order must match.
         assert list(row.nameservers) == ["1.1.1.1", "8.8.8.8"]

@@ -106,14 +106,10 @@ class HostsEntryYAML(BaseModel):
     def _validate_ref_or_literal(self) -> "HostsEntryYAML":
         if self.host_ref_id is not None:
             if self.ip_address or self.hostname:
-                raise ValueError(
-                    "ip_address and hostname must be empty when host_ref_id is set"
-                )
+                raise ValueError("ip_address and hostname must be empty when host_ref_id is set")
         else:
             if not self.ip_address or not self.hostname:
-                raise ValueError(
-                    "ip_address and hostname are required when host_ref_id is not set"
-                )
+                raise ValueError("ip_address and hostname are required when host_ref_id is not set")
         return self
 
 
