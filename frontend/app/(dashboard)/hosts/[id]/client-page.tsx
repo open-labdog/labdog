@@ -27,6 +27,7 @@ import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
+import { ActionsTab } from "@/components/actions-tab"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
@@ -748,7 +749,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions">("overview")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -839,6 +840,7 @@ export default function HostDetailPage() {
     packages: [["host-effective-packages", String(id)], ["host-package-overrides", String(id)], ["host-effective-repos", String(id)]],
     "ca-certs": [["host-effective-ca-certs", String(id)], ["host-ca-cert-overrides", String(id)], ["host-ca-cert-runs", String(id)]],
     dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
+    actions: [["actions-catalog"], ["action-runs", "host", String(id)]],
   }
 
   const moduleSyncEndpoints: Record<string, string> = {
@@ -2282,6 +2284,18 @@ export default function HostDetailPage() {
           }`}
         >
           DNS Resolver
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "actions"}
+          onClick={() => setActiveTab("actions")}
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+            activeTab === "actions"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Actions
         </button>
       </div>
 
@@ -5298,6 +5312,10 @@ export default function HostDetailPage() {
 
           <CurrentStateSection moduleType="resolver" modules={currentStateQuery.data} hostId={id} />
         </div>
+      )}
+
+      {activeTab === "actions" && (
+        <ActionsTab scope="host" targetId={id} />
       )}
 
       {confirmState && (

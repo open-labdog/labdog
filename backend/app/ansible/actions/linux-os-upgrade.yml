@@ -1,0 +1,17 @@
+---
+- name: Upgrade Linux OS to new release
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - current_version is defined and current_version != ""
+          - next_version is defined and next_version != ""
+        msg: "current_version and next_version are required (e.g. bookworm, trixie)"
+  roles:
+    - role: role-apt-upgrade
+  vars:
+    dist_upgrade: true
+    auto_reboot: true
+    # current_version and next_version passed via --extra-vars

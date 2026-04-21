@@ -1,0 +1,122 @@
+---
+- name: Fail if OS family is not Debian
+  ansible.builtin.fail:
+    msg: "This role only supports Debian-based systems. Detected OS family: {{ ansible_os_family }}"
+  when: ansible_os_family != "Debian"
+
+- name: Show upgrade plan
+  ansible.builtin.debug:
+    msg: >-
+      Upgrade plan for {{ inventory_hostname }}
+      ({{ ansible_distribution }} {{ ansible_distribution_release }}):
+      Standard upgrade — always runs.
+      {% if dist_upgrade | bool %}
+        {% if _version_ok | default(true) | bool %}
+      Dist-upgrade — will update sources from
+      {{ current_version }} to {{ next_version }}.
+        {% else %}
+      Dist-upgrade — SKIPPED due to version mismatch
+      (node is {{ ansible_distribution_release }}, expected {{ current_version }}).
+        {% endif %}
+      {% else %}
+      Dist-upgrade — skipped.
+      {% endif %}
+
+- name: Include upgrade tasks
+  ansible.builtin.include_tasks: upgrade.yml
+
+- name: Include dist-upgrade tasks
+  ansible.builtin.include_tasks: dist-upgrade.yml
+  when:
+    - dist_upgrade | bool
+    - _version_ok | default(true) | bool
+
+- name: Deploy NIC rename fix for reboot
+  when:
+    - dist_upgrade | bool
+    - _pre_reboot_nic is defined
+  block:
+    - name: "Dist-upgrade | Deploy NIC rename fix script"
+      ansible.builtin.copy:
+        content: |
+          #!/bin/bash
+          # One-shot script to fix NIC rename after dist-upgrade reboot.
+          # Deployed by ansible-debian-ubuntu-upgrade playbook.
+          OLD_NIC="{{ _pre_reboot_nic }}"
+          NEW_NIC=$(ip -o link show | awk -F': ' '!/lo|docker|br-|veth|tailscale|wg/{print $2}' | head -1)
+
+          if [ "$OLD_NIC" != "$NEW_NIC" ] && [ -n "$NEW_NIC" ]; then
+              sed -i "s/${OLD_NIC}/${NEW_NIC}/g" /etc/network/interfaces
+              for f in /etc/network/interfaces.d/*; do
+                  [ -f "$f" ] && sed -i "s/${OLD_NIC}/${NEW_NIC}/g" "$f"
+              done
+              logger "fix-nic-rename: Updated network config: ${OLD_NIC} -> ${NEW_NIC}"
+          else
+              logger "fix-nic-rename: No rename detected (${OLD_NIC}), no changes needed"
+          fi
+
+          # Self-cleanup
+          systemctl disable fix-nic-rename.service 2>/dev/null
+          rm -f /etc/systemd/system/fix-nic-rename.service
+          rm -f /usr/local/bin/fix-nic-rename.sh
+          systemctl daemon-reload
+        dest: /usr/local/bin/fix-nic-rename.sh
+        mode: "0755"
+
+    - name: "Dist-upgrade | Deploy NIC rename fix systemd unit"
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=Fix NIC rename after dist-upgrade
+          DefaultDependencies=no
+          Before=networking.service network-pre.target
+          After=local-fs.target
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/bin/fix-nic-rename.sh
+          RemainAfterExit=no
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/fix-nic-rename.service
+        mode: "0644"
+
+    - name: "Dist-upgrade | Enable NIC rename fix service"
+      ansible.builtin.systemd:
+        name: fix-nic-rename.service
+        enabled: true
+        daemon_reload: true
+
+- name: Reboot node after dist-upgrade
+  ansible.builtin.reboot:
+    reboot_timeout: "{{ reboot_timeout }}"
+    msg: "Dist-upgrade reboot triggered by ansible-debian-ubuntu-upgrade playbook"
+  when:
+    - dist_upgrade | bool
+    - auto_reboot | bool
+
+- name: Verify host is reachable after reboot
+  when:
+    - dist_upgrade | bool
+    - auto_reboot | bool
+  block:
+    - name: "Post-reboot | Verify connectivity"
+      ansible.builtin.ping:
+
+    - name: "Post-reboot | Gather network facts"
+      ansible.builtin.setup:
+        gather_subset:
+          - network
+      register: _post_reboot_facts
+
+    - name: "Post-reboot | Report network status"
+      ansible.builtin.debug:
+        msg: >-
+          Host {{ inventory_hostname }} is up after reboot.
+          Interface: {{ ansible_default_ipv4.interface | default('unknown') }},
+          IP: {{ ansible_default_ipv4.address | default('unknown') }}.
+          {% if _pre_reboot_nic is defined and
+                _pre_reboot_nic != (ansible_default_ipv4.interface | default('')) %}
+          NIC was renamed from {{ _pre_reboot_nic }} to {{ ansible_default_ipv4.interface }}.
+          {% endif %}

@@ -30,3 +30,23 @@ export function GitOpsStatusBadge({ status }: { status: GitOpsStatus }) {
   const c = config[status] ?? config.disconnected
   return <Badge className={c.className}>{c.label}</Badge>
 }
+
+const RUN_STATUS_COLORS: Record<string, string> = {
+  pending: "bg-slate-600 text-white",
+  queued: "bg-slate-600 text-white",
+  running: "bg-blue-600 text-white",
+  succeeded: "bg-green-600 text-white",
+  completed: "bg-green-600 text-white",
+  failed: "bg-red-600 text-white",
+  partial: "bg-amber-600 text-white",
+  cancelled: "bg-slate-500 text-white",
+  skipped: "bg-slate-400 text-white",
+}
+
+export function RunStatusBadge({ status }: { status: string }) {
+  return (
+    <Badge className={RUN_STATUS_COLORS[status] ?? "bg-slate-600 text-white"}>
+      {status.charAt(0).toUpperCase() + status.slice(1)}
+    </Badge>
+  )
+}

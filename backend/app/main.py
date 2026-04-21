@@ -10,6 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
+from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
@@ -342,6 +343,7 @@ def create_app() -> FastAPI:
         tags=["users"],
     )
 
+    app.include_router(actions_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(host_state_router, prefix="/api")
