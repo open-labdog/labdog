@@ -349,6 +349,22 @@ async def detect_firewall(
     return host
 
 
+@router.post("/{host_id}/facts/refresh", status_code=202)
+async def refresh_host_facts(
+    host_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.tasks.facts import collect_host_facts
+
+    result = await db.execute(select(Host).where(Host.id == host_id))
+    host = result.scalar_one_or_none()
+    if host is None:
+        raise HTTPException(status_code=404, detail="Host not found")
+    collect_host_facts.delay(host_id)
+    return {"status": "queued"}
+
+
 @router.get("/{host_id}/current-rules")
 async def get_current_rules(
     host_id: int,

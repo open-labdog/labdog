@@ -7,11 +7,12 @@ from app.auth.users import current_active_user, current_superuser
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
-from app.models.host import HostGroupMembership
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
 from app.schemas.groups import GroupCreate, GroupResponse, GroupUpdate
+from app.schemas.hosts import HostResponse
 
 
 class BulkAddHostsRequest(BaseModel):
@@ -223,6 +224,43 @@ async def get_group_host_count(
         .where(HostGroupMembership.c.group_id == group_id)
     )
     return {"count": result.scalar()}
+
+
+@router.get("/{group_id}/hosts", response_model=list[HostResponse])
+async def list_group_hosts(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    hosts_result = await db.execute(
+        select(Host).where(
+            Host.id.in_(
+                select(HostGroupMembership.c.host_id).where(
+                    HostGroupMembership.c.group_id == group_id
+                )
+            )
+        )
+    )
+    hosts = hosts_result.scalars().all()
+
+    if hosts:
+        host_ids = [h.id for h in hosts]
+        memberships = await db.execute(
+            select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id).where(
+                HostGroupMembership.c.host_id.in_(host_ids)
+            )
+        )
+        groups_by_host: dict[int, list[int]] = {}
+        for host_id, gid in memberships.all():
+            groups_by_host.setdefault(host_id, []).append(gid)
+        for h in hosts:
+            setattr(h, "group_ids", groups_by_host.get(h.id, []))
+
+    return hosts
 
 
 @router.post("/{group_id}/hosts", status_code=200)

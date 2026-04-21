@@ -38,6 +38,9 @@ class HostResponse(BaseModel):
     last_sync_at: datetime | None
     last_drift_check_at: datetime | None
     ssh_key_id: int | None
+    os_codename: str | None
+    os_pretty_name: str | None
+    os_facts_collected_at: datetime | None
     group_ids: list[int] = []
     created_at: datetime
     updated_at: datetime

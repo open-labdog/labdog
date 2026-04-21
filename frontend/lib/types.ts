@@ -50,6 +50,9 @@ export interface Host {
   last_drift_check_at: string | null; ssh_key_id: number | null
   group_ids: number[]
   created_at: string; updated_at: string
+  os_codename: string | null
+  os_pretty_name: string | null
+  os_facts_collected_at: string | null
 }
 
 export interface HostSummary extends Host {

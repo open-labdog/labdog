@@ -2362,6 +2362,11 @@ export default function HostDetailPage() {
                   ? new Date(host.last_drift_check_at).toLocaleString()
                   : "Never"}
               </InfoRow>
+              <InfoRow label="OS">
+                {host.os_pretty_name ?? (
+                  <span className="text-slate-500 italic text-sm">Not collected</span>
+                )}
+              </InfoRow>
               <InfoRow label="Drift Monitoring">
                 <Button
                   size="sm"
@@ -5315,7 +5320,7 @@ export default function HostDetailPage() {
       )}
 
       {activeTab === "actions" && (
-        <ActionsTab scope="host" targetId={id} />
+        <ActionsTab scope="host" targetId={id} host={hostQuery.data} />
       )}
 
       {confirmState && (

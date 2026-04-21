@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { apiFetch } from "@/lib/api"
 import { toast } from "sonner"
-import type { ActionDefinition, ActionRun } from "@/lib/types"
+import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
 
 interface ActionRunDialogProps {
   action: ActionDefinition | null
@@ -18,13 +19,32 @@ interface ActionRunDialogProps {
   targetId: number
   open: boolean
   onClose: () => void
+  hostOsCodename?: string | null
 }
 
-export function ActionRunDialog({ action, scope, targetId, open, onClose }: ActionRunDialogProps) {
+export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename }: ActionRunDialogProps) {
   const router = useRouter()
   const [params, setParams] = useState<Record<string, unknown>>({})
   const [parallelism, setParallelism] = useState(1)
   const [submitting, setSubmitting] = useState(false)
+
+  // Fetch group hosts to show OS codename context for linux-os-upgrade
+  const { data: groupHosts } = useQuery<Host[]>({
+    queryKey: ["group-hosts", targetId],
+    queryFn: () => apiFetch<Host[]>(`/api/groups/${targetId}/hosts`),
+    enabled: scope === "group" && open && action?.key === "linux-os-upgrade",
+    staleTime: 30_000,
+  })
+
+  const uniqueCodenames = [...new Set(
+    (groupHosts ?? []).map((h) => h.os_codename).filter((c): c is string => Boolean(c))
+  )]
+  const groupSingleCodename = uniqueCodenames.length === 1 ? uniqueCodenames[0] : null
+  const groupMixedCodenames = uniqueCodenames.length > 1
+  const groupCodenameCounts = uniqueCodenames.map((c) => ({
+    codename: c,
+    count: (groupHosts ?? []).filter((h) => h.os_codename === c).length,
+  }))
 
   // Reset params when action changes
   // (only reset, don't initialize defaults here to keep state simple)
@@ -41,8 +61,17 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose }: Acti
         const val = params[p.key]
         if (val !== undefined) {
           resolvedParams[p.key] = val
-        } else if (p.default !== null && p.default !== undefined) {
-          resolvedParams[p.key] = p.default
+        } else {
+          // Check pre-populated value for current_version
+          const prePopulated =
+            action.key === "linux-os-upgrade" && p.key === "current_version"
+              ? (scope === "host" ? hostOsCodename : groupSingleCodename) ?? undefined
+              : undefined
+          if (prePopulated !== undefined) {
+            resolvedParams[p.key] = prePopulated
+          } else if (p.default !== null && p.default !== undefined) {
+            resolvedParams[p.key] = p.default
+          }
         }
         if (p.required && resolvedParams[p.key] === undefined) {
           toast.error(`${p.label} is required`)
@@ -94,6 +123,24 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose }: Acti
           </div>
         )}
 
+        {scope === "group" && action.key === "linux-os-upgrade" && (
+          <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm">
+            {groupMixedCodenames ? (
+              <div className="text-amber-400">
+                <span className="font-medium">Mixed OS versions detected:</span>{" "}
+                {groupCodenameCounts.map(({ codename, count }) => `${codename} (${count})`).join(", ")}
+                {". "}Verify <em>Current codename</em> is correct before running.
+              </div>
+            ) : groupSingleCodename ? (
+              <p className="text-slate-400">
+                All hosts are on <span className="font-mono text-slate-200">{groupSingleCodename}</span>.
+              </p>
+            ) : groupHosts !== undefined ? (
+              <p className="text-slate-500 italic">OS facts not yet collected for hosts in this group.</p>
+            ) : null}
+          </div>
+        )}
+
         {action.parameters.length > 0 && (
           <div className="space-y-4 py-2">
             {action.parameters.map((p) => (
@@ -121,14 +168,26 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose }: Acti
                   >
                     {p.choices.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
-                ) : (
-                  <Input
-                    type={p.type === "int" ? "number" : "text"}
-                    placeholder={String(p.default ?? "")}
-                    value={String(params[p.key] ?? "")}
-                    onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: p.type === "int" ? Number(e.target.value) : e.target.value }))}
-                  />
-                )}
+                ) : (() => {
+                  const prePopulated =
+                    action.key === "linux-os-upgrade" && p.key === "current_version"
+                      ? (scope === "host" ? hostOsCodename : groupSingleCodename) ?? undefined
+                      : undefined
+                  const displayValue = params[p.key] !== undefined ? String(params[p.key]) : (prePopulated ?? "")
+                  return (
+                    <Input
+                      type={p.type === "int" ? "number" : "text"}
+                      placeholder={prePopulated ?? String(p.default ?? "")}
+                      value={displayValue}
+                      onChange={(e) =>
+                        setParams((prev) => ({
+                          ...prev,
+                          [p.key]: p.type === "int" ? Number(e.target.value) : e.target.value,
+                        }))
+                      }
+                    />
+                  )
+                })()}
                 {p.help_text && p.type !== "bool" && (
                   <p className="text-xs text-slate-500">{p.help_text}</p>
                 )}
