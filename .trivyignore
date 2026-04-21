@@ -1,0 +1,11 @@
+# No fix available upstream for these CVEs as of 2026-04-21
+
+# ncurses: buffer overflow (affected, no fix released)
+CVE-2025-69720
+
+# systemd: arbitrary code execution via spurious IPC (affected, no fix released)
+CVE-2026-29111
+
+# openssh-client: required for Ansible; no fix released
+CVE-2026-35385
+CVE-2026-35414
