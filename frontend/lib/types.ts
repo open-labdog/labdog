@@ -419,6 +419,8 @@ export interface UpdateWorkflow {
   verification_prompt: string | null
   auto_reboot: boolean
   enabled: boolean
+  action_key: string
+  action_parameters: Record<string, string>
   created_at: string
   updated_at: string
 }
@@ -538,4 +540,55 @@ export interface PendingHostFleet {
   ssh_verified: boolean
   ssh_error: string | null
   discovered_at: string
+}
+
+export interface ActionParameter {
+  key: string
+  label: string
+  type: "string" | "int" | "bool" | "choice"
+  default: unknown
+  required: boolean
+  choices: string[] | null
+  help_text: string | null
+}
+
+export interface ActionDefinition {
+  key: string
+  name: string
+  description: string
+  icon: string
+  version: string
+  estimated_duration: string
+  destructive: boolean
+  supports_group: boolean
+  supports_host: boolean
+  parameters: ActionParameter[]
+}
+
+export interface ActionHostRun {
+  id: number
+  action_run_id: number
+  host_id: number
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  exit_code: number | null
+  error_message: string | null
+}
+
+export interface ActionRun {
+  id: number
+  action_key: string
+  action_version: string
+  host_id: number | null
+  group_id: number | null
+  parameters: Record<string, unknown>
+  parallelism: number
+  status: string
+  triggered_by_user_id: number | null
+  started_at: string | null
+  finished_at: string | null
+  error_message: string | null
+  created_at: string
+  host_runs: ActionHostRun[]
 }

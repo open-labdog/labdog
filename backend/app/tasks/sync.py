@@ -18,8 +18,6 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         job_id: SyncJob ID for status tracking
         host_id: Host ID to look up details and SSH key
     """
-    import ansible_runner
-
     # Create isolated working directory
     private_data_dir = tempfile.mkdtemp(prefix="barricade-")
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
@@ -86,7 +84,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                         "Cannot sync firewall: backend not detected. Run 'Collect State' first."
                     )
                     await db.commit()
-                    return None, None, None, None
+                    return None, None, None, None, None, None
                 playbook_yaml = generate_playbook(
                     backend,
                     host.ip_address,
@@ -98,29 +96,22 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                     host.ip_address, host.ssh_port, ssh_key_path, ssh_user=ssh_key.ssh_user
                 )
 
-                # Write to private_data_dir
-                os.makedirs(f"{private_data_dir}/project", exist_ok=True)
-                os.makedirs(f"{private_data_dir}/inventory", exist_ok=True)
-
-                with open(f"{private_data_dir}/project/playbook.yml", "w") as f:
-                    f.write(playbook_yaml)
-                with open(f"{private_data_dir}/inventory/hosts", "w") as f:
-                    f.write(inventory_json)
-
-                return host, job, db, merged_rules
+                return host, job, db, merged_rules, playbook_yaml, inventory_json
 
         result = asyncio.run(_run())
-        host, job, db, merged_rules = result
+        host, job, db, merged_rules, playbook_yaml, inventory_json = result
         if host is None:
             return {"status": "failed", "error": "Unsupported firewall backend"}
 
         # Run ansible-runner (synchronous in Celery worker)
+        from app.ansible.runner import run_ansible
         from app.settings_service import get_setting_sync_typed
 
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
-        runner = ansible_runner.run(
+        runner = run_ansible(
+            playbook_yaml=playbook_yaml,
+            inventory_json=inventory_json,
             private_data_dir=private_data_dir,
-            playbook="playbook.yml",
             timeout=playbook_timeout,
         )
 

@@ -118,12 +118,23 @@ async def upsert_group_workflow(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.actions.registry import ACTION_REGISTRY
+
     # Validate cron expression before touching the DB
     if body.schedule_cron is not None:
         from croniter import croniter
 
         if not croniter.is_valid(body.schedule_cron):
             raise HTTPException(status_code=422, detail="Invalid cron expression")
+
+    if body.action_key is not None and body.action_key not in ACTION_REGISTRY:
+        raise HTTPException(status_code=400, detail=f"Unknown action_key: {body.action_key!r}")
+
+    if body.action_key == "linux-os-upgrade":
+        params = body.action_parameters or {}
+        missing = [k for k in ("current_version", "next_version") if not params.get(k)]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"linux-os-upgrade requires: {missing}")
 
     workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
 
