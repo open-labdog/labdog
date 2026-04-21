@@ -16,8 +16,13 @@ def pytest_configure(config):
 
     os.environ.setdefault("BARRICADE_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
     os.environ.setdefault(
-        "BARRICADE_SECURITY__ENCRYPTION_KEY", "dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz"
+        "BARRICADE_SECURITY__ENCRYPTION_KEY", "vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg="
     )
+    # Shared Redis across tests causes rate-limit pollution — fresh test runs
+    # still trip the 5/min login and 100/min API limits because httpx hits
+    # testserver from 127.0.0.1 repeatedly. Disable rate limiting for tests;
+    # individual rate-limit behavior can be tested in targeted integration tests.
+    os.environ.setdefault("BARRICADE_RATE_LIMIT__ENABLED", "false")
 
 
 @pytest.fixture(scope="session")
