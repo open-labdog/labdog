@@ -373,7 +373,7 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
               onValueChange={(value) =>
                 setForm((prev) => ({
                   ...prev,
-                  action_key: value,
+                  action_key: value ?? prev.action_key,
                   action_parameters: {},
                 }))
               }
