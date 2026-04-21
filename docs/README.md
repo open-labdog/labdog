@@ -307,18 +307,18 @@ sudo ./uninstall.sh --purge  # removes everything
 The `dev.sh` script manages all dev processes:
 
 ```bash
-./dev.sh start       # Start postgres + redis (Docker) + backend + frontend
-./dev.sh stop        # Stop everything
-./dev.sh status      # Show running processes
-./dev.sh logs        # Tail all dev logs
+./dev/dev.sh start       # Start postgres + redis (Docker) + backend + frontend
+./dev/dev.sh stop        # Stop everything
+./dev/dev.sh status      # Show running processes
+./dev/dev.sh logs        # Tail all dev logs
 
-./dev.sh infra       # Start only postgres + redis
-./dev.sh backend     # Start only backend (uvicorn + celery worker + celery beat)
-./dev.sh frontend    # Start only frontend (next dev)
+./dev/dev.sh infra       # Start only postgres + redis
+./dev/dev.sh backend     # Start only backend (uvicorn + celery worker + celery beat)
+./dev/dev.sh frontend    # Start only frontend (next dev)
 
-./dev.sh migrate     # Run alembic upgrade head
-./dev.sh migrate-down    # Roll back one migration
-./dev.sh migrate-new "description"  # Generate new migration
+./dev/dev.sh migrate     # Run alembic upgrade head
+./dev/dev.sh migrate-down    # Roll back one migration
+./dev/dev.sh migrate-new "description"  # Generate new migration
 ```
 
 ### Manual Setup (without dev.sh)

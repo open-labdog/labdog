@@ -19,9 +19,9 @@ Barricade is a centralized Linux configuration management tool with a FastAPI ba
 ## Development Setup
 
 ```bash
-./dev.sh start       # Start everything (infra + backend + frontend)
-./dev.sh stop        # Stop everything
-./dev.sh migrate     # Run alembic upgrade head
+./dev/dev.sh start       # Start everything (infra + backend + frontend)
+./dev/dev.sh stop        # Stop everything
+./dev/dev.sh migrate     # Run alembic upgrade head
 ```
 
 Manual:
