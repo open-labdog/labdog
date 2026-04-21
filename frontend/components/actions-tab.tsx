@@ -8,8 +8,8 @@ import { RunStatusBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch } from "@/lib/api"
+import type { ColumnDef } from "@/components/ui/data-table"
 import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
-import type { ColumnDef } from "@tanstack/react-table"
 import Link from "next/link"
 
 interface ActionsTabProps {
@@ -66,36 +66,36 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
 
   const runColumns: ColumnDef<ActionRun>[] = [
     {
-      accessorKey: "action_key",
-      header: "Action",
+      key: "action_key",
+      label: "Action",
       cell: (r) => {
-        const def = (catalog ?? []).find((a) => a.key === r.row.original.action_key)
-        return def?.name ?? r.row.original.action_key
+        const def = (catalog ?? []).find((a) => a.key === r.action_key)
+        return def?.name ?? r.action_key
       },
     },
     {
-      accessorKey: "status",
-      header: "Status",
-      cell: (r) => <RunStatusBadge status={r.row.original.status} />,
+      key: "status",
+      label: "Status",
+      cell: (r) => <RunStatusBadge status={r.status} />,
     },
     {
-      id: "duration",
-      header: "Duration",
-      cell: (r) => formatDuration(r.row.original),
+      key: "duration",
+      label: "Duration",
+      cell: (r) => formatDuration(r),
     },
     {
-      accessorKey: "created_at",
-      header: "Started",
-      cell: (r) => new Date(r.row.original.created_at).toLocaleString(),
+      key: "created_at",
+      label: "Started",
+      cell: (r) => new Date(r.created_at).toLocaleString(),
     },
     {
-      id: "logs",
-      header: "",
+      key: "logs",
+      label: "",
       cell: (r) => {
         const base = scope === "host" ? `/hosts/${targetId}` : `/groups/${targetId}`
         return (
           <Link
-            href={`${base}/actions/runs/${r.row.original.id}`}
+            href={`${base}/actions/runs/${r.id}`}
             className="text-xs text-blue-400 hover:text-blue-300"
           >
             Logs →
@@ -150,7 +150,7 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
           ) : !runs || runs.length === 0 ? (
             <p className="text-sm text-slate-500">No runs yet.</p>
           ) : (
-            <DataTable columns={runColumns} data={runs} />
+            <DataTable tableId="action-runs" columns={runColumns} data={runs} />
           )}
         </div>
       </div>
