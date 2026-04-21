@@ -41,14 +41,10 @@ def collect_host_facts(host_id: int):
                 return
 
             if host.ssh_key_id is None:
-                logger.info(
-                    "collect_host_facts: host %d has no SSH key, skipping", host_id
-                )
+                logger.info("collect_host_facts: host %d has no SSH key, skipping", host_id)
                 return
 
-            key_result = await db.execute(
-                select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-            )
+            key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
             ssh_key = key_result.scalar_one_or_none()
             if ssh_key is None:
                 logger.warning(
@@ -58,9 +54,7 @@ def collect_host_facts(host_id: int):
                 )
                 return
 
-            private_key_pem = decrypt_ssh_key(
-                ssh_key.encrypted_private_key, get_master_key()
-            )
+            private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
             imported_key = asyncssh.import_private_key(private_key_pem)
 
             try:
@@ -79,9 +73,7 @@ def collect_host_facts(host_id: int):
                 host.os_facts_collected_at = datetime.now(UTC)
                 await db.commit()
             except (asyncssh.Error, OSError, TimeoutError) as exc:
-                logger.warning(
-                    "collect_host_facts: SSH error for host %d: %s", host_id, exc
-                )
+                logger.warning("collect_host_facts: SSH error for host %d: %s", host_id, exc)
                 # Do NOT update os_facts_collected_at so next tab load retriggers
 
     asyncio.run(_run())

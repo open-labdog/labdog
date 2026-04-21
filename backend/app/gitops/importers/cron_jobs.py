@@ -106,13 +106,9 @@ async def import_cron_jobs(
 
     raw_entries = parsed.cron_jobs or []  # None → wipe (same as [])
     if parsed.cron_jobs is None:
-        logger.warning(
-            "Group %d: YAML has no cron_jobs section — wiping cron jobs", group_id
-        )
+        logger.warning("Group %d: YAML has no cron_jobs section — wiping cron jobs", group_id)
     elif not parsed.cron_jobs:
-        logger.warning(
-            "Group %d: YAML has empty cron_jobs list — wiping cron jobs", group_id
-        )
+        logger.warning("Group %d: YAML has empty cron_jobs list — wiping cron jobs", group_id)
 
     # Validate all schedules before mutating the DB.
     desired_entries: list[CronJobYAML] = []
@@ -122,16 +118,12 @@ async def import_cron_jobs(
         except ValueError as exc:
             return ModuleImportResult(
                 module="cron_jobs",
-                error_message=(
-                    f"Invalid cron schedule for job '{entry.name}': {exc}"
-                ),
+                error_message=(f"Invalid cron schedule for job '{entry.name}': {exc}"),
             )
         desired_entries.append(entry)
 
     # Fetch current group-scoped rows (host-level rows are not GitOps-managed).
-    current_result = await db.execute(
-        select(CronJob).where(CronJob.group_id == group_id)
-    )
+    current_result = await db.execute(select(CronJob).where(CronJob.group_id == group_id))
     current_jobs: list[CronJob] = list(current_result.scalars().all())
 
     # Diff by comparing sets of field tuples.
@@ -172,9 +164,7 @@ async def import_cron_jobs(
         }
 
         # Delete-and-replace: remove all existing group-scoped rows.
-        await db.execute(
-            delete(CronJob).where(CronJob.group_id == group_id)
-        )
+        await db.execute(delete(CronJob).where(CronJob.group_id == group_id))
 
         # Insert desired entries in list order.
         for entry in desired_entries:

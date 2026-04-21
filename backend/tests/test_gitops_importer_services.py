@@ -141,9 +141,7 @@ class TestServicesImporter:
         assert svc_result.unchanged == 0
         assert svc_result.changed is True
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 2
         names = {r.service_name for r in rules}
@@ -178,9 +176,7 @@ class TestServicesImporter:
         assert svc_result.removed == 2
         assert svc_result.changed is True
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 1
         assert rules[0].service_name == "redis"
@@ -210,9 +206,7 @@ class TestServicesImporter:
         assert svc_result.added == 0
         assert svc_result.changed is True
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_empty_services_list_wipes_existing_rows(self, db):
@@ -238,9 +232,7 @@ class TestServicesImporter:
         assert svc_result.removed == 2
         assert svc_result.changed is True
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_protected_service_stripped_others_imported(self, db):
@@ -260,9 +252,7 @@ class TestServicesImporter:
         assert svc_result.added == 1
         assert svc_result.changed is True
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 1
         assert rules[0].service_name == "nginx"
@@ -303,9 +293,7 @@ class TestServicesImporter:
         svc_result = next(m for m in result.modules if m.module == "services")
         assert svc_result.added == 1
 
-        db_rows = await db.execute(
-            select(ServiceRule).where(ServiceRule.group_id == group.id)
-        )
+        db_rows = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group.id))
         rules = db_rows.scalars().all()
         assert len(rules) == 1
         assert rules[0].deploy_mode.value == "full"

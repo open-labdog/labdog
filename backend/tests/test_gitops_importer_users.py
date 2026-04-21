@@ -243,9 +243,7 @@ class TestUsersImporter:
         assert users_result.unchanged == 0
         assert users_result.changed is True
 
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         users = db_rows.scalars().all()
         assert len(users) == 2
         names = {u.username for u in users}
@@ -271,9 +269,7 @@ class TestUsersImporter:
         assert users_result.added == 2
         assert users_result.changed is True
 
-        db_rows = await db.execute(
-            select(LinuxGroup).where(LinuxGroup.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group.id))
         groups = db_rows.scalars().all()
         assert len(groups) == 2
         names = {g.groupname for g in groups}
@@ -296,14 +292,10 @@ class TestUsersImporter:
         assert users_result.added == 2
         assert users_result.changed is True
 
-        lg_rows = await db.execute(
-            select(LinuxGroup).where(LinuxGroup.group_id == group.id)
-        )
+        lg_rows = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group.id))
         assert len(lg_rows.scalars().all()) == 1
 
-        lu_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        lu_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         users = lu_rows.scalars().all()
         assert len(users) == 1
         assert users[0].username == "alice"
@@ -333,9 +325,7 @@ class TestUsersImporter:
         assert users_result.added == 1
         assert users_result.removed == 2
 
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         users = db_rows.scalars().all()
         assert len(users) == 1
         assert users[0].username == "charlie"
@@ -365,9 +355,7 @@ class TestUsersImporter:
         assert users_result.added == 1
         assert users_result.removed == 2
 
-        db_rows = await db.execute(
-            select(LinuxGroup).where(LinuxGroup.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group.id))
         groups = db_rows.scalars().all()
         assert len(groups) == 1
         assert groups[0].groupname == "ops"
@@ -396,9 +384,7 @@ class TestUsersImporter:
         assert users_result.added == 0
         assert users_result.changed is True
 
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_null_wipe_users(self, db):
@@ -424,9 +410,7 @@ class TestUsersImporter:
         assert users_result.removed == 2
         assert users_result.changed is True
 
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_empty_wipe_linux_groups(self, db):
@@ -452,9 +436,7 @@ class TestUsersImporter:
         assert users_result.removed == 2
         assert users_result.changed is True
 
-        db_rows = await db.execute(
-            select(LinuxGroup).where(LinuxGroup.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group.id))
         assert db_rows.scalars().all() == []
 
     async def test_authorized_keys_reorder_is_not_drift(self, db):
@@ -525,9 +507,7 @@ class TestUsersImporter:
         assert result.error_message is None
 
         # Import succeeded — user row was created.
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         users = db_rows.scalars().all()
         assert len(users) == 1
         assert users[0].username == "alice"
@@ -555,9 +535,7 @@ class TestUsersImporter:
         msg = users_result.error_message.lower()
         assert "root" in msg or "protected" in msg
 
-        db_rows = await db.execute(
-            select(LinuxUser).where(LinuxUser.group_id == group.id)
-        )
+        db_rows = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group.id))
         assert db_rows.scalars().all() == []
 
         refreshed = await db.execute(select(HostGroup).where(HostGroup.id == group.id))

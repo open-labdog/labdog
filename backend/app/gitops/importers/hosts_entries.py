@@ -120,15 +120,11 @@ async def import_hosts_entries(
     for entry in raw_entries:
         if entry.host_ref_id is not None:
             # Verify the referenced host exists before touching the DB.
-            row = await db.execute(
-                select(Host.id).where(Host.id == entry.host_ref_id)
-            )
+            row = await db.execute(select(Host.id).where(Host.id == entry.host_ref_id))
             if row.scalar_one_or_none() is None:
                 return ModuleImportResult(
                     module="hosts_entries",
-                    error_message=(
-                        f"Referenced host id {entry.host_ref_id} does not exist"
-                    ),
+                    error_message=(f"Referenced host id {entry.host_ref_id} does not exist"),
                 )
         desired_entries.append(entry)
 
