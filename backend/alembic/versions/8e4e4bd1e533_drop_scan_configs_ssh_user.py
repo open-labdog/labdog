@@ -1,8 +1,8 @@
 """drop ssh_user from scan_configs
 
-Revision ID: a1b2c3d4e5f6
-Revises: f1a2b3c4d5e6
-Create Date: 2026-04-21 10:00:00.000000
+Revision ID: 8e4e4bd1e533
+Revises: a9f3c1b8d2e7
+Create Date: 2026-04-22 10:00:00.000000
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "a1b2c3d4e5f6"
-down_revision: str | Sequence[str] | None = "f1a2b3c4d5e6"
+revision: str = "8e4e4bd1e533"
+down_revision: str | Sequence[str] | None = "a9f3c1b8d2e7"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
