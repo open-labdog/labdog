@@ -20,7 +20,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { SyncStatusBadge, FirewallBadge } from "@/components/status-badge"
+import {
+  SyncStatusBadge,
+  FirewallBadge,
+  ItemStateBadge,
+  PackageStateBadge,
+  EnabledBadge,
+  SystemdStateBadge,
+} from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { GroupMultiSelect } from "@/components/group-multi-select"
 import { HostCombobox } from "@/components/host-combobox"
@@ -131,7 +138,7 @@ function ModuleStateView({
         emptyMessage="No services."
         columns={[
           { key: "service", label: "Service", accessor: (s) => s.unit ?? s.service_name ?? "", cell: (s) => <span className="font-mono text-white text-sm">{s.unit ?? s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
-          { key: "state", label: "State", accessor: (s) => s.sub_state ?? s.active_state, cell: (s) => <Badge className={s.active_state === "active" || s.active_state === "running" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : "bg-slate-600 text-white"}>{s.sub_state ?? s.active_state}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+          { key: "state", label: "State", accessor: (s) => s.sub_state ?? s.active_state, cell: (s) => <SystemdStateBadge state={s.active_state} label={s.sub_state ?? s.active_state} />, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
           { key: "description", label: "Description", accessor: (s) => s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : ""), cell: (s) => <span className="text-slate-400 text-sm truncate max-w-xs">{s.description ?? (s.enabled !== undefined ? (s.enabled ? "Enabled" : "Disabled") : "—")}</span>, defaultWidth: 260 },
         ]}
       />
@@ -2945,8 +2952,8 @@ export default function HostDetailPage() {
               emptyMessage="No services configured."
               columns={[
                 { key: "service_name", label: "Service Name", accessor: (s) => s.service_name, cell: (s) => <span className="font-mono text-white text-sm">{s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
-                { key: "state", label: "State", accessor: (s) => s.state, cell: (s) => <Badge className={s.state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>{s.state.charAt(0).toUpperCase() + s.state.slice(1)}</Badge>, defaultWidth: 110, filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] } },
-                { key: "enabled", label: "Enabled", accessor: (s) => s.enabled, cell: (s) => s.enabled ? <Badge className="bg-green-700 text-white">Enabled</Badge> : <Badge variant="outline">Disabled</Badge>, defaultWidth: 100, filter: { type: "boolean" } },
+                { key: "state", label: "State", accessor: (s) => s.state, cell: (s) => <SystemdStateBadge state={s.state} titleCase />, defaultWidth: 110, filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] } },
+                { key: "enabled", label: "Enabled", accessor: (s) => s.enabled, cell: (s) => <EnabledBadge enabled={s.enabled} />, defaultWidth: 100, filter: { type: "boolean" } },
                 { key: "source", label: "Source", accessor: (s) => s.source === "group" ? s.source_name : "Host override", cell: (s) => <Badge variant="outline" className="text-xs">{s.source === "group" ? s.source_name : "Host override"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
                 {
                   key: "actions",
@@ -3204,9 +3211,7 @@ export default function HostDetailPage() {
                     label: "Active State",
                     accessor: (s) => s.active_state,
                     cell: (s) => (
-                      <Badge className={s.active_state === "active" ? "bg-green-600 text-white" : s.active_state === "failed" ? "bg-red-600 text-white" : s.active_state === "activating" || s.active_state === "deactivating" ? "bg-yellow-600 text-white" : "bg-slate-600 text-white"}>
-                        {s.active_state}
-                      </Badge>
+                      <SystemdStateBadge state={s.active_state} />
                     ),
                     defaultWidth: 120,
                     filter: { type: "enum", from: "accessor" },
@@ -3635,9 +3640,7 @@ export default function HostDetailPage() {
                     label: "State",
                     accessor: (user) => user.state,
                     cell: (user) => (
-                      <Badge className={user.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                        {user.state.charAt(0).toUpperCase() + user.state.slice(1)}
-                      </Badge>
+                      <ItemStateBadge state={user.state} />
                     ),
                     defaultWidth: 110,
                     filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
@@ -3751,9 +3754,7 @@ export default function HostDetailPage() {
                     label: "State",
                     accessor: (group) => group.state,
                     cell: (group) => (
-                      <Badge className={group.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                        {group.state.charAt(0).toUpperCase() + group.state.slice(1)}
-                      </Badge>
+                      <ItemStateBadge state={group.state} />
                     ),
                     defaultWidth: 110,
                     filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
@@ -4142,11 +4143,7 @@ export default function HostDetailPage() {
                   key: "state",
                   label: "State",
                   accessor: (job) => job.state,
-                  cell: (job) => (
-                    <Badge className={job.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                      {job.state.charAt(0).toUpperCase() + job.state.slice(1)}
-                    </Badge>
-                  ),
+                  cell: (job) => <ItemStateBadge state={job.state} />,
                   defaultWidth: 110,
                   filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                 },
@@ -4450,15 +4447,7 @@ export default function HostDetailPage() {
                   key: "state",
                   label: "State",
                   accessor: (pkg) => pkg.state,
-                  cell: (pkg) => (
-                    <Badge className={
-                      pkg.state === "present" ? "bg-green-600 text-white"
-                        : pkg.state === "latest" ? "bg-blue-600 text-white"
-                        : "bg-red-600 text-white"
-                    }>
-                      {pkg.state.charAt(0).toUpperCase() + pkg.state.slice(1)}
-                    </Badge>
-                  ),
+                  cell: (pkg) => <PackageStateBadge state={pkg.state} />,
                   defaultWidth: 110,
                   filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"},{label:"Latest",value:"latest"}] },
                 },
@@ -4592,11 +4581,7 @@ export default function HostDetailPage() {
                   key: "state",
                   label: "State",
                   accessor: (repo) => repo.state,
-                  cell: (repo) => (
-                    <Badge className={repo.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                      {repo.state.charAt(0).toUpperCase() + repo.state.slice(1)}
-                    </Badge>
-                  ),
+                  cell: (repo) => <ItemStateBadge state={repo.state} />,
                   defaultWidth: 110,
                   filter: { type: "enum", from: "accessor" },
                 },
@@ -4823,11 +4808,7 @@ export default function HostDetailPage() {
                   key: "state",
                   label: "State",
                   accessor: (c) => c.state,
-                  cell: (c) => (
-                    <Badge className={c.state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                      {c.state.charAt(0).toUpperCase() + c.state.slice(1)}
-                    </Badge>
-                  ),
+                  cell: (c) => <ItemStateBadge state={c.state} />,
                   defaultWidth: 110,
                   filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
                 },

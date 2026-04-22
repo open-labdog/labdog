@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { GitBranch, Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ItemStateBadge, PackageStateBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -25,18 +26,6 @@ import { cn, useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { PackageRule, PackageRepository, HostGroup } from "@/lib/types"
 
-function StateBadge({ state }: { state: string }) {
-  const colors: Record<string, string> = {
-    present: "bg-green-600 text-white",
-    absent: "bg-red-600 text-white",
-    latest: "bg-blue-600 text-white",
-  }
-  return (
-    <Badge className={colors[state] ?? ""}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
 
 function RepoTypeBadge({ type }: { type: string }) {
   return (
@@ -297,7 +286,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 key: "state",
                 label: "State",
                 accessor: (pkg) => pkg.state,
-                cell: (pkg) => <StateBadge state={pkg.state} />,
+                cell: (pkg) => <PackageStateBadge state={pkg.state} />,
                 defaultWidth: 120,
                 filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"},{label:"Latest",value:"latest"}] },
               },
@@ -429,7 +418,7 @@ export default function GroupPackagesPage({ embedded = false }: { embedded?: boo
                 key: "state",
                 label: "State",
                 accessor: (repo) => repo.state,
-                cell: (repo) => <StateBadge state={repo.state} />,
+                cell: (repo) => <ItemStateBadge state={repo.state} />,
                 defaultWidth: 120,
                 filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },

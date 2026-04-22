@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { SystemdStateBadge, EnabledBadge } from "@/components/status-badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -27,21 +28,6 @@ import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { ServiceRule, HostGroup } from "@/lib/types"
 
-function StateBadge({ state }: { state: string }) {
-  return (
-    <Badge className={state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
-
-function EnabledBadge({ enabled }: { enabled: boolean }) {
-  return enabled ? (
-    <Badge className="bg-green-700 text-white">Enabled</Badge>
-  ) : (
-    <Badge variant="outline">Disabled</Badge>
-  )
-}
 
 export default function GroupServicesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
@@ -190,7 +176,7 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
               key: "state",
               label: "State",
               accessor: (s) => s.state,
-              cell: (s) => <StateBadge state={s.state} />,
+              cell: (s) => <SystemdStateBadge state={s.state} titleCase />,
               defaultWidth: 120,
               filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] },
             },
