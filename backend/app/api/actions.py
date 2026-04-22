@@ -68,23 +68,6 @@ async def list_actions(
 
 
 # ---------------------------------------------------------------------------
-# GET /actions/{action_key} — Single action
-# ---------------------------------------------------------------------------
-
-
-@router.get("/{action_key}", response_model=ActionDefinitionOut)
-async def get_action(
-    action_key: str,
-    _: User = Depends(current_active_user),
-):
-    """Return a single action definition by key."""
-    defn = ACTION_REGISTRY.get(action_key)
-    if defn is None:
-        raise HTTPException(status_code=404, detail="Action not found")
-    return _definition_to_out(defn)
-
-
-# ---------------------------------------------------------------------------
 # POST /actions/runs — Create run + dispatch
 # ---------------------------------------------------------------------------
 
@@ -180,7 +163,7 @@ async def create_run(
     try:
         from app.tasks import celery_app
 
-        celery_app.send_task("actions.run", args=[run_id])
+        celery_app.send_task("app.tasks.action_orchestrator.run_action", args=[run_id])
     except Exception as exc:
         logger.warning("Failed to dispatch actions.run task for run %d: %s", run_id, exc)
 
@@ -359,3 +342,25 @@ async def stream_run_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /actions/{action_key} — Single action
+#
+# NOTE: This route must be registered AFTER all /runs* routes.  FastAPI
+# evaluates routes in registration order; placing /{action_key} before
+# /runs would cause "GET /actions/runs" to be captured by the dynamic
+# segment (action_key="runs") and return 404 "Action not found".
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{action_key}", response_model=ActionDefinitionOut)
+async def get_action(
+    action_key: str,
+    _: User = Depends(current_active_user),
+):
+    """Return a single action definition by key."""
+    defn = ACTION_REGISTRY.get(action_key)
+    if defn is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+    return _definition_to_out(defn)

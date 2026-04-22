@@ -182,7 +182,6 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             )
             host_runs = list(host_runs_result.scalars().all())
 
-            {hr.status for hr in host_runs}
             success_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.success)
             failed_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.failed)
             total = len(host_runs)
