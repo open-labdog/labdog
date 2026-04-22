@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { apiFetch } from "@/lib/api"
+import { nextCodename } from "@/lib/os-upgrade-paths"
 import { toast } from "sonner"
 import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
 
@@ -56,17 +57,21 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     setSubmitting(true)
     try {
       // Build params with defaults for unset bool fields
+      const currentForPrepop = scope === "host" ? hostOsCodename : groupSingleCodename
       const resolvedParams: Record<string, unknown> = {}
       for (const p of action.parameters) {
         const val = params[p.key]
         if (val !== undefined) {
           resolvedParams[p.key] = val
         } else {
-          // Check pre-populated value for current_version
-          const prePopulated =
-            action.key === "linux-os-upgrade" && p.key === "current_version"
-              ? (scope === "host" ? hostOsCodename : groupSingleCodename) ?? undefined
-              : undefined
+          // Pre-populate for linux-os-upgrade: current_version from host/group
+          // codename; next_version derived from the static upgrade-path map.
+          let prePopulated: string | undefined
+          if (action.key === "linux-os-upgrade" && p.key === "current_version") {
+            prePopulated = currentForPrepop ?? undefined
+          } else if (action.key === "linux-os-upgrade" && p.key === "next_version") {
+            prePopulated = nextCodename(currentForPrepop)
+          }
           if (prePopulated !== undefined) {
             resolvedParams[p.key] = prePopulated
           } else if (p.default !== null && p.default !== undefined) {
@@ -169,10 +174,13 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
                     {p.choices.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
                 ) : (() => {
-                  const prePopulated =
-                    action.key === "linux-os-upgrade" && p.key === "current_version"
-                      ? (scope === "host" ? hostOsCodename : groupSingleCodename) ?? undefined
-                      : undefined
+                  const current = scope === "host" ? hostOsCodename : groupSingleCodename
+                  let prePopulated: string | undefined
+                  if (action.key === "linux-os-upgrade" && p.key === "current_version") {
+                    prePopulated = current ?? undefined
+                  } else if (action.key === "linux-os-upgrade" && p.key === "next_version") {
+                    prePopulated = nextCodename(current)
+                  }
                   const displayValue = params[p.key] !== undefined ? String(params[p.key]) : (prePopulated ?? "")
                   return (
                     <Input

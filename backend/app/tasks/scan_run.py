@@ -174,6 +174,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             hosts_pending = 0
 
             # ---- h. Branch on auto_add ----------------------------------
+            auto_added_host_ids: list[int] = []
             if config.auto_add:
                 for ip, hostname in verified:
                     host = Host(
@@ -203,6 +204,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                         after_state={"ip": ip, "hostname": hostname},
                     )
                     hosts_added += 1
+                    auto_added_host_ids.append(host.id)
 
                 # Unverified hits go to pending even in auto_add mode so
                 # operators can see what was discovered but could not be added.
@@ -268,6 +270,11 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             config.last_run_status = "ok"
             config.last_run_error = None
             await db.commit()
+
+            # Kick off OS-facts collection for any auto-added hosts so their
+            # os_codename is populated before the operator opens them.
+            for hid in auto_added_host_ids:
+                celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
 
             return {"hosts_added": hosts_added, "hosts_pending": hosts_pending}
 
