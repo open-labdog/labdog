@@ -122,12 +122,6 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           <DialogTitle>{action.name}</DialogTitle>
         </DialogHeader>
 
-        {action.destructive && (
-          <div className="rounded-lg border border-red-700 bg-red-950/40 p-3 text-sm text-red-300">
-            This action is destructive and may cause downtime. Review parameters carefully.
-          </div>
-        )}
-
         {scope === "group" && action.key === "linux-os-upgrade" && (
           <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm">
             {groupMixedCodenames ? (

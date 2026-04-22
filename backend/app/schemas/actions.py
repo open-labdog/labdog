@@ -47,6 +47,7 @@ class ActionHostRunOut(BaseModel):
     finished_at: datetime | None
     exit_code: int | None
     error_message: str | None
+    snapshot_name: str | None = None
 
     model_config = {"from_attributes": True}
 

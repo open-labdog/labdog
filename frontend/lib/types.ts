@@ -580,6 +580,7 @@ export interface ActionHostRun {
   finished_at: string | null
   exit_code: number | null
   error_message: string | null
+  snapshot_name: string | null
 }
 
 export interface ActionRun {

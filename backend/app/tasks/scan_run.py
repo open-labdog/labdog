@@ -273,8 +273,17 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
 
             # Kick off OS-facts collection for any auto-added hosts so their
             # os_codename is populated before the operator opens them.
+            # Best-effort: broker hiccups must not fail the scan.
             for hid in auto_added_host_ids:
-                celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
+                try:
+                    celery_app.send_task(
+                        "app.tasks.facts.collect_host_facts", args=[hid]
+                    )
+                except Exception:
+                    logger.warning(
+                        "scan_run: could not enqueue collect_host_facts for host %d",
+                        hid,
+                    )
 
             return {"hosts_added": hosts_added, "hosts_pending": hosts_pending}
 
