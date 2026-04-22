@@ -4,10 +4,11 @@ import { useState, useRef, useLayoutEffect, useEffect } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ScanIcon, PlayIcon, PencilIcon, Trash2Icon, ClockIcon, ChevronDownIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { ScanIcon, PlayIcon, PencilIcon, Trash2Icon, ClockIcon, ChevronDownIcon, SearchIcon, InboxIcon } from "lucide-react"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -15,7 +16,7 @@ import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading, formatRelativeTime, cn } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import type { ScanConfig } from "@/lib/types"
+import type { ScanConfig, PendingSummary } from "@/lib/types"
 import { ScanConfigDialog } from "@/components/scans/scan-config-dialog"
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -193,7 +194,7 @@ function RowActions({
               </button>
               {hasPending && (
                 <Link
-                  href={`/hosts/scans/${scan.id}/pending`}
+                  href={`/hosts/discovery/${scan.id}/pending`}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
                   onClick={() => setOpen(false)}
                 >
@@ -244,6 +245,14 @@ export default function ScansPage() {
     refetchInterval: 10000,
   })
   const showLoading = useDelayedLoading(isLoading)
+
+  const { data: pendingSummary } = useQuery<PendingSummary>({
+    queryKey: ["scans", "pending-summary"],
+    queryFn: () => apiFetch<PendingSummary>("/api/scans/pending-summary"),
+    refetchInterval: 30_000,
+    retry: false,
+  })
+  const pendingTotal = pendingSummary?.total ?? 0
 
   // ── toggle enabled ──────────────────────────────────────────────────────────
   const toggleMutation = useApiMutation({
@@ -378,21 +387,76 @@ export default function ScansPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Scan Configs" }]} />
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discovery" }]} />
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Scan Configs</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Automated network scans that discover and onboard hosts
-          </p>
-        </div>
-        <Button onClick={openCreate}>Add Scan Config</Button>
+      <div>
+        <h1 className="text-2xl font-bold text-white">Discovery</h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Find and onboard hosts via one-shot scans, schedules, or the approval inbox
+        </p>
       </div>
+
+      {/* ── Action tiles ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card className="bg-slate-900 border border-slate-700 ring-0">
+          <CardHeader className="px-4">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <SearchIcon className="w-4 h-4 text-slate-400" />
+              Scan now
+            </CardTitle>
+            <CardDescription className="text-slate-400">
+              Scan a network range right now
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1" />
+          <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
+            <Link href="/hosts/discover" className={cn(buttonVariants())}>
+              Scan now
+            </Link>
+          </CardFooter>
+        </Card>
+
+        <Card className="bg-slate-900 border border-slate-700 ring-0">
+          <CardHeader className="px-4">
+            <CardTitle className="flex items-center gap-2 text-white">
+              <InboxIcon className="w-4 h-4 text-slate-400" />
+              Review pending
+            </CardTitle>
+            <CardDescription className="text-slate-400">
+              Hosts awaiting approval before joining the fleet
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 px-4">
+            {pendingTotal > 0 && (
+              <Badge className="bg-amber-600 text-white text-[11px]">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-200 mr-1.5" />
+                {pendingTotal} pending
+              </Badge>
+            )}
+          </CardContent>
+          <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
+            <Link href="/hosts/pending" className={cn(buttonVariants({ variant: "outline" }))}>
+              Review pending
+            </Link>
+          </CardFooter>
+        </Card>
+      </div>
+
+      {/* ── Scan schedules list ──────────────────────────────────────── */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Scan schedules</h2>
+            <p className="text-slate-400 text-sm mt-0.5">
+              Recurring network scans that discover and onboard hosts
+            </p>
+          </div>
+          <Button onClick={openCreate}>Add Scan Schedule</Button>
+        </div>
 
       {showLoading && <TableSkeleton rows={3} columns={7} />}
       {error && (
-        <div className="text-red-400 py-8 text-center">Failed to load scan configs</div>
+        <div className="text-red-400 py-8 text-center">Failed to load scan schedules</div>
       )}
 
       {!isLoading && !error && (
@@ -403,13 +467,13 @@ export default function ScansPage() {
             <div className="flex flex-col items-center gap-3 py-8 mx-auto" style={{ maxWidth: "28rem" }}>
               <ScanIcon className="w-10 h-10 text-slate-700" />
               <div className="text-center">
-                <p className="text-slate-300 font-medium">No scan configs yet</p>
+                <p className="text-slate-300 font-medium">No scan schedules yet</p>
                 <p className="text-slate-500 text-sm mt-1">
-                  Create a scan config to automatically discover hosts on your network.
+                  Create a scan schedule to automatically discover hosts on your network.
                 </p>
               </div>
               <Button onClick={openCreate} className="mt-2">
-                Add Scan Config
+                Add Scan Schedule
               </Button>
             </div>
           }
@@ -417,6 +481,7 @@ export default function ScansPage() {
           columns={columns}
         />
       )}
+      </div>
 
       {/* Create / Edit dialog — T8 owns this component */}
       <ScanConfigDialog
@@ -432,11 +497,11 @@ export default function ScansPage() {
       <ConfirmDialog
         open={deleteTarget !== null}
         onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}
-        title="Delete Scan Config"
+        title="Delete Scan Schedule"
         description={
           deleteTarget
             ? `Delete "${deleteTarget.name}"? This cannot be undone.`
-            : "Delete this scan config? This cannot be undone."
+            : "Delete this scan schedule? This cannot be undone."
         }
         confirmLabel={deleteMutation.isPending ? "Deleting\u2026" : "Delete"}
         variant="destructive"

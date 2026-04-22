@@ -96,8 +96,8 @@ export default function PendingReviewClientPage() {
       <Breadcrumb
         items={[
           { label: "Hosts", href: "/hosts" },
-          { label: "Scans", href: "/hosts/scans" },
-          { label: scanName, href: `/hosts/scans` },
+          { label: "Discovery", href: "/hosts/discovery" },
+          { label: scanName, href: `/hosts/discovery` },
           { label: "Pending Review" },
         ]}
       />
