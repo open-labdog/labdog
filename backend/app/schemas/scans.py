@@ -58,7 +58,6 @@ class ScanConfigCreate(BaseModel):
     cidrs: list[str]
     ssh_key_id: int
     ssh_port: int = 22
-    ssh_user: str = "root"
     default_group_ids: list[int] = []
     interval_minutes: int | None = None
     cron_expression: str | None = None
@@ -104,7 +103,6 @@ class ScanConfigUpdate(BaseModel):
     cidrs: list[str] | None = None
     ssh_key_id: int | None = None
     ssh_port: int | None = None
-    ssh_user: str | None = None
     default_group_ids: list[int] | None = None
     interval_minutes: int | None = None
     cron_expression: str | None = None
@@ -167,7 +165,6 @@ class ScanConfigResponse(BaseModel):
     cidrs: list[str]
     ssh_key_id: int
     ssh_port: int
-    ssh_user: str
     default_group_ids: list[int]
     interval_minutes: int | None
     cron_expression: str | None

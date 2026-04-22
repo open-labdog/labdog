@@ -59,7 +59,6 @@ const emptyDefaults: ScanConfigInput = {
   name: "",
   cidrs: [],
   ssh_key_id: 0,
-  ssh_user: "root",
   ssh_port: 22,
   default_group_ids: [],
   schedule_type: "interval",
@@ -78,7 +77,6 @@ function configToFormValues(c: ScanConfig): ScanConfigInput {
     name: c.name,
     cidrs: c.cidrs,
     ssh_key_id: c.ssh_key_id,
-    ssh_user: c.ssh_user,
     ssh_port: c.ssh_port,
     default_group_ids: c.default_group_ids,
     schedule_type: scheduleType,
@@ -257,7 +255,6 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
         name: data.name,
         cidrs: data.cidrs,
         ssh_key_id: data.ssh_key_id,
-        ssh_user: data.ssh_user,
         ssh_port: data.ssh_port,
         default_group_ids: data.default_group_ids,
         interval_minutes: intervalMinutes,
@@ -364,37 +361,22 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
               )}
             </div>
 
-            {/* SSH user + SSH port side by side */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="sc-ssh-user">SSH User</Label>
-                <Input
-                  id="sc-ssh-user"
-                  {...form.register("ssh_user")}
-                  placeholder="root"
-                  className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
-                />
-                {errors.ssh_user && (
-                  <p className="text-sm text-red-400">{errors.ssh_user.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="sc-ssh-port">SSH Port</Label>
-                <Input
-                  id="sc-ssh-port"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  {...form.register("ssh_port", {
-                    setValueAs: (v: string) => (v === "" ? 22 : parseInt(v, 10)),
-                  })}
-                  className="bg-slate-800 border-slate-700 text-white"
-                />
-                {errors.ssh_port && (
-                  <p className="text-sm text-red-400">{errors.ssh_port.message}</p>
-                )}
-              </div>
+            {/* SSH port */}
+            <div className="space-y-1.5">
+              <Label htmlFor="sc-ssh-port">SSH Port</Label>
+              <Input
+                id="sc-ssh-port"
+                type="number"
+                min={1}
+                max={65535}
+                {...form.register("ssh_port", {
+                  setValueAs: (v: string) => (v === "" ? 22 : parseInt(v, 10)),
+                })}
+                className="bg-slate-800 border-slate-700 text-white"
+              />
+              {errors.ssh_port && (
+                <p className="text-sm text-red-400">{errors.ssh_port.message}</p>
+              )}
             </div>
           </section>
 

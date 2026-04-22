@@ -10,6 +10,7 @@ from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
 from app.models.scan_config import PendingHost, ScanConfig
+from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.scans import (
     ApproveBody,
@@ -117,7 +118,6 @@ async def create_scan_config(
         cidrs=body.cidrs,
         ssh_key_id=body.ssh_key_id,
         ssh_port=body.ssh_port,
-        ssh_user=body.ssh_user,
         default_group_ids=body.default_group_ids,
         interval_minutes=body.interval_minutes,
         cron_expression=body.cron_expression,
@@ -248,6 +248,10 @@ async def approve_pending_hosts(
     """
     config = await _get_config_or_404(config_id, db)
 
+    # Load the SSH key so we can read ssh_user from it (BUG-28: removed from ScanConfig).
+    ssh_key_result = await db.execute(select(SSHKey).where(SSHKey.id == config.ssh_key_id))
+    ssh_key = ssh_key_result.scalar_one()
+
     # Batch-load only rows that belong to *this* scan config — cross-config injection guard.
     pending_result = await db.execute(
         select(PendingHost).where(
@@ -277,7 +281,7 @@ async def approve_pending_hosts(
             hostname=hostname,
             ip_address=ip,
             ssh_port=config.ssh_port,
-            ssh_user=config.ssh_user,
+            ssh_user=ssh_key.ssh_user,
             ssh_key_id=config.ssh_key_id,
         )
         db.add(host)

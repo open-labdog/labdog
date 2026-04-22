@@ -81,7 +81,6 @@ async def _create_scan_config(
         cidrs=cidrs or ["10.0.1.0/30"],
         ssh_key_id=ssh_key_id,
         ssh_port=22,
-        ssh_user="root",
         default_group_ids=default_group_ids or [],
         interval_minutes=60,
         enabled=enabled,

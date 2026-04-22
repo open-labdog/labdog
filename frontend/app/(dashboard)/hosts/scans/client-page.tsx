@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useLayoutEffect, useEffect } from "react"
+import { createPortal } from "react-dom"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { ScanIcon, PlayIcon, PencilIcon, Trash2Icon, ClockIcon, ChevronDownIcon } from "lucide-react"
@@ -122,10 +123,98 @@ function RowActions({
   onRun: (scan: ScanConfig) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
+  const triggerRef = useRef<HTMLDivElement>(null)
   const hasPending = (scan.last_run_hosts_pending ?? 0) > 0
 
+  // Guard SSR: only portal once the client has mounted
+  useEffect(() => { setMounted(true) }, [])
+
+  // Compute fixed-position coords from the trigger's bounding rect whenever the menu opens
+  useLayoutEffect(() => {
+    if (!open || !triggerRef.current) return
+    const rect = triggerRef.current.getBoundingClientRect()
+    setMenuPos({
+      top: rect.bottom + 4,
+      right: window.innerWidth - rect.right,
+    })
+  }, [open])
+
+  // Recompute on scroll/resize so the menu tracks the trigger
+  useEffect(() => {
+    if (!open || !triggerRef.current) return
+    function recompute() {
+      if (!triggerRef.current) return
+      const rect = triggerRef.current.getBoundingClientRect()
+      setMenuPos({
+        top: rect.bottom + 4,
+        right: window.innerWidth - rect.right,
+      })
+    }
+    window.addEventListener("scroll", recompute, { capture: true, passive: true })
+    window.addEventListener("resize", recompute, { passive: true })
+    return () => {
+      window.removeEventListener("scroll", recompute, { capture: true })
+      window.removeEventListener("resize", recompute)
+    }
+  }, [open])
+
+  const portal =
+    mounted && open
+      ? createPortal(
+          <>
+            {/* backdrop */}
+            <div
+              style={{ position: "fixed", inset: 0, zIndex: 40 }}
+              onClick={() => setOpen(false)}
+            />
+            {/* menu */}
+            <div
+              style={{
+                position: "fixed",
+                top: menuPos.top,
+                right: menuPos.right,
+                zIndex: 50,
+              }}
+              className="min-w-[160px] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+            >
+              <button
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                onClick={() => { setOpen(false); onEdit(scan) }}
+              >
+                <PencilIcon className="w-3.5 h-3.5" /> Edit
+              </button>
+              <button
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                onClick={() => { setOpen(false); onRun(scan) }}
+              >
+                <PlayIcon className="w-3.5 h-3.5" /> Run now
+              </button>
+              {hasPending && (
+                <Link
+                  href={`/hosts/scans/${scan.id}/pending`}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+                  onClick={() => setOpen(false)}
+                >
+                  <ClockIcon className="w-3.5 h-3.5" /> View pending
+                </Link>
+              )}
+              <div className="my-1 border-t border-slate-700" />
+              <button
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-slate-800"
+                onClick={() => { setOpen(false); onDelete(scan) }}
+              >
+                <Trash2Icon className="w-3.5 h-3.5" /> Delete
+              </button>
+            </div>
+          </>,
+          document.body
+        )
+      : null
+
   return (
-    <div className="relative">
+    <div className="relative" ref={triggerRef}>
       <Button
         variant="ghost"
         size="sm"
@@ -135,43 +224,7 @@ function RowActions({
       >
         <ChevronDownIcon className="w-3.5 h-3.5" />
       </Button>
-
-      {open && (
-        <>
-          {/* backdrop */}
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl">
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-              onClick={() => { setOpen(false); onEdit(scan) }}
-            >
-              <PencilIcon className="w-3.5 h-3.5" /> Edit
-            </button>
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-              onClick={() => { setOpen(false); onRun(scan) }}
-            >
-              <PlayIcon className="w-3.5 h-3.5" /> Run now
-            </button>
-            {hasPending && (
-              <Link
-                href={`/hosts/scans/${scan.id}/pending`}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-                onClick={() => setOpen(false)}
-              >
-                <ClockIcon className="w-3.5 h-3.5" /> View pending
-              </Link>
-            )}
-            <div className="my-1 border-t border-slate-700" />
-            <button
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-slate-800"
-              onClick={() => { setOpen(false); onDelete(scan) }}
-            >
-              <Trash2Icon className="w-3.5 h-3.5" /> Delete
-            </button>
-          </div>
-        </>
-      )}
+      {portal}
     </div>
   )
 }
