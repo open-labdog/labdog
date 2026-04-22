@@ -110,7 +110,13 @@ async def _run_task(config_id: int, db) -> dict:
     """Await the async task body directly using the test's DB session."""
     from app.tasks.scan_run import _async_run
 
-    with _make_session_patcher(db):
+    # task_session is patched so scan_run writes hit the test's savepoint;
+    # celery_app.send_task is stubbed so the auto-add facts-collection
+    # enqueue doesn't try to connect to a real Redis broker during tests.
+    with (
+        _make_session_patcher(db),
+        patch("app.tasks.scan_run.celery_app.send_task", new=lambda *a, **kw: None),
+    ):
         return await _async_run(config_id)
 
 

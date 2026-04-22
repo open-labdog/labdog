@@ -322,12 +322,20 @@ async def approve_pending_hosts(
     await db.commit()
 
     # Kick off OS-facts collection for the newly-promoted hosts so os_codename
-    # is populated before the user opens them.
+    # is populated before the user opens them. Best-effort: broker outages
+    # must not fail the approve request.
     if approved_host_ids:
-        from app.tasks import celery_app  # noqa: PLC0415
+        try:
+            from app.tasks import celery_app  # noqa: PLC0415
 
-        for hid in approved_host_ids:
-            celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
+            for hid in approved_host_ids:
+                celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
+        except Exception:
+            import logging  # noqa: PLC0415
+
+            logging.getLogger(__name__).warning(
+                "could not enqueue collect_host_facts for approved hosts — broker unavailable?"
+            )
 
     return ApproveResponse(
         approved=approved,

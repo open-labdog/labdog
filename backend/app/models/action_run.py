@@ -65,5 +65,8 @@ class ActionHostRun(Base):
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     output: Mapped[str] = mapped_column(Text, nullable=False, server_default="''")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Proxmox snapshot captured before a destructive action ran. Non-null
+    # means a snapshot exists (deleted on success, kept on failure/rollback).
+    snapshot_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     __table_args__ = (UniqueConstraint("action_run_id", "host_id", name="uq_action_host_run"),)

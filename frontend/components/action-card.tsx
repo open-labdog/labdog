@@ -3,7 +3,6 @@
 import { ArrowUpFromLine, Layers, Network, Play, Zap } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import type { ActionDefinition } from "@/lib/types"
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -31,9 +30,6 @@ export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-white">{action.name}</span>
-            {action.destructive && (
-              <Badge className="bg-red-900/60 text-red-300 border-red-700 text-xs">Destructive</Badge>
-            )}
           </div>
           <p className="mt-1 text-xs text-slate-400">{action.description}</p>
           <p className="mt-1 text-xs text-slate-500">~{action.estimated_duration}</p>
