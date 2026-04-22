@@ -116,23 +116,29 @@ start_backend() {
   log "Running migrations..."
   (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" upgrade head)
 
+  # Prepend the venv bin to PATH so child processes (e.g. ansible-runner
+  # spawning ansible-playbook) can resolve console scripts installed in
+  # the venv. Without this, pip-installed CLIs like ansible-playbook are
+  # missing from subprocess PATH even though the Python imports work.
+  local venv_path="${VENV}:${PATH}"
+
   # Barricade (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
   # BARRICADE_DEV_MODE disables static frontend serving so the Next.js dev server on :3000 is used.
   log "Starting barricade..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_DEV_MODE=1 BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/python" -m app --reload --no-celery --skip-migrate \
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_DEV_MODE=1 BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/python" -m app --reload --no-celery --skip-migrate \
     >"${logdir}/barricade.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/barricade.pid"
 
   # Celery worker
   log "Starting celery worker..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks worker \
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks worker \
     --max-tasks-per-child=100 -Q default,long_running --loglevel=info \
     >"${logdir}/celery-worker.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-worker.pid"
 
   # Celery beat
   log "Starting celery beat..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks beat \
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks beat \
     --scheduler redbeat.RedBeatScheduler --loglevel=info \
     >"${logdir}/celery-beat.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-beat.pid"
