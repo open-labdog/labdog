@@ -2378,6 +2378,16 @@ export default function HostDetailPage() {
                   <span className="text-slate-500 italic text-sm">Not collected</span>
                 )}
               </InfoRow>
+              {host.kernel_version && (
+                <InfoRow label="Kernel">
+                  <span className="font-mono text-sm">{host.kernel_version}</span>
+                </InfoRow>
+              )}
+              {host.default_nic && (
+                <InfoRow label="Default NIC">
+                  <span className="font-mono text-sm">{host.default_nic}</span>
+                </InfoRow>
+              )}
               <InfoRow label="Drift Monitoring">
                 <Badge
                   variant={host.drift_check_enabled ? "default" : "outline"}

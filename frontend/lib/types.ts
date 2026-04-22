@@ -52,6 +52,10 @@ export interface Host {
   created_at: string; updated_at: string
   os_codename: string | null
   os_pretty_name: string | null
+  os_family: string | null
+  default_nic: string | null
+  kernel_version: string | null
+  kernel_release: string | null
   os_facts_collected_at: string | null
 }
 

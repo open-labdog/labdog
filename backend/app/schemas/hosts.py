@@ -40,6 +40,10 @@ class HostResponse(BaseModel):
     ssh_key_id: int | None
     os_codename: str | None
     os_pretty_name: str | None
+    os_family: str | None
+    default_nic: str | None
+    kernel_version: str | None
+    kernel_release: str | None
     os_facts_collected_at: datetime | None
     group_ids: list[int] = []
     created_at: datetime
