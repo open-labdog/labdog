@@ -162,10 +162,6 @@ export const scanConfigSchema = z.object({
     .number({ error: "SSH key is required" })
     .int()
     .min(1, "SSH key is required"),
-  ssh_user: z
-    .string()
-    .min(1, "SSH user is required")
-    .max(32, "SSH user must be 32 chars or fewer"),
   ssh_port: z
     .number({ error: "SSH port is required" })
     .int()

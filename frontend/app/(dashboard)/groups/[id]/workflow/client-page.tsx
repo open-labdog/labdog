@@ -15,8 +15,7 @@ import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { RunStatusBadge } from "@/components/status-badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { ActionDefinition, HostGroup, UpdateWorkflow, WorkflowRun } from "@/lib/types"
+import type { HostGroup, UpdateWorkflow, WorkflowRun } from "@/lib/types"
 
 const textareaClass =
   "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
@@ -26,8 +25,6 @@ function formatDateTime(iso: string | null): string {
   return new Date(iso).toLocaleString()
 }
 
-const GROUP_ACTION_KEYS = ["linux-upgrade", "linux-os-upgrade"]
-
 interface WorkflowFormState {
   batch_size: number
   schedule_cron: string
@@ -36,8 +33,6 @@ interface WorkflowFormState {
   auto_reboot: boolean
   verification_prompt: string
   enabled: boolean
-  action_key: string
-  action_parameters: Record<string, string>
 }
 
 function workflowToForm(wf: UpdateWorkflow): WorkflowFormState {
@@ -49,8 +44,6 @@ function workflowToForm(wf: UpdateWorkflow): WorkflowFormState {
     auto_reboot: wf.auto_reboot,
     verification_prompt: wf.verification_prompt ?? "",
     enabled: wf.enabled,
-    action_key: wf.action_key ?? "linux-upgrade",
-    action_parameters: wf.action_parameters ?? {},
   }
 }
 
@@ -62,8 +55,6 @@ const defaultForm: WorkflowFormState = {
   auto_reboot: true,
   verification_prompt: "",
   enabled: false,
-  action_key: "linux-upgrade",
-  action_parameters: {},
 }
 
 export default function WorkflowConfigPage({ embedded = false }: { embedded?: boolean } = {}) {
@@ -114,13 +105,6 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
     setFormInitialized(true)
   }
 
-  const { data: actions } = useQuery({
-    queryKey: ["actions"],
-    queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"),
-  })
-
-  const groupActions = (actions ?? []).filter((a) => GROUP_ACTION_KEYS.includes(a.key))
-
   const {
     data: runs = [],
     isLoading: runsLoading,
@@ -159,8 +143,8 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
         auto_reboot: form.auto_reboot,
         verification_prompt: form.verification_prompt || null,
         enabled: form.enabled,
-        action_key: form.action_key,
-        action_parameters: form.action_parameters,
+        action_key: "linux-upgrade",
+        action_parameters: {},
       }
       await apiFetch(`/api/groups/${id}/workflow`, { method: "PUT", json: payload })
       await queryClient.invalidateQueries({ queryKey: ["group-workflow", id] })
@@ -364,83 +348,6 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
               </div>
             </div>
           </div>
-
-          {/* Action type selector */}
-          <div className="space-y-2">
-            <Label htmlFor="action-key">Action Type</Label>
-            <Select
-              value={form.action_key}
-              onValueChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  action_key: value ?? prev.action_key,
-                  action_parameters: {},
-                }))
-              }
-            >
-              <SelectTrigger id="action-key">
-                <SelectValue placeholder="Select action type" />
-              </SelectTrigger>
-              <SelectContent>
-                {groupActions.length > 0
-                  ? groupActions.map((a) => (
-                      <SelectItem key={a.key} value={a.key}>
-                        {a.name}
-                      </SelectItem>
-                    ))
-                  : GROUP_ACTION_KEYS.map((key) => (
-                      <SelectItem key={key} value={key}>
-                        {key}
-                      </SelectItem>
-                    ))}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-slate-500">The update action to run on each host in this workflow</p>
-          </div>
-
-          {/* Conditional codename fields for linux-os-upgrade */}
-          {form.action_key === "linux-os-upgrade" && (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="current-codename">Current Codename</Label>
-                <Input
-                  id="current-codename"
-                  type="text"
-                  required
-                  placeholder="e.g. bookworm"
-                  value={form.action_parameters.current_version ?? ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      action_parameters: {
-                        ...prev.action_parameters,
-                        current_version: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="target-codename">Target Codename</Label>
-                <Input
-                  id="target-codename"
-                  type="text"
-                  required
-                  placeholder="e.g. trixie"
-                  value={form.action_parameters.next_version ?? ""}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      action_parameters: {
-                        ...prev.action_parameters,
-                        next_version: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-          )}
 
           {/* Verification prompt */}
           <div className="space-y-2">

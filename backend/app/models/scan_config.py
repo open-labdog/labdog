@@ -31,7 +31,6 @@ class ScanConfig(Base):
         ForeignKey("ssh_keys.id", ondelete="RESTRICT"), nullable=False
     )
     ssh_port: Mapped[int] = mapped_column(Integer, nullable=False, default=22)
-    ssh_user: Mapped[str] = mapped_column(String(32), nullable=False, default="root")
 
     # Default groups to join when a host is added.
     default_group_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")

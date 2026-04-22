@@ -153,7 +153,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                 ok, hostname, _source_ip, ssh_err = await verify_ssh(
                     ip,
                     port=config.ssh_port,
-                    username=config.ssh_user,
+                    username=key_row.ssh_user,
                     imported_key=imported_key,
                 )
                 if ok and hostname is not None:
@@ -180,7 +180,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                         hostname=hostname,
                         ip_address=ip,
                         ssh_port=config.ssh_port,
-                        ssh_user=config.ssh_user,
+                        ssh_user=key_row.ssh_user,
                         ssh_key_id=config.ssh_key_id,
                     )
                     db.add(host)

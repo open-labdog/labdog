@@ -72,6 +72,19 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     },
   ]
 
+  // Pick the nav item whose href is the longest prefix of the current pathname.
+  // Prevents double-highlighting when nested routes (/hosts/scans) share a prefix
+  // with a parent item (/hosts).
+  const allItems = navGroups.flatMap((g) => g.items)
+  const activeHref = allItems.reduce(
+    (best, it) =>
+      (pathname === it.href || pathname.startsWith(it.href + "/")) &&
+      it.href.length > best.length
+        ? it.href
+        : best,
+    "",
+  )
+
   const onPasswordSubmit = form.handleSubmit(async (data) => {
     try {
       const res = await fetch(`${API_BASE}/api/users/me`, {
@@ -118,7 +131,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
                     onClick={onNavigation}
                     className={cn(
                       "flex items-center justify-between rounded-md px-4 py-2 text-sm font-medium transition-colors",
-                      (item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href))
+                      item.href === activeHref
                         ? "bg-slate-800 text-white"
                         : "text-slate-300 hover:bg-slate-800 hover:text-white"
                     )}

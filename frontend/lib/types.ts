@@ -504,7 +504,6 @@ export interface ScanConfig {
   cidrs: string[]
   ssh_key_id: number
   ssh_port: number
-  ssh_user: string
   default_group_ids: number[]
   interval_minutes: number | null
   cron_expression: string | null

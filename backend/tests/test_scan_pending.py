@@ -47,7 +47,6 @@ async def _create_scan_config(
         cidrs=["10.0.0.0/24"],
         ssh_key_id=ssh_key_id,
         ssh_port=22,
-        ssh_user="root",
         default_group_ids=group_ids,
         interval_minutes=60,
     )
@@ -205,7 +204,6 @@ class TestApprove:
             cidrs=["172.16.0.0/24"],
             ssh_key_id=ssh_key.id,
             ssh_port=22,
-            ssh_user="root",
             default_group_ids=[],
             interval_minutes=60,
         )
@@ -330,7 +328,6 @@ class TestDismiss:
             cidrs=["192.168.50.0/24"],
             ssh_key_id=ssh_key.id,
             ssh_port=22,
-            ssh_user="root",
             default_group_ids=[],
             interval_minutes=60,
         )

@@ -53,6 +53,7 @@ register(
         version="1.0",
         estimated_duration="5\u201315 min",
         destructive=True,
+        supports_group=False,
         parameters=(
             ActionParameter(
                 key="auto_reboot",
