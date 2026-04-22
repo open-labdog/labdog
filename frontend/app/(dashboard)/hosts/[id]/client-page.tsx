@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, type FormEvent } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
@@ -752,11 +752,15 @@ function WorkflowStatusSection({ hostId }: { hostId: number }) {
   )
 }
 
+type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions"
+
 export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState<"overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions">("overview")
+  const searchParams = useSearchParams()
+  const initialTab = (searchParams.get("tab") as HostTab) || "overview"
+  const [activeTab, setActiveTab] = useState<HostTab>(initialTab)
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
