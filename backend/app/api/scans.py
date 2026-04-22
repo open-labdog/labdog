@@ -267,6 +267,7 @@ async def approve_pending_hosts(
 
     approved = 0
     skipped_ips: list[str] = []
+    approved_host_ids: list[int] = []
 
     for pending in pending_rows:
         ip = pending.ip_address
@@ -296,6 +297,7 @@ async def approve_pending_hosts(
         # Prevent within-batch duplicates if the same IP appears twice in the request.
         existing_ips.add(ip)
         approved += 1
+        approved_host_ids.append(host.id)
 
         await log_action(
             db,
@@ -318,6 +320,15 @@ async def approve_pending_hosts(
         )
 
     await db.commit()
+
+    # Kick off OS-facts collection for the newly-promoted hosts so os_codename
+    # is populated before the user opens them.
+    if approved_host_ids:
+        from app.tasks import celery_app  # noqa: PLC0415
+
+        for hid in approved_host_ids:
+            celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
+
     return ApproveResponse(
         approved=approved,
         skipped=len(skipped_ips),

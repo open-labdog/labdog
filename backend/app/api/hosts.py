@@ -119,6 +119,15 @@ async def create_host(
 
     await db.commit()
     await db.refresh(host)
+
+    # Kick off OS-facts collection so os_codename / os_pretty_name are populated
+    # by the time the user next lands on the host overview page. Deferred import
+    # keeps the hot import chain clean.
+    if host.ssh_key_id is not None:
+        from app.tasks import celery_app  # noqa: PLC0415
+
+        celery_app.send_task("app.tasks.facts.collect_host_facts", args=[host.id])
+
     return host
 
 
