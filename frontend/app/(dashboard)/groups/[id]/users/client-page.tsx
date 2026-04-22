@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { ItemStateBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,13 +25,6 @@ import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
 
-function UserStateBadge({ state }: { state: string }) {
-  return (
-    <Badge className={state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
 
 export default function GroupUsersPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
@@ -278,7 +272,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 key: "state",
                 label: "State",
                 accessor: (user) => user.state,
-                cell: (user) => <UserStateBadge state={user.state} />,
+                cell: (user) => <ItemStateBadge state={user.state} />,
                 defaultWidth: 120,
                 filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },
@@ -395,7 +389,7 @@ export default function GroupUsersPage({ embedded = false }: { embedded?: boolea
                 key: "state",
                 label: "State",
                 accessor: (g) => g.state,
-                cell: (g) => <UserStateBadge state={g.state} />,
+                cell: (g) => <ItemStateBadge state={g.state} />,
                 defaultWidth: 120,
                 filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
               },

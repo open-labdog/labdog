@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { InfoIcon, GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { ItemStateBadge } from "@/components/status-badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -30,13 +30,6 @@ import type { CronJob, HostGroup } from "@/lib/types"
 
 import { cronToHuman } from "@/lib/cron"
 
-function StateBadge({ state }: { state: string }) {
-  return (
-    <Badge className={state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
 
 interface EnvVar {
   key: string
@@ -320,7 +313,7 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               key: "state",
               label: "State",
               accessor: (j) => j.state,
-              cell: (j) => <StateBadge state={j.state} />,
+              cell: (j) => <ItemStateBadge state={j.state} />,
               defaultWidth: 110,
               filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
             },
