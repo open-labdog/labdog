@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { RunStatusBadge } from "@/components/status-badge"
-import { apiFetch } from "@/lib/api"
+import { API_BASE, apiFetch } from "@/lib/api"
 import { toast } from "sonner"
 import type { ActionRun, ActionHostRun } from "@/lib/types"
 
@@ -16,6 +16,15 @@ interface ActionRunDetailProps {
 }
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
+
+// Strip ANSI CSI SGR escape sequences (colour codes) from Ansible output.
+// Future runs are emitted uncoloured via ANSIBLE_NOCOLOR=1; this keeps legacy
+// rows that were captured before that env var was set rendering cleanly too.
+// eslint-disable-next-line no-control-regex
+const ANSI_SGR = /\x1B\[[0-9;]*m/g
+function stripAnsi(text: string): string {
+  return text.replace(ANSI_SGR, "")
+}
 
 export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailProps) {
   const queryClient = useQueryClient()
@@ -36,18 +45,55 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
     },
   })
 
+  // Terminal runs: fetch stored output from DB (SSE doesn't replay)
+  useEffect(() => {
+    if (!run || !TERMINAL.has(run.status)) return
+    if (output) return  // already have it — either from SSE or a previous fetch
+    if (run.host_runs.length === 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const parts = await Promise.all(
+        run.host_runs.map(async (hr) => {
+          try {
+            const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/hosts/${hr.host_id}/output`, {
+              credentials: "include",
+            })
+            if (!res.ok) return ""
+            const text = await res.text()
+            // Prefix per-host section only when there are multiple hosts (group run)
+            if (run.host_runs.length > 1) {
+              return `===== Host ${hr.host_id} (${hr.status}) =====\n${text}\n`
+            }
+            return text
+          } catch {
+            return ""
+          }
+        }),
+      )
+      if (!cancelled) setOutput(stripAnsi(parts.join("\n")))
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [run, runId, output])
+
   // SSE subscription for live output
   useEffect(() => {
     if (!runId) return
     if (run && TERMINAL.has(run.status)) return  // already done, no need for SSE
 
-    const es = new EventSource(`/api/actions/runs/${runId}/stream`)
+    const es = new EventSource(`${API_BASE}/api/actions/runs/${runId}/stream`, {
+      withCredentials: true,
+    })
 
     es.addEventListener("output", (e) => {
       try {
         const data = JSON.parse(e.data) as { text?: string }
         if (data.text) {
-          setOutput((prev) => prev + data.text)
+          const clean = stripAnsi(data.text)
+          setOutput((prev) => prev + clean)
         }
       } catch {}
     })

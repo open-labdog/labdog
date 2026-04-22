@@ -99,7 +99,14 @@ def run_ansible(
     with open(f"{private_data_dir}/inventory/hosts", "w") as f:
         f.write(inventory_json)
 
-    merged_env = {"ANSIBLE_ROLES_PATH": str(ANSIBLE_ROLES_PATH)}
+    # Ansible output is captured into the DB and rendered in HTML, not a
+    # terminal. ansible-runner attaches a pty by default, which makes Ansible
+    # emit ANSI SGR escape codes that show up as literal garbage in the UI.
+    # ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
+    merged_env = {
+        "ANSIBLE_ROLES_PATH": str(ANSIBLE_ROLES_PATH),
+        "ANSIBLE_NOCOLOR": "1",
+    }
     if envvars:
         merged_env.update(envvars)
 
