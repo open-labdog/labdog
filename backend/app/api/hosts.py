@@ -341,21 +341,27 @@ async def delete_host(
     await db.commit()
 
 
-@router.post("/{host_id}/detect-firewall", response_model=HostResponse)
+@router.post("/{host_id}/detect-firewall", status_code=202)
 async def detect_firewall(
     host_id: int,
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Detect firewall backend on host via Ansible. Stub for now — returns current state."""
+    """Re-run host facts collection, which re-probes the firewall backend.
+
+    The facts task writes nftables / iptables / unknown based on which
+    binary is present on the host. Returns 202 queued — the updated
+    firewall_backend will be visible after the task completes.
+    """
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    # Real detection implemented in T16 (Ansible integration)
-    # For now, return current state unchanged
-    return host
+    from app.tasks.facts import collect_host_facts  # noqa: PLC0415
+
+    collect_host_facts.delay(host_id)
+    return {"status": "queued"}
 
 
 @router.post("/{host_id}/facts/refresh", status_code=202)

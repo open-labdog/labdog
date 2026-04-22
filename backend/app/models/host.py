@@ -68,6 +68,10 @@ class Host(Base):
     )
     os_codename: Mapped[str | None] = mapped_column(String(64), nullable=True)
     os_pretty_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    os_family: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    default_nic: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    kernel_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kernel_release: Mapped[str | None] = mapped_column(String(32), nullable=True)
     os_facts_collected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
