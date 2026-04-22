@@ -34,9 +34,7 @@ def _derive_os_family(parsed: dict[str, str]) -> str | None:
 
 # Skip loopback, docker, bridges, virtual, wireguard, tailscale, and most
 # common virt interfaces when picking the primary NIC.
-_VIRT_NIC_RE = re.compile(
-    r"^(lo|docker|br-|veth|tailscale|wg|tun|tap|virbr|vnet|cni|flannel|cali)"
-)
+_VIRT_NIC_RE = re.compile(r"^(lo|docker|br-|veth|tailscale|wg|tun|tap|virbr|vnet|cni|flannel|cali)")
 
 
 def _pick_default_nic(ip_link_output: str) -> str | None:
@@ -138,9 +136,7 @@ def collect_host_facts(host_id: int):
                 host.kernel_version = (uname_r.stdout or "").strip() or None
                 host.kernel_release = (uname_s.stdout or "").strip() or None
                 host.default_nic = _pick_default_nic(ip_link.stdout or "")
-                backend_str = _detect_firewall_backend(
-                    nft.stdout or "", iptables.stdout or ""
-                )
+                backend_str = _detect_firewall_backend(nft.stdout or "", iptables.stdout or "")
                 host.firewall_backend = FirewallBackend(backend_str)
                 host.os_facts_collected_at = datetime.now(UTC)
                 await db.commit()

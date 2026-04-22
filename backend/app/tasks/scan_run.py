@@ -279,9 +279,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             # Best-effort: broker hiccups must not fail the scan.
             for hid in auto_added_host_ids:
                 try:
-                    celery_app.send_task(
-                        "app.tasks.facts.collect_host_facts", args=[hid]
-                    )
+                    celery_app.send_task("app.tasks.facts.collect_host_facts", args=[hid])
                 except Exception:
                     logger.warning(
                         "scan_run: could not enqueue collect_host_facts for host %d",

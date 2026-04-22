@@ -196,9 +196,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                         pve_node = vm_mapping.pve_node_name
                         vmid = vm_mapping.vmid
                         node_result = await db.execute(
-                            select(ProxmoxNode).where(
-                                ProxmoxNode.id == vm_mapping.proxmox_node_id
-                            )
+                            select(ProxmoxNode).where(ProxmoxNode.id == vm_mapping.proxmox_node_id)
                         )
                         proxmox_node = node_result.scalar_one()
                         token_secret = decrypt_ssh_key(
@@ -264,12 +262,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
 
             try:
-                snapshot_name = await create_snapshot(
-                    proxmox_client, pve_node, vmid, action_run_id
-                )
-                step_log.append(
-                    f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}"
-                )
+                snapshot_name = await create_snapshot(proxmox_client, pve_node, vmid, action_run_id)
+                step_log.append(f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}")
                 async with task_session() as db:
                     hr_result = await db.execute(
                         select(ActionHostRun).where(ActionHostRun.id == host_run_id)
@@ -323,16 +317,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         )
         if len(playbook_output.encode()) > MAX_OUTPUT_BYTES:
             playbook_output = (
-                playbook_output[:MAX_OUTPUT_BYTES]
-                + "\n\n(truncated — output exceeded 1 MB)"
+                playbook_output[:MAX_OUTPUT_BYTES] + "\n\n(truncated — output exceeded 1 MB)"
             )
 
         playbook_success: bool = runner.status == "successful"
         exit_code: int = runner.rc
 
-        step_log.append(
-            f"[playbook] exit={exit_code} status={runner.status}"
-        )
+        step_log.append(f"[playbook] exit={exit_code} status={runner.status}")
         step_log.append("=== Ansible output ===")
         step_log.append(playbook_output)
 
@@ -399,9 +390,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         success = playbook_success and verification_passed
         error_msg: str | None = None
         if not playbook_success:
-            error_msg = (
-                f"ansible-runner exited with status={runner.status}, rc={exit_code}"
-            )
+            error_msg = f"ansible-runner exited with status={runner.status}, rc={exit_code}"
         elif not verification_passed:
             error_msg = verification_error
 
