@@ -2368,27 +2368,24 @@ export default function HostDetailPage() {
                 )}
               </InfoRow>
               <InfoRow label="Drift Monitoring">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className={host.drift_check_enabled
-                    ? "text-green-400 hover:text-green-300 h-auto py-0.5 px-2"
-                    : "text-slate-400 hover:text-white h-auto py-0.5 px-2"
+                <Badge
+                  variant={host.drift_check_enabled ? "default" : "outline"}
+                  className={host.drift_check_enabled ? "bg-green-700 text-white cursor-pointer" : "cursor-pointer"}
+                  render={
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await apiFetch(`/api/hosts/${id}`, {
+                          method: "PUT",
+                          body: JSON.stringify({ drift_check_enabled: !host.drift_check_enabled }),
+                        })
+                        await queryClient.invalidateQueries({ queryKey: ["host", id] })
+                      }}
+                    />
                   }
-                  onClick={async () => {
-                    await apiFetch(`/api/hosts/${id}`, {
-                      method: "PUT",
-                      body: JSON.stringify({ drift_check_enabled: !host.drift_check_enabled }),
-                    })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  }}
                 >
-                  {host.drift_check_enabled ? (
-                    <Badge className="bg-green-700 text-white cursor-pointer">Enabled</Badge>
-                  ) : (
-                    <Badge variant="outline" className="cursor-pointer">Disabled</Badge>
-                  )}
-                </Button>
+                  {host.drift_check_enabled ? "Enabled" : "Disabled"}
+                </Badge>
               </InfoRow>
             </div>
           )}

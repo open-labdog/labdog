@@ -15,7 +15,7 @@ export function SyncStatusBadge({ status }: { status: SyncStatus }) {
 
 export function FirewallBadge({ backend }: { backend: FirewallBackend }) {
   if (backend === "unknown") {
-    return <Badge className="bg-slate-700 text-slate-400">unknown</Badge>
+    return <Badge className="bg-slate-600 text-slate-300">Unknown</Badge>
   }
   return <Badge variant="outline">{backend}</Badge>
 }
