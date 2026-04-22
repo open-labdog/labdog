@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useLayoutEffect, useEffect } from "react"
+import { useState, useRef, useLayoutEffect, useEffect, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -124,13 +124,16 @@ function RowActions({
   onRun: (scan: ScanConfig) => void
 }) {
   const [open, setOpen] = useState(false)
-  const [mounted, setMounted] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number }>({ top: 0, right: 0 })
   const triggerRef = useRef<HTMLDivElement>(null)
   const hasPending = (scan.last_run_hosts_pending ?? 0) > 0
 
   // Guard SSR: only portal once the client has mounted
-  useEffect(() => { setMounted(true) }, [])
+  const mounted = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  )
 
   // Compute fixed-position coords from the trigger's bounding rect whenever the menu opens
   useLayoutEffect(() => {

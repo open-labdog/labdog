@@ -11,9 +11,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 
 from app.db import task_session
 from app.tasks import celery_app
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Advisory-lock key derivation
