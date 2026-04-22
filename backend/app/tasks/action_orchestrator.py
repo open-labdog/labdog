@@ -124,6 +124,7 @@ async def _run_action_async(action_run_id: int) -> None:
     # ------------------------------------------------------------------ #
     import redis as redis_lib
     from celery import group as celery_group
+    from celery.result import allow_join_result
 
     from app.config import settings
 
@@ -166,7 +167,12 @@ async def _run_action_async(action_run_id: int) -> None:
             )
             result = tasks.apply_async()
             try:
-                result.join(timeout=3600, propagate=False)
+                # Celery refuses synchronous result-waiting from within a task
+                # by default (deadlock risk when the worker pool is saturated).
+                # allow_join_result() is the documented opt-in for orchestrators
+                # that genuinely need to block until their children finish.
+                with allow_join_result():
+                    result.join(timeout=3600, propagate=False)
             except Exception as exc:
                 logger.warning(
                     "action_orchestrator: action_run %d batch %d wait error: %s",
