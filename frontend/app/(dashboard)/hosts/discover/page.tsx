@@ -224,7 +224,7 @@ export default function DiscoverHostsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discover" }]} />
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discovery", href: "/hosts/discovery" }, { label: "Scan now" }]} />
       <div>
         <h1 className="text-2xl font-bold text-white">Discover Hosts</h1>
         <p className="text-slate-400 text-sm mt-1">

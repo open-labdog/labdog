@@ -1,5 +1,12 @@
-import ScansPage from "./client-page"
+"use client"
 
-export default function Page() {
-  return <ScansPage />
+import { useEffect } from "react"
+import { useRouter } from "next/navigation"
+
+export default function ScansRedirect() {
+  const router = useRouter()
+  useEffect(() => {
+    router.replace("/hosts/discovery")
+  }, [router])
+  return null
 }

@@ -1,9 +1,9 @@
-import ScanPendingRedirectClient from "./redirect-client"
+import ScanRedirectClient from "./redirect-client"
 
 export async function generateStaticParams() {
   return [{ id: "placeholder" }]
 }
 
 export default function Page() {
-  return <ScanPendingRedirectClient />
+  return <ScanRedirectClient />
 }
