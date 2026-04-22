@@ -8,9 +8,11 @@ import { RunStatusBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { apiFetch } from "@/lib/api"
+import { formatRelativeTime } from "@/lib/utils"
 import type { ColumnDef } from "@/components/ui/data-table"
 import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 interface ActionsTabProps {
   scope: "host" | "group"
@@ -27,6 +29,7 @@ function formatDuration(run: ActionRun): string {
 }
 
 export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
+  const router = useRouter()
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
 
@@ -70,40 +73,34 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
       label: "Action",
       cell: (r) => {
         const def = (catalog ?? []).find((a) => a.key === r.action_key)
-        return def?.name ?? r.action_key
+        return <span className="text-sm">{def?.name ?? r.action_key}</span>
       },
     },
     {
       key: "status",
       label: "Status",
       cell: (r) => <RunStatusBadge status={r.status} />,
+      defaultWidth: 100,
     },
     {
       key: "duration",
       label: "Duration",
-      cell: (r) => formatDuration(r),
+      cell: (r) => <span className="text-xs text-slate-400">{formatDuration(r)}</span>,
+      defaultWidth: 80,
     },
     {
       key: "created_at",
       label: "Started",
-      cell: (r) => new Date(r.created_at).toLocaleString(),
-    },
-    {
-      key: "logs",
-      label: "",
-      cell: (r) => {
-        const base = scope === "host" ? `/hosts/${targetId}` : `/groups/${targetId}`
-        return (
-          <Link
-            href={`${base}/actions/runs/${r.id}`}
-            className="text-xs text-blue-400 hover:text-blue-300"
-          >
-            Logs →
-          </Link>
-        )
-      },
+      cell: (r) => (
+        <span className="text-xs text-slate-400" title={new Date(r.created_at).toLocaleString()}>
+          {formatRelativeTime(r.created_at)}
+        </span>
+      ),
+      defaultWidth: 100,
     },
   ]
+
+  const runsBasePath = scope === "host" ? `/hosts/${targetId}` : `/groups/${targetId}`
 
   return (
     <div className="space-y-6">
@@ -150,7 +147,13 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
           ) : !runs || runs.length === 0 ? (
             <p className="text-sm text-slate-500">No runs yet.</p>
           ) : (
-            <DataTable tableId="action-runs" columns={runColumns} data={runs} />
+            <DataTable
+              tableId="action-runs"
+              columns={runColumns}
+              data={runs}
+              onRowClick={(r) => router.push(`${runsBasePath}/actions/runs/${r.id}`)}
+              rowClassName={() => "cursor-pointer"}
+            />
           )}
         </div>
       </div>
