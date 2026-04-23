@@ -5,10 +5,10 @@ from typing import Any
 import yaml
 
 from app.gitops.schema import (
-    LabDogGroupYAML,
     CronJobYAML,
     FirewallRuleYAML,
     HostsEntryYAML,
+    LabDogGroupYAML,
     LinuxGroupYAML,
     LinuxUserYAML,
     PackageRepositoryYAML,

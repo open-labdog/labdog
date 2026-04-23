@@ -9,7 +9,7 @@ from app.audit.logger import log_action
 from app.cron.models import CronJob, CronState
 from app.cron.validators import validate_cron_expression
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import LabDogGroupYAML, CronJobYAML
+from app.gitops.schema import CronJobYAML, LabDogGroupYAML
 from app.models.host_group import HostGroup
 
 logger = logging.getLogger(__name__)
