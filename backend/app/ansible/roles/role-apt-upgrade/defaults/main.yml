@@ -4,8 +4,8 @@
 dist_upgrade: false
 
 # Expected current release codename of the node being upgraded
-# The playbook verifies ansible_distribution_release matches this value,
-# preventing accidental version skips (e.g. bullseye -> trixie)
+# The playbook verifies ansible_facts['distribution_release'] matches this
+# value, preventing accidental version skips (e.g. bullseye -> trixie)
 # Required when dist_upgrade is true
 # Examples: bookworm (Debian 12), jammy (Ubuntu 22.04)
 current_version: ""

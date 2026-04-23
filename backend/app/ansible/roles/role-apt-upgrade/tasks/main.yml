@@ -1,14 +1,14 @@
 ---
 - name: Fail if OS family is not Debian
   ansible.builtin.fail:
-    msg: "This role only supports Debian-based systems. Detected OS family: {{ ansible_os_family }}"
-  when: ansible_os_family != "Debian"
+    msg: "This role only supports Debian-based systems. Detected OS family: {{ ansible_facts['os_family'] }}"
+  when: ansible_facts['os_family'] != "Debian"
 
 - name: Show upgrade plan
   ansible.builtin.debug:
     msg: >-
       Upgrade plan for {{ inventory_hostname }}
-      ({{ ansible_distribution }} {{ ansible_distribution_release }}):
+      ({{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_release'] }}):
       Standard upgrade — always runs.
       {% if dist_upgrade | bool %}
         {% if _version_ok | default(true) | bool %}
@@ -16,7 +16,7 @@
       {{ current_version }} to {{ next_version }}.
         {% else %}
       Dist-upgrade — SKIPPED due to version mismatch
-      (node is {{ ansible_distribution_release }}, expected {{ current_version }}).
+      (node is {{ ansible_facts['distribution_release'] }}, expected {{ current_version }}).
         {% endif %}
       {% else %}
       Dist-upgrade — skipped.
@@ -114,9 +114,9 @@
       ansible.builtin.debug:
         msg: >-
           Host {{ inventory_hostname }} is up after reboot.
-          Interface: {{ ansible_default_ipv4.interface | default('unknown') }},
-          IP: {{ ansible_default_ipv4.address | default('unknown') }}.
+          Interface: {{ ansible_facts['default_ipv4']['interface'] | default('unknown') }},
+          IP: {{ ansible_facts['default_ipv4']['address'] | default('unknown') }}.
           {% if _pre_reboot_nic is defined and
-                _pre_reboot_nic != (ansible_default_ipv4.interface | default('')) %}
-          NIC was renamed from {{ _pre_reboot_nic }} to {{ ansible_default_ipv4.interface }}.
+                _pre_reboot_nic != (ansible_facts['default_ipv4']['interface'] | default('')) %}
+          NIC was renamed from {{ _pre_reboot_nic }} to {{ ansible_facts['default_ipv4']['interface'] }}.
           {% endif %}
