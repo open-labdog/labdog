@@ -446,9 +446,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                         proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db
                     )
                     await db.commit()
-                _log_step(
-                    f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip()
-                )
+                _log_step(f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip())
             except Exception as exc:
                 logger.exception(
                     "action_host: rollback failed for action_run %d host %d: %s",
