@@ -1,7 +1,6 @@
 import json
 import re
 
-
 # Ansible inventory names must be a single token — no spaces, no commas.
 # Hostnames we receive can be arbitrary user input, so sanitise anything that
 # isn't safe. Keep it simple: letters, digits, dot, dash, underscore; replace

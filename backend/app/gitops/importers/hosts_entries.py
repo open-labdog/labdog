@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import LabDogGroupYAML, HostsEntryYAML
+from app.gitops.schema import HostsEntryYAML, LabDogGroupYAML
 from app.hosts_mgmt.models import HostsEntry
 from app.models.host import Host
 from app.models.host_group import HostGroup
