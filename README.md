@@ -1,4 +1,6 @@
-# Barricade
+# LabDog
+
+## *A homelabber's best friend.*
 
 Centralized Linux configuration management via Ansible. Manage firewall rules, systemd services, `/etc/hosts`, and more from a web UI — preview changes before applying, detect drift, and sync to hosts over SSH.
 

@@ -7,7 +7,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.gitops.schema import BarricadeGroupYAML
+from app.gitops.schema import LabDogGroupYAML
 from app.gitops.serializer import YAMLParseError, yaml_rules_to_specs
 from app.models.firewall_rule import FirewallRule
 from app.models.host_group import HostGroup
@@ -39,7 +39,7 @@ class ModuleImportResult:
 
 async def import_firewall(
     group: HostGroup,
-    parsed: BarricadeGroupYAML,
+    parsed: LabDogGroupYAML,
     commit_sha: str,
     db: AsyncSession,
 ) -> ModuleImportResult:
@@ -54,7 +54,7 @@ async def import_firewall(
 
     Args:
         group: The target ``HostGroup`` ORM instance.
-        parsed: Validated ``BarricadeGroupYAML`` from the current commit.
+        parsed: Validated ``LabDogGroupYAML`` from the current commit.
         commit_sha: Full commit SHA string (for audit trail).
         db: Active async database session.
 

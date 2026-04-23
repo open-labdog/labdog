@@ -8,7 +8,7 @@ The dashboard gives a fleet-wide health overview at a glance.
 
 | Card | What it shows |
 |------|---------------|
-| **Total Hosts** | All hosts registered in Barricade |
+| **Total Hosts** | All hosts registered in LabDog |
 | **Hosts in Sync** | Hosts whose current state matches desired state |
 | **Hosts Drifted** | Hosts where actual state has diverged from desired |
 | **Hosts with Errors** | Hosts where the last sync or drift check failed |

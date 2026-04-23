@@ -74,7 +74,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
         WorkflowStep,
     )
 
-    ssh_key_path = f"/dev/shm/barricade-wf-{host_run_id}.key"
+    ssh_key_path = f"/dev/shm/labdog-wf-{host_run_id}.key"
 
     try:
         async with task_session() as db:

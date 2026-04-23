@@ -75,18 +75,18 @@ class TestIptablesRenderer:
 
     def test_contains_default_policies(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert ":BARRICADE-INPUT - [0:0]" in v4
-        assert ":BARRICADE-OUTPUT - [0:0]" in v4
-        assert "-A BARRICADE-INPUT -j DROP" in v4
-        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert ":LABDOG-INPUT - [0:0]" in v4
+        assert ":LABDOG-OUTPUT - [0:0]" in v4
+        assert "-A LABDOG-INPUT -j DROP" in v4
+        assert "-A LABDOG-OUTPUT -j ACCEPT" in v4
 
     def test_contains_conntrack(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A BARRICADE-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT" in v4
+        assert "-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT" in v4
 
     def test_contains_loopback(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A BARRICADE-INPUT -i lo -j ACCEPT" in v4
+        assert "-A LABDOG-INPUT -i lo -j ACCEPT" in v4
 
     def test_ipv6_rule_goes_to_v6_file(self):
         rules = [

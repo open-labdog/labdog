@@ -1,7 +1,7 @@
-# Barricade Documentation
+# LabDog Documentation
 
-Guides and reference material for running Barricade. For a project
-summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barricade/-/blob/dev/README.md).
+Guides and reference material for running LabDog. For a project
+summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/-/blob/dev/README.md).
 
 ## Contents
 
@@ -34,7 +34,7 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barrica
 
 | Section | What it covers |
 |---|---|
-| [ui/](./ui/README.md) | Overview of every page in the Barricade web interface |
+| [ui/](./ui/README.md) | Overview of every page in the LabDog web interface |
 | [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Check All |
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, sync) |
@@ -52,11 +52,11 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barrica
 | [examples/gitops/web-servers.yaml](./examples/gitops/web-servers.yaml) | Realistic web-tier example covering all seven modules. |
 | [examples/gitops/database.yaml](./examples/gitops/database.yaml) | Realistic PostgreSQL-tier example with a declared apt repository, per-user cron backups, and different resolver backend. |
 | [examples/gitops/modules/](./examples/gitops/modules/) | One focused YAML per module (firewall, services, packages, hosts-entries, cron-jobs, resolver, users) with every field annotated and edge cases demonstrated. |
-| [examples/precedence/](./examples/precedence/README.md) | How Barricade merges group-level and host-level configurations when a host belongs to multiple groups. Worked examples for every module. |
+| [examples/precedence/](./examples/precedence/README.md) | How LabDog merges group-level and host-level configurations when a host belongs to multiple groups. Worked examples for every module. |
 
 ### Where to start
 
-- **New to Barricade?** → [ui/README.md](./ui/README.md) for a tour of the interface
+- **New to LabDog?** → [ui/README.md](./ui/README.md) for a tour of the interface
 - **Configuring operational settings?** → [ui/settings.md](./ui/settings.md)
 - **Setting up GitOps for the first time?** → [examples/gitops/README.md](./examples/gitops/README.md)
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
@@ -66,13 +66,13 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/barrica
 
 The YAML examples in this tree parse cleanly against the live Pydantic
 schema; the schema itself lives in
-[`backend/app/gitops/schema.py`](https://gitlab.lan.tyresson.se/dennis/barricade/-/blob/dev/backend/app/gitops/schema.py)
+[`backend/app/gitops/schema.py`](https://gitlab.lan.tyresson.se/dennis/labdog/-/blob/dev/backend/app/gitops/schema.py)
 and is the source of truth. Per-module handlers are in
-[`backend/app/gitops/importers/`](https://gitlab.lan.tyresson.se/dennis/barricade/-/tree/dev/backend/app/gitops/importers/).
+[`backend/app/gitops/importers/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/backend/app/gitops/importers/).
 
 ## How Configuration Is Applied
 
-Barricade organizes configuration through **host groups**. You define rules at the group level, assign hosts to one or more groups, and Barricade merges everything into a single effective configuration per host.
+LabDog organizes configuration through **host groups**. You define rules at the group level, assign hosts to one or more groups, and LabDog merges everything into a single effective configuration per host.
 
 ### Groups, Hosts, and Priority
 
@@ -109,27 +109,27 @@ Host overrides are applied after the group merge, so they always win regardless 
 
 ### How Sync Applies to the Remote Host
 
-When you sync, Barricade computes the full effective configuration and pushes it to the host via Ansible. The apply strategy differs by module:
+When you sync, LabDog computes the full effective configuration and pushes it to the host via Ansible. The apply strategy differs by module:
 
 | Module | Strategy | What happens on sync | Manual edits on host? |
 |--------|----------|---------------------|-----------------------|
 | **Firewall (nftables)** | Full replacement | Writes complete `/etc/nftables.conf` (includes `flush ruleset`), validates, reloads | Overwritten |
 | **Firewall (iptables)** | Full replacement | Writes complete iptables rules via `iptables-restore`, validates, persists | Overwritten |
 | **/etc/hosts** | Full replacement | Writes complete `/etc/hosts` via atomic copy, validates localhost entry exists | Overwritten |
-| **Services** | Per-service tasks | Deploys unit files (full or override) if configured, sets `state` (started/stopped) and `enabled` (true/false), cleans up orphaned Barricade-managed files | Preserved (unmanaged services are left alone) |
+| **Services** | Per-service tasks | Deploys unit files (full or override) if configured, sets `state` (started/stopped) and `enabled` (true/false), cleans up orphaned LabDog-managed files | Preserved (unmanaged services are left alone) |
 | **Packages** | Per-package tasks | Installs/removes individual packages via `apt`/`dnf`/`yum` (auto-detected) | Preserved (unmanaged packages are left alone) |
 | **Linux users** | Per-user tasks | Creates/removes users, sets authorized_keys (`exclusive=true`), writes `/etc/sudoers.d/{user}` | Preserved (unmanaged users are left alone) |
 | **Cron jobs** | Per-job tasks | Creates/removes individual cron entries via `crontab` (identified by job name) | Preserved (unmanaged cron jobs are left alone) |
 | **DNS resolver** | Full replacement | Writes complete resolver config (`/etc/resolv.conf`, `systemd-resolved`, or NetworkManager), restarts service | Overwritten |
 
-**Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/iptables, /etc/hosts, DNS resolver) use **full replacement** — Barricade owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs) are **selectively managed** — only the items you define in Barricade are touched; everything else on the host is left alone.
+**Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/iptables, /etc/hosts, DNS resolver) use **full replacement** — LabDog owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs) are **selectively managed** — only the items you define in LabDog are touched; everything else on the host is left alone.
 
 ### Automatic Safety Rules
 
-- **SSH lockout prevention**: An SSH ACCEPT rule for the Barricade server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
+- **SSH lockout prevention**: An SSH ACCEPT rule for the LabDog server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
 - **System /etc/hosts entries**: `127.0.0.1 localhost` and `::1 localhost` are always injected into the rendered hosts file, regardless of what you configure.
 - **Protected service deny-list**: Critical services (`sshd`, `systemd-*`) are blocked from management to prevent accidental lockout.
-- **DNS resolver header**: A `# Managed by Barricade` comment is injected into rendered resolver config files.
+- **DNS resolver header**: A `# Managed by LabDog` comment is injected into rendered resolver config files.
 
 ## Architecture
 
@@ -145,22 +145,22 @@ When you sync, Barricade computes the full effective configuration and pushes it
 
 ### From Package (Recommended)
 
-Pre-built packages are available on the [Releases](https://gitlab.lan.tyresson.se/dennis/barricade/-/releases) page for each tagged version.
+Pre-built packages are available on the [Releases](https://gitlab.lan.tyresson.se/dennis/labdog/-/releases) page for each tagged version.
 
 **Debian / Ubuntu (.deb)**
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade_${VERSION}-1_amd64.deb
-sudo apt install ./barricade_${VERSION}-1_amd64.deb
+curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog_${VERSION}-1_amd64.deb
+sudo apt install ./labdog_${VERSION}-1_amd64.deb
 ```
 
 **RHEL / Fedora / Rocky (.rpm)**
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade-${VERSION}-1.x86_64.rpm
-sudo dnf install ./barricade-${VERSION}-1.x86_64.rpm
+curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog-${VERSION}-1.x86_64.rpm
+sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 ```
 
 After package install, skip to [Post-install configuration](#post-install-configuration).
@@ -169,25 +169,25 @@ After package install, skip to [Post-install configuration](#post-install-config
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/barricade-${VERSION}-linux-amd64.tar.gz
-tar -xzf barricade-${VERSION}-linux-amd64.tar.gz
-cd barricade-${VERSION}-linux-amd64
+curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
+tar -xzf labdog-${VERSION}-linux-amd64.tar.gz
+cd labdog-${VERSION}-linux-amd64
 sudo ./install.sh
 ```
 
 ### Verifying Downloads
 
 ```bash
-curl -LO https://gitlab.example.com/dennis/barricade/-/packages/generic/barricade/${VERSION}/SHA256SUMS
+curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
 ### Post-install Configuration
 
-All three install methods place the default config at `/etc/barricade/barricade.toml`. Edit it before starting the service:
+All three install methods place the default config at `/etc/labdog/labdog.toml`. Edit it before starting the service:
 
 ```bash
-sudo nano /etc/barricade/barricade.toml
+sudo nano /etc/labdog/labdog.toml
 ```
 
 **Required fields:**
@@ -196,17 +196,17 @@ sudo nano /etc/barricade/barricade.toml
 |---------|-------------|-----------------|
 | `[security] secret_key` | JWT signing key | `openssl rand -base64 32` |
 | `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes, base64) | `openssl rand -base64 32` |
-| `[security] barricade_server_ip` | This server's IP (used in SSH lockout prevention rule) | `ip route get 1 \| awk '{print $7; exit}'` |
+| `[security] labdog_server_ip` | This server's IP (used in SSH lockout prevention rule) | `ip route get 1 \| awk '{print $7; exit}'` |
 | `[database] url` | PostgreSQL async connection string | — |
 
 ```toml
 [security]
 secret_key    = "<output of: openssl rand -base64 32>"
 encryption_key = "<output of: openssl rand -base64 32>"
-barricade_server_ip = "192.168.1.10"   # this server's IP
+labdog_server_ip = "192.168.1.10"   # this server's IP
 
 [database]
-url = "postgresql+asyncpg://barricade:password@localhost:5432/barricade"
+url = "postgresql+asyncpg://labdog:password@localhost:5432/labdog"
 ```
 
 **Prerequisites** (not bundled):
@@ -217,13 +217,13 @@ url = "postgresql+asyncpg://barricade:password@localhost:5432/barricade"
 **Start the service:**
 
 ```bash
-sudo systemctl enable --now barricade.service
-sudo systemctl status barricade.service
+sudo systemctl enable --now labdog.service
+sudo systemctl status labdog.service
 # Logs:
-sudo journalctl -u barricade -f
+sudo journalctl -u labdog -f
 ```
 
-Barricade listens on `http://127.0.0.1:8000` by default. Put it behind a reverse proxy (nginx, Caddy) for HTTPS.
+LabDog listens on `http://127.0.0.1:8000` by default. Put it behind a reverse proxy (nginx, Caddy) for HTTPS.
 
 ### Uninstalling
 
@@ -231,24 +231,24 @@ Barricade listens on `http://127.0.0.1:8000` by default. Put it behind a reverse
 
 ```bash
 # Remove (keeps config, data, and logs)
-sudo apt remove barricade
+sudo apt remove labdog
 
 # Remove everything including config, data, logs, and system user
-sudo apt purge barricade
+sudo apt purge labdog
 ```
 
 **RHEL / Fedora / Rocky**
 
 ```bash
-sudo dnf remove barricade
-# Config, data, and logs under /etc/barricade, /var/lib/barricade,
-# /var/log/barricade are preserved. Remove manually if no longer needed.
+sudo dnf remove labdog
+# Config, data, and logs under /etc/labdog, /var/lib/labdog,
+# /var/log/labdog are preserved. Remove manually if no longer needed.
 ```
 
 **Tarball install**
 
 ```bash
-cd barricade-<version>-linux-amd64
+cd labdog-<version>-linux-amd64
 sudo ./uninstall.sh          # keeps config/data/logs
 sudo ./uninstall.sh --purge  # removes everything
 ```
@@ -263,7 +263,7 @@ sudo ./uninstall.sh --purge  # removes everything
 
 1. Clone and configure:
    ```bash
-   git clone <repo-url> barricade && cd barricade
+   git clone <repo-url> labdog && cd labdog
    cp .env.example dev/.env
    ```
 
@@ -293,12 +293,12 @@ sudo ./uninstall.sh --purge  # removes everything
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `POSTGRES_PASSWORD` | Docker | `barricade` | PostgreSQL password |
+| `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password |
 | `SECRET_KEY` | Yes (production) | `change-me-in-production` | JWT signing key |
 | `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes, base64) |
-| `BARRICADE_SERVER_IP` | Yes | `127.0.0.1` | IP of the Barricade server (used in SSH lockout rule) |
+| `LABDOG_SERVER_IP` | Yes | `127.0.0.1` | IP of the LabDog server (used in SSH lockout rule) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://localhost:8000` | Backend API URL |
-| `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://barricade:barricade@localhost:5432/barricade` | Async PostgreSQL connection string |
+| `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://labdog:labdog@localhost:5432/labdog` | Async PostgreSQL connection string |
 | `REDIS_URL` | Auto (Docker) | `redis://localhost:6379/0` | Redis URL for Celery broker and result backend |
 | `DRIFT_CHECK_INTERVAL_MINUTES` | No | `30` | Interval for automatic drift detection checks |
 
@@ -481,7 +481,7 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 ## Project Structure
 
 ```
-barricade/
+labdog/
 ├── backend/
 │   ├── app/
 │   │   ├── api/             # FastAPI route handlers
@@ -520,7 +520,7 @@ barricade/
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
 │   └── package.json
-├── barricade-lint/           # CLI tool for YAML rule validation
+├── labdog-lint/           # CLI tool for YAML rule validation
 ├── packaging/               # Linux package build system (deb/rpm/tarball)
 ├── docs/                    # This directory — docs index + examples
 ├── dev/                     # Local development tools
@@ -528,7 +528,7 @@ barricade/
 │   ├── build.sh             # Local Docker build script
 │   ├── deploy.sh            # Local Docker deploy script
 │   ├── docker-compose.yml   # Local dev stack (postgres + redis)
-│   ├── barricade.toml       # Dev configuration
+│   ├── labdog.toml       # Dev configuration
 │   └── .env                 # Local secrets (gitignored — copy from .env.example)
 ├── dev.sh                   # Thin wrapper → dev/dev.sh
 ├── .env.example             # Environment variable template
@@ -538,7 +538,7 @@ barricade/
 
 ## Extension Modules
 
-Barricade uses a modular extension architecture. Each module follows the same pattern: model → schemas → merge engine → API → Ansible generator → drift detector → Celery tasks → frontend UI.
+LabDog uses a modular extension architecture. Each module follows the same pattern: model → schemas → merge engine → API → Ansible generator → drift detector → Celery tasks → frontend UI.
 
 | Module | Status | Description |
 |--------|--------|-------------|
@@ -558,11 +558,11 @@ Barricade uses a modular extension architecture. Each module follows the same pa
 
 - **Drift detection edge cases**: Firewall parsers exist for nftables and iptables, but drift comparison may miss some complex rule configurations.
 - **No HTTPS in dev**: Cookie `secure=False` by default. Set `cookie_secure=True` for production with HTTPS.
-- **Single Ansible control node**: All sync operations run from the Barricade server. No distributed execution.
+- **Single Ansible control node**: All sync operations run from the LabDog server. No distributed execution.
 
 ## CI/CD
 
-Barricade uses GitLab CI for automated builds and releases. See `.gitlab-ci.yml` for pipeline configuration.
+LabDog uses GitLab CI for automated builds and releases. See `.gitlab-ci.yml` for pipeline configuration.
 
 - **Test**: Backend pytest + frontend build check on every push
 - **Build**: Docker images for backend and frontend pushed to GitLab Container Registry

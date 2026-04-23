@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import BarricadeGroupYAML, HostsEntryYAML
+from app.gitops.schema import LabDogGroupYAML, HostsEntryYAML
 from app.hosts_mgmt.models import HostsEntry
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -71,7 +71,7 @@ def _yaml_to_tuple(entry: HostsEntryYAML) -> tuple:
 
 async def import_hosts_entries(
     group: HostGroup,
-    parsed: BarricadeGroupYAML,
+    parsed: LabDogGroupYAML,
     commit_sha: str,
     db: AsyncSession,
 ) -> ModuleImportResult:
@@ -93,7 +93,7 @@ async def import_hosts_entries(
 
     Args:
         group: The target ``HostGroup`` ORM instance.
-        parsed: Validated ``BarricadeGroupYAML`` from the current commit.
+        parsed: Validated ``LabDogGroupYAML`` from the current commit.
         commit_sha: Full commit SHA string (for audit trail).
         db: Active async database session.
 

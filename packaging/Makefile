@@ -1,4 +1,4 @@
-# Barricade packaging Makefile
+# LabDog packaging Makefile
 # Build orchestration for venv, frontend, tarball, deb, rpm
 
 SHELL := /bin/bash
@@ -8,7 +8,7 @@ VERSION      ?= $(shell grep '^version' ../backend/pyproject.toml 2>/dev/null | 
 ARCH         ?= amd64
 PYTHON       ?= python3.12
 DESTDIR      ?= $(CURDIR)/staging
-PREFIX       ?= /usr/lib/barricade
+PREFIX       ?= /usr/lib/labdog
 DIST         ?= $(CURDIR)/dist
 
 # --- Phony targets ---
@@ -16,7 +16,7 @@ DIST         ?= $(CURDIR)/dist
 
 # --- Default ---
 help:
-	@echo "Barricade packaging targets:"
+	@echo "LabDog packaging targets:"
 	@echo ""
 	@echo "  build           Build all components (venv + frontend)"
 	@echo "  build-venv      Create Python venv with production dependencies"
@@ -89,18 +89,18 @@ clean:
 
 # --- Packaging targets ---
 
-TARBALL_NAME := barricade-$(VERSION)-linux-$(ARCH).tar.gz
-TARBALL_DIR  := barricade-$(VERSION)-linux-$(ARCH)
+TARBALL_NAME := labdog-$(VERSION)-linux-$(ARCH).tar.gz
+TARBALL_DIR  := labdog-$(VERSION)-linux-$(ARCH)
 
 deb: build
 	@mkdir -p $(DIST)
 	VERSION=$(VERSION) nfpm pkg --packager deb --config nfpm.yaml --target $(DIST)/
-	@echo "✓ .deb built: $$(ls $(DIST)/barricade_*.deb | tail -1)"
+	@echo "✓ .deb built: $$(ls $(DIST)/labdog_*.deb | tail -1)"
 
 rpm: build
 	@mkdir -p $(DIST)
 	VERSION=$(VERSION) nfpm pkg --packager rpm --config nfpm.yaml --target $(DIST)/
-	@echo "✓ .rpm built: $$(ls $(DIST)/barricade-*.rpm | tail -1)"
+	@echo "✓ .rpm built: $$(ls $(DIST)/labdog-*.rpm | tail -1)"
 
 tarball: build
 	@mkdir -p $(DIST)/$(TARBALL_DIR)

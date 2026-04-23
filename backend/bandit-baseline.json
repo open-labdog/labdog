@@ -3411,7 +3411,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "70 \n71     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n72     os.close(fd)\n",
+      "code": "70 \n71     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n72     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/gitops/git_service.py",
@@ -3694,7 +3694,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "73     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-action-\")\n74     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-action-\", suffix=\".key\")\n75     os.close(fd)\n",
+      "code": "73     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-action-\")\n74     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-action-\", suffix=\".key\")\n75     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/action_host.py",
@@ -3735,7 +3735,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "27     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-ca-\")\n28     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-ca-\", suffix=\".key\")\n29     os.close(fd)\n",
+      "code": "27     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-ca-\")\n28     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-ca-\", suffix=\".key\")\n29     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/ca_cert_action.py",
@@ -3776,7 +3776,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "97                                 host.barricade_source_ip = await get_source_ip(probe)\n98                         except Exception:\n99                             pass\n100                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
+      "code": "97                                 host.labdog_source_ip = await get_source_ip(probe)\n98                         except Exception:\n99                             pass\n100                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/cron_drift.py",
@@ -3818,7 +3818,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n16     os.close(fd)\n",
+      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/cron_sync.py",
@@ -3859,7 +3859,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "90                                     host.barricade_source_ip = await get_source_ip(probe)\n91                         except Exception:\n92                             pass\n93                     await db.commit()\n",
+      "code": "90                                     host.labdog_source_ip = await get_source_ip(probe)\n91                         except Exception:\n92                             pass\n93                     await db.commit()\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/drift.py",
@@ -3945,7 +3945,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n26     os.close(fd)\n",
+      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n26     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/hosts_sync.py",
@@ -3986,7 +3986,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "82                                 host.barricade_source_ip = await get_source_ip(probe)\n83                         except Exception:\n84                             pass\n85                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
+      "code": "82                                 host.labdog_source_ip = await get_source_ip(probe)\n83                         except Exception:\n84                             pass\n85                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/package_drift.py",
@@ -4028,7 +4028,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "50     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n51     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n52     os.close(fd)\n",
+      "code": "50     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n51     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n52     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/package_sync.py",
@@ -4069,7 +4069,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "89                         host.barricade_source_ip = await get_source_ip(probe)\n90                 except Exception:\n91                     pass\n92 \n",
+      "code": "89                         host.labdog_source_ip = await get_source_ip(probe)\n90                 except Exception:\n91                     pass\n92 \n",
       "col_offset": 16,
       "end_col_offset": 24,
       "filename": "app/tasks/resolver_drift.py",
@@ -4090,7 +4090,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "190                                 host.barricade_source_ip = await get_source_ip(probe)\n191                         except Exception:\n192                             pass\n193                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
+      "code": "190                                 host.labdog_source_ip = await get_source_ip(probe)\n191                         except Exception:\n192                             pass\n193                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/resolver_drift.py",
@@ -4133,7 +4133,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n16     os.close(fd)\n",
+      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/resolver_sync.py",
@@ -4218,7 +4218,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "85                                 host.barricade_source_ip = await get_source_ip(probe)\n86                         except Exception:\n87                             pass\n88                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
+      "code": "85                                 host.labdog_source_ip = await get_source_ip(probe)\n86                         except Exception:\n87                             pass\n88                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/service_drift.py",
@@ -4261,7 +4261,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n26     os.close(fd)\n",
+      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n26     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/service_sync.py",
@@ -4302,7 +4302,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "22     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n23     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n24     os.close(fd)\n",
+      "code": "22     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n23     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n24     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/sync.py",
@@ -4343,7 +4343,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "98                                 host.barricade_source_ip = await get_source_ip(probe)\n99                         except Exception:\n100                             pass\n101                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
+      "code": "98                                 host.labdog_source_ip = await get_source_ip(probe)\n99                         except Exception:\n100                             pass\n101                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
       "filename": "app/tasks/user_drift.py",
@@ -4385,7 +4385,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"barricade-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"barricade-\", suffix=\".key\")\n16     os.close(fd)\n",
+      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/user_sync.py",
@@ -4426,7 +4426,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "76 \n77     ssh_key_path = f\"/dev/shm/barricade-wf-{host_run_id}.key\"\n78 \n",
+      "code": "76 \n77     ssh_key_path = f\"/dev/shm/labdog-wf-{host_run_id}.key\"\n78 \n",
       "col_offset": 21,
       "end_col_offset": 43,
       "filename": "app/tasks/workflow_host.py",

@@ -33,7 +33,7 @@ class HostResponse(BaseModel):
     ssh_user: str
     firewall_backend: FirewallBackend
     sync_status: SyncStatus
-    barricade_source_ip: str | None
+    labdog_source_ip: str | None
     drift_check_enabled: bool
     last_sync_at: datetime | None
     last_drift_check_at: datetime | None

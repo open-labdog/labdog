@@ -1,13 +1,13 @@
 """
-Barricade configuration — loaded from TOML config file.
+LabDog configuration — loaded from TOML config file.
 
 Resolution order (first found wins):
-  1. BARRICADE_CONFIG env var (explicit path)
-  2. barricade.toml in project root  (development)
-  3. /etc/barricade/barricade.toml    (production / packaged install)
+  1. LABDOG_CONFIG env var (explicit path)
+  2. labdog.toml in project root  (development)
+  3. /etc/labdog/labdog.toml    (production / packaged install)
 
 Environment variables can override any setting using double-underscore
-separators for nested keys.  E.g. BARRICADE_SERVER__PORT=9000 overrides
+separators for nested keys.  E.g. LABDOG_SERVER__PORT=9000 overrides
 [server] port.
 """
 
@@ -34,7 +34,7 @@ class ServerConfig(BaseModel):
 
 
 class DatabaseConfig(BaseModel):
-    url: str = "postgresql+asyncpg://barricade:barricade@localhost:5432/barricade"
+    url: str = "postgresql+asyncpg://labdog:labdog@localhost:5432/labdog"
     pool_size: int = 5
     max_overflow: int = 10
     pool_timeout: int = 30
@@ -50,7 +50,7 @@ _INSECURE_DEFAULTS = {"change-me-in-production", "change-me-32-bytes-base64-enco
 class SecurityConfig(BaseModel):
     secret_key: str = "change-me-in-production"
     encryption_key: str = "change-me-32-bytes-base64-encoded"
-    barricade_server_ip: str = "127.0.0.1"
+    labdog_server_ip: str = "127.0.0.1"
     allowed_origins: list[str] = ["http://localhost:3000"]
     cookie_secure: bool = False
     cookie_domain: str = ""
@@ -127,11 +127,11 @@ class Settings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _apply_env_overrides(cls, values: dict) -> dict:
-        """Allow env-var overrides with BARRICADE_ prefix and __ separators.
+        """Allow env-var overrides with LABDOG_ prefix and __ separators.
 
-        Example: BARRICADE_SERVER__PORT=9000  →  values["server"]["port"] = 9000
+        Example: LABDOG_SERVER__PORT=9000  →  values["server"]["port"] = 9000
         """
-        prefix = "BARRICADE_"
+        prefix = "LABDOG_"
         for key, raw in os.environ.items():
             if not key.startswith(prefix):
                 continue
@@ -155,7 +155,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def _find_config_path() -> Path | None:
     """Return the first config file that exists, or None."""
-    explicit = os.environ.get("BARRICADE_CONFIG")
+    explicit = os.environ.get("LABDOG_CONFIG")
     if explicit:
         p = Path(explicit)
         if p.is_file():
@@ -163,8 +163,8 @@ def _find_config_path() -> Path | None:
         return None
 
     candidates = [
-        _PROJECT_ROOT / "barricade.toml",
-        Path("/etc/barricade/barricade.toml"),
+        _PROJECT_ROOT / "labdog.toml",
+        Path("/etc/labdog/labdog.toml"),
     ]
     for candidate in candidates:
         if candidate.is_file():
@@ -186,17 +186,17 @@ def _validate_required(s: Settings) -> None:
     if s.security.secret_key in _INSECURE_DEFAULTS:
         errors.append(
             "security.secret_key is not set. "
-            "Set BARRICADE_SECURITY__SECRET_KEY or [security] secret_key in barricade.toml."
+            "Set LABDOG_SECURITY__SECRET_KEY or [security] secret_key in labdog.toml."
         )
     if s.security.encryption_key in _INSECURE_DEFAULTS:
         errors.append(
             "security.encryption_key is not set. "
             "Generate one with: python -m app.crypto.key_management "
-            "and set BARRICADE_SECURITY__ENCRYPTION_KEY"
-            " or [security] encryption_key in barricade.toml."
+            "and set LABDOG_SECURITY__ENCRYPTION_KEY"
+            " or [security] encryption_key in labdog.toml."
         )
     if errors:
-        raise SystemExit("FATAL: Barricade cannot start:\n  - " + "\n  - ".join(errors))
+        raise SystemExit("FATAL: LabDog cannot start:\n  - " + "\n  - ".join(errors))
 
 
 def load_settings() -> Settings:

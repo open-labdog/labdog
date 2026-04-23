@@ -162,7 +162,7 @@ def generate_user_playbook(
     tasks.extend(_group_tasks(groups_absent))
 
     return {
-        "name": "Barricade Linux User Management",
+        "name": "LabDog Linux User Management",
         "hosts": host_ip,
         "become": True,
         "gather_facts": False,

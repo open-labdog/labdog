@@ -5,7 +5,7 @@ stages:
   - scan
 
 variables:
-  IMAGE: gitlab.lan.tyresson.se:5050/dennis/barricade
+  IMAGE: gitlab.lan.tyresson.se:5050/dennis/labdog
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
 
@@ -95,10 +95,10 @@ backend-test:
     - name: redis:7-alpine
       alias: redis
   variables:
-    POSTGRES_DB: barricade_test
-    POSTGRES_USER: barricade
-    POSTGRES_PASSWORD: barricade
-    DATABASE_URL: "postgresql+asyncpg://barricade:barricade@postgres:5432/barricade_test"
+    POSTGRES_DB: labdog_test
+    POSTGRES_USER: labdog
+    POSTGRES_PASSWORD: labdog
+    DATABASE_URL: "postgresql+asyncpg://labdog:labdog@postgres:5432/labdog_test"
     REDIS_URL: "redis://redis:6379/0"
     SECRET_KEY: "ci-test-secret-key-not-for-production"
     ENCRYPTION_KEY: "Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz"

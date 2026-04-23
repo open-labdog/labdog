@@ -1,5 +1,5 @@
 """
-Shared pytest fixtures and factory helpers for Barricade integration tests.
+Shared pytest fixtures and factory helpers for LabDog integration tests.
 """
 
 import uuid
@@ -14,15 +14,15 @@ def pytest_configure(config):
     """Set test-safe security values before any app modules are imported."""
     import os
 
-    os.environ.setdefault("BARRICADE_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
+    os.environ.setdefault("LABDOG_SECURITY__SECRET_KEY", "test-secret-key-not-for-production")
     os.environ.setdefault(
-        "BARRICADE_SECURITY__ENCRYPTION_KEY", "vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg="
+        "LABDOG_SECURITY__ENCRYPTION_KEY", "vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg="
     )
     # Shared Redis across tests causes rate-limit pollution — fresh test runs
     # still trip the 5/min login and 100/min API limits because httpx hits
     # testserver from 127.0.0.1 repeatedly. Disable rate limiting for tests;
     # individual rate-limit behavior can be tested in targeted integration tests.
-    os.environ.setdefault("BARRICADE_RATE_LIMIT__ENABLED", "false")
+    os.environ.setdefault("LABDOG_RATE_LIMIT__ENABLED", "false")
 
 
 @pytest.fixture(scope="session")
@@ -41,7 +41,7 @@ def pg_url():
         settings.database.url = async_url
         settings.security.encryption_key = generate_master_key()
         env = os.environ.copy()
-        env["BARRICADE_DATABASE__URL"] = async_url
+        env["LABDOG_DATABASE__URL"] = async_url
         alembic_path = str(Path(sys.executable).parent / "alembic")
         result = subprocess.run(
             [alembic_path, "upgrade", "head"],
@@ -64,7 +64,7 @@ def pg_url():
             settings.database.url = async_url
             settings.security.encryption_key = generate_master_key()
             env = os.environ.copy()
-            env["BARRICADE_DATABASE__URL"] = async_url
+            env["LABDOG_DATABASE__URL"] = async_url
             alembic_path = str(Path(sys.executable).parent / "alembic")
             result = subprocess.run(
                 [alembic_path, "upgrade", "head"],

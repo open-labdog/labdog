@@ -6,13 +6,13 @@ ROOT_DIR="${SCRIPT_DIR}/.."
 PIDFILE_DIR="${ROOT_DIR}/.dev-pids"
 ENV_FILE="${SCRIPT_DIR}/.env"
 
-# Seed .env with dev-only secrets on first run. Barricade rejects the insecure
-# placeholder keys in barricade.toml at startup, so we generate a real pair here
+# Seed .env with dev-only secrets on first run. LabDog rejects the insecure
+# placeholder keys in labdog.toml at startup, so we generate a real pair here
 # and persist them for subsequent runs.
 ensure_dev_env() {
   if [[ -f "$ENV_FILE" ]] \
-     && grep -q "^BARRICADE_SECURITY__SECRET_KEY=" "$ENV_FILE" \
-     && grep -q "^BARRICADE_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE"; then
+     && grep -q "^LABDOG_SECURITY__SECRET_KEY=" "$ENV_FILE" \
+     && grep -q "^LABDOG_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE"; then
     return
   fi
 
@@ -30,10 +30,10 @@ ensure_dev_env() {
   enc=$("$venv_python" -c 'import os, base64; print(base64.b64encode(os.urandom(32)).decode())')
 
   touch "$ENV_FILE"
-  grep -q "^BARRICADE_SECURITY__SECRET_KEY=" "$ENV_FILE" \
-    || echo "BARRICADE_SECURITY__SECRET_KEY=${secret}" >> "$ENV_FILE"
-  grep -q "^BARRICADE_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE" \
-    || echo "BARRICADE_SECURITY__ENCRYPTION_KEY=${enc}" >> "$ENV_FILE"
+  grep -q "^LABDOG_SECURITY__SECRET_KEY=" "$ENV_FILE" \
+    || echo "LABDOG_SECURITY__SECRET_KEY=${secret}" >> "$ENV_FILE"
+  grep -q "^LABDOG_SECURITY__ENCRYPTION_KEY=" "$ENV_FILE" \
+    || echo "LABDOG_SECURITY__ENCRYPTION_KEY=${enc}" >> "$ENV_FILE"
   chmod 600 "$ENV_FILE"
 }
 
@@ -58,14 +58,14 @@ Commands:
   status      Show running dev processes
   logs        Tail all dev logs
   infra       Start only postgres + redis (docker)
-  backend     Start only backend (barricade + celery)
+  backend     Start only backend (labdog + celery)
   frontend    Start only frontend (next dev)
   migrate     Run alembic upgrade head
   migrate-down  Roll back one migration (alembic downgrade -1)
   migrate-new <msg>  Generate a new migration (alembic revision --autogenerate)
 
 Infrastructure (postgres, redis) runs via docker compose.
-Backend (barricade, celery worker, celery beat) and frontend (next dev) run as local processes.
+Backend (labdog, celery worker, celery beat) and frontend (next dev) run as local processes.
 EOF
   exit 1
 }
@@ -84,7 +84,7 @@ start_infra() {
   log "Starting postgres + redis..."
   docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" up -d postgres redis
   log "Waiting for postgres..."
-  until docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" exec -T postgres pg_isready -U barricade &>/dev/null; do
+  until docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" exec -T postgres pg_isready -U labdog &>/dev/null; do
     sleep 1
   done
   log "Postgres ready."
@@ -114,7 +114,7 @@ start_backend() {
 
   # Run migrations
   log "Running migrations..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" upgrade head)
+  (cd "${ROOT_DIR}/backend" && LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/alembic" upgrade head)
 
   # Prepend the venv bin to PATH so child processes (e.g. ansible-runner
   # spawning ansible-playbook) can resolve console scripts installed in
@@ -122,28 +122,28 @@ start_backend() {
   # missing from subprocess PATH even though the Python imports work.
   local venv_path="${VENV}:${PATH}"
 
-  # Barricade (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
-  # BARRICADE_DEV_MODE disables static frontend serving so the Next.js dev server on :3000 is used.
-  log "Starting barricade..."
-  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_DEV_MODE=1 BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/python" -m app --reload --no-celery --skip-migrate \
-    >"${logdir}/barricade.log" 2>&1) &
-  echo $! > "${PIDFILE_DIR}/barricade.pid"
+  # LabDog (python -m app with auto-reload, no embedded celery, skip migrate since we ran it above)
+  # LABDOG_DEV_MODE disables static frontend serving so the Next.js dev server on :3000 is used.
+  log "Starting labdog..."
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" LABDOG_DEV_MODE=1 LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/python" -m app --reload --no-celery --skip-migrate \
+    >"${logdir}/labdog.log" 2>&1) &
+  echo $! > "${PIDFILE_DIR}/labdog.pid"
 
   # Celery worker
   log "Starting celery worker..."
-  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks worker \
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/celery" -A app.tasks worker \
     --max-tasks-per-child=100 -Q default,long_running --loglevel=info \
     >"${logdir}/celery-worker.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-worker.pid"
 
   # Celery beat
   log "Starting celery beat..."
-  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/celery" -A app.tasks beat \
+  (cd "${ROOT_DIR}/backend" && PATH="${venv_path}" LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/celery" -A app.tasks beat \
     --scheduler redbeat.RedBeatScheduler --loglevel=info \
     >"${logdir}/celery-beat.log" 2>&1) &
   echo $! > "${PIDFILE_DIR}/celery-beat.pid"
 
-  log "Backend running — barricade at http://localhost:8000"
+  log "Backend running — labdog at http://localhost:8000"
 }
 
 kill_pattern() {
@@ -163,10 +163,10 @@ kill_pattern() {
 }
 
 stop_backend() {
-  kill_pattern "python -m app" "barricade"
+  kill_pattern "python -m app" "labdog"
   kill_pattern "celery -A app.tasks worker" "celery-worker"
   kill_pattern "celery -A app.tasks beat" "celery-beat"
-  rm -f "${PIDFILE_DIR}"/{barricade,celery-worker,celery-beat}.pid 2>/dev/null
+  rm -f "${PIDFILE_DIR}"/{labdog,celery-worker,celery-beat}.pid 2>/dev/null
 }
 
 #--- Frontend ---
@@ -200,7 +200,7 @@ run_migrate() {
   ensure_dev_env
   load_dev_env
   log "Running migrations..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" upgrade head)
+  (cd "${ROOT_DIR}/backend" && LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/alembic" upgrade head)
   log "Migrations complete."
 }
 
@@ -210,7 +210,7 @@ run_migrate_down() {
     exit 1
   fi
   log "Rolling back one migration..."
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" downgrade -1)
+  (cd "${ROOT_DIR}/backend" && LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/alembic" downgrade -1)
   log "Rollback complete."
 }
 
@@ -225,7 +225,7 @@ run_migrate_new() {
     exit 1
   fi
   log "Generating migration: ${msg}"
-  (cd "${ROOT_DIR}/backend" && BARRICADE_CONFIG="${SCRIPT_DIR}/barricade.toml" "${VENV}/alembic" revision --autogenerate -m "$msg")
+  (cd "${ROOT_DIR}/backend" && LABDOG_CONFIG="${SCRIPT_DIR}/labdog.toml" "${VENV}/alembic" revision --autogenerate -m "$msg")
   log "Migration generated."
 }
 
@@ -251,10 +251,10 @@ show_status() {
   done
 
   if port_listening 8000; then
-    printf "  %-20s %s\n" "barricade" "running (:8000)"
+    printf "  %-20s %s\n" "labdog" "running (:8000)"
     running=$((running + 1))
   else
-    printf "  %-20s %s\n" "barricade" "stopped"
+    printf "  %-20s %s\n" "labdog" "stopped"
   fi
 
   if pgrep -f "celery -A app.tasks worker" &>/dev/null; then

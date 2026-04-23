@@ -1,0 +1,23 @@
+[Unit]
+Description=LabDog
+After=network-online.target postgresql.service redis.service
+Requires=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=labdog
+Group=labdog
+WorkingDirectory=/usr/lib/labdog/backend
+Environment=PATH=/usr/lib/labdog/venv/bin:/usr/bin:/bin
+Environment=LABDOG_CONFIG=/etc/labdog/labdog.toml
+ExecStart=/usr/lib/labdog/venv/bin/python -m app
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=65
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/labdog /var/log/labdog /tmp /dev/shm
+
+[Install]
+WantedBy=multi-user.target

@@ -6,7 +6,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 function dbExec(sql: string) {
   try {
     execSync(
-      `docker exec barricade-postgres-1 psql -U barricade -d barricade -c '${sql.replace(/'/g, "'\\''")}'`,
+      `docker exec labdog-postgres-1 psql -U labdog -d labdog -c '${sql.replace(/'/g, "'\\''")}'`,
       { stdio: "pipe" }
     )
   } catch { /* ignore */ }

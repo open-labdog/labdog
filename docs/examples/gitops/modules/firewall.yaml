@@ -1,4 +1,4 @@
-# Managed by Barricade — Firewall module reference
+# Managed by LabDog — Firewall module reference
 #
 # Exhaustive per-field example.  Rule semantics (iptables / nftables):
 #   • action:    allow | deny | reject

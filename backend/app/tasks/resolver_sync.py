@@ -11,8 +11,8 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
     """Sync DNS resolver config to host via Ansible."""
     import ansible_runner
 
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-")
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-", suffix=".key")
     os.close(fd)
 
     try:

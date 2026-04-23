@@ -1,1 +1,1 @@
-"""Barricade FastAPI backend application."""
+"""LabDog FastAPI backend application."""

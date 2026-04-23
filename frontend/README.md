@@ -1,6 +1,6 @@
-# Barricade Frontend
+# LabDog Frontend
 
-Next.js 16 web UI for Barricade — centralized Linux configuration management.
+Next.js 16 web UI for LabDog — centralized Linux configuration management.
 
 ## Stack
 

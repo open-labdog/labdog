@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from app.gitops.schema import BarricadeGroupYAML
+from app.gitops.schema import LabDogGroupYAML
 from app.gitops.serializer import YAMLParseError, parse_yaml, yaml_rules_to_specs
 
 pytestmark = pytest.mark.integration
@@ -30,9 +30,9 @@ firewall:
 
 class TestYAMLSerializer:
     def test_valid_yaml_parses(self):
-        """YAML with firewall rules parses into BarricadeGroupYAML."""
+        """YAML with firewall rules parses into LabDogGroupYAML."""
         result = parse_yaml(VALID_YAML)
-        assert isinstance(result, BarricadeGroupYAML)
+        assert isinstance(result, LabDogGroupYAML)
         assert result.group == "web-servers"
         assert result.priority == 100
         assert result.firewall is not None

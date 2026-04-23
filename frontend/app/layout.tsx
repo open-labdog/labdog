@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Barricade',
+  title: 'LabDog',
   description: 'Self-hosted Linux configuration management',
 }
 

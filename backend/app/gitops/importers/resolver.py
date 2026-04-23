@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import BarricadeGroupYAML
+from app.gitops.schema import LabDogGroupYAML
 from app.models.host_group import HostGroup
 from app.resolver.models import ResolverConfig, ResolverType
 from app.resolver.schemas import ResolverConfigCreate
@@ -44,7 +44,7 @@ def _configs_equal(config: ResolverConfig, desired: ResolverConfigCreate) -> boo
 
 async def import_resolver(
     group: HostGroup,
-    parsed: BarricadeGroupYAML,
+    parsed: LabDogGroupYAML,
     commit_sha: str,
     db: AsyncSession,
 ) -> ModuleImportResult:
@@ -62,7 +62,7 @@ async def import_resolver(
 
     Args:
         group: The target ``HostGroup`` ORM instance.
-        parsed: Validated ``BarricadeGroupYAML`` from the current commit.
+        parsed: Validated ``LabDogGroupYAML`` from the current commit.
         commit_sha: Full commit SHA string (for audit trail).
         db: Active async database session.
 

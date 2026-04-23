@@ -6,7 +6,7 @@
 
 **Path:** `/groups`
 
-Groups are the core organisational unit in Barricade. Each group holds desired-state configuration for one or more modules. Hosts belong to groups, and when a host belongs to multiple groups, configurations are merged by priority (higher number wins).
+Groups are the core organisational unit in LabDog. Each group holds desired-state configuration for one or more modules. Hosts belong to groups, and when a host belongs to multiple groups, configurations are merged by priority (higher number wins).
 
 ### Columns
 
@@ -107,7 +107,7 @@ Each rule row shows:
 | Port | Port number or range (`22`, `8000-8080`) |
 | Comment | Optional note |
 
-The lock icon (🔒) on priority `0` rules marks the auto-generated SSH lockout rule — Barricade always injects this to prevent locking itself out.
+The lock icon (🔒) on priority `0` rules marks the auto-generated SSH lockout rule — LabDog always injects this to prevent locking itself out.
 
 Rows can be reordered by dragging the handle on the left.
 
@@ -137,7 +137,7 @@ Defines which systemd services should be running (or stopped) and enabled (or di
 
 ### Unit File Management
 
-Click **Edit** on any service to optionally attach a unit file. Barricade can deploy a full unit file or a drop-in override (stored under `/etc/systemd/system/<name>.d/`).
+Click **Edit** on any service to optionally attach a unit file. LabDog can deploy a full unit file or a drop-in override (stored under `/etc/systemd/system/<name>.d/`).
 
 ---
 
@@ -191,7 +191,7 @@ Manages `/etc/hosts` entries on all hosts in this group.
 | Aliases | Space-separated additional names |
 | Comment | Optional note |
 
-Barricade always injects `127.0.0.1 localhost` and the host's own entry — these system entries cannot be removed from the UI.
+LabDog always injects `127.0.0.1 localhost` and the host's own entry — these system entries cannot be removed from the UI.
 
 When a host belongs to multiple groups with conflicting entries for the same hostname, the highest-priority group wins. See the [Precedence guide](../examples/precedence/README.md) for examples.
 
@@ -296,7 +296,7 @@ The sync workflow has two steps:
 
 ### 1. Preview Changes
 
-Click **Preview Changes** to compute a diff between the desired state (stored in Barricade's database) and the current state on each host (fetched live over SSH). The diff is shown per-host, per-module, before anything is applied.
+Click **Preview Changes** to compute a diff between the desired state (stored in LabDog's database) and the current state on each host (fetched live over SSH). The diff is shown per-host, per-module, before anything is applied.
 
 The diff view shows:
 - Lines to **add** (green)
@@ -307,7 +307,7 @@ If everything is already in sync, the preview says "No changes — hosts are up 
 
 ### 2. Apply Changes
 
-Click **Apply Changes** to run the Ansible playbook generated from the diff. Barricade:
+Click **Apply Changes** to run the Ansible playbook generated from the diff. LabDog:
 
 1. Generates a playbook tailored to the specific changes (not a full re-apply)
 2. Runs it via `ansible-runner` against each host in parallel

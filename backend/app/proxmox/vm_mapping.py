@@ -7,7 +7,7 @@ from app.models.base import Base
 
 
 class VMMapping(Base):
-    """Maps a Barricade host to its Proxmox VM identity.
+    """Maps a LabDog host to its Proxmox VM identity.
 
     Discovered via qemu-guest-agent network interface inspection.
     One mapping per host (unique constraint on host_id).

@@ -6,11 +6,11 @@
 
 **Path:** `/ssh-keys`
 
-Stores the SSH private keys Barricade uses to connect to managed hosts. Keys are encrypted at rest using AES-256-GCM with the `BARRICADE_SECURITY__ENCRYPTION_KEY` from your environment.
+Stores the SSH private keys LabDog uses to connect to managed hosts. Keys are encrypted at rest using AES-256-GCM with the `LABDOG_SECURITY__ENCRYPTION_KEY` from your environment.
 
 ### Adding a Key
 
-Click **Add SSH Key**. Paste the private key in PEM format. Passphrase-protected keys are not supported — Barricade requires unencrypted private keys so it can use them from Celery workers without user interaction.
+Click **Add SSH Key**. Paste the private key in PEM format. Passphrase-protected keys are not supported — LabDog requires unencrypted private keys so it can use them from Celery workers without user interaction.
 
 After adding a key you can assign it to hosts on the host edit form, or select it as the default key during host discovery.
 
@@ -37,14 +37,14 @@ Manages Git repository connections used for GitOps-driven configuration. See [Gi
 
 **Path:** `/audit`
 
-An append-only log of every change made through Barricade — API writes, sync runs, and terminal session events.
+An append-only log of every change made through LabDog — API writes, sync runs, and terminal session events.
 
 ### Columns
 
 | Column | Description |
 |--------|-------------|
 | Timestamp | When the action occurred |
-| User | Which Barricade user performed the action |
+| User | Which LabDog user performed the action |
 | Action | What happened (e.g. `rule.create`, `sync.apply`, `terminal.open`) |
 | Entity | What was acted on (e.g. `group:4`, `host:tester3`) |
 | Before | State before the change (JSON) |
@@ -64,7 +64,7 @@ Audit entries older than the configured retention period are pruned automaticall
 
 **Path:** `/users` — superuser only
 
-Manage Barricade user accounts. This page is only visible to superusers.
+Manage LabDog user accounts. This page is only visible to superusers.
 
 ### User Table
 

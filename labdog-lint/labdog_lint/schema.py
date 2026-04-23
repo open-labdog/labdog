@@ -1,4 +1,4 @@
-"""Standalone Pydantic models for Barricade YAML firewall rules.
+"""Standalone Pydantic models for LabDog YAML firewall rules.
 
 These are a standalone copy of backend/app/gitops/schema.py — no backend imports.
 """
@@ -23,7 +23,7 @@ class FirewallModuleYAML(BaseModel):
     rules: list[FirewallRuleYAML] = []
 
 
-class BarricadeGroupYAML(BaseModel):
+class LabDogGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: Optional[int] = None  # Informational
     firewall: Optional[FirewallModuleYAML] = None

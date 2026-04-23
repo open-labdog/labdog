@@ -85,7 +85,7 @@ def compute_service_diff(
             actual_unit_content = unit_file_contents.get(name)
             deploy_mode = getattr(desired_svc, "deploy_mode", "full")
             if deploy_mode == "full":
-                expected = "# Managed by Barricade\n" + desired_unit
+                expected = "# Managed by LabDog\n" + desired_unit
             else:
                 expected = desired_unit
             if actual_unit_content != expected:

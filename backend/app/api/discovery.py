@@ -117,7 +117,7 @@ async def add_discovered_hosts(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bulk-add discovered hosts to Barricade."""
+    """Bulk-add discovered hosts to LabDog."""
     # Validate request size
     if len(body.ips) > settings.discovery.max_bulk_add:
         raise HTTPException(
@@ -187,7 +187,7 @@ async def add_discovered_hosts(
             ssh_port=body.ssh_port,
             ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
-            barricade_source_ip=source_ip,
+            labdog_source_ip=source_ip,
         )
         db.add(host)
         await db.flush()  # get host.id

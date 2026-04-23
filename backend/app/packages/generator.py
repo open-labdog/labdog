@@ -175,7 +175,7 @@ def generate_package_playbook(
 
     playbook = [
         {
-            "name": "Barricade Package Management",
+            "name": "LabDog Package Management",
             "hosts": "all",
             "become": True,
             "gather_facts": True,

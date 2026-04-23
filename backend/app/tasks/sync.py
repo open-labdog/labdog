@@ -19,8 +19,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
         host_id: Host ID to look up details and SSH key
     """
     # Create isolated working directory
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-")
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-", suffix=".key")
     os.close(fd)
 
     try:
@@ -67,7 +67,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
                 from app.rules.desired_state import get_desired_state, resolve_specs
 
                 merged_rules, merged_policies = await get_desired_state(
-                    host_id, db, host_source_ip=host.barricade_source_ip
+                    host_id, db, host_source_ip=host.labdog_source_ip
                 )
                 merged_rules = await resolve_specs(db, merged_rules)
 

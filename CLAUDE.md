@@ -1,8 +1,8 @@
-# Barricade Development Guide
+# LabDog Development Guide
 
 ## Project Overview
 
-Barricade is a centralized Linux configuration management tool with a FastAPI backend and Next.js frontend. It manages firewall rules, services, packages, users, cron jobs, DNS resolver config, and /etc/hosts via Ansible playbooks synced over SSH.
+LabDog is a centralized Linux configuration management tool with a FastAPI backend and Next.js frontend. It manages firewall rules, services, packages, users, cron jobs, DNS resolver config, and /etc/hosts via Ansible playbooks synced over SSH.
 
 ## Tech Stack
 
@@ -40,7 +40,7 @@ pytest tests/ --ignore=tests/integration -v    # unit/module tests
 pytest tests/integration/ -v -m integration     # integration tests
 ```
 
-Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`BARRICADE_SECURITY__SECRET_KEY`, `BARRICADE_SECURITY__ENCRYPTION_KEY`) before app modules are imported.
+Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`LABDOG_SECURITY__SECRET_KEY`, `LABDOG_SECURITY__ENCRYPTION_KEY`) before app modules are imported.
 
 **Test session architecture**: Each test gets a database session wrapped in a savepoint that rolls back after the test. The `get_db` dependency is overridden to return this test session. Any `session.commit()` in application code translates to savepoint release/create (not actual commit) via `join_transaction_mode="create_savepoint"`.
 
@@ -55,7 +55,7 @@ npx playwright test --ui     # interactive mode
 
 ## Configuration
 
-Settings are loaded from `dev/barricade.toml` (dev — set via `BARRICADE_CONFIG` env var by `dev.sh`), or `/etc/barricade/barricade.toml` (production). Environment variables override TOML settings using `BARRICADE_` prefix with `__` separators (e.g., `BARRICADE_SECURITY__SECRET_KEY`).
+Settings are loaded from `dev/labdog.toml` (dev — set via `LABDOG_CONFIG` env var by `dev.sh`), or `/etc/labdog/labdog.toml` (production). Environment variables override TOML settings using `LABDOG_` prefix with `__` separators (e.g., `LABDOG_SECURITY__SECRET_KEY`).
 
 **Required secrets** (validated at startup — insecure defaults are rejected):
 - `security.secret_key` — JWT signing key

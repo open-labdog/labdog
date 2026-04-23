@@ -27,13 +27,13 @@ async def create_snapshot(
             part of the snapshot name.
 
     Returns:
-        The snapshot name string (e.g. ``"barricade-42-1711234567"``).
+        The snapshot name string (e.g. ``"labdog-42-1711234567"``).
 
     Raises:
         :class:`~app.proxmox.client.ProxmoxError`: If the Proxmox task fails
             or times out.
     """
-    name = f"barricade-{run_id}-{int(time.time())}"
+    name = f"labdog-{run_id}-{int(time.time())}"
     logger.info(
         "snapshot: creating snapshot %r for vmid %d on %s",
         name,
@@ -45,7 +45,7 @@ async def create_snapshot(
         pve_node,
         vmid,
         name,
-        description="Barricade pre-update snapshot",
+        description="LabDog pre-update snapshot",
     )
     await proxmox_client.wait_for_task(pve_node, upid)
 

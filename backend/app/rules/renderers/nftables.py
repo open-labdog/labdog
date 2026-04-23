@@ -31,9 +31,9 @@ def _rule_to_nft(rule: FirewallRuleSpec) -> str:
     action = action_map.get(rule.action, "drop")
     parts.append(action)
     if rule.comment:
-        comment_text = f"Barricade: {rule.comment}"
+        comment_text = f"LabDog: {rule.comment}"
     else:
-        comment_text = "Managed by Barricade"
+        comment_text = "Managed by LabDog"
     parts.append(f'comment "{comment_text}"')
     return " ".join(parts)
 

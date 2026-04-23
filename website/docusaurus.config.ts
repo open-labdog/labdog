@@ -4,12 +4,12 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // Repo refs — update url / baseUrl / editUrl when the project moves to
 // GitHub.  Everything else is environment-agnostic.
-const REPO_URL = 'https://gitlab.lan.tyresson.se/dennis/barricade';
+const REPO_URL = 'https://gitlab.lan.tyresson.se/dennis/labdog';
 const EDIT_BRANCH = 'dev';
 
 const config: Config = {
-  title: 'Barricade',
-  tagline: 'Centralized Linux configuration management via Ansible',
+  title: 'LabDog',
+  tagline: "A homelabber's best friend",
   favicon: 'img/favicon.ico',
 
   future: {
@@ -17,12 +17,12 @@ const config: Config = {
   },
 
   // Production URL — placeholder until the site is actually published.
-  url: 'https://barricade.example.com',
+  url: 'https://labdog.example.com',
   baseUrl: '/',
 
   // Used by the `npm run deploy` GitHub Pages command if we ever use it.
   organizationName: 'dennis',
-  projectName: 'barricade',
+  projectName: 'labdog',
 
   // Fail the build on broken links — the existing content has been
   // audited and verified to resolve against the wrapped docs tree.
@@ -68,9 +68,9 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'Barricade',
+      title: 'LabDog',
       logo: {
-        alt: 'Barricade',
+        alt: 'LabDog',
         src: 'img/logo.svg',
       },
       items: [
@@ -105,7 +105,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Barricade.`,
+      copyright: `Copyright © ${new Date().getFullYear()} LabDog.`,
     },
     prism: {
       theme: prismThemes.github,

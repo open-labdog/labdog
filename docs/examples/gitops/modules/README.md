@@ -1,7 +1,7 @@
 # Per-module YAML references
 
 Focused YAML files, one per configuration module. Each is a standalone
-example that parses cleanly against the live `BarricadeGroupYAML`
+example that parses cleanly against the live `LabDogGroupYAML`
 schema and demonstrates every field plus common edge cases with inline
 comments.
 

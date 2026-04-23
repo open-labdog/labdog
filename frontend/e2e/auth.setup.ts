@@ -6,15 +6,15 @@ const REPO_ROOT = path.join(__dirname, "../..")
 const VENV_PYTHON = path.join(REPO_ROOT, "backend/.venv/bin/python")
 const AUTH_FILE = path.join(__dirname, "../playwright/.auth/user.json")
 
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@barricade.io"
+const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@labdog.io"
 const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || "E2eTestPass1"
 
 function dbExec(sql: string) {
-  const containers = ["barricade-postgres-1", "postgres"]
+  const containers = ["labdog-postgres-1", "postgres"]
   for (const container of containers) {
     try {
       execSync(
-        `docker exec ${container} psql -U barricade -d barricade -c '${sql.replace(/'/g, "'\\''")}'`,
+        `docker exec ${container} psql -U labdog -d labdog -c '${sql.replace(/'/g, "'\\''")}'`,
         { stdio: "pipe" }
       )
       return

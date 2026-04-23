@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react"
 import Link from "next/link"
-import { ShieldPlus, Eye, EyeOff, Loader2 } from "lucide-react"
+import { Dog, Eye, EyeOff, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -137,13 +137,13 @@ export function RegisterForm() {
       <div className="p-8 space-y-6">
         <div className="flex flex-col items-center gap-3">
           <div className="rounded-xl bg-amber-500/10 p-3 ring-1 ring-amber-500/20">
-            <ShieldPlus
+            <Dog
               className="size-8 text-amber-400"
               aria-hidden="true"
             />
           </div>
           <div className="text-center space-y-1">
-            <h1 className="text-2xl font-bold text-white">Welcome to Barricade</h1>
+            <h1 className="text-2xl font-bold text-white">Welcome to LabDog</h1>
             <p className="text-sm text-slate-400">
               This is a fresh instance. Create the admin account to get started.
             </p>

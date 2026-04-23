@@ -46,10 +46,10 @@ def _absent(name: str, fp: str) -> dict:
 
 class TestCertFilename:
     def test_filename_format(self):
-        assert cert_filename(FP_A) == "barricade-abcdef0000000000.crt"
+        assert cert_filename(FP_A) == "labdog-abcdef0000000000.crt"
 
     def test_filename_strips_colons_and_lowercases(self):
-        assert cert_filename(FP_B) == "barricade-123456ffffffffff.crt"
+        assert cert_filename(FP_B) == "labdog-123456ffffffffff.crt"
 
 
 class TestGenerateCACertPlaybook:
@@ -70,7 +70,7 @@ class TestGenerateCACertPlaybook:
         assert play["become"] is True
         assert play["gather_facts"] is True
         # Should still have find + reconcile tasks for each OS family
-        # (so an empty deploy = "remove all Barricade-managed certs")
+        # (so an empty deploy = "remove all LabDog-managed certs")
         find_tasks = [t for t in play["tasks"] if "ansible.builtin.find" in t]
         assert len(find_tasks) == 3  # Debian, RedHat, Suse
 
@@ -87,7 +87,7 @@ class TestGenerateCACertPlaybook:
             assert copy["content"] == PEM_FAKE_A
             assert copy["mode"] == "0644"
             assert copy["owner"] == "root"
-            assert "barricade-abcdef0000000000.crt" in copy["dest"]
+            assert "labdog-abcdef0000000000.crt" in copy["dest"]
 
     def test_os_family_when_clauses(self):
         play = self._gen([_present("X", FP_A, PEM_FAKE_A)])["playbook"][0]
@@ -123,7 +123,7 @@ class TestGenerateCACertPlaybook:
         # 3 OS families × 1 absent cert
         assert len(explicit_removes) == 3
         for t in explicit_removes:
-            assert "barricade-123456ffffffffff.crt" in t["ansible.builtin.file"]["path"]
+            assert "labdog-123456ffffffffff.crt" in t["ansible.builtin.file"]["path"]
 
     def test_handlers_present_for_each_os(self):
         play = self._gen([])["playbook"][0]
@@ -148,8 +148,8 @@ class TestGenerateCACertPlaybook:
         for t in reconcile_tasks:
             loop_expr = t["loop"]
             # Both keep paths should be referenced in the rejectattr filter
-            assert "barricade-abcdef0000000000.crt" in loop_expr
-            assert "barricade-123456ffffffffff.crt" in loop_expr
+            assert "labdog-abcdef0000000000.crt" in loop_expr
+            assert "labdog-123456ffffffffff.crt" in loop_expr
             assert "rejectattr" in loop_expr
 
     def test_inventory_uses_provided_host(self):

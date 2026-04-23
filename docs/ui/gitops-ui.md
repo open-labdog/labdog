@@ -1,6 +1,6 @@
 # GitOps UI
 
-GitOps lets a Git repository drive all configuration for a group. When enabled, Barricade pulls YAML from the repo on every push (via webhook) and imports it as the group's desired state.
+GitOps lets a Git repository drive all configuration for a group. When enabled, LabDog pulls YAML from the repo on every push (via webhook) and imports it as the group's desired state.
 
 For the YAML schema and file format, see the [GitOps guide](../examples/gitops/README.md).
 
@@ -16,7 +16,7 @@ Lists all connected repositories. Each row shows:
 |--------|-------------|
 | Name | Label for this repo connection |
 | URL | Clone URL (SSH or HTTPS) |
-| Branch | Branch Barricade tracks |
+| Branch | Branch LabDog tracks |
 | Groups | How many groups use this repo |
 | Last Import | When the repo was last pulled and imported |
 | Status | `ok`, `error`, or `never` |
@@ -43,7 +43,7 @@ After saving, the **Webhook URL** is shown on the repo's detail row. Copy it int
 | GitLab | Settings → Webhooks |
 | Gitea | Settings → Webhooks |
 
-Set the payload URL to the webhook URL shown in Barricade, content type to `application/json`, and configure the secret if shown. Only `push` events are needed.
+Set the payload URL to the webhook URL shown in LabDog, content type to `application/json`, and configure the secret if shown. Only `push` events are needed.
 
 ---
 

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "barricade-backend"
+name = "labdog-backend"
 version = "0.0.16"
-description = "FastAPI backend for Barricade - Ansible-based Linux firewall manager"
+description = "FastAPI backend for LabDog - Ansible-based Linux firewall manager"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

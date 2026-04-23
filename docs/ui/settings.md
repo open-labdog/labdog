@@ -2,9 +2,9 @@
 
 **Path:** `/settings`
 
-The Settings page controls operational behaviour that can be tuned without restarting Barricade. Values are stored in the database and take effect immediately — no config file edit or service restart required.
+The Settings page controls operational behaviour that can be tuned without restarting LabDog. Values are stored in the database and take effect immediately — no config file edit or service restart required.
 
-> **Note:** Infrastructure settings (database URL, TLS, secrets, rate limits) are set via environment variables or `dev/barricade.toml`. Only the settings below are managed through this page.
+> **Note:** Infrastructure settings (database URL, TLS, secrets, rate limits) are set via environment variables or `dev/labdog.toml`. Only the settings below are managed through this page.
 
 ---
 

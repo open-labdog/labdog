@@ -1,4 +1,4 @@
-"""System update step for Barricade update workflows.
+"""System update step for LabDog update workflows.
 
 Runs the action-registry playbook on a remote host via the shared run_ansible()
 helper.  Rebooting is handled by the separate reboot.py step, so auto_reboot is
@@ -60,7 +60,7 @@ def run_system_update(
 
     inventory_json = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
 
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-update-")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-update-")
 
     try:
         runner = run_ansible(

@@ -3,7 +3,7 @@ from celery import Celery
 from app.config import settings
 
 celery_app = Celery(
-    "barricade",
+    "labdog",
     broker=settings.redis.url,
     backend=settings.redis.url,
 )

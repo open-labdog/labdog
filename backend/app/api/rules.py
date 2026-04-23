@@ -266,7 +266,7 @@ async def get_effective_rules(
     # Load host to get per-host source IP
     host_result = await db.execute(select(Host).where(Host.id == host_id))
     host = host_result.scalar_one_or_none()
-    host_source_ip = host.barricade_source_ip if host else None
+    host_source_ip = host.labdog_source_ip if host else None
 
     # Get all groups for this host
     memberships_all = await db.execute(

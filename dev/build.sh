@@ -5,9 +5,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="${SCRIPT_DIR}/.."
 
 TAG="latest"
-IMAGE="barricade"
+IMAGE="labdog"
 
-echo "=== Barricade Local Build ==="
+echo "=== LabDog Local Build ==="
 echo ""
 
 # Remove previous image
@@ -18,7 +18,7 @@ fi
 
 # Build AIO image
 echo ""
-echo "--- Building barricade ---"
+echo "--- Building labdog ---"
 docker build \
   --tag "${IMAGE}:${TAG}" \
   --file "${ROOT_DIR}/Dockerfile" \

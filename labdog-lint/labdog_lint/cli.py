@@ -4,23 +4,23 @@ import click
 import yaml
 from pydantic import ValidationError
 
-from barricade_lint.formatter import (
+from labdog_lint.formatter import (
     echo_error,
     echo_rule_error,
     echo_rule_warning,
     echo_warning,
 )
-from barricade_lint.schema import BarricadeGroupYAML
-from barricade_lint.validators import validate_cidr, validate_port
+from labdog_lint.schema import LabDogGroupYAML
+from labdog_lint.validators import validate_cidr, validate_port
 
 
 @click.command()
 @click.argument("files", nargs=-1, type=click.Path(exists=True))
 @click.option("--strict", is_flag=True, help="Treat warnings as errors")
 def main(files, strict):
-    """Validate Barricade YAML firewall rule files."""
+    """Validate LabDog YAML firewall rule files."""
     if not files:
-        click.echo("Usage: barricade-lint <file> [file...]", err=True)
+        click.echo("Usage: labdog-lint <file> [file...]", err=True)
         sys.exit(1)
 
     errors = 0
@@ -43,7 +43,7 @@ def main(files, strict):
             continue
 
         try:
-            parsed = BarricadeGroupYAML.model_validate(data)
+            parsed = LabDogGroupYAML.model_validate(data)
         except ValidationError as e:
             for err in e.errors():
                 loc = ".".join(str(loc_part) for loc_part in err["loc"])

@@ -77,7 +77,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 
             await refresh_host_sync_status(host, db)
 
-            if not host.barricade_source_ip:
+            if not host.labdog_source_ip:
                 try:
                     imported_key = asyncssh.import_private_key(private_key_pem)
                     async with ssh_connect(
@@ -86,7 +86,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
                         username=ssh_key.ssh_user,
                         client_keys=[imported_key],
                     ) as probe:
-                        host.barricade_source_ip = await get_source_ip(probe)
+                        host.labdog_source_ip = await get_source_ip(probe)
                 except Exception:
                     pass
 
@@ -178,7 +178,7 @@ def check_all_resolver_drift():
                     hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
 
-                    if not host.barricade_source_ip:
+                    if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
                             async with ssh_connect(
@@ -187,7 +187,7 @@ def check_all_resolver_drift():
                                 username=ssh_key.ssh_user,
                                 client_keys=[imported_key],
                             ) as probe:
-                                host.barricade_source_ip = await get_source_ip(probe)
+                                host.labdog_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
                 except (OSError, asyncssh.Error, TimeoutError) as e:

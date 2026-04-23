@@ -10,7 +10,7 @@ def _make_ssh_lockout_rule(server_ip: str) -> FirewallRuleSpec:
         direction="input",
         source_cidr=f"{server_ip}/32",
         port_start=22,
-        comment="Barricade server SSH access — auto-injected, do not remove",
+        comment="LabDog server SSH access — auto-injected, do not remove",
         is_system=True,
         priority=999999,  # always highest priority
     )
@@ -29,7 +29,7 @@ def merge_group_rules(
 
     Args:
         groups: List of dicts with id, priority, and rules list
-        server_ip: Barricade server IP for SSH lockout rule (defaults to settings)
+        server_ip: LabDog server IP for SSH lockout rule (defaults to settings)
         host_source_ip: Per-host detected source IP (takes precedence over server_ip)
         host_rules: Host-level override rules; replace any group rule with the same signature
 
@@ -39,7 +39,7 @@ def merge_group_rules(
     if host_source_ip:
         server_ip = host_source_ip
     elif server_ip is None:
-        server_ip = settings.security.barricade_server_ip
+        server_ip = settings.security.labdog_server_ip
 
     # Sort groups by priority descending (highest priority first)
     sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
