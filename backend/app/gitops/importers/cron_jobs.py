@@ -9,7 +9,7 @@ from app.audit.logger import log_action
 from app.cron.models import CronJob, CronState
 from app.cron.validators import validate_cron_expression
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import BarricadeGroupYAML, CronJobYAML
+from app.gitops.schema import LabDogGroupYAML, CronJobYAML
 from app.models.host_group import HostGroup
 
 logger = logging.getLogger(__name__)
@@ -72,7 +72,7 @@ def _yaml_to_tuple(entry: CronJobYAML) -> tuple:
 
 async def import_cron_jobs(
     group: HostGroup,
-    parsed: BarricadeGroupYAML,
+    parsed: LabDogGroupYAML,
     commit_sha: str,
     db: AsyncSession,
 ) -> ModuleImportResult:
@@ -95,7 +95,7 @@ async def import_cron_jobs(
 
     Args:
         group: The target ``HostGroup`` ORM instance.
-        parsed: Validated ``BarricadeGroupYAML`` from the current commit.
+        parsed: Validated ``LabDogGroupYAML`` from the current commit.
         commit_sha: Full commit SHA string (for audit trail).
         db: Active async database session.
 

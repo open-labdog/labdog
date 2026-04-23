@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@barricade.io"
+const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@labdog.io"
 const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || "E2eTestPass1"
 
 // These tests run WITHOUT auth state (unauthenticated)
@@ -10,7 +10,7 @@ test.use({ storageState: { cookies: [], origins: [] } })
 test.describe("Login page", () => {
   test("renders login form correctly", async ({ page }) => {
     await page.goto("/login")
-    await expect(page.getByRole("heading", { name: "Barricade" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "LabDog" })).toBeVisible()
     await expect(page.locator("#email")).toBeVisible()
     await expect(page.locator("#password")).toBeVisible()
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible()

@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.gitops.importers.firewall import ModuleImportResult
-from app.gitops.schema import BarricadeGroupYAML, LinuxGroupYAML, LinuxUserYAML
+from app.gitops.schema import LabDogGroupYAML, LinuxGroupYAML, LinuxUserYAML
 from app.models.host_group import HostGroup
 from app.user_mgmt.models import LinuxGroup, LinuxUser, UserState
 from app.user_mgmt.schemas import LinuxGroupCreate, LinuxUserCreate
@@ -151,7 +151,7 @@ def _yaml_to_user_tuple(entry: LinuxUserYAML) -> tuple:
 
 async def import_users(
     group: HostGroup,
-    parsed: BarricadeGroupYAML,
+    parsed: LabDogGroupYAML,
     commit_sha: str,
     db: AsyncSession,
 ) -> ModuleImportResult:
@@ -173,7 +173,7 @@ async def import_users(
 
     Args:
         group: The target ``HostGroup`` ORM instance.
-        parsed: Validated ``BarricadeGroupYAML`` from the current commit.
+        parsed: Validated ``LabDogGroupYAML`` from the current commit.
         commit_sha: Full commit SHA string (for audit trail).
         db: Active async database session.
 
@@ -235,7 +235,7 @@ async def import_users(
 
         # Cross-reference check: warn when supplementary_groups references a
         # group not present in YAML or in the current DB.  This is a warning
-        # only — the group may pre-exist on the host outside Barricade's control.
+        # only — the group may pre-exist on the host outside LabDog's control.
         for sg_name in entry.supplementary_groups:
             if sg_name not in yaml_group_names and sg_name not in existing_db_group_names:
                 logger.warning(

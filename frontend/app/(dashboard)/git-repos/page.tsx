@@ -334,7 +334,7 @@ export default function GitReposPage() {
                 <p className="text-slate-300 font-medium">No repositories connected</p>
                 <p className="text-slate-500 text-sm mt-1">
                   Link a git repository to manage group configuration declaratively via YAML.
-                  Barricade imports changes automatically when a webhook fires or a manual sync is triggered.
+                  LabDog imports changes automatically when a webhook fires or a manual sync is triggered.
                 </p>
               </div>
               <Button onClick={openCreateDialog} className="mt-2">Add Repository</Button>

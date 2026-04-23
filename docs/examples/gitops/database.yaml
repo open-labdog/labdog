@@ -1,4 +1,4 @@
-# Managed by Barricade
+# Managed by LabDog
 #
 # Full example for a PostgreSQL database-tier group.  Counterpoint to
 # web-servers.yaml — different firewall posture, different packages,
@@ -110,7 +110,7 @@ packages:
     state: present
 
 # -----------------------------------------------------------------------------
-# /etc/hosts — point at a VIP for Barricade-registered cache hosts
+# /etc/hosts — point at a VIP for LabDog-registered cache hosts
 # -----------------------------------------------------------------------------
 hosts_entries:
   - ip_address: "10.0.2.10"
@@ -120,11 +120,11 @@ hosts_entries:
     priority: 100
 
   # Example of the "host_ref_id" variant: reference a host already in
-  # Barricade's registry instead of hard-coding an IP.  Replace 42 with
+  # LabDog's registry instead of hard-coding an IP.  Replace 42 with
   # the real host id from /api/hosts.
   # - host_ref_id: 42
   #   aliases: [replica]
-  #   comment: "Read replica — kept in sync by Barricade"
+  #   comment: "Read replica — kept in sync by LabDog"
   #   priority: 50
 
 # -----------------------------------------------------------------------------

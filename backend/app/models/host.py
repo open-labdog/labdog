@@ -60,7 +60,7 @@ class Host(Base):
         Enum(SyncStatus, name="syncstatus"),
         default=SyncStatus.unknown,
     )
-    barricade_source_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    labdog_source_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
     drift_check_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_drift_check_at: Mapped[datetime | None] = mapped_column(

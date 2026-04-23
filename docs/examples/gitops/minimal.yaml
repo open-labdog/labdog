@@ -1,9 +1,9 @@
-# Managed by Barricade
+# Managed by LabDog
 #
 # The smallest valid GitOps YAML. Useful as a starting template.
 #
 # What this does on import:
-#   • Declares the group name (must match the group in Barricade).
+#   • Declares the group name (must match the group in LabDog).
 #   • Adds exactly one firewall rule: allow SSH from the internal network.
 #   • Because no other sections are present, every other module
 #     (services, packages, users, cron_jobs, hosts_entries) is WIPED

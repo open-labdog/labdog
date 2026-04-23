@@ -1,8 +1,8 @@
 # ============================================================
-# Barricade Development Configuration
+# LabDog Development Configuration
 # ============================================================
 # This file is used by dev.sh and local development.
-# For production, see packaging/etc/barricade.toml
+# For production, see packaging/etc/labdog.toml
 #
 # Operational settings (drift interval, SSH timeout, Ansible timeout,
 # discovery tuning, log level, audit retention) are managed via the
@@ -14,7 +14,7 @@ port = 8000
 # static_dir = ""  # Path to frontend static export (empty = auto-detect)
 
 [database]
-url = "postgresql+asyncpg://barricade:barricade_test_pw@localhost:5432/barricade"
+url = "postgresql+asyncpg://labdog:labdog_test_pw@localhost:5432/labdog"
 
 [redis]
 url = "redis://localhost:6379/0"
@@ -22,7 +22,7 @@ url = "redis://localhost:6379/0"
 [security]
 secret_key = "change-me-in-production"
 encryption_key = "change-me-32-bytes-base64-encoded"
-barricade_server_ip = "127.0.0.1"
+labdog_server_ip = "127.0.0.1"
 allowed_origins = ["http://localhost:3000"]
 cookie_secure = false
 session_lifetime_seconds = 86400

@@ -73,8 +73,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     r = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
 
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-action-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-action-", suffix=".key")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-action-")
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-action-", suffix=".key")
     os.close(fd)
 
     try:

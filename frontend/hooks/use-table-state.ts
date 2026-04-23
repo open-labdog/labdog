@@ -39,7 +39,7 @@ type FilterValue =
 export type FilterValues = Record<string, FilterValue>
 
 function widthsKey(tableId: string) {
-  return `barricade:table-widths:${tableId}`
+  return `labdog:table-widths:${tableId}`
 }
 
 function loadWidths(tableId: string): Record<string, number> {

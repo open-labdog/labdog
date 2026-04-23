@@ -1,4 +1,4 @@
-# Managed by Barricade — Linux users + groups reference
+# Managed by LabDog — Linux users + groups reference
 #
 # Users and groups live together in one YAML file under TWO sections:
 #   users:         list of Linux user accounts
@@ -11,7 +11,7 @@
 # YAML nor in the DB logs a WARNING but does not fail the import — the
 # group may pre-exist on the host.
 #
-# Barricade never stores or manages user passwords.  Authentication for
+# LabDog never stores or manages user passwords.  Authentication for
 # managed users happens exclusively via `authorized_keys` (SSH).
 #
 # Protected system users/groups are rejected at parse time.  For users:
@@ -65,7 +65,7 @@ linux_groups:
 #   state                enum     — present | absent.  Default: present.
 #   comment              string?  — optional; GECOS field on the host.
 #   sudo_rule            string?  — optional.  Dropped into
-#                                   /etc/sudoers.d/barricade-<username>.
+#                                   /etc/sudoers.d/labdog-<username>.
 #                                   Shell metacharacters ` $ ( ) ; | & < >
 #                                   rejected at parse time.
 #   authorized_keys      list[str] — default [].  Each key must start with a
@@ -140,7 +140,7 @@ users:
     priority: 100
 
   # ─────────────────────────────────────────────────────────────
-  # Remove a user (explicit `absent`).  Barricade will delete their
+  # Remove a user (explicit `absent`).  LabDog will delete their
   # account + home directory on next sync.
   # ─────────────────────────────────────────────────────────────
   - username: carol

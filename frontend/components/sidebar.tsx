@@ -202,7 +202,8 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
   return (
     <aside className="w-64 border-r border-slate-700 bg-slate-950 p-6 flex flex-col h-full">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Barricade</h1>
+        <h1 className="text-2xl font-bold text-white">LabDog</h1>
+        <p className="text-xs italic text-slate-400">A homelabber&apos;s best friend</p>
       </div>
 
       <nav className="space-y-4">

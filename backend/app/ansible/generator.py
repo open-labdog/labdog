@@ -186,31 +186,31 @@ def generate_iptables_playbook(
             "ansible.builtin.shell": "ip6tables-restore --noflush < /etc/ip6tables.rules",
         },
         {
-            "name": "Ensure INPUT jumps to BARRICADE-INPUT",
+            "name": "Ensure INPUT jumps to LABDOG-INPUT",
             "ansible.builtin.shell": (
-                "iptables -C INPUT -j BARRICADE-INPUT 2>/dev/null || "
-                "iptables -I INPUT 1 -j BARRICADE-INPUT"
+                "iptables -C INPUT -j LABDOG-INPUT 2>/dev/null || "
+                "iptables -I INPUT 1 -j LABDOG-INPUT"
             ),
         },
         {
-            "name": "Ensure OUTPUT jumps to BARRICADE-OUTPUT",
+            "name": "Ensure OUTPUT jumps to LABDOG-OUTPUT",
             "ansible.builtin.shell": (
-                "iptables -C OUTPUT -j BARRICADE-OUTPUT 2>/dev/null || "
-                "iptables -I OUTPUT 1 -j BARRICADE-OUTPUT"
+                "iptables -C OUTPUT -j LABDOG-OUTPUT 2>/dev/null || "
+                "iptables -I OUTPUT 1 -j LABDOG-OUTPUT"
             ),
         },
         {
-            "name": "Ensure INPUT jumps to BARRICADE-INPUT (IPv6)",
+            "name": "Ensure INPUT jumps to LABDOG-INPUT (IPv6)",
             "ansible.builtin.shell": (
-                "ip6tables -C INPUT -j BARRICADE-INPUT 2>/dev/null || "
-                "ip6tables -I INPUT 1 -j BARRICADE-INPUT"
+                "ip6tables -C INPUT -j LABDOG-INPUT 2>/dev/null || "
+                "ip6tables -I INPUT 1 -j LABDOG-INPUT"
             ),
         },
         {
-            "name": "Ensure OUTPUT jumps to BARRICADE-OUTPUT (IPv6)",
+            "name": "Ensure OUTPUT jumps to LABDOG-OUTPUT (IPv6)",
             "ansible.builtin.shell": (
-                "ip6tables -C OUTPUT -j BARRICADE-OUTPUT 2>/dev/null || "
-                "ip6tables -I OUTPUT 1 -j BARRICADE-OUTPUT"
+                "ip6tables -C OUTPUT -j LABDOG-OUTPUT 2>/dev/null || "
+                "ip6tables -I OUTPUT 1 -j LABDOG-OUTPUT"
             ),
         },
         {

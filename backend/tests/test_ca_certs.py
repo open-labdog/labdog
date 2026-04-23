@@ -36,7 +36,7 @@ def _make_ca_cert(
     subject = issuer = x509.Name(
         [
             x509.NameAttribute(NameOID.COMMON_NAME, common_name),
-            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Barricade Test"),
+            x509.NameAttribute(NameOID.ORGANIZATION_NAME, "LabDog Test"),
         ]
     )
     nb = not_before or datetime.now(UTC) - timedelta(days=1)

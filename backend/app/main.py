@@ -240,7 +240,7 @@ def create_app() -> FastAPI:
     _configure_logging()
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="Barricade", version="0.1.0")
+    app = FastAPI(title="LabDog", version="0.1.0")
 
     # -- HTTPS redirect (must be outermost) --
     if settings.tls.force_https:
@@ -461,10 +461,10 @@ def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str 
 def _resolve_static_dir() -> Path | None:
     """Return the frontend static directory, or None if not available.
 
-    Skipped when BARRICADE_DEV_MODE=1 (set by dev.sh) so the Next.js dev
+    Skipped when LABDOG_DEV_MODE=1 (set by dev.sh) so the Next.js dev
     server on :3000 is used instead of a stale static export.
     """
-    if os.environ.get("BARRICADE_DEV_MODE"):
+    if os.environ.get("LABDOG_DEV_MODE"):
         return None
     configured = settings.server.static_dir
     if configured:
@@ -479,7 +479,7 @@ def _resolve_static_dir() -> Path | None:
         return dev_path
 
     # Auto-detect: production packaged install
-    prod_path = Path("/usr/lib/barricade/frontend/out")
+    prod_path = Path("/usr/lib/labdog/frontend/out")
     if prod_path.is_dir() and (prod_path / "index.html").is_file():
         return prod_path
 

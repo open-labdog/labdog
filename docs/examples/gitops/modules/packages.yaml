@@ -1,4 +1,4 @@
-# Managed by Barricade — Packages module reference
+# Managed by LabDog — Packages module reference
 #
 # Packages module covers TWO related sections: `packages:` (individual
 # package rules) and `package_repositories:` (declarative repo entries).

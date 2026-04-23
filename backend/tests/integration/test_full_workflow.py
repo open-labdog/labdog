@@ -1,5 +1,5 @@
 """
-Integration test: full Barricade workflow from registration to audit log verification.
+Integration test: full LabDog workflow from registration to audit log verification.
 
 Runs against the real FastAPI app via httpx.AsyncClient + ASGITransport.
 Uses testcontainers for an isolated PostgreSQL instance.
@@ -58,7 +58,7 @@ class TestFullWorkflow:
             import subprocess
 
             env = os.environ.copy()
-            env["BARRICADE_DATABASE__URL"] = async_url
+            env["LABDOG_DATABASE__URL"] = async_url
 
             result = subprocess.run(
                 ["alembic", "upgrade", "head"],
@@ -111,25 +111,25 @@ class TestFullWorkflow:
         # ── Step 1: Register superuser ────────────────────────────────────────
         r = await client.post(
             "/auth/register",
-            json={"email": "integ@barricade.test", "password": "IntegPass1!"},
+            json={"email": "integ@labdog.test", "password": "IntegPass1!"},
         )
         assert r.status_code == 201, r.text
         user_data = r.json()
         assert "id" in user_data
-        assert user_data["email"] == "integ@barricade.test"
+        assert user_data["email"] == "integ@labdog.test"
         user_data["id"]
 
         # Promote to superuser directly in DB
-        await _promote_to_superuser(self.async_url, "integ@barricade.test")
+        await _promote_to_superuser(self.async_url, "integ@labdog.test")
 
         # ── Step 2: Login ─────────────────────────────────────────────────────
         r = await client.post(
             "/auth/jwt/login",
-            data={"username": "integ@barricade.test", "password": "IntegPass1!"},
+            data={"username": "integ@labdog.test", "password": "IntegPass1!"},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         assert r.status_code == 200, r.text
-        assert "barricade_auth" in r.cookies
+        assert "labdog_auth" in r.cookies
 
         # ── Step 3: Create SSH key ────────────────────────────────────────────
         private_key_pem = _generate_ed25519_private_key_pem()
@@ -266,7 +266,7 @@ class TestFullWorkflow:
         # Register viewer
         r = await client.post(
             "/auth/register",
-            json={"email": "viewer@barricade.test", "password": "ViewerPass1!"},
+            json={"email": "viewer@labdog.test", "password": "ViewerPass1!"},
         )
         assert r.status_code == 201, r.text
         viewer_id = r.json()["id"]
@@ -286,7 +286,7 @@ class TestFullWorkflow:
         ) as viewer_client:
             r = await viewer_client.post(
                 "/auth/jwt/login",
-                data={"username": "viewer@barricade.test", "password": "ViewerPass1!"},
+                data={"username": "viewer@labdog.test", "password": "ViewerPass1!"},
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
             assert r.status_code == 200, r.text

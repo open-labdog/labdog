@@ -84,7 +84,7 @@ async def get_source_ip(conn: asyncssh.SSHClientConnection) -> str | None:
     """Determine what IP the remote host sees us connecting from.
 
     Uses SSH_CLIENT env var on the remote side, which is authoritative
-    even when barricade runs inside a Docker container (NAT/bridge).
+    even when labdog runs inside a Docker container (NAT/bridge).
     Falls back to the local socket address if SSH_CLIENT is unavailable.
     """
     try:

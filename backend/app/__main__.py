@@ -1,11 +1,11 @@
 """
-Barricade application entrypoint.
+LabDog application entrypoint.
 
 Usage:
     python -m app              # start API server
     python -m app --workers 4  # start with multiple workers
 
-All server settings (host, port, TLS) are read from barricade.toml.
+All server settings (host, port, TLS) are read from labdog.toml.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ def _run_migrations() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Barricade API Server")
+    parser = argparse.ArgumentParser(description="LabDog API Server")
     parser.add_argument(
         "--workers",
         type=int,

@@ -1,15 +1,15 @@
 # ============================================================
-# Barricade Configuration
+# LabDog Configuration
 # ============================================================
-# Production configuration for Barricade.
-# Copy this file to /etc/barricade/barricade.toml and update
+# Production configuration for LabDog.
+# Copy this file to /etc/labdog/labdog.toml and update
 # all REQUIRED values before starting the service.
 #
 # Every setting can be overridden via environment variables
-# using the prefix BARRICADE_ with double-underscore separators:
-#   BARRICADE_SERVER__PORT=9000       → [server] port
-#   BARRICADE_DATABASE__URL=...       → [database] url
-#   BARRICADE_SECURITY__SECRET_KEY=.. → [security] secret_key
+# using the prefix LABDOG_ with double-underscore separators:
+#   LABDOG_SERVER__PORT=9000       → [server] port
+#   LABDOG_DATABASE__URL=...       → [database] url
+#   LABDOG_SECURITY__SECRET_KEY=.. → [security] secret_key
 
 # ── Server ───────────────────────────────────────────────────
 [server]
@@ -20,7 +20,7 @@ port = 8000
 # Path to frontend static export directory (Next.js `out/`).
 # Leave empty (default) to auto-detect:
 #   - ../frontend/out  (development)
-#   - /usr/lib/barricade/frontend/out  (production)
+#   - /usr/lib/labdog/frontend/out  (production)
 # Set to a path to override, or "none" to disable static serving.
 # static_dir = ""
 # Trusted reverse-proxy IPs/CIDRs — X-Forwarded-For is only
@@ -32,7 +32,7 @@ forwarded_allow_ips = "127.0.0.1"
 # ── Database ─────────────────────────────────────────────────
 [database]
 # PostgreSQL async connection string (REQUIRED)
-url = "postgresql+asyncpg://barricade:CHANGE_ME@localhost:5432/barricade"
+url = "postgresql+asyncpg://labdog:CHANGE_ME@localhost:5432/labdog"
 # Connection pool tuning
 pool_size = 5
 max_overflow = 10
@@ -54,9 +54,9 @@ secret_key = "CHANGE_ME"
 # Generate with: openssl rand -base64 32
 encryption_key = "CHANGE_ME"
 
-# IP of the Barricade server — used in the auto-injected SSH
+# IP of the LabDog server — used in the auto-injected SSH
 # lockout prevention rule (REQUIRED)
-barricade_server_ip = "127.0.0.1"
+labdog_server_ip = "127.0.0.1"
 
 # CORS allowed origins
 allowed_origins = ["http://localhost:3000"]

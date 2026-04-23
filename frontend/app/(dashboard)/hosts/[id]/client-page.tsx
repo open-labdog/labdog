@@ -239,7 +239,7 @@ function ModuleStateView({
         {(systemUsers.length > 0 || systemGroups.length > 0) && (
           <div className="pt-2 border-t border-slate-800">
             <h4 className="text-xs font-medium text-slate-500 mb-1">System (read-only)</h4>
-            <p className="text-xs text-slate-600 mb-2">Managed by the OS — not editable via Barricade.</p>
+            <p className="text-xs text-slate-600 mb-2">Managed by the OS — not editable via LabDog.</p>
             {systemUsers.length > 0 && (
               <div className="font-mono text-xs text-slate-500 space-y-0.5">
                 {systemUsers.map((u, i) => (
@@ -468,7 +468,7 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
           package_name: "nftables",
           state: "present",
           package_manager: "auto",
-          comment: "Installed by Barricade for firewall management",
+          comment: "Installed by LabDog for firewall management",
         }),
       })
     } catch (e: unknown) {
@@ -2355,7 +2355,7 @@ export default function HostDetailPage() {
                 <span className="font-mono">{host.ssh_port}</span>
               </InfoRow>
               <InfoRow label="Management IP">
-                <span className="font-mono">{host.barricade_source_ip ?? "Not yet detected"}</span>
+                <span className="font-mono">{host.labdog_source_ip ?? "Not yet detected"}</span>
               </InfoRow>
               <InfoRow label="Firewall Backend">
                 <FirewallBadge backend={host.firewall_backend} />

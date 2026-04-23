@@ -47,8 +47,8 @@ def run_package_sync(self, job_id: int, host_id: int) -> dict:
     """SECURITY: SSH key decrypted inside task, written to /dev/shm/, cleaned in finally."""
     import ansible_runner
 
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-", suffix=".key")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-")
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-", suffix=".key")
     os.close(fd)
 
     try:

@@ -3,17 +3,17 @@
 Strategy
 --------
 Each cert is written to the OS-appropriate trust-anchor directory under
-a deterministic ``barricade-<fingerprint16>.crt`` filename. After all
+a deterministic ``labdog-<fingerprint16>.crt`` filename. After all
 copies/removals are done, a single per-OS-family update task rebuilds
 the trust store.
 
 Reconciliation (no DB tracking of "previously deployed")
 --------------------------------------------------------
 The generator emits a "reconcile" task that lists existing
-``barricade-*.crt`` files on the host and removes any whose filename is
+``labdog-*.crt`` files on the host and removes any whose filename is
 not in the current desired set. This means deleting a cert from the
 group config and re-running the action removes it from hosts, without
-Barricade needing to remember what was previously deployed.
+LabDog needing to remember what was previously deployed.
 """
 
 from app.ansible.inventory import generate_inventory
@@ -33,7 +33,7 @@ def _short_fingerprint(fp: str) -> str:
 
 
 def cert_filename(fingerprint_sha256: str) -> str:
-    return f"barricade-{_short_fingerprint(fingerprint_sha256)}.crt"
+    return f"labdog-{_short_fingerprint(fingerprint_sha256)}.crt"
 
 
 def generate_ca_cert_playbook(
@@ -112,34 +112,34 @@ def generate_ca_cert_playbook(
                 }
             )
 
-        # Reconcile: discover any barricade-*.crt files and remove
+        # Reconcile: discover any labdog-*.crt files and remove
         # those not in the desired set.
         keep_full_paths = sorted(f"{drop_in_dir}/{fname}" for fname in keep_filenames)
         keep_paths_jinja = "[" + ", ".join(f"'{p}'" for p in keep_full_paths) + "]"
 
         tasks.append(
             {
-                "name": f"[{label}] Discover existing Barricade-managed certs",
+                "name": f"[{label}] Discover existing LabDog-managed certs",
                 "ansible.builtin.find": {
                     "paths": drop_in_dir,
-                    "patterns": "barricade-*.crt",
+                    "patterns": "labdog-*.crt",
                     "file_type": "file",
                 },
-                "register": f"barricade_existing_{label.lower()}",
+                "register": f"labdog_existing_{label.lower()}",
                 "when": os_when,
             }
         )
 
         tasks.append(
             {
-                "name": f"[{label}] Remove orphaned Barricade-managed certs",
+                "name": f"[{label}] Remove orphaned LabDog-managed certs",
                 "ansible.builtin.file": {
                     "path": "{{ item.path }}",
                     "state": "absent",
                 },
                 "loop": (
                     "{{ "
-                    f"barricade_existing_{label.lower()}.files | default([]) "
+                    f"labdog_existing_{label.lower()}.files | default([]) "
                     f"| rejectattr('path', 'in', {keep_paths_jinja}) "
                     "| list "
                     "}}"
@@ -161,7 +161,7 @@ def generate_ca_cert_playbook(
 
     playbook = [
         {
-            "name": "Barricade CA Certificate Deployment",
+            "name": "LabDog CA Certificate Deployment",
             "hosts": "all",
             "become": True,
             "gather_facts": True,

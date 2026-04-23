@@ -1,4 +1,4 @@
-"""YAML schema models for Barricade GitOps group configuration.
+"""YAML schema models for LabDog GitOps group configuration.
 
 Top-level key conventions
 --------------------------
@@ -19,7 +19,7 @@ Missing section semantics
 
 Forward compatibility
 ----------------------
-``BarricadeGroupYAML`` is configured with ``extra="allow"``, so unknown
+``LabDogGroupYAML`` is configured with ``extra="allow"``, so unknown
 top-level keys are silently ignored.  This lets future module phases add new
 sections to YAML files without breaking older importer versions.
 """
@@ -226,7 +226,7 @@ class LinuxUserYAML(BaseModel):
     priority: int = Field(default=0, ge=0, le=10000)
 
 
-class BarricadeGroupYAML(BaseModel):
+class LabDogGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
     firewall: FirewallModuleYAML | None = None

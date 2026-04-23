@@ -1,4 +1,4 @@
-# Managed by Barricade — DNS resolver reference
+# Managed by LabDog — DNS resolver reference
 #
 # Resolver is the only SINGLETON module — there is at most ONE resolver
 # config per group (and one per host for overrides).  This has two

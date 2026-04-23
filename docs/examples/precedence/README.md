@@ -2,7 +2,7 @@
 
 ← [Back to docs/examples](../README.md)
 
-Concrete examples showing how Barricade merges group-level and host-level
+Concrete examples showing how LabDog merges group-level and host-level
 configurations when a host belongs to multiple groups.
 
 ## Setup
@@ -153,7 +153,7 @@ Effective services for web-prod-01:
 ```
 
 Note: services not listed here (e.g. `sshd`, `cron`) are left untouched on
-the host. Barricade only manages what you explicitly define.
+the host. LabDog only manages what you explicitly define.
 
 ---
 
@@ -201,7 +201,7 @@ Effective /etc/hosts for web-prod-01:
 ```
 
 On sync, the entire `/etc/hosts` file is replaced. Any entries not defined in
-Barricade (and not system entries) will be removed.
+LabDog (and not system entries) will be removed.
 
 ---
 
@@ -245,7 +245,7 @@ Effective packages for web-prod-01:
 ```
 
 Unmanaged packages on the host are left alone. Only packages explicitly
-defined in Barricade are installed, upgraded, or removed.
+defined in LabDog are installed, upgraded, or removed.
 
 ---
 
@@ -271,7 +271,7 @@ Effective users for web-prod-01:
   - deploy: shell=/bin/bash, keys=["ssh-ed25519 BBB...prod-deploy-key"]  (from "production")
 ```
 
-Note: `authorized_keys` are synced with `exclusive=true`, meaning Barricade
+Note: `authorized_keys` are synced with `exclusive=true`, meaning LabDog
 replaces all SSH keys for that user. Keys added manually on the host will be
 removed on next sync.
 

@@ -118,7 +118,7 @@ async def create_host(
         ssh_port=body.ssh_port,
         ssh_user=ssh_user,
         ssh_key_id=body.ssh_key_id,
-        barricade_source_ip=source_ip,
+        labdog_source_ip=source_ip,
     )
     db.add(host)
     await db.flush()  # get host.id
@@ -209,7 +209,7 @@ async def list_hosts_summary(
                 "sync_status": h.sync_status.value
                 if hasattr(h.sync_status, "value")
                 else h.sync_status,
-                "barricade_source_ip": h.barricade_source_ip,
+                "labdog_source_ip": h.labdog_source_ip,
                 "drift_check_enabled": h.drift_check_enabled,
                 "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
                 "last_drift_check_at": h.last_drift_check_at.isoformat()

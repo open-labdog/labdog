@@ -1,4 +1,4 @@
-# Barricade — single-image build
+# LabDog — single-image build
 # Produces a container that runs the API, Celery worker+beat, and serves
 # the static frontend — all from `python -m app`.
 
@@ -29,20 +29,20 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -u 1000 barricade
+RUN useradd -m -u 1000 labdog
 
 # Python packages from builder
 COPY --from=backend-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
 
 # Backend source (app + alembic)
-COPY --chown=barricade:barricade backend/app/ app/
-COPY --chown=barricade:barricade backend/alembic/ alembic/
-COPY --chown=barricade:barricade backend/alembic.ini alembic.ini
+COPY --chown=labdog:labdog backend/app/ app/
+COPY --chown=labdog:labdog backend/alembic/ alembic/
+COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
 
 # Frontend static files
-COPY --from=frontend-builder --chown=barricade:barricade /app/out/ /usr/lib/barricade/frontend/out/
+COPY --from=frontend-builder --chown=labdog:labdog /app/out/ /usr/lib/labdog/frontend/out/
 
-USER barricade
+USER labdog
 EXPOSE 8000
 CMD ["python", "-m", "app"]

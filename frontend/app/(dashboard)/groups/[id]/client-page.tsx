@@ -822,7 +822,7 @@ export default function GroupDetailPage() {
         open={removeConfirmOpen}
         onOpenChange={(open) => { if (!open) setRemoveConfirmOpen(false) }}
         title={`Remove ${removeSelected.size} ${removeSelected.size === 1 ? "host" : "hosts"} from group?`}
-        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from Barricade.`}
+        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from LabDog.`}
         confirmLabel="Remove"
         variant="destructive"
         loading={removeLoading}

@@ -1,9 +1,9 @@
-# Managed by Barricade — /etc/hosts entries reference
+# Managed by LabDog — /etc/hosts entries reference
 #
 # Two variants per entry:
 #   1. LITERAL entry — supply both `ip_address` and `hostname`.
 #   2. REFERENCE entry — supply `host_ref_id` (numeric id of a host in
-#      Barricade's own hosts table). Barricade resolves the IP/hostname
+#      LabDog's own hosts table). LabDog resolves the IP/hostname
 #      at sync time, so if the referenced host's primary IP changes the
 #      /etc/hosts lines follow automatically.
 #
@@ -22,7 +22,7 @@
 #
 # Reference-only field:
 #   host_ref_id int     — required when not a literal; must be the id of a
-#                        host that exists in Barricade's hosts table.
+#                        host that exists in LabDog's hosts table.
 #                        Missing refs fail the import cleanly with
 #                        "Referenced host id N does not exist".
 #
@@ -38,7 +38,7 @@ priority: 100
 hosts_entries:
   # ─────────────────────────────────────────────────────────────
   # Literal entries — fixed IPs for infrastructure that isn't in
-  # Barricade's own hosts table.
+  # LabDog's own hosts table.
   # ─────────────────────────────────────────────────────────────
   - ip_address: "10.0.1.10"
     hostname: "primary-db.internal"
@@ -62,7 +62,7 @@ hosts_entries:
     priority: 100
 
   # ─────────────────────────────────────────────────────────────
-  # Reference entry — track a host already in Barricade.  Replace
+  # Reference entry — track a host already in LabDog.  Replace
   # 42 with the actual host id from the hosts list (or /api/hosts).
   # ─────────────────────────────────────────────────────────────
   - host_ref_id: 42
@@ -75,7 +75,7 @@ hosts_entries:
   # passthrough based on the registered host's own fields.
   # ─────────────────────────────────────────────────────────────
   - host_ref_id: 43
-    comment: "Monitoring endpoint — tracked by Barricade"
+    comment: "Monitoring endpoint — tracked by LabDog"
     priority: 50
 
   # ─────────────────────────────────────────────────────────────

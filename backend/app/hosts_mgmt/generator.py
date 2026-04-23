@@ -34,7 +34,7 @@ def generate_hosts_file_playbook(
 
     playbook = [
         {
-            "name": "Barricade /etc/hosts management",
+            "name": "LabDog /etc/hosts management",
             "hosts": "all",
             "become": True,
             "gather_facts": False,

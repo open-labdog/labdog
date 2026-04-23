@@ -6,11 +6,11 @@
 
 **Path:** `/hosts`
 
-Shows every host registered in Barricade. Columns:
+Shows every host registered in LabDog. Columns:
 
 | Column | Description |
 |--------|-------------|
-| Hostname | The name given to the host in Barricade |
+| Hostname | The name given to the host in LabDog |
 | IP Address | Used for SSH connections and SSH-lockout rule generation |
 | Groups | Which host groups this host belongs to |
 | OS / Firewall | Detected firewall backend (`nftables`, `iptables`, `unknown`) |
@@ -30,7 +30,7 @@ Click **Add Host**. Required fields:
 | Field | Notes |
 |-------|-------|
 | Hostname | Display name — does not need to be the actual DNS name |
-| IP Address | Must be reachable over SSH from the Barricade server |
+| IP Address | Must be reachable over SSH from the LabDog server |
 | SSH User | User Ansible connects as (`root` by default) |
 | SSH Port | Default 22 |
 | SSH Key | One of the keys stored under SSH Keys |
@@ -80,11 +80,11 @@ The manual discovery page also shows an **"Automate this"** link pointing to the
 
 **Path:** `/hosts/{id}/terminal`
 
-A full browser-based SSH terminal powered by xterm.js. The connection goes through the Barricade server over a WebSocket — no direct SSH access from the browser is needed.
+A full browser-based SSH terminal powered by xterm.js. The connection goes through the LabDog server over a WebSocket — no direct SSH access from the browser is needed.
 
 ### Notes
 
 - Sessions are subject to the idle timeout configured in [Settings](settings.md) (default 30 minutes).
 - All terminal sessions are recorded in the [Audit Log](admin.md#audit-log) (session open/close events).
 - The SSH user and key are the same ones configured on the host.
-- Max concurrent sessions per user and globally are configurable in `dev/barricade.toml` or via environment variables (see `.env.example`).
+- Max concurrent sessions per user and globally are configurable in `dev/labdog.toml` or via environment variables (see `.env.example`).

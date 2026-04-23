@@ -1,4 +1,4 @@
-# Managed by Barricade — Services module reference
+# Managed by LabDog — Services module reference
 #
 # Per-field reference for the `services:` section.
 #
@@ -86,7 +86,7 @@ services:
 
       [Install]
       WantedBy=multi-user.target
-    comment: "Custom unit file, delivered by Barricade"
+    comment: "Custom unit file, delivered by LabDog"
 
   # ─────────────────────────────────────────────────────────────
   # Template instance — `@` is a legal character in service_name.

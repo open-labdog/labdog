@@ -5,7 +5,7 @@ from typing import Any
 import yaml
 
 from app.gitops.schema import (
-    BarricadeGroupYAML,
+    LabDogGroupYAML,
     CronJobYAML,
     FirewallRuleYAML,
     HostsEntryYAML,
@@ -27,8 +27,8 @@ class YAMLParseError(Exception):
     pass
 
 
-def parse_yaml(yaml_str: str) -> BarricadeGroupYAML:
-    """Parse YAML string into validated BarricadeGroupYAML model.
+def parse_yaml(yaml_str: str) -> LabDogGroupYAML:
+    """Parse YAML string into validated LabDogGroupYAML model.
 
     Raises YAMLParseError with descriptive message on failure.
     Silently ignores unknown top-level keys (future modules).
@@ -42,7 +42,7 @@ def parse_yaml(yaml_str: str) -> BarricadeGroupYAML:
         raise YAMLParseError("YAML must be a mapping (key-value pairs)")
 
     try:
-        return BarricadeGroupYAML.model_validate(data)
+        return LabDogGroupYAML.model_validate(data)
     except Exception as e:
         raise YAMLParseError(f"YAML validation failed: {e}") from e
 
@@ -157,7 +157,7 @@ def specs_to_yaml(
         "priority": priority,
         "firewall": firewall,
     }
-    return f"# Managed by Barricade\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
+    return f"# Managed by LabDog\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
 
 
 def package_specs_to_yaml(specs: list[PackageYAML]) -> list[dict[str, Any]]:

@@ -70,7 +70,7 @@ def check_all_package_drift():
 
                     await refresh_host_sync_status(host, db)
 
-                    if not host.barricade_source_ip:
+                    if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
                             async with ssh_connect(
@@ -79,7 +79,7 @@ def check_all_package_drift():
                                 username=ssh_key.ssh_user,
                                 client_keys=[imported_key],
                             ) as probe:
-                                host.barricade_source_ip = await get_source_ip(probe)
+                                host.labdog_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
                 except (OSError, asyncssh.Error, TimeoutError) as e:
@@ -100,7 +100,7 @@ def check_all_package_drift():
 
 package_drift_task = check_all_package_drift
 
-DRIFT_SCHEDULE_KEY = "barricade:package:drift"
+DRIFT_SCHEDULE_KEY = "labdog:package:drift"
 
 
 def _register_package_drift_schedule():

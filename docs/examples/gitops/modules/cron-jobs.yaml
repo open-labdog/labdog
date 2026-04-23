@@ -1,10 +1,10 @@
-# Managed by Barricade — Cron jobs reference
+# Managed by LabDog — Cron jobs reference
 #
 # Fields:
 #   name         string    — required; matches [a-zA-Z0-9][a-zA-Z0-9_-]*,
 #                            max 100 chars.  Used as the file name in
 #                            /etc/cron.d/ after being prefixed with
-#                            `barricade-`.
+#                            `labdog-`.
 #   user         string    — default "root".  The user the cron job runs
 #                            as.  Must match [a-zA-Z0-9_][a-zA-Z0-9_.-]*
 #                            (no shell metacharacters), max 32 chars.
@@ -111,8 +111,8 @@ cron_jobs:
     state: present
 
   # ─────────────────────────────────────────────────────────────
-  # Remove an old job (explicit absent).  Barricade will delete
-  # /etc/cron.d/barricade-old-job on next sync.
+  # Remove an old job (explicit absent).  LabDog will delete
+  # /etc/cron.d/labdog-old-job on next sync.
   # ─────────────────────────────────────────────────────────────
   - name: old-job
     user: root

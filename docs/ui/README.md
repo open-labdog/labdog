@@ -1,6 +1,6 @@
-# Barricade UI Guide
+# LabDog UI Guide
 
-A walkthrough of every page in the Barricade web interface.
+A walkthrough of every page in the LabDog web interface.
 
 ## Navigation
 
@@ -28,7 +28,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Firewall Rules](groups.md#firewall-rules) | Inbound/outbound TCP/UDP/ICMP rules per group |
 | [Services](groups.md#services) | Systemd service desired state (running/stopped, enabled/disabled) |
 | [Packages](groups.md#packages) | System package install/remove/pin and custom repositories |
-| [Hosts File](groups.md#hosts-file) | /etc/hosts entries managed by Barricade |
+| [Hosts File](groups.md#hosts-file) | /etc/hosts entries managed by LabDog |
 | [Cron Jobs](groups.md#cron-jobs) | Scheduled tasks deployed via Ansible |
 | [Linux Users](groups.md#linux-users) | User accounts, SSH keys, sudo rules |
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
@@ -37,7 +37,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
-| [Users](admin.md#users) | Barricade user accounts (superuser only) |
+| [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |
 
 ---
