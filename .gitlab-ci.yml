@@ -5,7 +5,9 @@ stages:
   - scan
 
 variables:
-  IMAGE: gitlab.example.internal:5050/operator/labdog
+  # NOTE: registry project path is still `barricade` — the rebrand cannot
+  # move it yet. Keep this in sync with the deployment compose file too.
+  IMAGE: gitlab.example.internal:5050/operator/barricade
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
 
