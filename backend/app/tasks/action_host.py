@@ -162,6 +162,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             # Cache scalar values before the session closes
             host_id: int = host.id
             host_ip: str = host.ip_address
+            host_hostname: str = host.hostname
             host_port: int = host.ssh_port or 22
             ssh_user: str = ssh_key.ssh_user or "root"
             parameters: dict = dict(run.parameters or {})
@@ -180,6 +181,30 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         vmid: int | None = None
         snapshot_name: str | None = None
         step_log: list[str] = []
+
+        def _log_step(msg: str) -> None:
+            """Append a line to step_log AND stream it to the SSE channel so
+            the UI sees snapshot / verify / rollback / cleanup progress
+            live, not just at the end. Broker hiccups are silent — the DB
+            output is persisted regardless.
+            """
+            step_log.append(msg)
+            try:
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {
+                            "event": "output",
+                            "host_run_id": host_run_id,
+                            "text": msg + "\n",
+                        }
+                    ),
+                )
+            except Exception:
+                logger.debug(
+                    "action_host: SSE publish failed for step log line",
+                    exc_info=True,
+                )
 
         if action_destructive:
             try:
@@ -227,7 +252,9 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         # ------------------------------------------------------------------ #
         # Build inventory and extra vars                                      #
         # ------------------------------------------------------------------ #
-        inventory_json = generate_inventory(host_ip, host_port, ssh_key_path, ssh_user=ssh_user)
+        inventory_json = generate_inventory(
+            host_ip, host_port, ssh_key_path, ssh_user=ssh_user, hostname=host_hostname
+        )
 
         dry_run = parameters.pop("__dry_run", False)
         extra_vars: dict | None = dict(parameters) if parameters else None
@@ -263,7 +290,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
 
             try:
                 snapshot_name = await create_snapshot(proxmox_client, pve_node, vmid, action_run_id)
-                step_log.append(f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}")
+                _log_step(f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}")
                 async with task_session() as db:
                     hr_result = await db.execute(
                         select(ActionHostRun).where(ActionHostRun.id == host_run_id)
@@ -278,7 +305,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     host_id,
                     exc,
                 )
-                step_log.append(f"[snapshot] FAILED: {exc}")
+                _log_step(f"[snapshot] FAILED: {exc}")
                 async with task_session() as db:
                     hr_result = await db.execute(
                         select(ActionHostRun).where(ActionHostRun.id == host_run_id)
@@ -300,6 +327,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     ),
                 )
                 return
+        elif action_destructive:
+            # Destructive action but no Proxmox VM mapping — snapshot-wrap is
+            # skipped. Surface this in the log so users know no rollback is
+            # possible for this run.
+            _log_step(
+                "[snapshot] skipped — host has no Proxmox VM mapping "
+                "(no rollback available on failure)"
+            )
 
         # ------------------------------------------------------------------ #
         # Run ansible-runner                                                  #
@@ -323,21 +358,26 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         playbook_success: bool = runner.status == "successful"
         exit_code: int = runner.rc
 
-        step_log.append(f"[playbook] exit={exit_code} status={runner.status}")
+        _log_step(f"[playbook] exit={exit_code} status={runner.status}")
         step_log.append("=== Ansible output ===")
         step_log.append(playbook_output)
 
-        # Publish last 4 KB of playbook output to SSE
-        r.publish(
-            channel,
-            json.dumps(
-                {
-                    "event": "output",
-                    "host_run_id": host_run_id,
-                    "text": playbook_output[-4000:],
-                }
-            ),
-        )
+        # Publish last 4 KB of playbook output to SSE. Prepend a divider so
+        # the step-log lines stay visually separated from the raw ansible
+        # stream in the live view.
+        try:
+            r.publish(
+                channel,
+                json.dumps(
+                    {
+                        "event": "output",
+                        "host_run_id": host_run_id,
+                        "text": "=== Ansible output ===\n" + playbook_output[-4000:],
+                    }
+                ),
+            )
+        except Exception:
+            logger.debug("action_host: SSE publish failed for ansible output", exc_info=True)
 
         # ------------------------------------------------------------------ #
         # Post-run verification (only when we also took a snapshot — i.e.     #
@@ -366,7 +406,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                         db,
                     )
                 verification_passed = bool(verify_result.get("passed"))
-                step_log.append(
+                _log_step(
                     f"[verify] passed={verification_passed} "
                     f"services_ok={verify_result.get('services_ok')} "
                     f"packages_ok={verify_result.get('packages_ok')}"
@@ -382,7 +422,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                 )
                 verification_passed = False
                 verification_error = f"Verification error: {exc}"
-                step_log.append(f"[verify] ERROR: {exc}")
+                _log_step(f"[verify] ERROR: {exc}")
 
         # ------------------------------------------------------------------ #
         # Decide overall success, roll back on failure, clean up on success   #
@@ -397,7 +437,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         if not success and snapshot_name is not None and proxmox_client is not None:
             from app.workflows.steps.rollback import rollback_to_snapshot  # noqa: PLC0415
 
-            step_log.append(f"[rollback] restoring {snapshot_name}")
+            _log_step(f"[rollback] restoring {snapshot_name}")
             try:
                 async with task_session() as db:
                     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -406,7 +446,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                         proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db
                     )
                     await db.commit()
-                step_log.append(
+                _log_step(
                     f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip()
                 )
             except Exception as exc:
@@ -416,14 +456,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     host_id,
                     exc,
                 )
-                step_log.append(f"[rollback] ERROR: {exc}")
+                _log_step(f"[rollback] ERROR: {exc}")
 
         if success and snapshot_name is not None and proxmox_client is not None:
             from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
 
             try:
                 await delete_snapshot(proxmox_client, pve_node, vmid, snapshot_name)
-                step_log.append(f"[cleanup] snapshot {snapshot_name} deleted")
+                _log_step(f"[cleanup] snapshot {snapshot_name} deleted")
             except Exception as exc:
                 # Non-fatal — the action succeeded; orphan snapshot is
                 # cosmetic and will be reaped by the periodic cleanup task.
@@ -433,7 +473,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     host_id,
                     exc,
                 )
-                step_log.append(f"[cleanup] WARN: {exc}")
+                _log_step(f"[cleanup] WARN: {exc}")
 
         # ------------------------------------------------------------------ #
         # Persist result to DB                                                #

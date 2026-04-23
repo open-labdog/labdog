@@ -3,7 +3,7 @@
 - name: "Dist-upgrade | Replace release codename in /etc/apt/sources.list"
   ansible.builtin.replace:
     path: /etc/apt/sources.list
-    regexp: "{{ ansible_distribution_release }}"
+    regexp: "{{ ansible_facts['distribution_release'] }}"
     replace: "{{ next_version }}"
     backup: true
 
@@ -16,7 +16,7 @@
 - name: "Dist-upgrade | Replace release codename in sources.list.d files"
   ansible.builtin.replace:
     path: "{{ item.path }}"
-    regexp: "{{ ansible_distribution_release }}"
+    regexp: "{{ ansible_facts['distribution_release'] }}"
     replace: "{{ next_version }}"
     backup: true
   loop: "{{ sources_list_d_files.files }}"
@@ -56,7 +56,7 @@
 
 - name: "Dist-upgrade | Record pre-reboot NIC name"
   ansible.builtin.set_fact:
-    _pre_reboot_nic: "{{ ansible_default_ipv4.interface }}"
+    _pre_reboot_nic: "{{ ansible_facts['default_ipv4']['interface'] }}"
 
 - name: "Dist-upgrade | Include cleanup tasks"
   ansible.builtin.include_tasks: cleanup.yml
