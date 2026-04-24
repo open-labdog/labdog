@@ -1,7 +1,7 @@
 # LabDog Documentation
 
 Guides and reference material for running LabDog. For a project
-summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/-/blob/dev/README.md).
+summary see the [top-level README](https://github.com/open-labdog/labdog/blob/main/README.md).
 
 ## Contents
 
@@ -69,9 +69,9 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/
 
 The YAML examples in this tree parse cleanly against the live Pydantic
 schema; the schema itself lives in
-[`backend/app/gitops/schema.py`](https://gitlab.lan.tyresson.se/dennis/labdog/-/blob/dev/backend/app/gitops/schema.py)
+[`backend/app/gitops/schema.py`](https://github.com/open-labdog/labdog/blob/main/backend/app/gitops/schema.py)
 and is the source of truth. Per-module handlers are in
-[`backend/app/gitops/importers/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/backend/app/gitops/importers/).
+[`backend/app/gitops/importers/`](https://github.com/open-labdog/labdog/tree/main/backend/app/gitops/importers/).
 
 ## How Configuration Is Applied
 
@@ -148,13 +148,13 @@ When you sync, LabDog computes the full effective configuration and pushes it to
 
 ### From Package (Recommended)
 
-Pre-built packages are available on the [Releases](https://gitlab.lan.tyresson.se/dennis/labdog/-/releases) page for each tagged version.
+Pre-built packages are available on the [Releases](https://github.com/open-labdog/labdog/releases) page for each tagged version.
 
 **Debian / Ubuntu (.deb)**
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog_${VERSION}-1_amd64.deb
+curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 ```
 
@@ -162,7 +162,7 @@ sudo apt install ./labdog_${VERSION}-1_amd64.deb
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog-${VERSION}-1.x86_64.rpm
+curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 ```
 
@@ -172,7 +172,7 @@ After package install, skip to [Post-install configuration](#post-install-config
 
 ```bash
 VERSION=0.0.1
-curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
+curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
 tar -xzf labdog-${VERSION}-linux-amd64.tar.gz
 cd labdog-${VERSION}-linux-amd64
 sudo ./install.sh
@@ -181,7 +181,7 @@ sudo ./install.sh
 ### Verifying Downloads
 
 ```bash
-curl -LO https://gitlab.example.com/dennis/labdog/-/packages/generic/labdog/${VERSION}/SHA256SUMS
+curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 

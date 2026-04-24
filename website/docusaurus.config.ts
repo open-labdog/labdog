@@ -2,10 +2,10 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
-// Repo refs — update url / baseUrl / editUrl when the project moves to
-// GitHub.  Everything else is environment-agnostic.
-const REPO_URL = 'https://gitlab.lan.tyresson.se/dennis/labdog';
-const EDIT_BRANCH = 'dev';
+// Repo refs — change REPO_URL / EDIT_BRANCH if the repo moves or
+// renames its default branch.
+const REPO_URL = 'https://github.com/open-labdog/labdog';
+const EDIT_BRANCH = 'main';
 
 const config: Config = {
   title: 'LabDog',

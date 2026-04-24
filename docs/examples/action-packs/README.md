@@ -8,14 +8,14 @@ and group detail pages.
 For the mechanics — what a pack is, how it loads, how overrides resolve
 — see [the Actions user guide](../../ui/actions.md). For the end-to-end
 reference of all manifest fields, see
-[the `labdog-playbooks` README](https://gitlab.lan.tyresson.se/dennis/labdog-playbooks).
+[the `labdog-playbooks` README](https://github.com/open-labdog/labdog-playbooks).
 
 | Example | What it demonstrates |
 |---|---|
-| [`minimal-pack/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/minimal-pack) | The smallest possible pack. One action, no parameters, no roles, no destructive wrapping. Start here. |
-| [`reboot-pack/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/reboot-pack) | A realistic destructive action with a parameter. Shows how `destructive: true` activates the Proxmox snapshot → verify → rollback pipeline automatically. |
-| [`with-role/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/with-role) | A pack that ships its own Ansible role and reuses it from a playbook. Shows how `ANSIBLE_ROLES_PATH` resolution works across bundled + pack roles. |
-| [`with-verify/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/with-verify) | A destructive action with a pack-supplied verify playbook that decides pass/fail after the main playbook runs. Replaces LabDog's built-in SSH/services/packages check with the pack's own definition of success. |
+| [`minimal-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/minimal-pack) | The smallest possible pack. One action, no parameters, no roles, no destructive wrapping. Start here. |
+| [`reboot-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/reboot-pack) | A realistic destructive action with a parameter. Shows how `destructive: true` activates the Proxmox snapshot → verify → rollback pipeline automatically. |
+| [`with-role/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-role) | A pack that ships its own Ansible role and reuses it from a playbook. Shows how `ANSIBLE_ROLES_PATH` resolution works across bundled + pack roles. |
+| [`with-verify/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-verify) | A destructive action with a pack-supplied verify playbook that decides pass/fail after the main playbook runs. Replaces LabDog's built-in SSH/services/packages check with the pack's own definition of success. |
 
 ## Quick start
 

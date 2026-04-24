@@ -172,12 +172,12 @@ The three example packs in
 [`docs/examples/action-packs/`](../examples/action-packs/) cover the
 bread and butter:
 
-- [`minimal-pack/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/minimal-pack) — smallest
+- [`minimal-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/minimal-pack) — smallest
   possible pack, one action with no parameters.
-- [`reboot-pack/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/reboot-pack) — a
+- [`reboot-pack/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/reboot-pack) — a
   destructive action with a parameter, suitable as a template for
   things that modify host state.
-- [`with-role/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/with-role) — a pack that
+- [`with-role/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-role) — a pack that
   ships its own Ansible role and reuses it from a playbook.
 
 ### Pack layout
@@ -227,7 +227,7 @@ parameters:                  # passed as --extra-vars at run time
 Unknown fields are rejected (the manifest is validated with pydantic
 `extra="forbid"`), so typos fail loudly instead of silently doing
 nothing. The bundled pack's manifests in
-[`backend/app/ansible/actions/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/backend/app/ansible/actions)
+[`backend/app/ansible/actions/`](https://github.com/open-labdog/labdog/tree/main/backend/app/ansible/actions)
 are working examples of every field.
 
 ### Playbook conventions
@@ -332,10 +332,10 @@ the main playbook.
 built-in SSH + services + packages check (healthy if every
 currently-desired service is running and every desired package is
 installed). The full working example is
-[`docs/examples/action-packs/with-verify/`](https://gitlab.lan.tyresson.se/dennis/labdog/-/tree/dev/docs/examples/action-packs/with-verify).
+[`docs/examples/action-packs/with-verify/`](https://github.com/open-labdog/labdog/tree/main/docs/examples/action-packs/with-verify).
 
 **Reusable verify templates** ship in the `labdog-playbooks` repo
-under [`verify/`](https://gitlab.lan.tyresson.se/dennis/labdog-playbooks/-/tree/main/verify)
+under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/verify)
 — point `verify_playbook:` at one of them (e.g.
 `../verify/post-upgrade.yml`) and pass overrides through manifest
 parameters. The bundled `linux-upgrade` action in that repo uses
