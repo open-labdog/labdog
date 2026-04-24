@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-04-21T10:20:12Z",
+  "generated_at": "2026-04-24T15:14:08Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 53,
+      "CONFIDENCE.HIGH": 55,
       "CONFIDENCE.LOW": 5,
-      "CONFIDENCE.MEDIUM": 21,
+      "CONFIDENCE.MEDIUM": 22,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 54,
+      "SEVERITY.LOW": 57,
       "SEVERITY.MEDIUM": 25,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 25537,
+      "loc": 27293,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -54,6 +54,45 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/actions/git_sync.py": {
+      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 2,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 125,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/actions/manifest.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 54,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/actions/packs.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 141,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/actions/registry.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -63,7 +102,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 132,
+      "loc": 114,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/actions/types.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 36,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -102,7 +154,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 19,
+      "loc": 36,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -115,7 +167,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 94,
+      "loc": 109,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -141,7 +193,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 27,
+      "loc": 25,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/api/action_packs.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 275,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -154,7 +219,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 255,
+      "loc": 272,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -323,7 +388,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 365,
+      "loc": 384,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -492,7 +557,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 261,
+      "loc": 275,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -843,7 +908,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 150,
+      "loc": 228,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1129,7 +1194,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 192,
+      "loc": 182,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1155,7 +1220,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 193,
+      "loc": 189,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1168,7 +1233,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 282,
+      "loc": 276,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1181,7 +1246,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 145,
+      "loc": 139,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1194,7 +1259,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 193,
+      "loc": 185,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1207,7 +1272,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 3,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 329,
+      "loc": 309,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1233,7 +1298,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 198,
+      "loc": 194,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1376,7 +1441,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 379,
+      "loc": 399,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1389,7 +1454,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 92,
+      "loc": 100,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1402,7 +1467,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 57,
+      "loc": 58,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1480,7 +1545,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 70,
+      "loc": 74,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1519,7 +1584,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 65,
+      "loc": 64,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1663,6 +1728,97 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 94,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/__init__.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 9,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/git_auth.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 115,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/known_hosts.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 31,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/models.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 1,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 94,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/redact.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 23,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/schemas.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 188,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/service.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 207,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2000,7 +2156,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 56,
+      "loc": 59,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2052,7 +2208,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 39,
+      "loc": 43,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2078,7 +2234,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 174,
+      "loc": 171,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2364,7 +2520,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 71,
+      "loc": 95,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2377,7 +2533,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 242,
+      "loc": 501,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2390,7 +2546,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 229,
+      "loc": 231,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2468,7 +2624,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 71,
+      "loc": 112,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2572,7 +2728,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 256,
+      "loc": 268,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2676,7 +2832,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 180,
+      "loc": 181,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2949,7 +3105,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 71,
+      "loc": 72,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2968,6 +3124,54 @@
     }
   },
   "results": [
+    {
+      "code": "17 import shutil\n18 import subprocess\n19 from pathlib import Path\n",
+      "col_offset": 0,
+      "end_col_offset": 17,
+      "filename": "app/actions/git_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Consider possible security implications associated with the subprocess module.",
+      "line_number": 18,
+      "line_range": [
+        18
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_imports.html#b404-import-subprocess",
+      "test_id": "B404",
+      "test_name": "blacklist"
+    },
+    {
+      "code": "49     try:\n50         result = subprocess.run(\n51             cmd,\n52             cwd=str(cwd) if cwd else None,\n53             capture_output=True,\n54             text=True,\n55             check=True,\n56             timeout=120,\n57             env=env,\n58         )\n59     except FileNotFoundError as exc:\n",
+      "col_offset": 17,
+      "end_col_offset": 9,
+      "filename": "app/actions/git_sync.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 78,
+        "link": "https://cwe.mitre.org/data/definitions/78.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "subprocess call - check for execution of untrusted input.",
+      "line_number": 50,
+      "line_range": [
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b603_subprocess_without_shell_equals_true.html",
+      "test_id": "B603",
+      "test_name": "subprocess_without_shell_equals_true"
+    },
     {
       "code": "51                 \"src\": \"/etc/nftables.conf\",\n52                 \"dest\": \"/tmp/nftables-backup.conf.orig\",\n53                 \"remote_src\": True,\n54             },\n55             \"ignore_errors\": True,\n56         },\n57         {\n",
       "col_offset": 24,
@@ -3349,7 +3553,7 @@
       "test_name": "subprocess_without_shell_equals_true"
     },
     {
-      "code": "28 class ServerConfig(BaseModel):\n29     host: str = \"0.0.0.0\"\n30     port: int = 8000\n",
+      "code": "30 class ServerConfig(BaseModel):\n31     host: str = \"0.0.0.0\"\n32     port: int = 8000\n",
       "col_offset": 16,
       "end_col_offset": 25,
       "filename": "app/config.py",
@@ -3360,9 +3564,9 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible binding to all interfaces.",
-      "line_number": 29,
+      "line_number": 31,
       "line_range": [
-        29
+        31
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html",
       "test_id": "B104",
@@ -3493,7 +3697,7 @@
       "test_name": "any_other_function_with_shell_equals_true"
     },
     {
-      "code": "359                     uid=entry.uid,\n360                     shell=entry.shell,\n361                     home_dir=entry.home_dir,\n362                     state=UserState(entry.state),\n363                     comment=entry.comment,\n364                     sudo_rule=entry.sudo_rule,\n365                     # Preserve user-provided list order in DB; sorted copies\n366                     # were used only for diff comparison above.\n367                     authorized_keys=list(entry.authorized_keys),\n368                     supplementary_groups=list(entry.supplementary_groups),\n369                     priority=entry.priority,\n370                 )\n371                 db.add(row)\n372 \n373         after_state = {\n374             \"linux_groups\": [\n375                 {\n",
+      "code": "339                     uid=entry.uid,\n340                     shell=entry.shell,\n341                     home_dir=entry.home_dir,\n342                     state=UserState(entry.state),\n343                     comment=entry.comment,\n344                     sudo_rule=entry.sudo_rule,\n345                     # Preserve user-provided list order in DB; sorted copies\n346                     # were used only for diff comparison above.\n347                     authorized_keys=list(entry.authorized_keys),\n348                     supplementary_groups=list(entry.supplementary_groups),\n349                     priority=entry.priority,\n350                 )\n351                 db.add(row)\n352 \n353         after_state = {\n354             \"linux_groups\": [\n355                 {\n",
       "col_offset": 22,
       "end_col_offset": 17,
       "filename": "app/gitops/importers/users.py",
@@ -3504,23 +3708,23 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Function call with shell=True parameter identified, possible security issue.",
-      "line_number": 360,
+      "line_number": 340,
       "line_range": [
-        356,
-        357,
-        358,
-        359,
-        360,
-        361,
-        362,
-        363,
-        364,
-        365,
-        366,
-        367,
-        368,
-        369,
-        370
+        336,
+        337,
+        338,
+        339,
+        340,
+        341,
+        342,
+        343,
+        344,
+        345,
+        346,
+        347,
+        348,
+        349,
+        350
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b604_any_other_function_with_shell_equals_true.html",
       "test_id": "B604",
@@ -3563,6 +3767,26 @@
       "line_number": 12,
       "line_range": [
         12
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
+      "test_id": "B105",
+      "test_name": "hardcoded_password_string"
+    },
+    {
+      "code": "23     SSH = \"ssh\"\n24     HTTPS_TOKEN = \"https_token\"\n25 \n",
+      "col_offset": 18,
+      "end_col_offset": 31,
+      "filename": "app/packs/models.py",
+      "issue_confidence": "MEDIUM",
+      "issue_cwe": {
+        "id": 259,
+        "link": "https://cwe.mitre.org/data/definitions/259.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Possible hardcoded password: 'https_token'",
+      "line_number": 24,
+      "line_range": [
+        24
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
@@ -3694,7 +3918,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "73     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-action-\")\n74     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-action-\", suffix=\".key\")\n75     os.close(fd)\n",
+      "code": "76     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-action-\")\n77     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-action-\", suffix=\".key\")\n78     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
       "filename": "app/tasks/action_host.py",
@@ -3705,16 +3929,16 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 74,
+      "line_number": 77,
       "line_range": [
-        74
+        77
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
       "test_id": "B108",
       "test_name": "hardcoded_tmp_directory"
     },
     {
-      "code": "311             )\n312         except Exception:\n313             pass\n314         raise\n",
+      "code": "611             )\n612         except Exception:\n613             pass\n614         raise\n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "app/tasks/action_host.py",
@@ -3725,10 +3949,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 312,
+      "line_number": 612,
       "line_range": [
-        312,
-        313
+        612,
+        613
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4427,8 +4651,8 @@
     },
     {
       "code": "76 \n77     ssh_key_path = f\"/dev/shm/labdog-wf-{host_run_id}.key\"\n78 \n",
-      "col_offset": 21,
-      "end_col_offset": 43,
+      "col_offset": 19,
+      "end_col_offset": 58,
       "filename": "app/tasks/workflow_host.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {

@@ -180,9 +180,7 @@ def _unwrap_optional(annotation: Any) -> Any:
     return annotation
 
 
-def _resolve_path_annotation(
-    settings_cls: type[BaseModel], path: list[str]
-) -> Any | None:
+def _resolve_path_annotation(settings_cls: type[BaseModel], path: list[str]) -> Any | None:
     """Walk ``path`` through nested BaseModel fields and return the leaf
     annotation. Returns ``None`` if any segment doesn't exist on the model
     so the caller can fall back to passing the raw string through."""
@@ -210,9 +208,7 @@ def _set_nested(container: dict, path: list[str], value: Any) -> None:
     target[path[-1]] = value
 
 
-def _coerce_env_value(
-    settings_cls: type[BaseModel], path: list[str], raw: str
-) -> Any:
+def _coerce_env_value(settings_cls: type[BaseModel], path: list[str], raw: str) -> Any:
     """Parse an env-var string into the shape of the target field.
 
     List and dict fields accept JSON (``'["a","b"]'``) or, as a shorthand

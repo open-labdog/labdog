@@ -22,9 +22,7 @@ def origin_repo(tmp_path: Path) -> str:
     _git(path, ["config", "user.email", "test@example.com"])
     _git(path, ["config", "user.name", "Test"])
     (path / "actions").mkdir()
-    (path / "actions" / "demo.yml").write_text(
-        "---\n- name: demo\n  hosts: all\n  tasks: []\n"
-    )
+    (path / "actions" / "demo.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
     (path / "actions" / "demo.manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
@@ -213,9 +211,7 @@ async def test_create_token_with_ssh_auth_rejected(superuser_client):
     assert resp.status_code == 422
 
 
-async def test_pre_save_test_runs_ls_remote(
-    superuser_client, origin_repo
-):
+async def test_pre_save_test_runs_ls_remote(superuser_client, origin_repo):
     resp = await superuser_client.post(
         "/api/action-packs/test",
         json={
@@ -230,9 +226,7 @@ async def test_pre_save_test_runs_ls_remote(
     assert body["commit_sha"]
 
 
-async def test_pre_save_test_fails_cleanly_on_bad_ref(
-    superuser_client, origin_repo
-):
+async def test_pre_save_test_fails_cleanly_on_bad_ref(superuser_client, origin_repo):
     resp = await superuser_client.post(
         "/api/action-packs/test",
         json={
@@ -247,9 +241,7 @@ async def test_pre_save_test_fails_cleanly_on_bad_ref(
     assert body["commit_sha"] is None
 
 
-async def test_update_ref_triggers_resync(
-    superuser_client, origin_repo, monkeypatch, tmp_path
-):
+async def test_update_ref_triggers_resync(superuser_client, origin_repo, monkeypatch, tmp_path):
     from app.config import settings
 
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
@@ -325,9 +317,7 @@ def local_pack_dir(tmp_path: Path) -> Path:
     """Materialise a ready-to-load local pack directory (no git)."""
     p = tmp_path / "my-local-pack"
     (p / "actions").mkdir(parents=True)
-    (p / "actions" / "hello.yml").write_text(
-        "---\n- name: hello\n  hosts: all\n  tasks: []\n"
-    )
+    (p / "actions" / "hello.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
     (p / "actions" / "hello.manifest.yml").write_text(
         "key: hello-local\n"
         "name: Hello from local\n"
@@ -363,9 +353,7 @@ async def test_create_local_pack_registers_action(superuser_client, local_pack_d
     assert "hello-local" in keys
 
 
-async def test_create_local_pack_with_missing_path_marks_failed(
-    superuser_client, tmp_path: Path
-):
+async def test_create_local_pack_with_missing_path_marks_failed(superuser_client, tmp_path: Path):
     resp = await superuser_client.post(
         "/api/action-packs",
         json={

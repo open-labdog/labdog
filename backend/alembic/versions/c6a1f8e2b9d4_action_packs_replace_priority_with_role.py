@@ -48,9 +48,7 @@ def upgrade() -> None:
     # Backfill: packs whose old priority was <= 10 become 'default',
     # everything else becomes 'override'. Matches the semantic we used
     # before the rename.
-    op.execute(
-        "UPDATE action_packs SET role = 'default' WHERE priority <= 10"
-    )
+    op.execute("UPDATE action_packs SET role = 'default' WHERE priority <= 10")
 
     op.drop_column("action_packs", "priority")
 
@@ -65,10 +63,6 @@ def downgrade() -> None:
             server_default="10",
         ),
     )
-    op.execute(
-        "UPDATE action_packs SET priority = CASE "
-        "WHEN role = 'default' THEN 10 "
-        "ELSE 100 END"
-    )
+    op.execute("UPDATE action_packs SET priority = CASE WHEN role = 'default' THEN 10 ELSE 100 END")
     op.drop_column("action_packs", "role")
     pack_role.drop(op.get_bind(), checkfirst=True)

@@ -114,10 +114,7 @@ def _scan_db_pack_rows_sync() -> list[dict]:
                     ActionPack.priority,
                 ).where(ActionPack.enabled.is_(True))
             )
-            return [
-                {"id": r.id, "name": r.name, "priority": r.priority}
-                for r in result
-            ]
+            return [{"id": r.id, "name": r.name, "priority": r.priority} for r in result]
     finally:
         engine.dispose()
 

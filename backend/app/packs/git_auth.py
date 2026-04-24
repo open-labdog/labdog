@@ -22,10 +22,10 @@ import logging
 import os
 import stat
 import tempfile
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
 
 from app.packs.known_hosts import build_known_hosts
 from app.packs.models import PackAuthType
@@ -112,18 +112,14 @@ def git_auth_context(
 
 
 @contextmanager
-def _materialised_ssh_files(
-    private_key: str, known_hosts_body: str
-) -> Iterator[tuple[Path, Path]]:
+def _materialised_ssh_files(private_key: str, known_hosts_body: str) -> Iterator[tuple[Path, Path]]:
     """Write the key + known_hosts to a 0700 temp dir, return paths, clean up."""
     tmpdir = tempfile.mkdtemp(prefix="labdog-pack-ssh-")
     try:
         os.chmod(tmpdir, 0o700)
         key_path = Path(tmpdir) / "id"
         hosts_path = Path(tmpdir) / "known_hosts"
-        key_path.write_text(
-            private_key if private_key.endswith("\n") else private_key + "\n"
-        )
+        key_path.write_text(private_key if private_key.endswith("\n") else private_key + "\n")
         hosts_path.write_text(known_hosts_body)
         os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
         os.chmod(hosts_path, stat.S_IRUSR | stat.S_IWUSR)

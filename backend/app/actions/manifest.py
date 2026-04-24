@@ -36,9 +36,7 @@ class ActionManifest(BaseModel):
     name: str
     description: str
     icon: str
-    playbook: str = Field(
-        description="Playbook filename relative to the manifest's directory."
-    )
+    playbook: str = Field(description="Playbook filename relative to the manifest's directory.")
     version: str
     estimated_duration: str
     destructive: bool = False

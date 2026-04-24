@@ -68,7 +68,8 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "(auth_type = 'none' AND encrypted_ssh_key IS NULL AND encrypted_token IS NULL)"
             " OR (auth_type = 'ssh' AND encrypted_ssh_key IS NOT NULL AND encrypted_token IS NULL)"
-            " OR (auth_type = 'https_token' AND encrypted_token IS NOT NULL AND encrypted_ssh_key IS NULL)",
+            " OR (auth_type = 'https_token' AND encrypted_token IS NOT NULL"
+            " AND encrypted_ssh_key IS NULL)",
             name="ck_action_packs_auth_consistency",
         ),
     )

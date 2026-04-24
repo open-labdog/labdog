@@ -51,9 +51,7 @@ def test_allowed_origins_accepts_json_array():
 
 
 def test_allowed_origins_empty_env_yields_empty_list():
-    with patch.dict(
-        os.environ, _env(LABDOG_SECURITY__ALLOWED_ORIGINS=""), clear=True
-    ):
+    with patch.dict(os.environ, _env(LABDOG_SECURITY__ALLOWED_ORIGINS=""), clear=True):
         s = Settings()
     assert s.security.allowed_origins == []
 

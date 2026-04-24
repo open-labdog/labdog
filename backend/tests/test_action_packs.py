@@ -140,9 +140,7 @@ def test_load_pack_resolves_verify_playbook(tmp_path: Path):
     assert len(defns) == 1
     d = defns[0]
     assert d.verify_playbook_path is not None
-    assert d.verify_playbook_path == (
-        tmp_path / "vp" / "actions" / "hello-verify.yml"
-    ).resolve()
+    assert d.verify_playbook_path == (tmp_path / "vp" / "actions" / "hello-verify.yml").resolve()
     assert d.verify_timeout_seconds == 300
 
 

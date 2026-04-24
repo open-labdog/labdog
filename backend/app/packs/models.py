@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base
 
 
-class PackAuthType(str, enum.Enum):
+class PackAuthType(enum.StrEnum):
     """How LabDog authenticates to the pack's git remote.
 
     ``none`` is for public repos. ``ssh`` uses a stored private key with
@@ -24,7 +24,7 @@ class PackAuthType(str, enum.Enum):
     HTTPS_TOKEN = "https_token"
 
 
-class PackSourceType(str, enum.Enum):
+class PackSourceType(enum.StrEnum):
     """Where the pack's manifests live.
 
     ``git`` — LabDog clones / fetches the configured remote into
@@ -39,7 +39,7 @@ class PackSourceType(str, enum.Enum):
     LOCAL = "local"
 
 
-class PackRole(str, enum.Enum):
+class PackRole(enum.StrEnum):
     """Semantic position of a pack in the override hierarchy.
 
     ``default`` — a canonical/baseline pack that downstream packs can
@@ -108,9 +108,7 @@ class ActionPack(Base):
     ssh_known_hosts: Mapped[str | None] = mapped_column(Text, nullable=True)
     encrypted_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
 
-    last_synced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)

@@ -12,22 +12,13 @@ def test_build_known_hosts_empty_input_returns_empty_string():
 
 
 def test_build_known_hosts_strips_comments_and_blanks():
-    body = build_known_hosts(
-        "# this is a comment\n"
-        "host1 ssh-rsa AAAA\n"
-        "\n"
-        "host2 ssh-ed25519 BBBB\n"
-    )
+    body = build_known_hosts("# this is a comment\nhost1 ssh-rsa AAAA\n\nhost2 ssh-ed25519 BBBB\n")
     lines = body.strip().splitlines()
     assert lines == ["host1 ssh-rsa AAAA", "host2 ssh-ed25519 BBBB"]
 
 
 def test_build_known_hosts_deduplicates():
-    body = build_known_hosts(
-        "host1 ssh-rsa AAAA\n"
-        "host1 ssh-rsa AAAA\n"
-        "host2 ssh-ed25519 BBBB\n"
-    )
+    body = build_known_hosts("host1 ssh-rsa AAAA\nhost1 ssh-rsa AAAA\nhost2 ssh-ed25519 BBBB\n")
     lines = body.strip().splitlines()
     assert lines == ["host1 ssh-rsa AAAA", "host2 ssh-ed25519 BBBB"]
 
