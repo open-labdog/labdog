@@ -59,6 +59,16 @@ def _manifest_to_definition(
     roles_paths: tuple[Path, ...] = (
         (pack.roles_dir,) if pack.roles_dir.is_dir() else ()
     )
+    verify_playbook_path: Path | None = None
+    if manifest.verify_playbook is not None:
+        candidate = (manifest_path.parent / manifest.verify_playbook).resolve()
+        if not candidate.is_file():
+            raise FileNotFoundError(
+                f"Manifest {manifest_path} references verify_playbook "
+                f"{manifest.verify_playbook!r} which does not exist at "
+                f"{candidate}."
+            )
+        verify_playbook_path = candidate
     return ActionDefinition(
         key=manifest.key,
         name=manifest.name,
@@ -84,6 +94,8 @@ def _manifest_to_definition(
         ),
         pack_name=pack.name,
         roles_paths=roles_paths,
+        verify_playbook_path=verify_playbook_path,
+        verify_timeout_seconds=manifest.verify_timeout_seconds,
     )
 
 

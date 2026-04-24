@@ -90,6 +90,79 @@ def test_manifest_rejects_unknown_fields():
         )
 
 
+def test_manifest_accepts_verify_playbook_fields():
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "demo.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+            "verify_playbook": "demo-verify.yml",
+            "verify_timeout_seconds": 45,
+        }
+    )
+    assert m.verify_playbook == "demo-verify.yml"
+    assert m.verify_timeout_seconds == 45
+
+
+def test_manifest_defaults_have_no_verify():
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "demo.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+        }
+    )
+    assert m.verify_playbook is None
+    assert m.verify_timeout_seconds == 300
+
+
+def test_load_pack_resolves_verify_playbook(tmp_path: Path):
+    manifest_body = SIMPLE_MANIFEST + "verify_playbook: hello-verify.yml\n"
+    _write_pack(
+        tmp_path,
+        "vp",
+        manifests={"hello.manifest.yml": manifest_body},
+        playbooks={
+            "demo.yml": SIMPLE_PLAYBOOK,
+            "hello-verify.yml": SIMPLE_PLAYBOOK,
+        },
+    )
+    pack = Pack(name="vp", path=tmp_path / "vp")
+    defns = load_pack(pack)
+    assert len(defns) == 1
+    d = defns[0]
+    assert d.verify_playbook_path is not None
+    assert d.verify_playbook_path == (
+        tmp_path / "vp" / "actions" / "hello-verify.yml"
+    ).resolve()
+    assert d.verify_timeout_seconds == 300
+
+
+def test_load_pack_skips_when_verify_playbook_missing(tmp_path: Path, caplog):
+    manifest_body = SIMPLE_MANIFEST + "verify_playbook: not-here.yml\n"
+    _write_pack(
+        tmp_path,
+        "vp",
+        manifests={"demo.manifest.yml": manifest_body},
+        playbooks={"demo.yml": SIMPLE_PLAYBOOK},
+    )
+    pack = Pack(name="vp", path=tmp_path / "vp")
+    with caplog.at_level("ERROR"):
+        defns = load_pack(pack)
+    # The whole manifest is rejected — same treatment as a missing main
+    # playbook. Better to catch typos at load time than at run time.
+    assert defns == []
+    assert any("verify_playbook" in r.message for r in caplog.records)
+
+
 def test_load_pack_returns_action_definition(tmp_path: Path):
     _write_pack(
         tmp_path,

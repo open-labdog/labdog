@@ -280,9 +280,59 @@ system works on bare metal too.
 Non-destructive actions never trigger snapshot wrapping regardless of
 VM mapping.
 
-**Current limitation:** the post-run verification is hardcoded (SSH +
-services + packages). A pack action can't yet specify its own
-verification hook. See `plans/TODO.md` for the planned extension.
+### Custom verification (pack-supplied)
+
+Packs can declare their own definition of success. When a manifest sets
+`verify_playbook`, LabDog runs that playbook after the main one and its
+`ansible-runner` exit status becomes the verification result — a
+failed task fails the verify, which fails the action, which triggers
+rollback.
+
+```yaml
+# actions/deploy-app.manifest.yml
+key: deploy-app
+name: Deploy app
+destructive: true
+playbook: deploy-app.yml
+verify_playbook: deploy-app-verify.yml  # runs after deploy-app.yml
+verify_timeout_seconds: 120             # budget; default 300
+# ...rest of the manifest
+```
+
+The verify playbook runs with the **same inventory, same extra_vars,
+same pack roles** as the main playbook — no special plumbing needed.
+Typical patterns:
+
+```yaml
+# actions/deploy-app-verify.yml
+- name: Verify the deploy worked
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Service is up
+      ansible.builtin.systemd_service: { name: "{{ service_name }}" }
+      register: svc
+      failed_when: svc.status.ActiveState != "active"
+
+    - name: App reports healthy
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ port }}/healthz"
+        status_code: 200
+```
+
+**When the verify hook fires:** same gate as the built-in check —
+destructive action + host with a Proxmox VM mapping + the main playbook
+succeeded. Non-destructive actions or hosts without a VM mapping skip
+verification entirely (there's no snapshot to protect, so the safety
+net doesn't apply). If you need verification on a non-destructive
+action, either mark it destructive or do the checks as tasks inside
+the main playbook.
+
+**Default behaviour when no verify_playbook is set:** LabDog runs the
+built-in SSH + services + packages check (healthy if every
+currently-desired service is running and every desired package is
+installed). The full working example is
+[`docs/examples/action-packs/with-verify/`](../examples/action-packs/with-verify/).
 
 ---
 

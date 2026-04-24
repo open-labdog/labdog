@@ -169,6 +169,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             playbook_path = action.playbook_path
             action_destructive: bool = action.destructive
             action_roles_paths: tuple = action.roles_paths
+            action_verify_playbook_path = action.verify_playbook_path
+            action_verify_timeout: int = action.verify_timeout_seconds
 
         # ------------------------------------------------------------------ #
         # Load Proxmox VM mapping if the action is destructive. A snapshot is
@@ -389,42 +391,103 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         verification_passed = True
         verification_error: str | None = None
         if playbook_success and snapshot_name is not None:
-            try:
-                from app.packages.merge import get_effective_packages  # noqa: PLC0415
-                from app.services.merge import get_effective_services  # noqa: PLC0415
-                from app.workflows.steps.verify import run_verification  # noqa: PLC0415
-
-                async with task_session() as db:
-                    host_result = await db.execute(select(Host).where(Host.id == host_id))
-                    host = host_result.scalar_one()
-                    effective_services = await get_effective_services(host_id, db)
-                    effective_packages = await get_effective_packages(host_id, db)
-                    verify_result = await run_verification(
-                        host,
-                        ssh_key_path,
-                        effective_services,
-                        effective_packages,
-                        None,  # no AI prompt for ad-hoc actions
-                        db,
+            if action_verify_playbook_path is not None:
+                # Pack-supplied verify: run it the same way as the main
+                # playbook. Any non-zero rc or ansible-runner status other
+                # than "successful" counts as verification failure. Output
+                # is appended to step_log so the UI run view shows it
+                # distinctly from the main playbook.
+                try:
+                    verify_runner = run_ansible(
+                        playbook_path=action_verify_playbook_path,
+                        inventory_json=inventory_json,
+                        private_data_dir=private_data_dir + "-verify",
+                        extra_vars=extra_vars,
+                        timeout=action_verify_timeout,
+                        roles_paths=list(action_roles_paths) if action_roles_paths else None,
                     )
-                verification_passed = bool(verify_result.get("passed"))
-                _log_step(
-                    f"[verify] passed={verification_passed} "
-                    f"services_ok={verify_result.get('services_ok')} "
-                    f"packages_ok={verify_result.get('packages_ok')}"
-                )
-                if not verification_passed:
-                    verification_error = f"Post-run verification failed: {verify_result}"
-            except Exception as exc:
-                logger.exception(
-                    "action_host: verification failed for action_run %d host %d: %s",
-                    action_run_id,
-                    host_id,
-                    exc,
-                )
-                verification_passed = False
-                verification_error = f"Verification error: {exc}"
-                _log_step(f"[verify] ERROR: {exc}")
+                    verify_output: str = (
+                        verify_runner.stdout.read()
+                        if hasattr(verify_runner.stdout, "read")
+                        else str(verify_runner.stdout)
+                    )
+                    verification_passed = verify_runner.status == "successful"
+                    _log_step(
+                        f"[verify] pack playbook exit={verify_runner.rc} "
+                        f"status={verify_runner.status} "
+                        f"passed={verification_passed}"
+                    )
+                    step_log.append("=== Verify playbook output ===")
+                    step_log.append(verify_output)
+                    try:
+                        r.publish(
+                            channel,
+                            json.dumps(
+                                {
+                                    "event": "output",
+                                    "host_run_id": host_run_id,
+                                    "text": "=== Verify playbook output ===\n"
+                                    + verify_output[-4000:],
+                                }
+                            ),
+                        )
+                    except Exception:
+                        logger.debug(
+                            "action_host: SSE publish failed for verify output",
+                            exc_info=True,
+                        )
+                    if not verification_passed:
+                        verification_error = (
+                            f"Verify playbook failed "
+                            f"(status={verify_runner.status}, rc={verify_runner.rc})"
+                        )
+                except Exception as exc:
+                    logger.exception(
+                        "action_host: verify playbook errored for action_run %d host %d: %s",
+                        action_run_id,
+                        host_id,
+                        exc,
+                    )
+                    verification_passed = False
+                    verification_error = f"Verify playbook error: {exc}"
+                    _log_step(f"[verify] ERROR: {exc}")
+            else:
+                try:
+                    from app.packages.merge import get_effective_packages  # noqa: PLC0415
+                    from app.services.merge import get_effective_services  # noqa: PLC0415
+                    from app.workflows.steps.verify import run_verification  # noqa: PLC0415
+
+                    async with task_session() as db:
+                        host_result = await db.execute(select(Host).where(Host.id == host_id))
+                        host = host_result.scalar_one()
+                        effective_services = await get_effective_services(host_id, db)
+                        effective_packages = await get_effective_packages(host_id, db)
+                        verify_result = await run_verification(
+                            host,
+                            ssh_key_path,
+                            effective_services,
+                            effective_packages,
+                            None,  # no AI prompt for ad-hoc actions
+                            db,
+                        )
+                    verification_passed = bool(verify_result.get("passed"))
+                    _log_step(
+                        f"[verify] passed={verification_passed} "
+                        f"services_ok={verify_result.get('services_ok')} "
+                        f"packages_ok={verify_result.get('packages_ok')}"
+                    )
+                    if not verification_passed:
+                        verification_error = f"Post-run verification failed: {verify_result}"
+                except Exception as exc:
+                    logger.exception(
+                        "action_host: verification failed for action_run %d host %d: %s",
+                        action_run_id,
+                        host_id,
+                        exc,
+                    )
+                    verification_passed = False
+                    verification_error = f"Verification error: {exc}"
+                    _log_step(f"[verify] ERROR: {exc}")
 
         # ------------------------------------------------------------------ #
         # Decide overall success, roll back on failure, clean up on success   #

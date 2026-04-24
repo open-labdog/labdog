@@ -1,0 +1,30 @@
+---
+# Runs after deploy-app.yml. LabDog takes ansible-runner's exit status
+# as the verification result: any failed task fails the action run and
+# triggers a snapshot rollback. Same inventory, same extra_vars, same
+# pack roles as the main playbook — no special setup.
+- name: Verify app deployment succeeded
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Confirm the service is up
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+      register: svc
+      failed_when: svc.status.ActiveState != "active"
+
+    - name: Confirm the HTTP endpoint reports healthy
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ port | default(8080) }}/healthz"
+        return_content: true
+        status_code: 200
+      register: health
+      failed_when: "'ok' not in (health.content | default(''))"
+
+    - name: Confirm the deployed version matches what we asked for
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ port | default(8080) }}/version"
+        return_content: true
+      register: version_probe
+      failed_when: version not in (version_probe.content | default(''))
