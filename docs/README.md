@@ -56,6 +56,12 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [examples/precedence/](./examples/precedence/README.md) | How LabDog merges group-level and host-level configurations when a host belongs to multiple groups. Worked examples for every module. |
 | [examples/action-packs/](./examples/action-packs/README.md) | Three working examples of the action-pack format — minimal, destructive-with-parameter, and a pack that ships its own role. Drop into a git repo or local directory and add via the UI. |
 
+### Operations
+
+| Section | What it covers |
+|---|---|
+| [backup-restore.md](./backup-restore.md) | Backing up the PostgreSQL database and the encryption key, a daily-backup systemd timer, restore procedure (fresh host + point-in-time), disaster recovery for lost-key / lost-DB scenarios, and security notes for backup handling. |
+
 ### Where to start
 
 - **New to LabDog?** → [ui/README.md](./ui/README.md) for a tour of the interface
@@ -64,6 +70,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
 - **Trying to reason about multi-group hosts?** → [examples/precedence/README.md](./examples/precedence/README.md)
 - **Want to add or override action playbooks?** → [ui/actions.md](./ui/actions.md) and [examples/action-packs/README.md](./examples/action-packs/README.md)
+- **Running LabDog in production?** → [backup-restore.md](./backup-restore.md) before users start entering credentials
 
 ### Authoritative sources
 

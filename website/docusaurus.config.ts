@@ -16,12 +16,13 @@ const config: Config = {
     v4: true, // Improve compatibility with the upcoming Docusaurus v4
   },
 
-  // Production URL — placeholder until the site is actually published.
-  url: 'https://labdog.example.com',
-  baseUrl: '/',
+  // GitHub Pages URL. If you add a custom domain (CNAME), update this
+  // to the canonical URL and keep baseUrl at '/'. For project pages on
+  // the default github.io domain the path is '/<projectName>/'.
+  url: 'https://open-labdog.github.io',
+  baseUrl: '/labdog/',
 
-  // Used by the `npm run deploy` GitHub Pages command if we ever use it.
-  organizationName: 'dennis',
+  organizationName: 'open-labdog',
   projectName: 'labdog',
 
   // Fail the build on broken links — the existing content has been
