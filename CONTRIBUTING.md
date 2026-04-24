@@ -110,7 +110,25 @@ it with the maintainer privately
 
 ## Release process
 
-Maintainer-only, documented in [`docs/upgrade.md`](docs/upgrade.md)
-once that exists. Short form: tag `vX.Y.Z` on `main`, the GitHub
-Actions pipeline builds artifacts and attaches them to the
-auto-created Release.
+Maintainer-only. Short form:
+
+1. Bump version in `backend/pyproject.toml` and
+   `frontend/package.json` to the target `X.Y.Z`. These must match
+   the tag — the release-artifacts CI job derives the packaged
+   version from the tag, not from the files, so if they drift
+   `labdog --version` and the .deb/.rpm filenames won't agree.
+2. Commit the bump on `main`.
+3. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. The `release-artifacts` workflow job builds `.tar.gz`, `.deb`,
+   `.rpm`, and `SHA256SUMS` via `./packaging/build.sh` and
+   attaches them to the auto-created Release via
+   `softprops/action-gh-release`.
+5. To smoke-test the packaging path without cutting a real
+   release, run the workflow manually (**Actions → CI → Run
+   workflow**). The same job builds artifacts with a dev-flavoured
+   version (`0.0.0-dev.<short-sha>`) and uploads them to the
+   workflow-run artifacts for download, but skips the
+   release-create step.
+
+Automating the version-sync (bumping the manifests from the tag
+on-the-fly in CI) is a follow-up tracked in `plans/TODO.md`.
