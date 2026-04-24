@@ -51,6 +51,7 @@ celery_app.conf.update(
     task_soft_time_limit=1500,
 )
 
+
 @worker_ready.connect
 def _sync_packs_on_worker_start(sender=None, **_kwargs):
     """On Celery worker boot, sync every enabled action pack and rebuild
@@ -75,9 +76,7 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
         asyncio.run(_do_sync())
         reload_registry()
     except Exception:
-        logger.exception(
-            "action-pack sync on worker_ready failed; bundled pack only"
-        )
+        logger.exception("action-pack sync on worker_ready failed; bundled pack only")
 
 
 # Auto-discover tasks

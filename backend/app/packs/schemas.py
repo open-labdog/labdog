@@ -107,13 +107,10 @@ def _enforce_source_fields(model) -> None:
     at = getattr(model, "auth_type", None)
     if st == PackSourceType.LOCAL:
         if at is not None and at != PackAuthType.NONE:
-            raise ValueError(
-                "source_type=local requires auth_type=none (nothing is cloned)"
-            )
+            raise ValueError("source_type=local requires auth_type=none (nothing is cloned)")
         if model.ssh_private_key or model.token:
             raise ValueError(
-                "source_type=local does not accept credentials — the path is "
-                "read in place"
+                "source_type=local does not accept credentials — the path is read in place"
             )
 
 
@@ -135,9 +132,7 @@ def _enforce_auth_fields(model, *, creating: bool):
 
     if at == PackAuthType.NONE:
         if model.ssh_private_key or model.token:
-            raise ValueError(
-                "auth_type=none does not accept ssh_private_key or token"
-            )
+            raise ValueError("auth_type=none does not accept ssh_private_key or token")
     elif at == PackAuthType.SSH:
         if creating and not model.ssh_private_key:
             raise ValueError("auth_type=ssh requires ssh_private_key")

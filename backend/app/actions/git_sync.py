@@ -35,7 +35,7 @@ def _run_git(
     args: list[str],
     *,
     cwd: Path | None = None,
-    auth: "GitAuthContext | None" = None,
+    auth: GitAuthContext | None = None,
 ) -> str:
     """Invoke git with optional auth context. Error output is scrubbed of
     any secrets the auth context declared before being raised."""
@@ -63,9 +63,7 @@ def _run_git(
     except subprocess.CalledProcessError as exc:
         raw = (exc.stderr or exc.stdout or "").strip()
         scrubbed = redact(raw, auth.redact_values if auth else None) or ""
-        raise GitSyncError(
-            f"git {args[0]} failed (rc={exc.returncode}): {scrubbed}"
-        ) from exc
+        raise GitSyncError(f"git {args[0]} failed (rc={exc.returncode}): {scrubbed}") from exc
     return result.stdout
 
 
@@ -81,7 +79,7 @@ def sync_remote_pack(
     ref: str,
     path: Path,
     *,
-    auth: "GitAuthContext | None" = None,
+    auth: GitAuthContext | None = None,
 ) -> str:
     """Ensure *path* is a checkout of *repo* at *ref*, cloning or updating.
 
@@ -126,9 +124,7 @@ def sync_remote_pack(
         )
     else:
         logger.info("updating remote pack %s@%s at %s", repo, ref, path)
-        _run_git(
-            ["fetch", "--depth", "1", "origin", ref], cwd=path, auth=auth
-        )
+        _run_git(["fetch", "--depth", "1", "origin", ref], cwd=path, auth=auth)
         _run_git(["reset", "--hard", "FETCH_HEAD"], cwd=path, auth=auth)
 
     return _run_git(["rev-parse", "HEAD"], cwd=path).strip()
@@ -138,7 +134,7 @@ def ls_remote(
     repo: str,
     ref: str,
     *,
-    auth: "GitAuthContext | None" = None,
+    auth: GitAuthContext | None = None,
 ) -> str:
     """Resolve *ref* at *repo* without checking out anything.
 

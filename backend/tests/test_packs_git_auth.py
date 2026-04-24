@@ -26,9 +26,7 @@ def test_none_auth_yields_empty_context():
 
 
 def test_https_token_sets_extraheader_and_redacts_token():
-    with git_auth_context(
-        auth_type=PackAuthType.HTTPS_TOKEN, token="ghp_secret_pat_value"
-    ) as ctx:
+    with git_auth_context(auth_type=PackAuthType.HTTPS_TOKEN, token="ghp_secret_pat_value") as ctx:
         assert ctx.extra_args[0] == "-c"
         assert "Authorization: Bearer ghp_secret_pat_value" in ctx.extra_args[1]
         assert "ghp_secret_pat_value" in ctx.redact_values
@@ -50,15 +48,15 @@ def test_ssh_missing_known_hosts_raises():
     with pytest.raises(ValueError, match="ssh_known_hosts"):
         with git_auth_context(
             auth_type=PackAuthType.SSH,
-            ssh_private_key="-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----",
+            ssh_private_key=(
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nkey\n-----END OPENSSH PRIVATE KEY-----"
+            ),
         ):
             pass
 
 
 def test_ssh_materialises_files_and_cleans_up():
-    key_bytes = (
-        "-----BEGIN OPENSSH PRIVATE KEY-----\nABCDEF\n-----END OPENSSH PRIVATE KEY-----"
-    )
+    key_bytes = "-----BEGIN OPENSSH PRIVATE KEY-----\nABCDEF\n-----END OPENSSH PRIVATE KEY-----"
     hosts_entry = "github.com ssh-rsa AAAAB3NzaC1yc2EABC"
 
     seen_paths: dict[str, Path] = {}

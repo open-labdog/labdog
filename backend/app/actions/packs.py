@@ -56,9 +56,7 @@ def _manifest_to_definition(
             f"Manifest {manifest_path} references playbook "
             f"{manifest.playbook!r} which does not exist at {playbook_path}."
         )
-    roles_paths: tuple[Path, ...] = (
-        (pack.roles_dir,) if pack.roles_dir.is_dir() else ()
-    )
+    roles_paths: tuple[Path, ...] = (pack.roles_dir,) if pack.roles_dir.is_dir() else ()
     verify_playbook_path: Path | None = None
     if manifest.verify_playbook is not None:
         candidate = (manifest_path.parent / manifest.verify_playbook).resolve()
@@ -165,5 +163,3 @@ def load_packs(packs: list[Pack]) -> dict[str, ActionDefinition]:
         key: replace(defn, overridden_from=tuple(history[key][:-1]))
         for key, defn in registry.items()
     }
-
-

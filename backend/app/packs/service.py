@@ -147,9 +147,7 @@ async def sync_pack(
     return True
 
 
-async def _verify_local_pack(
-    db: AsyncSession, pack: ActionPack, *, commit: bool
-) -> bool:
+async def _verify_local_pack(db: AsyncSession, pack: ActionPack, *, commit: bool) -> bool:
     """Smoke-check a local pack's path and record the outcome."""
     path = Path(pack.repo_url)
     ok = path.is_dir() and (path / "actions").is_dir()
@@ -161,9 +159,7 @@ async def _verify_local_pack(
         logger.info("pack %r (local) verified at %s", pack.name, path)
     else:
         pack.last_sync_status = "failed"
-        pack.last_sync_error = (
-            f"local path {path} does not exist or lacks an actions/ directory"
-        )
+        pack.last_sync_error = f"local path {path} does not exist or lacks an actions/ directory"
         logger.warning("pack %r (local) verification failed: %s", pack.name, path)
     if commit:
         await db.commit()
