@@ -9,7 +9,7 @@ The sidebar is always visible on desktop (collapses on mobile). It has three sec
 | Section | Items |
 |---------|-------|
 | **Manage** | Dashboard, Hosts, Groups, Update Workflows |
-| **Integrations** | SSH Keys, Git Repos, Proxmox |
+| **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox |
 | **Admin** | Users, Audit Log, Settings |
 
 Your email, a **Change Password** link, and a **Log Out** button sit at the bottom of the sidebar.
@@ -34,6 +34,8 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
 | [Sync](groups.md#sync) | Preview and apply desired state to hosts |
 | [Update Workflows](workflows.md) | Scheduled Linux and Kubernetes upgrade automation |
+| [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
+| [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |

@@ -80,6 +80,17 @@ Groups have priorities (higher number wins). When a host belongs to multiple gro
 ### Discovery flow
 Network scanning is async via Celery tasks. Bulk-add requires SSH verification — each host must be reachable before being added.
 
+### Action packs (BYO playbooks)
+Action playbooks are supplied by pluggable packs, not the hardcoded
+registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
+module import. DB-backed packs are configured from the UI at
+`/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
+can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
+Pack role (`default` / `override`) derives the priority tier — admins
+never enter integers. See `app/packs/` for the subsystem, the user
+guide at `docs/ui/actions.md`, and starter packs at
+`docs/examples/action-packs/`.
+
 ## Key Files
 
 | File | Purpose |
@@ -91,6 +102,10 @@ Network scanning is async via Celery tasks. Bulk-add requires SSH verification �
 | `frontend/lib/api.ts` | API client (`apiFetch`) |
 | `frontend/lib/auth.ts` | Auth context (`useAuth()`) |
 | `frontend/FRONTEND.md` | Frontend design and pattern reference |
+| `backend/app/packs/` | DB-backed action-pack subsystem (models, sync service, git auth, UI-entered credentials) |
+| `backend/app/actions/` | Pack loader, registry, manifest schema, git sync primitives |
+| `docs/ui/actions.md` | User guide for actions + packs |
+| `docs/examples/action-packs/` | Starter packs demonstrating the format |
 
 ## CI/CD
 

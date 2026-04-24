@@ -4,6 +4,13 @@
 
 Update Workflows automate Linux system updates and Kubernetes cluster upgrades on managed hosts. Workflows run Ansible playbooks with optional Proxmox VM snapshotting before each run.
 
+> **Update Workflows vs. [Actions](actions.md):** Update Workflows are
+> scheduled and opinionated about upgrade flows. Actions are the
+> generic "run this playbook now" primitive — same Ansible pipeline
+> and same snapshot-rollback safety net, but triggered manually and
+> backed by [action packs](actions.md#action-packs) you can extend
+> with your own playbooks.
+
 ---
 
 ## Workflow Types

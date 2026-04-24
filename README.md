@@ -23,6 +23,7 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 - **Audit trail**: Append-only log of all actions with before/after state
 - **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
 - **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
+- **Action packs (BYO playbooks)**: Extend the built-in action catalog by pointing LabDog at a git repo or a local directory; credentials encrypted at rest, overrides resolved by semantic role (default / override / local), provenance surfaced in the UI
 
 ## Documentation
 
@@ -40,6 +41,8 @@ Direct entry points:
 - [API endpoints](docs/README.md#api-endpoints) — full REST surface
 - [GitOps guide](docs/examples/gitops/README.md) — webhook setup + YAML schema for every module
 - [Precedence](docs/examples/precedence/README.md) — worked examples for multi-group merges
+- [Actions & Action Packs](docs/ui/actions.md) — ad-hoc playbook runs and bring-your-own pack guide
+- [Action-pack examples](docs/examples/action-packs/README.md) — three working starter packs
 
 ## License
 

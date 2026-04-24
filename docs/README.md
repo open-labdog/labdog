@@ -40,6 +40,7 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, sync) |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
 | [ui/workflows.md](./ui/workflows.md) | Update Workflows — Linux and Kubernetes upgrade automation |
+| [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
 
@@ -53,6 +54,7 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/
 | [examples/gitops/database.yaml](./examples/gitops/database.yaml) | Realistic PostgreSQL-tier example with a declared apt repository, per-user cron backups, and different resolver backend. |
 | [examples/gitops/modules/](./examples/gitops/modules/) | One focused YAML per module (firewall, services, packages, hosts-entries, cron-jobs, resolver, users) with every field annotated and edge cases demonstrated. |
 | [examples/precedence/](./examples/precedence/README.md) | How LabDog merges group-level and host-level configurations when a host belongs to multiple groups. Worked examples for every module. |
+| [examples/action-packs/](./examples/action-packs/README.md) | Three working examples of the action-pack format — minimal, destructive-with-parameter, and a pack that ships its own role. Drop into a git repo or local directory and add via the UI. |
 
 ### Where to start
 
@@ -61,6 +63,7 @@ summary see the [top-level README](https://gitlab.lan.tyresson.se/dennis/labdog/
 - **Setting up GitOps for the first time?** → [examples/gitops/README.md](./examples/gitops/README.md)
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
 - **Trying to reason about multi-group hosts?** → [examples/precedence/README.md](./examples/precedence/README.md)
+- **Want to add or override action playbooks?** → [ui/actions.md](./ui/actions.md) and [examples/action-packs/README.md](./examples/action-packs/README.md)
 
 ### Authoritative sources
 
