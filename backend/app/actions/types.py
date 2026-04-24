@@ -44,3 +44,9 @@ class ActionDefinition:
     #: a provenance hint so admins know why a collision resolved the way
     #: it did.
     overridden_from: tuple[str, ...] = field(default_factory=tuple)
+    #: Absolute path to a pack-supplied verify playbook that decides
+    #: post-run success. ``None`` falls back to the built-in
+    #: SSH/services/packages health check. Only consulted for
+    #: destructive actions on hosts with a Proxmox VM mapping.
+    verify_playbook_path: Path | None = None
+    verify_timeout_seconds: int = 300

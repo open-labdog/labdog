@@ -15,6 +15,7 @@ reference of all manifest fields, see
 | [`minimal-pack/`](./minimal-pack/) | The smallest possible pack. One action, no parameters, no roles, no destructive wrapping. Start here. |
 | [`reboot-pack/`](./reboot-pack/) | A realistic destructive action with a parameter. Shows how `destructive: true` activates the Proxmox snapshot → verify → rollback pipeline automatically. |
 | [`with-role/`](./with-role/) | A pack that ships its own Ansible role and reuses it from a playbook. Shows how `ANSIBLE_ROLES_PATH` resolution works across bundled + pack roles. |
+| [`with-verify/`](./with-verify/) | A destructive action with a pack-supplied verify playbook that decides pass/fail after the main playbook runs. Replaces LabDog's built-in SSH/services/packages check with the pack's own definition of success. |
 
 ## Quick start
 

@@ -45,3 +45,23 @@ class ActionManifest(BaseModel):
     supports_group: bool = True
     supports_host: bool = True
     parameters: list[ManifestParameter] = Field(default_factory=list)
+    verify_playbook: str | None = Field(
+        default=None,
+        description=(
+            "Optional filename (relative to the manifest's directory) of a "
+            "second playbook that decides post-run success. When set, LabDog "
+            "runs it after the main playbook against the same host with the "
+            "same extra_vars and pack roles; the Ansible exit status becomes "
+            "the verification result. Only fires for destructive actions on "
+            "hosts with a Proxmox VM mapping — same gate as the built-in "
+            "health check it replaces."
+        ),
+    )
+    verify_timeout_seconds: int = Field(
+        default=300,
+        description=(
+            "Budget for the verify playbook. Prevents a slow probe from "
+            "stalling snapshot cleanup. Ignored when verify_playbook is "
+            "unset."
+        ),
+    )

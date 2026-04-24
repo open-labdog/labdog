@@ -1,0 +1,6 @@
+name: verify-example
+description: >-
+  Demonstrates a pack-supplied verify playbook. After the main playbook
+  finishes, LabDog runs the verify one against the same host; its
+  ansible-runner status becomes the pass/fail signal and decides
+  whether the pre-run Proxmox snapshot is cleaned up or rolled back.
