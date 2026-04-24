@@ -334,6 +334,13 @@ currently-desired service is running and every desired package is
 installed). The full working example is
 [`docs/examples/action-packs/with-verify/`](../examples/action-packs/with-verify/).
 
+**Reusable verify templates** ship in the `labdog-playbooks` repo
+under [`verify/`](https://gitlab.lan.tyresson.se/dennis/labdog-playbooks/-/tree/main/verify)
+— point `verify_playbook:` at one of them (e.g.
+`../verify/post-upgrade.yml`) and pass overrides through manifest
+parameters. The bundled `linux-upgrade` action in that repo uses
+`verify/post-upgrade.yml` and is the reference implementation.
+
 ---
 
 ## Troubleshooting
