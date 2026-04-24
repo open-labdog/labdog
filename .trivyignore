@@ -9,3 +9,9 @@ CVE-2026-29111
 # openssh-client: required for Ansible; no fix released
 CVE-2026-35385
 CVE-2026-35414
+
+# libexpat1: integer-overflow info disclosure (affected, no fix released as of 2026-04-24)
+CVE-2026-25210
+
+# libnghttp2-14: post-session-termination DoS (affected, no fix released as of 2026-04-24)
+CVE-2026-27135
