@@ -46,4 +46,14 @@ Direct entry points:
 
 ## License
 
-This project is proprietary software. All rights reserved.
+LabDog is licensed under the GNU Affero General Public License v3.0 or
+later (**AGPL-3.0-or-later**). See [LICENSE](LICENSE) for the full
+text.
+
+The AGPL's network-use clause means anyone running a modified version
+of LabDog as a service must make the source of their modifications
+available to its users. Private internal deployments without
+modifications carry no extra obligations beyond those of any
+AGPL-licensed program.
+
+Copyright © 2026 Dennis Tyresson and contributors.
