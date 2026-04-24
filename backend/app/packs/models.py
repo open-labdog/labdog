@@ -3,35 +3,21 @@ from __future__ import annotations
 import enum
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, LargeBinary, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
 
-class PackAuthType(enum.StrEnum):
-    """How LabDog authenticates to the pack's git remote.
-
-    ``none`` is for public repos. ``ssh`` uses a stored private key with
-    an accompanying (optional) per-pack known_hosts file. ``https_token``
-    uses a Personal Access Token delivered via ``http.extraHeader`` so it
-    never lands in ``remote.origin.url``.
-    """
-
-    NONE = "none"
-    SSH = "ssh"
-    HTTPS_TOKEN = "https_token"
-
-
 class PackSourceType(enum.StrEnum):
     """Where the pack's manifests live.
 
-    ``git`` — LabDog clones / fetches the configured remote into
-    ``<packs_root>/<id>`` and loads manifests from the checkout.
-    ``local`` — the pack is a pre-existing directory on disk (BYO
-    playbooks); LabDog reads manifests from ``repo_url`` directly and
-    never clones. Useful for ops who maintain playbooks outside a
+    ``git`` — the pack references a configured ``GitRepository``. LabDog
+    clones that repo and reads the pack from a subpath within it.
+    ``local`` — the pack is a pre-existing directory on the LabDog host;
+    nothing is cloned. Useful for BYO playbooks you maintain outside a
     git workflow, or for local dev against a working copy.
     """
 
@@ -59,11 +45,17 @@ class PackRole(enum.StrEnum):
 
 
 class ActionPack(Base):
-    """A git-backed action pack configured from the admin UI.
+    """A pack of playbooks LabDog treats as a source of action
+    definitions.
 
-    Credentials (SSH private key, HTTPS token) are encrypted at rest with
-    the same AES-256-GCM pipeline the ``ProxmoxNode`` table uses; handling
-    happens in the API / service layers, never here.
+    For git packs: ``git_repository_id`` references a configured
+    ``GitRepository`` row (managed on the Git Repos page) and ``path``
+    is the subpath within that repo where the pack lives. URL, branch,
+    and credentials are owned by the repository row — never duplicated
+    here.
+
+    For local packs: ``local_path`` is the absolute filesystem path on
+    the LabDog host where the pack directory lives. No clone, no auth.
     """
 
     __tablename__ = "action_packs"
@@ -78,11 +70,23 @@ class ActionPack(Base):
         ),
         default=PackSourceType.GIT,
     )
-    # For ``git`` source this is the clone URL; for ``local`` it's a
-    # filesystem path (the UI labels it accordingly).
-    repo_url: Mapped[str] = mapped_column(String(500))
-    # Only meaningful when source_type == git; ignored for local.
-    ref: Mapped[str] = mapped_column(String(200), default="main")
+
+    #: For source_type='git': FK into git_repositories. For 'local':
+    #: always NULL.
+    git_repository_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("git_repositories.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+
+    #: For source_type='git': subpath within the repo where the pack
+    #: lives; empty string = repo root. For 'local': ignored.
+    path: Mapped[str] = mapped_column(String(500), default="", server_default="")
+
+    #: For source_type='local': absolute filesystem path on the LabDog
+    #: host. For 'git': NULL.
+    local_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     # Role tiers the pack in the override hierarchy. Only applied for
     # git packs; local packs are always placed above all git tiers
     # regardless of this value.
@@ -96,19 +100,9 @@ class ActionPack(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    auth_type: Mapped[PackAuthType] = mapped_column(
-        SAEnum(
-            PackAuthType,
-            name="packauthtype",
-            values_callable=lambda e: [m.value for m in e],
-        ),
-        default=PackAuthType.NONE,
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
-    encrypted_ssh_key: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    ssh_known_hosts: Mapped[str | None] = mapped_column(Text, nullable=True)
-    encrypted_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-
-    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)

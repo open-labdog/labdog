@@ -37,7 +37,6 @@ _EXTERNAL_MODELS = {
     "WorkflowRun": "app.workflows.models",
     "WorkflowHostRun": "app.workflows.models",
     "ActionPack": "app.packs.models",
-    "PackAuthType": "app.packs.models",
     "PackSourceType": "app.packs.models",
     "PackRole": "app.packs.models",
 }
@@ -107,7 +106,6 @@ __all__ = [
     "WorkflowRun",
     "WorkflowHostRun",
     "ActionPack",
-    "PackAuthType",
     "PackSourceType",
     "PackRole",
 ]

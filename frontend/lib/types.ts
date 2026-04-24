@@ -153,7 +153,6 @@ export interface VMMapping {
   discovered_at: string
 }
 
-export type PackAuthType = "none" | "ssh" | "https_token"
 export type PackSourceType = "git" | "local"
 export type PackRole = "default" | "override"
 
@@ -161,28 +160,24 @@ export interface ActionPack {
   id: number
   name: string
   source_type: PackSourceType
-  repo_url: string
-  ref: string
+  /** For source_type=git: FK to a GitRepository. Null for local packs. */
+  git_repository_id: number | null
+  /** Display name of the linked GitRepository (server-resolved). */
+  git_repository_name: string | null
+  /** Subpath within the git repo where the pack lives ("" = repo root). */
+  path: string
+  /** Absolute filesystem path for source_type=local. Null for git. */
+  local_path: string | null
   role: PackRole
   /** Derived server-side from (source_type, role). Read-only. */
   priority: number
   enabled: boolean
-  auth_type: PackAuthType
-  has_ssh_key: boolean
-  has_token: boolean
-  ssh_known_hosts: string | null
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
   last_sync_error: string | null
   current_sha: string | null
   created_at: string
   updated_at: string
-}
-
-export interface ActionPackTestResponse {
-  success: boolean
-  message: string
-  commit_sha: string | null
 }
 
 export interface ActionPackSyncResponse {

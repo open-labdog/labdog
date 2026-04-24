@@ -4,18 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.packs.models import PackAuthType, PackRole, PackSourceType
-
-
-def _validate_ref(v: str) -> str:
-    v = v.strip()
-    if not v:
-        raise ValueError("ref must not be empty")
-    # Git ref names disallow ASCII control chars, space, ~, ^, :, ?, *, [, \
-    forbidden = set(" ~^:?*[\\")
-    if any(c in forbidden for c in v) or any(ord(c) < 0x20 for c in v):
-        raise ValueError("ref contains characters git won't accept")
-    return v
+from app.packs.models import PackRole, PackSourceType
 
 
 def _validate_name(v: str) -> str:
@@ -30,132 +19,106 @@ def _validate_name(v: str) -> str:
 class ActionPackCreate(BaseModel):
     """Admin-supplied payload for creating a pack.
 
-    ``ssh_private_key`` / ``ssh_known_hosts`` / ``token`` are write-only —
-    the encrypted bytes live in the DB, responses expose only booleans.
+    Git packs reference a configured ``GitRepository`` via
+    ``git_repository_id`` and name a subpath via ``path``. Local packs
+    supply ``local_path`` — the absolute filesystem path on the LabDog
+    host. Credentials never appear here; they live on the
+    ``GitRepository`` row managed on the Git Repos page.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     source_type: PackSourceType = PackSourceType.GIT
-    repo_url: str
-    ref: str = "main"
+    git_repository_id: int | None = None
+    path: str = ""
+    local_path: str | None = None
     role: PackRole = PackRole.OVERRIDE
     enabled: bool = True
 
-    auth_type: PackAuthType = PackAuthType.NONE
-    ssh_private_key: str | None = None
-    ssh_known_hosts: str | None = None
-    token: str | None = None
-
     _validate_name = field_validator("name")(classmethod(lambda cls, v: _validate_name(v)))
-    _validate_ref = field_validator("ref")(classmethod(lambda cls, v: _validate_ref(v)))
 
     @model_validator(mode="after")
-    def _check_auth_fields(self) -> ActionPackCreate:
-        _enforce_source_fields(self)
-        return _enforce_auth_fields(self, creating=True)
+    def _check_source_fields(self) -> ActionPackCreate:
+        _enforce_source_fields(self, creating=True)
+        return self
 
 
 class ActionPackUpdate(BaseModel):
     """Partial update payload. All fields optional.
 
-    Credential fields semantics:
-      * ``ssh_private_key`` / ``token`` omitted → keep the stored secret.
-      * Set to a non-empty string → replace.
-      * Switching ``auth_type`` requires supplying the relevant secret in
-        the same request; the mutex validator enforces this.
+    When ``source_type`` switches from git→local or vice versa, the
+    caller must supply the fields the new source needs; the mutex
+    validator refuses otherwise.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str | None = None
     source_type: PackSourceType | None = None
-    repo_url: str | None = None
-    ref: str | None = None
+    git_repository_id: int | None = None
+    path: str | None = None
+    local_path: str | None = None
     role: PackRole | None = None
     enabled: bool | None = None
-
-    auth_type: PackAuthType | None = None
-    ssh_private_key: str | None = None
-    ssh_known_hosts: str | None = None
-    token: str | None = None
 
     @field_validator("name")
     @classmethod
     def _check_name(cls, v: str | None) -> str | None:
         return _validate_name(v) if v is not None else v
 
-    @field_validator("ref")
-    @classmethod
-    def _check_ref(cls, v: str | None) -> str | None:
-        return _validate_ref(v) if v is not None else v
-
     @model_validator(mode="after")
-    def _check_auth_fields(self) -> ActionPackUpdate:
-        _enforce_source_fields(self)
-        return _enforce_auth_fields(self, creating=False)
+    def _check_source_fields(self) -> ActionPackUpdate:
+        _enforce_source_fields(self, creating=False)
+        return self
 
 
-def _enforce_source_fields(model) -> None:
-    """Local packs must use auth_type='none' and supply no credentials.
+def _enforce_source_fields(model, *, creating: bool) -> None:
+    """Enforce the shape of the source-dependent fields.
 
-    The DB-level check constraint backs this up; we reject early here so
-    admins get a readable error instead of a 500 from the constraint.
+    Git packs must reference a GitRepository and must not carry a
+    local_path. Local packs must carry an absolute local_path and must
+    not reference a GitRepository. On update (``creating=False``),
+    rules apply only when the relevant field appears in the payload —
+    the caller may be editing unrelated fields.
     """
-    st = getattr(model, "source_type", None)
-    at = getattr(model, "auth_type", None)
-    if st == PackSourceType.LOCAL:
-        if at is not None and at != PackAuthType.NONE:
-            raise ValueError("source_type=local requires auth_type=none (nothing is cloned)")
-        if model.ssh_private_key or model.token:
+    st = model.source_type
+    if st is None and not creating:
+        # Update not touching source_type; no cross-field rules to check.
+        return
+
+    if st == PackSourceType.GIT:
+        if creating and model.git_repository_id is None:
             raise ValueError(
-                "source_type=local does not accept credentials — the path is read in place"
+                "source_type=git requires git_repository_id to reference a "
+                "configured Git repository"
             )
-
-
-def _enforce_auth_fields(model, *, creating: bool):
-    """Shared mutex check between auth_type and the secret fields.
-
-    For create: the secret corresponding to ``auth_type`` must be present;
-    the irrelevant secret must be absent. For update: rules only apply
-    when ``auth_type`` is part of the payload — otherwise the caller is
-    just editing non-auth fields.
-    """
-    at = model.auth_type
-    if at is None and not creating:
-        # Update without changing auth_type — nothing to enforce here.
-        # (Supplying a secret without auth_type is still allowed: it's
-        # treated as "rotate the existing key for the current auth_type",
-        # which the API layer handles when it encrypts the new value.)
-        return model
-
-    if at == PackAuthType.NONE:
-        if model.ssh_private_key or model.token:
-            raise ValueError("auth_type=none does not accept ssh_private_key or token")
-    elif at == PackAuthType.SSH:
-        if creating and not model.ssh_private_key:
-            raise ValueError("auth_type=ssh requires ssh_private_key")
-        if model.token:
-            raise ValueError("auth_type=ssh does not accept token")
-    elif at == PackAuthType.HTTPS_TOKEN:
-        if creating and not model.token:
-            raise ValueError("auth_type=https_token requires token")
-        if model.ssh_private_key:
-            raise ValueError("auth_type=https_token does not accept ssh_private_key")
-    return model
+        if model.local_path not in (None, ""):
+            raise ValueError("source_type=git does not accept local_path")
+    elif st == PackSourceType.LOCAL:
+        if creating and not model.local_path:
+            raise ValueError(
+                "source_type=local requires local_path (absolute filesystem "
+                "path on the LabDog host)"
+            )
+        if model.git_repository_id is not None:
+            raise ValueError("source_type=local does not accept git_repository_id")
 
 
 class ActionPackResponse(BaseModel):
-    """Public read representation. Excludes every byte of credential material."""
+    """Public read representation."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     source_type: PackSourceType
-    repo_url: str
-    ref: str
+    git_repository_id: int | None
+    git_repository_name: str | None = None
+    """Convenience — the repo's display name when linked; the UI can
+    render this directly instead of having to look up the repo by id."""
+    path: str
+    local_path: str | None
     role: PackRole
     priority: int = Field(
         description=(
@@ -165,11 +128,6 @@ class ActionPackResponse(BaseModel):
     )
     enabled: bool
 
-    auth_type: PackAuthType
-    has_ssh_key: bool = Field(default=False)
-    has_token: bool = Field(default=False)
-    ssh_known_hosts: str | None = None
-
     last_synced_at: datetime | None
     last_sync_status: str | None
     last_sync_error: str | None
@@ -178,22 +136,20 @@ class ActionPackResponse(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_model(cls, row) -> ActionPackResponse:
+    def from_model(cls, row, *, repo_name: str | None = None) -> ActionPackResponse:
         from app.packs.service import derive_priority  # noqa: PLC0415
 
         return cls(
             id=row.id,
             name=row.name,
             source_type=row.source_type,
-            repo_url=row.repo_url,
-            ref=row.ref,
+            git_repository_id=row.git_repository_id,
+            git_repository_name=repo_name,
+            path=row.path,
+            local_path=row.local_path,
             role=row.role,
             priority=derive_priority(row),
             enabled=row.enabled,
-            auth_type=row.auth_type,
-            has_ssh_key=row.encrypted_ssh_key is not None,
-            has_token=row.encrypted_token is not None,
-            ssh_known_hosts=row.ssh_known_hosts,
             last_synced_at=row.last_synced_at,
             last_sync_status=row.last_sync_status,
             last_sync_error=row.last_sync_error,
@@ -201,37 +157,6 @@ class ActionPackResponse(BaseModel):
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
-
-
-class ActionPackTestRequest(BaseModel):
-    """Pre-save connection test. Credentials travel in the request body,
-    never touch the DB."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    source_type: PackSourceType = PackSourceType.GIT
-    repo_url: str
-    ref: str = "main"
-    auth_type: PackAuthType = PackAuthType.NONE
-    ssh_private_key: str | None = None
-    ssh_known_hosts: str | None = None
-    token: str | None = None
-
-    @field_validator("ref")
-    @classmethod
-    def _check_ref(cls, v: str) -> str:
-        return _validate_ref(v)
-
-    @model_validator(mode="after")
-    def _check_auth_fields(self) -> ActionPackTestRequest:
-        _enforce_source_fields(self)
-        return _enforce_auth_fields(self, creating=True)
-
-
-class ActionPackTestResponse(BaseModel):
-    success: bool
-    message: str
-    commit_sha: str | None = None
 
 
 class ActionPackSyncResponse(BaseModel):
