@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
@@ -9,7 +10,6 @@ import { showSuccess, showError } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
@@ -24,8 +24,7 @@ import { DataTable } from "@/components/ui/data-table"
 import type {
   ActionPack,
   ActionPackSyncResponse,
-  ActionPackTestResponse,
-  PackAuthType,
+  GitRepository,
   PackRole,
   PackSourceType,
 } from "@/lib/types"
@@ -33,27 +32,21 @@ import type {
 interface PackFormState {
   name: string
   source_type: PackSourceType
-  repo_url: string
-  ref: string
+  git_repository_id: number | null
+  path: string
+  local_path: string
   role: PackRole
   enabled: boolean
-  auth_type: PackAuthType
-  ssh_private_key: string
-  ssh_known_hosts: string
-  token: string
 }
 
 const emptyForm: PackFormState = {
   name: "",
   source_type: "git",
-  repo_url: "",
-  ref: "main",
+  git_repository_id: null,
+  path: "",
+  local_path: "",
   role: "override",
   enabled: true,
-  auth_type: "none",
-  ssh_private_key: "",
-  ssh_known_hosts: "",
-  token: "",
 }
 
 function statusChip(pack: ActionPack) {
@@ -77,8 +70,6 @@ export default function ActionPacksPage() {
   const [form, setForm] = useState<PackFormState>(emptyForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSaving, setFormSaving] = useState(false)
-  const [testingModal, setTestingModal] = useState(false)
-  const [modalTestResult, setModalTestResult] = useState<string | null>(null)
   const [syncingId, setSyncingId] = useState<number | null>(null)
   const [confirmState, setConfirmState] = useState<{
     open: boolean
@@ -96,6 +87,14 @@ export default function ActionPacksPage() {
   })
   const showLoading = useDelayedLoading(isLoading)
 
+  // GitRepositories power the "pick a repo" dropdown. Fetched on mount
+  // and whenever the dialog opens so newly-added repos show up without
+  // a hard refresh.
+  const { data: gitRepos } = useQuery<GitRepository[]>({
+    queryKey: ["git-repos"],
+    queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"),
+  })
+
   const deleteMutation = useApiMutation<unknown, number, ActionPack>({
     mutationFn: (packId) =>
       apiFetch(`/api/action-packs/${packId}`, { method: "DELETE" }),
@@ -111,7 +110,6 @@ export default function ActionPacksPage() {
     setEditing(null)
     setForm(emptyForm)
     setFormError(null)
-    setModalTestResult(null)
     setDialogOpen(true)
   }
 
@@ -120,39 +118,28 @@ export default function ActionPacksPage() {
     setForm({
       name: pack.name,
       source_type: pack.source_type,
-      repo_url: pack.repo_url,
-      ref: pack.ref,
+      git_repository_id: pack.git_repository_id,
+      path: pack.path ?? "",
+      local_path: pack.local_path ?? "",
       role: pack.role,
       enabled: pack.enabled,
-      auth_type: pack.auth_type,
-      ssh_private_key: "",
-      ssh_known_hosts: pack.ssh_known_hosts ?? "",
-      token: "",
     })
     setFormError(null)
-    setModalTestResult(null)
     setDialogOpen(true)
   }
 
   function buildPayload(): Record<string, unknown> {
-    const isLocal = form.source_type === "local"
     const p: Record<string, unknown> = {
       name: form.name,
       source_type: form.source_type,
-      repo_url: form.repo_url,
-      // Backend ignores ref for local packs but still validates the
-      // string — keep the default rather than risk an empty value.
-      ref: isLocal ? "main" : form.ref,
-      role: isLocal ? "override" : form.role,
+      role: form.role,
       enabled: form.enabled,
-      auth_type: isLocal ? "none" : form.auth_type,
     }
-    if (!isLocal && form.auth_type === "ssh") {
-      if (form.ssh_private_key) p.ssh_private_key = form.ssh_private_key
-      p.ssh_known_hosts = form.ssh_known_hosts
-    }
-    if (!isLocal && form.auth_type === "https_token") {
-      if (form.token) p.token = form.token
+    if (form.source_type === "git") {
+      p.git_repository_id = form.git_repository_id
+      p.path = form.path ?? ""
+    } else {
+      p.local_path = form.local_path
     }
     return p
   }
@@ -184,47 +171,11 @@ export default function ActionPacksPage() {
     }
   }
 
-  async function handleTestInModal() {
-    setTestingModal(true)
-    setModalTestResult(null)
-    try {
-      const payload = buildPayload() as Record<string, unknown>
-      // /test takes the same shape minus priority/enabled/name — but
-      // the backend tolerates those via extra="forbid"? No, it forbids.
-      // Strip down:
-      const testPayload: Record<string, unknown> = {
-        source_type: payload.source_type,
-        repo_url: payload.repo_url,
-        ref: payload.ref,
-        auth_type: payload.auth_type,
-      }
-      if (payload.ssh_private_key) testPayload.ssh_private_key = payload.ssh_private_key
-      if (payload.ssh_known_hosts) testPayload.ssh_known_hosts = payload.ssh_known_hosts
-      if (payload.token) testPayload.token = payload.token
-
-      const result = await apiFetch<ActionPackTestResponse>(
-        "/api/action-packs/test",
-        { method: "POST", json: testPayload }
-      )
-      if (result.success) {
-        setModalTestResult(
-          `✓ ${result.message}${result.commit_sha ? ` (${result.commit_sha.slice(0, 8)})` : ""}`
-        )
-      } else {
-        setModalTestResult(`✗ ${result.message}`)
-      }
-    } catch (err) {
-      setModalTestResult(`✗ ${err instanceof Error ? err.message : "Test failed"}`)
-    } finally {
-      setTestingModal(false)
-    }
-  }
-
   function handleDelete(pack: ActionPack) {
     setConfirmState({
       open: true,
       title: "Delete Action Pack",
-      description: `Delete "${pack.name}"? Its checkout will be removed and any actions it provided will disappear from the registry.`,
+      description: `Delete "${pack.name}"? The pack's checkout will be removed and any actions it provided will disappear from the registry. The linked Git repository (if any) is not affected.`,
       action: async () => {
         setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
@@ -261,6 +212,8 @@ export default function ActionPacksPage() {
     }
   }
 
+  const hasGitRepos = (gitRepos?.length ?? 0) > 0
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Action Packs" }]} />
@@ -269,8 +222,12 @@ export default function ActionPacksPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Action Packs</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Git-backed bundles of playbooks and manifests. Added actions show up
-            in the registry for every host and group.
+            Collections of playbooks that supply actions to every host and
+            group. Git packs reference a repository configured under{" "}
+            <Link href="/git-repos" className="underline hover:text-slate-200">
+              Git Repos
+            </Link>
+            ; local packs point at a directory on the LabDog host.
           </p>
         </div>
         <Button onClick={openCreate}>Add Pack</Button>
@@ -288,7 +245,9 @@ export default function ActionPacksPage() {
         <DataTable<ActionPack>
           tableId="action-packs"
           data={packs}
-          emptyMessage={<>No action packs configured. Click <strong>Add Pack</strong> to get started.</>}
+          emptyMessage={
+            <>No action packs configured. Click <strong>Add Pack</strong> to get started.</>
+          }
           getRowKey={(p) => p.id}
           columns={[
             {
@@ -300,33 +259,36 @@ export default function ActionPacksPage() {
               filter: { type: "text" },
             },
             {
-              key: "repo_url",
+              key: "source",
               label: "Source",
-              accessor: (p) => p.repo_url,
+              accessor: (p) =>
+                p.source_type === "local"
+                  ? p.local_path ?? ""
+                  : p.git_repository_name ?? "",
               cell: (p) => (
                 <div className="flex flex-col">
-                  <span className="font-mono text-slate-300 text-sm truncate">
-                    {p.repo_url}
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    {p.source_type === "local" ? "local directory" : "git remote"}
-                  </span>
+                  {p.source_type === "local" ? (
+                    <>
+                      <span className="font-mono text-slate-300 text-sm truncate">
+                        {p.local_path}
+                      </span>
+                      <span className="text-xs text-slate-500">local directory</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-300 text-sm truncate">
+                        {p.git_repository_name ?? "(missing)"}
+                        {p.path ? (
+                          <span className="font-mono text-slate-500"> / {p.path}</span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-slate-500">git repo</span>
+                    </>
+                  )}
                 </div>
               ),
               defaultWidth: 320,
               filter: { type: "text" },
-            },
-            {
-              key: "ref",
-              label: "Ref",
-              accessor: (p) => p.ref,
-              cell: (p) =>
-                p.source_type === "local" ? (
-                  <span className="text-slate-500 text-sm">—</span>
-                ) : (
-                  <span className="font-mono text-slate-300 text-sm">{p.ref}</span>
-                ),
-              defaultWidth: 120,
             },
             {
               key: "role",
@@ -344,7 +306,12 @@ export default function ActionPacksPage() {
               key: "enabled",
               label: "Enabled",
               accessor: (p) => p.enabled,
-              cell: (p) => (p.enabled ? <span className="text-green-400 text-sm">Yes</span> : <span className="text-yellow-400 text-sm">No</span>),
+              cell: (p) =>
+                p.enabled ? (
+                  <span className="text-green-400 text-sm">Yes</span>
+                ) : (
+                  <span className="text-yellow-400 text-sm">No</span>
+                ),
               defaultWidth: 100,
             },
             {
@@ -354,9 +321,13 @@ export default function ActionPacksPage() {
               cell: (p) => (
                 <div className="flex flex-col gap-0.5">
                   {statusChip(p)}
-                  <span className="text-xs text-slate-500">{formatDate(p.last_synced_at)}</span>
+                  <span className="text-xs text-slate-500">
+                    {formatDate(p.last_synced_at)}
+                  </span>
                   {p.current_sha && (
-                    <span className="text-xs text-slate-600 font-mono">{p.current_sha.slice(0, 8)}</span>
+                    <span className="text-xs text-slate-600 font-mono">
+                      {p.current_sha.slice(0, 8)}
+                    </span>
                   )}
                 </div>
               ),
@@ -403,13 +374,14 @@ export default function ActionPacksPage() {
           if (!open) {
             setDialogOpen(false)
             setFormError(null)
-            setModalTestResult(null)
           }
         }}
       >
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Action Pack" : "Add Action Pack"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Action Pack" : "Add Action Pack"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="space-y-2">
@@ -434,68 +406,99 @@ export default function ActionPacksPage() {
                       onChange={() => setForm((p) => ({ ...p, source_type: st }))}
                     />
                     <span>
-                      {st === "git" && "Git remote"}
+                      {st === "git" && "Git repository"}
                       {st === "local" && "Local directory"}
                     </span>
                   </label>
                 ))}
               </div>
-              {form.source_type === "local" && (
-                <p className="text-xs text-slate-400">
-                  LabDog reads manifests from the path in place — nothing is
-                  cloned. Useful for BYO playbooks you maintain outside git.
-                </p>
-              )}
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="pack-repo">
-                {form.source_type === "local" ? "Filesystem path" : "Repo URL"}
-              </Label>
-              <Input
-                id="pack-repo"
-                placeholder={
-                  form.source_type === "local"
-                    ? "/var/lib/labdog/my-pack"
-                    : "git@github.com:me/labdog-playbooks.git"
-                }
-                value={form.repo_url}
-                onChange={(e) => setForm((p) => ({ ...p, repo_url: e.target.value }))}
-                className="font-mono"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {form.source_type === "git" && (
+            {form.source_type === "git" && (
+              <>
                 <div className="space-y-2">
-                  <Label htmlFor="pack-ref">Ref (branch or tag)</Label>
+                  <Label htmlFor="pack-repo">Git repository</Label>
+                  {!hasGitRepos ? (
+                    <p className="text-sm text-yellow-400">
+                      No git repositories configured yet. Add one under{" "}
+                      <Link
+                        href="/git-repos"
+                        className="underline hover:text-yellow-200"
+                      >
+                        Git Repos
+                      </Link>{" "}
+                      first.
+                    </p>
+                  ) : (
+                    <select
+                      id="pack-repo"
+                      value={form.git_repository_id ?? ""}
+                      onChange={(e) =>
+                        setForm((p) => ({
+                          ...p,
+                          git_repository_id: e.target.value
+                            ? Number(e.target.value)
+                            : null,
+                        }))
+                      }
+                      className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      <option value="">— Select a repository —</option>
+                      {gitRepos!.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name} ({r.url} @ {r.branch})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pack-path">Path inside the repo</Label>
                   <Input
-                    id="pack-ref"
-                    placeholder="main"
-                    value={form.ref}
-                    onChange={(e) => setForm((p) => ({ ...p, ref: e.target.value }))}
+                    id="pack-path"
+                    placeholder="(leave empty if the pack is at the repo root)"
+                    value={form.path}
+                    onChange={(e) => setForm((p) => ({ ...p, path: e.target.value }))}
                     className="font-mono"
                   />
+                  <p className="text-xs text-slate-400">
+                    LabDog looks for <code>actions/*.manifest.yml</code> under
+                    this subpath.
+                  </p>
                 </div>
-              )}
-              <div className="flex items-center gap-2 pt-6">
-                <input
-                  id="pack-enabled"
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={(e) => setForm((p) => ({ ...p, enabled: e.target.checked }))}
-                  className="rounded border-input"
+              </>
+            )}
+
+            {form.source_type === "local" && (
+              <div className="space-y-2">
+                <Label htmlFor="pack-local-path">Filesystem path</Label>
+                <Input
+                  id="pack-local-path"
+                  placeholder="/var/lib/labdog/my-pack"
+                  value={form.local_path}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, local_path: e.target.value }))
+                  }
+                  className="font-mono"
                 />
-                <Label htmlFor="pack-enabled">Enabled</Label>
+                <p className="text-xs text-slate-400">
+                  Absolute path on the LabDog host. Nothing is cloned; the
+                  directory is read in place. Useful for BYO playbooks you
+                  maintain outside a git workflow.
+                </p>
               </div>
-            </div>
+            )}
 
             {form.source_type === "git" && (
               <div className="space-y-2">
                 <Label>Role</Label>
                 <div className="flex gap-4 text-sm">
                   {(["default", "override"] as const).map((r) => (
-                    <label key={r} className="flex items-center gap-1 cursor-pointer">
+                    <label
+                      key={r}
+                      className="flex items-center gap-1 cursor-pointer"
+                    >
                       <input
                         type="radio"
                         name="role"
@@ -517,120 +520,27 @@ export default function ActionPacksPage() {
               </div>
             )}
 
-            {form.source_type === "git" && (
-              <div className="space-y-2">
-                <Label>Authentication</Label>
-                <div className="flex gap-4 text-sm">
-                  {(["none", "ssh", "https_token"] as const).map((at) => (
-                    <label key={at} className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="auth_type"
-                        checked={form.auth_type === at}
-                        onChange={() => setForm((p) => ({ ...p, auth_type: at }))}
-                      />
-                      <span>
-                        {at === "none" && "None (public repo)"}
-                        {at === "ssh" && "SSH deploy key"}
-                        {at === "https_token" && "HTTPS token (PAT)"}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <input
+                id="pack-enabled"
+                type="checkbox"
+                checked={form.enabled}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, enabled: e.target.checked }))
+                }
+                className="rounded border-input"
+              />
+              <Label htmlFor="pack-enabled">Enabled</Label>
+            </div>
 
-            {form.source_type === "git" && form.auth_type === "ssh" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="pack-ssh-key">
-                    SSH private key
-                    {editing && editing.has_ssh_key && " (leave blank to keep current)"}
-                  </Label>
-                  <Textarea
-                    id="pack-ssh-key"
-                    placeholder={
-                      editing && editing.has_ssh_key
-                        ? "Already set — paste new key to replace"
-                        : "-----BEGIN OPENSSH PRIVATE KEY-----"
-                    }
-                    value={form.ssh_private_key}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, ssh_private_key: e.target.value }))
-                    }
-                    rows={4}
-                    className="font-mono text-xs"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="pack-known-hosts">
-                    Known hosts (required)
-                  </Label>
-                  <p className="text-xs text-slate-400">
-                    Paste the server's host keys — one line per key.
-                    Look up canonical values from your provider's docs. LabDog
-                    does NOT fall back to TOFU.
-                  </p>
-                  <Textarea
-                    id="pack-known-hosts"
-                    placeholder="github.com ssh-ed25519 AAAA..."
-                    value={form.ssh_known_hosts}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, ssh_known_hosts: e.target.value }))
-                    }
-                    rows={3}
-                    className="font-mono text-xs"
-                  />
-                </div>
-              </>
-            )}
-
-            {form.source_type === "git" && form.auth_type === "https_token" && (
-              <div className="space-y-2">
-                <Label htmlFor="pack-token">
-                  Personal access token
-                  {editing && editing.has_token && " (leave blank to keep current)"}
-                </Label>
-                <Input
-                  id="pack-token"
-                  type="password"
-                  placeholder={
-                    editing && editing.has_token
-                      ? "Leave blank to keep current"
-                      : "ghp_…"
-                  }
-                  value={form.token}
-                  onChange={(e) => setForm((p) => ({ ...p, token: e.target.value }))}
-                  className="font-mono"
-                />
-              </div>
-            )}
-
-            {modalTestResult && (
-              <p
-                className={`text-sm ${
-                  modalTestResult.startsWith("✓") ? "text-green-400" : "text-red-400"
-                }`}
-              >
-                {modalTestResult}
-              </p>
-            )}
             {formError && <p className="text-sm text-red-400">{formError}</p>}
 
             <DialogFooter>
               <Button
                 variant="outline"
-                onClick={handleTestInModal}
-                disabled={testingModal || !form.repo_url}
-              >
-                {testingModal ? "Testing..." : "Test"}
-              </Button>
-              <Button
-                variant="outline"
                 onClick={() => {
                   setDialogOpen(false)
                   setFormError(null)
-                  setModalTestResult(null)
                 }}
               >
                 Cancel

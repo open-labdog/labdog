@@ -82,37 +82,38 @@ pack that redeclares the same keys.
 
 ### Adding a pack
 
-**Action Packs** (Integrations → Action Packs) → **Add Pack**. Required
-fields:
+Git repository configuration (URL, branch, credentials) is **not**
+duplicated on the pack. Configure the repo once under
+[Git Repos](gitops-ui.md), then point one or more packs at it. The
+pack only carries its own metadata — name, source type, a subpath,
+role, enabled flag.
+
+**Action Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 
 | Field | What it is |
 |---|---|
 | Name | Admin-chosen label; must be unique. `bundled` is reserved. |
-| Source | `Git remote` or `Local directory`. |
-| Repo URL / Filesystem path | Where the pack lives. For git, any URL `git clone` understands (SSH or HTTPS). For local, an absolute path on the LabDog host. |
-| Ref | Branch or tag for git sources. Ignored for local. |
-| Role | `Default` (canonical baseline) or `Override` (layered customisations). See [below](#roles-default-vs-override-vs-local). Ignored for local sources — they always sit at the top. |
+| Source | `Git repository` or `Local directory`. |
+| Git repository | Dropdown of configured `GitRepository` rows. Only shown for source = Git. If empty, add one under [Git Repos](gitops-ui.md) first. |
+| Path inside the repo | Subpath where the pack lives (e.g. `packs/labdog-default`). Leave empty when the pack is at the repo root. Only shown for source = Git. |
+| Filesystem path | Absolute path on the LabDog host. Only shown for source = Local. LabDog reads the directory in place — nothing is cloned. |
+| Role | `Default` (canonical baseline) or `Override` (layered customisations). See [below](#roles-default-vs-override-vs-local). Only shown for source = Git; local packs are always top-tier. |
 | Enabled | Uncheck to keep the pack configured but out of the registry. |
-| Authentication | For git: `None` (public repo), `SSH deploy key`, or `HTTPS token (PAT)`. |
 
-**For SSH auth:** paste the deploy key and the remote's `known_hosts`
-entries. LabDog does **not** fall back to trust-on-first-use — you must
-supply the fingerprints so the connection can verify the server. Get
-them from your provider's canonical fingerprints page (e.g. GitHub's
-docs) and paste the lines as-is; LabDog normalises and dedupes them.
+On save, LabDog resolves the linked repository's URL, branch, and
+credentials; clones into `<packs_root>/<pack_id>/`; and folds the
+pack's actions into the registry. If the sync fails, the row is still
+saved with `last_sync_status=failed`; fix the config and hit **Sync**
+to retry.
 
-**For HTTPS PAT:** paste the token. LabDog delivers it via
-`http.extraHeader` at invocation time, so it never lands in
-`remote.origin.url` or in logs.
+**Credentials** live on the `GitRepository` row. The Git Repos page is
+where you configure SSH keys (`ssh_key_id` referencing an SSH Key row)
+or HTTPS tokens. Rotating a credential there propagates to every pack
+using that repo at the next sync — no per-pack duplication.
 
-Before saving, click **Test** in the modal. For git sources this runs
-`git ls-remote` with the supplied credentials — a cheap round-trip that
-validates auth + ref existence without cloning anything. For local it
-just checks the path exists and has an `actions/` subdirectory.
-
-On save, LabDog clones (or verifies) and folds the pack's actions into
-the registry. If the sync fails, the row is still saved in a `failed`
-state; fix the config and hit **Sync** to retry.
+**SSH host-key verification** uses TOFU (trust-on-first-use) to stay
+consistent with the rest of LabDog's git integration. Packs don't
+require pasted `known_hosts`.
 
 ### Roles: default vs override vs local
 
@@ -347,8 +348,9 @@ parameters. The bundled `linux-upgrade` action in that repo uses
 
 **"Sync failed" on a git pack.** The row is saved with a failure reason
 — click **Edit** to see the error in the modal. Common causes: wrong
-ref, missing `known_hosts` for SSH, expired PAT. Fix the field, click
-**Test** to validate, click **Save** (triggers a re-sync).
+ref, expired PAT on the linked Git repository, missing ssh_key_id on
+the repo. The credentials live on the linked repo — fix them under
+**Git Repos**, then hit **Sync** on the pack.
 
 **"No actions appear after adding a pack."** Check: (1) the pack's
 `actions/` directory exists and contains `*.manifest.yml` sidecars, (2)

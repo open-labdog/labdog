@@ -1,17 +1,22 @@
 """Action pack sync orchestration.
 
-Bridges the DB (``ActionPack`` rows) and the on-disk pack loader
-(``app.actions.packs``). Responsibilities:
+Bridges the DB (``ActionPack`` + linked ``GitRepository``) and the
+on-disk pack loader (``app.actions.packs``). Responsibilities:
 
-- Decrypt credentials + build a ``GitAuthContext``.
-- Sync the checkout via ``app.actions.git_sync``.
+- For git packs, resolve the linked ``GitRepository`` + its credentials
+  (via the ``SSHKey`` table for SSH auth or the repo's own encrypted
+  HTTPS token), build a ``GitAuthContext``, and clone/pull through
+  ``app.actions.git_sync``.
+- For local packs, verify the configured filesystem path is shaped
+  like a pack.
 - Persist sync outcomes (status, sha, error) to the DB, scrubbed of
   any secret material.
-- Produce ``Pack`` objects for the registry to scan.
+- Produce ``Pack`` objects (rooted at the checkout + subpath) for the
+  registry loader to scan.
 
 Callers (API endpoints, FastAPI lifespan, Celery worker startup) should
 use the high-level helpers: ``sync_pack``, ``sync_enabled_packs``,
-``rebuild_registry``, ``delete_checkout``.
+``load_db_packs``, ``delete_checkout``.
 """
 
 from __future__ import annotations
@@ -24,12 +29,14 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.git_sync import GitSyncError, ls_remote, sync_remote_pack
+from app.actions.git_sync import GitSyncError, sync_remote_pack
 from app.actions.packs import Pack
 from app.config import settings
 from app.crypto import decrypt_ssh_key, get_master_key
+from app.models.git_repository import GitAuthType, GitRepository
+from app.models.ssh_key import SSHKey
 from app.packs.git_auth import git_auth_context
-from app.packs.models import ActionPack, PackAuthType, PackRole, PackSourceType
+from app.packs.models import ActionPack, PackRole, PackSourceType
 from app.packs.redact import redact
 
 logger = logging.getLogger(__name__)
@@ -43,13 +50,7 @@ PRIORITY_LOCAL = 1000
 
 
 def derive_priority(pack: ActionPack) -> int:
-    """Map a pack's source+role to its numeric load priority.
-
-    Callers of the pack loader only see the derived integer; the DB
-    stores semantic attributes and admins pick them from a finite set
-    in the UI. Integer priorities are an internal implementation
-    detail.
-    """
+    """Map a pack's source+role to its numeric load priority."""
     if pack.source_type == PackSourceType.LOCAL:
         return PRIORITY_LOCAL
     if pack.role == PackRole.DEFAULT:
@@ -60,7 +61,7 @@ def derive_priority(pack: ActionPack) -> int:
 def checkout_path_for(pack_id: int) -> Path:
     """Deterministic on-disk location for a git pack's checkout.
 
-    Local packs use their configured ``repo_url`` directly — see
+    Local packs use their configured ``local_path`` directly — see
     ``effective_path_for``.
     """
     return Path(settings.ansible.packs_root_dir) / str(pack_id)
@@ -69,25 +70,45 @@ def checkout_path_for(pack_id: int) -> Path:
 def effective_path_for(pack: ActionPack) -> Path:
     """Where the pack's manifests actually live on disk.
 
-    ``git`` → the managed checkout under ``packs_root_dir``.
-    ``local`` → the admin-supplied filesystem path.
+    ``git`` → ``<checkout>/<pack.path>`` — subpath within the managed
+    checkout under ``packs_root_dir``.
+    ``local`` → ``<pack.local_path>`` — the admin-supplied filesystem
+    path, used in place (nothing is cloned).
     """
     if pack.source_type == PackSourceType.LOCAL:
-        return Path(pack.repo_url)
-    return checkout_path_for(pack.id)
+        return Path(pack.local_path or "")
+    checkout = checkout_path_for(pack.id)
+    subpath = pack.path.strip("/")
+    return checkout / subpath if subpath else checkout
 
 
-def _decrypt_credentials(pack: ActionPack) -> tuple[str | None, str | None]:
-    """Return ``(ssh_private_key, token)`` decrypted from the row.
+async def _decrypt_repo_credentials(
+    db: AsyncSession, repo: GitRepository
+) -> tuple[str | None, str | None]:
+    """Return ``(ssh_private_key, token)`` decrypted from the linked
+    ``GitRepository``.
 
-    Returns the appropriate field based on ``auth_type``; the other is
-    always ``None``. Raises on cryptographic failure — caller handles.
+    For SSH auth, this resolves ``repo.ssh_key_id`` against the ``SSHKey``
+    table and decrypts ``encrypted_private_key``. For HTTPS, decrypts
+    ``repo.encrypted_https_token``. Returns ``(None, None)`` when the
+    repo has no auth configured.
     """
-    if pack.auth_type == PackAuthType.SSH and pack.encrypted_ssh_key is not None:
-        key = decrypt_ssh_key(pack.encrypted_ssh_key, get_master_key())
+    if repo.auth_type == GitAuthType.ssh_key:
+        if repo.ssh_key_id is None:
+            return None, None
+        result = await db.execute(select(SSHKey).where(SSHKey.id == repo.ssh_key_id))
+        ssh_key = result.scalar_one_or_none()
+        if ssh_key is None:
+            raise ValueError(
+                f"GitRepository {repo.name!r} references ssh_key_id="
+                f"{repo.ssh_key_id} which no longer exists"
+            )
+        key = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
         return key, None
-    if pack.auth_type == PackAuthType.HTTPS_TOKEN and pack.encrypted_token is not None:
-        token = decrypt_ssh_key(pack.encrypted_token, get_master_key())
+    if repo.auth_type == GitAuthType.https_token:
+        if repo.encrypted_https_token is None:
+            return None, None
+        token = decrypt_ssh_key(repo.encrypted_https_token, get_master_key())
         return None, token
     return None, None
 
@@ -111,22 +132,40 @@ async def sync_pack(
     if pack.source_type == PackSourceType.LOCAL:
         return await _verify_local_pack(db, pack, commit=commit)
 
+    # source = git — load the linked GitRepository + credentials.
+    if pack.git_repository_id is None:
+        return await _record_failure(
+            db,
+            pack,
+            "git pack is not linked to a GitRepository",
+            commit=commit,
+        )
+    repo_result = await db.execute(
+        select(GitRepository).where(GitRepository.id == pack.git_repository_id)
+    )
+    repo = repo_result.scalar_one_or_none()
+    if repo is None:
+        return await _record_failure(
+            db,
+            pack,
+            f"linked GitRepository id={pack.git_repository_id} no longer exists",
+            commit=commit,
+        )
+
     path = checkout_path_for(pack.id)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    ssh_key, token = _decrypt_credentials(pack)
     try:
-        with git_auth_context(
-            auth_type=pack.auth_type,
-            ssh_private_key=ssh_key,
-            ssh_known_hosts=pack.ssh_known_hosts,
-            token=token,
-        ) as auth:
-            sha = sync_remote_pack(pack.repo_url, pack.ref, path, auth=auth)
+        ssh_key, token = await _decrypt_repo_credentials(db, repo)
+    except Exception as exc:
+        return await _record_failure(
+            db, pack, f"credential decryption failed: {exc}", commit=commit
+        )
+
+    try:
+        with git_auth_context(ssh_private_key=ssh_key, token=token) as auth:
+            sha = sync_remote_pack(repo.url, repo.branch, path, auth=auth)
     except (GitSyncError, ValueError) as exc:
-        # ValueError is raised by git_auth_context for missing creds /
-        # missing known_hosts; treat it the same as a sync failure so
-        # the admin sees the message in the UI.
         secrets = [s for s in (ssh_key, token) if s]
         scrubbed = redact(str(exc), secrets)
         logger.warning("pack %r sync failed: %s", pack.name, scrubbed)
@@ -149,7 +188,7 @@ async def sync_pack(
 
 async def _verify_local_pack(db: AsyncSession, pack: ActionPack, *, commit: bool) -> bool:
     """Smoke-check a local pack's path and record the outcome."""
-    path = Path(pack.repo_url)
+    path = Path(pack.local_path or "")
     ok = path.is_dir() and (path / "actions").is_dir()
     pack.current_sha = None
     pack.last_synced_at = datetime.now(UTC)
@@ -166,6 +205,18 @@ async def _verify_local_pack(db: AsyncSession, pack: ActionPack, *, commit: bool
     return ok
 
 
+async def _record_failure(
+    db: AsyncSession, pack: ActionPack, message: str, *, commit: bool
+) -> bool:
+    logger.warning("pack %r sync failed: %s", pack.name, message)
+    pack.last_sync_status = "failed"
+    pack.last_sync_error = message
+    pack.last_synced_at = datetime.now(UTC)
+    if commit:
+        await db.commit()
+    return False
+
+
 async def sync_enabled_packs(db: AsyncSession) -> list[tuple[ActionPack, bool]]:
     """Sync every enabled pack. Returns [(pack, success), ...]."""
     result = await db.execute(
@@ -180,54 +231,13 @@ async def sync_enabled_packs(db: AsyncSession) -> list[tuple[ActionPack, bool]]:
     return outcomes
 
 
-async def test_pack_credentials(
-    *,
-    source_type: PackSourceType = PackSourceType.GIT,
-    repo_url: str,
-    ref: str,
-    auth_type: PackAuthType,
-    ssh_private_key: str | None = None,
-    ssh_known_hosts: str | None = None,
-    token: str | None = None,
-) -> tuple[bool, str, str | None]:
-    """Validate a (prospective) pack config.
-
-    For ``git`` source this runs ``git ls-remote`` to confirm auth works
-    and the ref exists. For ``local`` source it just checks the path
-    looks like a pack. Returns ``(success, message, commit_sha)``.
-    """
-    if source_type == PackSourceType.LOCAL:
-        path = Path(repo_url)
-        if not path.is_dir():
-            return False, f"path {path} is not a directory", None
-        if not (path / "actions").is_dir():
-            return (
-                False,
-                f"path {path} is missing an actions/ directory",
-                None,
-            )
-        return True, f"Local pack found at {path}", None
-
-    try:
-        with git_auth_context(
-            auth_type=auth_type,
-            ssh_private_key=ssh_private_key,
-            ssh_known_hosts=ssh_known_hosts,
-            token=token,
-        ) as auth:
-            sha = ls_remote(repo_url, ref, auth=auth)
-    except (GitSyncError, ValueError) as exc:
-        secrets = [s for s in (ssh_private_key, token) if s]
-        return False, redact(str(exc), secrets) or str(exc), None
-    return True, f"Resolved {ref} at {repo_url}", sha
-
-
 async def load_db_packs(db: AsyncSession) -> list[Pack]:
     """Return ``Pack`` objects for every enabled pack with a readable path.
 
-    For git packs that's a successful checkout under ``packs_root_dir``;
-    for local packs that's the admin-supplied filesystem path. Missing
-    or empty paths are skipped — the registry is built best-effort.
+    For git packs that's a successful checkout under ``packs_root_dir``
+    (possibly narrowed by the pack's subpath); for local packs that's
+    the admin-supplied filesystem path. Missing or empty paths are
+    skipped — the registry is built best-effort.
     """
     result = await db.execute(
         select(ActionPack).where(ActionPack.enabled.is_(True)).order_by(ActionPack.id)
