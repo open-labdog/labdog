@@ -151,6 +151,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       items: [
         { href: "/ssh-keys", label: "SSH Keys" },
         { href: "/git-repos", label: "Git Repos" },
+        { href: "/action-packs", label: "Action Packs" },
         { href: "/hypervisors", label: "Proxmox" },
       ],
     },

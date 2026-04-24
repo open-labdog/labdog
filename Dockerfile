@@ -26,7 +26,7 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get upgrade -y --no-install-recommends openssl libssl3t64 openssl-provider-legacy \
-    && apt-get install -y --no-install-recommends openssh-client \
+    && apt-get install -y --no-install-recommends openssh-client git \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 labdog

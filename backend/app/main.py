@@ -1,6 +1,7 @@
 import logging
 import logging.config
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -10,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
+from app.api.action_packs import router as action_packs_router
 from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
@@ -236,11 +238,31 @@ class HTTPSRedirectMiddleware:
 # ---------------------------------------------------------------------------
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup: sync every enabled action pack from its git remote, then
+    fold them into the in-memory action registry. Failures are logged
+    per-pack but don't prevent the app from booting — bundled actions
+    are always available."""
+    logger = logging.getLogger(__name__)
+    try:
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.packs.service import sync_enabled_packs  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await sync_enabled_packs(session)
+            await reload_registry_async(session)
+    except Exception:
+        logger.exception("action-pack startup sync failed; bundled pack only")
+    yield
+
+
 def create_app() -> FastAPI:
     _configure_logging()
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="LabDog", version="0.1.0")
+    app = FastAPI(title="LabDog", version="0.1.0", lifespan=_lifespan)
 
     # -- HTTPS redirect (must be outermost) --
     if settings.tls.force_https:
@@ -344,6 +366,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(actions_router, prefix="/api")
+    app.include_router(action_packs_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(host_state_router, prefix="/api")

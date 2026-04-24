@@ -19,6 +19,28 @@ interface ActionCardProps {
   lastRun?: { status: string; started_at: string } | null
 }
 
+function PackBadge({ action }: { action: ActionDefinition }) {
+  const overridden = action.overridden_from ?? []
+  const hasOverride = overridden.length > 0
+  const tooltip = hasOverride
+    ? `Loaded from pack "${action.pack_name}". Overrides: ${overridden.join(", ")}`
+    : `Loaded from pack "${action.pack_name}"`
+  const classes = hasOverride
+    ? "border-amber-700/60 bg-amber-950/40 text-amber-300"
+    : "border-slate-700 bg-slate-900 text-slate-400"
+  const label = hasOverride
+    ? `from ${action.pack_name} (overrides ${overridden.length})`
+    : `from ${action.pack_name}`
+  return (
+    <span
+      title={tooltip}
+      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${classes}`}
+    >
+      {label}
+    </span>
+  )
+}
+
 export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
   const Icon = ICON_MAP[action.icon] ?? Zap
   return (
@@ -30,6 +52,7 @@ export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-white">{action.name}</span>
+            <PackBadge action={action} />
           </div>
           <p className="mt-1 text-xs text-slate-400">{action.description}</p>
           <p className="mt-1 text-xs text-slate-500">~{action.estimated_duration}</p>

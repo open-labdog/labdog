@@ -49,6 +49,7 @@ def run_ansible(
     extra_vars: dict | None = None,
     timeout: int | None = None,
     envvars: dict | None = None,
+    roles_paths: list[Path] | tuple[Path, ...] | None = None,
 ) -> Any:
     """Write playbook + inventory to *private_data_dir* and invoke ansible_runner.
 
@@ -73,6 +74,9 @@ def run_ansible(
         envvars: Optional dict of environment variables merged with the
             default ``ANSIBLE_ROLES_PATH`` env var and forwarded to
             ``ansible_runner.run()``.
+        roles_paths: Optional list of additional roles directories (e.g. from
+            user packs) joined into ``ANSIBLE_ROLES_PATH``. The bundled
+            ``roles/`` dir is always included as a fallback.
 
     Returns:
         The ``ansible_runner.Runner`` object returned by ``ansible_runner.run()``.
@@ -99,12 +103,24 @@ def run_ansible(
     with open(f"{private_data_dir}/inventory/hosts", "w") as f:
         f.write(inventory_json)
 
+    # Assemble roles path: caller-supplied dirs (e.g. a user pack's roles)
+    # take precedence, bundled roles are the fallback. De-duplicate while
+    # preserving order.
+    seen: set[str] = set()
+    combined_roles: list[str] = []
+    for p in list(roles_paths or []) + [ANSIBLE_ROLES_PATH]:
+        s = str(p)
+        if s in seen:
+            continue
+        seen.add(s)
+        combined_roles.append(s)
+
     # Ansible output is captured into the DB and rendered in HTML, not a
     # terminal. ansible-runner attaches a pty by default, which makes Ansible
     # emit ANSI SGR escape codes that show up as literal garbage in the UI.
     # ANSIBLE_NOCOLOR=1 tells Ansible to skip colouring regardless of tty.
     merged_env = {
-        "ANSIBLE_ROLES_PATH": str(ANSIBLE_ROLES_PATH),
+        "ANSIBLE_ROLES_PATH": ":".join(combined_roles),
         "ANSIBLE_NOCOLOR": "1",
     }
     if envvars:

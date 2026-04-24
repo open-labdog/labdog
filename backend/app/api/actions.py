@@ -8,8 +8,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.registry import ACTION_REGISTRY
-from app.auth.users import current_active_user
+from app.actions.registry import ACTION_REGISTRY, reload_registry
+from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.user import User
@@ -51,6 +51,8 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         supports_group=defn.supports_group,
         supports_host=defn.supports_host,
         parameters=params,
+        pack_name=defn.pack_name,
+        overridden_from=list(defn.overridden_from),
     )
 
 
@@ -65,6 +67,24 @@ async def list_actions(
 ):
     """Return all registered actions from the catalog."""
     return [_definition_to_out(defn) for defn in ACTION_REGISTRY.values()]
+
+
+@router.post("/refresh")
+async def refresh_actions(
+    _: User = Depends(current_superuser),
+):
+    """Re-sync the remote default pack and rescan user packs.
+
+    Pulls the configured remote default pack (if any) and re-scans disk,
+    then rebuilds ACTION_REGISTRY in place. Returns a summary so admins
+    can confirm which packs contributed.
+    """
+    registry = reload_registry()
+    packs = sorted({defn.pack_name for defn in registry.values()})
+    return {
+        "action_count": len(registry),
+        "packs": packs,
+    }
 
 
 # ---------------------------------------------------------------------------
