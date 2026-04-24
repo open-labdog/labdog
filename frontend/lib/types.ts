@@ -153,6 +153,45 @@ export interface VMMapping {
   discovered_at: string
 }
 
+export type PackAuthType = "none" | "ssh" | "https_token"
+export type PackSourceType = "git" | "local"
+export type PackRole = "default" | "override"
+
+export interface ActionPack {
+  id: number
+  name: string
+  source_type: PackSourceType
+  repo_url: string
+  ref: string
+  role: PackRole
+  /** Derived server-side from (source_type, role). Read-only. */
+  priority: number
+  enabled: boolean
+  auth_type: PackAuthType
+  has_ssh_key: boolean
+  has_token: boolean
+  ssh_known_hosts: string | null
+  last_synced_at: string | null
+  last_sync_status: "ok" | "failed" | null
+  last_sync_error: string | null
+  current_sha: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ActionPackTestResponse {
+  success: boolean
+  message: string
+  commit_sha: string | null
+}
+
+export interface ActionPackSyncResponse {
+  success: boolean
+  message: string
+  current_sha: string | null
+  last_synced_at: string | null
+}
+
 export interface FirewallRule {
   id: number
   group_id: number
@@ -569,6 +608,10 @@ export interface ActionDefinition {
   supports_group: boolean
   supports_host: boolean
   parameters: ActionParameter[]
+  /** Pack whose manifest provided this action. */
+  pack_name: string
+  /** Packs whose entries for this key were shadowed. Empty when uncontested. */
+  overridden_from: string[]
 }
 
 export interface ActionHostRun {

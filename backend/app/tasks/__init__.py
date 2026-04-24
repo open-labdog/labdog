@@ -1,6 +1,11 @@
+import logging
+
 from celery import Celery
+from celery.signals import worker_ready
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 celery_app = Celery(
     "labdog",
@@ -45,6 +50,35 @@ celery_app.conf.update(
     task_time_limit=1800,
     task_soft_time_limit=1500,
 )
+
+@worker_ready.connect
+def _sync_packs_on_worker_start(sender=None, **_kwargs):
+    """On Celery worker boot, sync every enabled action pack and rebuild
+    the in-process action registry from disk.
+
+    Runs synchronously — reload_registry() uses a blocking engine so it
+    doesn't conflict with the worker's async task runtime. Failures are
+    logged and swallowed so a failing git remote doesn't prevent the
+    worker from starting.
+    """
+    try:
+        import asyncio  # noqa: PLC0415
+
+        from app.actions.registry import reload_registry  # noqa: PLC0415
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.packs.service import sync_enabled_packs  # noqa: PLC0415
+
+        async def _do_sync():
+            async with AsyncSessionLocal() as session:
+                await sync_enabled_packs(session)
+
+        asyncio.run(_do_sync())
+        reload_registry()
+    except Exception:
+        logger.exception(
+            "action-pack sync on worker_ready failed; bundled pack only"
+        )
+
 
 # Auto-discover tasks
 celery_app.conf.include = [

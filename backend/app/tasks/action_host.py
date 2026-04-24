@@ -168,6 +168,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             parameters: dict = dict(run.parameters or {})
             playbook_path = action.playbook_path
             action_destructive: bool = action.destructive
+            action_roles_paths: tuple = action.roles_paths
 
         # ------------------------------------------------------------------ #
         # Load Proxmox VM mapping if the action is destructive. A snapshot is
@@ -345,6 +346,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             private_data_dir=private_data_dir,
             extra_vars=extra_vars,
             timeout=timeout,
+            roles_paths=list(action_roles_paths) if action_roles_paths else None,
         )
 
         playbook_output: str = (

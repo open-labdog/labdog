@@ -69,6 +69,7 @@ def run_system_update(
             private_data_dir=private_data_dir,
             extra_vars=extra_vars,
             timeout=timeout,
+            roles_paths=list(action.roles_paths) if action.roles_paths else None,
         )
 
         if hasattr(runner.stdout, "read"):

@@ -1,0 +1,27 @@
+key: linux-upgrade
+name: Upgrade Linux packages
+description: >-
+  Upgrades all system packages to the latest version.
+  Reboots if /var/run/reboot-required is set.
+icon: ArrowUpFromLine
+playbook: linux-upgrade.yml
+version: "1.0"
+estimated_duration: "5–15 min"
+destructive: true
+supports_group: false
+supports_host: true
+parameters:
+  - key: auto_reboot
+    label: Reboot if required
+    type: bool
+    default: true
+    help_text: Reboot the host after upgrade if /var/run/reboot-required exists.
+  - key: reboot_timeout
+    label: Reboot timeout (seconds)
+    type: int
+    default: 300
+    help_text: Maximum seconds to wait for host to come back after reboot.
+  - key: cleanup
+    label: Remove unused packages
+    type: bool
+    default: true

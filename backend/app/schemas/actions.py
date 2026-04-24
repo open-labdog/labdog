@@ -27,6 +27,11 @@ class ActionDefinitionOut(BaseModel):
     supports_group: bool
     supports_host: bool
     parameters: list[ActionParameterOut]
+    #: Pack whose manifest is currently active for this action key.
+    pack_name: str
+    #: Pack names whose entries for the same key were shadowed by this
+    #: one, in processing order. Non-empty only on collisions.
+    overridden_from: list[str] = []
 
 
 class RunCreateBody(BaseModel):
