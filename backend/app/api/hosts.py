@@ -1,3 +1,5 @@
+import logging
+
 import asyncssh
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -15,6 +17,40 @@ from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.hosts import HostCreate, HostResponse, HostUpdate
 from app.ssh_utils import ssh_connect
+
+logger = logging.getLogger(__name__)
+
+
+async def _load_hosts_resilient(db: AsyncSession) -> list[Host]:
+    """Load every Host row, skipping any that fail to materialise.
+
+    Bulk ``scalars().all()`` fails the whole query if a single row has
+    an invalid enum value or similar data corruption — that would 500
+    the list endpoints and leave the UI blank. Fall back to per-row
+    loading only on bulk failure, so the common case stays a single
+    query; the diagnostic path pays N+1 once and tells us which rows
+    are bad.
+    """
+    try:
+        result = await db.execute(select(Host))
+        return list(result.scalars().all())
+    except Exception:
+        logger.exception(
+            "list_hosts: bulk load failed; falling back to per-row. "
+            "Look for 'skipping unloadable host' lines below to find the "
+            "offending row(s)."
+        )
+
+    id_result = await db.execute(select(Host.id).order_by(Host.id))
+    ids = [row[0] for row in id_result.all()]
+    survivors: list[Host] = []
+    for host_id in ids:
+        try:
+            row_result = await db.execute(select(Host).where(Host.id == host_id))
+            survivors.append(row_result.scalar_one())
+        except Exception:
+            logger.exception("list_hosts: skipping unloadable host id=%d", host_id)
+    return survivors
 
 
 class ImportRulesRequest(BaseModel):
@@ -45,8 +81,7 @@ async def list_hosts(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Host))
-    hosts = result.scalars().all()
+    hosts = await _load_hosts_resilient(db)
 
     # Populate group_ids for all hosts in a single query
     if hosts:
@@ -159,8 +194,7 @@ async def list_hosts_summary(
     from app.services.models import ServiceRule
     from app.user_mgmt.models import LinuxGroup, LinuxUser
 
-    result = await db.execute(select(Host))
-    hosts = result.scalars().all()
+    hosts = await _load_hosts_resilient(db)
     if not hosts:
         return []
 
@@ -196,41 +230,52 @@ async def list_hosts_summary(
     out = []
     for h in hosts:
         hid = h.id
-        out.append(
-            {
-                "id": hid,
-                "hostname": h.hostname,
-                "ip_address": h.ip_address,
-                "ssh_port": h.ssh_port,
-                "ssh_user": h.ssh_user,
-                "firewall_backend": h.firewall_backend.value
-                if hasattr(h.firewall_backend, "value")
-                else h.firewall_backend,
-                "sync_status": h.sync_status.value
-                if hasattr(h.sync_status, "value")
-                else h.sync_status,
-                "labdog_source_ip": h.labdog_source_ip,
-                "drift_check_enabled": h.drift_check_enabled,
-                "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
-                "last_drift_check_at": h.last_drift_check_at.isoformat()
-                if h.last_drift_check_at
-                else None,
-                "ssh_key_id": h.ssh_key_id,
-                "group_ids": groups_by_host.get(hid, []),
-                "created_at": h.created_at.isoformat() if h.created_at else None,
-                "updated_at": h.updated_at.isoformat() if h.updated_at else None,
-                "override_counts": {
-                    "firewall": fw.get(hid, 0),
-                    "hosts_file": he.get(hid, 0),
-                    "services": svc.get(hid, 0),
-                    "users": lu.get(hid, 0) + lg.get(hid, 0),
-                    "cron": cj.get(hid, 0),
-                    "packages": pkg.get(hid, 0),
-                    "resolver": res.get(hid, 0),
-                    "ca_certs": ca.get(hid, 0),
-                },
-            }
-        )
+        try:
+            out.append(
+                {
+                    "id": hid,
+                    "hostname": h.hostname,
+                    "ip_address": h.ip_address,
+                    "ssh_port": h.ssh_port,
+                    "ssh_user": h.ssh_user,
+                    "firewall_backend": h.firewall_backend.value
+                    if hasattr(h.firewall_backend, "value")
+                    else h.firewall_backend,
+                    "sync_status": h.sync_status.value
+                    if hasattr(h.sync_status, "value")
+                    else h.sync_status,
+                    "labdog_source_ip": h.labdog_source_ip,
+                    "drift_check_enabled": h.drift_check_enabled,
+                    "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
+                    "last_drift_check_at": h.last_drift_check_at.isoformat()
+                    if h.last_drift_check_at
+                    else None,
+                    "ssh_key_id": h.ssh_key_id,
+                    "group_ids": groups_by_host.get(hid, []),
+                    "created_at": h.created_at.isoformat() if h.created_at else None,
+                    "updated_at": h.updated_at.isoformat() if h.updated_at else None,
+                    "override_counts": {
+                        "firewall": fw.get(hid, 0),
+                        "hosts_file": he.get(hid, 0),
+                        "services": svc.get(hid, 0),
+                        "users": lu.get(hid, 0) + lg.get(hid, 0),
+                        "cron": cj.get(hid, 0),
+                        "packages": pkg.get(hid, 0),
+                        "resolver": res.get(hid, 0),
+                        "ca_certs": ca.get(hid, 0),
+                    },
+                }
+            )
+        except Exception:
+            # A single malformed row shouldn't blank the whole list. The
+            # Host already loaded (otherwise _load_hosts_resilient would
+            # have skipped it); this guards against edge cases in value
+            # serialisation (datetime tz mismatch, enum.value attribute
+            # errors on a corrupt enum instance, etc.).
+            logger.exception(
+                "list_hosts_summary: skipping host id=%d during response build",
+                hid,
+            )
     return out
 
 
