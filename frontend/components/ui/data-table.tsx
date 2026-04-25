@@ -156,7 +156,7 @@ export function DataTable<T>({
     const arrow = isSorted ? (state.sortDir === "asc" ? "↑" : "↓") : ""
     return (
       <span className="inline-flex items-center gap-1 w-full">
-        <span className="truncate flex-1">{col.label}</span>
+        <span className="truncate flex-1">{col.header ?? col.label}</span>
         {sortable && arrow && <span className="text-slate-400 text-xs">{arrow}</span>}
         {col.filter && (
           <span className="relative">

@@ -124,6 +124,26 @@ export default function HostsPage() {
     })
   }
 
+  const allFilteredSelected =
+    filteredHosts.length > 0 && filteredHosts.every(h => selected.has(h.id))
+  const someFilteredSelected =
+    filteredHosts.some(h => selected.has(h.id)) && !allFilteredSelected
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelected(prev => {
+        const next = new Set(prev)
+        for (const h of filteredHosts) next.delete(h.id)
+        return next
+      })
+    } else {
+      setSelected(prev => {
+        const next = new Set(prev)
+        for (const h of filteredHosts) next.add(h.id)
+        return next
+      })
+    }
+  }
+
   async function handleBulkDelete() {
     const ids = Array.from(selected)
     setBulkDeleting(true)
@@ -329,6 +349,19 @@ export default function HostsPage() {
             {
               key: "select",
               label: "",
+              header: (
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someFilteredSelected
+                  }}
+                  onChange={toggleSelectAll}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded border-slate-600"
+                  aria-label="Select all hosts"
+                />
+              ),
               cell: (h) => (
                 <input
                   type="checkbox"
