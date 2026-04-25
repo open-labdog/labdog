@@ -15,7 +15,13 @@ import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
 import { RunStatusBadge } from "@/components/status-badge"
-import type { HostGroup, UpdateWorkflow, WorkflowRun } from "@/lib/types"
+import type {
+  ActionDefinition,
+  ActionParameter,
+  HostGroup,
+  UpdateWorkflow,
+  WorkflowRun,
+} from "@/lib/types"
 
 const textareaClass =
   "w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 resize-y"
@@ -33,6 +39,8 @@ interface WorkflowFormState {
   auto_reboot: boolean
   verification_prompt: string
   enabled: boolean
+  action_key: string
+  action_parameters: Record<string, unknown>
 }
 
 function workflowToForm(wf: UpdateWorkflow): WorkflowFormState {
@@ -44,6 +52,8 @@ function workflowToForm(wf: UpdateWorkflow): WorkflowFormState {
     auto_reboot: wf.auto_reboot,
     verification_prompt: wf.verification_prompt ?? "",
     enabled: wf.enabled,
+    action_key: wf.action_key,
+    action_parameters: wf.action_parameters ?? {},
   }
 }
 
@@ -55,6 +65,15 @@ const defaultForm: WorkflowFormState = {
   auto_reboot: true,
   verification_prompt: "",
   enabled: false,
+  action_key: "linux-upgrade",
+  action_parameters: {},
+}
+
+function paramInputType(p: ActionParameter): "checkbox" | "select" | "number" | "text" {
+  if (p.type === "bool") return "checkbox"
+  if (p.type === "choice" && p.choices && p.choices.length > 0) return "select"
+  if (p.type === "int") return "number"
+  return "text"
 }
 
 export default function WorkflowConfigPage({ embedded = false }: { embedded?: boolean } = {}) {
@@ -76,6 +95,14 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
     queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
   })
+
+  const { data: actionCatalog } = useQuery<ActionDefinition[]>({
+    queryKey: ["actions-catalog"],
+    queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"),
+    staleTime: 60_000,
+  })
+
+  const selectedAction = actionCatalog?.find((a) => a.key === form.action_key) ?? null
 
   const {
     data: workflow,
@@ -143,8 +170,8 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
         auto_reboot: form.auto_reboot,
         verification_prompt: form.verification_prompt || null,
         enabled: form.enabled,
-        action_key: "linux-upgrade",
-        action_parameters: {},
+        action_key: form.action_key,
+        action_parameters: form.action_parameters,
       }
       await apiFetch(`/api/groups/${id}/workflow`, { method: "PUT", json: payload })
       await queryClient.invalidateQueries({ queryKey: ["group-workflow", id] })
@@ -281,6 +308,107 @@ export default function WorkflowConfigPage({ embedded = false }: { embedded?: bo
               <p className="text-xs text-slate-500">Cron expression for scheduled runs (leave blank to disable)</p>
             </div>
           </div>
+
+          {/* Action selection */}
+          <div className="space-y-2">
+            <Label htmlFor="action-key">Action</Label>
+            <select
+              id="action-key"
+              value={form.action_key}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  action_key: e.target.value,
+                  // Reset parameters when switching actions — different actions
+                  // expose different keys, so carrying values forward would
+                  // either no-op or get rejected at save time.
+                  action_parameters: {},
+                }))
+              }
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+            >
+              {actionCatalog?.map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.name} ({a.key})
+                </option>
+              )) ?? <option value={form.action_key}>{form.action_key}</option>}
+            </select>
+            {selectedAction?.description && (
+              <p className="text-xs text-slate-500">{selectedAction.description}</p>
+            )}
+          </div>
+
+          {/* Per-action parameters */}
+          {selectedAction && selectedAction.parameters.length > 0 && (
+            <div className="space-y-4 rounded-lg border border-slate-700 bg-slate-950/40 p-4">
+              <h3 className="text-sm font-medium text-slate-300">Action parameters</h3>
+              {selectedAction.parameters.map((p) => {
+                const inputType = paramInputType(p)
+                const current = form.action_parameters[p.key]
+                const update = (val: unknown) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    action_parameters: { ...prev.action_parameters, [p.key]: val },
+                  }))
+                return (
+                  <div key={p.key} className="space-y-1.5">
+                    <Label className="text-sm font-medium text-slate-200">
+                      {p.label}
+                      {p.required && <span className="text-red-400 ml-1">*</span>}
+                    </Label>
+                    {inputType === "checkbox" ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`param-${p.key}`}
+                          checked={
+                            current !== undefined ? Boolean(current) : Boolean(p.default)
+                          }
+                          onChange={(e) => update(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-600"
+                        />
+                        {p.help_text && (
+                          <label htmlFor={`param-${p.key}`} className="text-sm text-slate-400">
+                            {p.help_text}
+                          </label>
+                        )}
+                      </div>
+                    ) : inputType === "select" ? (
+                      <select
+                        value={String(current ?? p.default ?? "")}
+                        onChange={(e) => update(e.target.value)}
+                        className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                      >
+                        {p.choices!.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input
+                        type={inputType}
+                        placeholder={p.default != null ? String(p.default) : ""}
+                        value={current !== undefined ? String(current) : ""}
+                        onChange={(e) =>
+                          update(
+                            inputType === "number"
+                              ? e.target.value === ""
+                                ? null
+                                : Number(e.target.value)
+                              : e.target.value,
+                          )
+                        }
+                      />
+                    )}
+                    {p.help_text && inputType !== "checkbox" && (
+                      <p className="text-xs text-slate-500">{p.help_text}</p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
 
           {/* Toggle options */}
           <div className="space-y-3">

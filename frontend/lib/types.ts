@@ -461,7 +461,7 @@ export interface UpdateWorkflow {
   auto_reboot: boolean
   enabled: boolean
   action_key: string
-  action_parameters: Record<string, string>
+  action_parameters: Record<string, unknown>
   created_at: string
   updated_at: string
 }
