@@ -6,6 +6,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.gitops.importers.cron_jobs import import_cron_jobs
+from app.gitops.importers.discovery import import_discovery
+from app.gitops.importers.drift import import_drift
 from app.gitops.importers.firewall import ModuleImportResult, import_firewall
 from app.gitops.importers.hosts_entries import import_hosts_entries
 from app.gitops.importers.packages import import_packages
@@ -13,13 +15,20 @@ from app.gitops.importers.resolver import import_resolver
 from app.gitops.importers.services import import_services
 from app.gitops.importers.users import import_users
 from app.gitops.importers.workflow import import_workflow
-from app.gitops.serializer import YAMLParseError, parse_yaml
+from app.gitops.serializer import YAMLParseError, parse_global_yaml, parse_yaml
 from app.models.git_repository import GitOpsStatus
 from app.models.host_group import HostGroup
 
 logger = logging.getLogger(__name__)
 
 _GITOPS_LOCK_OFFSET = 1_000_000
+
+# Global YAML lives in a different lock-id namespace so that a per-group
+# import doesn't block (or get blocked by) a concurrent global import for
+# the same repo. The advisory-lock argument is the repo id plus this
+# offset, so two repos can each import their own _global.yaml in
+# parallel.
+_GITOPS_GLOBAL_LOCK_OFFSET = 2_000_000
 
 
 @dataclass
@@ -149,3 +158,70 @@ async def import_group_from_yaml(
         group.gitops_error_message = f"Unexpected error: {e}"
         await db.flush()
         raise
+
+
+async def import_global_from_yaml(
+    repo_id: int,
+    yaml_content: str,
+    commit_sha: str,
+    db: AsyncSession,
+) -> ImportResult:
+    """Import the optional ``_global.yaml`` payload for a GitRepository.
+
+    Companion to :func:`import_group_from_yaml`. Where group YAML carries
+    state scoped to a single ``HostGroup`` (firewall rules, services, …)
+    this dispatcher carries state that's genuinely global to the
+    install: the drift-check interval and the independent
+    ``ScanConfig`` rows.
+
+    Acquires a per-repo PostgreSQL advisory lock so two webhook
+    deliveries for the same repo serialize cleanly. The lock id lives
+    in a different namespace from the per-group lock (``_OFFSET`` is
+    distinct), so a global import doesn't block a parallel per-group
+    import for the same repo.
+
+    Args:
+        repo_id: ``GitRepository.id`` — used only for the advisory-lock
+            scope. Global YAML doesn't otherwise reference the repo
+            because the data it imports is not per-repo.
+        yaml_content: Raw YAML string read from the repo's
+            ``_global.yaml`` at the pushed commit.
+        commit_sha: Full commit SHA string (for audit trail).
+        db: Active async DB session — caller owns the transaction.
+
+    Returns:
+        :class:`ImportResult` describing what changed (or the error).
+    """
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_id)"),
+        {"lock_id": repo_id + _GITOPS_GLOBAL_LOCK_OFFSET},
+    )
+
+    try:
+        parsed = parse_global_yaml(yaml_content)
+    except YAMLParseError as e:
+        return ImportResult(error_message=str(e))
+
+    module_results: list[ModuleImportResult] = []
+
+    drift_result = await import_drift(parsed, commit_sha, db)
+    module_results.append(drift_result)
+
+    discovery_result = await import_discovery(parsed, commit_sha, db)
+    module_results.append(discovery_result)
+
+    failed = [m for m in module_results if m.error_message]
+    if failed:
+        return ImportResult(
+            modules=module_results,
+            error_message=failed[0].error_message,
+        )
+
+    logger.info(
+        "GitOps global import for repo %d: %d module(s) (SHA: %s)",
+        repo_id,
+        len(module_results),
+        commit_sha[:8],
+    )
+
+    return ImportResult(success=True, modules=module_results)

@@ -8,6 +8,7 @@ from app.gitops.schema import (
     CronJobYAML,
     FirewallRuleYAML,
     HostsEntryYAML,
+    LabDogGlobalYAML,
     LabDogGroupYAML,
     LinuxGroupYAML,
     LinuxUserYAML,
@@ -43,6 +44,32 @@ def parse_yaml(yaml_str: str) -> LabDogGroupYAML:
 
     try:
         return LabDogGroupYAML.model_validate(data)
+    except Exception as e:
+        raise YAMLParseError(f"YAML validation failed: {e}") from e
+
+
+def parse_global_yaml(yaml_str: str) -> LabDogGlobalYAML:
+    """Parse a ``_global.yaml`` payload into validated LabDogGlobalYAML.
+
+    Same error semantics as :func:`parse_yaml` — raises ``YAMLParseError``
+    for syntax failures, missing-mapping payloads, and pydantic validation
+    errors. Used by ``import_global_from_yaml`` for global-scope settings
+    (drift interval, scan configs).
+    """
+    try:
+        data = yaml.safe_load(yaml_str)
+    except yaml.YAMLError as e:
+        raise YAMLParseError(f"Invalid YAML syntax: {e}") from e
+
+    if data is None:
+        # Empty file — treat as an empty mapping; the importer will do nothing.
+        data = {}
+
+    if not isinstance(data, dict):
+        raise YAMLParseError("YAML must be a mapping (key-value pairs)")
+
+    try:
+        return LabDogGlobalYAML.model_validate(data)
     except Exception as e:
         raise YAMLParseError(f"YAML validation failed: {e}") from e
 

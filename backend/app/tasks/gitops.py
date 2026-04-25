@@ -25,10 +25,15 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
 
     from app.db import task_session
     from app.gitops.git_service import cleanup_repo, clone_repo, read_file_at_sha
-    from app.gitops.importer import import_group_from_yaml
+    from app.gitops.importer import import_global_from_yaml, import_group_from_yaml
     from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
     from app.models.host_group import HostGroup
     from app.models.ssh_key import SSHKey
+
+    # Convention: the optional global YAML lives at the repo root.
+    # Operators who want a different layout can symlink to it, but the
+    # path itself is not user-configurable — keeps Phase 2 small.
+    GLOBAL_YAML_PATH = "_global.yaml"
 
     repo_dir: Path | None = None
 
@@ -60,6 +65,44 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             except Exception as e:
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
+
+            # Global YAML is optional; missing file is the common case.
+            # Failures here are logged but never abort the per-group loop —
+            # an operator typo in `_global.yaml` shouldn't block per-group
+            # rules from importing.
+            try:
+                global_yaml_content = read_file_at_sha(
+                    repo_dir, GLOBAL_YAML_PATH, commit_sha
+                )
+            except FileNotFoundError:
+                global_yaml_content = None
+
+            if global_yaml_content is not None:
+                try:
+                    global_result = await import_global_from_yaml(
+                        repo_id=repo_id,
+                        yaml_content=global_yaml_content,
+                        commit_sha=commit_sha,
+                        db=db,
+                    )
+                    if not global_result.success:
+                        logger.warning(
+                            "GitOps: global import failed for repo %s: %s",
+                            repo.name,
+                            global_result.error_message,
+                        )
+                    else:
+                        logger.info(
+                            "GitOps: global import OK for repo %s (changes=%s)",
+                            repo.name,
+                            global_result.any_changes(),
+                        )
+                except Exception as e:
+                    logger.error(
+                        "GitOps: error importing _global.yaml for repo %s: %s",
+                        repo.name,
+                        e,
+                    )
 
             groups_result = await db.execute(
                 select(HostGroup).where(
