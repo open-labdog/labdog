@@ -21,11 +21,19 @@ file per group:
 | Linux users + groups | `users` + `linux_groups` | two lists |
 | Update workflow schedule | `workflow` | singleton object |
 
+Plus, in the optional global file `_global.yaml` at the repo root:
+
+| Module | YAML section | Shape |
+|---|---|---|
+| Drift-check interval | `drift` | singleton object (global setting) |
+| Discovery scan configs | `discovery` | list |
+
 This directory contains:
 
 - **[minimal.yaml](./minimal.yaml)** — smallest valid file: just `group:` and one tiny section.
 - **[web-servers.yaml](./web-servers.yaml)** — realistic web tier covering all seven modules.
 - **[database.yaml](./database.yaml)** — realistic database tier, different shape.
+- **[_global.yaml](./_global.yaml)** — install-wide settings (drift interval + scan configs) that don't fit a single group. Optional; place at the repo root.
 - **[modules/](./modules/)** — one file per module, focused examples showing every field and corner case.
 
 ---
@@ -53,6 +61,32 @@ This directory contains:
 
 Manual imports are also available — a **Sync from Git** button on the Git
 Repos page bypasses the webhook (handy during setup).
+
+---
+
+## Global YAML (`_global.yaml`)
+
+State that's install-wide rather than per-group lives in an optional
+file at the repo root, named exactly `_global.yaml`. As of v0.1 it
+covers two sections:
+
+- **`drift:`** — sets `drift.check_interval_minutes` (the same setting
+  reachable from Settings → Drift Detection in the UI).
+- **`discovery:`** — list of `ScanConfig` rows that periodically scan a
+  CIDR for SSH-reachable hosts.
+
+The file is optional — install behaviour with no `_global.yaml`
+matches Phase 1 (only per-group YAML imports). The convention is path
+plus name; operators who want a different layout can symlink to it.
+
+See [`_global.yaml`](./_global.yaml) for a fully-commented example,
+including how `ssh_key:` and `default_groups:` resolve to existing
+`SSHKey` / `HostGroup` rows by name.
+
+The global file imports under its own per-repo advisory lock,
+independent of the per-group locks. A typo in `_global.yaml` does NOT
+abort the per-group loop — the global error is logged and the
+remaining files import normally.
 
 ---
 
@@ -85,6 +119,8 @@ breaking older LabDog versions.
 | `linux_groups` | wipe | wipe |
 | `resolver` | **leave alone** (singleton exception) | n/a |
 | `workflow` | **leave alone** (singleton exception) | n/a |
+| `drift` *(global)* | **leave alone** (singleton exception) | n/a |
+| `discovery` *(global)* | wipe | wipe |
 
 Rule of thumb: omitting a list-shaped section means "I have no opinion and I
 want LabDog to have none either" — so it empties the group's rows. The
