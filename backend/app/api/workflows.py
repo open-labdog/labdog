@@ -99,16 +99,19 @@ async def list_workflows_summary(
     return out
 
 
-@router.get("/groups/{group_id}/workflow", response_model=UpdateWorkflowResponse)
+@router.get("/groups/{group_id}/workflow", response_model=UpdateWorkflowResponse | None)
 async def get_group_workflow(
     group_id: int,
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
-    if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    return workflow
+    """Return the group's workflow, or `null` when none has been configured.
+
+    Returning a 200 with `null` instead of a 404 keeps the frontend's
+    console clean on first load — the "not configured yet" state is
+    expected, not an error.
+    """
+    return await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
 
 
 @router.put("/groups/{group_id}/workflow", response_model=UpdateWorkflowResponse)
@@ -289,9 +292,10 @@ async def list_workflow_runs(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
+    """Return the group's workflow runs, or `[]` when no workflow exists yet."""
     workflow = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group_id))
     if not workflow:
-        raise HTTPException(status_code=404, detail="Workflow not found")
+        return []
 
     result = await db.execute(
         select(WorkflowRun)
@@ -303,13 +307,16 @@ async def list_workflow_runs(
     return result.scalars().all()
 
 
-@router.get("/hosts/{host_id}/latest-workflow-run", response_model=WorkflowHostRunResponse)
+@router.get(
+    "/hosts/{host_id}/latest-workflow-run",
+    response_model=WorkflowHostRunResponse | None,
+)
 async def get_host_latest_workflow_run(
     host_id: int,
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the most recent workflow host run for a host."""
+    """Return the most recent workflow host run for a host, or `null` if none."""
     result = await db.execute(
         select(WorkflowHostRun, Host.hostname)
         .join(Host, WorkflowHostRun.host_id == Host.id)
@@ -319,7 +326,7 @@ async def get_host_latest_workflow_run(
     )
     row = result.first()
     if not row:
-        raise HTTPException(status_code=404, detail="No workflow runs found for this host")
+        return None
     hr, hostname = row
     return WorkflowHostRunResponse(
         id=hr.id,

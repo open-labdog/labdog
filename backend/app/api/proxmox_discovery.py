@@ -25,21 +25,15 @@ async def trigger_full_discovery(
     return await discover_all_vms(db)
 
 
-@router.get("/hosts/{host_id}/vm-mapping", response_model=VMMappingResponse)
+@router.get("/hosts/{host_id}/vm-mapping", response_model=VMMappingResponse | None)
 async def get_host_vm_mapping(
     host_id: int,
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the cached VM mapping for a host.
-
-    Raises 404 if no mapping has been discovered yet.
-    """
+    """Return the cached VM mapping for a host, or `null` when none has been discovered."""
     result = await db.execute(select(VMMapping).where(VMMapping.host_id == host_id))
-    mapping = result.scalar_one_or_none()
-    if mapping is None:
-        raise HTTPException(status_code=404, detail="No VM mapping found for this host")
-    return mapping
+    return result.scalar_one_or_none()
 
 
 @router.post("/hosts/{host_id}/discover", response_model=VMMappingResponse)
