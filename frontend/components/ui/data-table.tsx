@@ -220,10 +220,21 @@ export function DataTable<T>({
               const width = state.columnWidths[col.key] ?? col.defaultWidth
               const resizable = col.resizable !== false && col.defaultWidth != null
               const sortable = col.sortable !== false
+              // Width acts as a *preferred* width, not a hard floor. After the
+              // user resizes anything we switch to fixed-layout mode (see
+              // useFixedLayout below) and pin minWidth = width so dragged
+              // sizes hold; until then we let auto-layout shrink columns to
+              // fit the container, otherwise narrow viewports force a
+              // horizontal scrollbar even when there's nothing to scroll to.
+              const style = width
+                ? state.hasUserResized
+                  ? { width, minWidth: width }
+                  : { width }
+                : undefined
               return (
                 <TableHead
                   key={col.key}
-                  style={width ? { width, minWidth: width } : undefined}
+                  style={style}
                   className={cn(
                     "relative select-none",
                     col.align === "right" && "text-right",
