@@ -86,7 +86,7 @@ export default function DashboardPage() {
     )
     await refetchHosts()
     setCheckingAll(false)
-    showSuccess("State collection triggered for all hosts")
+    showSuccess("State collected for all hosts")
   }
 
   const handleSyncHost = async (hostId: number) => {
@@ -112,8 +112,13 @@ export default function DashboardPage() {
             Operational status across all hosts — auto-refreshes every 30s
           </p>
         </div>
-        <Button onClick={handleCheckAll} variant="outline" disabled={checkingAll}>
-          {checkingAll ? "Checking..." : "Check All"}
+        <Button
+          onClick={handleCheckAll}
+          variant="outline"
+          disabled={checkingAll}
+          title="SSH into every host and refresh its current state. Distinct from the drift check (Last Check column) and the config sync push (Last Sync column)."
+        >
+          {checkingAll ? "Collecting..." : "Collect State"}
         </Button>
       </div>
 
@@ -220,10 +225,10 @@ export default function DashboardPage() {
                   variant="ghost"
                   disabled={syncingHost === h.id}
                   onClick={() => handleSyncHost(h.id)}
-                  title="Collect current state from host"
+                  title="SSH into the host and refresh its current state"
                 >
                   <PlayIcon className="w-3.5 h-3.5 mr-1" />
-                  {syncingHost === h.id ? "..." : "Check"}
+                  {syncingHost === h.id ? "..." : "Collect"}
                 </Button>
               ),
               defaultWidth: 100,

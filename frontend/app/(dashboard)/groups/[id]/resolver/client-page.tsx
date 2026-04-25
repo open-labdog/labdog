@@ -35,22 +35,18 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
 
   const gitopsEnabled = !!group?.gitops_enabled
 
-  const resolverQuery = useQuery<ResolverConfig>({
+  const resolverQuery = useQuery<ResolverConfig | null>({
     queryKey: ["group-resolver", id],
-    queryFn: async () => {
-      const res = await apiFetch<ResolverConfig>(`/api/groups/${id}/resolver`)
-      return res
-    },
+    queryFn: () => apiFetch<ResolverConfig | null>(`/api/groups/${id}/resolver`),
     enabled: !!id,
-    retry: (count, error) => {
-      if (error && "status" in error && (error as { status: number }).status === 404) return false
-      return count < 3
-    },
   })
 
   const showLoading = useDelayedLoading(resolverQuery.isLoading)
-  const is404 = resolverQuery.error && "status" in resolverQuery.error && (resolverQuery.error as { status: number }).status === 404
-  const hasConfig = resolverQuery.data && !resolverQuery.error
+  // The endpoint returns 200+null when no resolver config exists yet,
+  // which is the common case rather than an error. Distinguish "not
+  // configured" (data === null) from "request failed" (error truthy).
+  const is404 = !resolverQuery.isLoading && !resolverQuery.error && resolverQuery.data === null
+  const hasConfig = !!resolverQuery.data && !resolverQuery.error
 
   const [resolverType, setResolverType] = useState<"resolv_conf" | "systemd_resolved" | "networkmanager">("resolv_conf")
   const [nameservers, setNameservers] = useState<string[]>([])
@@ -91,7 +87,7 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
     setFormReady(true)
   }
 
-  if (hasConfig && !formReady) {
+  if (hasConfig && !formReady && resolverQuery.data) {
     populateForm(resolverQuery.data)
   }
 

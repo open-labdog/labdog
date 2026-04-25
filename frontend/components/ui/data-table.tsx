@@ -148,6 +148,11 @@ export function DataTable<T>({
     return map
   }, [columns, data])
 
+  // Fixed-layout only kicks in once the user has manually resized a
+  // column. With auto-layout the browser can shrink columns to fit the
+  // container (the original 9ad650c fix). Forcing fixed-layout always
+  // would re-introduce a horizontal scrollbar on tables where column
+  // defaults sum just past the container width.
   const useFixedLayout = state.hasUserResized
 
   function headerContent(col: ColumnDef<T>) {
@@ -293,6 +298,14 @@ export function DataTable<T>({
               <TableCell
                 key={col.key}
                 className={cn(
+                  // Pair with `table-layout: fixed` so cells whose
+                  // content exceeds the column width clip with an
+                  // ellipsis instead of widening the column. Cells
+                  // that need richer content (badges, multi-line
+                  // wrappers, custom truncation) can override via
+                  // `col.className` or by setting `whitespace-normal`
+                  // on the inner element.
+                  "truncate",
                   col.align === "right" && "text-right",
                   col.align === "center" && "text-center",
                   col.className,
