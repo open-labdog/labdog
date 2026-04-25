@@ -266,6 +266,97 @@ class WorkflowYAML(BaseModel):
         return v
 
 
+class DriftYAML(BaseModel):
+    """Global drift-detection schedule.
+
+    Singleton with **leave-alone** semantics: if the ``drift:`` block is
+    absent from ``_global.yaml`` (or set to ``null``), the existing
+    `drift.check_interval_minutes` setting is left untouched.
+
+    Maps to ``app.settings_service.SETTING_DEFINITIONS['drift.check_interval_minutes']``;
+    bounds (1–1440) match the UI / settings-service validators exactly.
+    """
+
+    check_interval_minutes: int = Field(ge=1, le=1440)
+
+
+class DiscoveryYAML(BaseModel):
+    """One scheduled network-discovery scan (``ScanConfig`` row).
+
+    Cross-references SSH keys and host groups by **name**, not numeric
+    ID — IDs are install-specific, names round-trip across environments.
+    Both ``SSHKey.name`` and ``HostGroup.name`` carry a unique constraint
+    so the lookup is unambiguous.
+
+    Either ``interval_minutes`` or ``cron_expression`` must be set,
+    not both, not neither — same XOR rule the API and DB constraint
+    enforce.
+    """
+
+    name: str
+    cidrs: list[str]
+    ssh_key: str  # Resolved to SSHKey.id by the importer
+    ssh_port: int = Field(default=22, ge=1, le=65535)
+    default_groups: list[str] = []  # Resolved to HostGroup.id list
+    interval_minutes: int | None = Field(default=None, ge=1, le=10_080)
+    cron_expression: str | None = None
+    enabled: bool = True
+    auto_add: bool = False
+
+    @field_validator("cidrs", mode="before")
+    @classmethod
+    def validate_cidrs(cls, v: list) -> list[str]:
+        from app.schemas.scans import _validate_cidr  # noqa: PLC0415
+
+        if not v:
+            raise ValueError("At least one CIDR is required")
+        return [_validate_cidr(str(c)) for c in v]
+
+    @field_validator("cron_expression")
+    @classmethod
+    def validate_cron(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from croniter import croniter  # noqa: PLC0415
+
+        if not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r}")
+        return v
+
+    @model_validator(mode="after")
+    def check_schedule_xor(self) -> "DiscoveryYAML":
+        has_interval = self.interval_minutes is not None
+        has_cron = self.cron_expression is not None
+        if has_interval == has_cron:
+            raise ValueError(
+                "Exactly one of interval_minutes or cron_expression must be set, "
+                "not both or neither"
+            )
+        return self
+
+
+class LabDogGlobalYAML(BaseModel):
+    """Root model for ``_global.yaml`` at the repo root.
+
+    Phase-1 GitOps imports a per-group YAML keyed by ``HostGroup.name``;
+    Phase-2 adds this companion file for state that doesn't fit the
+    per-group shape — the global drift interval and the independent
+    ``ScanConfig`` rows.
+
+    Missing-section semantics:
+
+    * ``drift`` — singleton, **leave alone** if absent (matches
+      ``resolver:`` / ``workflow:`` precedent).
+    * ``discovery`` — list, **wipe** if absent (matches firewall /
+      services / packages precedent: GitOps is source of truth, the
+      operator opts out by removing the file or the section).
+    """
+
+    drift: DriftYAML | None = None
+    discovery: list[DiscoveryYAML] | None = None
+    model_config = ConfigDict(extra="allow")  # Forward-compat
+
+
 class LabDogGroupYAML(BaseModel):
     group: str  # Human-readable name
     priority: int | None = None  # Informational
