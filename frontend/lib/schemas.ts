@@ -45,8 +45,8 @@ export const ruleSchema = z.object({
   destination_cidr: cidrOrEmpty,
   source_host_id: z.number().int().nullable().optional(),
   destination_host_id: z.number().int().nullable().optional(),
-  port_start: z.number().int().min(1).max(65535).optional().nullable(),
-  port_end: z.number().int().min(1).max(65535).optional().nullable(),
+  port_start: z.number().int().min(1).max(65535).nullish(),
+  port_end: z.number().int().min(1).max(65535).nullish(),
   comment: z.string().optional(),
 })
 export type RuleInput = z.infer<typeof ruleSchema>
