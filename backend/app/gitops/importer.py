@@ -12,6 +12,7 @@ from app.gitops.importers.packages import import_packages
 from app.gitops.importers.resolver import import_resolver
 from app.gitops.importers.services import import_services
 from app.gitops.importers.users import import_users
+from app.gitops.importers.workflow import import_workflow
 from app.gitops.serializer import YAMLParseError, parse_yaml
 from app.models.git_repository import GitOpsStatus
 from app.models.host_group import HostGroup
@@ -110,6 +111,9 @@ async def import_group_from_yaml(
 
         users_result = await import_users(group, parsed, commit_sha, db)
         module_results.append(users_result)
+
+        workflow_result = await import_workflow(group, parsed, commit_sha, db)
+        module_results.append(workflow_result)
 
         # If any handler reported an error, abort with error status.
         failed = [m for m in module_results if m.error_message]

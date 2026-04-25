@@ -19,6 +19,7 @@ file per group:
 | Cron jobs | `cron_jobs` | list |
 | DNS resolver | `resolver` | singleton object |
 | Linux users + groups | `users` + `linux_groups` | two lists |
+| Update workflow schedule | `workflow` | singleton object |
 
 This directory contains:
 
@@ -83,6 +84,7 @@ breaking older LabDog versions.
 | `users` | wipe | wipe |
 | `linux_groups` | wipe | wipe |
 | `resolver` | **leave alone** (singleton exception) | n/a |
+| `workflow` | **leave alone** (singleton exception) | n/a |
 
 Rule of thumb: omitting a list-shaped section means "I have no opinion and I
 want LabDog to have none either" — so it empties the group's rows. The
@@ -98,8 +100,9 @@ See [modules/firewall.yaml](./modules/firewall.yaml),
 [modules/hosts-entries.yaml](./modules/hosts-entries.yaml),
 [modules/cron-jobs.yaml](./modules/cron-jobs.yaml),
 [modules/resolver.yaml](./modules/resolver.yaml),
-and [modules/users.yaml](./modules/users.yaml) for every field with inline
-comments.
+[modules/users.yaml](./modules/users.yaml),
+and [modules/workflow.yaml](./modules/workflow.yaml) for every field with
+inline comments.
 
 ### System-owned rows
 
@@ -181,6 +184,9 @@ message appears on the group's overview page. Common causes:
 | Missing host ref | `Referenced host id 42 does not exist` | The host was deleted in LabDog; update the YAML |
 | SSH key prefix unknown | `Invalid SSH key: must start with ssh-rsa \| ssh-ed25519 \| …` | Only public-key formats are accepted |
 | Too many nameservers | `Maximum 3 nameservers allowed …` | Resolver's `/etc/resolv.conf` limit |
+| Unknown `action_key` in `workflow:` | `Unknown action_key: '<value>'` | The action isn't in the registry — fix the typo, or add the pack supplying it |
+| Missing `linux-os-upgrade` params | `linux-os-upgrade requires action_parameters: ['current_version', 'next_version']` | Add both keys under `action_parameters:` |
+| Invalid cron in `workflow.schedule_cron` | `Invalid cron expression: …` | 5-field cron only; `crontab.guru` is your friend |
 
 The error message is also available via `GET /api/groups/{group_id}` →
 `gitops_error_message` for scripted recovery.

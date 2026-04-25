@@ -85,3 +85,21 @@ Shows live output streamed from the Ansible playbook execution. Each host's outp
 Workflows use cron expressions (same syntax as the Cron Jobs module). The scheduler check interval is configurable in [Settings](settings.md) (`workflow.schedule_check_interval_seconds`, default 60 seconds).
 
 Proxmox snapshots created before a run are cleaned up automatically after the configured max age (`workflow.snapshot_max_age_hours`, default 24 hours).
+
+---
+
+## GitOps
+
+Workflows can be declared in the same per-group YAML as the rest of a
+group's configuration. When a group has GitOps enabled, the
+`workflow:` section becomes the source of truth and the UI mutation
+controls on this page are read-only.
+
+The section is **singleton**: at most one workflow per group, and
+omitting (or `null`-ing) the section leaves the existing DB row
+untouched. Explicit deletion is not supported via YAML — disable
+GitOps on the group first, then delete via the UI.
+
+See [`docs/examples/gitops/modules/workflow.yaml`](../examples/gitops/modules/workflow.yaml)
+for a fully-commented example covering every field, including the
+`linux-os-upgrade` parameter requirements.
