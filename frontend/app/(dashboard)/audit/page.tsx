@@ -14,6 +14,7 @@ interface AuditEntry {
   id: number
   created_at: string
   user_id: number | null
+  user_email: string | null
   action: "create" | "update" | "delete" | string
   entity_type: string
   entity_id: number | string | null
@@ -103,13 +104,13 @@ export default function AuditPage() {
               {
                 key: "user",
                 label: "User",
-                accessor: (e) => e.user_id ? `User #${e.user_id}` : "System",
+                accessor: (e) => e.user_email ?? (e.user_id ? `User #${e.user_id}` : "System"),
                 cell: (e) => (
                   <span className="text-slate-300 text-sm">
-                    {e.user_id ? `User #${e.user_id}` : "System"}
+                    {e.user_email ?? (e.user_id ? `User #${e.user_id}` : "System")}
                   </span>
                 ),
-                defaultWidth: 140,
+                defaultWidth: 180,
                 filter: { type: "text" },
               },
               {

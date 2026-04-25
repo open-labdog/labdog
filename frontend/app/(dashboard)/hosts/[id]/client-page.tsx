@@ -818,7 +818,9 @@ export default function HostDetailPage() {
   const effectiveResolver = effectiveResolverQuery.data
   const resolverLoading = effectiveResolverQuery.isLoading
   const resolverError = effectiveResolverQuery.error
-  const resolverIs404 = resolverError && "status" in resolverError && (resolverError as { status: number }).status === 404
+  // 200+null is the "no resolver applies to this host" signal — distinct
+  // from the loading state (data === undefined) and from a real error.
+  const resolverNotConfigured = !resolverLoading && !resolverError && effectiveResolver === null
   const hostResolverOverride = hostResolverOverrideQuery.data
 
   const {
@@ -2175,7 +2177,7 @@ export default function HostDetailPage() {
         )}
       </div>
 
-      <div role="tablist" className="flex gap-1 border-b border-slate-700 overflow-x-auto">
+      <div role="tablist" className="flex gap-1 border-b border-slate-700 flex-wrap">
         <button
           role="tab"
           aria-selected={activeTab === "overview"}
@@ -5064,13 +5066,13 @@ export default function HostDetailPage() {
 
           {showResolverLoading && <CardSkeleton />}
 
-          {resolverIs404 && !resolverLoading && (
+          {resolverNotConfigured && (
             <div className="text-slate-400 py-6 text-center">
               DNS is not managed for this host. Configure DNS at the group level to get started.
             </div>
           )}
 
-          {resolverError && !resolverIs404 && (
+          {resolverError && (
             <div className="text-red-400 py-6 text-center">Failed to load DNS resolver</div>
           )}
 
