@@ -35,11 +35,11 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | Section | What it covers |
 |---|---|
 | [ui/](./ui/README.md) | Overview of every page in the LabDog web interface |
-| [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Check All |
+| [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Collect State |
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
-| [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, sync) |
+| [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, Firewall Sync) |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
-| [ui/workflows.md](./ui/workflows.md) | Update Workflows — Linux and Kubernetes upgrade automation |
+| [ui/workflows.md](./ui/workflows.md) | Update Workflows — scheduled action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, custom packs) with snapshot/rollback |
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
@@ -484,7 +484,9 @@ npx playwright test --ui     # interactive test runner
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/api/git-repos` | Manage Git repository connections |
-| `POST` | `/api/webhooks/git/{repo_id}` | Webhook endpoint for Git push events |
+| `POST` | `/webhooks/github` | GitHub push webhook (HMAC-SHA256 signature) |
+| `POST` | `/webhooks/gitlab` | GitLab push webhook (X-Gitlab-Token shared secret) |
+| `POST` | `/webhooks/gitea` | Gitea push webhook (HMAC-SHA256 signature) |
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
 
@@ -572,9 +574,17 @@ LabDog uses a modular extension architecture. Each module follows the same patte
 
 ## CI/CD
 
-LabDog uses GitLab CI for automated builds and releases. See `.gitlab-ci.yml` for pipeline configuration.
+LabDog runs CI on GitHub Actions (`.github/workflows/ci.yml`). The
+legacy `.gitlab-ci.yml` is kept for repo mirrors. Stages: lint → test →
+build → scan.
 
-- **Test**: Backend pytest + frontend build check on every push
-- **Build**: Docker images for backend and frontend pushed to GitLab Container Registry
-- **Package**: Tarball, .deb, and .rpm artifacts built on tagged releases
-- **Release**: GitLab release created with package download links
+- **Lint**: ruff (backend) + ESLint/tsc (frontend) + gitleaks
+- **Test**: backend pytest (unit + integration via testcontainers) +
+  frontend Playwright smoke + pip-audit
+- **Build**: Docker images for backend and frontend; published to
+  Docker Hub on `main` (`latest` + `<sha>`) and `dev` (`test` +
+  `test-<sha>`)
+- **Package**: tarball, .deb, .rpm artifacts on `v*` tags (workflow:
+  release)
+- **Release**: GitHub release with package download links and
+  SHA256SUMS
