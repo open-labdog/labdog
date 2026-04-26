@@ -60,8 +60,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
-    from app.ansible.inventory import generate_inventory
-    from app.ansible.runner import run_ansible
+    from app.ansible_runtime.inventory import generate_inventory
+    from app.ansible_runtime.runner import run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
     from app.db import task_session

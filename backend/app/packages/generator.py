@@ -1,4 +1,4 @@
-from app.ansible.inventory import generate_inventory
+from app.ansible_runtime.inventory import generate_inventory
 
 
 def generate_package_playbook(
