@@ -376,13 +376,17 @@ async def remove_hosts_from_group(
     # Capture which host_ids actually had memberships so the audit
     # entry reflects what changed, not what the request asked for.
     actual_member_ids = (
-        await db.execute(
-            select(HostGroupMembership.c.host_id).where(
-                HostGroupMembership.c.group_id == group_id,
-                HostGroupMembership.c.host_id.in_(body.host_ids),
+        (
+            await db.execute(
+                select(HostGroupMembership.c.host_id).where(
+                    HostGroupMembership.c.group_id == group_id,
+                    HostGroupMembership.c.host_id.in_(body.host_ids),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     await db.execute(
         delete(HostGroupMembership).where(

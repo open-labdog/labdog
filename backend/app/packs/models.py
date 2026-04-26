@@ -3,8 +3,7 @@ from __future__ import annotations
 import enum
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy import Boolean
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -100,9 +99,7 @@ class ActionPack(Base):
     )
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    last_synced_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     current_sha: Mapped[str | None] = mapped_column(String(40), nullable=True)

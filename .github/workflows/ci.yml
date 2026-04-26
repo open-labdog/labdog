@@ -408,7 +408,17 @@ jobs:
           uv pip install --system . -q
       - name: pip-audit
         working-directory: backend
-        run: pip-audit --progress-spinner off
+        # CVE-2026-3219 / GHSA-58qw-9mgm-455v: pip itself has an
+        # interpretation conflict between concatenated tar+ZIP archives.
+        # Affects every pip release ≤ 26.0.1; upstream fix is in
+        # https://github.com/pypa/pip/pull/13870 but no patched pip is
+        # on PyPI yet. The vulnerability is in pip's archive handling
+        # during `pip install`; LabDog never invokes pip on user input,
+        # so the attack surface is "the maintainer pip-installs a
+        # malicious package while building" — same threat model as any
+        # other supply-chain attack on the build host. Re-evaluate when
+        # the patched pip ships and drop this exception.
+        run: pip-audit --progress-spinner off --ignore-vuln GHSA-58qw-9mgm-455v
 
   frontend-audit:
     runs-on: ubuntu-latest

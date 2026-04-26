@@ -143,9 +143,7 @@ async def list_action_packs(
     repo_names: dict[int, str] = {}
     if repo_ids:
         rr = await db.execute(
-            select(GitRepository.id, GitRepository.name).where(
-                GitRepository.id.in_(repo_ids)
-            )
+            select(GitRepository.id, GitRepository.name).where(GitRepository.id.in_(repo_ids))
         )
         repo_names = {rid: name for rid, name in rr.all()}
 
@@ -232,9 +230,7 @@ async def update_action_pack(
     before = _audit_snapshot(pack)
 
     if body.name is not None and body.name != pack.name:
-        existing = await db.execute(
-            select(ActionPack).where(ActionPack.name == body.name)
-        )
+        existing = await db.execute(select(ActionPack).where(ActionPack.name == body.name))
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Action pack name already exists")
     if body.git_repository_id is not None:

@@ -38,9 +38,7 @@ def test_token_and_key_together_rejected():
 
 
 def test_ssh_materialises_key_and_cleans_up():
-    key_bytes = (
-        "-----BEGIN OPENSSH PRIVATE KEY-----\nABCDEF\n-----END OPENSSH PRIVATE KEY-----"
-    )
+    key_bytes = "-----BEGIN OPENSSH PRIVATE KEY-----\nABCDEF\n-----END OPENSSH PRIVATE KEY-----"
 
     seen: dict[str, Path] = {}
     with git_auth_context(ssh_private_key=key_bytes) as ctx:

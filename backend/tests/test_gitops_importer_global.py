@@ -172,9 +172,7 @@ class TestDriftImporter:
         """`check_interval_minutes` below 1 fails YAML parse."""
         invalidate_cache()
 
-        result = await import_global_from_yaml(
-            1, OUT_OF_RANGE_DRIFT_YAML, "sha", db
-        )
+        result = await import_global_from_yaml(1, OUT_OF_RANGE_DRIFT_YAML, "sha", db)
 
         assert result.success is False
         assert "check_interval_minutes" in (result.error_message or "")
@@ -259,9 +257,7 @@ class TestDiscoveryImporter:
         await db.commit()
 
         # Seed a scan via import.
-        await import_global_from_yaml(
-            1, _discovery_yaml(ssh_key_name="seed-key"), "sha1", db
-        )
+        await import_global_from_yaml(1, _discovery_yaml(ssh_key_name="seed-key"), "sha1", db)
         seeded = await db.scalar(select(ScanConfig).where(ScanConfig.name == "dmz-scan"))
         assert seeded is not None
 
@@ -284,9 +280,7 @@ class TestDiscoveryImporter:
         await create_ssh_key(db, name="seed-key2")
         await db.commit()
 
-        await import_global_from_yaml(
-            1, _discovery_yaml(ssh_key_name="seed-key2"), "sha1", db
-        )
+        await import_global_from_yaml(1, _discovery_yaml(ssh_key_name="seed-key2"), "sha1", db)
 
         result = await import_global_from_yaml(1, DISCOVERY_EMPTY_LIST_YAML, "sha2", db)
         disc = next(m for m in result.modules if m.module == "discovery")

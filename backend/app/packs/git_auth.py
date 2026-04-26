@@ -54,9 +54,7 @@ def git_auth_context(
     deleted when the ``with`` block exits, even on error.
     """
     if ssh_private_key and token:
-        raise ValueError(
-            "git_auth_context accepts at most one of ssh_private_key / token"
-        )
+        raise ValueError("git_auth_context accepts at most one of ssh_private_key / token")
 
     if token:
         # Token is passed inline as a git -c override so git treats it
@@ -98,9 +96,7 @@ def _materialised_ssh_key(private_key: str) -> Iterator[Path]:
     try:
         os.chmod(tmpdir, 0o700)
         key_path = Path(tmpdir) / "id"
-        key_path.write_text(
-            private_key if private_key.endswith("\n") else private_key + "\n"
-        )
+        key_path.write_text(private_key if private_key.endswith("\n") else private_key + "\n")
         os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
         yield key_path
     finally:

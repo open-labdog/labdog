@@ -71,9 +71,7 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             # an operator typo in `_global.yaml` shouldn't block per-group
             # rules from importing.
             try:
-                global_yaml_content = read_file_at_sha(
-                    repo_dir, GLOBAL_YAML_PATH, commit_sha
-                )
+                global_yaml_content = read_file_at_sha(repo_dir, GLOBAL_YAML_PATH, commit_sha)
             except FileNotFoundError:
                 global_yaml_content = None
 

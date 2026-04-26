@@ -30,9 +30,7 @@ def origin_repo(tmp_path: Path) -> Path:
     _git(path, ["config", "user.email", "test@example.com"])
     _git(path, ["config", "user.name", "Test"])
     (path / "actions").mkdir()
-    (path / "actions" / "demo.yml").write_text(
-        "---\n- name: demo\n  hosts: all\n  tasks: []\n"
-    )
+    (path / "actions" / "demo.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
     (path / "actions" / "demo.manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
@@ -67,9 +65,7 @@ def local_pack_dir(tmp_path: Path) -> Path:
     """Materialise a ready-to-load local pack directory (no git)."""
     p = tmp_path / "my-local-pack"
     (p / "actions").mkdir(parents=True)
-    (p / "actions" / "hello.yml").write_text(
-        "---\n- name: hello\n  hosts: all\n  tasks: []\n"
-    )
+    (p / "actions" / "hello.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
     (p / "actions" / "hello.manifest.yml").write_text(
         "key: hello-local\n"
         "name: Hello from local\n"
@@ -258,9 +254,7 @@ async def test_create_local_pack_rejects_git_repository_id(
     assert "local" in resp.text.lower()
 
 
-async def test_create_local_pack_with_missing_path_marks_failed(
-    superuser_client, tmp_path: Path
-):
+async def test_create_local_pack_with_missing_path_marks_failed(superuser_client, tmp_path: Path):
     resp = await superuser_client.post(
         "/api/action-packs",
         json={
@@ -280,9 +274,7 @@ async def test_create_local_pack_with_missing_path_marks_failed(
 # ---------------------------------------------------------------------------
 
 
-async def test_git_pack_with_subpath(
-    superuser_client, tmp_path, db, monkeypatch
-):
+async def test_git_pack_with_subpath(superuser_client, tmp_path, db, monkeypatch):
     """A pack whose manifests live under a subpath loads from there,
     not the repo root."""
     from app.config import settings
