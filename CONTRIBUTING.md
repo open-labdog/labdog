@@ -117,8 +117,13 @@ Maintainer-only. Short form:
    the tag — the release-artifacts CI job derives the packaged
    version from the tag, not from the files, so if they drift
    `labdog --version` and the .deb/.rpm filenames won't agree.
-2. Commit the bump on `main`.
-3. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+2. Update [`CHANGELOG.md`](CHANGELOG.md): rename `[Unreleased]` to
+   `[X.Y.Z] — YYYY-MM-DD`, add a fresh empty `[Unreleased]` block
+   above it, and update the comparison link refs at the bottom.
+   This is what populates the GitHub Release body — without it the
+   release page renders blank.
+3. Commit the bump + changelog on `main`.
+4. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. The `release-artifacts` workflow job builds `.tar.gz`, `.deb`,
    `.rpm`, and `SHA256SUMS` via `./packaging/build.sh` and
    attaches them to the auto-created Release via
