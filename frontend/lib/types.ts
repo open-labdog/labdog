@@ -99,12 +99,14 @@ export interface SSHKey {
   ssh_user: string; is_default: boolean; created_at: string
 }
 
+export type GitAuthType = "none" | "ssh_key" | "https_token"
+
 export interface GitRepository {
   id: number
   name: string
   url: string
   branch: string
-  auth_type: "ssh_key" | "https_token"
+  auth_type: GitAuthType
   ssh_key_id: number | null
   webhook_secret: string | null
   last_commit_sha: string | null
@@ -117,7 +119,6 @@ export interface GitRepoCreate {
   name: string
   url: string
   branch?: string
-  auth_type: "ssh_key" | "https_token"
   ssh_key_id?: number | null
   https_token?: string | null
   webhook_secret?: string | null
@@ -127,7 +128,6 @@ export interface GitRepoUpdate {
   name?: string
   url?: string
   branch?: string
-  auth_type?: string
   ssh_key_id?: number | null
   https_token?: string | null
   webhook_secret?: string | null

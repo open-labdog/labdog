@@ -42,10 +42,15 @@ const defaultFormValues: GitRepoInput = {
   name: "",
   url: "",
   branch: "main",
-  auth_type: "ssh_key",
   ssh_key_id: "",
   https_token: "",
   webhook_secret: "",
+}
+
+function detectAuthFromUrl(url: string): "ssh_key" | "https" | "unknown" {
+  if (url.startsWith("git@") || url.startsWith("ssh://")) return "ssh_key"
+  if (url.startsWith("https://")) return "https"
+  return "unknown"
 }
 
 export default function GitReposPage() {
@@ -62,7 +67,8 @@ export default function GitReposPage() {
     mode: "onSubmit",
   })
 
-  const authType = form.watch("auth_type")
+  const url = form.watch("url")
+  const detectedAuth = detectAuthFromUrl(url)
 
   const { data: repos, isLoading, error } = useQuery<GitRepository[]>({
     queryKey: ["git-repos"],
@@ -89,31 +95,29 @@ export default function GitReposPage() {
 
   const saveMutation = useApiMutation({
     mutationFn: ({ editId, data }: { editId: number | null; data: GitRepoInput }) => {
+      const auth = detectAuthFromUrl(data.url)
+      const sshKeyId = auth === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null
+      const token = auth === "https" && data.https_token ? data.https_token : undefined
+
       if (editId) {
         const body: GitRepoUpdate = {
           name: data.name,
           url: data.url,
           branch: data.branch,
-          auth_type: data.auth_type,
-          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          ssh_key_id: sshKeyId,
           webhook_secret: data.webhook_secret || null,
         }
-        if (data.auth_type === "https_token" && data.https_token) {
-          body.https_token = data.https_token
-        }
+        if (token) body.https_token = token
         return apiFetch(`/api/git-repos/${editId}`, { method: "PUT", body: JSON.stringify(body) })
       } else {
         const body: GitRepoCreate = {
           name: data.name,
           url: data.url,
           branch: data.branch,
-          auth_type: data.auth_type,
-          ssh_key_id: data.auth_type === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null,
+          ssh_key_id: sshKeyId,
           webhook_secret: data.webhook_secret || null,
         }
-        if (data.auth_type === "https_token" && data.https_token) {
-          body.https_token = data.https_token
-        }
+        if (token) body.https_token = token
         return apiFetch("/api/git-repos", { method: "POST", body: JSON.stringify(body) })
       }
     },
@@ -150,7 +154,6 @@ export default function GitReposPage() {
       name: repo.name,
       url: repo.url,
       branch: repo.branch,
-      auth_type: repo.auth_type,
       ssh_key_id: repo.ssh_key_id ? String(repo.ssh_key_id) : "",
       https_token: "",
       webhook_secret: repo.webhook_secret || "",
@@ -251,19 +254,7 @@ export default function GitReposPage() {
                   <Input id="repo-branch" type="text" placeholder="main" {...form.register("branch")} />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="auth-type">Auth Type</Label>
-                  <select
-                    id="auth-type"
-                    {...form.register("auth_type")}
-                    className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
-                  >
-                    <option value="ssh_key">SSH Key</option>
-                    <option value="https_token">HTTPS Token</option>
-                  </select>
-                </div>
-
-                {authType === "ssh_key" && (
+                {detectedAuth === "ssh_key" && (
                   <div className="space-y-2">
                     <Label htmlFor="ssh-key-select">SSH Key</Label>
                     <select
@@ -278,18 +269,25 @@ export default function GitReposPage() {
                         </option>
                       ))}
                     </select>
+                    {form.formState.errors.ssh_key_id && (
+                      <p className="text-sm text-red-400">{form.formState.errors.ssh_key_id.message}</p>
+                    )}
+                    <p className="text-xs text-slate-500">SSH URL detected — pick the deploy key LabDog should use.</p>
                   </div>
                 )}
 
-                {authType === "https_token" && (
+                {detectedAuth === "https" && (
                   <div className="space-y-2">
-                    <Label htmlFor="https-token">HTTPS Token</Label>
+                    <Label htmlFor="https-token">Personal Access Token (optional)</Label>
                     <Input
                       id="https-token"
                       type="password"
-                      placeholder={editingRepo ? "Leave blank to keep existing token" : "Personal access token"}
+                      placeholder={editingRepo ? "Leave blank to keep existing token" : "Leave blank for public repos"}
                       {...form.register("https_token")}
                     />
+                    <p className="text-xs text-slate-500">
+                      HTTPS URL detected — leave the token blank for public repos.
+                    </p>
                   </div>
                 )}
 
@@ -383,13 +381,17 @@ export default function GitReposPage() {
               key: "auth_type",
               label: "Auth",
               accessor: (r) => r.auth_type,
-              cell: (r) => (
-                <Badge className={r.auth_type === "ssh_key" ? "bg-blue-600 text-white" : "bg-amber-600 text-white"}>
-                  {r.auth_type === "ssh_key" ? "SSH" : "HTTPS"}
-                </Badge>
-              ),
-              defaultWidth: 80,
-              filter: { type: "enum", options: [{label:"SSH Key",value:"ssh_key"},{label:"HTTPS",value:"https_token"}] },
+              cell: (r) => {
+                if (r.auth_type === "ssh_key") return <Badge className="bg-blue-600 text-white">SSH</Badge>
+                if (r.auth_type === "https_token") return <Badge className="bg-amber-600 text-white">HTTPS</Badge>
+                return <Badge className="bg-slate-600 text-white">Public</Badge>
+              },
+              defaultWidth: 90,
+              filter: { type: "enum", options: [
+                {label:"SSH Key",value:"ssh_key"},
+                {label:"HTTPS Token",value:"https_token"},
+                {label:"Public",value:"none"},
+              ] },
             },
             {
               key: "groups",
