@@ -37,26 +37,37 @@ Manages Git repository connections used for GitOps-driven configuration. See [Gi
 
 **Path:** `/audit`
 
-An append-only log of every change made through LabDog — API writes, sync runs, and terminal session events.
+An append-only log of every change made through LabDog. Events come
+from API writes (group/host/module mutations, GitOps repo CRUD,
+action-pack mutations, settings changes), sync and workflow runs,
+discovery runs, and terminal session lifecycle events.
 
 ### Columns
 
 | Column | Description |
 |--------|-------------|
 | Timestamp | When the action occurred |
-| User | Which LabDog user performed the action |
-| Action | What happened (e.g. `rule.create`, `sync.apply`, `terminal.open`) |
-| Entity | What was acted on (e.g. `group:4`, `host:tester3`) |
-| Before | State before the change (JSON) |
-| After | State after the change (JSON) |
+| User | The acting user's email (joined from `users` for display); `system` for non-user events like scheduled drift checks |
+| Action | What happened (e.g. `rule.create`, `sync.apply`, `pack.sync`, `gitops.repo.create`, `terminal.open`) |
+| Entity | What was acted on (e.g. `group:4`, `host:tester3`, `pack:gh-internal`) |
+| Before | State before the change (JSON, secrets scrubbed) |
+| After | State after the change (JSON, secrets scrubbed) |
+
+The integer `user_id` is preserved internally (used for filtering and
+linking back to the user detail page) but the table shows `user_email`
+for legibility.
 
 ### Filtering
 
-Use the filter bar to narrow by user, action type, or date range. The table paginates with cursor-based pagination — scroll to load more.
+Use the filter bar to narrow by user, action type, or date range. The
+table paginates with cursor-based pagination — scroll to load more.
 
 ### Retention
 
-Audit entries older than the configured retention period are pruned automatically. The retention period is set in [Settings](settings.md) (`logging.audit_retention_days`, default 90 days).
+Audit entries older than the configured retention period are pruned
+automatically. The retention period is set in
+[Settings](settings.md) (`logging.audit_retention_days`, default 90
+days).
 
 ---
 

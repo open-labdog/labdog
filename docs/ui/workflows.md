@@ -2,75 +2,74 @@
 
 **Path:** `/update-workflows` (sidebar) and `/groups/{id}/workflow` (per-group tab)
 
-Update Workflows automate Linux system updates and Kubernetes cluster upgrades on managed hosts. Workflows run Ansible playbooks with optional Proxmox VM snapshotting before each run.
+Update Workflows are scheduled, per-group runs of an
+[Action](actions.md). Each group can have at most one workflow; the
+workflow picks an action (e.g. `linux-upgrade`, `linux-os-upgrade`,
+`k8s-upgrade`, or any pack-supplied action) and runs it across the
+group's hosts on a cron schedule with optional Proxmox snapshot,
+verify, and rollback.
 
-> **Update Workflows vs. [Actions](actions.md):** Update Workflows are
-> scheduled and opinionated about upgrade flows. Actions are the
-> generic "run this playbook now" primitive — same Ansible pipeline
-> and same snapshot-rollback safety net, but triggered manually and
-> backed by [action packs](actions.md#action-packs) you can extend
-> with your own playbooks.
-
----
-
-## Workflow Types
-
-| Type | What it does |
-|------|-------------|
-| **Linux Upgrade** | Runs `apt upgrade` / `dnf upgrade`, optionally takes a Proxmox snapshot first, and reboots if the kernel changed |
-| **Kubernetes Upgrade** | Drains node, upgrades kubeadm/kubelet/kubectl to target version, uncordons |
+> **Update Workflows vs. [Actions](actions.md):** Workflows are the
+> *scheduled* surface — they pick an action and run it on a group on
+> a cadence. Actions are the *primitive* — a playbook + manifest you
+> can run ad-hoc against a host (or via a workflow). Same Ansible
+> pipeline, same snapshot/verify/rollback safety net.
 
 ---
 
-## Workflows List
+## Workflows list
 
 **Path:** `/update-workflows`
 
-Shows all defined workflows. Each row shows:
+Shows every group that has a workflow configured, with status,
+schedule, and last-run summary. Click any row to jump to the
+group's Workflow tab.
 
 | Column | Description |
 |--------|-------------|
-| Name | Workflow label |
-| Type | Linux upgrade or Kubernetes upgrade |
-| Schedule | Cron expression or interval for automatic runs |
-| Last Run | When the workflow last executed |
-| Status | `success`, `failed`, `running`, or `never` |
+| Group | Group name + category |
+| Status | `enabled` or `disabled` |
+| Schedule | Cron expression (or empty for manual-only) |
+| Hosts | Number of hosts in the group |
+| Batch | Hosts updated per batch |
+| Options | Snapshot / rollback / reboot toggles |
+| Last Run | Status + timestamp of the latest run |
 
-### Creating a Workflow
-
-Click **New Workflow**. Fields vary by type:
-
-**Common:**
-
-| Field | Description |
-|-------|-------------|
-| Name | Display label |
-| Target | Hosts or groups to apply to |
-| SSH Key | Key used to connect |
-| Snapshot before run | Take a Proxmox VM snapshot before applying (requires Proxmox configured) |
-| Schedule | Leave empty for manual-only; or set a cron expression for automatic runs |
-
-**Linux Upgrade specific:**
-
-| Field | Description |
-|-------|-------------|
-| Reboot if kernel updated | Automatically reboot after a kernel upgrade |
-| Reboot timeout | Wait time (seconds) for host to come back after reboot |
-
-**Kubernetes Upgrade specific:**
-
-| Field | Description |
-|-------|-------------|
-| Target version | Kubernetes version string (e.g. `1.30.1`) |
-| Drain timeout | Time to wait for pods to evacuate before forcing |
+A group with no workflow row simply doesn't appear here. Configure
+one from the group's **Workflow** tab.
 
 ---
 
-## Group Workflow Tab
+## Group Workflow tab
 
 **Path:** `/groups/{id}/workflow`
 
-Lists all workflows that target this group and shows their run history. Click **Run Now** on any workflow to trigger an immediate execution.
+The form has the live action picker, parameter inputs, schedule,
+batching, snapshot/rollback/reboot toggles, and the recent-runs
+table. Configuration changes save on **Save**; **Run Now** triggers
+an immediate execution and is enabled only when **Enabled** is on
+and no run is currently active.
+
+### Configuration
+
+| Field | Description |
+|-------|-------------|
+| Batch Size | Number of hosts to update simultaneously (default 1 = sequential) |
+| Schedule (Cron) | Cron expression for scheduled runs. Leave blank for manual-only. Validated by `croniter` at save time. |
+| Action | Dropdown of every registered action — bundled (`linux-upgrade`, `linux-os-upgrade`, `k8s-upgrade`) plus any DB-configured packs. Selection updates the parameter inputs below. |
+| Action parameters | Per-action inputs derived from the manifest. Required parameters get a red `*`; e.g. `linux-os-upgrade` requires `current_version` + `next_version`. |
+| Pre-update Snapshot | Take a Proxmox snapshot before each host's run (requires a VM mapping for the host). |
+| Auto Rollback | Restore from snapshot on failure. |
+| Auto Reboot | Reboot hosts as part of the playbook when needed (e.g. kernel update). |
+| Enabled | Allows scheduled and manual runs. Off by default — turn on when you're ready for the workflow to fire. |
+| Verification Prompt | Optional free-text shown alongside the run output for human review. |
+
+### Run history
+
+Below the configuration form, **Recent Runs** lists the workflow's
+runs with status, started/completed timestamps, and triggered-by
+("Manual" vs "Scheduled"). Click any row for the per-host detail
+view.
 
 ### Run Detail
 
