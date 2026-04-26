@@ -2,9 +2,16 @@
 
 ![Dashboard](screenshots/dashboard.png)
 
-The dashboard gives a fleet-wide health overview at a glance.
+**Path:** `/dashboard`
+
+Fleet-wide health overview. Heading reads **Fleet Overview**; the page
+auto-refreshes every 30 seconds.
 
 ## Metric Cards
+
+Two rows of summary cards at the top:
+
+**Triage tier**
 
 | Card | What it shows |
 |------|---------------|
@@ -12,16 +19,22 @@ The dashboard gives a fleet-wide health overview at a glance.
 | **Hosts in Sync** | Hosts whose current state matches desired state |
 | **Hosts Drifted** | Hosts where actual state has diverged from desired |
 | **Hosts with Errors** | Hosts where the last sync or drift check failed |
-| **Unknown / Pending** | Hosts that have never been checked |
-| **Last Fleet Check** | When the most recent drift check ran |
-| **Never Checked** | Count of hosts with no drift check history |
-| **Never Synced** | Count of hosts that have never had Ansible applied |
+| **Unknown / Pending** | Hosts not yet checked or with a check in flight |
 
-The page auto-refreshes every 30 seconds.
+**Coverage tier**
+
+| Card | What it shows |
+|------|---------------|
+| **Last Fleet Check** | Relative time since the most recent host drift check |
+| **Never Checked** | Hosts with no drift-check history |
+| **Never Synced** | Hosts that have never had Ansible applied |
 
 ## Host Table
 
-Below the cards, a table lists every host with its IP address, current status badge, last check time, and last sync time. Click any row to go to that host's detail page.
+Below the cards, a table lists every host with its IP address, current
+status badge, **Last Check**, and **Last Sync** timestamps. Rows are
+sorted by triage priority (errors first). Click the hostname to open
+the host detail page.
 
 **Status badges:**
 
@@ -32,6 +45,17 @@ Below the cards, a table lists every host with its IP address, current status ba
 | `Error` (red) | Last check or sync returned an error |
 | `Unknown` (grey) | Host has never been checked |
 
-## Check All
+Each row also has a **Collect** button that re-runs state collection
+for that single host.
 
-The **Check All** button in the top-right triggers an immediate drift check across every host that has drift detection enabled. Results appear as the checks complete (the table refreshes automatically).
+## Collect State
+
+The **Collect State** button in the top-right SSHes into every host
+and refreshes its **current state** in LabDog's database. This is
+distinct from:
+
+- the **Last Check** column (drift detection — diff against desired state)
+- the **Last Sync** column (Ansible push — apply desired state)
+
+State collection feeds both views: it's the read step that makes the
+drift comparison and the dashboard's status badges accurate.

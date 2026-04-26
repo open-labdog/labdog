@@ -72,7 +72,7 @@ Shows whether this group is managed by a Git repository. Click **Enable** to lin
 | Packages | [Packages](#packages) |
 | CA Certs | CA certificate deployment |
 | DNS Resolver | [DNS Resolver](#dns-resolver) |
-| Sync | [Sync & Preview](#sync) |
+| Firewall Sync | [Firewall Sync](#firewall-sync) |
 | Workflow | [Update Workflows](workflows.md) |
 
 ---
@@ -286,32 +286,44 @@ Click **Configure DNS** to set up the resolver for this group. If a resolver is 
 
 ---
 
-## Sync
+## Firewall Sync
 
-![Sync page](screenshots/group-sync.png)
+![Firewall Sync page](screenshots/group-sync.png)
 
 **Path:** `/groups/{id}/sync`
 
-The sync workflow has two steps:
+The Firewall Sync tab previews and applies **firewall rule** changes
+across every host in the group. Other modules (Services, Packages,
+Hosts File, Cron Jobs, Linux Users, DNS Resolver, CA Certs) sync from
+their own per-tab **Sync** buttons — each module owns its own playbook
+and audit trail.
+
+The flow has two steps:
 
 ### 1. Preview Changes
 
-Click **Preview Changes** to compute a diff between the desired state (stored in LabDog's database) and the current state on each host (fetched live over SSH). The diff is shown per-host, per-module, before anything is applied.
+Click **Preview Changes** to compute a per-host firewall diff between
+the desired state (stored in LabDog's database, merged across all
+groups the host belongs to) and the current state on each host
+(fetched live over SSH). Each host card expands to show:
 
-The diff view shows:
-- Lines to **add** (green)
-- Lines to **remove** (red)
-- Context lines (grey)
+- Rules to **add** (green, `+` prefix)
+- Rules to **remove** (red, `-` prefix)
+- Rules **unchanged** (grey, indented)
 
-If everything is already in sync, the preview says "No changes — hosts are up to date."
+Hosts already in sync are flagged "no changes" inline; if every host
+is in sync, the preview header reads "All hosts in sync."
 
 ### 2. Apply Changes
 
-Click **Apply Changes** to run the Ansible playbook generated from the diff. LabDog:
+Click **Apply Changes** and confirm the dialog to run the Ansible
+firewall playbook. LabDog:
 
-1. Generates a playbook tailored to the specific changes (not a full re-apply)
-2. Runs it via `ansible-runner` against each host in parallel
-3. Updates the per-host, per-module sync status in the database
-4. Writes an audit log entry with before/after state
+1. Generates the playbook from the previewed diff
+2. Runs it via `ansible-runner` against each host
+3. Updates per-host firewall sync status
+4. Writes an audit log entry with before/after rule sets
 
-Only one sync can run per group at a time. If a sync is already running, the button is disabled and shows "Sync in progress".
+Apply runs as a background job — the page polls for completion and
+shows live status (`pending` → `running` → `success`/`failed`). Only
+one firewall sync can run per group at a time.
