@@ -239,12 +239,16 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
 
   return (
     <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />}
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Firewall Sync" }]} />}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Sync</h1>
+          <h1 className="text-2xl font-bold text-white">Firewall Sync</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Previews and applies <strong className="text-slate-300">firewall rule</strong>{" "}
+            changes only. Services, packages, /etc/hosts entries, cron jobs, users, DNS resolver, and CA certs sync from each module&apos;s own tab.
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 shrink-0">
           <Button
             onClick={handlePreview}
             disabled={previewMutation.isPending}
