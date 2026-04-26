@@ -566,7 +566,7 @@ export default function GroupDetailPage() {
           ["packages", "Packages"],
           ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
-          ["sync", "Sync"],
+          ["sync", "Firewall Sync"],
           ["workflow", "Workflow"],
           ["actions", "Actions"],
         ] as const).map(([key, label]) => (
