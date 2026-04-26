@@ -1,4 +1,4 @@
-from app.ansible.inventory import generate_inventory
+from app.ansible_runtime.inventory import generate_inventory
 
 CLOUD_INIT_DISABLE_PATH = "/etc/cloud/cloud.cfg.d/99-labdog-disable-network-config.cfg"
 CLOUD_INIT_DISABLE_CONTENT = (

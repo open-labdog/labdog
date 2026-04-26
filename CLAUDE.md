@@ -91,6 +91,21 @@ never enter integers. See `app/packs/` for the subsystem, the user
 guide at `docs/ui/actions.md`, and starter packs at
 `docs/examples/action-packs/`.
 
+**Bundled pack mirrors `labdog-playbooks`.** The directory at
+`backend/app/ansible/` is a byte-identical mirror of
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+at the moment the container image is built. Do **not** edit it
+directly — change the upstream repo, then re-sync with
+`rsync -a --exclude='.git' --exclude='.gitignore' /path/to/labdog-playbooks/ backend/app/ansible/`.
+The `bundled-pack-mirror` CI job runs
+`scripts/check-bundled-mirrors-playbooks.sh` and fails the build on
+drift. The Python runtime that consumes packs (playbook generation,
+ansible-runner) lives separately at `backend/app/ansible_runtime/` and
+is *not* part of the mirror. A fresh install also auto-registers
+`labdog-playbooks` as a DB-backed override pack so deployed instances
+pick up newer playbooks than the in-image snapshot — operators that
+prefer a private fork delete the seeded row and add their own.
+
 ## Key Files
 
 | File | Purpose |

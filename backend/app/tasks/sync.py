@@ -29,8 +29,8 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
 
         from sqlalchemy import select
 
-        from app.ansible.generator import generate_playbook
-        from app.ansible.inventory import generate_inventory
+        from app.ansible_runtime.generator import generate_playbook
+        from app.ansible_runtime.inventory import generate_inventory
         from app.crypto import decrypt_ssh_key, get_master_key
         from app.db import task_session
         from app.models.host import Host
@@ -104,7 +104,7 @@ def run_sync_playbook(self, job_id: int, host_id: int) -> dict:
             return {"status": "failed", "error": "Unsupported firewall backend"}
 
         # Run ansible-runner (synchronous in Celery worker)
-        from app.ansible.runner import run_ansible
+        from app.ansible_runtime.runner import run_ansible
         from app.settings_service import get_setting_sync_typed
 
         playbook_timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
