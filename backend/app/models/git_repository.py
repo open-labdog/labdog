@@ -8,6 +8,7 @@ from app.models.base import Base
 
 
 class GitAuthType(enum.StrEnum):
+    none = "none"
     ssh_key = "ssh_key"
     https_token = "https_token"
 

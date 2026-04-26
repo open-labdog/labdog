@@ -8,7 +8,12 @@ from app.db import get_db
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.host_group import HostGroup
 from app.models.user import User
-from app.schemas.git_repos import GitRepoCreate, GitRepoResponse, GitRepoUpdate
+from app.schemas.git_repos import (
+    GitRepoCreate,
+    GitRepoResponse,
+    GitRepoUpdate,
+    derive_auth_type,
+)
 
 router = APIRouter(prefix="/git-repos", tags=["git-repos"])
 
@@ -28,22 +33,25 @@ async def create_git_repo(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    # Check unique name
     existing = await db.execute(select(GitRepository).where(GitRepository.name == body.name))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Git repository name already exists")
+
+    try:
+        auth_type = derive_auth_type(body.url, body.ssh_key_id, body.https_token)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     repo = GitRepository(
         name=body.name,
         url=body.url,
         branch=body.branch,
-        auth_type=GitAuthType(body.auth_type),
-        ssh_key_id=body.ssh_key_id,
+        auth_type=GitAuthType(auth_type),
+        ssh_key_id=body.ssh_key_id if auth_type == "ssh_key" else None,
         webhook_secret=body.webhook_secret,
     )
 
-    # Encrypt HTTPS token if provided
-    if body.https_token:
+    if body.https_token and auth_type == "https_token":
         master_key = get_master_key()
         repo.encrypted_https_token = encrypt_ssh_key(body.https_token, master_key)
 
@@ -82,12 +90,30 @@ async def update_git_repo(
     token = update_data.pop("https_token", None)
 
     for field, value in update_data.items():
-        if field == "auth_type":
-            setattr(repo, field, GitAuthType(value))
-        else:
-            setattr(repo, field, value)
+        setattr(repo, field, value)
 
-    if token:
+    # Re-derive auth_type whenever URL or credential inputs changed.
+    # An omitted token on update means "keep the existing one"; a
+    # non-empty string replaces it.
+    new_url = update_data.get("url", repo.url)
+    new_ssh_key_id = update_data.get("ssh_key_id", repo.ssh_key_id)
+    has_token = bool(token) or bool(repo.encrypted_https_token)
+    try:
+        auth_type = derive_auth_type(
+            new_url,
+            new_ssh_key_id,
+            "x" if has_token else None,  # placeholder — only the truthy/falsy bit is read
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    repo.auth_type = GitAuthType(auth_type)
+    if auth_type != "ssh_key":
+        repo.ssh_key_id = None
+    if auth_type != "https_token":
+        repo.encrypted_https_token = None
+
+    if token and auth_type == "https_token":
         repo.encrypted_https_token = encrypt_ssh_key(token, get_master_key())
 
     await db.commit()
@@ -106,7 +132,6 @@ async def delete_git_repo(
     if not repo:
         raise HTTPException(status_code=404, detail="Git repository not found")
 
-    # Check if any groups linked
     linked = await db.execute(select(HostGroup).where(HostGroup.git_repository_id == repo_id))
     if linked.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Cannot delete repository with linked groups")
@@ -126,5 +151,4 @@ async def test_connection(
     if not repo:
         raise HTTPException(status_code=404, detail="Git repository not found")
 
-    # Placeholder — actual git connection test will be implemented in the sync engine
     return {"status": "ok", "message": "Connection test not yet implemented"}

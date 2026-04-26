@@ -83,10 +83,17 @@ def local_pack_dir(tmp_path: Path) -> Path:
 # ---------------------------------------------------------------------------
 
 
-async def test_list_empty_when_no_packs(superuser_client):
+async def test_list_returns_seeded_labdog_playbooks_pack(superuser_client):
+    """A fresh install ships one seeded pack pointing at the canonical
+    labdog-playbooks repo. Operators that don't want it can delete it
+    via the UI; the migration only inserts when missing."""
     resp = await superuser_client.get("/api/action-packs")
     assert resp.status_code == 200
-    assert resp.json() == []
+    packs = resp.json()
+    assert len(packs) == 1
+    assert packs[0]["name"] == "labdog-playbooks"
+    assert packs[0]["source_type"] == "git"
+    assert packs[0]["role"] == "override"
 
 
 async def test_regular_user_cannot_manage_packs(regular_user_client):

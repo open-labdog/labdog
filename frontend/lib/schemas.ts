@@ -97,16 +97,22 @@ export const sshKeySchema = z.object({
 })
 export type SshKeyInput = z.infer<typeof sshKeySchema>
 
-// Git repo schema
+// Git repo schema. auth_type is derived server-side from the URL and
+// credential fields, so the form does not collect it.
 export const gitRepoSchema = z.object({
   name: z.string().min(1, "Name is required"),
   url: z.string().min(1, "URL is required"),
   branch: z.string().min(1, "Branch is required"),
-  auth_type: z.enum(["ssh_key", "https_token"]),
   ssh_key_id: z.string().optional().nullable(),
   https_token: z.string().optional(),
   webhook_secret: z.string().optional().nullable(),
-})
+}).refine(
+  (data) => {
+    const isSsh = data.url.startsWith("git@") || data.url.startsWith("ssh://")
+    return !isSsh || (!!data.ssh_key_id && data.ssh_key_id !== "")
+  },
+  { message: "SSH URLs require an SSH key", path: ["ssh_key_id"] },
+)
 export type GitRepoInput = z.infer<typeof gitRepoSchema>
 
 // Cron job schema
