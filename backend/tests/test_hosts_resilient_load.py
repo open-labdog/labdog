@@ -144,9 +144,7 @@ async def test_bad_rows_are_skipped_and_logged(caplog):
         result = await _load_hosts_resilient(db)
 
     assert [h.id for h in result] == [1, 3]
-    assert any(
-        "skipping unloadable host id=2" in r.message for r in caplog.records
-    )
+    assert any("skipping unloadable host id=2" in r.message for r in caplog.records)
 
 
 @pytest.mark.asyncio
