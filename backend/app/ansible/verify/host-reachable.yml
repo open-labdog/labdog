@@ -1,0 +1,49 @@
+---
+# Minimal verify: confirm SSH works and the host is recently up.
+#
+# Intended for actions that reboot the host — by the time the verify
+# runs LabDog has already waited for SSH to come back, so this just
+# sanity-checks that wait actually succeeded and the box isn't in a
+# coma.
+#
+# Use from a manifest with:
+#
+#   verify_playbook: ../verify/host-reachable.yml
+#
+# Or import on top of more specific checks.
+- name: Verify host is reachable
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    # Lower bound: the host should have at least this many seconds of
+    # uptime. Useful after a reboot to confirm the restart completed
+    # rather than the box coming back up multiple times.
+    min_uptime_seconds: 10
+    # Upper bound: the host's uptime should be at most this many
+    # seconds. Skipped when zero. Handy to assert a reboot actually
+    # happened (set to e.g. 300 for "rebooted in the last 5 min").
+    max_uptime_seconds: 0
+  tasks:
+    - name: SSH round-trip
+      ansible.builtin.ping:
+
+    - name: Read uptime
+      ansible.builtin.shell: awk '{print int($1)}' /proc/uptime
+      register: uptime
+      changed_when: false
+
+    - name: Assert uptime is sane (lower bound)
+      ansible.builtin.assert:
+        that: (uptime.stdout | int) >= (min_uptime_seconds | int)
+        fail_msg: >-
+          Uptime {{ uptime.stdout }}s is below minimum
+          {{ min_uptime_seconds }}s
+
+    - name: Assert uptime is below upper bound (when configured)
+      ansible.builtin.assert:
+        that: (uptime.stdout | int) <= (max_uptime_seconds | int)
+        fail_msg: >-
+          Uptime {{ uptime.stdout }}s exceeds max
+          {{ max_uptime_seconds }}s — was a reboot expected?
+      when: (max_uptime_seconds | int) > 0

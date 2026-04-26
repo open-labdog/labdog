@@ -1,0 +1,41 @@
+---
+# Verify that every service in the expected_services list is 'active'.
+#
+# This is the building block for "did my systemd unit come back up"
+# checks. It takes one var — expected_services — and fails the verify
+# if any of them are inactive, failed, or missing.
+#
+# Use from a manifest:
+#
+#   verify_playbook: ../verify/services-active.yml
+#
+# And supply expected_services via either:
+#
+#   1. An action parameter (admin picks at run time), or
+#   2. A parameter with default: ["nginx", "postgresql"] (pack author
+#      bakes in the list), or
+#   3. extra_vars on the orchestrator side (not currently supported
+#      via the UI — you'd have to hardcode via default:).
+- name: Verify services are active
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    expected_services: []
+  tasks:
+    - name: Refuse to run without an expected_services list
+      ansible.builtin.assert:
+        that: expected_services | length > 0
+        fail_msg: >-
+          services-active.yml requires a non-empty expected_services
+          list; got none. Either set it in the manifest or pass via
+          the UI.
+
+    - name: Assert each expected service is active
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      register: svc
+      loop: "{{ expected_services }}"
+      loop_control:
+        label: "{{ item }}"
+      failed_when: svc.status.ActiveState != 'active'

@@ -392,6 +392,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  bundled-pack-mirror:
+    # Verify the in-image bundled pack at backend/app/ansible/ stays
+    # byte-identical to a tagged release of open-labdog/labdog-playbooks.
+    # The script no-ops cleanly until labdog-playbooks publishes its
+    # first tag — until then it just reports "not yet published" and
+    # passes. Bump PLAYBOOKS_REF to a release tag once published.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify bundled pack mirrors labdog-playbooks
+        env:
+          PLAYBOOKS_REF: main
+        run: ./scripts/check-bundled-mirrors-playbooks.sh
+
   backend-audit:
     runs-on: ubuntu-latest
     steps:

@@ -8,8 +8,8 @@ always forced to False here.
 import tempfile
 
 from app.actions.registry import ACTION_REGISTRY
-from app.ansible.inventory import generate_inventory
-from app.ansible.runner import run_ansible
+from app.ansible_runtime.inventory import generate_inventory
+from app.ansible_runtime.runner import run_ansible
 
 
 def run_system_update(
@@ -24,7 +24,7 @@ def run_system_update(
     """Run a full system package upgrade on a remote host.
 
     Looks up the playbook to execute from the action registry using
-    *action_key*, then delegates to :func:`app.ansible.runner.run_ansible`.
+    *action_key*, then delegates to :func:`app.ansible_runtime.runner.run_ansible`.
     The caller is responsible for writing the decrypted SSH key to
     ``ssh_key_path`` before calling this function and for cleaning it up
     afterwards.

@@ -16,7 +16,7 @@ group config and re-running the action removes it from hosts, without
 LabDog needing to remember what was previously deployed.
 """
 
-from app.ansible.inventory import generate_inventory
+from app.ansible_runtime.inventory import generate_inventory
 
 # Per-OS-family configuration: drop-in directory + update command.
 _OS_CONFIG: list[tuple[str, str, str, str]] = [
