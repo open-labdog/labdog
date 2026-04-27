@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-04-24T15:14:08Z",
+  "generated_at": "2026-04-27T11:54:25Z",
   "metrics": {
     "_totals": {
       "CONFIDENCE.HIGH": 55,
       "CONFIDENCE.LOW": 5,
-      "CONFIDENCE.MEDIUM": 22,
+      "CONFIDENCE.MEDIUM": 21,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 57,
+      "SEVERITY.LOW": 56,
       "SEVERITY.MEDIUM": 25,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 27293,
+      "loc": 27956,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -119,7 +119,7 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/ansible/__init__.py": {
+    "app/ansible_runtime/__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
@@ -132,7 +132,7 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/ansible/generator.py": {
+    "app/ansible_runtime/generator.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 7,
@@ -145,7 +145,7 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/ansible/inventory.py": {
+    "app/ansible_runtime/inventory.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
@@ -158,7 +158,7 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/ansible/runner.py": {
+    "app/ansible_runtime/runner.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
@@ -206,7 +206,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 275,
+      "loc": 239,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -245,7 +245,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 46,
+      "loc": 73,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -349,7 +349,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 102,
+      "loc": 124,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -362,7 +362,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 347,
+      "loc": 428,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -388,7 +388,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 384,
+      "loc": 418,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -492,7 +492,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 56,
+      "loc": 51,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -518,7 +518,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 181,
+      "loc": 178,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -700,7 +700,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 325,
+      "loc": 331,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1168,7 +1168,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 113,
+      "loc": 173,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1195,6 +1195,32 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 182,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/gitops/importers/discovery.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 167,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/gitops/importers/drift.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 94,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1276,6 +1302,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/gitops/importers/workflow.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 151,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/gitops/pipeline.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1298,7 +1337,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 194,
+      "loc": 298,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1311,7 +1350,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 352,
+      "loc": 372,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1454,7 +1493,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 100,
+      "loc": 98,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1532,7 +1571,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 45,
+      "loc": 46,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1753,11 +1792,11 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 115,
+      "loc": 92,
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/packs/known_hosts.py": {
+    "app/packs/models.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
@@ -1766,20 +1805,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 31,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/packs/models.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 94,
+      "loc": 82,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1805,7 +1831,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 188,
+      "loc": 134,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1818,7 +1844,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 207,
+      "loc": 220,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2182,7 +2208,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 47,
+      "loc": 65,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2637,7 +2663,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 145,
+      "loc": 176,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3176,7 +3202,7 @@
       "code": "51                 \"src\": \"/etc/nftables.conf\",\n52                 \"dest\": \"/tmp/nftables-backup.conf.orig\",\n53                 \"remote_src\": True,\n54             },\n55             \"ignore_errors\": True,\n56         },\n57         {\n",
       "col_offset": 24,
       "end_col_offset": 56,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3200,7 +3226,7 @@
       "code": "94             \"loop\": [\n95                 \"/tmp/nftables-backup.conf\",\n96                 \"/tmp/nftables-backup.conf.orig\",\n97                 \"/tmp/nftables-revert.log\",\n98             ],\n99         },\n100     ]\n",
       "col_offset": 16,
       "end_col_offset": 43,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3224,7 +3250,7 @@
       "code": "95                 \"/tmp/nftables-backup.conf\",\n96                 \"/tmp/nftables-backup.conf.orig\",\n97                 \"/tmp/nftables-revert.log\",\n98             ],\n99         },\n100     ]\n101     playbook = [\n",
       "col_offset": 16,
       "end_col_offset": 48,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3248,7 +3274,7 @@
       "code": "96                 \"/tmp/nftables-backup.conf.orig\",\n97                 \"/tmp/nftables-revert.log\",\n98             ],\n99         },\n100     ]\n101     playbook = [\n102         {\n",
       "col_offset": 16,
       "end_col_offset": 42,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3272,7 +3298,7 @@
       "code": "259             \"loop\": [\n260                 \"/tmp/iptables-backup.rules\",\n261                 \"/tmp/ip6tables-backup.rules\",\n262                 \"/tmp/iptables-revert.log\",\n263             ],\n264         },\n265     ]\n",
       "col_offset": 16,
       "end_col_offset": 44,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3296,7 +3322,7 @@
       "code": "260                 \"/tmp/iptables-backup.rules\",\n261                 \"/tmp/ip6tables-backup.rules\",\n262                 \"/tmp/iptables-revert.log\",\n263             ],\n264         },\n265     ]\n266     playbook = [\n",
       "col_offset": 16,
       "end_col_offset": 45,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3320,7 +3346,7 @@
       "code": "261                 \"/tmp/ip6tables-backup.rules\",\n262                 \"/tmp/iptables-revert.log\",\n263             ],\n264         },\n265     ]\n266     playbook = [\n267         {\n",
       "col_offset": 16,
       "end_col_offset": 42,
-      "filename": "app/ansible/generator.py",
+      "filename": "app/ansible_runtime/generator.py",
       "issue_confidence": "MEDIUM",
       "issue_cwe": {
         "id": 377,
@@ -3753,7 +3779,7 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "11     ssh_key = \"ssh_key\"\n12     https_token = \"https_token\"\n13 \n",
+      "code": "12     ssh_key = \"ssh_key\"\n13     https_token = \"https_token\"\n14 \n",
       "col_offset": 18,
       "end_col_offset": 31,
       "filename": "app/models/git_repository.py",
@@ -3764,29 +3790,9 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Possible hardcoded password: 'https_token'",
-      "line_number": 12,
+      "line_number": 13,
       "line_range": [
-        12
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
-      "test_id": "B105",
-      "test_name": "hardcoded_password_string"
-    },
-    {
-      "code": "23     SSH = \"ssh\"\n24     HTTPS_TOKEN = \"https_token\"\n25 \n",
-      "col_offset": 18,
-      "end_col_offset": 31,
-      "filename": "app/packs/models.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 259,
-        "link": "https://cwe.mitre.org/data/definitions/259.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Possible hardcoded password: 'https_token'",
-      "line_number": 24,
-      "line_range": [
-        24
+        13
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html",
       "test_id": "B105",
