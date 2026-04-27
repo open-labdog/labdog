@@ -325,6 +325,34 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building release artifacts for version $VERSION"
+      - name: Sync version files to tag
+        # On tag pushes only: rewrite backend/pyproject.toml and
+        # frontend/package.json so the in-tree version strings match
+        # the tag before the build step bakes them into the artifacts.
+        # Skipped for workflow_dispatch dry-runs so the working tree
+        # isn't mutated when no tag exists.
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          # backend/pyproject.toml — sed regex anchored to start of
+          # line. The file has exactly one top-level `version = "..."`
+          # entry under [project]; the assertion below fails the build
+          # if a future edit introduces a second match.
+          MATCHES=$(grep -c '^version = ' backend/pyproject.toml)
+          if [ "$MATCHES" != "1" ]; then
+            echo "::error::expected exactly 1 top-level version line in backend/pyproject.toml, found $MATCHES"
+            exit 1
+          fi
+          sed -i "s/^version = \".*\"/version = \"${V}\"/" backend/pyproject.toml
+          python -c "import tomllib; d=tomllib.load(open('backend/pyproject.toml','rb')); assert d['project']['version']=='${V}', d['project']['version']"
+
+          # frontend/package.json — JSON.parse + JSON.stringify
+          # round-trip. Preserves 2-space indent and trailing newline.
+          node -e "const f='frontend/package.json'; const j=JSON.parse(require('fs').readFileSync(f,'utf8')); j.version=process.env.V; require('fs').writeFileSync(f, JSON.stringify(j, null, 2)+'\n')"
+          node -e "const j=JSON.parse(require('fs').readFileSync('frontend/package.json','utf8')); if(j.version!==process.env.V){console.error('version mismatch:',j.version);process.exit(1)}"
+
+          echo "Synced backend/pyproject.toml and frontend/package.json to ${V}"
       - name: Build release artifacts
         run: ./packaging/build.sh --version="${{ steps.ver.outputs.version }}"
       - name: Generate unified SHA256SUMS
