@@ -29,7 +29,9 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openssh-client git \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd -m -u 1000 labdog
+RUN useradd -m -u 1000 labdog \
+    && mkdir -p /var/lib/labdog/packs \
+    && chown -R labdog:labdog /var/lib/labdog
 
 # Python packages from builder
 COPY --from=backend-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
