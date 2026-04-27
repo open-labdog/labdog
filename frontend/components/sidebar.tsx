@@ -129,10 +129,10 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
   })
 
   const pendingTotal = pendingSummary?.total ?? 0
-  const hostsChildren: NavChild[] = [
-    { href: "/hosts/discovery", label: "Discovery" },
-    ...(pendingTotal > 0 ? [{ href: "/hosts/pending", label: "Pending" }] : []),
-  ]
+  // Pending stays a Hosts child (per-host review queue). Discovery is promoted to a top-level MANAGE entry.
+  const hostsChildren: NavChild[] = pendingTotal > 0
+    ? [{ href: "/hosts/pending", label: "Pending" }]
+    : []
 
   const navGroups: NavGroup[] = [
     {
@@ -142,6 +142,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       label: "MANAGE",
       items: [
         { href: "/hosts", label: "Hosts", children: hostsChildren },
+        { href: "/hosts/discovery", label: "Discovery" },
         { href: "/groups", label: "Groups" },
         { href: "/schedules", label: "Update Workflows" },
       ],
