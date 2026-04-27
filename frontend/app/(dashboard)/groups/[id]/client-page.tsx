@@ -734,6 +734,26 @@ export default function GroupDetailPage() {
                         {
                           key: "select",
                           label: "",
+                          header: (() => {
+                            const visibleIds = availableHosts.map(h => h.id)
+                            const selectedVisible = visibleIds.filter(id => addHostsSelected.has(id)).length
+                            const allChecked = visibleIds.length > 0 && selectedVisible === visibleIds.length
+                            const indeterminate = selectedVisible > 0 && !allChecked
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={allChecked}
+                                ref={(el) => { if (el) el.indeterminate = indeterminate }}
+                                onChange={() => {
+                                  if (allChecked) setAddHostsSelected(new Set())
+                                  else setAddHostsSelected(new Set(visibleIds))
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border-slate-600"
+                                aria-label="Select all visible hosts"
+                              />
+                            )
+                          })(),
                           cell: (host) => (
                             <input
                               type="checkbox"
