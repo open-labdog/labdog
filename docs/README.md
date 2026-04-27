@@ -61,6 +61,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | Section | What it covers |
 |---|---|
 | [backup-restore.md](./backup-restore.md) | Backing up the PostgreSQL database and the encryption key, a daily-backup systemd timer, restore procedure (fresh host + point-in-time), disaster recovery for lost-key / lost-DB scenarios, and security notes for backup handling. |
+| [encryption-key-rotation.md](./encryption-key-rotation.md) | When and how to rotate `security.encryption_key`: pre-rotation checklist, step-by-step procedure, rollback, and failure modes. |
 | [upgrade.md](./upgrade.md) | Upgrade and rollback procedure for new releases. |
 | [production-deploy.md](./production-deploy.md) | Docker Compose production reference (TLS, volumes, secrets). |
 | [security-hardening.md](./security-hardening.md) | Reverse-proxy TLS, cookie/CSP/rate-limit configuration, DB security, superuser policy. |
