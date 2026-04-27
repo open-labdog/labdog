@@ -115,14 +115,15 @@ function ModuleStateView({
         data={rules}
         getRowKey={(_, i) => i}
         emptyMessage="No firewall rules."
+        // Column widths trimmed (Source/Destination/Comment) so the sum fits the ~770px content area at ~1080px viewport without a horizontal scrollbar; full text on hover via title.
         columns={[
           { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
           { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
           { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
-          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
+          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
           { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
-          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[140px]">{r.comment ?? "—"}</span>, defaultWidth: 140 },
+          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[90px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },
         ]}
       />
     )
@@ -2553,6 +2554,26 @@ export default function HostDetailPage() {
                           {
                             key: "select",
                             label: "",
+                            header: (() => {
+                              const visibleIds = filtered.map(g => g.id)
+                              const selectedVisible = visibleIds.filter(gid => addGroupSelected.has(gid)).length
+                              const allChecked = visibleIds.length > 0 && selectedVisible === visibleIds.length
+                              const indeterminate = selectedVisible > 0 && !allChecked
+                              return (
+                                <input
+                                  type="checkbox"
+                                  checked={allChecked}
+                                  ref={(el) => { if (el) el.indeterminate = indeterminate }}
+                                  onChange={() => {
+                                    if (allChecked) setAddGroupSelected(new Set())
+                                    else setAddGroupSelected(new Set(visibleIds))
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="rounded border-slate-600"
+                                  aria-label="Select all visible groups"
+                                />
+                              )
+                            })(),
                             cell: (g) => (
                               <input
                                 type="checkbox"
@@ -2729,16 +2750,17 @@ export default function HostDetailPage() {
               data={effectiveRules}
               getRowKey={(rule) => `${rule.rule_id ?? "sys"}-${rule.group_id ?? "none"}`}
               emptyMessage="No effective rules."
+              // Column widths trimmed (Source/Destination/Group/Comment/Actions) so the column-default sum fits the ~770px content area at ~1080px viewports without a horizontal scrollbar; full text on hover via title.
               columns={[
                 { key: "priority", label: "Priority", accessor: (r) => r.group_priority ?? r.priority, cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.group_priority ?? r.priority}</span>, defaultWidth: 80 },
                 { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
                 { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
                 { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-                { key: "source", label: "Source", accessor: (r) => r.source_host_name ?? r.source_cidr ?? "any", cell: (r) => r.source_host_name ? <span className="text-sky-400 text-xs">{r.source_host_name} <span className="text-slate-500">({r.source_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs">{r.source_cidr ?? "any"}</span>, defaultWidth: 160, filter: { type: "text" } },
-                { key: "destination", label: "Destination", accessor: (r) => r.destination_host_name ?? r.destination_cidr ?? "any", cell: (r) => r.destination_host_name ? <span className="text-sky-400 text-xs">{r.destination_host_name} <span className="text-slate-500">({r.destination_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs">{r.destination_cidr ?? "any"}</span>, defaultWidth: 160, filter: { type: "text" } },
+                { key: "source", label: "Source", accessor: (r) => r.source_host_name ?? r.source_cidr ?? "any", cell: (r) => r.source_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.source_host_name} (${r.source_cidr ?? ""})`}>{r.source_host_name} <span className="text-slate-500">({r.source_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
+                { key: "destination", label: "Destination", accessor: (r) => r.destination_host_name ?? r.destination_cidr ?? "any", cell: (r) => r.destination_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.destination_host_name} (${r.destination_cidr ?? ""})`}>{r.destination_host_name} <span className="text-slate-500">({r.destination_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
                 { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{formatPorts(r)}</span>, defaultWidth: 90 },
-                { key: "group", label: "Group", accessor: (r) => r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "", cell: (r) => <Badge variant="outline" className="text-xs font-mono">{r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "—"}</Badge>, defaultWidth: 140, filter: { type: "enum", from: "accessor" } },
-                { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs max-w-[140px] truncate">{r.comment ?? "—"}</span>, defaultWidth: 140 },
+                { key: "group", label: "Group", accessor: (r) => r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "", cell: (r) => <Badge variant="outline" className="text-xs font-mono max-w-[100px] truncate" title={r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? ""}>{r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "—"}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
+                { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs max-w-[90px] truncate inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },
                 {
                   key: "actions",
                   label: "Actions",
@@ -2756,7 +2778,7 @@ export default function HostDetailPage() {
                       </div>
                     ) : null
                   ),
-                  defaultWidth: 160,
+                  defaultWidth: 130,
                   resizable: false,
                   sortable: false,
                 },
