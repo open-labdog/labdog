@@ -90,9 +90,5 @@ def downgrade() -> None:
     # Best-effort removal of the seeded rows. The enum value stays —
     # postgres has no DROP VALUE for enums and removing it would
     # require recreating the type. Harmless to leave behind.
-    op.execute(
-        f"DELETE FROM action_packs WHERE name = '{PACK_NAME}'"
-    )
-    op.execute(
-        f"DELETE FROM git_repositories WHERE url = '{PACK_REPO_URL}'"
-    )
+    op.execute(f"DELETE FROM action_packs WHERE name = '{PACK_NAME}'")
+    op.execute(f"DELETE FROM git_repositories WHERE url = '{PACK_REPO_URL}'")
