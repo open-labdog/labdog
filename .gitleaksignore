@@ -13,11 +13,3 @@
 # .sisyphus/plans/barricade-gitops-v2.md — placeholder HTTPS PAT in
 # an example HTTP request body inside a pre-rebrand planning doc.
 718c14c9cf93e87038646961c4fb4f33044432aa:.sisyphus/plans/barricade-gitops-v2.md:generic-api-key:850
-
-# plans/option-c-coalesced-per-host-sync.md — Section 6 step-8 mock
-# instructions originally inlined `-----BEGIN/END OPENSSH PRIVATE
-# KEY-----` markers around the literal word "fake" (no key material).
-# Already replaced with `<PEM HEADER>`/`<PEM FOOTER>` placeholders in
-# bedefd9; this fingerprint suppresses the historical match in the
-# commit that introduced it.
-2c345a7470b0d704b33705920bac94b2c50c0e13:plans/option-c-coalesced-per-host-sync.md:private-key:2989
