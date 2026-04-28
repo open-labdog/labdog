@@ -10,7 +10,7 @@ def _make_ssh_lockout_rule(server_ip: str) -> FirewallRuleSpec:
         direction="input",
         source_cidr=f"{server_ip}/32",
         port_start=22,
-        comment="LabDog server SSH access — auto-injected, do not remove",
+        comment="anti-lockout SSH allow — auto-injected, do not remove",
         is_system=True,
         priority=999999,  # always highest priority
     )

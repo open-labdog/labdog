@@ -2,6 +2,27 @@ import ipaddress
 
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 
+_COMMENT_PREFIX = "Managed by LabDog"
+
+
+def _safe_comment(text: str | None) -> str:
+    """Build the unified comment string, sanitised for iptables embedding.
+
+    iptables-restore tolerates double-quoted comment values up to 256 bytes;
+    embedded double quotes and newlines would break the line. We strip those
+    and cap length to leave headroom under the kernel limit.
+    """
+    base = _COMMENT_PREFIX
+    if text:
+        cleaned = text.replace('"', "'").replace("\n", " ").replace("\t", " ").strip()
+        if cleaned:
+            base = f"{_COMMENT_PREFIX}: {cleaned}"
+    return base[:200]
+
+
+def _comment_match(text: str | None) -> str:
+    return f'-m comment --comment "{_safe_comment(text)}"'
+
 
 def _rule_to_iptables(rule: FirewallRuleSpec, chain: str, ipv6: bool = False) -> str:
     """Convert rule to iptables-save format line."""
@@ -18,6 +39,7 @@ def _rule_to_iptables(rule: FirewallRuleSpec, chain: str, ipv6: bool = False) ->
             else:
                 cmd += f" --dport {rule.port_start}"
     action_map = {"allow": "ACCEPT", "deny": "DROP", "reject": "REJECT"}
+    cmd += f" {_comment_match(rule.comment)}"
     cmd += f" -j {action_map.get(rule.action, 'DROP')}"
     return cmd
 
@@ -53,8 +75,8 @@ def render_iptables_rules(
             "-F LABDOG-INPUT",
             "-F LABDOG-OUTPUT",
             # Infrastructure rules in our input chain
-            "-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT",
-            "-A LABDOG-INPUT -i lo -j ACCEPT",
+            f'-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED {_comment_match("stateful tracking")} -j ACCEPT',
+            f'-A LABDOG-INPUT -i lo {_comment_match("loopback")} -j ACCEPT',
         ]
         for rule in rule_list:
             chain = "LABDOG-INPUT" if rule.direction == "input" else "LABDOG-OUTPUT"
@@ -62,8 +84,8 @@ def render_iptables_rules(
         # Apply chain default policies via final rules
         input_target = "DROP" if policies.input == "drop" else "ACCEPT"
         output_target = "DROP" if policies.output == "drop" else "ACCEPT"
-        lines.append(f"-A LABDOG-INPUT -j {input_target}")
-        lines.append(f"-A LABDOG-OUTPUT -j {output_target}")
+        lines.append(f'-A LABDOG-INPUT {_comment_match("default policy")} -j {input_target}')
+        lines.append(f'-A LABDOG-OUTPUT {_comment_match("default policy")} -j {output_target}')
         lines += ["COMMIT", ""]
         return "\n".join(lines)
 
