@@ -12,6 +12,19 @@ def _cidr_family(cidr: str) -> str:
         return "ip"
 
 
+_COMMENT_PREFIX = "Managed by LabDog"
+
+
+def _safe_comment(text: str | None) -> str:
+    """Build the unified comment string, sanitised for nft/iptables embedding."""
+    base = _COMMENT_PREFIX
+    if text:
+        cleaned = text.replace('"', "'").replace("\n", " ").replace("\t", " ").strip()
+        if cleaned:
+            base = f"{_COMMENT_PREFIX}: {cleaned}"
+    return base[:200]
+
+
 def _rule_to_nft(rule: FirewallRuleSpec) -> str:
     parts = []
     if rule.source_cidr:
@@ -30,11 +43,7 @@ def _rule_to_nft(rule: FirewallRuleSpec) -> str:
     action_map = {"allow": "accept", "deny": "drop", "reject": "reject"}
     action = action_map.get(rule.action, "drop")
     parts.append(action)
-    if rule.comment:
-        comment_text = f"LabDog: {rule.comment}"
-    else:
-        comment_text = "Managed by LabDog"
-    parts.append(f'comment "{comment_text}"')
+    parts.append(f'comment "{_safe_comment(rule.comment)}"')
     return " ".join(parts)
 
 
@@ -55,8 +64,8 @@ def render_nftables_config(
         "table inet filter {",
         "  chain input {",
         f"    type filter hook input priority 0; policy {policies.input};",
-        "    ct state established,related accept",
-        "    iif lo accept",
+        f'    ct state established,related accept comment "{_COMMENT_PREFIX}: stateful tracking"',
+        f'    iif lo accept comment "{_COMMENT_PREFIX}: loopback"',
     ]
     for rule in input_rules:
         lines.append(f"    {_rule_to_nft(rule)}")
