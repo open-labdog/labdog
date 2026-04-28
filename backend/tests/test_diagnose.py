@@ -44,23 +44,17 @@ def test_no_space_left_translated():
 
 
 def test_connection_refused_translated():
-    runner = _FakeRunner(
-        events=[_unreachable_event("Failed to connect: Connection refused")]
-    )
+    runner = _FakeRunner(events=[_unreachable_event("Failed to connect: Connection refused")])
     assert "SSH connection refused" in interpret_runner_failure(runner)
 
 
 def test_permission_denied_translated():
-    runner = _FakeRunner(
-        events=[_unreachable_event("Permission denied (publickey).")]
-    )
+    runner = _FakeRunner(events=[_unreachable_event("Permission denied (publickey).")])
     assert "SSH authentication failed" in interpret_runner_failure(runner)
 
 
 def test_dns_resolution_translated():
-    runner = _FakeRunner(
-        events=[_unreachable_event("ssh: Could not resolve hostname foo: ...")]
-    )
+    runner = _FakeRunner(events=[_unreachable_event("ssh: Could not resolve hostname foo: ...")])
     assert "DNS resolution failed" in interpret_runner_failure(runner)
 
 
@@ -84,9 +78,7 @@ def test_module_stderr_used_when_msg_missing():
         events=[
             {
                 "event": "runner_on_failed",
-                "event_data": {
-                    "res": {"module_stderr": "Permission denied (publickey)."}
-                },
+                "event_data": {"res": {"module_stderr": "Permission denied (publickey)."}},
             }
         ]
     )
