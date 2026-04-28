@@ -160,11 +160,11 @@ async def trigger_group_service_sync(
     if not host_ids:
         raise HTTPException(status_code=400, detail="No hosts in this group")
 
-    jobs = []
     from app.tasks.service_sync import run_service_sync
 
+    # BUG-37: dispatch after commit, not before — see app/api/sync.py.
+    pending: list[tuple[int, int]] = []
     for hid in host_ids:
-        # Skip hosts with running service syncs
         running = await db.execute(
             select(SyncJob).where(
                 SyncJob.host_id == hid,
@@ -184,11 +184,12 @@ async def trigger_group_service_sync(
         )
         db.add(job)
         await db.flush()
-        run_service_sync.delay(job_id=job.id, host_id=hid)
-        jobs.append(job)
+        pending.append((job.id, hid))
 
     await db.commit()
-    return {"triggered": len(jobs), "skipped": len(host_ids) - len(jobs)}
+    for job_id, hid in pending:
+        run_service_sync.delay(job_id=job_id, host_id=hid)
+    return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
