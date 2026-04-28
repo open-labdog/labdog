@@ -100,7 +100,9 @@ def run_resolver_sync(self, job_id: int, host_id: int) -> dict:
                     runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
                 if runner.status != "successful":
-                    job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
+                    from app.ansible_runtime.diagnose import interpret_runner_failure
+
+                    job.error_message = interpret_runner_failure(runner)
 
                 # Update host-level sync status
                 from app.models.host import SyncStatus

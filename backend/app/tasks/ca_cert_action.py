@@ -103,7 +103,9 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
                 if runner.status != "successful":
-                    job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
+                    from app.ansible_runtime.diagnose import interpret_runner_failure
+
+                    job.error_message = interpret_runner_failure(runner)
                 await db.commit()
 
         asyncio.run(_record_result())
