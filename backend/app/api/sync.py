@@ -259,11 +259,14 @@ async def trigger_group_sync(
     if not host_ids:
         raise HTTPException(status_code=400, detail="No hosts in this group")
 
-    jobs = []
     from app.tasks.sync import run_sync_playbook
 
+    # BUG-37: dispatch must happen AFTER commit, not before. flush() makes
+    # job.id available to Python but does not make the row visible to the
+    # Celery worker's connection. Build the dispatch list in the loop, commit
+    # all rows together, then dispatch.
+    pending: list[tuple[int, int]] = []
     for hid in host_ids:
-        # Skip hosts with running syncs
         running = await db.execute(
             select(SyncJob).where(
                 SyncJob.host_id == hid,
@@ -278,11 +281,12 @@ async def trigger_group_sync(
         )
         db.add(job)
         await db.flush()
-        run_sync_playbook.delay(job_id=job.id, host_id=hid)
-        jobs.append(job)
+        pending.append((job.id, hid))
 
     await db.commit()
-    return {"triggered": len(jobs), "skipped": len(host_ids) - len(jobs)}
+    for job_id, hid in pending:
+        run_sync_playbook.delay(job_id=job_id, host_id=hid)
+    return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
