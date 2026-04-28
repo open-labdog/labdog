@@ -85,8 +85,9 @@ class TestIptablesRenderer:
         v4, _ = render_iptables_rules(_sample_rules())
         assert ":LABDOG-INPUT - [0:0]" in v4
         assert ":LABDOG-OUTPUT - [0:0]" in v4
-        assert '-A LABDOG-INPUT -m comment --comment "Managed by LabDog: default policy" -j DROP' in v4
-        assert '-A LABDOG-OUTPUT -m comment --comment "Managed by LabDog: default policy" -j ACCEPT' in v4
+        comment = '-m comment --comment "Managed by LabDog: default policy"'
+        assert f"-A LABDOG-INPUT {comment} -j DROP" in v4
+        assert f"-A LABDOG-OUTPUT {comment} -j ACCEPT" in v4
 
     def test_contains_conntrack(self):
         v4, _ = render_iptables_rules(_sample_rules())
