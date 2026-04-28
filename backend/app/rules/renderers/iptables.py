@@ -75,8 +75,9 @@ def render_iptables_rules(
             "-F LABDOG-INPUT",
             "-F LABDOG-OUTPUT",
             # Infrastructure rules in our input chain
-            f'-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED {_comment_match("stateful tracking")} -j ACCEPT',
-            f'-A LABDOG-INPUT -i lo {_comment_match("loopback")} -j ACCEPT',
+            "-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED "
+            f"{_comment_match('stateful tracking')} -j ACCEPT",
+            f"-A LABDOG-INPUT -i lo {_comment_match('loopback')} -j ACCEPT",
         ]
         for rule in rule_list:
             chain = "LABDOG-INPUT" if rule.direction == "input" else "LABDOG-OUTPUT"
@@ -84,8 +85,8 @@ def render_iptables_rules(
         # Apply chain default policies via final rules
         input_target = "DROP" if policies.input == "drop" else "ACCEPT"
         output_target = "DROP" if policies.output == "drop" else "ACCEPT"
-        lines.append(f'-A LABDOG-INPUT {_comment_match("default policy")} -j {input_target}')
-        lines.append(f'-A LABDOG-OUTPUT {_comment_match("default policy")} -j {output_target}')
+        lines.append(f"-A LABDOG-INPUT {_comment_match('default policy')} -j {input_target}")
+        lines.append(f"-A LABDOG-OUTPUT {_comment_match('default policy')} -j {output_target}")
         lines += ["COMMIT", ""]
         return "\n".join(lines)
 
