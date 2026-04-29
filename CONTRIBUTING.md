@@ -11,9 +11,9 @@ land under the same license (inbound = outbound).
   version/commit you saw it on, and the relevant logs. If you can
   share the exact SQL state + API response, even better.
 - **Feature ideas** — open an issue first so we can discuss scope
-  before you invest significant time. See
-  [`plans/TODO.md`](plans/TODO.md) for what's already on the
-  roadmap.
+  before you invest significant time. See [`TODO.md`](TODO.md) for
+  what's already on the roadmap and [`BUGS.md`](BUGS.md) for the
+  open bug registry.
 
 ## Dev setup
 
@@ -86,8 +86,20 @@ the decision points and what was considered and rejected.
   without tests won't merge.
 - Update `docs/` when you change user-visible behaviour. A comment
   on the PR is not a substitute for updating the user guide.
-- If the change touches anything in [`plans/TODO.md`](plans/TODO.md)
-  — complete the item or un-check it with an explanation.
+- If the change touches anything in [`TODO.md`](TODO.md) or fixes a
+  bug listed in [`BUGS.md`](BUGS.md) — tick the item (`[x]`), note
+  the fix and commit hash, or un-check it with an explanation.
+
+### `plans/` is local-only — do not commit
+
+A `plans/` directory at the repo root is reserved for the
+maintainer's working notes (design drafts, multi-agent plan docs,
+exploratory scaffolding). It is `.gitignore`'d and **must not be
+committed to `dev` or `main`**. Open work and bugs that affect the
+public roadmap belong in [`TODO.md`](TODO.md) and
+[`BUGS.md`](BUGS.md) at the repo root, where contributors can see
+them. If you accidentally stage something under `plans/`, unstage
+it with `git restore --staged plans/`.
 
 ## Licensing & copyright
 
