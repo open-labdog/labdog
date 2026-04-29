@@ -22,9 +22,9 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Add host fact columns collected at host-add time.
 
-    See plans/host-facts-collection.md for rationale. All nullable — a host
-    that pre-dates this migration will have NULLs until the next facts
-    collection runs.
+    Columns are populated by the host-facts collector triggered on add
+    and on demand from the UI. All nullable — a host that pre-dates this
+    migration will have NULLs until the next facts collection runs.
     """
     op.add_column("hosts", sa.Column("os_family", sa.String(length=32), nullable=True))
     op.add_column("hosts", sa.Column("default_nic", sa.String(length=32), nullable=True))

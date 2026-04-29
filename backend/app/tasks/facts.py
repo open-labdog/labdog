@@ -72,7 +72,9 @@ def collect_host_facts(host_id: int):
     """Collect host facts via SSH and persist them to the Host row.
 
     One SSH session gathers /etc/os-release, uname, default NIC, and firewall
-    backend probes. See plans/host-facts-collection.md for rationale.
+    backend probes — the result is persisted on the Host row so the UI can
+    pre-populate version pickers and pick the right firewall backend module
+    without re-probing on every page load.
     """
     import asyncio
     from datetime import UTC, datetime

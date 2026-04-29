@@ -335,16 +335,16 @@ Fresh install. See `docs/README.md` installation section.
   bcrypt; still don't leave the file world-readable), hostnames
   and IP addresses of managed infrastructure, and audit trails.
 - When rotating the encryption key (see
-  `plans/TODO.md` — encryption-key rotation runbook), make sure
-  your backup set for the rotation window contains *both* the
+  [`encryption-key-rotation.md`](encryption-key-rotation.md)), make
+  sure your backup set for the rotation window contains *both* the
   old and new keys until every live row has been re-encrypted
   under the new key. Otherwise a mid-rotation restore can't
   read rows that were still ciphertext-under-old-key.
 - Never commit `/etc/labdog/labdog.toml` or a backup file to a
   git repo. If it happens by accident, treat every currently-
-  stored credential as compromised. Until the dedicated rotation
-  runbook exists (tracked in `plans/TODO.md`), the documented
-  recovery path is the truncate-and-re-enter procedure under
-  [Lost the encryption key](#lost-the-encryption-key): generate
-  a new key, restart, then clear the encrypted rows and re-enter
-  credentials from the UI.
+  stored credential as compromised. The structured rotation path
+  is in [`encryption-key-rotation.md`](encryption-key-rotation.md);
+  for installs with few credentials, the truncate-and-re-enter
+  procedure under [Lost the encryption key](#lost-the-encryption-key)
+  is also valid — generate a new key, restart, then clear the
+  encrypted rows and re-enter credentials from the UI.

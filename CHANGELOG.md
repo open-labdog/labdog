@@ -142,7 +142,7 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 - Per-host action execution only — multi-host coordination
   (one ansible-runner invocation against a host group) is parked,
-  see [`plans/TODO.md`](plans/TODO.md).
+  see [`TODO.md`](TODO.md).
 - `nftables` and `iptables` only; no Cisco / pfSense / opnsense /
   Mikrotik backends.
 - No encryption-key rotation tooling — recovery from a leaked key
