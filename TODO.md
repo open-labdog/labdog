@@ -1,7 +1,18 @@
 # TODO
 
-Open tasks and forward-looking design notes for LabDog. Completed
-tasks are removed once the fix lands — details live in git history:
+Open tasks and forward-looking design notes for LabDog.
+
+## Convention: open-only
+
+**Only open items belong in this file.** When a task is completed:
+
+1. Land the fix and write a descriptive commit message — that commit
+   message is the canonical record (what changed, why, how).
+2. Delete the entry from this file in the same commit (or a follow-up
+   `docs(todo): Tick off ...` commit). Do **not** mark items `[x]`
+   and leave them here.
+
+To retrace a completed task, search the commit log:
 
 ```
 git log --grep "labdog-playbooks"
@@ -21,6 +32,18 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
+- [ ] **Add an "About" section to the UI.** Show version, license
+      (AGPL-3.0-or-later), commit SHA / build date, and a link to the
+      project repo. Useful for support ("which version are you on?")
+      and required for AGPL attribution surfacing. Likely lives under
+      Settings or as a footer link.
+- [ ] **Verify `packaging/` is up-to-date and run its tests.** Walk
+      `packaging/` (deb, rpm, tarball builders + install/uninstall
+      scripts) against current `backend/` and `frontend/` layouts and
+      systemd unit expectations — catch drift in file paths, baked-in
+      versions, dependency lists, post-install hooks. Then run whatever
+      test/validation harness exists (`packaging/tests/`, lintian, rpmlint,
+      a smoke install in a container) and fix what fails.
 - [ ] **Retire `.gitlab-ci.yml`.** Keep during migration. Remove
       once the GitHub Actions pipeline has been green for ~two weeks
       and no one's relying on GitLab Pages / Packages.
