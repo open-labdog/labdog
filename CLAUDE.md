@@ -106,24 +106,25 @@ is *not* part of the mirror. A fresh install also auto-registers
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
 
-## Tracking files: TODO.md and BUGS.md
+## Working with `plans/`
 
-`TODO.md` and `BUGS.md` are **open-only** registries — they list work
-that is still pending. Completed/fixed items are *not* archived here;
-the commit history is the canonical record.
+When picking up substantive design work that needs more than a
+[`TODO.md`](TODO.md) line can hold, use `plans/` as a branch-scoped
+scratchpad:
 
-When you finish a task or land a bug fix:
+1. Branch from `dev`.
+2. Add plan files under `plans/` on the branch and commit them so
+   later sessions / agents can read them.
+3. Implement. Capture the *why* and the design decisions in commit
+   messages — those are the permanent record, the plan is scaffolding.
+4. **Delete `plans/` before opening the PR.** `dev` and `main` must
+   never carry it.
 
-1. Write a descriptive commit message. For bugs, reference the ID
-   (e.g. `fix(sync): BUG-37 — dispatch Celery tasks after commit`) so
-   the entry is later retrievable via `git log --grep BUG-37`.
-2. **Delete** the entry from `TODO.md` / `BUGS.md` in the same commit
-   (or a follow-up `docs(todo): ...` / `docs(bugs): ...` commit). Do
-   not leave items marked `[x]`.
-
-When filing a new bug, pick the next number in the relevant series
-(`BUG-NN`, `SEC-NN`, `TYPE-NN`, `DEAD-NN`) — the counter is recorded
-in `BUGS.md` under "How to file an entry".
+Roles of the four top-level tracking files: [`ROADMAP.md`](ROADMAP.md)
+(direction), [`TODO.md`](TODO.md) (open near-term tasks, open-only),
+[`BUGS.md`](BUGS.md) (open bug registry, open-only), `plans/` (private
+in-flight scratchpad on work branches). See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow.
 
 ## Key Files
 
