@@ -165,7 +165,7 @@ Pre-built packages are available on the [Releases](https://github.com/open-labdo
 **Debian / Ubuntu (.deb)**
 
 ```bash
-VERSION=0.0.1
+VERSION=0.1.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 ```
@@ -173,7 +173,7 @@ sudo apt install ./labdog_${VERSION}-1_amd64.deb
 **RHEL / Fedora / Rocky (.rpm)**
 
 ```bash
-VERSION=0.0.1
+VERSION=0.1.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 ```
@@ -183,7 +183,7 @@ After package install, skip to [Post-install configuration](#post-install-config
 ### From Tarball
 
 ```bash
-VERSION=0.0.1
+VERSION=0.1.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
 tar -xzf labdog-${VERSION}-linux-amd64.tar.gz
 cd labdog-${VERSION}-linux-amd64
@@ -370,7 +370,7 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v          # 326 unit/module tests
+pytest tests/ --ignore=tests/integration -v          # 755 unit/module tests
 pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
 ```
 
@@ -385,7 +385,7 @@ npx playwright test          # requires running Docker stack
 npx playwright test --ui     # interactive test runner
 ```
 
-16 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
+15 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
@@ -524,7 +524,7 @@ labdog/
 │   │   ├── user_mgmt/       # Linux user/group management
 │   │   └── workflows/       # Proxmox workflow execution
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite (326 tests)
+│   ├── tests/               # pytest suite (755 tests)
 │   │   ├── integration/     # Integration tests (require full stack)
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
@@ -532,7 +532,7 @@ labdog/
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
 │   ├── components/          # React components (shadcn/ui)
-│   ├── e2e/                 # Playwright E2E tests (16 spec files)
+│   ├── e2e/                 # Playwright E2E tests (15 spec files)
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
