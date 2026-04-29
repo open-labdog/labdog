@@ -106,6 +106,25 @@ is *not* part of the mirror. A fresh install also auto-registers
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
 
+## Tracking files: TODO.md and BUGS.md
+
+`TODO.md` and `BUGS.md` are **open-only** registries — they list work
+that is still pending. Completed/fixed items are *not* archived here;
+the commit history is the canonical record.
+
+When you finish a task or land a bug fix:
+
+1. Write a descriptive commit message. For bugs, reference the ID
+   (e.g. `fix(sync): BUG-37 — dispatch Celery tasks after commit`) so
+   the entry is later retrievable via `git log --grep BUG-37`.
+2. **Delete** the entry from `TODO.md` / `BUGS.md` in the same commit
+   (or a follow-up `docs(todo): ...` / `docs(bugs): ...` commit). Do
+   not leave items marked `[x]`.
+
+When filing a new bug, pick the next number in the relevant series
+(`BUG-NN`, `SEC-NN`, `TYPE-NN`, `DEAD-NN`) — the counter is recorded
+in `BUGS.md` under "How to file an entry".
+
 ## Key Files
 
 | File | Purpose |

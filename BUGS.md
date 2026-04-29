@@ -1,8 +1,18 @@
 # Bug Registry
 
-Open bugs in LabDog. New entries are added as bugs are surfaced;
-fixed entries are removed once the fix lands and ships — the fix
-details live in git history.
+Open bugs in LabDog. New entries are added as bugs are surfaced.
+
+## Convention: open-only
+
+**Only open bugs belong in this file.** When a bug is fixed:
+
+1. Land the fix and write a descriptive commit message that references
+   the bug ID (e.g. `fix(sync): BUG-37 — dispatch Celery tasks after
+   commit`). That commit message is the canonical record (symptom,
+   root cause, fix).
+2. Delete the entry from this file in the same commit. Do **not** mark
+   bugs `[x]` and leave them here — fixed entries belong in git history,
+   not in the registry.
 
 To retrace a historical bug ID referenced elsewhere
 (`BUG-NN`, `SEC-NN`, `TYPE-NN`, `DEAD-NN`), search the commit log:
@@ -11,8 +21,6 @@ To retrace a historical bug ID referenced elsewhere
 git log --grep BUG-37
 git log -- backend/app/api/sync.py
 ```
-
-Status: `[ ]` open · `[x]` fixed.
 
 ## How to file an entry
 
