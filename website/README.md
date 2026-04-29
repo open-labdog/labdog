@@ -39,12 +39,14 @@ No manual copy step.
 
 ## Deployment
 
-- **Today (GitLab Pages):** the `pages` job in
-  [`../.gitlab-ci.yml`](../.gitlab-ci.yml) builds this directory and
-  publishes `public/` on every push to `dev`.
-- **Later (GitHub Pages):** replace the GitLab job with
-  `.github/workflows/docs.yml` and update `url` / `baseUrl` in
-  [`docusaurus.config.ts`](./docusaurus.config.ts).
+- **GitHub Pages:** the `docs-deploy` job in
+  [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) builds
+  this directory and publishes to GitHub Pages on every push. The
+  `docs-build-check` job runs on every PR as a link-validity gate.
+- **GitLab Pages (legacy):** the `pages` job in
+  [`../.gitlab-ci.yml`](../.gitlab-ci.yml) is kept while the GitLab
+  pipeline lingers; will be removed alongside `.gitlab-ci.yml` once
+  the migration window closes (see `TODO.md`).
 
 ## Updating the docs
 
