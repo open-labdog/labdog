@@ -90,16 +90,32 @@ the decision points and what was considered and rejected.
   bug listed in [`BUGS.md`](BUGS.md) — tick the item (`[x]`), note
   the fix and commit hash, or un-check it with an explanation.
 
-### `plans/` is local-only — do not commit
+### Working with `plans/` — branch-scoped scratchpad
 
-A `plans/` directory at the repo root is reserved for the
-maintainer's working notes (design drafts, multi-agent plan docs,
-exploratory scaffolding). It is `.gitignore`'d and **must not be
-committed to `dev` or `main`**. Open work and bugs that affect the
-public roadmap belong in [`TODO.md`](TODO.md) and
-[`BUGS.md`](BUGS.md) at the repo root, where contributors can see
-them. If you accidentally stage something under `plans/`, unstage
-it with `git restore --staged plans/`.
+For substantive design work that needs more than a TODO entry can
+hold, use a temporary `plans/` directory on the work branch. The
+workflow:
+
+1. **Branch from `dev`** — `feat/<topic>`, `fix/<bug-id>`, etc.
+2. **Drop plan files into `plans/`** on that branch and commit them.
+   Other sessions, collaborators, or agents picking up the branch
+   need to read them.
+3. **Implement.** Each commit message captures the *why* and the
+   decisions taken — including ones from the plan that aren't
+   obvious from the diff. The commit log is the permanent record;
+   the plan is scaffolding.
+4. **Delete `plans/` before opening the PR.** `dev` and `main` must
+   never carry it.
+5. **Merge.** Reviewers read commits, not plan files.
+
+Roles of the four top-level tracking files:
+
+| File | Purpose |
+|---|---|
+| [`ROADMAP.md`](ROADMAP.md) | High-altitude direction — in design, ideas, out of scope. |
+| [`TODO.md`](TODO.md) | Open near-term tasks. Open-only — finished items are deleted, not ticked. |
+| [`BUGS.md`](BUGS.md) | Open bug registry. Open-only — fixed bugs are deleted, with a commit referencing the bug ID. |
+| `plans/` (work branches) | Private scratchpad for one piece of in-flight work. Created and deleted within a single branch's lifetime. |
 
 ## Licensing & copyright
 
