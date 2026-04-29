@@ -19,15 +19,15 @@ paths = [
     '''^backend/tests/''',
     '''^frontend/e2e/''',
     '''^labdog\.toml$''',
-    # Multi-agent plan doc — Section 6 step-8 uses a fake-PEM string
-    # ("-----BEGIN/END OPENSSH PRIVATE KEY-----" wrapping the literal
-    # word "fake") to document what to mock in a unit test. The
-    # current tree has been replaced with <PEM HEADER>/<PEM FOOTER>
-    # placeholders in bedefd9, but the historical commit (2c345a7)
-    # still contains the markers and the fingerprint-based
-    # .gitleaksignore entry was not honoured. Path-allowlist scoped
-    # to this single doc file keeps the blast radius small — it's
-    # documentation, not code.
+    # Historical-only path. The plans/ directory has since been
+    # gitignored (see .gitignore + CONTRIBUTING.md) and no longer
+    # exists in the working tree, but commit 2c345a7 contains a
+    # multi-agent plan doc whose Section 6 step-8 inlined fake-PEM
+    # markers ("-----BEGIN/END OPENSSH PRIVATE KEY-----" wrapping
+    # the literal word "fake") to document what to mock in a unit
+    # test. gitleaks scans recent commit history, so this allowlist
+    # entry suppresses the historical false-positive without
+    # masking real findings in the current tree.
     '''^plans/option-c-coalesced-per-host-sync\.md$''',
 ]
 
