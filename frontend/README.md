@@ -28,7 +28,7 @@ npx playwright test          # requires full Docker stack running
 npx playwright test --ui     # interactive test runner
 ```
 
-16 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns.
+15 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns.
 
 ## Pages
 
