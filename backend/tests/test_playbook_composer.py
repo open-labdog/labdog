@@ -19,6 +19,7 @@ from app.tasks.playbook_composer import (
     compose_playbook,
     fragment_cron,
     fragment_linux_users,
+    fragment_packages,
 )
 
 
@@ -289,3 +290,44 @@ def test_fragment_linux_users_with_empty_inputs():
     fragment = fragment_linux_users(users=[], groups=[])
     assert fragment.module == "linux-users"
     assert fragment.plays[0]["tasks"] == []
+
+
+# ---------------------------------------------------------------------------
+# fragment_packages
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_packages_returns_valid_fragment():
+    fragment = fragment_packages(
+        packages=[{"package_name": "nginx", "state": "present"}],
+        repos=[],
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "packages"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_packages_emits_package_module_tasks():
+    fragment = fragment_packages(
+        packages=[{"package_name": "nginx", "state": "present"}],
+        repos=[],
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.package" in t for t in tasks)
+
+
+def test_fragment_packages_rewrites_default_hosts_all():
+    # The package generator hardcodes hosts: "all"; adapter must rewrite it.
+    fragment = fragment_packages(packages=[], repos=[])
+    assert fragment.plays[0]["hosts"] == HOSTS_SENTINEL
+
+
+def test_fragment_packages_composes_through_compose_playbook():
+    fragment = fragment_packages(
+        packages=[{"package_name": "curl", "state": "present"}],
+        repos=[],
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="web02"))
+    assert out[0]["hosts"] == "web02"
+    assert all("packages" in t["tags"] for t in out[0]["tasks"])
