@@ -11,6 +11,7 @@ import copy
 import pytest
 import yaml
 
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.tasks.playbook_composer import (
     CANONICAL_ORDER,
     HOSTS_SENTINEL,
@@ -18,6 +19,7 @@ from app.tasks.playbook_composer import (
     _inject_tags,
     compose_playbook,
     fragment_cron,
+    fragment_firewall,
     fragment_hosts_file,
     fragment_linux_users,
     fragment_packages,
@@ -459,3 +461,62 @@ def test_fragment_services_composes_through_compose_playbook():
     out = yaml.safe_load(compose_playbook([fragment], hosts_alias="bastion"))
     assert out[0]["hosts"] == "bastion"
     assert all("services" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_firewall
+# ---------------------------------------------------------------------------
+
+
+def _ssh_rule() -> FirewallRuleSpec:
+    return FirewallRuleSpec(
+        action="allow",
+        protocol="tcp",
+        direction="input",
+        port_start=22,
+    )
+
+
+def test_fragment_firewall_returns_valid_fragment_nftables():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "firewall"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_firewall_nftables_emits_nft_tasks():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    tasks = fragment.plays[0]["tasks"]
+    # nftables backend writes /etc/nftables.conf and runs `nft -f ...`
+    assert any("nftables.conf" in str(t) for t in tasks)
+    assert any("nft" in str(t) for t in tasks)
+
+
+def test_fragment_firewall_iptables_emits_iptables_tasks():
+    fragment = fragment_firewall(
+        backend="iptables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("iptables" in str(t) for t in tasks)
+
+
+def test_fragment_firewall_composes_through_compose_playbook():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="edge01"))
+    assert out[0]["hosts"] == "edge01"
+    assert all("firewall" in t["tags"] for t in out[0]["tasks"])
