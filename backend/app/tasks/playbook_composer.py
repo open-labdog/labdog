@@ -17,10 +17,12 @@ from typing import Any
 
 import yaml
 
+from app.ansible_runtime.generator import generate_playbook as generate_firewall_playbook
 from app.cron.generator import generate_cron_playbook
 from app.hosts_mgmt.generator import generate_hosts_file_playbook
 from app.packages.generator import generate_package_playbook
 from app.resolver.generator import generate_resolver_playbook
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.services.generator import generate_service_playbook
 from app.user_mgmt.generator import generate_user_playbook
 
@@ -219,6 +221,34 @@ def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFr
     for p in plays:
         p["hosts"] = HOSTS_SENTINEL
     return PlaybookFragment(module="hosts-file", plays=plays)
+
+
+def fragment_firewall(
+    backend: str,
+    rules: list[FirewallRuleSpec],
+    policies: ChainPolicies | None = None,
+) -> PlaybookFragment:
+    """Build the ``firewall`` fragment by wrapping ``generate_firewall_playbook``.
+
+    The firewall generator dispatches on ``backend`` ("nftables" or
+    "iptables") and returns a YAML playbook string. The adapter parses
+    the YAML, runs the SSH-var strip, and rewrites hosts to
+    HOSTS_SENTINEL (the firewall plays already use ``"target"`` —
+    which equals HOSTS_SENTINEL — but we rewrite unconditionally to
+    keep the contract uniform across adapters).
+    """
+    playbook_yaml = generate_firewall_playbook(
+        backend=backend,
+        host_ip=HOSTS_SENTINEL,
+        rules=rules,
+        ssh_key_path=_UNUSED_KEY_PATH,
+        policies=policies,
+    )
+    plays = list(yaml.safe_load(playbook_yaml))
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="firewall", plays=plays)
 
 
 def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragment:
