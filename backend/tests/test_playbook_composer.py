@@ -17,6 +17,7 @@ from app.tasks.playbook_composer import (
     PlaybookFragment,
     _inject_tags,
     compose_playbook,
+    fragment_cron,
 )
 
 
@@ -172,3 +173,67 @@ def test_inject_tags_helper_idempotent():
     once = _inject_tags(plays, "firewall")
     twice = _inject_tags(once, "firewall")
     assert twice[0]["tasks"][0]["tags"] == ["firewall"]
+
+
+# ---------------------------------------------------------------------------
+# fragment_cron
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_cron_returns_valid_fragment():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "nightly-backup",
+                "user": "root",
+                "schedule": "0 3 * * *",
+                "command": "/usr/local/bin/backup.sh",
+                "state": "present",
+            }
+        ]
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "cron"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_cron_emits_cron_module_tasks():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "nightly-backup",
+                "user": "root",
+                "schedule": "0 3 * * *",
+                "command": "/usr/local/bin/backup.sh",
+                "state": "present",
+            }
+        ]
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.cron" in t for t in tasks)
+
+
+def test_fragment_cron_composes_through_compose_playbook():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "j",
+                "user": "root",
+                "schedule": "*/5 * * * *",
+                "command": "/bin/true",
+                "state": "present",
+            }
+        ]
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="web01"))
+    assert out[0]["hosts"] == "web01"
+    assert all("cron" in t["tags"] for t in out[0]["tasks"])
+
+
+def test_fragment_cron_with_empty_jobs():
+    fragment = fragment_cron(cron_jobs=[])
+    assert fragment.module == "cron"
+    assert fragment.plays[0]["tasks"] == []
+    out = yaml.safe_load(compose_playbook([fragment]))
+    assert out[0]["hosts"] == HOSTS_SENTINEL
