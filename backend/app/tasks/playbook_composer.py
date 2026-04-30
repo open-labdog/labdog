@@ -17,6 +17,28 @@ from typing import Any
 
 import yaml
 
+from app.cron.generator import generate_cron_playbook
+
+# SSH-related play.vars keys that some generators bake into the play.
+# The orchestrator owns SSH wiring via the inventory, so adapters strip
+# them post-call to keep fragments transport-agnostic.
+_SSH_VAR_KEYS = frozenset(
+    {
+        "ansible_host",
+        "ansible_port",
+        "ansible_user",
+        "ansible_ssh_private_key_file",
+        "ansible_ssh_common_args",
+        "ansible_ssh_extra_args",
+        "ansible_connection",
+    }
+)
+
+# Throwaway value passed to generators that require a path. The
+# orchestrator supplies the real key path via the inventory; adapters
+# discard whatever the generator did with this stub.
+_UNUSED_KEY_PATH = "/dev/null"
+
 CANONICAL_ORDER: list[str] = [
     "packages",
     "resolver",
@@ -107,3 +129,48 @@ def compose_playbook(
         composed.extend(plays)
 
     return yaml.dump(composed, default_flow_style=False, sort_keys=False)
+
+
+# ---------------------------------------------------------------------------
+# Module adapters: wrap per-module generators into PlaybookFragment.
+#
+# Each adapter calls the underlying generator with HOSTS_SENTINEL as
+# host_ip and a throwaway SSH key path, then normalizes the result into
+# a list of plays, strips any SSH-bearing play vars, and rewrites every
+# play's ``hosts`` to HOSTS_SENTINEL. The orchestrator owns inventory
+# and the real SSH key — the generator's stub call exists only to
+# produce play structure.
+# ---------------------------------------------------------------------------
+
+
+def _strip_ssh_vars(plays: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove SSH-related keys from each play's ``vars`` dict, in place.
+
+    No-op for plays without ``vars`` or with ``vars`` that contain no
+    SSH keys. If ``vars`` becomes empty after stripping, the key is
+    removed from the play entirely.
+    """
+    for play in plays:
+        play_vars = play.get("vars")
+        if not isinstance(play_vars, dict):
+            continue
+        for key in list(play_vars.keys()):
+            if key in _SSH_VAR_KEYS:
+                del play_vars[key]
+        if not play_vars:
+            play.pop("vars", None)
+    return plays
+
+
+def fragment_cron(cron_jobs: list) -> PlaybookFragment:
+    """Build the ``cron`` fragment by wrapping ``generate_cron_playbook``."""
+    play = generate_cron_playbook(
+        host_ip=HOSTS_SENTINEL,
+        cron_jobs=cron_jobs,
+        ssh_key_path=_UNUSED_KEY_PATH,
+    )
+    plays = [play]
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="cron", plays=plays)
