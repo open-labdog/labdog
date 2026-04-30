@@ -18,6 +18,7 @@ from app.tasks.playbook_composer import (
     _inject_tags,
     compose_playbook,
     fragment_cron,
+    fragment_linux_users,
 )
 
 
@@ -237,3 +238,54 @@ def test_fragment_cron_with_empty_jobs():
     assert fragment.plays[0]["tasks"] == []
     out = yaml.safe_load(compose_playbook([fragment]))
     assert out[0]["hosts"] == HOSTS_SENTINEL
+
+
+# ---------------------------------------------------------------------------
+# fragment_linux_users
+# ---------------------------------------------------------------------------
+
+
+def _user(username: str = "alice", **overrides) -> dict:
+    base = {
+        "username": username,
+        "state": "present",
+        "shell": "/bin/bash",
+        "authorized_keys": [],
+        "sudo_rule": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def _group(groupname: str = "devs", **overrides) -> dict:
+    base = {"groupname": groupname, "state": "present"}
+    base.update(overrides)
+    return base
+
+
+def test_fragment_linux_users_returns_valid_fragment():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[_group("devs")])
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "linux-users"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_linux_users_emits_user_and_group_modules():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[_group("devs")])
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.user" in t for t in tasks)
+    assert any("ansible.builtin.group" in t for t in tasks)
+
+
+def test_fragment_linux_users_composes_through_compose_playbook():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[])
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="db01"))
+    assert out[0]["hosts"] == "db01"
+    assert all("linux-users" in t["tags"] for t in out[0]["tasks"])
+
+
+def test_fragment_linux_users_with_empty_inputs():
+    fragment = fragment_linux_users(users=[], groups=[])
+    assert fragment.module == "linux-users"
+    assert fragment.plays[0]["tasks"] == []
