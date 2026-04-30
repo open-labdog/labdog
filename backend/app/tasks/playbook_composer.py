@@ -21,6 +21,7 @@ from app.cron.generator import generate_cron_playbook
 from app.hosts_mgmt.generator import generate_hosts_file_playbook
 from app.packages.generator import generate_package_playbook
 from app.resolver.generator import generate_resolver_playbook
+from app.services.generator import generate_service_playbook
 from app.user_mgmt.generator import generate_user_playbook
 
 # SSH-related play.vars keys that some generators bake into the play.
@@ -218,6 +219,28 @@ def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFr
     for p in plays:
         p["hosts"] = HOSTS_SENTINEL
     return PlaybookFragment(module="hosts-file", plays=plays)
+
+
+def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragment:
+    """Build the ``services`` fragment by wrapping ``generate_service_playbook``.
+
+    The services generator returns a ``(playbook_yaml, inventory_json)``
+    tuple; the adapter parses the YAML, discards the inventory string,
+    and keeps the play list. The play's non-SSH ``vars``
+    (``allowed_unit_paths`` / ``allowed_override_paths`` used by the
+    cleanup tasks) are preserved.
+    """
+    playbook_yaml, _inventory = generate_service_playbook(
+        host_ip=HOSTS_SENTINEL,
+        ssh_port=ssh_port,
+        services=services,
+        ssh_key_path=_UNUSED_KEY_PATH,
+    )
+    plays = list(yaml.safe_load(playbook_yaml))
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="services", plays=plays)
 
 
 def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFragment:
