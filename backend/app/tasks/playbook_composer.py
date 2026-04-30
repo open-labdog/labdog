@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 
 from app.cron.generator import generate_cron_playbook
+from app.hosts_mgmt.generator import generate_hosts_file_playbook
 from app.packages.generator import generate_package_playbook
 from app.resolver.generator import generate_resolver_playbook
 from app.user_mgmt.generator import generate_user_playbook
@@ -197,6 +198,26 @@ def fragment_packages(packages: list[dict], repos: list[dict]) -> PlaybookFragme
     for p in plays:
         p["hosts"] = HOSTS_SENTINEL
     return PlaybookFragment(module="packages", plays=plays)
+
+
+def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFragment:
+    """Build the ``hosts-file`` fragment by wrapping ``generate_hosts_file_playbook``.
+
+    The hosts_mgmt generator returns a ``(playbook_yaml, inventory_json)``
+    tuple; the adapter parses the YAML, discards the inventory string
+    (the orchestrator owns inventory), and keeps the play list.
+    """
+    playbook_yaml, _inventory = generate_hosts_file_playbook(
+        host_ip=HOSTS_SENTINEL,
+        ssh_port=ssh_port,
+        rendered_content=rendered_content,
+        ssh_key_path=_UNUSED_KEY_PATH,
+    )
+    plays = list(yaml.safe_load(playbook_yaml))
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="hosts-file", plays=plays)
 
 
 def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFragment:

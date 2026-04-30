@@ -18,6 +18,7 @@ from app.tasks.playbook_composer import (
     _inject_tags,
     compose_playbook,
     fragment_cron,
+    fragment_hosts_file,
     fragment_linux_users,
     fragment_packages,
     fragment_resolver,
@@ -378,3 +379,32 @@ def test_fragment_resolver_composes_through_compose_playbook():
     out = yaml.safe_load(compose_playbook([fragment], hosts_alias="dns01"))
     assert out[0]["hosts"] == "dns01"
     assert all("resolver" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_hosts_file
+# ---------------------------------------------------------------------------
+
+
+_HOSTS_CONTENT = "127.0.0.1 localhost\n10.0.0.1 db01\n"
+
+
+def test_fragment_hosts_file_returns_valid_fragment():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "hosts-file"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_hosts_file_emits_copy_to_etc_hosts():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    tasks = fragment.plays[0]["tasks"]
+    assert any(t.get("ansible.builtin.copy", {}).get("dest") == "/etc/hosts" for t in tasks)
+
+
+def test_fragment_hosts_file_composes_through_compose_playbook():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="lab01"))
+    assert out[0]["hosts"] == "lab01"
+    assert all("hosts-file" in t["tags"] for t in out[0]["tasks"])
