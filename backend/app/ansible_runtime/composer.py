@@ -28,7 +28,10 @@ from app.user_mgmt.generator import generate_user_playbook
 
 # SSH-related play.vars keys that some generators bake into the play.
 # The orchestrator owns SSH wiring via the inventory, so adapters strip
-# them post-call to keep fragments transport-agnostic.
+# them post-call to keep fragments transport-agnostic. As of today
+# (option-c entry), no generator actually populates play.vars with
+# these keys — SSH wiring lives entirely in the inventory — so this
+# strip is a contract guard against future regressions.
 _SSH_VAR_KEYS = frozenset(
     {
         "ansible_host",
@@ -41,9 +44,13 @@ _SSH_VAR_KEYS = frozenset(
     }
 )
 
-# Throwaway value passed to generators that require a path. The
+# Throwaway value passed to generators that require a key path. The
 # orchestrator supplies the real key path via the inventory; adapters
-# discard whatever the generator did with this stub.
+# discard whatever the generator did with this stub. Today the
+# generators only bake the path into inventory output that the adapter
+# discards, so /dev/null is safe; if a future generator opens the file,
+# it will see empty content — switch this to a tempfile if that ever
+# becomes an issue.
 _UNUSED_KEY_PATH = "/dev/null"
 
 CANONICAL_ORDER: list[str] = [
@@ -68,6 +75,10 @@ class PlaybookFragment:
     field should be set to ``HOSTS_SENTINEL`` (``"target"``);
     ``compose_playbook`` rewrites it to the caller-supplied
     ``hosts_alias``.
+
+    ``frozen=True`` only freezes attribute reassignment; the ``plays``
+    list and its dicts are themselves mutable. Don't share fragments
+    across threads or rely on input immutability after passing them in.
     """
 
     module: str
@@ -142,45 +153,41 @@ def compose_playbook(
 # Module adapters: wrap per-module generators into PlaybookFragment.
 #
 # Each adapter calls the underlying generator with HOSTS_SENTINEL as
-# host_ip and a throwaway SSH key path, then normalizes the result into
-# a list of plays, strips any SSH-bearing play vars, and rewrites every
-# play's ``hosts`` to HOSTS_SENTINEL. The orchestrator owns inventory
+# host_ip and a throwaway SSH key path, normalizes the result into a
+# list of plays, then hands off to ``_finalize`` which strips SSH vars
+# and pins ``hosts`` to the sentinel. The orchestrator owns inventory
 # and the real SSH key — the generator's stub call exists only to
 # produce play structure.
 # ---------------------------------------------------------------------------
 
 
-def _strip_ssh_vars(plays: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Remove SSH-related keys from each play's ``vars`` dict, in place.
+def _finalize(plays: list[dict[str, Any]], module: str) -> PlaybookFragment:
+    """Strip SSH vars from each play, pin ``hosts`` to the sentinel, return the fragment.
 
-    No-op for plays without ``vars`` or with ``vars`` that contain no
-    SSH keys. If ``vars`` becomes empty after stripping, the key is
-    removed from the play entirely.
+    Mutates ``plays`` and its inner dicts in place. Adapters always
+    pass freshly-built lists, so caller-visible mutation is not an
+    issue.
     """
     for play in plays:
         play_vars = play.get("vars")
-        if not isinstance(play_vars, dict):
-            continue
-        for key in list(play_vars.keys()):
-            if key in _SSH_VAR_KEYS:
-                del play_vars[key]
-        if not play_vars:
-            play.pop("vars", None)
-    return plays
+        if isinstance(play_vars, dict):
+            for key in list(play_vars.keys()):
+                if key in _SSH_VAR_KEYS:
+                    del play_vars[key]
+            if not play_vars:
+                play.pop("vars", None)
+        play["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module=module, plays=plays)
 
 
-def fragment_cron(cron_jobs: list) -> PlaybookFragment:
+def fragment_cron(cron_jobs: list[dict]) -> PlaybookFragment:
     """Build the ``cron`` fragment by wrapping ``generate_cron_playbook``."""
     play = generate_cron_playbook(
         host_ip=HOSTS_SENTINEL,
         cron_jobs=cron_jobs,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = [play]
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="cron", plays=plays)
+    return _finalize([play], "cron")
 
 
 def fragment_packages(packages: list[dict], repos: list[dict]) -> PlaybookFragment:
@@ -196,11 +203,7 @@ def fragment_packages(packages: list[dict], repos: list[dict]) -> PlaybookFragme
         repos=repos,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = list(result["playbook"])
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="packages", plays=plays)
+    return _finalize(list(result["playbook"]), "packages")
 
 
 def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFragment:
@@ -216,11 +219,7 @@ def fragment_hosts_file(rendered_content: str, ssh_port: int = 22) -> PlaybookFr
         rendered_content=rendered_content,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = list(yaml.safe_load(playbook_yaml))
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="hosts-file", plays=plays)
+    return _finalize(yaml.safe_load(playbook_yaml), "hosts-file")
 
 
 def fragment_firewall(
@@ -230,12 +229,11 @@ def fragment_firewall(
 ) -> PlaybookFragment:
     """Build the ``firewall`` fragment by wrapping ``generate_firewall_playbook``.
 
-    The firewall generator dispatches on ``backend`` ("nftables" or
-    "iptables") and returns a YAML playbook string. The adapter parses
-    the YAML, runs the SSH-var strip, and rewrites hosts to
-    HOSTS_SENTINEL (the firewall plays already use ``"target"`` —
-    which equals HOSTS_SENTINEL — but we rewrite unconditionally to
-    keep the contract uniform across adapters).
+    The firewall generator dispatches on ``backend`` (``"nftables"`` or
+    ``"iptables"``) and returns a YAML playbook string. The firewall
+    plays already use ``"target"`` (== ``HOSTS_SENTINEL``) but
+    ``_finalize`` rewrites unconditionally to keep the contract
+    uniform across adapters.
     """
     playbook_yaml = generate_firewall_playbook(
         backend=backend,
@@ -244,11 +242,7 @@ def fragment_firewall(
         ssh_key_path=_UNUSED_KEY_PATH,
         policies=policies,
     )
-    plays = list(yaml.safe_load(playbook_yaml))
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="firewall", plays=plays)
+    return _finalize(yaml.safe_load(playbook_yaml), "firewall")
 
 
 def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragment:
@@ -258,7 +252,7 @@ def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragm
     tuple; the adapter parses the YAML, discards the inventory string,
     and keeps the play list. The play's non-SSH ``vars``
     (``allowed_unit_paths`` / ``allowed_override_paths`` used by the
-    cleanup tasks) are preserved.
+    cleanup tasks) are preserved by the SSH-key allowlist.
     """
     playbook_yaml, _inventory = generate_service_playbook(
         host_ip=HOSTS_SENTINEL,
@@ -266,11 +260,7 @@ def fragment_services(services: list[dict], ssh_port: int = 22) -> PlaybookFragm
         services=services,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = list(yaml.safe_load(playbook_yaml))
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="services", plays=plays)
+    return _finalize(yaml.safe_load(playbook_yaml), "services")
 
 
 def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFragment:
@@ -285,14 +275,10 @@ def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFrag
         rendered_content=rendered_content,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = list(result["playbook"])
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="resolver", plays=plays)
+    return _finalize(list(result["playbook"]), "resolver")
 
 
-def fragment_linux_users(users: list, groups: list) -> PlaybookFragment:
+def fragment_linux_users(users: list[dict], groups: list[dict]) -> PlaybookFragment:
     """Build the ``linux-users`` fragment by wrapping ``generate_user_playbook``."""
     play = generate_user_playbook(
         host_ip=HOSTS_SENTINEL,
@@ -300,8 +286,4 @@ def fragment_linux_users(users: list, groups: list) -> PlaybookFragment:
         groups=groups,
         ssh_key_path=_UNUSED_KEY_PATH,
     )
-    plays = [play]
-    plays = _strip_ssh_vars(plays)
-    for p in plays:
-        p["hosts"] = HOSTS_SENTINEL
-    return PlaybookFragment(module="linux-users", plays=plays)
+    return _finalize([play], "linux-users")
