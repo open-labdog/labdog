@@ -20,6 +20,7 @@ from app.tasks.playbook_composer import (
     fragment_cron,
     fragment_linux_users,
     fragment_packages,
+    fragment_resolver,
 )
 
 
@@ -331,3 +332,49 @@ def test_fragment_packages_composes_through_compose_playbook():
     out = yaml.safe_load(compose_playbook([fragment], hosts_alias="web02"))
     assert out[0]["hosts"] == "web02"
     assert all("packages" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_resolver
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_resolver_returns_valid_fragment():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 1.1.1.1\n",
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "resolver"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_resolver_emits_cloud_init_disable_and_resolv_tasks():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 8.8.8.8\n",
+    )
+    tasks = fragment.plays[0]["tasks"]
+    # cloud-init disable + resolv.conf write should both be present
+    assert any("cloud-init" in (t.get("name") or "").lower() for t in tasks)
+    assert any("/etc/resolv.conf" in str(t) for t in tasks)
+
+
+def test_fragment_resolver_systemd_resolved_variant():
+    fragment = fragment_resolver(
+        resolver_type="systemd_resolved",
+        rendered_content="[Resolve]\nDNS=1.1.1.1\n",
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("/etc/systemd/resolved.conf" in str(t) for t in tasks)
+
+
+def test_fragment_resolver_composes_through_compose_playbook():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 9.9.9.9\n",
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="dns01"))
+    assert out[0]["hosts"] == "dns01"
+    assert all("resolver" in t["tags"] for t in out[0]["tasks"])
