@@ -1,7 +1,8 @@
 """Unit tests for the playbook composer.
 
-Pure in-memory tests — no DB, no Celery, no real generators. Fragments
-are constructed by hand to exercise the composer's contract.
+Pure in-memory tests — no DB, no Celery. Fragments without real
+generator backing are constructed by hand to exercise the composer's
+contract; adapter tests call the real generators.
 """
 
 from __future__ import annotations
@@ -11,8 +12,7 @@ import copy
 import pytest
 import yaml
 
-from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.tasks.playbook_composer import (
+from app.ansible_runtime.composer import (
     CANONICAL_ORDER,
     HOSTS_SENTINEL,
     PlaybookFragment,
@@ -26,6 +26,7 @@ from app.tasks.playbook_composer import (
     fragment_resolver,
     fragment_services,
 )
+from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 
 def _frag(module: str, task_name: str = "stub") -> PlaybookFragment:
