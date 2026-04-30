@@ -19,6 +19,7 @@ import yaml
 
 from app.cron.generator import generate_cron_playbook
 from app.packages.generator import generate_package_playbook
+from app.resolver.generator import generate_resolver_playbook
 from app.user_mgmt.generator import generate_user_playbook
 
 # SSH-related play.vars keys that some generators bake into the play.
@@ -196,6 +197,25 @@ def fragment_packages(packages: list[dict], repos: list[dict]) -> PlaybookFragme
     for p in plays:
         p["hosts"] = HOSTS_SENTINEL
     return PlaybookFragment(module="packages", plays=plays)
+
+
+def fragment_resolver(resolver_type: str, rendered_content: str) -> PlaybookFragment:
+    """Build the ``resolver`` fragment by wrapping ``generate_resolver_playbook``.
+
+    The resolver generator returns a ``{"playbook": [...], "inventory": ...}``
+    dict; the adapter discards the inventory and keeps the play list.
+    """
+    result = generate_resolver_playbook(
+        host_ip=HOSTS_SENTINEL,
+        resolver_type=resolver_type,
+        rendered_content=rendered_content,
+        ssh_key_path=_UNUSED_KEY_PATH,
+    )
+    plays = list(result["playbook"])
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="resolver", plays=plays)
 
 
 def fragment_linux_users(users: list, groups: list) -> PlaybookFragment:
