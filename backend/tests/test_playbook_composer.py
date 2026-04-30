@@ -22,6 +22,7 @@ from app.tasks.playbook_composer import (
     fragment_linux_users,
     fragment_packages,
     fragment_resolver,
+    fragment_services,
 )
 
 
@@ -408,3 +409,53 @@ def test_fragment_hosts_file_composes_through_compose_playbook():
     out = yaml.safe_load(compose_playbook([fragment], hosts_alias="lab01"))
     assert out[0]["hosts"] == "lab01"
     assert all("hosts-file" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_services
+# ---------------------------------------------------------------------------
+
+
+def _svc(name: str = "nginx", **overrides) -> dict:
+    base = {
+        "service_name": name,
+        "state": "running",
+        "enabled": True,
+        "unit_content": None,
+        "deploy_mode": "override",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_fragment_services_returns_valid_fragment():
+    fragment = fragment_services(services=[_svc("nginx")])
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "services"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_services_emits_service_management_tasks():
+    fragment = fragment_services(services=[_svc("nginx")])
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.service" in t for t in tasks)
+
+
+def test_fragment_services_preserves_non_ssh_play_vars():
+    # The services generator sets play.vars.allowed_unit_paths and
+    # allowed_override_paths — these are referenced by cleanup tasks
+    # via Jinja and must survive the SSH-var strip.
+    fragment = fragment_services(
+        services=[_svc("nginx", unit_content="[Service]\n", deploy_mode="full")]
+    )
+    play_vars = fragment.plays[0].get("vars", {})
+    assert "allowed_unit_paths" in play_vars
+    assert "allowed_override_paths" in play_vars
+
+
+def test_fragment_services_composes_through_compose_playbook():
+    fragment = fragment_services(services=[_svc("sshd")])
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="bastion"))
+    assert out[0]["hosts"] == "bastion"
+    assert all("services" in t["tags"] for t in out[0]["tasks"])
