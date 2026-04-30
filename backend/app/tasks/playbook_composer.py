@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 
 from app.cron.generator import generate_cron_playbook
+from app.packages.generator import generate_package_playbook
 from app.user_mgmt.generator import generate_user_playbook
 
 # SSH-related play.vars keys that some generators bake into the play.
@@ -175,6 +176,26 @@ def fragment_cron(cron_jobs: list) -> PlaybookFragment:
     for p in plays:
         p["hosts"] = HOSTS_SENTINEL
     return PlaybookFragment(module="cron", plays=plays)
+
+
+def fragment_packages(packages: list[dict], repos: list[dict]) -> PlaybookFragment:
+    """Build the ``packages`` fragment by wrapping ``generate_package_playbook``.
+
+    The package generator returns a ``{"playbook": [...], "inventory": ...}``
+    dict; the adapter discards the inventory (the orchestrator owns
+    inventory) and keeps the play list.
+    """
+    result = generate_package_playbook(
+        host_ip=HOSTS_SENTINEL,
+        packages=packages,
+        repos=repos,
+        ssh_key_path=_UNUSED_KEY_PATH,
+    )
+    plays = list(result["playbook"])
+    plays = _strip_ssh_vars(plays)
+    for p in plays:
+        p["hosts"] = HOSTS_SENTINEL
+    return PlaybookFragment(module="packages", plays=plays)
 
 
 def fragment_linux_users(users: list, groups: list) -> PlaybookFragment:
