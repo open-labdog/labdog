@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -287,6 +287,127 @@ async def trigger_group_sync(
     for job_id, hid in pending:
         run_sync_playbook.delay(job_id=job_id, host_id=hid)
     return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
+
+
+class BulkSyncRequest(BaseModel):
+    module_filter: list[str] | None = None
+
+
+class BulkSyncResponse(BaseModel):
+    job_id: int
+    status: str
+    module_filter: list[str] | None
+
+
+# Canonical module names accepted by the orchestrator's module_filter.
+# Kept in sync with ``app.ansible_runtime.composer.CANONICAL_ORDER``.
+_BULK_ALLOWED_MODULES: frozenset[str] = frozenset(
+    {
+        "firewall",
+        "services",
+        "packages",
+        "hosts-file",
+        "cron",
+        "linux-users",
+        "resolver",
+    }
+)
+
+
+@router.post("/hosts/{host_id}/bulk", response_model=BulkSyncResponse)
+async def trigger_bulk_sync(
+    host_id: int,
+    body: BulkSyncRequest,
+    response: Response,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a coalesced multi-module sync for one host.
+
+    ``body.module_filter`` is either ``None`` (sync every supported
+    module) or a non-empty list of canonical module names. The task is
+    dispatched as a single ``run_host_sync`` Celery job tagged with
+    ``module_type="bulk"``.
+
+    Idempotency: when a bulk SyncJob is already pending or running for
+    the host, the existing job's ID is returned with HTTP 200 — the
+    partial unique index ``uq_sync_job_active`` guarantees no duplicate
+    ever lands in the DB. Fresh inserts return HTTP 201.
+    """
+    # Validate module_filter shape early so a bad request never hits the
+    # DB or queue.
+    module_filter = body.module_filter
+    if module_filter is not None:
+        if len(module_filter) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="module_filter must be null or non-empty",
+            )
+        unknown = [m for m in module_filter if m not in _BULK_ALLOWED_MODULES]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown module(s) in module_filter: {unknown}",
+            )
+
+    # Verify host exists.
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    job = SyncJob(
+        host_id=host_id,
+        status="pending",
+        module_type="bulk",
+        triggered_by_user_id=user.id,
+    )
+    db.add(job)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Partial unique index ``uq_sync_job_active`` tripped — a bulk
+        # job for this host is already pending/running. Return the
+        # in-flight job's ID with HTTP 200 (idempotent re-dispatch).
+        await db.rollback()
+        existing_result = await db.execute(
+            select(SyncJob).where(
+                SyncJob.host_id == host_id,
+                SyncJob.module_type == "bulk",
+                SyncJob.status.in_(["pending", "running"]),
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is None:
+            # Race: the conflicting job finished between the failed
+            # commit and our re-query. Surface a 409 so the caller
+            # retries cleanly.
+            raise HTTPException(
+                status_code=409,
+                detail="Bulk sync conflict; please retry",
+            ) from None
+        response.status_code = 200
+        return BulkSyncResponse(
+            job_id=existing.id,
+            status=existing.status.value
+            if hasattr(existing.status, "value")
+            else str(existing.status),
+            module_filter=module_filter,
+        )
+
+    await db.refresh(job)
+
+    # Fresh insert — dispatch the orchestrator.
+    from app.tasks.host_sync_orchestrator import run_host_sync
+
+    run_host_sync.delay(job_id=job.id, host_id=host_id, module_filter=module_filter)
+
+    response.status_code = 201
+    return BulkSyncResponse(
+        job_id=job.id,
+        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        module_filter=module_filter,
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
