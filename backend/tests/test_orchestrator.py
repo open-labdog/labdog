@@ -366,3 +366,48 @@ async def test_orchestrate_unreachable_event_marks_module_error(db: AsyncSession
     )
 
     assert outcomes == {"firewall": "error"}
+
+
+async def test_orchestrate_resolver_only_no_config_short_circuits(db: AsyncSession, tmp_path):
+    """BUG-40: resolver-only filter + no resolver config → no runner call.
+
+    The resolver block is the only one with a "skip if no config" path.
+    When it skips and is the sole requested module, ``fragments`` is
+    empty. Calling ``compose_playbook([])`` would yield an empty play
+    list that ansible-runner rejects with a runtime error. The fix
+    short-circuits: outcomes report ``no_tasks`` for every requested
+    module, the runner is never invoked, and the playbook/inventory
+    strings come back empty.
+    """
+    ssh_key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=ssh_key.id)
+    from app.models.host import FirewallBackend
+
+    host.firewall_backend = FirewallBackend.nftables
+    await db.flush()
+    host_id = host.id
+
+    ssh_key_path = str(tmp_path / "id_ed25519")
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir, exist_ok=True)
+
+    runner_calls: list[dict[str, Any]] = []
+
+    def _runner_must_not_be_called(**kwargs: Any) -> _FakeRunner:
+        runner_calls.append(kwargs)
+        raise AssertionError("BUG-40: runner invoked despite empty fragment list")
+
+    outcomes, playbook_yaml, inventory_json = await orchestrate_host_sync(
+        host_id,
+        ["resolver"],
+        db,
+        decrypt_key_fn=_make_decrypt_fn(b"FAKE PRIVATE KEY"),
+        run_ansible_fn=_runner_must_not_be_called,
+        ssh_key_path=ssh_key_path,
+        private_data_dir=private_data_dir,
+    )
+
+    assert outcomes == {"resolver": "no_tasks"}, outcomes
+    assert playbook_yaml == ""
+    assert inventory_json == ""
+    assert runner_calls == []
