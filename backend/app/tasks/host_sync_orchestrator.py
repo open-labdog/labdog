@@ -520,12 +520,91 @@ async def _async_run(
     # committing the gate check and the ``running`` flip in the same
     # transaction, the second worker — which blocks on the advisory
     # lock — observes the first worker's commit and defers. (BUG-38.)
-    async with task_session() as db:
-        claimed = await _claim_or_defer(db, job_id, host_id)
-        if claimed:
-            modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
-                db, job_id, host_id, module_filter
+    # If ``_prepare_run`` raises *after* its internal commit (the SyncJob
+    # is already visible as ``running`` to other workers, but
+    # orchestration never started), we must run a compensating finalise
+    # so the job ends up ``failed`` instead of stuck ``running`` forever.
+    # See BUG-39. We detect post-commit raise by re-reading the SyncJob:
+    # if its status is ``running`` we know _prepare_run's commit
+    # succeeded but execution never made it to the orchestrator phase.
+    claimed = False
+    modules_to_orchestrate: list[str] = []
+    seeded_modules: list[str] = []
+    triggered_by_user_id: int | None = None
+
+    try:
+        async with task_session() as db:
+            claimed = await _claim_or_defer(db, job_id, host_id)
+            if claimed:
+                modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
+                    db, job_id, host_id, module_filter
+                )
+    except Exception as exc:
+        # Was the post-commit window reached? Re-read the row.
+        from app.models.sync_job import SyncJob as _SyncJob
+
+        post_commit = False
+        try:
+            async with task_session() as probe:
+                row = (
+                    await probe.execute(select(_SyncJob).where(_SyncJob.id == job_id))
+                ).scalar_one_or_none()
+                if (
+                    row is not None
+                    and str(row.status.value if hasattr(row.status, "value") else row.status)
+                    == "running"
+                ):
+                    post_commit = True
+        except Exception:  # pragma: no cover - probe failure shouldn't mask root cause
+            logger.exception("post-commit probe failed for job_id=%s", job_id)
+
+        if post_commit:
+            logger.exception(
+                "_prepare_run raised post-commit for job_id=%s host_id=%s; compensating",
+                job_id,
+                host_id,
             )
+            error_message = "prepare_run raised after commit"
+            firewall_pre_error = (
+                "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
+            )
+            # If _prepare_run raised before populating seeded_modules,
+            # fall back to the module set implied by the caller filter
+            # so audit + status rows still describe the requested run.
+            seeded_for_compensation = seeded_modules or _resolve_modules(module_filter)
+            module_outcomes_err = {
+                m: "error"
+                for m in seeded_for_compensation
+                if not (m == "firewall" and firewall_pre_error)
+            }
+            try:
+                async with task_session() as db:
+                    await _finalise_run(
+                        db,
+                        job_id=job_id,
+                        host_id=host_id,
+                        module_filter=module_filter,
+                        seeded_modules=seeded_for_compensation,
+                        module_outcomes=module_outcomes_err,
+                        triggered_by_user_id=triggered_by_user_id,
+                        firewall_pre_error=firewall_pre_error,
+                        error_message=error_message,
+                    )
+            except Exception:
+                logger.exception(
+                    "compensating finalise failed for job_id=%s host_id=%s", job_id, host_id
+                )
+            try:
+                async with task_session() as db:
+                    await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
+            except Exception:
+                logger.exception(
+                    "dispatch-next-pending failed in BUG-39 compensation path "
+                    "for host_id=%s after job_id=%s",
+                    host_id,
+                    job_id,
+                )
+        raise exc
 
     if not claimed:
         logger.info(

@@ -42,33 +42,6 @@ when filing a new entry.
 
 ### High
 
-- [ ] **BUG-39** `backend/app/tasks/host_sync_orchestrator.py:520` — `_prepare_run` failure after claim leaves SyncJob permanently stuck in "running" and queue blocked
-
-  If `_prepare_run` raises an exception after it has already committed
-  `job.status = "running"` to the database — for example, if the DB commit
-  at line 360 succeeds but a subsequent query in a retry path fails, or
-  if the exception is raised between the commit and the return — the outer
-  `try` block in `_async_run` (line 520) has no inner `except` covering Phase 1.
-  The `finally` at line 610 still executes `_dispatch_next_pending_for_host`,
-  which scans for pending jobs and dispatches any successor; that successor will
-  immediately defer because it sees the current job as "running" (it was
-  committed as such and `_finalise_run` was never called to flip it to
-  "success"/"failed"). The queue is then stuck: the job sits "running" forever
-  with no worker owning it, and every future task for this host defers
-  indefinitely. This is a distinct failure mode from the known crash-recovery
-  hole (worker-killed-mid-task) because it arises from a normal exception in
-  Python code with the worker still alive.
-  Root cause: `_prepare_run`'s commit is outside the `try/except` that
-  synthesises a finalise call on orchestrator failure. There is no compensating
-  path that calls `_finalise_run` (or a minimal status-flip to "failed") when
-  `_prepare_run` itself raises post-commit.
-  Severity: High.
-  Trigger: any transient DB error or unexpected exception inside `_prepare_run`
-  that occurs after its commit at line 360 — in the current code the commit is
-  the last operation so this window is near-zero, but the absence of a safety
-  net means any future edit to `_prepare_run` that adds post-commit logic
-  creates an immediate stuck-queue failure.
-
 - [ ] **BUG-40** `backend/app/sync/orchestrator.py:247` — `compose_playbook` called with empty fragment list when resolver is the only requested module and no resolver config exists
 
   When `module_filter=["resolver"]` is passed (e.g., from the per-tab
