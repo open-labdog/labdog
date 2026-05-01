@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-41`, `SEC-02`,
+ID counter as of last housekeeping pass: `BUG-41`, `SEC-06`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -123,6 +123,43 @@ when filing a new entry.
 
 ### Medium
 
+- [ ] **SEC-05** `backend/app/api/sync.py:317` — bulk sync trigger event is not audited at the API layer
+
+  `POST /api/sync/hosts/{host_id}/bulk` creates a `SyncJob` row with
+  `triggered_by_user_id` populated and dispatches a Celery task, but
+  the API handler does not emit an `AuditLog` row at trigger time. The
+  orchestrator's Celery wrapper does emit a single audit row per job
+  (`sync_completed` or `sync_failed`) once the run finishes — but that
+  is *after* the orchestrator runs, not when the operator pressed the
+  button. Consequences: (a) if the worker queue is saturated or down,
+  a triggered bulk sync may sit `pending` for an extended period with
+  no audit trail showing it was ever requested; (b) an operator who
+  triggers and then cancels (or the SyncJob is never picked up due to
+  a worker outage) leaves no audit record at all of the attempt; (c) a
+  forensic trace of "who clicked sync, and when" requires joining
+  `SyncJob.created_at` + `triggered_by_user_id` against `AuditLog`,
+  rather than reading `AuditLog` alone.
+  Note: this is consistent with the pre-existing
+  `POST /api/sync/hosts/{id}/sync` and `POST /api/sync/groups/{id}/sync`
+  handlers in the same module, neither of which audit at trigger time
+  either. Not a regression — but the bulk endpoint is a higher-impact
+  operation (touches up to seven modules in one shot) so the absence
+  of trigger-time audit is more notable here than for the per-tab
+  endpoints.
+  Severity: Medium. Single-tenant deployment limits the blast radius;
+  detection-of-misuse is the main concern.
+  Trigger: any caller invoking the bulk endpoint. To verify, watch
+  `AuditLog` while issuing a bulk POST — no row appears until the
+  Celery task finalises.
+  Design tradeoff (why not fixed inline): an audit row for the
+  trigger event needs a payload shape that the team should agree on
+  (action name `bulk_sync_triggered`? included `module_filter`? the
+  resulting job ID, which would require auditing after `db.commit()`?
+  what about the idempotent-200 path — audit the duplicate request,
+  or only the original?). All three existing trigger endpoints in
+  `app/api/sync.py` would benefit from the same treatment, so the fix
+  is best done as a coordinated pass rather than a one-off here.
+
 - [ ] **BUG-41** `backend/app/api/sync.py:395` — bulk endpoint idempotent 200 path returns caller's `module_filter`, not the existing job's
 
   When a second `POST /api/sync/hosts/{host_id}/bulk` arrives while a bulk
@@ -146,3 +183,47 @@ when filing a new entry.
   Trigger: two bulk sync requests for the same host_id with different
   `module_filter` values, where the second arrives before the first job
   completes.
+
+### Low
+
+- [ ] **SEC-06** `backend/app/sync/orchestrator.py:163` — orchestrator exception messages may leak the tmpfs SSH-key path back to the API caller
+
+  When the orchestrator raises (e.g., the SSH-key file open fails with
+  `OSError`, or any later step throws while `ssh_key_path` is part of
+  the exception's traceback), the Celery wrapper at
+  `app/tasks/host_sync_orchestrator.py:563` captures
+  `str(exc) or exc.__class__.__name__` and writes it verbatim to
+  `SyncJob.error_message` and every per-module
+  `HostModuleStatus.error_message`. Both columns are returned by
+  authenticated GET endpoints (`/api/sync/jobs/{id}` and the host
+  detail / module-status views) to any active user. The leaked path
+  takes the form `/dev/shm/labdog-sync-XXXXXXXX/id_ssh` — non-secret
+  on its own (the file is 0o600 inside a 0o700 directory the same
+  user already controls), but it discloses (a) the use of `/dev/shm`
+  for SSH key staging, (b) the `labdog-sync-` prefix convention, and
+  (c) the per-run random suffix. None of these are credentials, but
+  they are operational details that a hardened deployment would
+  prefer not to surface to non-superuser users via the jobs API.
+  Note: with the SEC-03 fix tightening the bulk endpoint to
+  superuser, the disclosure surface for *bulk-triggered* failures is
+  restricted to admins. The per-tab endpoints
+  (`/api/sync/hosts/{id}/sync` etc.) already required superuser
+  pre-audit, so the same applies there. Worth filing because
+  exception traces are a common path for accidental secret leakage,
+  and the next-tier failure mode (e.g., a `subprocess.CalledProcessError`
+  whose `cmd` attribute carries command-line arguments) could leak
+  more sensitive data without any code change here.
+  Severity: Low.
+  Trigger: any orchestrator failure during a bulk or per-tab sync —
+  e.g., decrypt with a rotated `encryption_key` (raises `InvalidTag`),
+  point ansible-runner at an unreachable host, or any I/O error on
+  the SSH-key write.
+  Design tradeoff (why not fixed inline): the right fix is a
+  redaction layer at the Celery wrapper (sanitise
+  `orchestrator_error` before persisting it), but the redaction
+  rules need design — strip paths under `/dev/shm`, strip anything
+  resembling a private-key PEM block, etc. A naïve "hide all error
+  details" would harm debuggability, which is the whole point of the
+  per-module `error_message` column. Best treated as a follow-up
+  pass that touches both the Celery wrapper and the Pydantic
+  response models that surface `error_message` to API consumers.
