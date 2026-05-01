@@ -386,13 +386,22 @@ async def trigger_bulk_sync(
                 status_code=409,
                 detail="Bulk sync conflict; please retry",
             ) from None
+        # BUG-41: the existing SyncJob row only stores ``module_type``
+        # (a single short string like ``"bulk"`` or ``"firewall"``), not
+        # the original ``module_filter`` list the first request supplied.
+        # We therefore can't honestly echo the in-flight job's filter on
+        # the idempotent-200 path. Returning the *current* request's
+        # filter would be a lie (the queued job won't honour it) so we
+        # surface ``None`` to make that ambiguity explicit. The
+        # design-correct follow-up is to add a JSONB ``module_filter``
+        # column to ``SyncJob`` so the original filter can round-trip.
         response.status_code = 200
         return BulkSyncResponse(
             job_id=existing.id,
             status=existing.status.value
             if hasattr(existing.status, "value")
             else str(existing.status),
-            module_filter=module_filter,
+            module_filter=None,
         )
 
     await db.refresh(job)
