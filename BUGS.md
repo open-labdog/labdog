@@ -40,35 +40,6 @@ when filing a new entry.
 
 ## Open
 
-### Critical
-
-- [ ] **BUG-38** `backend/app/tasks/host_sync_orchestrator.py:511` — `_claim_or_defer` TOCTOU: two workers can both proceed past the gate for the same host
-
-  Two Celery workers dispatched nearly simultaneously for the same host (e.g.,
-  two API calls in quick succession, or the dispatch-next-pending helper racing
-  with a direct API dispatch) both execute the Phase-0 SELECT in
-  `_claim_or_defer` before either has committed the "running" status write that
-  happens in Phase 1 (`_prepare_run`). The check is purely read-only with no
-  row lock, so both workers see "no other running job" and both set `claimed=True`.
-  Both proceed into `_prepare_run`, both flip the SyncJob to "running" and
-  commit, and then both invoke `orchestrate_host_sync` concurrently against the
-  same host. This violates the single-in-flight-per-host guarantee the queue
-  mechanism was designed to enforce, and results in two simultaneous Ansible
-  playbook executions against the target — potentially leaving the host in an
-  inconsistent state.
-  Root cause: the gate is a plain SELECT with no FOR UPDATE or advisory lock,
-  so the critical section between the check and the commit of the "running"
-  flip is completely unguarded. The docstring acknowledges the check is
-  "read-only" but incorrectly describes the race window as bounded by the
-  in-flight task's finally block; that bound only applies once a task is
-  *already* running, not to two tasks starting simultaneously.
-  Severity: Critical.
-  Trigger: two workers pick up tasks for the same host_id within the same
-  inter-commit window (typically a few milliseconds at default Postgres
-  isolation). More likely under load or when the dispatch-next-pending
-  helper fires a new task before the just-finished task's "running" flip
-  is visible.
-
 ### High
 
 - [ ] **BUG-39** `backend/app/tasks/host_sync_orchestrator.py:520` — `_prepare_run` failure after claim leaves SyncJob permanently stuck in "running" and queue blocked

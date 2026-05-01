@@ -908,6 +908,138 @@ async def test_dispatch_uses_correct_filter_for_bulk_type(db: AsyncSession, tmp_
     assert kwargs["module_filter"] is None  # "bulk" → all modules
 
 
+async def test_claim_or_defer_serializes_concurrent_workers(pg_url):
+    """BUG-38: two coroutines that both call ``_claim_or_defer`` + ``_prepare_run``
+    against the same host must produce exactly one claim winner, not two.
+
+    Without the advisory lock the gate is a plain SELECT and both
+    coroutines see "no other running job", both proceed to set
+    ``status=running``, both commit. With the lock acquired in the
+    same transaction as the ``running`` flip, the second worker blocks
+    until the first commits, then observes the running row and defers.
+    """
+    import asyncio
+    import uuid as _uuid
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from sqlalchemy import delete
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.crypto.encryption import encrypt_ssh_key
+    from app.crypto.key_management import get_master_key
+    from app.models.host import FirewallBackend, Host
+    from app.models.host_module_status import HostModuleStatus
+    from app.models.ssh_key import SSHKey
+    from app.models.sync_job import SyncJob
+    from app.tasks.host_sync_orchestrator import _claim_or_defer, _prepare_run
+
+    engine = create_async_engine(pg_url, pool_size=4, max_overflow=4)
+    SessionMaker = async_sessionmaker(engine, expire_on_commit=False)
+
+    # --- Set up host + ssh-key + two pending jobs in committed state ---
+    key = Ed25519PrivateKey.generate()
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+    pub = (
+        key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.OpenSSH,
+            format=serialization.PublicFormat.OpenSSH,
+        )
+        .decode()
+    )
+    encrypted = encrypt_ssh_key(pem, get_master_key())
+
+    async with SessionMaker() as setup:
+        ssh = SSHKey(
+            name=f"bug38-key-{_uuid.uuid4().hex[:8]}",
+            public_key=pub,
+            encrypted_private_key=encrypted,
+        )
+        setup.add(ssh)
+        await setup.flush()
+        host = Host(
+            hostname=f"bug38-host-{_uuid.uuid4().hex[:8]}.test",
+            ip_address="10.99.99.1",
+            ssh_key_id=ssh.id,
+            firewall_backend=FirewallBackend.nftables,
+        )
+        setup.add(host)
+        await setup.flush()
+        host_id = host.id
+        ssh_id = ssh.id
+
+        job_a = SyncJob(host_id=host_id, status="pending", module_type="firewall")
+        job_b = SyncJob(host_id=host_id, status="pending", module_type="service")
+        setup.add(job_a)
+        setup.add(job_b)
+        await setup.flush()
+        job_a_id = job_a.id
+        job_b_id = job_b.id
+        await setup.commit()
+
+    async def _worker(job_id: int) -> bool:
+        """Race one worker through gate + prepare on a fresh connection.
+        Returns True iff this worker claimed (i.e. its prepare ran).
+
+        The ``await asyncio.sleep(0.05)`` widens the race window: if the
+        gate-and-flip aren't serialized by an advisory lock, the second
+        worker reaches its commit *after* the first worker has flipped
+        ``status=running`` but before it commits, so the post-fix
+        behaviour (second worker observes lock held → waits → reads
+        running row → defers) only manifests under the lock.
+        """
+        async with SessionMaker() as db:
+            claimed = await _claim_or_defer(db, job_id, host_id)
+            # Yield control to widen the race window between the
+            # gate check and the status flip.
+            await asyncio.sleep(0.05)
+            if claimed:
+                await _prepare_run(db, job_id, host_id, module_filter=["firewall"])
+            return claimed
+
+    try:
+        results = await asyncio.gather(_worker(job_a_id), _worker(job_b_id))
+
+        # Exactly one worker claimed. The other observed the lock-held
+        # commit and saw the racer's running row → deferred.
+        assert sum(1 for r in results if r) == 1, (
+            f"BUG-38: both workers claimed concurrently — got {results}"
+        )
+
+        # Database state: exactly one job in ``running``.
+        async with SessionMaker() as check:
+            running = (
+                (
+                    await check.execute(
+                        select(SyncJob).where(
+                            SyncJob.host_id == host_id, SyncJob.status == "running"
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(running) == 1, (
+                f"expected exactly one running SyncJob, got {[(j.id, j.status) for j in running]}"
+            )
+    finally:
+        # Clean up — these rows live outside the test's savepoint.
+        async with SessionMaker() as cleanup:
+            await cleanup.execute(
+                delete(HostModuleStatus).where(HostModuleStatus.host_id == host_id)
+            )
+            await cleanup.execute(delete(SyncJob).where(SyncJob.host_id == host_id))
+            await cleanup.execute(delete(Host).where(Host.id == host_id))
+            await cleanup.execute(delete(SSHKey).where(SSHKey.id == ssh_id))
+            await cleanup.commit()
+        await engine.dispose()
+
+
 async def test_dispatch_uses_correct_filter_for_per_tab_type(db: AsyncSession, tmp_path):
     """A per-tab queued job is re-dispatched with its single-element canonical filter."""
     from datetime import UTC, datetime, timedelta

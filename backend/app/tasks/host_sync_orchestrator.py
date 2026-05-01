@@ -47,7 +47,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.db import task_session
 from app.sync.orchestrator import orchestrate_host_sync
@@ -205,14 +205,22 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     in-flight task will dispatch us via ``_dispatch_next_pending_for_host``
     when it finishes (success or failure).
 
-    The check is read-only: no commit, no row lock. Race window is
-    bounded by the in-flight task's ``finally`` reliably calling the
-    dispatch helper *after* its own status flip to ``success``/``failed``
-    has committed (so by the time the next task wakes up and runs
-    ``_claim_or_defer``, the previous job is no longer ``running``).
+    Concurrency: a Postgres transaction-level advisory lock keyed on
+    ``host_id`` is acquired at the very start of the transaction. This
+    serializes the check-and-flip across workers — two tasks dispatched
+    nearly simultaneously for the same host will run their gates one
+    after the other rather than racing through the read-only SELECT.
+    The lock auto-releases when the transaction commits or rolls back.
+    Different ``host_id`` values use different lock keys, so unrelated
+    hosts never block each other.
+
+    BUG-38: prior to the advisory-lock fix the SELECT was unguarded,
+    so two workers could both see "no other running job" and both
+    proceed past the gate concurrently for the same host.
     """
     from app.models.sync_job import JobStatus, SyncJob
 
+    await db.execute(text("SELECT pg_advisory_xact_lock(:host_id)"), {"host_id": host_id})
     other = await db.execute(
         select(SyncJob.id)
         .where(
@@ -503,12 +511,22 @@ async def _async_run(
     """
     from app.crypto import decrypt_ssh_key
 
-    # --- Phase 0: claim or defer -------------------------------------
-    # Single-flight gate. If another SyncJob is already running on this
-    # host, we leave our row pending and return immediately. The
-    # in-flight task will dispatch us when it commits its final state.
+    # --- Phase 0+1: claim-and-prepare under one advisory lock --------
+    # Single-flight gate combined with the pre-run write. The advisory
+    # lock taken inside ``_claim_or_defer`` only serializes peer workers
+    # for the duration of *its* transaction; if the status flip lived in
+    # a separate transaction (as it did before BUG-38), two workers could
+    # both pass the gate, then both flip the row to ``running``. By
+    # committing the gate check and the ``running`` flip in the same
+    # transaction, the second worker — which blocks on the advisory
+    # lock — observes the first worker's commit and defers. (BUG-38.)
     async with task_session() as db:
         claimed = await _claim_or_defer(db, job_id, host_id)
+        if claimed:
+            modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
+                db, job_id, host_id, module_filter
+            )
+
     if not claimed:
         logger.info(
             "host_sync deferred: job_id=%s host_id=%s (another sync is running)",
@@ -518,12 +536,6 @@ async def _async_run(
         return {"job_id": job_id, "status": "deferred", "module_outcomes": {}}
 
     try:
-        # --- Phase 1: pre-run writes ---------------------------------
-        async with task_session() as db:
-            modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
-                db, job_id, host_id, module_filter
-            )
-
         firewall_pre_error = (
             "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
         )
