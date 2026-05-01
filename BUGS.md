@@ -81,30 +81,6 @@ when filing a new entry.
   `app/api/sync.py` would benefit from the same treatment, so the fix
   is best done as a coordinated pass rather than a one-off here.
 
-- [ ] **BUG-41** `backend/app/api/sync.py:395` — bulk endpoint idempotent 200 path returns caller's `module_filter`, not the existing job's
-
-  When a second `POST /api/sync/hosts/{host_id}/bulk` arrives while a bulk
-  SyncJob is already pending or running for the host, the endpoint returns HTTP
-  200 with the existing job's ID. However, the `module_filter` field in the
-  response body is taken from `body.module_filter` (the current request's
-  payload) rather than from the existing job. If the two requests carry
-  different filters — for example, the first requested `None` (all modules) and
-  the second requests `["firewall"]` — the 200 response claims
-  `module_filter=["firewall"]` while the actual queued/running job will execute
-  all modules. Consumers that use the response to track what the job will do
-  (monitoring, audit UIs) will be misled.
-  Root cause: line 395 constructs `BulkSyncResponse(module_filter=module_filter)`
-  where `module_filter` is the local variable bound to `body.module_filter`
-  from the current request, not to any field stored on or derivable from the
-  `existing` SyncJob object (which only stores `module_type="bulk"`, not the
-  original filter list).
-  Severity: Medium. No data is corrupted; the queued job runs correctly. The
-  defect is informational: callers relying on the echoed filter for audit or
-  retry logic receive stale/incorrect metadata.
-  Trigger: two bulk sync requests for the same host_id with different
-  `module_filter` values, where the second arrives before the first job
-  completes.
-
 ### Low
 
 - [ ] **SEC-06** `backend/app/sync/orchestrator.py:163` — orchestrator exception messages may leak the tmpfs SSH-key path back to the API caller

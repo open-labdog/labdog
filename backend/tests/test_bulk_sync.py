@@ -94,15 +94,25 @@ async def test_bulk_sync_idempotent_when_already_pending(
     existing_id = existing.id
     await db.commit()
 
+    # BUG-41: fire the second POST with a DIFFERENT module_filter than
+    # the existing job. The endpoint must not echo the caller's filter
+    # back as if it were authoritative — since SyncJob doesn't persist
+    # the original filter list, the honest answer is ``None``.
     resp = await superuser_client.post(
         f"/api/sync/hosts/{host_id}/bulk",
-        json={"module_filter": None},
+        json={"module_filter": ["firewall"]},
     )
 
     assert resp.status_code == 200, f"got {resp.status_code}: {resp.text}"
     body = resp.json()
     assert body["job_id"] == existing_id
     assert body["status"] == "pending"
+    # The second request's filter MUST NOT leak through. The queued job
+    # won't honour ``["firewall"]`` — it runs every module — so claiming
+    # the response says ``["firewall"]`` would mislead audit / monitoring
+    # consumers. ``None`` is the truthful "we don't know what the
+    # in-flight job's original filter was".
+    assert body["module_filter"] is None
 
     # No second SyncJob row inserted.
     rows = (
