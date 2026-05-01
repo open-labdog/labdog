@@ -253,6 +253,22 @@ async def orchestrate_host_sync(
                 )
             )
 
+    # BUG-40: when the only requested module skipped its fragment (the
+    # resolver block is the only one with a "skip when no config"
+    # branch), ``fragments`` is empty. Composing an empty playbook
+    # produces ``"[]\n"``, which ansible-runner rejects with a runtime
+    # error — the orchestrator surfaces that as an exception and the
+    # wrapper marks every seeded module as ``error``, even though the
+    # truthful outcome is "no managed config applies → no-op".
+    # Short-circuit: skip the runner entirely and return ``no_tasks``
+    # for every requested module.
+    if not fragments:
+        return (
+            {m: "no_tasks" for m in modules_to_run},
+            "",
+            "",
+        )
+
     # 5. Compose playbook.
     playbook_yaml = compose_playbook(
         fragments,
