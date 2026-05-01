@@ -21,6 +21,7 @@ celery_app.conf.update(
     enable_utc=True,
     task_routes={
         "app.tasks.sync.*": {"queue": "long_running"},
+        "app.tasks.host_sync_orchestrator.*": {"queue": "long_running"},
         "app.tasks.drift.*": {"queue": "long_running"},
         "app.tasks.service_sync.*": {"queue": "long_running"},
         "app.tasks.service_drift.*": {"queue": "long_running"},
@@ -84,6 +85,7 @@ celery_app.conf.include = [
     "app.tasks.discovery",
     "app.tasks.gitops",
     "app.tasks.sync",
+    "app.tasks.host_sync_orchestrator",
     "app.tasks.drift",
     "app.tasks.service_sync",
     "app.tasks.service_drift",
