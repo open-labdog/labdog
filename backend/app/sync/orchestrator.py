@@ -160,7 +160,17 @@ async def orchestrate_host_sync(
         plaintext_bytes = plaintext.encode()
     else:
         plaintext_bytes = plaintext
-    fd = os.open(ssh_key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # O_NOFOLLOW refuses to follow a symlink at ``ssh_key_path``. The
+    # parent directory created by ``_make_tmpfs_workspace`` is 0o700
+    # owned by the worker uid, so a non-privileged local user cannot
+    # plant a symlink there — but defence-in-depth: if anything in the
+    # path resolution unexpectedly hits a symlink, fail loudly rather
+    # than write the decrypted key to the symlink target.
+    fd = os.open(
+        ssh_key_path,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+        0o600,
+    )
     try:
         os.write(fd, plaintext_bytes)
         if not plaintext_bytes.endswith(b"\n"):
