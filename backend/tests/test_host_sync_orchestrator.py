@@ -908,6 +908,86 @@ async def test_dispatch_uses_correct_filter_for_bulk_type(db: AsyncSession, tmp_
     assert kwargs["module_filter"] is None  # "bulk" → all modules
 
 
+async def test_prepare_run_post_commit_failure_finalises_to_failed(db: AsyncSession, tmp_path):
+    """BUG-39: _prepare_run raises after its commit → compensating finalise.
+
+    SyncJob ends up ``failed`` (not stuck in ``running``), all per-module
+    HostModuleStatus rows are ``error``, and the next pending sync for
+    this host is dispatched. Without the fix the SyncJob stays
+    ``running`` forever and queued siblings defer indefinitely.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.ansible_runtime.composer import CANONICAL_ORDER
+    from app.models.host_module_status import HostModuleStatus
+    from app.models.sync_job import SyncJob
+    from app.tasks import host_sync_orchestrator as hso
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+
+    # Older pending job will run; younger pending job is the queued
+    # successor we expect to be dispatched after the compensating
+    # finalise releases the per-host slot.
+    older_id = await _create_pending_job(db, host_id, module_type="bulk")
+    older = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    older.created_at = datetime.now(UTC) - timedelta(seconds=30)
+
+    younger_id = await _create_pending_job(db, host_id, module_type="firewall")
+    younger = (await db.execute(select(SyncJob).where(SyncJob.id == younger_id))).scalar_one()
+    younger.created_at = datetime.now(UTC) - timedelta(seconds=10)
+    await db.flush()
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    real_prepare = hso._prepare_run
+
+    async def _prepare_then_raise(*args, **kwargs):
+        # Run the real prepare (its internal commit lands here). Then
+        # raise to simulate any post-commit failure.
+        await real_prepare(*args, **kwargs)
+        raise RuntimeError("synthetic post-commit explosion")
+
+    with (
+        _make_session_patcher(db),
+        patch.object(hso, "_prepare_run", new=_prepare_then_raise),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="synthetic post-commit explosion"):
+            await hso._async_run(
+                job_id=older_id,
+                host_id=host_id,
+                module_filter=None,
+                private_data_dir=private_data_dir,
+                ssh_key_path=ssh_key_path,
+            )
+
+    # SyncJob ends up failed (not stuck "running").
+    job = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    assert job.status == "failed", f"expected failed, got {job.status}"
+    assert "prepare_run raised after commit" in (job.error_message or "")
+
+    # Every seeded HostModuleStatus row is in ``error``.
+    rows = (
+        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host_id)))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == len(CANONICAL_ORDER)
+    for row in rows:
+        assert row.sync_status == "error", f"{row.module_type} not error: {row.sync_status}"
+
+    # Queued successor was dispatched.
+    delay_mock.assert_called_once()
+    assert delay_mock.call_args.kwargs["job_id"] == younger_id
+
+
 async def test_claim_or_defer_serializes_concurrent_workers(pg_url):
     """BUG-38: two coroutines that both call ``_claim_or_defer`` + ``_prepare_run``
     against the same host must produce exactly one claim winner, not two.
