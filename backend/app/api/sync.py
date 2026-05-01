@@ -319,7 +319,7 @@ async def trigger_bulk_sync(
     host_id: int,
     body: BulkSyncRequest,
     response: Response,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a coalesced multi-module sync for one host.
