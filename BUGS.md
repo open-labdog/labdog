@@ -42,29 +42,6 @@ when filing a new entry.
 
 ### High
 
-- [ ] **BUG-40** `backend/app/sync/orchestrator.py:247` — `compose_playbook` called with empty fragment list when resolver is the only requested module and no resolver config exists
-
-  When `module_filter=["resolver"]` is passed (e.g., from the per-tab
-  `run_resolver_sync` delegator) and `get_effective_resolver` returns `None`
-  (no resolver configuration applies to the host), the resolver block at
-  orchestrator lines 237-244 skips appending a fragment. `compose_playbook` is
-  then called at line 247 with `fragments=[]`. `yaml.dump([], ...)` returns
-  `"[]\n"`, which ansible-runner receives as the playbook. Ansible rejects an
-  empty play list, causing the runner to fail; this surfaces as an orchestrator
-  exception (or a runner error), which the Celery wrapper catches and marks
-  every seeded module as "error". The SyncJob is recorded "failed" even though
-  the correct semantic is "resolver is unmanaged for this host" — a successful
-  no-op.
-  Root cause: `orchestrate_host_sync` does not guard against the
-  all-fragments-skipped case before calling `compose_playbook`. The resolver
-  module is the only one with a conditional "skip if no config" path; all
-  other modules always append a fragment. When resolver is the sole requested
-  module and skips, `fragments` is empty.
-  Severity: High.
-  Trigger: `POST /api/sync/hosts/{id}/bulk` with `module_filter=["resolver"]`
-  (or the `run_resolver_sync` per-tab task) against a host that has no
-  resolver configuration assigned.
-
 ### Medium
 
 - [ ] **SEC-05** `backend/app/api/sync.py:317` — bulk sync trigger event is not audited at the API layer
