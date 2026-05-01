@@ -43,7 +43,10 @@ def _make_session_patcher(db):
 
 
 async def _create_pending_job(
-    db: AsyncSession, host_id: int, triggered_by_user_id: int | None = None
+    db: AsyncSession,
+    host_id: int,
+    triggered_by_user_id: int | None = None,
+    module_type: str = "firewall",
 ) -> int:
     from app.models.sync_job import SyncJob
 
@@ -51,6 +54,24 @@ async def _create_pending_job(
         host_id=host_id,
         status="pending",
         triggered_by_user_id=triggered_by_user_id,
+        module_type=module_type,
+    )
+    db.add(job)
+    await db.flush()
+    return job.id
+
+
+async def _create_running_job(db: AsyncSession, host_id: int, module_type: str = "firewall") -> int:
+    """Insert a SyncJob already in ``running`` state for blocking-tests."""
+    from datetime import UTC, datetime
+
+    from app.models.sync_job import SyncJob
+
+    job = SyncJob(
+        host_id=host_id,
+        status="running",
+        module_type=module_type,
+        started_at=datetime.now(UTC),
     )
     db.add(job)
     await db.flush()
@@ -519,6 +540,417 @@ async def test_module_filter_passed_to_orchestrator(db: AsyncSession, tmp_path):
 
     assert len(calls) == 1
     assert calls[0].get("_pos_module_filter") == ["firewall"]
+
+
+# ---------------------------------------------------------------------------
+# Queue mechanism (commit C-2)
+# ---------------------------------------------------------------------------
+
+
+async def test_defer_when_another_sync_running_on_host(db: AsyncSession, tmp_path):
+    """If another SyncJob is already running on this host, the task defers.
+
+    No orchestration call, no pre-run write, no audit row. The pending
+    SyncJob stays in ``pending`` so the in-flight task picks it up via
+    ``_dispatch_next_pending_for_host`` when it finishes.
+    """
+    from app.models.audit_log import AuditLog
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+    # Pretend a different SyncJob is already in flight for this host.
+    # The DB carries a partial unique index on (host_id, module_type)
+    # for active rows, so the queued sibling uses a different
+    # ``module_type`` — exactly the situation the queue mechanism is
+    # designed to coalesce (e.g. firewall in flight, service queued).
+    running_job_id = await _create_running_job(db, host_id, module_type="firewall")
+    pending_job_id = await _create_pending_job(db, host_id, module_type="service")
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    orchestrator_calls: list[dict] = []
+    delay_calls: list[tuple] = []
+
+    async def _never_orchestrate(*args, **kwargs):  # pragma: no cover - guard
+        orchestrator_calls.append({"args": args, "kwargs": kwargs})
+        return {}, "", ""
+
+    def _record_delay(*args, **kwargs):
+        delay_calls.append((args, kwargs))
+
+    with (
+        _make_session_patcher(db),
+        patch(
+            "app.tasks.host_sync_orchestrator.orchestrate_host_sync",
+            new=_never_orchestrate,
+        ),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=MagicMock(side_effect=_record_delay),
+        ),
+    ):
+        from app.tasks.host_sync_orchestrator import _async_run
+
+        result = await _async_run(
+            job_id=pending_job_id,
+            host_id=host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    assert result == {
+        "job_id": pending_job_id,
+        "status": "deferred",
+        "module_outcomes": {},
+    }
+    # Orchestrator was never invoked.
+    assert orchestrator_calls == []
+    # No re-dispatch from a deferred task — the running task owns the queue.
+    assert delay_calls == []
+
+    # Pending job stays pending; nothing else mutated.
+    pending = (await db.execute(select(SyncJob).where(SyncJob.id == pending_job_id))).scalar_one()
+    assert pending.status == "pending"
+    assert pending.started_at is None
+    assert pending.completed_at is None
+
+    running = (await db.execute(select(SyncJob).where(SyncJob.id == running_job_id))).scalar_one()
+    assert running.status == "running"
+
+    # No audit row was emitted (deferral is silent).
+    audit_count = len(
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "host", AuditLog.entity_id == host_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert audit_count == 0
+
+
+async def test_no_defer_when_no_other_running(db: AsyncSession, tmp_path):
+    """Single SyncJob for host runs normally (no other running → claim wins)."""
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+    job_id = await _create_pending_job(db, host_id)
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=MagicMock(),
+        ),
+    ):
+        result = await _run_task(
+            db,
+            job_id,
+            host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    assert result["status"] == "success"
+    job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
+    assert job.status == "success"
+
+
+async def test_dispatch_next_pending_on_success(db: AsyncSession, tmp_path):
+    """When a job finishes successfully, the oldest queued job is dispatched."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+
+    # Create the older pending job (the one we'll run) and a younger
+    # queued sibling. Manual ``created_at`` so ordering is deterministic
+    # — the default lambda runs at insert time which can be too close.
+    older_id = await _create_pending_job(db, host_id, module_type="firewall")
+    older = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    older.created_at = datetime.now(UTC) - timedelta(seconds=30)
+
+    younger_id = await _create_pending_job(db, host_id, module_type="service")
+    younger = (await db.execute(select(SyncJob).where(SyncJob.id == younger_id))).scalar_one()
+    younger.created_at = datetime.now(UTC) - timedelta(seconds=10)
+    await db.flush()
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        await _run_task(
+            db,
+            older_id,
+            host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    delay_mock.assert_called_once()
+    kwargs = delay_mock.call_args.kwargs
+    assert kwargs["job_id"] == younger_id
+    assert kwargs["host_id"] == host_id
+    # ``module_type="service"`` → canonical filter ``["services"]``.
+    assert kwargs["module_filter"] == ["services"]
+
+
+async def test_dispatch_next_pending_on_failure(db: AsyncSession, tmp_path):
+    """Even when the orchestrator raises, the dispatch step still runs (finally)."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+
+    older_id = await _create_pending_job(db, host_id, module_type="firewall")
+    older = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    older.created_at = datetime.now(UTC) - timedelta(seconds=30)
+
+    younger_id = await _create_pending_job(db, host_id, module_type="cron")
+    younger = (await db.execute(select(SyncJob).where(SyncJob.id == younger_id))).scalar_one()
+    younger.created_at = datetime.now(UTC) - timedelta(seconds=10)
+    await db.flush()
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator_raising(LookupError("synthetic boom")),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        with pytest.raises(RuntimeError, match="synthetic boom"):
+            await _run_task(
+                db,
+                older_id,
+                host_id,
+                module_filter=None,
+                private_data_dir=private_data_dir,
+                ssh_key_path=ssh_key_path,
+            )
+
+    # Dispatch ran exactly once despite the orchestrator failure.
+    delay_mock.assert_called_once()
+    assert delay_mock.call_args.kwargs["job_id"] == younger_id
+    assert delay_mock.call_args.kwargs["module_filter"] == ["cron"]
+
+
+async def test_no_dispatch_when_no_pending(db: AsyncSession, tmp_path):
+    """Single SyncJob runs to success; no pending sibling → no .delay() call."""
+    host_id = await _setup_host_with_backend(db, "nftables")
+    job_id = await _create_pending_job(db, host_id)
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        await _run_task(
+            db,
+            job_id,
+            host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    delay_mock.assert_not_called()
+
+
+async def test_running_on_other_host_does_not_block(db: AsyncSession, tmp_path):
+    """A running SyncJob on host A must not block host B from syncing."""
+    from app.models.sync_job import SyncJob
+
+    host_a_id = await _setup_host_with_backend(db, "nftables")
+    host_b_id = await _setup_host_with_backend(db, "nftables")
+
+    # Stuck-running job on host A — the gate must scope its check by host_id.
+    running_a_id = await _create_running_job(db, host_a_id)
+
+    pending_b_id = await _create_pending_job(db, host_b_id)
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        result = await _run_task(
+            db,
+            pending_b_id,
+            host_b_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    assert result["status"] == "success"
+    job_b = (await db.execute(select(SyncJob).where(SyncJob.id == pending_b_id))).scalar_one()
+    assert job_b.status == "success"
+
+    # Host A's running row is irrelevant to host B and stays put.
+    job_a = (await db.execute(select(SyncJob).where(SyncJob.id == running_a_id))).scalar_one()
+    assert job_a.status == "running"
+
+
+def test_filter_from_module_type_canonical():
+    """Unit-test the helper across all canonical mappings + bulk + unknown."""
+    from app.tasks.host_sync_orchestrator import (
+        _MODULE_TYPE_MAPPING,
+        _filter_from_module_type,
+    )
+
+    # Every canonical → DB value should round-trip back to a single-element filter.
+    for canonical, db_value in _MODULE_TYPE_MAPPING.items():
+        assert _filter_from_module_type(db_value) == [canonical]
+
+    # The seven persisted DB values explicitly:
+    assert _filter_from_module_type("firewall") == ["firewall"]
+    assert _filter_from_module_type("service") == ["services"]
+    assert _filter_from_module_type("package") == ["packages"]
+    assert _filter_from_module_type("cron") == ["cron"]
+    assert _filter_from_module_type("linux_user") == ["linux-users"]
+    assert _filter_from_module_type("hosts_file") == ["hosts-file"]
+    assert _filter_from_module_type("resolver") == ["resolver"]
+
+    # ``bulk`` is the C-3 sentinel for "all modules".
+    assert _filter_from_module_type("bulk") is None
+
+    # Unknown values fall back to "all" rather than getting stuck.
+    assert _filter_from_module_type("not-a-module") is None
+
+
+async def test_dispatch_uses_correct_filter_for_bulk_type(db: AsyncSession, tmp_path):
+    """A queued job with ``module_type="bulk"`` is re-dispatched with filter=None."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+
+    older_id = await _create_pending_job(db, host_id, module_type="firewall")
+    older = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    older.created_at = datetime.now(UTC) - timedelta(seconds=30)
+
+    bulk_id = await _create_pending_job(db, host_id, module_type="bulk")
+    bulk = (await db.execute(select(SyncJob).where(SyncJob.id == bulk_id))).scalar_one()
+    bulk.created_at = datetime.now(UTC) - timedelta(seconds=10)
+    await db.flush()
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        await _run_task(
+            db,
+            older_id,
+            host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    delay_mock.assert_called_once()
+    kwargs = delay_mock.call_args.kwargs
+    assert kwargs["job_id"] == bulk_id
+    assert kwargs["module_filter"] is None  # "bulk" → all modules
+
+
+async def test_dispatch_uses_correct_filter_for_per_tab_type(db: AsyncSession, tmp_path):
+    """A per-tab queued job is re-dispatched with its single-element canonical filter."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+
+    older_id = await _create_pending_job(db, host_id, module_type="package")
+    older = (await db.execute(select(SyncJob).where(SyncJob.id == older_id))).scalar_one()
+    older.created_at = datetime.now(UTC) - timedelta(seconds=30)
+
+    queued_id = await _create_pending_job(db, host_id, module_type="firewall")
+    queued = (await db.execute(select(SyncJob).where(SyncJob.id == queued_id))).scalar_one()
+    queued.created_at = datetime.now(UTC) - timedelta(seconds=10)
+    await db.flush()
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    delay_mock = MagicMock()
+
+    with (
+        _patch_orchestrator(_all_in_sync_outcomes()),
+        patch(
+            "app.tasks.host_sync_orchestrator.run_host_sync.delay",
+            new=delay_mock,
+        ),
+    ):
+        await _run_task(
+            db,
+            older_id,
+            host_id,
+            module_filter=None,
+            private_data_dir=private_data_dir,
+            ssh_key_path=ssh_key_path,
+        )
+
+    delay_mock.assert_called_once()
+    kwargs = delay_mock.call_args.kwargs
+    assert kwargs["job_id"] == queued_id
+    assert kwargs["module_filter"] == ["firewall"]
 
 
 # ---------------------------------------------------------------------------

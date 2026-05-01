@@ -20,9 +20,20 @@ itself with:
    error row. Other modules still run.
 7. Tmpfs cleanup in ``finally``.
 
-No queue mechanism (commit C-2) and no API wiring (commit C-3) live
-here — this commit is a self-contained task that runs *one* coalesced
-sync end-to-end with the right bookkeeping.
+Per-host serialization (commit C-2) is layered on top: at task entry
+we ``_claim_or_defer`` against any in-flight ``SyncJob.running`` row
+for the same host — if one exists, this task returns immediately and
+leaves the SyncJob in ``pending``. When the in-flight task finishes
+(success *or* failure) it scans for the oldest pending SyncJob on the
+host via ``_dispatch_next_pending_for_host`` and re-dispatches it via
+Celery. This guarantees a single in-flight orchestrator per host
+without external locking. Crash recovery — a stale-``running`` sweeper
+that releases jobs whose worker died mid-task — is deliberately
+deferred to a future commit; the structure here is friendly to that
+addition (the dispatch helper is the natural callsite to reuse from a
+sweeper).
+
+API wiring (commit C-3) lives elsewhere.
 """
 
 from __future__ import annotations
@@ -69,6 +80,11 @@ _MODULE_TYPE_MAPPING: dict[str, str] = {
     "hosts-file": "hosts_file",
     "resolver": "resolver",
 }
+
+# Reverse lookup for ``_filter_from_module_type``: given the short DB
+# value persisted on ``SyncJob.module_type``, return the canonical name
+# the orchestrator wants in its ``module_filter`` list.
+_DB_TO_CANONICAL: dict[str, str] = {v: k for k, v in _MODULE_TYPE_MAPPING.items()}
 
 # D3 timeout constants. Documented inline at the call site too.
 _TIMEOUT_BASE_SECONDS = 60
@@ -145,6 +161,110 @@ def _resolve_modules(module_filter: list[str] | None) -> list[str]:
     from app.ansible_runtime.outcomes import determine_modules_to_run
 
     return determine_modules_to_run(module_filter)
+
+
+def _filter_from_module_type(module_type: str) -> list[str] | None:
+    """Reconstruct an orchestrator ``module_filter`` from a stored ``SyncJob.module_type``.
+
+    The C-3 bulk endpoint persists ``module_type="bulk"`` to mark
+    "all modules" runs; per-tab tasks persist their canonical module's
+    short DB name (existing convention from ``app/tasks/*_sync.py``).
+
+    Mapping rules:
+    - ``"bulk"`` → ``None``: orchestrator interprets as "every module".
+    - Known short DB name → ``[canonical]``: a single-element filter.
+    - Anything else → ``None`` and a warning: better to over-run than
+      to leave a queued job stuck on a typo'd ``module_type``.
+    """
+    if module_type == "bulk":
+        return None
+    canonical = _DB_TO_CANONICAL.get(module_type)
+    if canonical is None:
+        logger.warning(
+            "Unknown SyncJob.module_type %r; dispatching as bulk to avoid stuck job",
+            module_type,
+        )
+        return None
+    return [canonical]
+
+
+# ---------------------------------------------------------------------------
+# Per-host serialization (queue mechanism)
+# ---------------------------------------------------------------------------
+
+
+async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
+    """Single-flight gate at task entry.
+
+    Returns ``True`` when no other ``SyncJob`` for ``host_id`` is in
+    ``running`` state — caller proceeds with the normal pre-run write
+    that flips this job to ``running``.
+
+    Returns ``False`` when another sync is already in flight for this
+    host. The caller must return early without touching DB state; the
+    in-flight task will dispatch us via ``_dispatch_next_pending_for_host``
+    when it finishes (success or failure).
+
+    The check is read-only: no commit, no row lock. Race window is
+    bounded by the in-flight task's ``finally`` reliably calling the
+    dispatch helper *after* its own status flip to ``success``/``failed``
+    has committed (so by the time the next task wakes up and runs
+    ``_claim_or_defer``, the previous job is no longer ``running``).
+    """
+    from app.models.sync_job import JobStatus, SyncJob
+
+    other = await db.execute(
+        select(SyncJob.id)
+        .where(
+            SyncJob.host_id == host_id,
+            SyncJob.id != job_id,
+            SyncJob.status == JobStatus.running,
+        )
+        .limit(1)
+    )
+    return other.scalar_one_or_none() is None
+
+
+async def _dispatch_next_pending_for_host(
+    db: AsyncSession, host_id: int, exclude_job_id: int
+) -> int | None:
+    """Pick the oldest queued ``SyncJob`` for ``host_id`` and dispatch it.
+
+    Called from the just-finished task's finally block, after the
+    finalise commit (so the row at ``exclude_job_id`` is already
+    ``success``/``failed`` and the picked successor is guaranteed to
+    not see *us* as ``running`` when it runs ``_claim_or_defer``).
+
+    Returns the dispatched job id, or ``None`` when no pending job
+    exists for this host.
+
+    Uses ``run_host_sync.delay(...)`` from the *same* module so a
+    test-side ``patch("...host_sync_orchestrator.run_host_sync.delay")``
+    intercepts it.
+    """
+    from app.models.sync_job import JobStatus, SyncJob
+
+    next_pending = await db.execute(
+        select(SyncJob)
+        .where(
+            SyncJob.host_id == host_id,
+            SyncJob.id != exclude_job_id,
+            SyncJob.status == JobStatus.pending,
+        )
+        .order_by(SyncJob.created_at.asc())
+        .limit(1)
+    )
+    next_job = next_pending.scalar_one_or_none()
+    if next_job is None:
+        return None
+
+    module_filter = _filter_from_module_type(next_job.module_type)
+    run_host_sync.delay(
+        job_id=next_job.id,
+        host_id=host_id,
+        module_filter=module_filter,
+    )
+    return next_job.id
 
 
 # ---------------------------------------------------------------------------
@@ -367,97 +487,144 @@ async def _async_run(
 ) -> dict:
     """Async implementation of :func:`run_host_sync`.
 
-    Sequenced as: prepare → orchestrate → finalise. Three separate
-    sessions because each phase needs its own commit boundary
-    (commit-on-prepare so the UI sees ``running`` immediately;
-    orchestrator runs read-only against a fresh session; commit-on-finalise
-    is atomic for the post-run trio of writes).
+    Sequenced as: claim-or-defer → prepare → orchestrate → finalise →
+    dispatch-next-pending. Each DB phase opens its own session for its
+    own commit boundary (commit-on-prepare so the UI sees ``running``
+    immediately; orchestrator runs read-only against a fresh session;
+    commit-on-finalise is atomic for the post-run trio of writes;
+    dispatch reads the queue *after* finalise has committed so the
+    successor task sees us as no-longer-running).
+
+    The dispatch step runs in a ``finally`` block — both the success
+    path and the orchestrator-raised path must release the per-host
+    queue. If we returned early via ``_claim_or_defer`` (this task is
+    the queued one), no dispatch happens: the in-flight task will
+    handle that when it finishes.
     """
     from app.crypto import decrypt_ssh_key
 
-    # --- Phase 1: pre-run writes -------------------------------------
+    # --- Phase 0: claim or defer -------------------------------------
+    # Single-flight gate. If another SyncJob is already running on this
+    # host, we leave our row pending and return immediately. The
+    # in-flight task will dispatch us when it commits its final state.
     async with task_session() as db:
-        modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
-            db, job_id, host_id, module_filter
+        claimed = await _claim_or_defer(db, job_id, host_id)
+    if not claimed:
+        logger.info(
+            "host_sync deferred: job_id=%s host_id=%s (another sync is running)",
+            job_id,
+            host_id,
         )
-
-    firewall_pre_error = "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
-
-    # --- Phase 2: orchestrate ----------------------------------------
-    timeout = _compute_timeout(modules_to_orchestrate)
-
-    # The orchestrator wants the *filtered* canonical module list when
-    # the caller supplied one, otherwise None to mean "all". When the
-    # firewall guard removes firewall from a None-filter run we must
-    # convert to an explicit list so the orchestrator skips firewall.
-    if module_filter is None and not firewall_pre_error:
-        orchestrator_filter: list[str] | None = None
-    else:
-        orchestrator_filter = modules_to_orchestrate
-
-    module_outcomes: dict[str, str] = {}
-    orchestrator_error: str | None = None
+        return {"job_id": job_id, "status": "deferred", "module_outcomes": {}}
 
     try:
-        if modules_to_orchestrate:
-            from app.ansible_runtime.runner import run_ansible
+        # --- Phase 1: pre-run writes ---------------------------------
+        async with task_session() as db:
+            modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
+                db, job_id, host_id, module_filter
+            )
 
-            async with task_session() as db:
-                module_outcomes, _playbook, _inventory = await orchestrate_host_sync(
-                    host_id,
-                    orchestrator_filter,
-                    db,
-                    decrypt_key_fn=decrypt_ssh_key,
-                    run_ansible_fn=run_ansible,
-                    ssh_key_path=ssh_key_path,
-                    private_data_dir=private_data_dir,
-                    timeout=timeout,
-                )
-    except Exception as exc:
-        orchestrator_error = str(exc) or exc.__class__.__name__
-        # Synthesise an all-error outcome map so _finalise_run marks
-        # every seeded module as error. The firewall pre-error path is
-        # left alone (its row already says "backend not detected").
-        module_outcomes = {
-            m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
-        }
-        logger.exception("orchestrate_host_sync raised for job_id=%s host_id=%s", job_id, host_id)
-
-    # --- Phase 3: finalise (atomic) ----------------------------------
-    async with task_session() as db:
-        final_status = await _finalise_run(
-            db,
-            job_id=job_id,
-            host_id=host_id,
-            module_filter=module_filter,
-            seeded_modules=seeded_modules,
-            module_outcomes=module_outcomes,
-            triggered_by_user_id=triggered_by_user_id,
-            firewall_pre_error=firewall_pre_error,
-            error_message=orchestrator_error,
+        firewall_pre_error = (
+            "firewall" in seeded_modules and "firewall" not in modules_to_orchestrate
         )
 
-    if orchestrator_error is not None:
-        # Re-raise so Celery records the task failure. The DB writes
-        # have already been committed in phase 3 — Celery's retry
-        # policy is the caller's concern.
-        raise RuntimeError(orchestrator_error)
+        # --- Phase 2: orchestrate ------------------------------------
+        timeout = _compute_timeout(modules_to_orchestrate)
 
-    # Build the per-module-outcome map exposed to Celery result
-    # inspection. We use the seeded_modules set so the firewall-guard
-    # case still surfaces ``firewall: error`` in the result dict.
-    result_outcomes: dict[str, str] = {}
-    for m in seeded_modules:
-        if m == "firewall" and firewall_pre_error:
-            result_outcomes[m] = "error"
+        # The orchestrator wants the *filtered* canonical module list
+        # when the caller supplied one, otherwise None to mean "all".
+        # When the firewall guard removes firewall from a None-filter
+        # run we must convert to an explicit list so the orchestrator
+        # skips firewall.
+        if module_filter is None and not firewall_pre_error:
+            orchestrator_filter: list[str] | None = None
         else:
-            result_outcomes[m] = module_outcomes.get(m, "error")
+            orchestrator_filter = modules_to_orchestrate
 
-    return {
-        "job_id": job_id,
-        "status": final_status,
-        "module_outcomes": result_outcomes,
-    }
+        module_outcomes: dict[str, str] = {}
+        orchestrator_error: str | None = None
+
+        try:
+            if modules_to_orchestrate:
+                from app.ansible_runtime.runner import run_ansible
+
+                async with task_session() as db:
+                    module_outcomes, _playbook, _inventory = await orchestrate_host_sync(
+                        host_id,
+                        orchestrator_filter,
+                        db,
+                        decrypt_key_fn=decrypt_ssh_key,
+                        run_ansible_fn=run_ansible,
+                        ssh_key_path=ssh_key_path,
+                        private_data_dir=private_data_dir,
+                        timeout=timeout,
+                    )
+        except Exception as exc:
+            orchestrator_error = str(exc) or exc.__class__.__name__
+            # Synthesise an all-error outcome map so _finalise_run marks
+            # every seeded module as error. The firewall pre-error path
+            # is left alone (its row already says "backend not detected").
+            module_outcomes = {
+                m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
+            }
+            logger.exception(
+                "orchestrate_host_sync raised for job_id=%s host_id=%s", job_id, host_id
+            )
+
+        # --- Phase 3: finalise (atomic) ------------------------------
+        async with task_session() as db:
+            final_status = await _finalise_run(
+                db,
+                job_id=job_id,
+                host_id=host_id,
+                module_filter=module_filter,
+                seeded_modules=seeded_modules,
+                module_outcomes=module_outcomes,
+                triggered_by_user_id=triggered_by_user_id,
+                firewall_pre_error=firewall_pre_error,
+                error_message=orchestrator_error,
+            )
+
+        if orchestrator_error is not None:
+            # Re-raise so Celery records the task failure. The DB writes
+            # have already been committed in phase 3 — Celery's retry
+            # policy is the caller's concern. The ``finally`` below still
+            # runs the per-host dispatch step.
+            raise RuntimeError(orchestrator_error)
+
+        # Build the per-module-outcome map exposed to Celery result
+        # inspection. We use the seeded_modules set so the firewall-guard
+        # case still surfaces ``firewall: error`` in the result dict.
+        result_outcomes: dict[str, str] = {}
+        for m in seeded_modules:
+            if m == "firewall" and firewall_pre_error:
+                result_outcomes[m] = "error"
+            else:
+                result_outcomes[m] = module_outcomes.get(m, "error")
+
+        return {
+            "job_id": job_id,
+            "status": final_status,
+            "module_outcomes": result_outcomes,
+        }
+    finally:
+        # --- Phase 4: dispatch the next pending sync for this host ---
+        # Runs on the success path *and* the orchestrator-raised path.
+        # By the time we get here phase 3 has committed (or wasn't
+        # reached, in which case there's no successor to release —
+        # ``_claim_or_defer`` short-circuits above and skips the try
+        # entirely). Any failure in the dispatch helper itself is
+        # swallowed so it never masks the real outcome of the task.
+        try:
+            async with task_session() as db:
+                await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
+        except Exception:
+            logger.exception(
+                "dispatch-next-pending failed for host_id=%s after job_id=%s; "
+                "queue may be stuck until next sync triggers it",
+                host_id,
+                job_id,
+            )
 
 
 # ---------------------------------------------------------------------------
