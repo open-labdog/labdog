@@ -908,6 +908,89 @@ async def test_dispatch_uses_correct_filter_for_bulk_type(db: AsyncSession, tmp_
     assert kwargs["module_filter"] is None  # "bulk" → all modules
 
 
+def test_redact_path_strips_tmpfs_paths():
+    """SEC-06 unit test for the redaction helper.
+
+    Direct unit cover for the regex: the helper must strip
+    ``/dev/shm/labdog-sync-XXXXXXXX/...`` and the ``/tmp`` fallback
+    while leaving unrelated text untouched.
+    """
+    from app.tasks.host_sync_orchestrator import _redact_path
+
+    # /dev/shm form (the common case). The regex is greedy through
+    # non-whitespace, so the trailing colon ends up consumed — the
+    # important property is that no characters from the secret prefix
+    # or path-suffix remain.
+    redacted = _redact_path("OSError: [Errno 2] /dev/shm/labdog-sync-abc12345/id_ssh: no such file")
+    assert "labdog-sync-abc12345" not in redacted
+    assert "/dev/shm" not in redacted
+    assert "<tmpfs>" in redacted
+    # /tmp fallback form.
+    redacted = _redact_path("foo /tmp/labdog-sync-deadbeef/id_ssh bar")
+    assert "labdog-sync-deadbeef" not in redacted
+    assert "/tmp/labdog" not in redacted
+    assert "<tmpfs>" in redacted
+    # Bare directory (no trailing path).
+    assert _redact_path("rmtree(/dev/shm/labdog-sync-deadbeef)") == "rmtree(<tmpfs>)"
+    # Path-less message round-trips unchanged.
+    assert _redact_path("InvalidTag") == "InvalidTag"
+    # None round-trips.
+    assert _redact_path(None) is None
+
+
+async def test_orchestrator_error_message_redacts_tmpfs_path(db: AsyncSession, tmp_path):
+    """SEC-06: a tmpfs path in the orchestrator exception is redacted before persisting.
+
+    Without the fix the full path lands in ``SyncJob.error_message``
+    and every seeded ``HostModuleStatus.error_message``, both of which
+    are returned by authenticated GET endpoints.
+    """
+    from app.models.host_module_status import HostModuleStatus
+    from app.models.sync_job import SyncJob
+
+    host_id = await _setup_host_with_backend(db, "nftables")
+    job_id = await _create_pending_job(db, host_id)
+
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir)
+    ssh_key_path = str(tmp_path / "id_ssh")
+
+    leaky = OSError("[Errno 13] Permission denied: '/dev/shm/labdog-sync-deadbeef/id_ssh'")
+
+    with _patch_orchestrator_raising(leaky):
+        with pytest.raises(RuntimeError) as exc_info:
+            await _run_task(
+                db,
+                job_id,
+                host_id,
+                module_filter=None,
+                private_data_dir=private_data_dir,
+                ssh_key_path=ssh_key_path,
+            )
+
+    # The re-raised RuntimeError carries the redacted message too.
+    assert "labdog-sync-deadbeef" not in str(exc_info.value)
+    assert "<tmpfs>" in str(exc_info.value)
+
+    job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
+    assert job.error_message
+    assert "labdog-sync-deadbeef" not in job.error_message
+    assert "/dev/shm" not in job.error_message
+    assert "<tmpfs>" in job.error_message
+
+    rows = (
+        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host_id)))
+        .scalars()
+        .all()
+    )
+    assert rows
+    for row in rows:
+        if row.error_message:
+            assert "labdog-sync-deadbeef" not in row.error_message
+            assert "/dev/shm" not in row.error_message
+            assert "<tmpfs>" in row.error_message
+
+
 async def test_prepare_run_post_commit_failure_finalises_to_failed(db: AsyncSession, tmp_path):
     """BUG-39: _prepare_run raises after its commit → compensating finalise.
 

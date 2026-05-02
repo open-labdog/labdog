@@ -41,6 +41,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import shutil
 import tempfile
 from datetime import UTC, datetime
@@ -154,6 +155,29 @@ def _cleanup_tmpfs(private_data_dir: str | None) -> None:
         shutil.rmtree(private_data_dir, ignore_errors=True)
     except Exception:
         logger.exception("tmpfs cleanup failed for %s", private_data_dir)
+
+
+_TMPFS_PATH_RE = re.compile(r"(/dev/shm|/tmp)/labdog-sync-[A-Za-z0-9_]+(?:/[^\s'\"]*)?")
+
+
+def _redact_path(msg: str | None) -> str | None:
+    """Replace tmpfs SSH-key paths in error messages with ``<tmpfs>``.
+
+    The orchestrator stages decrypted SSH keys under
+    ``/dev/shm/labdog-sync-XXXXXXXX/id_ssh`` (or ``/tmp`` when
+    ``/dev/shm`` is missing). Any exception traceback that includes the
+    full path leaks (a) the use of ``/dev/shm``, (b) the
+    ``labdog-sync-`` prefix convention, and (c) the per-run random
+    suffix. None are credentials but a hardened deployment shouldn't
+    surface them via the jobs API. (SEC-06.)
+
+    Returns the redacted string. ``None`` round-trips. Anything that
+    isn't a string falls through to ``str(...)`` first to be safe.
+    """
+    if msg is None:
+        return None
+    msg_str = msg if isinstance(msg, str) else str(msg)
+    return _TMPFS_PATH_RE.sub("<tmpfs>", msg_str)
 
 
 def _resolve_modules(module_filter: list[str] | None) -> list[str]:
@@ -395,6 +419,11 @@ async def _finalise_run(
     from app.audit.logger import log_action
     from app.models.host_module_status import HostModuleStatus
     from app.models.sync_job import SyncJob
+
+    # SEC-06: redact tmpfs SSH-key paths from any orchestrator-supplied
+    # error message before persisting it to columns the API surfaces to
+    # authenticated users.
+    error_message = _redact_path(error_message)
 
     job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one()
 
@@ -651,7 +680,9 @@ async def _async_run(
                         timeout=timeout,
                     )
         except Exception as exc:
-            orchestrator_error = str(exc) or exc.__class__.__name__
+            # SEC-06: redact tmpfs SSH-key paths from the captured
+            # message before it lands in DB columns the API surfaces.
+            orchestrator_error = _redact_path(str(exc) or exc.__class__.__name__)
             # Synthesise an all-error outcome map so _finalise_run marks
             # every seeded module as error. The firewall pre-error path
             # is left alone (its row already says "backend not detected").
