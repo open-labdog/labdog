@@ -61,6 +61,10 @@ class TestSync:
         POST /api/sync/hosts/{id}/sync → 201, response has status == "pending",
         verify mock_celery_tasks was called (Celery dispatched).
         """
+        from sqlalchemy import select as _select
+
+        from app.models.audit_log import AuditLog
+
         # Setup: SSH key → group → rule → host in group
         ssh_key = await create_ssh_key(db)
         group = await create_group(db)
@@ -89,6 +93,77 @@ class TestSync:
             "Expected run_sync_playbook.delay to be called, "
             f"got {mock_celery_tasks.call_count} calls"
         )
+
+        # SEC-05: trigger-time audit row at API layer for the per-host
+        # firewall-sync endpoint.
+        audit_rows = (
+            (
+                await db.execute(
+                    _select(AuditLog).where(
+                        AuditLog.entity_type == "host",
+                        AuditLog.entity_id == host_id,
+                        AuditLog.action == "sync_triggered",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(audit_rows) == 1
+        after = audit_rows[0].after_state
+        assert after["sync_job_id"] == data["id"]
+        assert after["module_filter"] == ["firewall"]
+        assert after["trigger_kind"] == "per_host"
+
+    async def test_trigger_group_sync_audits_at_trigger(
+        self, superuser_client, db: AsyncSession, mock_celery_tasks
+    ):
+        """SEC-05: per-group firewall-sync emits an audit row scoped to
+        the group entity, with affected host IDs in ``after_state.hosts``.
+        """
+        from sqlalchemy import select as _select
+
+        from app.models.audit_log import AuditLog
+
+        ssh_key = await create_ssh_key(db)
+        group = await create_group(db)
+        await create_rule(
+            db,
+            group_id=group.id,
+            action="allow",
+            protocol="tcp",
+            direction="input",
+            port_start=2222,
+        )
+        host_a = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+        host_b = await create_host(db, ssh_key_id=ssh_key.id, ip="10.0.0.2", group_ids=[group.id])
+        host_a_id = host_a.id
+        host_b_id = host_b.id
+        group_id = group.id
+
+        resp = await superuser_client.post(f"/api/sync/groups/{group_id}/sync")
+
+        assert resp.status_code == 201, resp.text
+
+        audit_rows = (
+            (
+                await db.execute(
+                    _select(AuditLog).where(
+                        AuditLog.entity_type == "host_group",
+                        AuditLog.entity_id == group_id,
+                        AuditLog.action == "sync_triggered",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(audit_rows) == 1
+        after = audit_rows[0].after_state
+        assert after["trigger_kind"] == "per_group"
+        assert after["module_filter"] == ["firewall"]
+        assert sorted(after["hosts"]) == sorted([host_a_id, host_b_id])
+        assert len(after["sync_job_ids"]) == 2
 
     async def test_get_job_status(self, superuser_client, db: AsyncSession, mock_celery_tasks):
         """

@@ -30,6 +30,8 @@ def mock_run_host_sync():
 async def test_bulk_sync_creates_pending_job_and_dispatches(
     superuser_client, db: AsyncSession, mock_run_host_sync
 ):
+    from app.models.audit_log import AuditLog
+
     ssh_key = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh_key.id)
     host_id = host.id
@@ -57,6 +59,26 @@ async def test_bulk_sync_creates_pending_job_and_dispatches(
     assert call.kwargs.get("job_id") == job_id
     assert call.kwargs.get("host_id") == host_id
     assert call.kwargs.get("module_filter") is None
+
+    # SEC-05: a trigger-time audit row was emitted at API layer.
+    audit_rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "host",
+                    AuditLog.entity_id == host_id,
+                    AuditLog.action == "sync_triggered",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audit_rows) == 1
+    after = audit_rows[0].after_state
+    assert after["sync_job_id"] == job_id
+    assert after["module_filter"] is None
+    assert after["trigger_kind"] == "bulk"
 
 
 async def test_bulk_sync_with_filter(superuser_client, db: AsyncSession, mock_run_host_sync):
@@ -128,6 +150,32 @@ async def test_bulk_sync_idempotent_when_already_pending(
 
     # No dispatch on the idempotent re-entry.
     assert mock_run_host_sync.call_count == 0
+
+    # SEC-05: the idempotent-200 path still represents an operator's
+    # intent — record it with the existing job's ID.
+    from app.models.audit_log import AuditLog
+
+    audit_rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "host",
+                    AuditLog.entity_id == host_id,
+                    AuditLog.action == "sync_triggered",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(audit_rows) == 1
+    after = audit_rows[0].after_state
+    assert after["sync_job_id"] == existing_id
+    assert after["trigger_kind"] == "bulk"
+    # The audit captures *this* request's filter (so the trail records
+    # what the operator asked for at trigger time, even though the
+    # endpoint response surfaces ``None`` per BUG-41).
+    assert after["module_filter"] == ["firewall"]
 
 
 async def test_bulk_sync_rejects_empty_filter(

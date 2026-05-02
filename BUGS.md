@@ -42,45 +42,6 @@ when filing a new entry.
 
 ### High
 
-### Medium
-
-- [ ] **SEC-05** `backend/app/api/sync.py:317` — bulk sync trigger event is not audited at the API layer
-
-  `POST /api/sync/hosts/{host_id}/bulk` creates a `SyncJob` row with
-  `triggered_by_user_id` populated and dispatches a Celery task, but
-  the API handler does not emit an `AuditLog` row at trigger time. The
-  orchestrator's Celery wrapper does emit a single audit row per job
-  (`sync_completed` or `sync_failed`) once the run finishes — but that
-  is *after* the orchestrator runs, not when the operator pressed the
-  button. Consequences: (a) if the worker queue is saturated or down,
-  a triggered bulk sync may sit `pending` for an extended period with
-  no audit trail showing it was ever requested; (b) an operator who
-  triggers and then cancels (or the SyncJob is never picked up due to
-  a worker outage) leaves no audit record at all of the attempt; (c) a
-  forensic trace of "who clicked sync, and when" requires joining
-  `SyncJob.created_at` + `triggered_by_user_id` against `AuditLog`,
-  rather than reading `AuditLog` alone.
-  Note: this is consistent with the pre-existing
-  `POST /api/sync/hosts/{id}/sync` and `POST /api/sync/groups/{id}/sync`
-  handlers in the same module, neither of which audit at trigger time
-  either. Not a regression — but the bulk endpoint is a higher-impact
-  operation (touches up to seven modules in one shot) so the absence
-  of trigger-time audit is more notable here than for the per-tab
-  endpoints.
-  Severity: Medium. Single-tenant deployment limits the blast radius;
-  detection-of-misuse is the main concern.
-  Trigger: any caller invoking the bulk endpoint. To verify, watch
-  `AuditLog` while issuing a bulk POST — no row appears until the
-  Celery task finalises.
-  Design tradeoff (why not fixed inline): an audit row for the
-  trigger event needs a payload shape that the team should agree on
-  (action name `bulk_sync_triggered`? included `module_filter`? the
-  resulting job ID, which would require auditing after `db.commit()`?
-  what about the idempotent-200 path — audit the duplicate request,
-  or only the original?). All three existing trigger endpoints in
-  `app/api/sync.py` would benefit from the same treatment, so the fix
-  is best done as a coordinated pass rather than a one-off here.
-
 ### Low
 
 - [ ] **SEC-06** `backend/app/sync/orchestrator.py:163` — orchestrator exception messages may leak the tmpfs SSH-key path back to the API caller
