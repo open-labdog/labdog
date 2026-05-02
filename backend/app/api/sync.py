@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
@@ -216,18 +217,43 @@ async def trigger_host_sync(
             detail="Cannot sync — no rules defined. This would remove all firewall rules.",
         )
 
+    # Capture user.id eagerly — see BUG-41/SEC-05 for the rationale: a
+    # rollback during the IntegrityError path expires the ORM-bound
+    # ``user`` and lazy-loading ``user.id`` would attempt sync IO.
+    user_id = user.id
+
     # Create sync job (partial unique index prevents duplicates)
     job = SyncJob(
         host_id=host_id,
         status="pending",
-        triggered_by_user_id=user.id,
+        triggered_by_user_id=user_id,
     )
     db.add(job)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Sync already in progress for this host")
+
+    # SEC-05: emit a trigger-time audit row so "who clicked sync, when"
+    # is recorded immediately — not only on Celery finalisation. This
+    # endpoint is the per-tab firewall-sync trigger; record
+    # ``trigger_kind="per_host"`` and a synthetic single-element
+    # ``module_filter`` derived from the legacy module_type.
+    await log_action(
+        db,
+        action="sync_triggered",
+        entity_type="host",
+        entity_id=host_id,
+        user_id=user_id,
+        before_state=None,
+        after_state={
+            "sync_job_id": job.id,
+            "module_filter": ["firewall"],
+            "trigger_kind": "per_host",
+        },
+    )
+    await db.commit()
     await db.refresh(job)
 
     # Dispatch Celery task
@@ -261,6 +287,9 @@ async def trigger_group_sync(
 
     from app.tasks.sync import run_sync_playbook
 
+    # Capture user.id eagerly so post-rollback access is safe.
+    user_id = user.id
+
     # BUG-37: dispatch must happen AFTER commit, not before. flush() makes
     # job.id available to Python but does not make the row visible to the
     # Celery worker's connection. Build the dispatch list in the loop, commit
@@ -277,13 +306,33 @@ async def trigger_group_sync(
         if running.scalar_one_or_none():
             continue
         job = SyncJob(
-            host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user.id
+            host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user_id
         )
         db.add(job)
         await db.flush()
         pending.append((job.id, hid))
 
+    # SEC-05: emit a trigger-time audit row scoped to the group entity.
+    # ``after_state.hosts`` lists the host IDs that actually got jobs
+    # dispatched (skipping those with an in-flight sync). Module filter
+    # is the legacy single-module ``["firewall"]`` for this endpoint.
+    if pending:
+        await log_action(
+            db,
+            action="sync_triggered",
+            entity_type="host_group",
+            entity_id=group_id,
+            user_id=user_id,
+            before_state=None,
+            after_state={
+                "sync_job_ids": [jid for jid, _ in pending],
+                "hosts": [hid for _, hid in pending],
+                "module_filter": ["firewall"],
+                "trigger_kind": "per_group",
+            },
+        )
     await db.commit()
+
     for job_id, hid in pending:
         run_sync_playbook.delay(job_id=job_id, host_id=hid)
     return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
@@ -356,19 +405,25 @@ async def trigger_bulk_sync(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
+    # Capture user.id eagerly. After a possible session rollback below
+    # the ORM's lazy-load of ``user.id`` would attempt sync IO outside
+    # the greenlet context and raise ``MissingGreenlet``.
+    user_id = user.id
+
     job = SyncJob(
         host_id=host_id,
         status="pending",
         module_type="bulk",
-        triggered_by_user_id=user.id,
+        triggered_by_user_id=user_id,
     )
     db.add(job)
+    # Pre-flush so ``job.id`` is available for the audit row that we
+    # commit alongside the SyncJob insert. If the unique index trips,
+    # the audit row is rolled back together with the job and we emit a
+    # fresh audit on the idempotent-200 path below.
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
-        # Partial unique index ``uq_sync_job_active`` tripped — a bulk
-        # job for this host is already pending/running. Return the
-        # in-flight job's ID with HTTP 200 (idempotent re-dispatch).
         await db.rollback()
         existing_result = await db.execute(
             select(SyncJob).where(
@@ -379,31 +434,55 @@ async def trigger_bulk_sync(
         )
         existing = existing_result.scalar_one_or_none()
         if existing is None:
-            # Race: the conflicting job finished between the failed
-            # commit and our re-query. Surface a 409 so the caller
-            # retries cleanly.
             raise HTTPException(
                 status_code=409,
                 detail="Bulk sync conflict; please retry",
             ) from None
-        # BUG-41: the existing SyncJob row only stores ``module_type``
-        # (a single short string like ``"bulk"`` or ``"firewall"``), not
-        # the original ``module_filter`` list the first request supplied.
-        # We therefore can't honestly echo the in-flight job's filter on
-        # the idempotent-200 path. Returning the *current* request's
-        # filter would be a lie (the queued job won't honour it) so we
-        # surface ``None`` to make that ambiguity explicit. The
-        # design-correct follow-up is to add a JSONB ``module_filter``
-        # column to ``SyncJob`` so the original filter can round-trip.
+        existing_id = existing.id
+        existing_status = (
+            existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+        )
+        # SEC-05 idempotent-200 audit row.
+        await log_action(
+            db,
+            action="sync_triggered",
+            entity_type="host",
+            entity_id=host_id,
+            user_id=user_id,
+            before_state=None,
+            after_state={
+                "sync_job_id": existing_id,
+                "module_filter": module_filter,
+                "trigger_kind": "bulk",
+            },
+        )
+        await db.commit()
         response.status_code = 200
+        # BUG-41: existing SyncJob doesn't persist the original filter
+        # list; surface ``None`` to avoid lying about what the queued
+        # job will do.
         return BulkSyncResponse(
-            job_id=existing.id,
-            status=existing.status.value
-            if hasattr(existing.status, "value")
-            else str(existing.status),
+            job_id=existing_id,
+            status=existing_status,
             module_filter=None,
         )
 
+    # Fresh insert path: emit the trigger-time audit row in the same
+    # transaction as the SyncJob commit, so they're durably linked.
+    await log_action(
+        db,
+        action="sync_triggered",
+        entity_type="host",
+        entity_id=host_id,
+        user_id=user_id,
+        before_state=None,
+        after_state={
+            "sync_job_id": job.id,
+            "module_filter": module_filter,
+            "trigger_kind": "bulk",
+        },
+    )
+    await db.commit()
     await db.refresh(job)
 
     # Fresh insert — dispatch the orchestrator.
