@@ -42,13 +42,20 @@ from API writes (group/host/module mutations, GitOps repo CRUD,
 action-pack mutations, settings changes), sync and workflow runs,
 discovery runs, and terminal session lifecycle events.
 
+Sync events come in pairs: `sync_triggered` (at API entry — records
+the operator's intent and the requested `module_filter`) and
+`sync_completed` or `sync_failed` (at orchestrator finish — carries
+a composite `{module: outcome}` payload covering every module that
+ran). One pair per `SyncJob`, regardless of whether the sync was
+multi-module bulk or single-module per-tab.
+
 ### Columns
 
 | Column | Description |
 |--------|-------------|
 | Timestamp | When the action occurred |
 | User | The acting user's email (joined from `users` for display); `system` for non-user events like scheduled drift checks |
-| Action | What happened (e.g. `rule.create`, `sync.apply`, `pack.sync`, `gitops.repo.create`, `terminal.open`) |
+| Action | What happened (e.g. `rule.create`, `sync_triggered`, `sync_completed`, `sync_failed`, `pack.sync`, `gitops.repo.create`, `terminal.open`) |
 | Entity | What was acted on (e.g. `group:4`, `host:tester3`, `pack:gh-internal`) |
 | Before | State before the change (JSON, secrets scrubbed) |
 | After | State after the change (JSON, secrets scrubbed) |

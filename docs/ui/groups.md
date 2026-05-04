@@ -295,8 +295,14 @@ Click **Configure DNS** to set up the resolver for this group. If a resolver is 
 The Firewall Sync tab previews and applies **firewall rule** changes
 across every host in the group. Other modules (Services, Packages,
 Hosts File, Cron Jobs, Linux Users, DNS Resolver, CA Certs) sync from
-their own per-tab **Sync** buttons — each module owns its own playbook
-and audit trail.
+their own per-tab **Sync** buttons.
+
+Behind the scenes (v0.2.0+) every per-tab sync goes through the
+unified per-host orchestrator with a single-module filter, so two
+tabs syncing the same host queue rather than race over SSH. The UI
+contract is unchanged — each module still has its own Sync button
+and audit row — but the underlying ansible-runner invocations are
+serialised per host.
 
 The flow has two steps:
 
