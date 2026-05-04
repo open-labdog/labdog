@@ -1,0 +1,8 @@
+group: web-servers
+priority: 100
+firewall:
+  rules:
+    - action: allow
+      protocol: tcp
+      direction: input
+      port_start: 443
