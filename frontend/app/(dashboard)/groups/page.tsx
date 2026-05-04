@@ -69,6 +69,8 @@ function PriorityBar({ priority, min, max }: { priority: number; min: number; ma
 export default function GroupsPage() {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkSyncing, setBulkSyncing] = useState(false)
+  const [bulkAction, setBulkAction] = useState<"delete" | "sync" | null>(null)
   const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null)
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false)
   const [syncingGroup, setSyncingGroup] = useState<number | null>(null)
@@ -143,6 +145,7 @@ export default function GroupsPage() {
   async function handleBulkDelete() {
     const ids = Array.from(selected)
     setBulkDeleting(true)
+    setBulkAction("delete")
     setBulkProgress({ done: 0, total: ids.length })
     let success = 0, failed = 0
     for (const id of ids) {
@@ -155,6 +158,7 @@ export default function GroupsPage() {
       setBulkProgress({ done: success + failed, total: ids.length })
     }
     setBulkDeleting(false)
+    setBulkAction(null)
     setBulkProgress(null)
     setSelected(new Set())
     await queryClient.invalidateQueries({ queryKey: ["groups-summary"] })
@@ -164,6 +168,44 @@ export default function GroupsPage() {
       showError(`Deleted ${success} of ${ids.length}. ${failed} failed.`)
     }
     setBulkConfirmOpen(false)
+  }
+
+  async function handleBulkSync() {
+    // Coalesced multi-module bulk sync per group: each selected group
+    // dispatches a unified-playbook sync for every host it owns. Hosts
+    // already in flight for a bulk sync are skipped server-side.
+    const ids = Array.from(selected)
+    setBulkSyncing(true)
+    setBulkAction("sync")
+    setBulkProgress({ done: 0, total: ids.length })
+    let triggered = 0, skipped = 0, failed = 0
+    for (const id of ids) {
+      try {
+        const resp = await apiFetch<{
+          triggered_job_ids: number[]
+          skipped_host_ids: number[]
+        }>(`/api/sync/groups/${id}/bulk`, {
+          method: "POST",
+          json: { module_filter: null },
+        })
+        triggered += resp.triggered_job_ids.length
+        skipped += resp.skipped_host_ids.length
+      } catch {
+        failed++
+      }
+      setBulkProgress({ done: triggered + skipped + failed, total: ids.length })
+    }
+    setBulkSyncing(false)
+    setBulkAction(null)
+    setBulkProgress(null)
+    setSelected(new Set())
+    await queryClient.invalidateQueries({ queryKey: ["groups-summary"] })
+    if (failed === 0) {
+      const skippedNote = skipped > 0 ? ` (${skipped} host${skipped !== 1 ? "s" : ""} already in flight, skipped)` : ""
+      showSuccess(`Sync triggered for ${triggered} host${triggered !== 1 ? "s" : ""} across ${ids.length} group${ids.length !== 1 ? "s" : ""}${skippedNote}`)
+    } else {
+      showError(`Triggered ${triggered}; ${failed} group${failed !== 1 ? "s" : ""} failed.`)
+    }
   }
 
   function startEditingCategory(category: string) {
@@ -386,16 +428,28 @@ export default function GroupsPage() {
             <div className="flex items-center gap-3 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
               <span className="text-sm text-slate-300">{selected.size} selected</span>
               {bulkProgress ? (
-                <span className="text-sm text-slate-400">Deleting {bulkProgress.done}/{bulkProgress.total}...</span>
+                <span className="text-sm text-slate-400">
+                  {bulkAction === "delete" ? "Deleting" : "Syncing"} {bulkProgress.done}/{bulkProgress.total}...
+                </span>
               ) : (
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => setBulkConfirmOpen(true)}
-                  disabled={bulkDeleting}
-                >
-                  Delete Selected
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleBulkSync}
+                    disabled={bulkDeleting || bulkSyncing}
+                  >
+                    Sync Selected
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => setBulkConfirmOpen(true)}
+                    disabled={bulkDeleting || bulkSyncing}
+                  >
+                    Delete Selected
+                  </Button>
+                </>
               )}
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
                 Clear
