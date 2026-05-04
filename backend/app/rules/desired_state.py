@@ -56,8 +56,9 @@ async def get_desired_state(
     host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
 
     if not group_ids:
-        if not host_rule_specs:
-            return [], ChainPolicies()
+        # Always run merge_group_rules even when there are no groups
+        # and no host rules — it injects the SSH lockout rule which
+        # must never be skipped (security-critical anti-lockout).
         return (
             merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs),
             ChainPolicies(),

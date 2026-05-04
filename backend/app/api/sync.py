@@ -1,11 +1,12 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
@@ -216,18 +217,43 @@ async def trigger_host_sync(
             detail="Cannot sync — no rules defined. This would remove all firewall rules.",
         )
 
+    # Capture user.id eagerly — see BUG-41/SEC-05 for the rationale: a
+    # rollback during the IntegrityError path expires the ORM-bound
+    # ``user`` and lazy-loading ``user.id`` would attempt sync IO.
+    user_id = user.id
+
     # Create sync job (partial unique index prevents duplicates)
     job = SyncJob(
         host_id=host_id,
         status="pending",
-        triggered_by_user_id=user.id,
+        triggered_by_user_id=user_id,
     )
     db.add(job)
     try:
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="Sync already in progress for this host")
+
+    # SEC-05: emit a trigger-time audit row so "who clicked sync, when"
+    # is recorded immediately — not only on Celery finalisation. This
+    # endpoint is the per-tab firewall-sync trigger; record
+    # ``trigger_kind="per_host"`` and a synthetic single-element
+    # ``module_filter`` derived from the legacy module_type.
+    await log_action(
+        db,
+        action="sync_triggered",
+        entity_type="host",
+        entity_id=host_id,
+        user_id=user_id,
+        before_state=None,
+        after_state={
+            "sync_job_id": job.id,
+            "module_filter": ["firewall"],
+            "trigger_kind": "per_host",
+        },
+    )
+    await db.commit()
     await db.refresh(job)
 
     # Dispatch Celery task
@@ -261,6 +287,9 @@ async def trigger_group_sync(
 
     from app.tasks.sync import run_sync_playbook
 
+    # Capture user.id eagerly so post-rollback access is safe.
+    user_id = user.id
+
     # BUG-37: dispatch must happen AFTER commit, not before. flush() makes
     # job.id available to Python but does not make the row visible to the
     # Celery worker's connection. Build the dispatch list in the loop, commit
@@ -277,16 +306,196 @@ async def trigger_group_sync(
         if running.scalar_one_or_none():
             continue
         job = SyncJob(
-            host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user.id
+            host_id=hid, group_id=group_id, status="pending", triggered_by_user_id=user_id
         )
         db.add(job)
         await db.flush()
         pending.append((job.id, hid))
 
+    # SEC-05: emit a trigger-time audit row scoped to the group entity.
+    # ``after_state.hosts`` lists the host IDs that actually got jobs
+    # dispatched (skipping those with an in-flight sync). Module filter
+    # is the legacy single-module ``["firewall"]`` for this endpoint.
+    if pending:
+        await log_action(
+            db,
+            action="sync_triggered",
+            entity_type="host_group",
+            entity_id=group_id,
+            user_id=user_id,
+            before_state=None,
+            after_state={
+                "sync_job_ids": [jid for jid, _ in pending],
+                "hosts": [hid for _, hid in pending],
+                "module_filter": ["firewall"],
+                "trigger_kind": "per_group",
+            },
+        )
     await db.commit()
+
     for job_id, hid in pending:
         run_sync_playbook.delay(job_id=job_id, host_id=hid)
     return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
+
+
+class BulkSyncRequest(BaseModel):
+    module_filter: list[str] | None = None
+
+
+class BulkSyncResponse(BaseModel):
+    job_id: int
+    status: str
+    module_filter: list[str] | None
+
+
+# Canonical module names accepted by the orchestrator's module_filter.
+# Kept in sync with ``app.ansible_runtime.composer.CANONICAL_ORDER``.
+_BULK_ALLOWED_MODULES: frozenset[str] = frozenset(
+    {
+        "firewall",
+        "services",
+        "packages",
+        "hosts-file",
+        "cron",
+        "linux-users",
+        "resolver",
+    }
+)
+
+
+@router.post("/hosts/{host_id}/bulk", response_model=BulkSyncResponse)
+async def trigger_bulk_sync(
+    host_id: int,
+    body: BulkSyncRequest,
+    response: Response,
+    user: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a coalesced multi-module sync for one host.
+
+    ``body.module_filter`` is either ``None`` (sync every supported
+    module) or a non-empty list of canonical module names. The task is
+    dispatched as a single ``run_host_sync`` Celery job tagged with
+    ``module_type="bulk"``.
+
+    Idempotency: when a bulk SyncJob is already pending or running for
+    the host, the existing job's ID is returned with HTTP 200 — the
+    partial unique index ``uq_sync_job_active`` guarantees no duplicate
+    ever lands in the DB. Fresh inserts return HTTP 201.
+    """
+    # Validate module_filter shape early so a bad request never hits the
+    # DB or queue.
+    module_filter = body.module_filter
+    if module_filter is not None:
+        if len(module_filter) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="module_filter must be null or non-empty",
+            )
+        unknown = [m for m in module_filter if m not in _BULK_ALLOWED_MODULES]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown module(s) in module_filter: {unknown}",
+            )
+
+    # Verify host exists.
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    # Capture user.id eagerly. After a possible session rollback below
+    # the ORM's lazy-load of ``user.id`` would attempt sync IO outside
+    # the greenlet context and raise ``MissingGreenlet``.
+    user_id = user.id
+
+    job = SyncJob(
+        host_id=host_id,
+        status="pending",
+        module_type="bulk",
+        triggered_by_user_id=user_id,
+    )
+    db.add(job)
+    # Pre-flush so ``job.id`` is available for the audit row that we
+    # commit alongside the SyncJob insert. If the unique index trips,
+    # the audit row is rolled back together with the job and we emit a
+    # fresh audit on the idempotent-200 path below.
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        existing_result = await db.execute(
+            select(SyncJob).where(
+                SyncJob.host_id == host_id,
+                SyncJob.module_type == "bulk",
+                SyncJob.status.in_(["pending", "running"]),
+            )
+        )
+        existing = existing_result.scalar_one_or_none()
+        if existing is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Bulk sync conflict; please retry",
+            ) from None
+        existing_id = existing.id
+        existing_status = (
+            existing.status.value if hasattr(existing.status, "value") else str(existing.status)
+        )
+        # SEC-05 idempotent-200 audit row.
+        await log_action(
+            db,
+            action="sync_triggered",
+            entity_type="host",
+            entity_id=host_id,
+            user_id=user_id,
+            before_state=None,
+            after_state={
+                "sync_job_id": existing_id,
+                "module_filter": module_filter,
+                "trigger_kind": "bulk",
+            },
+        )
+        await db.commit()
+        response.status_code = 200
+        # BUG-41: existing SyncJob doesn't persist the original filter
+        # list; surface ``None`` to avoid lying about what the queued
+        # job will do.
+        return BulkSyncResponse(
+            job_id=existing_id,
+            status=existing_status,
+            module_filter=None,
+        )
+
+    # Fresh insert path: emit the trigger-time audit row in the same
+    # transaction as the SyncJob commit, so they're durably linked.
+    await log_action(
+        db,
+        action="sync_triggered",
+        entity_type="host",
+        entity_id=host_id,
+        user_id=user_id,
+        before_state=None,
+        after_state={
+            "sync_job_id": job.id,
+            "module_filter": module_filter,
+            "trigger_kind": "bulk",
+        },
+    )
+    await db.commit()
+    await db.refresh(job)
+
+    # Fresh insert — dispatch the orchestrator.
+    from app.tasks.host_sync_orchestrator import run_host_sync
+
+    run_host_sync.delay(job_id=job.id, host_id=host_id, module_filter=module_filter)
+
+    response.status_code = 201
+    return BulkSyncResponse(
+        job_id=job.id,
+        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        module_filter=module_filter,
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
