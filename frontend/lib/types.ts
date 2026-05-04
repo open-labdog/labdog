@@ -187,6 +187,50 @@ export interface ActionPackSyncResponse {
   last_synced_at: string | null
 }
 
+// ---------------------------------------------------------------------------
+// Repo onboarding scan / activate
+// ---------------------------------------------------------------------------
+
+export interface ScanError {
+  file: string
+  message: string
+}
+
+export interface DetectedPack {
+  path: string
+  name: string
+  contributed_keys: string[]
+  pack_yml_present: boolean
+  errors: ScanError[]
+}
+
+export interface DetectedGitopsFile {
+  path: string
+  group_name: string | null
+  errors: ScanError[]
+}
+
+export interface KeyOwner {
+  key: string
+  source: "bundled" | "db_pack"
+  pack_name: string
+  pack_id: number | null
+}
+
+export interface KeyConflict {
+  key: string
+  contributing_packs: string[]
+}
+
+export interface RepoScanResponse {
+  packs: DetectedPack[]
+  gitops_files: DetectedGitopsFile[]
+  existing_key_winners: Record<string, KeyOwner>
+  intra_repo_key_conflicts: KeyConflict[]
+  scan_errors: ScanError[]
+  head_sha: string | null
+}
+
 export interface FirewallRule {
   id: number
   group_id: number
