@@ -121,13 +121,9 @@ class TestDiscoveryAPI:
 
     async def test_bulk_add_creates_hosts(self, superuser_client, db):
         key = await create_ssh_key(db)
-        mock_conn = AsyncMock()
-        mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
-        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn.__aexit__ = AsyncMock(return_value=False)
-        with (
-            patch("app.api.discovery.ssh_connect", return_value=mock_conn),
-            patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")),
+        with patch(
+            "app.api.discovery.verify_ssh",
+            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None)),
         ):
             resp = await superuser_client.post(
                 "/api/discovery/add-hosts",
@@ -141,13 +137,9 @@ class TestDiscoveryAPI:
 
     async def test_bulk_add_skips_existing_ip(self, superuser_client, db):
         key = await create_ssh_key(db)
-        mock_conn = AsyncMock()
-        mock_conn.run = AsyncMock(return_value=MagicMock(stdout="discovered-host\n"))
-        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_conn.__aexit__ = AsyncMock(return_value=False)
-        with (
-            patch("app.api.discovery.ssh_connect", return_value=mock_conn),
-            patch("app.ssh_utils.get_source_ip", new=AsyncMock(return_value="10.0.0.100")),
+        with patch(
+            "app.api.discovery.verify_ssh",
+            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None)),
         ):
             # First add
             resp1 = await superuser_client.post(

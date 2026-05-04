@@ -145,9 +145,10 @@ async def trigger_group_resolver_sync(
     if not host_ids:
         raise HTTPException(status_code=400, detail="No hosts in this group")
 
-    jobs = []
     from app.tasks.resolver_sync import run_resolver_sync
 
+    # BUG-37: dispatch after commit, not before — see app/api/sync.py.
+    pending: list[tuple[int, int]] = []
     for hid in host_ids:
         effective = await get_effective_resolver(hid, db)
         if not effective:
@@ -172,11 +173,12 @@ async def trigger_group_resolver_sync(
         )
         db.add(job)
         await db.flush()
-        run_resolver_sync.delay(job_id=job.id, host_id=hid)
-        jobs.append(job)
+        pending.append((job.id, hid))
 
     await db.commit()
-    return {"triggered": len(jobs), "skipped": len(host_ids) - len(jobs)}
+    for job_id, hid in pending:
+        run_resolver_sync.delay(job_id=job_id, host_id=hid)
+    return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)

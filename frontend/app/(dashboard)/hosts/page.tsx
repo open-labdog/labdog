@@ -15,7 +15,7 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
-import type { HostGroup, HostSummary, ModuleCounts, SyncStatus } from "@/lib/types"
+import type { HostGroup, HostSummary, ModuleCounts, SyncStatus, PendingSummary } from "@/lib/types"
 
 const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
   { key: "firewall", icon: ShieldIcon, label: "Firewall" },
@@ -56,6 +56,10 @@ const ROW_BORDER: Record<SyncStatus, string> = {
   error: "border-l-2 border-l-red-500/60",
 }
 
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
 export default function HostsPage() {
   const [filterGroup, setFilterGroup] = useState<number | "ungrouped" | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -92,6 +96,11 @@ export default function HostsPage() {
     queryKey: ["groups"],
     queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
   })
+  const { data: pendingSummary } = useQuery<PendingSummary>({
+    queryKey: ["scans", "pending-summary"],
+    queryFn: () => apiFetch<PendingSummary>("/api/scans/pending-summary"),
+    refetchInterval: 30000,
+  })
   const groupMap = useMemo(() => {
     const map = new Map<number, HostGroup>()
     groups?.forEach(g => map.set(g.id, g))
@@ -113,6 +122,26 @@ export default function HostsPage() {
       else next.add(id)
       return next
     })
+  }
+
+  const allFilteredSelected =
+    filteredHosts.length > 0 && filteredHosts.every(h => selected.has(h.id))
+  const someFilteredSelected =
+    filteredHosts.some(h => selected.has(h.id)) && !allFilteredSelected
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      setSelected(prev => {
+        const next = new Set(prev)
+        for (const h of filteredHosts) next.delete(h.id)
+        return next
+      })
+    } else {
+      setSelected(prev => {
+        const next = new Set(prev)
+        for (const h of filteredHosts) next.add(h.id)
+        return next
+      })
+    }
   }
 
   async function handleBulkDelete() {
@@ -180,12 +209,22 @@ export default function HostsPage() {
           <p className="text-slate-400 text-sm mt-1">Manage hosts, configurations, and sync status</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/hosts/discover" className={cn(buttonVariants({ variant: "outline" }))}>
-            Discover Hosts
-          </Link>
           <Link href="/hosts/new" className={cn(buttonVariants())}>Add Host</Link>
+          <Link href="/hosts/discovery" className={cn(buttonVariants({ variant: "outline" }))}>
+            Discovery
+          </Link>
         </div>
       </div>
+
+      {pendingSummary && pendingSummary.total > 0 && (
+        <Link href="/hosts/pending" className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/5 px-4 py-2.5 text-sm hover:bg-amber-500/10 transition-colors">
+          <span className="h-2 w-2 rounded-full bg-amber-500" />
+          <span className="text-amber-400">
+            {pendingSummary.total} host{pendingSummary.total !== 1 ? "s" : ""} awaiting approval
+          </span>
+          <span className="ml-auto text-xs text-amber-500">Review pending →</span>
+        </Link>
+      )}
 
       <div className="flex items-center gap-2">
         <div className="relative" ref={groupDropdownRef}>
@@ -310,6 +349,19 @@ export default function HostsPage() {
             {
               key: "select",
               label: "",
+              header: (
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someFilteredSelected
+                  }}
+                  onChange={toggleSelectAll}
+                  onClick={(e) => e.stopPropagation()}
+                  className="rounded border-slate-600"
+                  aria-label="Select all hosts"
+                />
+              ),
               cell: (h) => (
                 <input
                   type="checkbox"

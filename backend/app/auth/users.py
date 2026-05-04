@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # ── Cookie transport — httpOnly for XSS protection ──────────────────────────
 cookie_transport = CookieTransport(
-    cookie_name="barricade_auth",
+    cookie_name="labdog_auth",
     cookie_max_age=settings.security.session_lifetime_seconds,
     cookie_secure=settings.security.cookie_secure,
     cookie_httponly=True,

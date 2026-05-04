@@ -5,6 +5,8 @@ stages:
   - scan
 
 variables:
+  # NOTE: registry project path is still `barricade` — the rebrand cannot
+  # move it yet. Keep this in sync with the deployment compose file too.
   IMAGE: gitlab.lan.tyresson.se:5050/dennis/barricade
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
@@ -14,6 +16,12 @@ variables:
 
 .docker-login: &docker-login
   - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+
+# Lets a "Run pipeline" click in the GitLab UI run a dev-branch job
+# unconditionally, bypassing the `changes:` filter that would otherwise
+# skip it when the latest commit didn't touch matching paths.
+.rules-dev-web-trigger: &rules-dev-web-trigger
+  if: $CI_PIPELINE_SOURCE == "web" && $CI_COMMIT_BRANCH == "dev"
 
 
 # --- Static code analysis ---
@@ -33,7 +41,31 @@ backend-lint:
     - ruff check .
     - ruff format --check .
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
+
+backend-sast:
+  stage: lint
+  image: python:3.12-slim
+  cache:
+    key: backend-pip-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/pip
+  script:
+    - pip install -U pip -q
+    - pip install uv -q
+    - uv pip install --system "bandit>=1.9" -q
+    - cd backend
+    # Fail only on findings not present in the baseline; run over severity
+    # Low+ so any new issue at any level is caught.
+    - bandit -r app/ -l --baseline bandit-baseline.json
+  rules:
+    - *rules-dev-web-trigger
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
 
 frontend-lint:
   stage: lint
@@ -48,7 +80,10 @@ frontend-lint:
     - npm ci --prefer-offline
     - npm run lint
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - frontend/**/*
 
 
 # --- Tests ---
@@ -62,10 +97,10 @@ backend-test:
     - name: redis:7-alpine
       alias: redis
   variables:
-    POSTGRES_DB: barricade_test
-    POSTGRES_USER: barricade
-    POSTGRES_PASSWORD: barricade
-    DATABASE_URL: "postgresql+asyncpg://barricade:barricade@postgres:5432/barricade_test"
+    POSTGRES_DB: labdog_test
+    POSTGRES_USER: labdog
+    POSTGRES_PASSWORD: labdog
+    DATABASE_URL: "postgresql+asyncpg://labdog:labdog@postgres:5432/labdog_test"
     REDIS_URL: "redis://redis:6379/0"
     SECRET_KEY: "ci-test-secret-key-not-for-production"
     ENCRYPTION_KEY: "Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz"
@@ -81,7 +116,10 @@ backend-test:
     - uv pip install --system '.[dev]'
     - python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
 
 frontend-build-check:
   stage: test
@@ -96,7 +134,29 @@ frontend-build-check:
     - npm ci --prefer-offline
     - npm run build
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - frontend/**/*
+
+docs-build-check:
+  stage: test
+  image: node:20-alpine
+  cache:
+    key: docs-npm-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/npm
+      - website/node_modules/
+  script:
+    - cd website
+    - npm ci --prefer-offline
+    - npm run build
+  rules:
+    - *rules-dev-web-trigger
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - docs/**/*
+        - website/**/*
 
 
 # --- Build & publish ---
@@ -124,6 +184,9 @@ build-image:
     - docker push $IMAGE:$CI_COMMIT_SHORT_SHA
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - backend/**/*
+        - frontend/**/*
 
 build-test-image:
   stage: build
@@ -147,7 +210,34 @@ build-test-image:
     - docker push $IMAGE:test
     - docker push $IMAGE:test-$CI_COMMIT_SHORT_SHA
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
+        - frontend/**/*
+
+pages:
+  stage: build
+  image: node:20-alpine
+  cache:
+    key: docs-npm-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/npm
+      - website/node_modules/
+  script:
+    - cd website
+    - npm ci --prefer-offline
+    - npm run build
+    - mv build ../public
+  artifacts:
+    paths:
+      - public
+  rules:
+    - *rules-dev-web-trigger
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - docs/**/*
+        - website/**/*
 
 
 # --- Security scans ---
@@ -173,7 +263,11 @@ trivy-scan:
     - trivy image --exit-code 0 --severity LOW,MEDIUM $IMAGE:test-$CI_COMMIT_SHORT_SHA
     - trivy image --exit-code 1 --severity HIGH,CRITICAL $IMAGE:test-$CI_COMMIT_SHORT_SHA
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
+        - frontend/**/*
 
 gitleaks:
   stage: scan
@@ -184,7 +278,11 @@ gitleaks:
   script:
     - gitleaks detect --source . --verbose --redact --no-banner
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
+        - frontend/**/*
 
 backend-audit:
   stage: scan
@@ -202,7 +300,10 @@ backend-audit:
     - uv pip install --system . -q
     - pip-audit --progress-spinner off
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/**/*
 
 frontend-audit:
   stage: scan
@@ -218,4 +319,7 @@ frontend-audit:
     - npm ci --prefer-offline
     - npm audit --audit-level=high --omit=dev
   rules:
+    - *rules-dev-web-trigger
     - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - frontend/**/*

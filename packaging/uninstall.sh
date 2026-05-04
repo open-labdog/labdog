@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# Barricade uninstaller
+# LabDog uninstaller
 # Usage: sudo ./uninstall.sh [--purge] [--help]
 
 set -euo pipefail
 
 PURGE=0
-log() { echo "[barricade-uninstall] $*" >&2; }
+log() { echo "[labdog-uninstall] $*" >&2; }
 die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
     cat <<'EOF'
 Usage: sudo ./uninstall.sh [--purge] [--help]
 
-Removes Barricade from the system.
+Removes LabDog from the system.
 
 Options:
   --purge   Also remove configuration, data, logs, and the system user
   --help    Show this help message
 
-Without --purge, configuration (/etc/barricade), data (/var/lib/barricade),
-logs (/var/log/barricade), and the barricade user are preserved.
+Without --purge, configuration (/etc/labdog), data (/var/lib/labdog),
+logs (/var/log/labdog), and the labdog user are preserved.
 EOF
     exit 0
 }
@@ -38,9 +38,9 @@ fi
 
 # --- Stop and disable services ---
 if command -v systemctl >/dev/null 2>&1; then
-    log "Stopping barricade service..."
-    systemctl stop barricade.service 2>/dev/null || true
-    systemctl disable barricade.service 2>/dev/null || true
+    log "Stopping labdog service..."
+    systemctl stop labdog.service 2>/dev/null || true
+    systemctl disable labdog.service 2>/dev/null || true
 fi
 
 # --- Detect systemd unit path ---
@@ -54,18 +54,18 @@ fi
 
 # --- Remove unit files ---
 log "Removing systemd unit files..."
-rm -f "$SYSTEMD_DIR"/barricade.service
+rm -f "$SYSTEMD_DIR"/labdog.service
 
 # --- Remove tmpfiles config ---
 log "Removing tmpfiles.d configuration..."
-rm -f /usr/lib/tmpfiles.d/barricade.conf
+rm -f /usr/lib/tmpfiles.d/labdog.conf
 
 # --- Remove application ---
-log "Removing /usr/lib/barricade..."
-rm -rf /usr/lib/barricade
+log "Removing /usr/lib/labdog..."
+rm -rf /usr/lib/labdog
 
 # --- Remove runtime directory ---
-rm -rf /run/barricade
+rm -rf /run/labdog
 
 # --- Reload systemd ---
 if command -v systemctl >/dev/null 2>&1; then
@@ -75,35 +75,35 @@ fi
 # --- Purge (config, data, logs, user) ---
 if [ "$PURGE" -eq 1 ]; then
     log "Purging configuration, data, logs, and user..."
-    rm -rf /etc/barricade /var/lib/barricade /var/log/barricade
+    rm -rf /etc/labdog /var/lib/labdog /var/log/labdog
 
-    if id barricade >/dev/null 2>&1; then
-        deluser --system barricade 2>/dev/null || userdel barricade 2>/dev/null || true
-        log "Removed system user 'barricade'"
+    if id labdog >/dev/null 2>&1; then
+        deluser --system labdog 2>/dev/null || userdel labdog 2>/dev/null || true
+        log "Removed system user 'labdog'"
     fi
-    if getent group barricade >/dev/null 2>&1; then
-        delgroup barricade 2>/dev/null || groupdel barricade 2>/dev/null || true
+    if getent group labdog >/dev/null 2>&1; then
+        delgroup labdog 2>/dev/null || groupdel labdog 2>/dev/null || true
     fi
 fi
 
 log "Uninstall complete."
 echo ""
 echo "Removed:"
-echo "  /usr/lib/barricade          (application)"
-echo "  $SYSTEMD_DIR/barricade.service (systemd unit)"
-echo "  /usr/lib/tmpfiles.d/barricade.conf"
-echo "  /run/barricade              (runtime)"
+echo "  /usr/lib/labdog          (application)"
+echo "  $SYSTEMD_DIR/labdog.service (systemd unit)"
+echo "  /usr/lib/tmpfiles.d/labdog.conf"
+echo "  /run/labdog              (runtime)"
 
 if [ "$PURGE" -eq 1 ]; then
-    echo "  /etc/barricade              (configuration)"
-    echo "  /var/lib/barricade          (data)"
-    echo "  /var/log/barricade          (logs)"
-    echo "  barricade user and group"
+    echo "  /etc/labdog              (configuration)"
+    echo "  /var/lib/labdog          (data)"
+    echo "  /var/log/labdog          (logs)"
+    echo "  labdog user and group"
 else
     echo ""
     echo "Preserved (use --purge to remove):"
-    echo "  /etc/barricade              (configuration)"
-    echo "  /var/lib/barricade          (data)"
-    echo "  /var/log/barricade          (logs)"
-    echo "  barricade system user"
+    echo "  /etc/labdog              (configuration)"
+    echo "  /var/lib/labdog          (data)"
+    echo "  /var/log/labdog          (logs)"
+    echo "  labdog system user"
 fi

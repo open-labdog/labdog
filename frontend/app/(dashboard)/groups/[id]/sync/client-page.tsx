@@ -94,7 +94,10 @@ function formatRule(r: RuleDiffItem): string {
   const port = r.port_start
     ? r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`
     : "any"
-  return `${r.action} ${r.protocol} ${r.direction} ${r.source_cidr ?? "any"} → ${r.destination_cidr ?? "any"} port=${port}${r.comment ? ` (${r.comment})` : ""}`
+  // Mirror the nftables renderer fallback (backend/app/rules/renderers/nftables.py:33-37):
+  // empty/null user-authored comments still land on the host as "Managed by LabDog".
+  const comment = r.comment || "Managed by LabDog"
+  return `${r.action} ${r.protocol} ${r.direction} ${r.source_cidr ?? "any"} → ${r.destination_cidr ?? "any"} port=${port} (${comment})`
 }
 
 function DiffLine({ rule, status }: { rule: RuleDiffItem; status: "add" | "remove" | "unchanged" }) {
@@ -239,12 +242,16 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
 
   return (
     <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Sync" }]} />}
+      {!embedded && <Breadcrumb items={[{ label: "Groups", href: "/groups" }, { label: group?.name ?? "Group", href: `/groups/${id}` }, { label: "Firewall Sync" }]} />}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Sync</h1>
+          <h1 className="text-2xl font-bold text-white">Firewall Sync</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Previews and applies <strong className="text-slate-300">firewall rule</strong>{" "}
+            changes only. Services, packages, /etc/hosts entries, cron jobs, users, DNS resolver, and CA certs sync from each module&apos;s own tab.
+          </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 shrink-0">
           <Button
             onClick={handlePreview}
             disabled={previewMutation.isPending}

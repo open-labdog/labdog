@@ -39,7 +39,7 @@ def check_all_drift():
                     from app.api.drift import _get_desired_state_for_host
 
                     desired, desired_policies = await _get_desired_state_for_host(
-                        host.id, db, host_source_ip=host.barricade_source_ip
+                        host.id, db, host_source_ip=host.labdog_source_ip
                     )
                     current_fw_state = await fetch_current_firewall_state(host.id, db)
                     drift_result = await check_drift(
@@ -70,7 +70,7 @@ def check_all_drift():
 
                     await refresh_host_sync_status(host, db)
 
-                    if not host.barricade_source_ip and host.ssh_key_id:
+                    if not host.labdog_source_ip and host.ssh_key_id:
                         try:
                             key_result = await db.execute(
                                 select(SSHKey).where(SSHKey.id == host.ssh_key_id)
@@ -87,7 +87,7 @@ def check_all_drift():
                                     username=ssh_key.ssh_user,
                                     client_keys=[imported_key],
                                 ) as probe:
-                                    host.barricade_source_ip = await get_source_ip(probe)
+                                    host.labdog_source_ip = await get_source_ip(probe)
                         except Exception:
                             pass
                     await db.commit()

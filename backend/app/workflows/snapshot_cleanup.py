@@ -1,8 +1,8 @@
-"""Orphaned snapshot detection and cleanup for Barricade update workflows.
+"""Orphaned snapshot detection and cleanup for LabDog update workflows.
 
 Snapshots created by the workflow follow the naming convention::
 
-    barricade-{run_id}-{unix_timestamp}
+    labdog-{run_id}-{unix_timestamp}
 
 A snapshot is considered orphaned when:
 - No active (pending/running) WorkflowHostRun references it, AND
@@ -24,21 +24,21 @@ from app.workflows.models import WorkflowHostRun, WorkflowHostStatus
 
 logger = logging.getLogger(__name__)
 
-_SNAPSHOT_PREFIX = "barricade-"
+_SNAPSHOT_PREFIX = "labdog-"
 _ACTIVE_STATUSES = {WorkflowHostStatus.pending, WorkflowHostStatus.running}
 
 
 def _parse_snapshot_timestamp(snapshot_name: str) -> datetime | None:
-    """Extract the UTC timestamp embedded in a barricade snapshot name.
+    """Extract the UTC timestamp embedded in a labdog snapshot name.
 
     Args:
-        snapshot_name: Snapshot name in the form ``barricade-{run_id}-{ts}``.
+        snapshot_name: Snapshot name in the form ``labdog-{run_id}-{ts}``.
 
     Returns:
         A timezone-aware :class:`datetime` in UTC, or ``None`` if the name
         does not match the expected format.
     """
-    # Expected format: barricade-<run_id>-<unix_timestamp>
+    # Expected format: labdog-<run_id>-<unix_timestamp>
     parts = snapshot_name.split("-")
     if len(parts) < 3:
         return None
@@ -53,11 +53,11 @@ async def find_orphaned_snapshots(
     db: AsyncSession,
     max_age_hours: int = 24,
 ) -> list[dict]:
-    """Discover barricade snapshots that are no longer associated with an active run.
+    """Discover labdog snapshots that are no longer associated with an active run.
 
     Iterates over every configured :class:`ProxmoxNode`, enumerates all VMs on
     each PVE node, and inspects their snapshots.  A snapshot whose name starts
-    with ``barricade-`` is treated as orphaned when:
+    with ``labdog-`` is treated as orphaned when:
 
     1. No :class:`WorkflowHostRun` with status *pending* or *running* references
        the snapshot by name, AND
@@ -194,7 +194,7 @@ async def find_orphaned_snapshots(
 
 
 async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
-    """Delete all orphaned barricade snapshots across every configured Proxmox node.
+    """Delete all orphaned labdog snapshots across every configured Proxmox node.
 
     The maximum age threshold is read from the ``workflow.snapshot_max_age_hours``
     application setting (default 24 hours).

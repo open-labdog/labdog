@@ -26,22 +26,25 @@ test.describe("Groups page", () => {
 
   test("create group via form and see it in list", async ({ page }) => {
     const groupName = `e2e-group-${Date.now()}`
+    // Use timestamp-based priority that avoids conflicts with fixed priorities
+    // auth.setup.ts cleans e2e groups before each run; use mod to stay in 1-500 range
+    const priority = 50 + (Date.now() % 400)
 
     await page.goto("/groups/new")
     await page.locator("#name").fill(groupName)
     await page.locator("#description").fill("E2E test group")
-    await page.locator("#priority").fill("999")
+    await page.locator("#priority").fill(String(priority))
     await page.getByRole("button", { name: "Create Group" }).click()
 
-    await page.waitForURL("**/groups")
-    await expect(page).toHaveURL(/\/groups$/)
+    await page.waitForURL(/\/groups\/?$/)
+    await expect(page).toHaveURL(/\/groups\/?$/)
     await expect(page.getByText(groupName)).toBeVisible()
   })
 
   test("cancel button on new group form returns to groups list", async ({ page }) => {
     await page.goto("/groups/new")
     await page.getByRole("button", { name: "Cancel" }).click()
-    await expect(page).toHaveURL(/\/groups$/)
+    await expect(page).toHaveURL(/\/groups\/?$/)
   })
 
   test("group detail page shows group info", async ({ request, page }) => {
@@ -53,8 +56,10 @@ test.describe("Groups page", () => {
 
     await page.goto(`/groups/${group.id}`)
     await expect(page.getByRole("heading", { name: groupName })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Manage Rules" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Sync" })).toBeVisible()
+    // Group detail uses tabs — check for the Rules tab button
+    await expect(page.getByRole("tab", { name: "Rules" })).toBeVisible()
+    // Sync tab replaces the old Sync link
+    await expect(page.getByRole("tab", { name: "Sync" })).toBeVisible()
   })
 
   test("group detail shows priority card", async ({ request, page }) => {
@@ -65,7 +70,10 @@ test.describe("Groups page", () => {
     const group = await res.json()
 
     await page.goto(`/groups/${group.id}`)
-    await expect(page.getByText("42")).toBeVisible()
+    // Priority value shown in the info card (2xl bold number)
+    // Scope to the card that has a "Priority" heading to avoid ambiguous matches
+    const priorityCard = page.locator("[data-slot='card']").filter({ hasText: "Priority" })
+    await expect(priorityCard.getByText("42")).toBeVisible()
   })
 
   test("group not found shows error message", async ({ page }) => {

@@ -3,15 +3,17 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
-from app.models.host import HostGroupMembership
+from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.user import User
 from app.schemas.git_repos import GitOpsEnableRequest, GitOpsStatusResponse
 from app.schemas.groups import GroupCreate, GroupResponse, GroupUpdate
+from app.schemas.hosts import HostResponse
 
 
 class BulkAddHostsRequest(BaseModel):
@@ -33,7 +35,7 @@ async def list_groups(
 @router.post("", response_model=GroupResponse, status_code=201)
 async def create_group(
     body: GroupCreate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     # Check unique name
@@ -46,6 +48,20 @@ async def create_group(
         raise HTTPException(status_code=409, detail="Group priority already in use")
     group = HostGroup(**body.model_dump())
     db.add(group)
+    await db.flush()
+    await log_action(
+        db=db,
+        action="create",
+        entity_type="host_group",
+        entity_id=group.id,
+        user_id=user.id,
+        after_state={
+            "name": group.name,
+            "priority": group.priority,
+            "category": group.category,
+            "description": group.description,
+        },
+    )
     await db.commit()
     await db.refresh(group)
     return group
@@ -180,8 +196,29 @@ async def update_group(
         )
         if existing_n.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Group name already exists")
+    before_state = {
+        "name": group.name,
+        "priority": group.priority,
+        "category": group.category,
+        "description": group.description,
+    }
     for field, value in body.model_dump(exclude_none=True).items():
         setattr(group, field, value)
+    await db.flush()
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="host_group",
+        entity_id=group.id,
+        user_id=user.id,
+        before_state=before_state,
+        after_state={
+            "name": group.name,
+            "priority": group.priority,
+            "category": group.category,
+            "description": group.description,
+        },
+    )
     await db.commit()
     await db.refresh(group)
     return group
@@ -190,7 +227,7 @@ async def update_group(
 @router.delete("/{group_id}", status_code=204)
 async def delete_group(
     group_id: int,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.host import HostGroupMembership
@@ -205,7 +242,22 @@ async def delete_group(
     group = result.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="Group not found")
+    before_state = {
+        "name": group.name,
+        "priority": group.priority,
+        "category": group.category,
+        "description": group.description,
+    }
     await db.delete(group)
+    await db.flush()
+    await log_action(
+        db=db,
+        action="delete",
+        entity_type="host_group",
+        entity_id=group_id,
+        user_id=user.id,
+        before_state=before_state,
+    )
     await db.commit()
 
 
@@ -223,6 +275,43 @@ async def get_group_host_count(
         .where(HostGroupMembership.c.group_id == group_id)
     )
     return {"count": result.scalar()}
+
+
+@router.get("/{group_id}/hosts", response_model=list[HostResponse])
+async def list_group_hosts(
+    group_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    hosts_result = await db.execute(
+        select(Host).where(
+            Host.id.in_(
+                select(HostGroupMembership.c.host_id).where(
+                    HostGroupMembership.c.group_id == group_id
+                )
+            )
+        )
+    )
+    hosts = hosts_result.scalars().all()
+
+    if hosts:
+        host_ids = [h.id for h in hosts]
+        memberships = await db.execute(
+            select(HostGroupMembership.c.host_id, HostGroupMembership.c.group_id).where(
+                HostGroupMembership.c.host_id.in_(host_ids)
+            )
+        )
+        groups_by_host: dict[int, list[int]] = {}
+        for host_id, gid in memberships.all():
+            groups_by_host.setdefault(host_id, []).append(gid)
+        for h in hosts:
+            setattr(h, "group_ids", groups_by_host.get(h.id, []))
+
+    return hosts
 
 
 @router.post("/{group_id}/hosts", status_code=200)
@@ -259,6 +348,14 @@ async def add_hosts_to_group(
         for hid in to_add:
             await auto_enqueue_for_new_membership(hid, group_id, db, triggered_by_user_id=user.id)
 
+        await log_action(
+            db=db,
+            action="add_hosts",
+            entity_type="host_group",
+            entity_id=group_id,
+            user_id=user.id,
+            after_state={"added_host_ids": to_add},
+        )
         await db.commit()
 
     return {"added": len(to_add), "already_member": len(already_member)}
@@ -268,7 +365,7 @@ async def add_hosts_to_group(
 async def remove_hosts_from_group(
     group_id: int,
     body: BulkAddHostsRequest,
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove multiple hosts from this group."""
@@ -276,12 +373,39 @@ async def remove_hosts_from_group(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Group not found")
 
+    # Capture which host_ids actually had memberships so the audit
+    # entry reflects what changed, not what the request asked for.
+    actual_member_ids = (
+        (
+            await db.execute(
+                select(HostGroupMembership.c.host_id).where(
+                    HostGroupMembership.c.group_id == group_id,
+                    HostGroupMembership.c.host_id.in_(body.host_ids),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     await db.execute(
         delete(HostGroupMembership).where(
             HostGroupMembership.c.group_id == group_id,
             HostGroupMembership.c.host_id.in_(body.host_ids),
         )
     )
+    await db.flush()
+
+    if actual_member_ids:
+        await log_action(
+            db=db,
+            action="remove_hosts",
+            entity_type="host_group",
+            entity_id=group_id,
+            user_id=user.id,
+            before_state={"removed_host_ids": list(actual_member_ids)},
+        )
+
     await db.commit()
 
 

@@ -1,9 +1,9 @@
-from app.ansible.inventory import generate_inventory
+from app.ansible_runtime.inventory import generate_inventory
 
-CLOUD_INIT_DISABLE_PATH = "/etc/cloud/cloud.cfg.d/99-barricade-disable-network-config.cfg"
+CLOUD_INIT_DISABLE_PATH = "/etc/cloud/cloud.cfg.d/99-labdog-disable-network-config.cfg"
 CLOUD_INIT_DISABLE_CONTENT = (
-    "# Managed by Barricade. Prevents cloud-init from re-applying network/DNS\n"
-    "# config on boot, which would overwrite the Barricade resolver sync.\n"
+    "# Managed by LabDog. Prevents cloud-init from re-applying network/DNS\n"
+    "# config on boot, which would overwrite the LabDog resolver sync.\n"
     "network: {config: disabled}\n"
 )
 
@@ -30,7 +30,7 @@ def generate_resolver_playbook(
 
     playbook = [
         {
-            "name": "Barricade DNS resolver sync",
+            "name": "LabDog DNS resolver sync",
             "hosts": "all",
             "become": True,
             "gather_facts": False,
@@ -60,7 +60,7 @@ def _disable_cloud_init_network_tasks() -> list[dict]:
         {
             "name": "Check for cloud-init",
             "ansible.builtin.stat": {"path": "/etc/cloud/cloud.cfg.d"},
-            "register": "barricade_cloud_init_dir",
+            "register": "labdog_cloud_init_dir",
         },
         {
             "name": "Disable cloud-init network config (if cloud-init present)",
@@ -69,7 +69,7 @@ def _disable_cloud_init_network_tasks() -> list[dict]:
                 "dest": CLOUD_INIT_DISABLE_PATH,
                 "mode": "0644",
             },
-            "when": "barricade_cloud_init_dir.stat.exists",
+            "when": "labdog_cloud_init_dir.stat.exists",
         },
     ]
 
@@ -79,12 +79,12 @@ def _tasks_resolv_conf(content: str) -> list[dict]:
         {
             "name": "Stat /etc/resolv.conf",
             "ansible.builtin.stat": {"path": "/etc/resolv.conf"},
-            "register": "barricade_resolv_stat",
+            "register": "labdog_resolv_stat",
         },
         {
             "name": "Replace /etc/resolv.conf symlink",
             "ansible.builtin.file": {"path": "/etc/resolv.conf", "state": "absent"},
-            "when": "barricade_resolv_stat.stat.islnk | default(false)",
+            "when": "labdog_resolv_stat.stat.islnk | default(false)",
         },
         {
             "name": "Write /etc/resolv.conf",
@@ -123,7 +123,7 @@ def _tasks_networkmanager(content: str) -> list[dict]:
             "name": "Write NetworkManager DNS config",
             "ansible.builtin.copy": {
                 "content": content,
-                "dest": "/etc/NetworkManager/conf.d/90-barricade-dns.conf",
+                "dest": "/etc/NetworkManager/conf.d/90-labdog-dns.conf",
                 "mode": "0644",
             },
         },
