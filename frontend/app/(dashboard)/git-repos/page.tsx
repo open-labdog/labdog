@@ -303,7 +303,12 @@ export default function GitReposPage() {
               accessor: (r) => r.name,
               cell: (r) => (
                 <div>
-                  <span className="text-sm font-medium text-white">{r.name}</span>
+                  <Link
+                    href={`/git-repos/${r.id}`}
+                    className="text-sm font-medium text-white hover:text-blue-300"
+                  >
+                    {r.name}
+                  </Link>
                   {r.last_commit_sha && (
                     <div className="font-mono text-[11px] text-slate-500 mt-0.5" title={r.last_commit_sha}>
                       {r.last_commit_sha.slice(0, 7)}
