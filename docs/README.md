@@ -139,6 +139,19 @@ When you sync, LabDog computes the full effective configuration and pushes it to
 
 **Key takeaway**: Modules that manage a single config file (firewall/nftables, firewall/iptables, /etc/hosts, DNS resolver) use **full replacement** — LabDog owns the entire file and manual edits will be lost on next sync. Modules that manage individual items (services, packages, users, cron jobs) are **selectively managed** — only the items you define in LabDog are touched; everything else on the host is left alone.
 
+**Coalesced execution**: From v0.2.0 onward, every sync — bulk or
+per-tab — runs through one orchestrator task per host that emits a
+single Ansible playbook covering the requested modules in a fixed
+order (`packages → resolver → services → hosts-file → cron →
+linux-users → firewall`, with firewall last so its 60-second deadman
+switch doesn't expire while later modules run). Concurrent sync
+requests for the same host queue (`SyncJob.status="pending"`) and
+are dispatched in `created_at` order; only one ansible-runner
+invocation against a given host at a time. The new
+`POST /api/sync/hosts/{id}/bulk` endpoint exposes multi-module
+syncs to API callers; per-tab Sync buttons are unchanged externally
+but internally delegate to the same orchestrator.
+
 ### Automatic Safety Rules
 
 - **SSH lockout prevention**: An SSH ACCEPT rule for the LabDog server IP is always injected at the top of the firewall ruleset (priority 999999). This rule cannot be deleted and ensures you never lock yourself out.
@@ -407,14 +420,31 @@ npx playwright test --ui     # interactive test runner
 | `GET` | `/api/audit-log` | View audit trail |
 | `GET` | `/health` | Health check |
 
+### Sync (coalesced multi-module)
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/sync/hosts/{id}/bulk` | Sync any subset of modules in one call. Body: `{"module_filter": ["firewall", "services"]}` (or `null` for all). Idempotent — returns the in-flight job's id with HTTP 200 if a bulk sync is already pending/running for the host. Superuser-only. |
+| `GET` | `/api/sync/jobs/{id}` | Check sync job status (any sync — bulk or per-tab) |
+
+The bulk endpoint dispatches one orchestrator task per host that
+produces a single unified Ansible playbook covering every requested
+module — one ansible-runner invocation regardless of how many
+modules are syncing. Per-host serialisation: only one sync runs per
+host at a time; concurrent requests queue (`SyncJob.status="pending"`)
+and are dispatched in `created_at` order when the in-flight task
+finishes.
+
+Two `audit_log` rows per sync: `sync_triggered` at API entry,
+`sync_completed` at orchestrator finish (carries
+`{module: "in_sync"|"error"|"no_tasks"}` composite payload).
+
 ### Firewall Rules
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/rules` | Manage firewall rules per group |
 | `GET` | `/api/hosts/{id}/effective-rules` | Get merged effective rules |
 | `POST` | `/api/sync/hosts/{id}/plan` | Preview firewall changes |
-| `POST` | `/api/sync/hosts/{id}/sync` | Apply firewall changes via Ansible |
-| `GET` | `/api/sync/jobs/{id}` | Check sync job status |
+| `POST` | `/api/sync/hosts/{id}/sync` | Apply firewall changes via Ansible. Internally a single-module bulk sync (`module_filter=["firewall"]`); shares the orchestrator's queue + audit semantics. |
 | `POST` | `/api/drift/hosts/{id}/check` | Check firewall drift |
 | `POST` | `/api/drift/groups/{id}/check` | Check drift for all hosts in group |
 
@@ -425,7 +455,7 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/services` | Host-level service overrides |
 | `GET` | `/api/hosts/{id}/effective-services` | Merged effective services |
 | `POST` | `/api/services/hosts/{id}/plan` | Preview service changes |
-| `POST` | `/api/services/hosts/{id}/sync` | Sync services via Ansible |
+| `POST` | `/api/services/hosts/{id}/sync` | Sync services via Ansible (delegated to the orchestrator with `module_filter=["services"]`) |
 | `POST` | `/api/services/hosts/{id}/drift-check` | Check service drift |
 | `PUT` | `/api/services/hosts/{id}/drift-settings` | Toggle service drift detection |
 | `GET` | `/api/services/hosts/{id}/unit-file/{service_name}` | Fetch current unit file content from host via SSH |
@@ -438,7 +468,7 @@ npx playwright test --ui     # interactive test runner
 | `GET` | `/api/hosts/{id}/effective-hosts-entries` | Merged effective entries |
 | `GET` | `/api/hosts/{id}/hosts-file-preview` | Preview rendered /etc/hosts |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/plan` | Preview hosts file changes |
-| `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible |
+| `POST` | `/api/hosts-mgmt/hosts/{id}/sync` | Sync /etc/hosts via Ansible (delegated to the orchestrator with `module_filter=["hosts-file"]`) |
 | `POST` | `/api/hosts-mgmt/hosts/{id}/drift-check` | Check hosts file drift |
 
 ### Package Management
@@ -447,7 +477,7 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/packages` | Manage packages per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/packages` | Host-level package overrides |
 | `GET` | `/api/hosts/{id}/effective-packages` | Merged effective packages |
-| `POST` | `/api/packages/hosts/{id}/sync` | Sync packages via Ansible |
+| `POST` | `/api/packages/hosts/{id}/sync` | Sync packages via Ansible (delegated to the orchestrator with `module_filter=["packages"]`) |
 
 ### Linux User Management
 | Method | Path | Description |
@@ -455,7 +485,7 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/users` | Manage Linux users per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/users` | Host-level user overrides |
 | `GET` | `/api/hosts/{id}/effective-users` | Merged effective users |
-| `POST` | `/api/user-mgmt/hosts/{id}/sync` | Sync users via Ansible |
+| `POST` | `/api/user-mgmt/hosts/{id}/sync` | Sync users via Ansible (delegated to the orchestrator with `module_filter=["linux-users"]`) |
 
 ### Cron Jobs
 | Method | Path | Description |
@@ -463,7 +493,7 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/cron-jobs` | Manage cron jobs per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/cron-jobs` | Host-level cron overrides |
 | `GET` | `/api/hosts/{id}/effective-cron-jobs` | Merged effective cron jobs |
-| `POST` | `/api/cron/hosts/{id}/sync` | Sync cron jobs via Ansible |
+| `POST` | `/api/cron/hosts/{id}/sync` | Sync cron jobs via Ansible (delegated to the orchestrator with `module_filter=["cron"]`) |
 
 ### DNS Resolver
 | Method | Path | Description |
@@ -471,7 +501,7 @@ npx playwright test --ui     # interactive test runner
 | `GET/POST/PUT/DELETE` | `/api/groups/{id}/resolver` | Manage resolver config per group |
 | `GET/POST/PUT/DELETE` | `/api/hosts/{id}/resolver` | Host-level resolver override |
 | `GET` | `/api/hosts/{id}/effective-resolver` | Merged effective resolver |
-| `POST` | `/api/resolver/hosts/{id}/sync` | Sync resolver via Ansible |
+| `POST` | `/api/resolver/hosts/{id}/sync` | Sync resolver via Ansible (delegated to the orchestrator with `module_filter=["resolver"]`) |
 
 ### Host Discovery
 | Method | Path | Description |

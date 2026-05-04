@@ -32,7 +32,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Cron Jobs](groups.md#cron-jobs) | Scheduled tasks deployed via Ansible |
 | [Linux Users](groups.md#linux-users) | User accounts, SSH keys, sudo rules |
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
-| [Firewall Sync](groups.md#firewall-sync) | Preview and apply firewall rule changes per group (other modules sync from their own per-tab buttons) |
+| [Firewall Sync](groups.md#firewall-sync) | Preview and apply firewall rule changes per group (other modules sync from their own per-tab buttons; v0.2.0+ all per-tab syncs route through one per-host orchestrator with PostgreSQL serialisation) |
 | [Update Workflows](workflows.md) | Scheduled per-group action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, custom packs) with snapshot/rollback |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |

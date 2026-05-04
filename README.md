@@ -18,6 +18,7 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 - **GitOps**: Import configuration from Git repositories with webhook-driven sync
 - **Web shell**: Browser-based SSH terminal via xterm.js + WebSocket + asyncssh
 - **Plan-before-apply**: Preview exact changes before syncing to remote hosts
+- **Coalesced sync**: One Ansible playbook per host covering every requested module — bulk-sync a host or per-tab single-module sync, both run through the same per-host orchestrator with PostgreSQL-backed serialisation. No SSH races between concurrent module syncs.
 - **SSH lockout prevention**: Auto-injected system rule ensures SSH access is never accidentally blocked
 - **Drift detection**: Periodic and manual checks for out-of-sync hosts across all modules
 - **Audit trail**: Append-only log of all actions with before/after state

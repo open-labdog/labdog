@@ -77,6 +77,38 @@ Groups have priorities (higher number wins). When a host belongs to multiple gro
 2. **Sync**: Generate and execute Ansible playbook to apply changes
 3. **Drift check**: Compare current host state against desired state
 
+#### Coalesced per-host sync (v0.2.0+, "option-c")
+Every sync — bulk and per-tab — flows through one orchestrator task
+per host that produces a single unified Ansible playbook covering
+every requested module. One ansible-runner invocation per sync, not
+seven. Per-host serialisation via PostgreSQL advisory lock; concurrent
+requests for the same host queue (`SyncJob.status="pending"`) and are
+dispatched in `created_at` order when the in-flight task finishes.
+
+- Entry points: `POST /api/sync/hosts/{id}/bulk` (multi-module) and
+  the seven per-tab endpoints (single-module). Per-tab endpoints
+  unchanged externally — internally their Celery tasks are one-line
+  delegators to `run_host_sync` with a single-module filter.
+- Orchestrator core: `app.sync.orchestrator.orchestrate_host_sync`
+  (pure-ish; DB reads + composition + dep-injected runner).
+- Celery wrapper: `app.tasks.host_sync_orchestrator.run_host_sync`
+  (claim-or-defer at start, atomic post-run write of `SyncJob` +
+  per-module `HostModuleStatus` + one `AuditLog` row, dispatch-next
+  in finally).
+- Composer: `app.ansible_runtime.composer` — `PlaybookFragment`
+  dataclass + 7 `fragment_<module>()` adapters that wrap each
+  per-module generator, plus `compose_playbook` that emits in
+  canonical order with `_inject_tags` per task and a `hosts`
+  sentinel rewritten at compose time.
+- Outcome aggregation: `app.ansible_runtime.outcomes`
+  (`aggregate_module_outcomes`) — resolves module identity from
+  `event_data.play` on ansible-runner events via the
+  `PLAY_NAME_TO_MODULE` map next to `CANONICAL_ORDER` in `composer.py`.
+  Both keys must move together when a play is renamed.
+- Audit shape: one `sync_triggered` row at API entry + one
+  `sync_completed` row at orchestrator finish; the completion row
+  carries `{module: outcome}` composite payload (per Decision B2).
+
 ### Discovery flow
 Network scanning is async via Celery tasks. Bulk-add requires SSH verification — each host must be reachable before being added.
 
