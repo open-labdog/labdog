@@ -4,6 +4,7 @@ import { useReducer } from "react"
 import Link from "next/link"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
+import { AuthStep } from "@/components/git-repos/auth-step"
 import { WizardStepIndicator, type WizardStep } from "@/components/git-repos/wizard-step-indicator"
 
 // Placeholder types for the wizard state. Replaced with the real
@@ -52,32 +53,6 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-function AuthStepStub({
-  onCreated,
-}: {
-  onCreated: (repoId: number, repoName: string) => void
-}) {
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-      <p className="text-sm text-slate-400">
-        Repository connection form goes here. Submitting it creates a row via{" "}
-        <code className="text-slate-300">POST /api/git-repos</code>, then advances to the scan step.
-      </p>
-      <div className="mt-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => onCreated(0, "")}
-          disabled
-          data-testid="auth-step-submit-stub"
-        >
-          Continue (wired in F2)
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 function ScanStepStub({ repoName }: { repoName: string | null }) {
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
@@ -122,9 +97,9 @@ export default function RepoOnboardingWizard() {
       <WizardStepIndicator current={state.step} />
 
       {state.step === "auth" && (
-        <AuthStepStub
-          onCreated={(repoId, repoName) =>
-            dispatch({ type: "REPO_CREATED", repoId, repoName })
+        <AuthStep
+          onCreated={(repo) =>
+            dispatch({ type: "REPO_CREATED", repoId: repo.id, repoName: repo.name })
           }
         />
       )}
