@@ -7,7 +7,78 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-Nothing yet — this section gathers changes after the v0.1.0 tag.
+### Added
+
+#### Coalesced per-host sync (option-c)
+
+Replaces the seven independent per-module Celery sync tasks with one
+orchestrator task per host that produces a single unified Ansible
+playbook. Eliminates the per-host SSH race between concurrent module
+syncs and unblocks bulk-sync UX.
+
+- **New `POST /api/sync/hosts/{host_id}/bulk` endpoint** — sync any
+  subset of modules (or all of them) for a host in one call.
+  Validates `module_filter` (rejects empty list, unknown module names),
+  is idempotent on the in-flight job (HTTP 200 with the existing
+  `job_id` if a bulk sync is already pending or running for the host),
+  and requires superuser auth (matches per-tab convention).
+- **`run_host_sync` Celery task** — drives the full lifecycle:
+  per-host serialisation via PostgreSQL advisory lock, atomic
+  per-module status writes (`HostModuleStatus`), per-(sync_job)
+  audit log emission with composite `module_outcomes` payload,
+  tmpfs `/dev/shm` lifecycle, exception compensation, and
+  dispatch-next-pending on completion.
+- **Per-tab delegation** — the seven existing per-module sync tasks
+  (`run_sync_playbook`, `service_sync.run_sync`, etc.) are now
+  one-line delegators to `run_host_sync`. Same task names preserved
+  for any external Celery clients; same per-module audit + status
+  semantics. Sync triggered from any single-tab API call now goes
+  through the unified orchestrator.
+- **Pending-job queue** — sync requests against a host that already
+  has a running sync are queued (status `pending`); the running
+  task dispatches the oldest pending one when it finishes. UI sees
+  the queued state immediately.
+- **`sync_triggered` audit events** — bulk and per-tab sync API
+  endpoints now emit an audit row at the moment of trigger
+  (separate from the existing `sync_completed` row at finish).
+
+#### Documentation & process
+
+- New top-level `ROADMAP.md` — high-altitude in-design / ideas /
+  out-of-scope view, distinct from `TODO.md` (open near-term tasks).
+- `CONTRIBUTING.md` documents the branch-scoped `plans/` workflow:
+  drop plan files into `plans/` on a work branch, capture decisions
+  in commit messages, delete `plans/` before merge. `dev` and
+  `main` never carry it.
+
+### Fixed
+
+- Pre-existing bug in `app.rules.desired_state.get_desired_state`:
+  short-circuited to `[]` when a host had no groups AND no host-level
+  rules, skipping the auto-injected SSH lockout rule. Now always runs
+  `merge_group_rules` so the lockout rule is unconditionally present
+  on every code path (firewall sync, drift check, orchestrator).
+
+### Security
+
+- **SEC-03**: `POST /api/sync/hosts/{host_id}/bulk` now requires
+  superuser (was authenticated-user). Matches the existing per-tab
+  endpoint policy.
+- **SEC-04**: SSH key tmpfs file is opened with `O_NOFOLLOW` to
+  foreclose symlink-attack regressions.
+
+### Internal
+
+- Composer + 7 fragment adapters at `app.ansible_runtime.composer`:
+  pure library code that wraps each per-module generator into a
+  uniform `PlaybookFragment` and concatenates them in canonical
+  order with module-tagged tasks and a `hosts` sentinel.
+- `app.ansible_runtime.outcomes`: per-module outcome aggregator that
+  resolves module identity from `event_data.play` on ansible-runner
+  events.
+- Firewall `get_effective_rules` / `get_effective_policies` moved
+  from `app/api/rules.py` to `app/rules/merge.py` for consistency
+  with the per-module pattern (cron, services, packages, …).
 
 ## [0.1.0] — 2026-04-26
 
