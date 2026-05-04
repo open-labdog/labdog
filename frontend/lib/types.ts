@@ -231,6 +231,42 @@ export interface RepoScanResponse {
   head_sha: string | null
 }
 
+export interface ActivatePackSelection {
+  path: string
+  name: string
+  role: PackRole
+}
+
+export interface ActivateGitopsBinding {
+  file_path: string
+  host_group_id: number
+}
+
+export interface RepoActivateRequest {
+  packs: ActivatePackSelection[]
+  gitops_bindings: ActivateGitopsBinding[]
+}
+
+export interface ActivatedPackOut {
+  pack_id: number
+  name: string
+  path: string
+  role: PackRole
+  requested_name: string
+  name_was_disambiguated: boolean
+}
+
+export interface ActivatedGitopsBindingOut {
+  host_group_id: number
+  file_path: string
+}
+
+export interface RepoActivateResponse {
+  activated_packs: ActivatedPackOut[]
+  activated_gitops_bindings: ActivatedGitopsBindingOut[]
+  head_sha: string | null
+}
+
 export interface FirewallRule {
   id: number
   group_id: number

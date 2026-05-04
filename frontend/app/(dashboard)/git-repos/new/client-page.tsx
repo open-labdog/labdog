@@ -2,39 +2,33 @@
 
 import { useReducer } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { AuthStep } from "@/components/git-repos/auth-step"
 import { ScanStep } from "@/components/git-repos/scan-step"
+import { ReviewStep } from "@/components/git-repos/review-step"
 import { WizardStepIndicator, type WizardStep } from "@/components/git-repos/wizard-step-indicator"
 import type { RepoScanResponse } from "@/lib/types"
-
-type SelectionsState = {
-  packs: Record<string, { checked: boolean; role: "default" | "override" }>
-  gitops: Record<string, { checked: boolean; host_group_id: number | null }>
-}
 
 type State = {
   step: WizardStep
   repoId: number | null
   repoName: string | null
   scanResult: RepoScanResponse | null
-  selections: SelectionsState
 }
 
 type Action =
   | { type: "REPO_CREATED"; repoId: number; repoName: string }
-  | { type: "SCAN_SUCCESS"; result: RepoScanResponse; selections: SelectionsState }
+  | { type: "SCAN_SUCCESS"; result: RepoScanResponse }
   | { type: "BACK_TO_AUTH" }
   | { type: "BACK_TO_SCANNING" }
-  | { type: "UPDATE_SELECTIONS"; selections: SelectionsState }
 
 const initialState: State = {
   step: "auth",
   repoId: null,
   repoName: null,
   scanResult: null,
-  selections: { packs: {}, gitops: {} },
 }
 
 function reducer(state: State, action: Action): State {
@@ -42,26 +36,17 @@ function reducer(state: State, action: Action): State {
     case "REPO_CREATED":
       return { ...state, step: "scanning", repoId: action.repoId, repoName: action.repoName }
     case "SCAN_SUCCESS":
-      return { ...state, step: "review", scanResult: action.result, selections: action.selections }
+      return { ...state, step: "review", scanResult: action.result }
     case "BACK_TO_AUTH":
       return initialState
     case "BACK_TO_SCANNING":
       return { ...state, step: "scanning", scanResult: null }
-    case "UPDATE_SELECTIONS":
-      return { ...state, selections: action.selections }
   }
-}
-
-function ReviewStepStub() {
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-      <p className="text-sm text-slate-400">Review and activate UI goes here (wired in F4).</p>
-    </div>
-  )
 }
 
 export default function RepoOnboardingWizard() {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const router = useRouter()
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -96,17 +81,18 @@ export default function RepoOnboardingWizard() {
         <ScanStep
           repoId={state.repoId}
           repoName={state.repoName ?? ""}
-          onScanned={(result) =>
-            dispatch({
-              type: "SCAN_SUCCESS",
-              result,
-              selections: { packs: {}, gitops: {} },
-            })
-          }
+          onScanned={(result) => dispatch({ type: "SCAN_SUCCESS", result })}
           onCancelled={() => dispatch({ type: "BACK_TO_AUTH" })}
         />
       )}
-      {state.step === "review" && <ReviewStepStub />}
+      {state.step === "review" && state.repoId !== null && state.scanResult !== null && (
+        <ReviewStep
+          repoId={state.repoId}
+          scanResult={state.scanResult}
+          onActivated={() => router.push(`/git-repos/${state.repoId}`)}
+          onRescan={() => dispatch({ type: "BACK_TO_SCANNING" })}
+        />
+      )}
     </div>
   )
 }
