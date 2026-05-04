@@ -32,13 +32,52 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-43`, `SEC-06`,
+ID counter as of last housekeeping pass: `BUG-44`, `SEC-06`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
 ---
 
 ## Open
+
+### High
+
+- [ ] **BUG-44** `backend/app/sync/orchestrator.py:78-99` — orchestrator outcome aggregation always returns `"no_tasks"` because `event_data.task_tags` isn't populated by ansible-runner
+
+  Verified empirically: a bulk sync against a real host runs the unified
+  playbook to completion (Celery worker log shows real `runner_on_ok` /
+  `runner_on_changed` events with `ok=13 changed=6 failed=0`), but the
+  orchestrator's `module_outcomes` returns `"no_tasks"` for every module
+  in the audit log. The Celery wrapper translates `"no_tasks"` →
+  `"in_sync"` when writing `HostModuleStatus`, so the operator-visible
+  per-module status ends up correct *only because the playbook didn't
+  fail*. If any task fails, its `runner_on_failed` event is also tagless
+  per the same bug — `aggregate_module_outcomes` ignores tagless events,
+  no module gets marked `error`, and the SyncJob is reported as `success`
+  with all modules `in_sync` despite real failure.
+  Root cause: `_runner_events_to_task_events` reads
+  `event_data.task_tags` (line 93 of `orchestrator.py`). ansible-runner's
+  event payloads don't include `task_tags` for `runner_on_*` events when
+  the playbook isn't invoked with explicit `--tags` filtering — the field
+  is present at play-level events (`playbook_on_task_start` carries tag
+  metadata under different keys) but not on the per-task result events
+  the aggregator consumes. The unit tests in `test_outcomes.py` build
+  synthetic events with a top-level `tags` key (the contract the
+  aggregator expects), so they don't catch the projection mismatch.
+  Severity: High. Functionally masks real Ansible failures — a single
+  failed task in the unified playbook can produce a SyncJob marked
+  `success` with all modules `in_sync` and no audit-visible error.
+  Trigger: any real bulk sync (verified with `POST /api/sync/hosts/2/bulk`
+  against tester3 — outcomes audit log shows
+  `{"firewall": "no_tasks", "services": "no_tasks", ...}` despite the
+  playbook running tasks).
+  Fix sketch: instead of relying on `event_data.task_tags`, parse the
+  `play_pattern` / `task_path` / `task` fields available on
+  `runner_on_*` events and either (a) match each task's path against
+  the play's name to attribute it to a module, or (b) walk
+  `playbook_on_task_start` events first to build a task→play→module
+  map, then look each result event up by `task_uuid`. Approach (b) is
+  more robust to play-name renames.
 
 ### Medium
 
