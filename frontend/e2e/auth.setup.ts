@@ -10,7 +10,7 @@ const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@labdog.io"
 const TEST_PASSWORD = process.env.TEST_USER_PASSWORD || "E2eTestPass1"
 
 function dbExec(sql: string) {
-  const containers = ["labdog-postgres-1", "postgres"]
+  const containers = ["labdog-postgres-1", "dev-postgres-1", "postgres"]
   for (const container of containers) {
     try {
       execSync(
