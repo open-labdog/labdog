@@ -16,8 +16,8 @@ import pytest
 import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ansible_runtime.composer import CANONICAL_ORDER
-from app.sync.orchestrator import orchestrate_host_sync
+from app.ansible_runtime.composer import CANONICAL_ORDER, PLAY_NAME_TO_MODULE
+from app.sync.orchestrator import _runner_events_to_task_events, orchestrate_host_sync
 from tests.conftest import create_host, create_ssh_key
 
 # These tests touch the real DB via testcontainers (factories require
@@ -43,18 +43,40 @@ class _FakeRunner:
         self.events = events
 
 
+# Reverse of ``PLAY_NAME_TO_MODULE``. Used by ``_make_event`` to translate
+# the canonical module name a test asks for into a representative
+# ``event_data.play`` string of the shape ansible-runner actually emits.
+# Firewall has two plays (nftables/iptables); we deterministically pick
+# the nftables one — the orchestrator resolves both to ``firewall``.
+_MODULE_TO_PLAY_NAME: dict[str, str] = {}
+for _play, _module in PLAY_NAME_TO_MODULE.items():
+    _MODULE_TO_PLAY_NAME.setdefault(_module, _play)
+
+
 def _make_event(
     event_type: str,
     tags: list[str],
 ) -> dict[str, Any]:
     """Build a synthetic ansible-runner event dict.
 
-    Matches the shape ``orchestrate_host_sync`` consumes:
-    ``{"event": <type>, "event_data": {"task_tags": [...]}}``.
+    The event carries module identity via ``event_data.play``, matching
+    the real ansible-runner event shape. ``tags`` is interpreted as a
+    list with a single canonical module name (the convention these
+    tests adopted before BUG-44 — kept so existing assertions and
+    fixtures don't churn). Multi-tag events are not emitted in the
+    real stream and aren't useful here.
     """
+    if not tags:
+        play_name = "<unknown play>"
+    else:
+        play_name = _MODULE_TO_PLAY_NAME.get(tags[0], tags[0])
     return {
         "event": event_type,
-        "event_data": {"task_tags": list(tags)},
+        "event_data": {
+            "play": play_name,
+            "task": "synthetic test task",
+            "task_uuid": f"00000000-0000-0000-0000-{abs(hash(play_name)) % 10**12:012d}",
+        },
     }
 
 
@@ -411,3 +433,185 @@ async def test_orchestrate_resolver_only_no_config_short_circuits(db: AsyncSessi
     assert playbook_yaml == ""
     assert inventory_json == ""
     assert runner_calls == []
+
+
+# ---------------------------------------------------------------------------
+# BUG-44 — projection from realistic ansible-runner event shape
+#
+# The event payloads below are stripped-down versions of what the
+# orchestrator captured against a real bulk sync of tester3 (a host
+# running tasks across all 7 canonical modules). Only the fields the
+# projection actually reads are kept (``event``, ``event_data.play``,
+# ``event_data.task``, ``event_data.task_uuid``); the full payloads
+# also carry ``play_uuid``, ``task_path``, ``res``, ``stdout``, etc.
+# but those are irrelevant to module-identity resolution.
+#
+# Critically these fixtures do *not* set ``event_data.task_tags`` —
+# that key is what the broken pre-fix code consumed and what
+# ansible-runner actually does *not* emit on ``runner_on_*`` events.
+# The pre-fix projection produces ``[]`` tags for every event here, so
+# every module ends up ``no_tasks``; the fixed projection resolves the
+# play name to a canonical module via ``PLAY_NAME_TO_MODULE``.
+# ---------------------------------------------------------------------------
+
+
+def _real_shape_event(
+    event_type: str, play_name: str, task: str = "synthetic test task"
+) -> dict[str, Any]:
+    """Build an event in the shape ansible-runner actually emits.
+
+    Differs from ``_make_event`` only in being explicit about the play
+    name (rather than translating from a canonical module). Used by the
+    realistic-shape tests to make the contract assertion obvious.
+    """
+    return {
+        "event": event_type,
+        "event_data": {
+            "play": play_name,
+            "task": task,
+            "task_uuid": f"00000000-0000-0000-0000-{abs(hash(task)) % 10**12:012d}",
+        },
+    }
+
+
+def test_runner_events_to_task_events_resolves_real_event_shape() -> None:
+    """Realistic event stream → projection finds module identity per play.
+
+    Mirrors the captured event stream from a bulk sync against tester3:
+    every play in the unified playbook emits ``playbook_on_play_start``
+    plus several ``playbook_on_task_start`` and ``runner_on_ok`` events.
+    Only the four ``runner_on_*`` event types are consumed by the
+    projection; the rest are ignored.
+    """
+    realistic_events = [
+        # Packages play
+        _real_shape_event("playbook_on_play_start", "LabDog Package Management"),
+        _real_shape_event("playbook_on_task_start", "LabDog Package Management"),
+        _real_shape_event("runner_on_ok", "LabDog Package Management", task="Gathering Facts"),
+        # Services play
+        _real_shape_event("playbook_on_play_start", "LabDog service management"),
+        _real_shape_event(
+            "runner_on_ok", "LabDog service management", task="Gather systemd service facts"
+        ),
+        _real_shape_event(
+            "runner_on_skipped", "LabDog service management", task="Remove orphaned overrides"
+        ),
+        # Hosts file play
+        _real_shape_event("runner_on_ok", "LabDog /etc/hosts management", task="Deploy /etc/hosts"),
+        # Firewall (nftables) play
+        _real_shape_event(
+            "runner_on_ok",
+            "Apply nftables firewall rules (safe mode)",
+            task="Apply nftables rules atomically",
+        ),
+        # Unrelated event types should not produce projection rows.
+        {"event": "verbose", "event_data": {"play": "LabDog Package Management"}},
+        {"event": "playbook_on_stats", "event_data": {}},
+    ]
+
+    projected = _runner_events_to_task_events(realistic_events)
+
+    # Only the five ``runner_on_*`` events project. ``runner_on_skipped``
+    # is in ``_RELEVANT_EVENT_TYPES`` so it counts; ``playbook_on_*`` and
+    # ``verbose`` do not.
+    assert len(projected) == 5
+    seen_modules = {ev["tags"][0] for ev in projected if ev["tags"]}
+    assert seen_modules == {"packages", "services", "hosts-file", "firewall"}
+
+    # Every projected event has exactly one tag (the resolved module).
+    for ev in projected:
+        assert len(ev["tags"]) == 1
+        assert ev["tags"][0] in CANONICAL_ORDER
+        assert ev["failed"] is False
+        assert ev["unreachable"] is False
+
+
+def test_runner_events_to_task_events_marks_failed_event_correctly() -> None:
+    """A ``runner_on_failed`` event with the realistic shape projects with ``failed=True``."""
+    events = [
+        _real_shape_event(
+            "runner_on_failed",
+            "Apply nftables firewall rules (safe mode)",
+            task="Apply nftables rules atomically",
+        ),
+        _real_shape_event(
+            "runner_on_unreachable",
+            "LabDog DNS resolver sync",
+            task="Render resolver config",
+        ),
+        _real_shape_event("runner_on_ok", "LabDog Package Management", task="Install package: vim"),
+    ]
+
+    projected = _runner_events_to_task_events(events)
+    by_module = {ev["tags"][0]: ev for ev in projected}
+
+    assert by_module["firewall"]["failed"] is True
+    assert by_module["firewall"]["unreachable"] is False
+    assert by_module["resolver"]["unreachable"] is True
+    assert by_module["resolver"]["failed"] is False
+    assert by_module["packages"]["failed"] is False
+    assert by_module["packages"]["unreachable"] is False
+
+
+async def test_orchestrator_outcomes_real_event_fixture(db: AsyncSession, tmp_path):
+    """Full ``orchestrate_host_sync`` integration with realistic events.
+
+    BUG-44: this test would have failed before the fix because the
+    projection looked at ``event_data.task_tags`` (always absent in
+    real events) so every module collapsed to ``no_tasks`` and the
+    failed firewall task never raised the module to ``error``. With
+    the fix, ``event_data.play`` resolves to the canonical module and
+    real failures surface as expected.
+    """
+    ssh_key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=ssh_key.id)
+    from app.models.host import FirewallBackend
+
+    host.firewall_backend = FirewallBackend.nftables
+    await db.flush()
+    host_id = host.id
+
+    ssh_key_path = str(tmp_path / "id_ed25519")
+    private_data_dir = str(tmp_path / "runner")
+    os.makedirs(private_data_dir, exist_ok=True)
+
+    # Realistic mixed-outcome stream: packages and services succeed,
+    # firewall fails on the apply step. hosts-file and the rest of
+    # the modules emit no events (no managed config / idempotent
+    # no-op) so they should land as ``no_tasks``.
+    events = [
+        _real_shape_event("runner_on_ok", "LabDog Package Management", task="Gathering Facts"),
+        _real_shape_event(
+            "runner_on_ok", "LabDog service management", task="Gather systemd service facts"
+        ),
+        _real_shape_event(
+            "runner_on_ok",
+            "Apply nftables firewall rules (safe mode)",
+            task="Backup current nftables ruleset",
+        ),
+        _real_shape_event(
+            "runner_on_failed",
+            "Apply nftables firewall rules (safe mode)",
+            task="Apply nftables rules atomically",
+        ),
+    ]
+
+    fake_runner = _FakeRunner(events=events)
+    outcomes, _playbook, _inventory = await orchestrate_host_sync(
+        host_id,
+        None,
+        db,
+        decrypt_key_fn=_make_decrypt_fn(b"FAKE PRIVATE KEY"),
+        run_ansible_fn=_make_run_ansible_fn(fake_runner),
+        ssh_key_path=ssh_key_path,
+        private_data_dir=private_data_dir,
+    )
+
+    # Modules with at least one ok event → in_sync.
+    assert outcomes["packages"] == "in_sync"
+    assert outcomes["services"] == "in_sync"
+    # Module with a failed event → error (sticky over the prior ok event).
+    assert outcomes["firewall"] == "error"
+    # Modules with no events → no_tasks.
+    for module in ("resolver", "hosts-file", "cron", "linux-users"):
+        assert outcomes[module] == "no_tasks", f"{module}: {outcomes[module]}"

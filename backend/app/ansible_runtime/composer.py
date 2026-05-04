@@ -63,6 +63,33 @@ CANONICAL_ORDER: list[str] = [
     "firewall",
 ]
 
+# Map from per-module play ``name`` (as emitted by the generators) to the
+# canonical module name. ``orchestrator._runner_events_to_task_events``
+# uses this to resolve module identity from ansible-runner events:
+# ansible-runner does not surface the per-task ``tags`` list on its
+# ``runner_on_*`` result events (BUG-44), so we identify the module by
+# the play name carried on every event instead.
+#
+# Every value here MUST appear in ``CANONICAL_ORDER``. Every key here
+# MUST be the exact ``"name"`` field of a play emitted by one of the
+# ``fragment_*`` adapters (or the underlying generator they wrap). Keep
+# this map next to ``CANONICAL_ORDER`` so generator-side play names and
+# the orchestrator-side reverse map can't drift independently — if you
+# rename a play, this map must be updated in the same patch.
+#
+# The firewall module produces two distinct play names depending on
+# backend (nftables vs iptables); both map to ``firewall``.
+PLAY_NAME_TO_MODULE: dict[str, str] = {
+    "LabDog Package Management": "packages",
+    "LabDog DNS resolver sync": "resolver",
+    "LabDog service management": "services",
+    "LabDog /etc/hosts management": "hosts-file",
+    "LabDog Cron Job Management": "cron",
+    "LabDog Linux User Management": "linux-users",
+    "Apply nftables firewall rules (safe mode)": "firewall",
+    "Apply iptables firewall rules (safe mode)": "firewall",
+}
+
 HOSTS_SENTINEL = "target"
 
 
