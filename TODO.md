@@ -52,34 +52,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       against `app.actions.manifest.ActionManifest.model_validate`.
       Catches typos in pack contributions before they reach a
       labdog instance.
-- [ ] **Bulk-sync multiple groups from the Groups overview.**
-      Surfaced 2026-04-27. The Groups list at `/groups`
-      (`frontend/app/(dashboard)/groups/page.tsx`) already
-      renders a per-row checkbox and tracks `selected` state for
-      bulk delete (`handleBulkDelete`, line 143), but there's no
-      bulk-sync action — operators have to click Sync per row.
-      Add a "Sync selected" button to the bulk-action bar that
-      reuses the multi-module fan-out from `handleSyncGroup`
-      (line 218: firewall + services + hosts-mgmt + linux-users
-      + cron + packages + resolver) across every selected group.
-      **Race-condition status (updated 2026-04-29):** the
-      dispatch-after-commit race (`NoResultFound` under load) was
-      fixed in `d07692e` (BUG-37), so naive serial fan-out is
-      now safe at the persistence layer. The remaining concurrency
-      hazard — overlapping ansible-runner invocations against the
-      same host when two groups share members — is the design
-      target of the planned **coalesced per-host sync** redesign
-      for v0.2.0 (one orchestrator task per host, single unified
-      playbook).
-      Until that lands, ship the UI as a serial per-group
-      `POST` loop from the client (or a small server-side
-      endpoint that does the same) so two selected groups that
-      share a host queue rather than collide. Add an integration
-      test that selects two groups sharing a host and asserts no
-      two ansible-runner processes target that host concurrently
-      — the test stays valid before and after Option C and pins
-      the contract.
-
 ---
 
 ## Bundled pack scope — keep 1:1 or slim down?
