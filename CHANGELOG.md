@@ -38,6 +38,15 @@ syncs and unblocks bulk-sync UX.
   has a running sync are queued (status `pending`); the running
   task dispatches the oldest pending one when it finishes. UI sees
   the queued state immediately.
+- **Stale-job sweeper** — periodic Celery beat task
+  (`app.tasks.sync_sweeper.sweep_stale_syncs`, every 5 minutes)
+  that finds `SyncJob` rows stuck in `running` for longer than
+  30 minutes (2× the worst-case orchestrator timeout), flips
+  them to `failed`, marks every seeded `HostModuleStatus` as
+  `error`, emits a `sync_failed` audit row, and dispatches the
+  queued successor. Closes the crash-recovery hole left open by
+  the option-c chain: a worker dying mid-task no longer blocks
+  the host's queue indefinitely.
 - **`sync_triggered` audit events** — bulk and per-tab sync API
   endpoints now emit an audit row at the moment of trigger
   (separate from the existing `sync_completed` row at finish).
