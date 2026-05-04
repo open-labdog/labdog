@@ -68,3 +68,69 @@ class RepoScanResponse(BaseModel):
     intra_repo_key_conflicts: list[KeyConflictOut]
     scan_errors: list[ScanErrorOut]
     head_sha: str | None
+
+
+# ---------------------------------------------------------------------------
+# Activation request / response
+# ---------------------------------------------------------------------------
+
+
+class ActivatePackSelection(BaseModel):
+    """One operator-selected pack to activate from a scan result.
+
+    ``path`` matches the corresponding ``DetectedPackOut.path``. ``name``
+    is the desired ``ActionPack.name``; if it collides with an existing
+    pack, the activation endpoint suffixes it (``-<repo_name>``, then
+    ``-<short_sha>``) and reports the final name in the response.
+    ``role`` is the operator's chosen role (typically ``override`` for
+    same-key matches, ``default`` for novel keys).
+    """
+
+    path: str
+    name: str
+    role: Literal["default", "override"]
+
+
+class ActivateGitopsBinding(BaseModel):
+    """Bind one detected gitops file to one existing HostGroup."""
+
+    file_path: str
+    host_group_id: int
+
+
+class RepoActivateRequest(BaseModel):
+    packs: list[ActivatePackSelection] = []
+    gitops_bindings: list[ActivateGitopsBinding] = []
+
+
+class ActivatedPackOut(BaseModel):
+    """One pack as actually persisted (with the post-collision name)."""
+
+    pack_id: int
+    name: str
+    path: str
+    role: str
+    requested_name: str
+    name_was_disambiguated: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActivatedGitopsBindingOut(BaseModel):
+    host_group_id: int
+    file_path: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RepoActivateResponse(BaseModel):
+    """What the wizard's Activate step renders in the success toast.
+
+    Lists every pack that was actually inserted (disambiguated names
+    visible) and every group binding that was applied. ``head_sha``
+    is the commit the activation was validated against — operator
+    can compare against the scan's ``head_sha`` to confirm nothing
+    moved underneath them.
+    """
+
+    activated_packs: list[ActivatedPackOut]
+    activated_gitops_bindings: list[ActivatedGitopsBindingOut]
+    head_sha: str | None
