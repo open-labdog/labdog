@@ -265,7 +265,6 @@ function ReviewStepInner({
                   conflictKeys={conflictKeys}
                   inUnresolvedConflict={unresolvedConflictPaths.has(pack.path)}
                   onToggle={(checked) => setPackSelection(pack.path, { checked })}
-                  onRoleChange={(role) => setPackSelection(pack.path, { role })}
                 />
               )
             })}
