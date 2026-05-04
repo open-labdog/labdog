@@ -5,11 +5,10 @@ import Link from "next/link"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { AuthStep } from "@/components/git-repos/auth-step"
+import { ScanStep } from "@/components/git-repos/scan-step"
 import { WizardStepIndicator, type WizardStep } from "@/components/git-repos/wizard-step-indicator"
+import type { RepoScanResponse } from "@/lib/types"
 
-// Placeholder types for the wizard state. Replaced with the real
-// schema mirrors in F4 (frontend/lib/types.ts).
-type ScanResultPlaceholder = unknown
 type SelectionsState = {
   packs: Record<string, { checked: boolean; role: "default" | "override" }>
   gitops: Record<string, { checked: boolean; host_group_id: number | null }>
@@ -19,13 +18,13 @@ type State = {
   step: WizardStep
   repoId: number | null
   repoName: string | null
-  scanResult: ScanResultPlaceholder | null
+  scanResult: RepoScanResponse | null
   selections: SelectionsState
 }
 
 type Action =
   | { type: "REPO_CREATED"; repoId: number; repoName: string }
-  | { type: "SCAN_SUCCESS"; result: ScanResultPlaceholder; selections: SelectionsState }
+  | { type: "SCAN_SUCCESS"; result: RepoScanResponse; selections: SelectionsState }
   | { type: "BACK_TO_AUTH" }
   | { type: "BACK_TO_SCANNING" }
   | { type: "UPDATE_SELECTIONS"; selections: SelectionsState }
@@ -51,16 +50,6 @@ function reducer(state: State, action: Action): State {
     case "UPDATE_SELECTIONS":
       return { ...state, selections: action.selections }
   }
-}
-
-function ScanStepStub({ repoName }: { repoName: string | null }) {
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-      <p className="text-sm text-slate-400">
-        Scanning <span className="text-slate-200">{repoName ?? "repository"}</span>… (wired in F3)
-      </p>
-    </div>
-  )
 }
 
 function ReviewStepStub() {
@@ -103,7 +92,20 @@ export default function RepoOnboardingWizard() {
           }
         />
       )}
-      {state.step === "scanning" && <ScanStepStub repoName={state.repoName} />}
+      {state.step === "scanning" && state.repoId !== null && (
+        <ScanStep
+          repoId={state.repoId}
+          repoName={state.repoName ?? ""}
+          onScanned={(result) =>
+            dispatch({
+              type: "SCAN_SUCCESS",
+              result,
+              selections: { packs: {}, gitops: {} },
+            })
+          }
+          onCancelled={() => dispatch({ type: "BACK_TO_AUTH" })}
+        />
+      )}
       {state.step === "review" && <ReviewStepStub />}
     </div>
   )
