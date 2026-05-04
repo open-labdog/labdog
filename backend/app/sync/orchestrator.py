@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import select
 
 from app.ansible_runtime.composer import (
+    PLAY_NAME_TO_MODULE,
     PlaybookFragment,
     compose_playbook,
     fragment_cron,
@@ -79,8 +80,24 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
 
     Filters to the four task-result event types and projects each into
     a ``{"tags": [...], "failed": bool, "unreachable": bool}`` dict.
-    The ``task_tags`` list (injected by ``compose_playbook``) is what
-    ties an event back to a module.
+    The ``tags`` list contains the canonical module name resolved from
+    ``event_data.play``, which carries the per-module play name set by
+    the generators (e.g. ``"LabDog Package Management"`` →
+    ``"packages"``).
+
+    BUG-44: ansible-runner does *not* populate ``event_data.task_tags``
+    on ``runner_on_*`` events when the playbook isn't filtered with
+    explicit ``--tags`` — the per-task ``tags:`` list injected by
+    ``compose_playbook._inject_tags`` controls Ansible's tag-filtering
+    machinery but is not echoed back on result events. The play name
+    *is* on every result event (``event_data.play``), so we use that as
+    the module-identity carrier and resolve via
+    ``composer.PLAY_NAME_TO_MODULE``.
+
+    Events whose play name doesn't match any known module are skipped
+    (defence against playbooks the orchestrator didn't compose, or play
+    renames the map hasn't been updated for — caught by the
+    same-commit invariant on ``PLAY_NAME_TO_MODULE``).
     """
     out: list[dict[str, Any]] = []
     for event in runner_events or []:
@@ -88,9 +105,13 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
         if et not in _RELEVANT_EVENT_TYPES:
             continue
         event_data = event.get("event_data") or {}
+        play_name = event_data.get("play")
+        module = PLAY_NAME_TO_MODULE.get(play_name) if play_name else None
+        if module is None:
+            continue
         out.append(
             {
-                "tags": list(event_data.get("task_tags") or []),
+                "tags": [module],
                 "failed": et == "runner_on_failed",
                 "unreachable": et == "runner_on_unreachable",
             }
