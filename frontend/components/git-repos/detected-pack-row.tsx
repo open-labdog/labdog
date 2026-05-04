@@ -14,7 +14,6 @@ export function DetectedPackRow({
   conflictKeys,
   inUnresolvedConflict,
   onToggle,
-  onRoleChange,
 }: {
   pack: DetectedPack
   selection: PackSelection
@@ -22,10 +21,8 @@ export function DetectedPackRow({
   conflictKeys: Set<string>
   inUnresolvedConflict: boolean
   onToggle: (checked: boolean) => void
-  onRoleChange: (role: PackRole) => void
 }) {
   const hasErrors = pack.errors.length > 0
-  const disabledReason = hasErrors ? "Fix the manifest errors and re-scan to enable this pack." : null
 
   const sameKeyMatches = pack.contributed_keys.filter((k) => k in existingWinners)
 
@@ -60,6 +57,24 @@ export function DetectedPackRow({
             <span className="font-mono text-xs text-slate-500" title={pack.path || "(repo root)"}>
               {pack.path || "(repo root)"}
             </span>
+            <Tooltip
+              content={
+                selection.role === "override"
+                  ? "Same-key match: this pack will override the existing action."
+                  : "Novel key: this pack contributes new actions."
+              }
+            >
+              <Badge
+                variant="outline"
+                className={
+                  selection.role === "override"
+                    ? "border-amber-500/60 text-amber-300"
+                    : "border-slate-600 text-slate-300"
+                }
+              >
+                {selection.role}
+              </Badge>
+            </Tooltip>
             {!pack.pack_yml_present && (
               <Tooltip content="No pack.yml found at this path; treating the repo root as a single pack.">
                 <Badge variant="outline" className="border-slate-600 text-slate-400">
@@ -130,23 +145,6 @@ export function DetectedPackRow({
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <label className="text-xs text-slate-500" htmlFor={`role-${pack.path || "_root"}`}>
-            Role
-          </label>
-          <select
-            id={`role-${pack.path || "_root"}`}
-            aria-label={`Role for pack ${pack.name}`}
-            className="rounded-lg border border-input bg-transparent px-2 py-1 text-xs text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring disabled:opacity-50 dark:bg-input/30"
-            value={selection.role}
-            disabled={hasErrors || !selection.checked}
-            onChange={(e) => onRoleChange(e.target.value as PackRole)}
-          >
-            <option value="default">default</option>
-            <option value="override">override</option>
-          </select>
-          {disabledReason && <span className="sr-only">{disabledReason}</span>}
-        </div>
       </div>
     </div>
   )
