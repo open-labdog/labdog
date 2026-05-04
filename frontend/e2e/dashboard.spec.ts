@@ -16,9 +16,9 @@ test.describe("Dashboard page", () => {
     await expect(page.getByText("Unknown / Pending")).toBeVisible()
   })
 
-  test("Check All button is visible", async ({ page }) => {
+  test("Collect State button is visible", async ({ page }) => {
     await page.goto("/dashboard")
-    await expect(page.getByRole("button", { name: "Check All" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Collect State" })).toBeVisible()
   })
 
   test("dashboard shows hosts table when hosts exist or empty state", async ({ page }) => {
@@ -80,13 +80,13 @@ test.describe("Dashboard page", () => {
     await expect(page.getByRole("heading", { name: "Audit Log" })).toBeVisible()
   })
 
-  test("Check All button triggers drift check", async ({ page }) => {
+  test("Collect State button triggers state collection", async ({ page }) => {
     await page.goto("/dashboard")
-    const checkAllBtn = page.getByRole("button", { name: "Check All" })
-    await expect(checkAllBtn).toBeVisible()
+    const collectBtn = page.getByRole("button", { name: "Collect State" })
+    await expect(collectBtn).toBeVisible()
 
     // Click should not throw or navigate away
-    await checkAllBtn.click()
+    await collectBtn.click()
     await expect(page).toHaveURL(/\/dashboard/)
   })
 })
