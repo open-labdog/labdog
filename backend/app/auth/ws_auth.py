@@ -8,7 +8,7 @@ from app.models.user import User
 
 _ALGORITHM = "HS256"
 _AUDIENCE = ["fastapi-users:auth"]
-_COOKIE_NAME = "barricade_auth"
+_COOKIE_NAME = "labdog_auth"
 
 
 async def get_ws_user(websocket: WebSocket, db: AsyncSession) -> User:

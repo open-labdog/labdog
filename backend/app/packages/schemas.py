@@ -28,7 +28,7 @@ class PackageRuleCreate(BaseModel):
                 "dots, underscores, colons, and plus signs allowed"
             )
         if is_protected(v):
-            raise ValueError(f"Package '{v}' is protected and cannot be managed via Barricade")
+            raise ValueError(f"Package '{v}' is protected and cannot be managed via LabDog")
         return v
 
 

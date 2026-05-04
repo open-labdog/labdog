@@ -1,6 +1,7 @@
 import logging
 import logging.config
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -10,6 +11,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
+from app.api.action_packs import router as action_packs_router
+from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
 from app.api.auth_setup import router as auth_setup_router
@@ -35,6 +38,7 @@ from app.api.proxmox_nodes import router as proxmox_nodes_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
 from app.api.rules import router as rules_router
+from app.api.scans import router as scans_router
 from app.api.service_drift import router as service_drift_router
 from app.api.service_live import router as service_live_router
 from app.api.service_sync import router as service_sync_router
@@ -234,11 +238,31 @@ class HTTPSRedirectMiddleware:
 # ---------------------------------------------------------------------------
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup: sync every enabled action pack from its git remote, then
+    fold them into the in-memory action registry. Failures are logged
+    per-pack but don't prevent the app from booting — bundled actions
+    are always available."""
+    logger = logging.getLogger(__name__)
+    try:
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.packs.service import sync_enabled_packs  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await sync_enabled_packs(session)
+            await reload_registry_async(session)
+    except Exception:
+        logger.exception("action-pack startup sync failed; bundled pack only")
+    yield
+
+
 def create_app() -> FastAPI:
     _configure_logging()
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="Barricade", version="0.1.0")
+    app = FastAPI(title="LabDog", version="0.1.0", lifespan=_lifespan)
 
     # -- HTTPS redirect (must be outermost) --
     if settings.tls.force_https:
@@ -341,6 +365,8 @@ def create_app() -> FastAPI:
         tags=["users"],
     )
 
+    app.include_router(actions_router, prefix="/api")
+    app.include_router(action_packs_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(host_state_router, prefix="/api")
@@ -351,6 +377,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
+    app.include_router(scans_router, prefix="/api")
     app.include_router(admin_users_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
     app.include_router(services_router, prefix="/api")
@@ -457,10 +484,10 @@ def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str 
 def _resolve_static_dir() -> Path | None:
     """Return the frontend static directory, or None if not available.
 
-    Skipped when BARRICADE_DEV_MODE=1 (set by dev.sh) so the Next.js dev
+    Skipped when LABDOG_DEV_MODE=1 (set by dev.sh) so the Next.js dev
     server on :3000 is used instead of a stale static export.
     """
-    if os.environ.get("BARRICADE_DEV_MODE"):
+    if os.environ.get("LABDOG_DEV_MODE"):
         return None
     configured = settings.server.static_dir
     if configured:
@@ -475,7 +502,7 @@ def _resolve_static_dir() -> Path | None:
         return dev_path
 
     # Auto-detect: production packaged install
-    prod_path = Path("/usr/lib/barricade/frontend/out")
+    prod_path = Path("/usr/lib/labdog/frontend/out")
     if prod_path.is_dir() and (prod_path / "index.html").is_file():
         return prod_path
 

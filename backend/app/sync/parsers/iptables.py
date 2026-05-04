@@ -24,6 +24,19 @@ def _parse_rule_flags(flags_str: str) -> dict[str, str]:
     i = 0
     while i < len(tokens):
         token = tokens[i]
+        # Skip the entire `--comment "..."` value so flag-like sequences inside
+        # the comment text (e.g. `-j`, `-p`) cannot be misread as real flags.
+        if token == "--comment" and i + 1 < len(tokens):  # nosec B105 — iptables flag, not a password
+            val = tokens[i + 1]
+            if val.startswith('"'):
+                j = i + 1
+                while j < len(tokens) and not tokens[j].endswith('"'):
+                    j += 1
+                if j < len(tokens):
+                    i = j + 1
+                    continue
+            i += 2
+            continue
         if token in ("-p", "-s", "-d", "-j", "--dport", "--sport") and i + 1 < len(tokens):
             result[token] = tokens[i + 1]
             i += 2

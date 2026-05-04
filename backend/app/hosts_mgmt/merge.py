@@ -136,7 +136,7 @@ def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
     Render a complete /etc/hosts file from effective entries.
     System entries first, then sorted by IP.
     """
-    lines = ["# Managed by Barricade — do not edit manually"]
+    lines = ["# Managed by LabDog — do not edit manually"]
 
     for entry in entries:
         parts = [entry.ip_address, entry.hostname]

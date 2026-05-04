@@ -150,7 +150,7 @@ class TestGitOpsWorkflow:
                 db=db,
             )
             assert result.success is True
-            assert result.rules_added == 2
+            assert result.modules[0].added == 2
 
             rules_result = await db.execute(
                 select(FirewallRule).where(
@@ -218,9 +218,9 @@ class TestGitOpsWorkflow:
                 db=db,
             )
             assert result3.success is True
-            assert result3.rules_added == 2
-            assert result3.rules_removed == 1
-            assert result3.rules_unchanged == 1
+            assert result3.modules[0].added == 2
+            assert result3.modules[0].removed == 1
+            assert result3.modules[0].unchanged == 1
 
             await db.refresh(group)
             assert group.gitops_status == GitOpsStatus.synced

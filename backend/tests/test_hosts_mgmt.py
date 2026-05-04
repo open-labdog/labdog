@@ -70,7 +70,7 @@ class TestHostsRenderer:
         rendered = render_hosts_file(entries)
         assert "127.0.0.1 localhost" in rendered
         assert "::1 localhost ip6-localhost ip6-loopback" in rendered
-        assert "Managed by Barricade" in rendered
+        assert "Managed by LabDog" in rendered
 
     def test_custom_entry_rendered(self):
         entries = [
@@ -200,4 +200,4 @@ class TestHostsAPI:
         text = resp.text
         assert "127.0.0.1 localhost" in text
         assert "10.0.0.5 web1.internal" in text
-        assert "Managed by Barricade" in text
+        assert "Managed by LabDog" in text

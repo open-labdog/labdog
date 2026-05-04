@@ -1,0 +1,523 @@
+"""Unit tests for the playbook composer.
+
+Pure in-memory tests — no DB, no Celery. Fragments without real
+generator backing are constructed by hand to exercise the composer's
+contract; adapter tests call the real generators.
+"""
+
+from __future__ import annotations
+
+import copy
+
+import pytest
+import yaml
+
+from app.ansible_runtime.composer import (
+    CANONICAL_ORDER,
+    HOSTS_SENTINEL,
+    PlaybookFragment,
+    _inject_tags,
+    compose_playbook,
+    fragment_cron,
+    fragment_firewall,
+    fragment_hosts_file,
+    fragment_linux_users,
+    fragment_packages,
+    fragment_resolver,
+    fragment_services,
+)
+from app.rules.model import ChainPolicies, FirewallRuleSpec
+
+
+def _frag(module: str, task_name: str = "stub") -> PlaybookFragment:
+    """Build a minimal one-play, one-task fragment for `module`."""
+    return PlaybookFragment(
+        module=module,
+        plays=[
+            {
+                "name": f"LabDog {module}",
+                "hosts": HOSTS_SENTINEL,
+                "tasks": [{"name": task_name, "ansible.builtin.debug": {"msg": "ok"}}],
+            }
+        ],
+    )
+
+
+def test_orders_plays_in_canonical_order_regardless_of_input():
+    out = yaml.safe_load(
+        compose_playbook([_frag("firewall"), _frag("services"), _frag("packages")])
+    )
+    assert [p["name"] for p in out] == [
+        "LabDog packages",
+        "LabDog services",
+        "LabDog firewall",
+    ]
+
+
+def test_module_filter_selects_subset():
+    out = yaml.safe_load(
+        compose_playbook(
+            [_frag("firewall"), _frag("services"), _frag("packages")],
+            module_filter=["firewall"],
+        )
+    )
+    assert len(out) == 1
+    assert out[0]["name"] == "LabDog firewall"
+
+
+def test_module_filter_silently_skips_modules_not_in_fragments():
+    out = yaml.safe_load(
+        compose_playbook([_frag("firewall")], module_filter=["firewall", "services"])
+    )
+    assert [p["name"] for p in out] == ["LabDog firewall"]
+
+
+def test_empty_module_filter_raises():
+    with pytest.raises(ValueError, match="module_filter must not be empty"):
+        compose_playbook([_frag("firewall")], module_filter=[])
+
+
+def test_none_module_filter_includes_all():
+    out = yaml.safe_load(
+        compose_playbook([_frag("firewall"), _frag("packages")], module_filter=None)
+    )
+    assert {p["name"] for p in out} == {"LabDog firewall", "LabDog packages"}
+
+
+def test_hosts_sentinel_replaced_with_alias():
+    out = yaml.safe_load(
+        compose_playbook([_frag("firewall"), _frag("services")], hosts_alias="web01")
+    )
+    assert all(p["hosts"] == "web01" for p in out)
+
+
+def test_tags_injected_per_module():
+    out = yaml.safe_load(compose_playbook([_frag("firewall"), _frag("services")]))
+    fw_tags = out[1]["tasks"][0]["tags"]
+    svc_tags = out[0]["tasks"][0]["tags"]
+    assert "firewall" in fw_tags
+    assert "services" in svc_tags
+    assert "firewall" not in svc_tags
+
+
+def test_duplicate_fragment_raises():
+    with pytest.raises(ValueError, match="duplicate fragment"):
+        compose_playbook([_frag("firewall"), _frag("firewall")])
+
+
+def test_unknown_module_raises():
+    with pytest.raises(ValueError, match="unknown module"):
+        compose_playbook([PlaybookFragment(module="not-a-module", plays=[])])
+
+
+def test_inject_tags_does_not_mutate_input():
+    fragment = _frag("firewall", task_name="original")
+    snapshot = copy.deepcopy(fragment.plays)
+    compose_playbook([fragment])
+    assert fragment.plays == snapshot
+
+
+def test_canonical_order_covers_seven_modules():
+    assert len(CANONICAL_ORDER) == 7
+    assert set(CANONICAL_ORDER) == {
+        "packages",
+        "resolver",
+        "services",
+        "hosts-file",
+        "cron",
+        "linux-users",
+        "firewall",
+    }
+
+
+def test_existing_string_tag_is_preserved():
+    fragment = PlaybookFragment(
+        module="firewall",
+        plays=[
+            {
+                "name": "x",
+                "hosts": HOSTS_SENTINEL,
+                "tasks": [
+                    {
+                        "name": "t",
+                        "ansible.builtin.debug": {"msg": "ok"},
+                        "tags": "preexisting",
+                    }
+                ],
+            }
+        ],
+    )
+    out = yaml.safe_load(compose_playbook([fragment]))
+    assert out[0]["tasks"][0]["tags"] == ["firewall", "preexisting"]
+
+
+def test_pre_and_post_tasks_are_tagged():
+    fragment = PlaybookFragment(
+        module="firewall",
+        plays=[
+            {
+                "name": "x",
+                "hosts": HOSTS_SENTINEL,
+                "pre_tasks": [{"name": "p", "ansible.builtin.debug": {"msg": "p"}}],
+                "tasks": [{"name": "t", "ansible.builtin.debug": {"msg": "t"}}],
+                "post_tasks": [{"name": "po", "ansible.builtin.debug": {"msg": "po"}}],
+            }
+        ],
+    )
+    out = yaml.safe_load(compose_playbook([fragment]))
+    assert "firewall" in out[0]["pre_tasks"][0]["tags"]
+    assert "firewall" in out[0]["tasks"][0]["tags"]
+    assert "firewall" in out[0]["post_tasks"][0]["tags"]
+
+
+def test_inject_tags_helper_idempotent():
+    plays = [
+        {
+            "name": "x",
+            "hosts": HOSTS_SENTINEL,
+            "tasks": [{"name": "t", "tags": ["firewall"]}],
+        }
+    ]
+    once = _inject_tags(plays, "firewall")
+    twice = _inject_tags(once, "firewall")
+    assert twice[0]["tasks"][0]["tags"] == ["firewall"]
+
+
+# ---------------------------------------------------------------------------
+# fragment_cron
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_cron_returns_valid_fragment():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "nightly-backup",
+                "user": "root",
+                "schedule": "0 3 * * *",
+                "command": "/usr/local/bin/backup.sh",
+                "state": "present",
+            }
+        ]
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "cron"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_cron_emits_cron_module_tasks():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "nightly-backup",
+                "user": "root",
+                "schedule": "0 3 * * *",
+                "command": "/usr/local/bin/backup.sh",
+                "state": "present",
+            }
+        ]
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.cron" in t for t in tasks)
+
+
+def test_fragment_cron_composes_through_compose_playbook():
+    fragment = fragment_cron(
+        cron_jobs=[
+            {
+                "name": "j",
+                "user": "root",
+                "schedule": "*/5 * * * *",
+                "command": "/bin/true",
+                "state": "present",
+            }
+        ]
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="web01"))
+    assert out[0]["hosts"] == "web01"
+    assert all("cron" in t["tags"] for t in out[0]["tasks"])
+
+
+def test_fragment_cron_with_empty_jobs():
+    fragment = fragment_cron(cron_jobs=[])
+    assert fragment.module == "cron"
+    assert fragment.plays[0]["tasks"] == []
+    out = yaml.safe_load(compose_playbook([fragment]))
+    assert out[0]["hosts"] == HOSTS_SENTINEL
+
+
+# ---------------------------------------------------------------------------
+# fragment_linux_users
+# ---------------------------------------------------------------------------
+
+
+def _user(username: str = "alice", **overrides) -> dict:
+    base = {
+        "username": username,
+        "state": "present",
+        "shell": "/bin/bash",
+        "authorized_keys": [],
+        "sudo_rule": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def _group(groupname: str = "devs", **overrides) -> dict:
+    base = {"groupname": groupname, "state": "present"}
+    base.update(overrides)
+    return base
+
+
+def test_fragment_linux_users_returns_valid_fragment():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[_group("devs")])
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "linux-users"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_linux_users_emits_user_and_group_modules():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[_group("devs")])
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.user" in t for t in tasks)
+    assert any("ansible.builtin.group" in t for t in tasks)
+
+
+def test_fragment_linux_users_composes_through_compose_playbook():
+    fragment = fragment_linux_users(users=[_user("alice")], groups=[])
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="db01"))
+    assert out[0]["hosts"] == "db01"
+    assert all("linux-users" in t["tags"] for t in out[0]["tasks"])
+
+
+def test_fragment_linux_users_with_empty_inputs():
+    fragment = fragment_linux_users(users=[], groups=[])
+    assert fragment.module == "linux-users"
+    assert fragment.plays[0]["tasks"] == []
+
+
+# ---------------------------------------------------------------------------
+# fragment_packages
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_packages_returns_valid_fragment():
+    fragment = fragment_packages(
+        packages=[{"package_name": "nginx", "state": "present"}],
+        repos=[],
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "packages"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_packages_emits_package_module_tasks():
+    fragment = fragment_packages(
+        packages=[{"package_name": "nginx", "state": "present"}],
+        repos=[],
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.package" in t for t in tasks)
+
+
+def test_fragment_packages_rewrites_default_hosts_all():
+    # The package generator hardcodes hosts: "all"; adapter must rewrite it.
+    fragment = fragment_packages(packages=[], repos=[])
+    assert fragment.plays[0]["hosts"] == HOSTS_SENTINEL
+
+
+def test_fragment_packages_composes_through_compose_playbook():
+    fragment = fragment_packages(
+        packages=[{"package_name": "curl", "state": "present"}],
+        repos=[],
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="web02"))
+    assert out[0]["hosts"] == "web02"
+    assert all("packages" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_resolver
+# ---------------------------------------------------------------------------
+
+
+def test_fragment_resolver_returns_valid_fragment():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 1.1.1.1\n",
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "resolver"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_resolver_emits_cloud_init_disable_and_resolv_tasks():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 8.8.8.8\n",
+    )
+    tasks = fragment.plays[0]["tasks"]
+    # cloud-init disable + resolv.conf write should both be present
+    assert any("cloud-init" in (t.get("name") or "").lower() for t in tasks)
+    assert any("/etc/resolv.conf" in str(t) for t in tasks)
+
+
+def test_fragment_resolver_systemd_resolved_variant():
+    fragment = fragment_resolver(
+        resolver_type="systemd_resolved",
+        rendered_content="[Resolve]\nDNS=1.1.1.1\n",
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("/etc/systemd/resolved.conf" in str(t) for t in tasks)
+
+
+def test_fragment_resolver_composes_through_compose_playbook():
+    fragment = fragment_resolver(
+        resolver_type="resolv_conf",
+        rendered_content="nameserver 9.9.9.9\n",
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="dns01"))
+    assert out[0]["hosts"] == "dns01"
+    assert all("resolver" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_hosts_file
+# ---------------------------------------------------------------------------
+
+
+_HOSTS_CONTENT = "127.0.0.1 localhost\n10.0.0.1 db01\n"
+
+
+def test_fragment_hosts_file_returns_valid_fragment():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "hosts-file"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_hosts_file_emits_copy_to_etc_hosts():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    tasks = fragment.plays[0]["tasks"]
+    assert any(t.get("ansible.builtin.copy", {}).get("dest") == "/etc/hosts" for t in tasks)
+
+
+def test_fragment_hosts_file_composes_through_compose_playbook():
+    fragment = fragment_hosts_file(rendered_content=_HOSTS_CONTENT)
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="lab01"))
+    assert out[0]["hosts"] == "lab01"
+    assert all("hosts-file" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_services
+# ---------------------------------------------------------------------------
+
+
+def _svc(name: str = "nginx", **overrides) -> dict:
+    base = {
+        "service_name": name,
+        "state": "running",
+        "enabled": True,
+        "unit_content": None,
+        "deploy_mode": "override",
+    }
+    base.update(overrides)
+    return base
+
+
+def test_fragment_services_returns_valid_fragment():
+    fragment = fragment_services(services=[_svc("nginx")])
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "services"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_services_emits_service_management_tasks():
+    fragment = fragment_services(services=[_svc("nginx")])
+    tasks = fragment.plays[0]["tasks"]
+    assert any("ansible.builtin.service" in t for t in tasks)
+
+
+def test_fragment_services_preserves_non_ssh_play_vars():
+    # The services generator sets play.vars.allowed_unit_paths and
+    # allowed_override_paths — these are referenced by cleanup tasks
+    # via Jinja and must survive the SSH-var strip.
+    fragment = fragment_services(
+        services=[_svc("nginx", unit_content="[Service]\n", deploy_mode="full")]
+    )
+    play_vars = fragment.plays[0].get("vars", {})
+    assert "allowed_unit_paths" in play_vars
+    assert "allowed_override_paths" in play_vars
+
+
+def test_fragment_services_composes_through_compose_playbook():
+    fragment = fragment_services(services=[_svc("sshd")])
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="bastion"))
+    assert out[0]["hosts"] == "bastion"
+    assert all("services" in t["tags"] for t in out[0]["tasks"])
+
+
+# ---------------------------------------------------------------------------
+# fragment_firewall
+# ---------------------------------------------------------------------------
+
+
+def _ssh_rule() -> FirewallRuleSpec:
+    return FirewallRuleSpec(
+        action="allow",
+        protocol="tcp",
+        direction="input",
+        port_start=22,
+    )
+
+
+def test_fragment_firewall_returns_valid_fragment_nftables():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    assert isinstance(fragment, PlaybookFragment)
+    assert fragment.module == "firewall"
+    assert len(fragment.plays) == 1
+    assert all(p["hosts"] == HOSTS_SENTINEL for p in fragment.plays)
+
+
+def test_fragment_firewall_nftables_emits_nft_tasks():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    tasks = fragment.plays[0]["tasks"]
+    # nftables backend writes /etc/nftables.conf and runs `nft -f ...`
+    assert any("nftables.conf" in str(t) for t in tasks)
+    assert any("nft" in str(t) for t in tasks)
+
+
+def test_fragment_firewall_iptables_emits_iptables_tasks():
+    fragment = fragment_firewall(
+        backend="iptables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    tasks = fragment.plays[0]["tasks"]
+    assert any("iptables" in str(t) for t in tasks)
+
+
+def test_fragment_firewall_composes_through_compose_playbook():
+    fragment = fragment_firewall(
+        backend="nftables",
+        rules=[_ssh_rule()],
+        policies=ChainPolicies(),
+    )
+    out = yaml.safe_load(compose_playbook([fragment], hosts_alias="edge01"))
+    assert out[0]["hosts"] == "edge01"
+    assert all("firewall" in t["tags"] for t in out[0]["tasks"])

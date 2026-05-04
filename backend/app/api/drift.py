@@ -87,7 +87,7 @@ async def check_host_drift(
             checked_at=datetime.now(UTC).isoformat(),
         )
     desired, policies = await _get_desired_state_for_host(
-        host_id, db, host_source_ip=host.barricade_source_ip
+        host_id, db, host_source_ip=host.labdog_source_ip
     )
     result = await check_drift(host_id, desired, db, desired_policies=policies)
     host.sync_status = result.status
@@ -134,7 +134,7 @@ async def check_group_drift(
             )
             continue
         desired, policies = await _get_desired_state_for_host(
-            hid, db, host_source_ip=host.barricade_source_ip
+            hid, db, host_source_ip=host.labdog_source_ip
         )
         result = await check_drift(hid, desired, db, desired_policies=policies)
         host.sync_status = result.status

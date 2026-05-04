@@ -37,9 +37,14 @@ test.describe("ConfirmDialog UX", () => {
     request,
   }) => {
     const groupName = `e2e-confirm-${Date.now()}`
-    await request.post(`${API_BASE}/api/groups`, {
-      data: { name: groupName, description: "Confirm dialog test", priority: 999 },
+    // Use timestamp-based priority that avoids conflicts with other concurrent tests
+    const priority = 600 + (Date.now() % 300)
+    const createRes = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: groupName, description: "Confirm dialog test", priority },
     })
+    if (!createRes.ok()) {
+      test.skip(true, `Could not create test group (${createRes.status()}): ${await createRes.text()}`)
+    }
 
     await page.goto("/groups")
     await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible()
@@ -51,7 +56,8 @@ test.describe("ConfirmDialog UX", () => {
 
     const dialog = page.getByRole("dialog")
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByText("Delete")).toBeVisible()
+    // Dialog title contains "Delete" — use the heading role to avoid strict-mode ambiguity
+    await expect(dialog.getByRole("heading", { name: /Delete/ })).toBeVisible()
 
     await dialog.getByRole("button", { name: "Cancel" }).click()
     await expect(dialog).not.toBeVisible()

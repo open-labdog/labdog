@@ -5,6 +5,7 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -50,6 +51,8 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
     queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
   })
+
+  const gitopsEnabled = !!group?.gitops_enabled
 
   const { data: entries, isLoading, error } = useQuery<HostsEntry[]>({
     queryKey: ["hosts-entries", id],
@@ -145,8 +148,18 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
         <div>
           <h1 className="text-2xl font-bold text-white">Hosts File</h1>
         </div>
-        <Button onClick={openCreateDialog}>Add Entry</Button>
+        {!gitopsEnabled && <Button onClick={openCreateDialog}>Add Entry</Button>}
       </div>
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Hosts entries are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
@@ -209,14 +222,21 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
                     <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
                   ) : (
                     <>
-                      <Button size="sm" variant="ghost" onClick={() => openEditDialog(entry)}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={gitopsEnabled}
+                        onClick={() => openEditDialog(entry)}
+                        title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                      >
                         Edit
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={deleteMutation.isPending}
+                        disabled={deleteMutation.isPending || gitopsEnabled}
                         onClick={() => handleDelete(entry)}
+                        title={gitopsEnabled ? "Managed via GitOps" : undefined}
                         className="text-red-400 hover:text-red-300 hover:bg-red-950"
                       >
                         {deleteMutation.isPending ? "…" : "Delete"}

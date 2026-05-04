@@ -1,0 +1,210 @@
+# Managed by LabDog
+#
+# Full example for a PostgreSQL database-tier group.  Counterpoint to
+# web-servers.yaml — different firewall posture, different packages,
+# dedicated dba user, pg_dump cron, TCP-only resolver for stability.
+#
+# Host assumptions:
+#   • Debian/Ubuntu (switch package_manager to dnf/yum for RHEL-family).
+#   • PostgreSQL 16 from the official PGDG repository.
+#   • Bind mount for backups lives at /var/backups/postgres.
+
+group: database
+priority: 200           # higher than web-servers; DB overrides generic settings
+
+# -----------------------------------------------------------------------------
+# Firewall — closed by default, Postgres only from the web tier
+# -----------------------------------------------------------------------------
+firewall:
+  rules:
+    - action: allow
+      protocol: tcp
+      direction: input
+      source: "10.0.0.0/8"
+      port: 22
+      comment: "SSH — internal only"
+
+    - action: allow
+      protocol: tcp
+      direction: input
+      source: "10.0.2.0/24"
+      port: 5432
+      comment: "PostgreSQL from the web tier subnet"
+
+    - action: allow
+      protocol: icmp
+      direction: input
+      source: "10.0.0.0/8"
+      comment: "Ping from internal"
+
+    - action: deny
+      protocol: any
+      direction: input
+      comment: "Default deny inbound"
+
+    - action: allow
+      protocol: udp
+      direction: output
+      port: 53
+      comment: "DNS"
+
+    - action: allow
+      protocol: tcp
+      direction: output
+      port: 443
+      comment: "HTTPS out (apt, ACME, telemetry)"
+
+    - action: allow
+      protocol: udp
+      direction: output
+      port: 123
+      comment: "NTP"
+
+    - action: deny
+      protocol: any
+      direction: output
+      comment: "Default deny outbound"
+
+# -----------------------------------------------------------------------------
+# Services
+# -----------------------------------------------------------------------------
+services:
+  - service_name: postgresql
+    state: running
+    enabled: true
+    comment: "Postgres 16 main"
+
+  - service_name: fail2ban
+    state: running
+    enabled: true
+
+  - service_name: pgbackrest
+    state: stopped
+    enabled: false
+    comment: "Continuous archiving — started by timer, not persistently"
+
+# -----------------------------------------------------------------------------
+# Packages — note PGDG repository declaration
+# -----------------------------------------------------------------------------
+package_repositories:
+  - name: pgdg
+    url: "https://apt.postgresql.org/pub/repos/apt"
+    key_url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+    repo_type: apt
+    distribution: "bookworm-pgdg"   # adjust to your Debian codename
+    components: main
+    state: present
+
+packages:
+  - package_name: postgresql-16
+    state: present
+    package_manager: apt
+
+  - package_name: postgresql-client-16
+    state: present
+
+  - package_name: pgbackrest
+    state: present
+
+  - package_name: fail2ban
+    state: present
+
+# -----------------------------------------------------------------------------
+# /etc/hosts — point at a VIP for LabDog-registered cache hosts
+# -----------------------------------------------------------------------------
+hosts_entries:
+  - ip_address: "10.0.2.10"
+    hostname: "web-lb.internal"
+    aliases: [web-lb]
+    comment: "Load balancer for the web tier"
+    priority: 100
+
+  # Example of the "host_ref_id" variant: reference a host already in
+  # LabDog's registry instead of hard-coding an IP.  Replace 42 with
+  # the real host id from /api/hosts.
+  # - host_ref_id: 42
+  #   aliases: [replica]
+  #   comment: "Read replica — kept in sync by LabDog"
+  #   priority: 50
+
+# -----------------------------------------------------------------------------
+# Cron jobs
+# -----------------------------------------------------------------------------
+cron_jobs:
+  - name: pgdump-nightly
+    user: postgres
+    schedule: "0 1 * * *"
+    command: "/usr/bin/pg_dumpall --clean --if-exists | gzip > /var/backups/postgres/nightly-$(date +\\%Y\\%m\\%d).sql.gz"
+    environment:
+      PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      PGPASSWORD: ""             # rely on peer auth; variable set intentionally empty
+    state: present
+    comment: "Nightly logical backup"
+    priority: 100
+
+  - name: pgbackrest-archive
+    user: postgres
+    schedule: "*/15 * * * *"
+    command: "/usr/bin/pgbackrest --stanza=main archive-push"
+    state: present
+    comment: "WAL archiving every 15 minutes"
+    priority: 100
+
+  - name: retention-prune
+    user: root
+    schedule: "30 2 * * *"
+    command: "find /var/backups/postgres -name '*.sql.gz' -mtime +14 -delete"
+    state: present
+    comment: "Prune backups older than 14 days"
+
+# -----------------------------------------------------------------------------
+# DNS resolver
+# -----------------------------------------------------------------------------
+resolver:
+  resolver_type: resolv_conf
+  nameservers:
+    - "10.0.0.2"
+    - "10.0.0.3"
+  search_domains:
+    - "internal.corp"
+  options:
+    timeout: 1
+    attempts: 5
+    rotate: 1       # rotate=1 is idiomatic shorthand in resolv.conf
+
+# -----------------------------------------------------------------------------
+# Linux groups
+# -----------------------------------------------------------------------------
+linux_groups:
+  - groupname: dba
+    gid: 3000
+    state: present
+
+  - groupname: pgbackups
+    gid: 3001
+    state: present
+
+# -----------------------------------------------------------------------------
+# Linux users
+# -----------------------------------------------------------------------------
+users:
+  - username: dba
+    uid: 3000
+    shell: /bin/bash
+    home_dir: /home/dba
+    state: present
+    comment: "Database administrator"
+    sudo_rule: "ALL=(postgres) NOPASSWD: /usr/bin/psql"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... dba@admin-laptop"
+    supplementary_groups: [dba]
+    priority: 100
+
+  - username: pgbackrest
+    uid: 3001
+    shell: /usr/sbin/nologin
+    state: present
+    comment: "pgbackrest service account"
+    authorized_keys: []
+    supplementary_groups: [pgbackups]
+    priority: 100

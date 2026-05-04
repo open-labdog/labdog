@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react"
 import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -26,28 +27,26 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
   const params = useParams()
   const id = Number(params.id)
 
-  const { data: groups } = useQuery<HostGroup[]>({
-    queryKey: ["groups"],
-    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-  })
-  const group = groups?.find((g) => g.id === id)
-
-  const resolverQuery = useQuery<ResolverConfig>({
-    queryKey: ["group-resolver", id],
-    queryFn: async () => {
-      const res = await apiFetch<ResolverConfig>(`/api/groups/${id}/resolver`)
-      return res
-    },
+  const { data: group } = useQuery<HostGroup>({
+    queryKey: ["group", id],
+    queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
-    retry: (count, error) => {
-      if (error && "status" in error && (error as { status: number }).status === 404) return false
-      return count < 3
-    },
+  })
+
+  const gitopsEnabled = !!group?.gitops_enabled
+
+  const resolverQuery = useQuery<ResolverConfig | null>({
+    queryKey: ["group-resolver", id],
+    queryFn: () => apiFetch<ResolverConfig | null>(`/api/groups/${id}/resolver`),
+    enabled: !!id,
   })
 
   const showLoading = useDelayedLoading(resolverQuery.isLoading)
-  const is404 = resolverQuery.error && "status" in resolverQuery.error && (resolverQuery.error as { status: number }).status === 404
-  const hasConfig = resolverQuery.data && !resolverQuery.error
+  // The endpoint returns 200+null when no resolver config exists yet,
+  // which is the common case rather than an error. Distinguish "not
+  // configured" (data === null) from "request failed" (error truthy).
+  const is404 = !resolverQuery.isLoading && !resolverQuery.error && resolverQuery.data === null
+  const hasConfig = !!resolverQuery.data && !resolverQuery.error
 
   const [resolverType, setResolverType] = useState<"resolv_conf" | "systemd_resolved" | "networkmanager">("resolv_conf")
   const [nameservers, setNameservers] = useState<string[]>([])
@@ -88,7 +87,7 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
     setFormReady(true)
   }
 
-  if (hasConfig && !formReady) {
+  if (hasConfig && !formReady && resolverQuery.data) {
     populateForm(resolverQuery.data)
   }
 
@@ -109,6 +108,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
     successMessage: "DNS resolver configuration deleted",
     onSuccess: () => setFormReady(false),
   })
+
+  const controlsDisabled = gitopsEnabled || saveMutation.isPending
 
   function handleSave(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -207,9 +208,18 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-white">DNS Resolver</h1>
         </div>
+        {gitopsEnabled && (
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+            <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-blue-200 font-medium">GitOps Enabled</p>
+              <p className="text-blue-300 text-sm mt-1">DNS resolver config is managed via GitOps. Changes must be pushed to Git.</p>
+            </div>
+          </div>
+        )}
         <div className="rounded-lg border border-slate-700 bg-slate-900 p-8 text-center">
           <p className="text-slate-400 mb-4">DNS is not managed for this group.</p>
-          <Button onClick={initNewForm}>Configure DNS</Button>
+          {!gitopsEnabled && <Button onClick={initNewForm}>Configure DNS</Button>}
         </div>
       </div>
     )
@@ -228,6 +238,16 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
           )}
         </div>
       </div>
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">DNS resolver config is managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {previewError && (
         <div className="text-red-400 text-sm">{previewError}</div>
@@ -259,6 +279,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
               id="resolver-type"
               value={resolverType}
               onChange={(e) => setResolverType(e.target.value as typeof resolverType)}
+              disabled={controlsDisabled}
+              title={gitopsEnabled ? "Managed via GitOps" : undefined}
               className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
             >
               <option value="resolv_conf">{RESOLVER_TYPE_LABELS.resolv_conf}</option>
@@ -278,7 +300,9 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                     <button
                       type="button"
                       onClick={() => removeNameserver(idx)}
-                      className="text-red-400 hover:text-red-300 text-sm px-1"
+                      disabled={controlsDisabled}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                      className="text-red-400 hover:text-red-300 text-sm px-1 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       &times;
                     </button>
@@ -295,9 +319,11 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                 onKeyDown={(e) => {
                   if (e.key === "Enter") { e.preventDefault(); addNameserver() }
                 }}
+                disabled={controlsDisabled}
+                title={gitopsEnabled ? "Managed via GitOps" : undefined}
                 className="flex-1"
               />
-              <Button type="button" variant="outline" size="sm" onClick={addNameserver}>
+              <Button type="button" variant="outline" size="sm" onClick={addNameserver} disabled={controlsDisabled} title={gitopsEnabled ? "Managed via GitOps" : undefined}>
                 Add
               </Button>
             </div>
@@ -315,7 +341,9 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                     <button
                       type="button"
                       onClick={() => removeSearchDomain(idx)}
-                      className="text-red-400 hover:text-red-300 text-sm px-1"
+                      disabled={controlsDisabled}
+                      title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                      className="text-red-400 hover:text-red-300 text-sm px-1 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       &times;
                     </button>
@@ -332,9 +360,11 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                 onKeyDown={(e) => {
                   if (e.key === "Enter") { e.preventDefault(); addSearchDomain() }
                 }}
+                disabled={controlsDisabled}
+                title={gitopsEnabled ? "Managed via GitOps" : undefined}
                 className="flex-1"
               />
-              <Button type="button" variant="outline" size="sm" onClick={addSearchDomain}>
+              <Button type="button" variant="outline" size="sm" onClick={addSearchDomain} disabled={controlsDisabled} title={gitopsEnabled ? "Managed via GitOps" : undefined}>
                 Add
               </Button>
             </div>
@@ -353,6 +383,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                       const updated = options.map((o, i) => i === idx ? { ...o, key: e.target.value } : o)
                       setOptions(updated)
                     }}
+                    disabled={controlsDisabled}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="w-40 rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
                   >
                     <option value="">Select option…</option>
@@ -368,6 +400,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                       const updated = options.map((o, i) => i === idx ? { ...o, value: e.target.value } : o)
                       setOptions(updated)
                     }}
+                    disabled={controlsDisabled}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="flex-1 font-mono text-xs"
                   />
                   <Button
@@ -375,13 +409,15 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                     variant="ghost"
                     size="sm"
                     onClick={() => removeOption(idx)}
+                    disabled={controlsDisabled}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="text-red-400 hover:text-red-300 hover:bg-red-950 px-2"
                   >
                     &times;
                   </Button>
                 </div>
               ))}
-              <Button type="button" variant="outline" size="sm" onClick={addOption}>
+              <Button type="button" variant="outline" size="sm" onClick={addOption} disabled={controlsDisabled} title={gitopsEnabled ? "Managed via GitOps" : undefined}>
                 + Add option
               </Button>
             </div>
@@ -395,6 +431,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
                 type="checkbox"
                 checked={dnsOverTls}
                 onChange={(e) => setDnsOverTls(e.target.checked)}
+                disabled={controlsDisabled}
+                title={gitopsEnabled ? "Managed via GitOps" : undefined}
                 className="rounded border-input"
               />
               <Label htmlFor="dns-over-tls">DNS-over-TLS</Label>
@@ -408,7 +446,7 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
         )}
 
         <div className="flex gap-3">
-          <Button type="submit" disabled={saveMutation.isPending}>
+          <Button type="submit" disabled={controlsDisabled} title={gitopsEnabled ? "Managed via GitOps" : undefined}>
             {saveMutation.isPending ? "Saving..." : hasConfig ? "Save Changes" : "Create Config"}
           </Button>
           {hasConfig && (
@@ -416,7 +454,8 @@ export default function GroupResolverPage({ embedded = false }: { embedded?: boo
               type="button"
               variant="destructive"
               onClick={handleDelete}
-              disabled={deleteMutation.isPending}
+              disabled={deleteMutation.isPending || gitopsEnabled}
+              title={gitopsEnabled ? "Managed via GitOps" : undefined}
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete Config"}
             </Button>

@@ -1,0 +1,5 @@
+name: reboot-example
+description: >-
+  Demonstrates a destructive action with a parameter. When the host has
+  a Proxmox VM mapping, LabDog wraps this run in snapshot → run →
+  verify → rollback-or-cleanup automatically.

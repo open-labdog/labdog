@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <MenuIcon className="w-6 h-6" />
             </button>
-            <span className="text-white font-bold">Barricade</span>
+            <span className="text-white font-bold">LabDog</span>
             {/* width spacer to center title */}
             <div className="w-6" />
           </div>

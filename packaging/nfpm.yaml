@@ -1,16 +1,17 @@
 # yaml-language-server: $schema=https://nfpm.goreleaser.com/schema.json
-name: barricade
+name: labdog
 arch: amd64
 platform: linux
 version: ${VERSION}
 release: "1"
-maintainer: "Barricade <barricade@barricade.io>"
+maintainer: "LabDog <labdog@labdog.io>"
 description: |
-  Barricade — Linux node configuration management platform.
-  Manages firewall rules, services, users, cron jobs, /etc/hosts, and more
-  using Ansible under the hood with a web UI and drift detection.
+  LabDog — a homelabber's best friend.
+  Linux node configuration management platform. Manages firewall rules,
+  services, users, cron jobs, /etc/hosts, and more using Ansible under
+  the hood with a web UI and drift detection.
   Requires PostgreSQL 14+ and Redis 6+.
-homepage: https://github.com/barricade/barricade
+homepage: https://github.com/labdog/labdog
 license: MIT
 
 # Runtime deps (Python deps bundled in venv)
@@ -23,8 +24,8 @@ recommends:
 
 contents:
   # ── Application code (venv + backend + frontend) ──────────────────────
-  - src: staging/usr/lib/barricade/
-    dst: /usr/lib/barricade/
+  - src: staging/usr/lib/labdog/
+    dst: /usr/lib/labdog/
     type: tree
     file_info:
       owner: root
@@ -32,40 +33,40 @@ contents:
       mode: 0755
 
   # ── Config file (config|noreplace — preserved on upgrade) ─────────────
-  - src: etc/barricade.toml
-    dst: /etc/barricade/barricade.toml
+  - src: etc/labdog.toml
+    dst: /etc/labdog/labdog.toml
     type: config|noreplace
     file_info:
       mode: 0640
       owner: root
-      group: barricade
+      group: labdog
 
   # ── Systemd units ──────────────────────────────────────────────────────
-  - src: systemd/barricade.service
-    dst: /usr/lib/systemd/system/barricade.service
+  - src: systemd/labdog.service
+    dst: /usr/lib/systemd/system/labdog.service
 
   # ── tmpfiles.d ─────────────────────────────────────────────────────────
-  - src: tmpfiles.d/barricade.conf
-    dst: /usr/lib/tmpfiles.d/barricade.conf
+  - src: tmpfiles.d/labdog.conf
+    dst: /usr/lib/tmpfiles.d/labdog.conf
 
   # ── Owned directories ──────────────────────────────────────────────────
-  - dst: /etc/barricade/
+  - dst: /etc/labdog/
     type: dir
     file_info:
       owner: root
-      group: barricade
+      group: labdog
       mode: 0750
-  - dst: /var/lib/barricade/
+  - dst: /var/lib/labdog/
     type: dir
     file_info:
-      owner: barricade
-      group: barricade
+      owner: labdog
+      group: labdog
       mode: 0750
-  - dst: /var/log/barricade/
+  - dst: /var/log/labdog/
     type: dir
     file_info:
-      owner: barricade
-      group: barricade
+      owner: labdog
+      group: labdog
       mode: 0750
 
 scripts:

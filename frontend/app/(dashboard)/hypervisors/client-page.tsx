@@ -17,7 +17,7 @@ export default function HypervisorsPage() {
 
       <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
         <p className="text-slate-300 text-sm">
-          Connecting a hypervisor allows Barricade to take automatic VM snapshots
+          Connecting a hypervisor allows LabDog to take automatic VM snapshots
           before applying system updates. If an update fails verification, the
           snapshot enables instant rollback to the pre-update state. Configure
           snapshot and rollback settings in each group&apos;s{" "}

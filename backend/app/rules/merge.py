@@ -1,5 +1,11 @@
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import settings
+from app.models.host import Host, HostGroupMembership
+from app.models.host_group import HostGroup
 from app.rules.model import ChainPolicies, FirewallRuleSpec
+from app.schemas.rules import ChainPoliciesResponse, EffectiveRuleResponse
 
 
 def _make_ssh_lockout_rule(server_ip: str) -> FirewallRuleSpec:
@@ -10,7 +16,7 @@ def _make_ssh_lockout_rule(server_ip: str) -> FirewallRuleSpec:
         direction="input",
         source_cidr=f"{server_ip}/32",
         port_start=22,
-        comment="Barricade server SSH access — auto-injected, do not remove",
+        comment="anti-lockout SSH allow — auto-injected, do not remove",
         is_system=True,
         priority=999999,  # always highest priority
     )
@@ -29,7 +35,7 @@ def merge_group_rules(
 
     Args:
         groups: List of dicts with id, priority, and rules list
-        server_ip: Barricade server IP for SSH lockout rule (defaults to settings)
+        server_ip: LabDog server IP for SSH lockout rule (defaults to settings)
         host_source_ip: Per-host detected source IP (takes precedence over server_ip)
         host_rules: Host-level override rules; replace any group rule with the same signature
 
@@ -39,7 +45,7 @@ def merge_group_rules(
     if host_source_ip:
         server_ip = host_source_ip
     elif server_ip is None:
-        server_ip = settings.security.barricade_server_ip
+        server_ip = settings.security.labdog_server_ip
 
     # Sort groups by priority descending (highest priority first)
     sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
@@ -137,4 +143,115 @@ def merge_group_policies(groups: list[dict]) -> ChainPolicies:
         input_source_group_name=input_source[1],
         output_source_group_id=output_source[0],
         output_source_group_name=output_source[1],
+    )
+
+
+async def get_effective_rules(
+    host_id: int,
+    db: AsyncSession,
+) -> list[EffectiveRuleResponse]:
+    """Merged effective firewall ruleset for a host, in API response shape.
+
+    Wraps ``get_desired_state`` (raw ``FirewallRuleSpec`` output) and
+    decorates each rule with display metadata: group/host names and
+    a ``source`` attribution (``"system"`` / ``"host"`` / ``"group"``).
+
+    For raw specs (sync task / orchestrator), call
+    ``app.rules.desired_state.get_desired_state`` directly.
+    """
+    # Deferred import — desired_state imports from merge, so a top-level
+    # import here would create a circular module load.
+    from app.rules.desired_state import get_desired_state  # noqa: PLC0415
+
+    host_result = await db.execute(select(Host).where(Host.id == host_id))
+    host = host_result.scalar_one_or_none()
+    host_source_ip = host.labdog_source_ip if host else None
+
+    merged_specs, _policies = await get_desired_state(host_id, db, host_source_ip=host_source_ip)
+
+    group_ids = {s.group_id for s in merged_specs if s.group_id}
+    if group_ids:
+        group_rows = await db.execute(
+            select(HostGroup.id, HostGroup.name).where(HostGroup.id.in_(group_ids))
+        )
+        group_names = {r.id: r.name for r in group_rows}
+    else:
+        group_names = {}
+
+    host_ref_ids = {
+        i for s in merged_specs for i in (s.source_host_id, s.destination_host_id) if i is not None
+    }
+    if host_ref_ids:
+        host_rows = await db.execute(
+            select(Host.id, Host.hostname).where(Host.id.in_(host_ref_ids))
+        )
+        host_names = {r.id: r.hostname for r in host_rows}
+    else:
+        host_names = {}
+
+    return [
+        EffectiveRuleResponse(
+            action=spec.action,
+            protocol=spec.protocol,
+            direction=spec.direction,
+            source_cidr=spec.source_cidr,
+            destination_cidr=spec.destination_cidr,
+            source_host_id=spec.source_host_id,
+            destination_host_id=spec.destination_host_id,
+            source_host_name=host_names.get(spec.source_host_id) if spec.source_host_id else None,
+            destination_host_name=host_names.get(spec.destination_host_id)
+            if spec.destination_host_id
+            else None,
+            port_start=spec.port_start,
+            port_end=spec.port_end,
+            comment=spec.comment,
+            priority=spec.priority,
+            is_system=spec.is_system,
+            group_id=spec.group_id,
+            group_name=group_names.get(spec.group_id) if spec.group_id else None,
+            rule_id=spec.rule_id,
+            group_priority=spec.group_priority,
+            source="system" if spec.is_system else ("host" if spec.host_id else "group"),
+            source_id=spec.host_id if spec.host_id else spec.group_id,
+            source_name="System"
+            if spec.is_system
+            else ("Host override" if spec.host_id else group_names.get(spec.group_id, "")),
+        )
+        for spec in merged_specs
+    ]
+
+
+async def get_effective_policies(
+    host_id: int,
+    db: AsyncSession,
+) -> ChainPoliciesResponse:
+    """Merged effective chain policies for a host, in API response shape."""
+    memberships = await db.execute(
+        select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
+    )
+    group_ids = [r[0] for r in memberships.all()]
+    if not group_ids:
+        return ChainPoliciesResponse(input="drop", output="accept")
+
+    groups_result = await db.execute(select(HostGroup).where(HostGroup.id.in_(group_ids)))
+    groups_data = [
+        {
+            "id": g.id,
+            "name": g.name,
+            "priority": g.priority,
+            "rules": [],
+            "input_policy": g.input_policy,
+            "output_policy": g.output_policy,
+        }
+        for g in groups_result.scalars().all()
+    ]
+
+    policies = merge_group_policies(groups_data)
+    return ChainPoliciesResponse(
+        input=policies.input,
+        output=policies.output,
+        input_source_group_id=policies.input_source_group_id,
+        input_source_group_name=policies.input_source_group_name,
+        output_source_group_id=policies.output_source_group_id,
+        output_source_group_name=policies.output_source_group_name,
     )

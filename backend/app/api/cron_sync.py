@@ -141,9 +141,10 @@ async def trigger_group_cron_sync(
     if not host_ids:
         raise HTTPException(status_code=400, detail="No hosts in this group")
 
-    jobs = []
     from app.tasks.cron_sync import cron_sync_task
 
+    # BUG-37: dispatch after commit, not before — see app/api/sync.py.
+    pending: list[tuple[int, int]] = []
     for hid in host_ids:
         running = await db.execute(
             select(SyncJob).where(
@@ -164,11 +165,12 @@ async def trigger_group_cron_sync(
         )
         db.add(job)
         await db.flush()
-        cron_sync_task.delay(job_id=job.id, host_id=hid)
-        jobs.append(job)
+        pending.append((job.id, hid))
 
     await db.commit()
-    return {"triggered": len(jobs), "skipped": len(host_ids) - len(jobs)}
+    for job_id, hid in pending:
+        cron_sync_task.delay(job_id=job_id, host_id=hid)
+    return {"triggered": len(pending), "skipped": len(host_ids) - len(pending)}
 
 
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)

@@ -21,6 +21,8 @@ class UpdateWorkflowUpdate(BaseModel):
     verification_prompt: str | None = Field(default=None)
     auto_reboot: bool | None = Field(default=None)
     enabled: bool | None = Field(default=None)
+    action_key: str | None = None
+    action_parameters: dict | None = None
 
 
 class UpdateWorkflowResponse(BaseModel):
@@ -32,6 +34,8 @@ class UpdateWorkflowResponse(BaseModel):
     auto_rollback: bool
     verification_prompt: str | None
     auto_reboot: bool
+    action_key: str
+    action_parameters: dict
     enabled: bool
     created_at: datetime
     updated_at: datetime

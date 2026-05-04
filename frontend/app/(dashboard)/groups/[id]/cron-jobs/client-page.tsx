@@ -5,9 +5,9 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { InfoIcon } from "lucide-react"
+import { InfoIcon, GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
+import { ItemStateBadge } from "@/components/status-badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -30,13 +30,6 @@ import type { CronJob, HostGroup } from "@/lib/types"
 
 import { cronToHuman } from "@/lib/cron"
 
-function StateBadge({ state }: { state: string }) {
-  return (
-    <Badge className={state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
 
 interface EnvVar {
   key: string
@@ -138,6 +131,8 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
     queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
   })
+
+  const gitopsEnabled = !!group?.gitops_enabled
 
   const { data: cronJobs, isLoading, error } = useQuery<CronJob[]>({
     queryKey: ["cron-jobs", id],
@@ -245,8 +240,18 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
         <div>
           <h1 className="text-2xl font-bold text-white">Cron Jobs</h1>
         </div>
-        <Button onClick={openCreateDialog}>Add Cron Job</Button>
+        {!gitopsEnabled && <Button onClick={openCreateDialog}>Add Cron Job</Button>}
       </div>
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Cron jobs are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
@@ -308,7 +313,7 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               key: "state",
               label: "State",
               accessor: (j) => j.state,
-              cell: (j) => <StateBadge state={j.state} />,
+              cell: (j) => <ItemStateBadge state={j.state} />,
               defaultWidth: 110,
               filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
             },
@@ -317,14 +322,21 @@ export default function GroupCronJobsPage({ embedded = false }: { embedded?: boo
               label: "Actions",
               cell: (job) => (
                 <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(job)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={gitopsEnabled}
+                    onClick={() => openEditDialog(job)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                  >
                     Edit
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={deleteMutation.isPending}
+                    disabled={deleteMutation.isPending || gitopsEnabled}
                     onClick={() => handleDelete(job)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="text-red-400 hover:text-red-300 hover:bg-red-950"
                   >
                     {deleteMutation.isPending ? "..." : "Delete"}

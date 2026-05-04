@@ -16,6 +16,9 @@ export type FilterSpec<T = unknown> =
 export type ColumnDef<T> = {
   key: string
   label: string
+  /** Optional header override. When set, replaces the label rendering — used
+   * for non-text headers like a select-all checkbox above a checkbox column. */
+  header?: React.ReactNode
   accessor?: (row: T) => unknown
   cell: (row: T) => React.ReactNode
   defaultWidth?: number
@@ -39,7 +42,7 @@ type FilterValue =
 export type FilterValues = Record<string, FilterValue>
 
 function widthsKey(tableId: string) {
-  return `barricade:table-widths:${tableId}`
+  return `labdog:table-widths:${tableId}`
 }
 
 function loadWidths(tableId: string): Record<string, number> {

@@ -45,11 +45,18 @@ export interface ChainPolicies {
 export interface Host {
   id: number; hostname: string; ip_address: string; ssh_port: number; ssh_user: string
   firewall_backend: FirewallBackend; sync_status: SyncStatus
-  barricade_source_ip: string | null
+  labdog_source_ip: string | null
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
   group_ids: number[]
   created_at: string; updated_at: string
+  os_codename: string | null
+  os_pretty_name: string | null
+  os_family: string | null
+  default_nic: string | null
+  kernel_version: string | null
+  kernel_release: string | null
+  os_facts_collected_at: string | null
 }
 
 export interface HostSummary extends Host {
@@ -92,12 +99,14 @@ export interface SSHKey {
   ssh_user: string; is_default: boolean; created_at: string
 }
 
+export type GitAuthType = "none" | "ssh_key" | "https_token"
+
 export interface GitRepository {
   id: number
   name: string
   url: string
   branch: string
-  auth_type: "ssh_key" | "https_token"
+  auth_type: GitAuthType
   ssh_key_id: number | null
   webhook_secret: string | null
   last_commit_sha: string | null
@@ -110,7 +119,6 @@ export interface GitRepoCreate {
   name: string
   url: string
   branch?: string
-  auth_type: "ssh_key" | "https_token"
   ssh_key_id?: number | null
   https_token?: string | null
   webhook_secret?: string | null
@@ -120,7 +128,6 @@ export interface GitRepoUpdate {
   name?: string
   url?: string
   branch?: string
-  auth_type?: string
   ssh_key_id?: number | null
   https_token?: string | null
   webhook_secret?: string | null
@@ -144,6 +151,40 @@ export interface VMMapping {
   vmid: number
   vm_name: string
   discovered_at: string
+}
+
+export type PackSourceType = "git" | "local"
+export type PackRole = "default" | "override"
+
+export interface ActionPack {
+  id: number
+  name: string
+  source_type: PackSourceType
+  /** For source_type=git: FK to a GitRepository. Null for local packs. */
+  git_repository_id: number | null
+  /** Display name of the linked GitRepository (server-resolved). */
+  git_repository_name: string | null
+  /** Subpath within the git repo where the pack lives ("" = repo root). */
+  path: string
+  /** Absolute filesystem path for source_type=local. Null for git. */
+  local_path: string | null
+  role: PackRole
+  /** Derived server-side from (source_type, role). Read-only. */
+  priority: number
+  enabled: boolean
+  last_synced_at: string | null
+  last_sync_status: "ok" | "failed" | null
+  last_sync_error: string | null
+  current_sha: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ActionPackSyncResponse {
+  success: boolean
+  message: string
+  current_sha: string | null
+  last_synced_at: string | null
 }
 
 export interface FirewallRule {
@@ -419,6 +460,8 @@ export interface UpdateWorkflow {
   verification_prompt: string | null
   auto_reboot: boolean
   enabled: boolean
+  action_key: string
+  action_parameters: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -491,4 +534,106 @@ export interface CACertActionRun {
   error_message: string | null
   triggered_by_user_id: number | null
   created_at: string
+}
+
+export interface ScanConfig {
+  id: number
+  name: string
+  cidrs: string[]
+  ssh_key_id: number
+  ssh_port: number
+  default_group_ids: number[]
+  interval_minutes: number | null
+  cron_expression: string | null
+  enabled: boolean
+  auto_add: boolean
+  last_run_at: string | null
+  last_run_status: string | null
+  last_run_hosts_added: number
+  last_run_hosts_pending: number
+  last_run_error: string | null
+  created_at: string
+  updated_at: string
+  pending_count: number | null
+}
+
+export interface PendingSummary {
+  total: number
+}
+
+export interface PendingHost {
+  id: number
+  scan_config_id: number
+  ip_address: string
+  hostname: string | null
+  ssh_verified: boolean
+  ssh_error: string | null
+  discovered_at: string
+}
+
+export interface PendingHostFleet {
+  id: number
+  scan_config_id: number
+  scan_config_name: string
+  ip_address: string
+  hostname: string | null
+  ssh_verified: boolean
+  ssh_error: string | null
+  discovered_at: string
+}
+
+export interface ActionParameter {
+  key: string
+  label: string
+  type: "string" | "int" | "bool" | "choice"
+  default: unknown
+  required: boolean
+  choices: string[] | null
+  help_text: string | null
+}
+
+export interface ActionDefinition {
+  key: string
+  name: string
+  description: string
+  icon: string
+  version: string
+  estimated_duration: string
+  destructive: boolean
+  supports_group: boolean
+  supports_host: boolean
+  parameters: ActionParameter[]
+  /** Pack whose manifest provided this action. */
+  pack_name: string
+  /** Packs whose entries for this key were shadowed. Empty when uncontested. */
+  overridden_from: string[]
+}
+
+export interface ActionHostRun {
+  id: number
+  action_run_id: number
+  host_id: number
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  exit_code: number | null
+  error_message: string | null
+  snapshot_name: string | null
+}
+
+export interface ActionRun {
+  id: number
+  action_key: string
+  action_version: string
+  host_id: number | null
+  group_id: number | null
+  parameters: Record<string, unknown>
+  parallelism: number
+  status: string
+  triggered_by_user_id: number | null
+  started_at: string | null
+  finished_at: string | null
+  error_message: string | null
+  created_at: string
+  host_runs: ActionHostRun[]
 }

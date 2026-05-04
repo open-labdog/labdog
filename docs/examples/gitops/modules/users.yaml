@@ -1,0 +1,164 @@
+# Managed by LabDog — Linux users + groups reference
+#
+# Users and groups live together in one YAML file under TWO sections:
+#   users:         list of Linux user accounts
+#   linux_groups:  list of Linux groups
+#
+# Both are managed by the same `gitops.import.users` audit event and
+# import in one transaction.  Groups are processed FIRST so that user
+# supplementary_groups references can resolve to groups declared in the
+# same YAML file.  A user referencing a group that is neither in this
+# YAML nor in the DB logs a WARNING but does not fail the import — the
+# group may pre-exist on the host.
+#
+# LabDog never stores or manages user passwords.  Authentication for
+# managed users happens exclusively via `authorized_keys` (SSH).
+#
+# Protected system users/groups are rejected at parse time.  For users:
+#   root, daemon, bin, sys, www-data, nobody, sshd, systemd-*, polkitd,
+#   messagebus, (full list in app/user_mgmt/constants.py)
+# For groups:
+#   root, sudo, wheel, shadow, sshd, audio, video, staff, utmp, …
+#
+# Merge identity keys:
+#   users:         `username`
+#   linux_groups:  `groupname`
+
+group: users-reference
+priority: 100
+
+# -----------------------------------------------------------------------------
+# Linux groups
+# -----------------------------------------------------------------------------
+# Fields:
+#   groupname   string   — required; matches [a-z_][a-z0-9_-]*, max 32 chars.
+#   gid         int?     — optional; must be >= 1000 (system GIDs reserved).
+#   state       enum     — present | absent.  Default: present.
+#   priority    int      — 0..10000, default 0.
+linux_groups:
+  - groupname: developers
+    gid: 3000
+    state: present
+
+  - groupname: operators
+    gid: 3001
+    state: present
+
+  - groupname: monitoring
+    gid: 3002
+    state: present
+
+  # Remove a now-obsolete group
+  - groupname: old-team
+    state: absent
+
+# -----------------------------------------------------------------------------
+# Linux users
+# -----------------------------------------------------------------------------
+# Fields:
+#   username             string   — required; matches [a-z_][a-z0-9_-]*,
+#                                   max 32 chars.  Protected names rejected.
+#   uid                  int?     — optional; must be >= 1000.
+#   shell                string   — default "/bin/bash".  Must be absolute.
+#   home_dir             string?  — optional.  If omitted Ansible defaults
+#                                   to /home/<username>.
+#   state                enum     — present | absent.  Default: present.
+#   comment              string?  — optional; GECOS field on the host.
+#   sudo_rule            string?  — optional.  Dropped into
+#                                   /etc/sudoers.d/labdog-<username>.
+#                                   Shell metacharacters ` $ ( ) ; | & < >
+#                                   rejected at parse time.
+#   authorized_keys      list[str] — default [].  Each key must start with a
+#                                    recognised prefix: ssh-rsa, ssh-ed25519,
+#                                    ecdsa-sha2-nistp{256,384,521}, ssh-dss.
+#                                    ORDER IS PRESERVED in the DB for display
+#                                    but SORTED for diff — re-ordering keys
+#                                    in YAML is NOT treated as drift.
+#   supplementary_groups list[str] — default []. Names must resolve either
+#                                    to a group declared above in this YAML,
+#                                    a group already in the DB, or a group
+#                                    that pre-exists on the host (warning).
+#   priority             int      — 0..10000, default 0.
+users:
+  # ─────────────────────────────────────────────────────────────
+  # Typical developer account: bash shell, SSH key, sudo for a
+  # specific service restart.
+  # ─────────────────────────────────────────────────────────────
+  - username: alice
+    uid: 3100
+    shell: /bin/bash
+    state: present
+    comment: "Alice — lead developer"
+    sudo_rule: "ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart myapp"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... alice@laptop"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... alice@backup-yubikey"
+    supplementary_groups: [developers]
+    priority: 100
+
+  # ─────────────────────────────────────────────────────────────
+  # Operator with broader sudo and membership in multiple groups.
+  # ─────────────────────────────────────────────────────────────
+  - username: bob
+    uid: 3101
+    shell: /bin/bash
+    state: present
+    comment: "Bob — senior operator"
+    sudo_rule: "ALL=(ALL) NOPASSWD: ALL"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... bob@laptop"
+    supplementary_groups: [operators, developers]
+    priority: 100
+
+  # ─────────────────────────────────────────────────────────────
+  # Service account — nologin shell, no sudo, no keys.
+  # ─────────────────────────────────────────────────────────────
+  - username: node-exporter
+    uid: 3200
+    shell: /usr/sbin/nologin
+    state: present
+    comment: "Prometheus node exporter service account"
+    authorized_keys: []
+    supplementary_groups: [monitoring]
+    priority: 100
+
+  # ─────────────────────────────────────────────────────────────
+  # Deploy user — shell+key pair for CI automation.  Note the
+  # `supplementary_groups: [sudo]` shortcut is not allowed — `sudo`
+  # is a protected system group; use a dedicated sudo_rule instead.
+  # ─────────────────────────────────────────────────────────────
+  - username: deploy
+    uid: 3300
+    shell: /bin/bash
+    home_dir: /var/lib/deploy
+    state: present
+    comment: "CI deploy account"
+    sudo_rule: "ALL=(root) NOPASSWD: /usr/local/bin/deploy-hook"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... deploy@ci"
+    supplementary_groups: [developers]
+    priority: 100
+
+  # ─────────────────────────────────────────────────────────────
+  # Remove a user (explicit `absent`).  LabDog will delete their
+  # account + home directory on next sync.
+  # ─────────────────────────────────────────────────────────────
+  - username: carol
+    state: absent
+    comment: "Carol left the team — remove account"
+
+  # ─────────────────────────────────────────────────────────────
+  # Supplementary_groups referencing a group NOT in linux_groups
+  # and NOT on the host.  This logs a WARNING but doesn't fail —
+  # useful for groups provided by a package you already install.
+  # ─────────────────────────────────────────────────────────────
+  - username: dave
+    uid: 3400
+    shell: /bin/bash
+    state: present
+    comment: "Has membership in a package-provided group"
+    authorized_keys:
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... dave"
+    supplementary_groups:
+      - docker      # provided by `docker.io` / `docker-ce` packages
+    priority: 100

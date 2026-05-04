@@ -1,0 +1,20 @@
+key: k8s-upgrade
+name: Upgrade Kubernetes cluster
+description: Drains, upgrades, and re-admits each node in the cluster.
+icon: Network
+playbook: k8s-upgrade.yml
+version: "1.0"
+estimated_duration: "5–20 min per node"
+destructive: true
+supports_group: true
+supports_host: true
+parameters:
+  - key: target_version
+    label: Target Kubernetes version
+    type: string
+    required: true
+    help_text: e.g. 1.29.3
+  - key: skip_preflight
+    label: Skip preflight checks
+    type: bool
+    default: false

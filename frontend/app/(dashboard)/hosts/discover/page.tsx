@@ -171,10 +171,30 @@ export default function DiscoverHostsPage() {
     ? Math.round((scanStatus.progress / scanStatus.total) * 100)
     : 0
 
+  const allDiscoveredSelected =
+    !!scanStatus?.hosts_found?.length &&
+    selectedHosts.size === scanStatus.hosts_found.length
+  const someDiscoveredSelected =
+    selectedHosts.size > 0 && !allDiscoveredSelected
+
   const discoveryColumns: ColumnDef<DiscoveredHost>[] = [
     {
       key: "select",
       label: "",
+      header: (
+        <input
+          type="checkbox"
+          checked={allDiscoveredSelected}
+          ref={(el) => {
+            if (el) el.indeterminate = someDiscoveredSelected
+          }}
+          onChange={toggleAll}
+          onClick={(e) => e.stopPropagation()}
+          disabled={phase === "adding"}
+          className="rounded border-input"
+          aria-label="Select all discovered hosts"
+        />
+      ),
       cell: (host) => (
         <input
           type="checkbox"
@@ -182,6 +202,7 @@ export default function DiscoverHostsPage() {
           onChange={() => toggleHost(host.ip)}
           disabled={phase === "adding"}
           className="rounded border-input"
+          aria-label={`Select ${host.ip}`}
         />
       ),
       defaultWidth: 40,
@@ -224,7 +245,7 @@ export default function DiscoverHostsPage() {
 
   return (
     <div className="max-w-3xl space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discover" }]} />
+      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discovery", href: "/hosts/discovery" }, { label: "Scan now" }]} />
       <div>
         <h1 className="text-2xl font-bold text-white">Discover Hosts</h1>
         <p className="text-slate-400 text-sm mt-1">
@@ -308,27 +329,13 @@ export default function DiscoverHostsPage() {
       )}
 
       {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
-        <>
-          {hostsFound.length > 0 && (phase === "done" || phase === "adding") && (
-            <div className="flex items-center gap-2 mb-1">
-              <input
-                type="checkbox"
-                checked={selectedHosts.size === hostsFound.length && hostsFound.length > 0}
-                onChange={toggleAll}
-                disabled={phase === "adding"}
-                className="rounded border-input"
-              />
-              <span className="text-sm text-slate-400">Select all</span>
-            </div>
-          )}
-          <DataTable<DiscoveredHost>
-            tableId="discovery-results"
-            columns={discoveryColumns}
-            data={hostsFound}
-            getRowKey={(h) => h.ip}
-            emptyMessage="No hosts found."
-          />
-        </>
+        <DataTable<DiscoveredHost>
+          tableId="discovery-results"
+          columns={discoveryColumns}
+          data={hostsFound}
+          getRowKey={(h) => h.ip}
+          emptyMessage="No hosts found."
+        />
       )}
 
       {(phase === "done" || phase === "adding") && selectedHosts.size > 0 && !addResult && (

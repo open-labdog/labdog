@@ -113,6 +113,7 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
     # Phase 2: dispatch host tasks in batches                             #
     # ------------------------------------------------------------------ #
     from celery import group as celery_group
+    from celery.result import allow_join_result
 
     try:
         batches = [
@@ -139,11 +140,15 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
 
             result = tasks.apply_async()
             try:
-                # Wait up to 1 hour for the entire batch; propagate=False so
-                # individual host failures do not raise here.
-                # Use join() instead of get() to avoid the Celery
-                # "never call result.get() within a task" deadlock risk.
-                result.join(timeout=3600, propagate=False)
+                # Celery blocks synchronous result-waiting from within a task
+                # (join()/get()/wait() all raise RuntimeError by default) to
+                # avoid worker-pool deadlocks. allow_join_result() is the
+                # documented opt-in for orchestrators that genuinely need to
+                # block; without it, the exception was swallowed below and
+                # aggregation happened before children finished — yielding
+                # false-success results.
+                with allow_join_result():
+                    result.join(timeout=3600, propagate=False)
             except Exception as exc:
                 # Timeout or backend error — log and continue with next batch.
                 logger.warning(
@@ -182,7 +187,6 @@ async def _run_group_workflow_async(workflow_id: int, run_id: int) -> None:
             )
             host_runs = list(host_runs_result.scalars().all())
 
-            {hr.status for hr in host_runs}
             success_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.success)
             failed_count = sum(1 for hr in host_runs if hr.status == WorkflowHostStatus.failed)
             total = len(host_runs)
