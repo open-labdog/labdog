@@ -1,0 +1,11 @@
+---
+- name: Deploy login banner
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Apply the motd role
+      ansible.builtin.include_role:
+        name: pack-motd
+      vars:
+        banner_text: "{{ banner | default('Managed by LabDog') }}"

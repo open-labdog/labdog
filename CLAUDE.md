@@ -1,8 +1,8 @@
-# Barricade Development Guide
+# LabDog Development Guide
 
 ## Project Overview
 
-Barricade is a centralized Linux configuration management tool with a FastAPI backend and Next.js frontend. It manages firewall rules, services, packages, users, cron jobs, DNS resolver config, and /etc/hosts via Ansible playbooks synced over SSH.
+LabDog is a centralized Linux configuration management tool with a FastAPI backend and Next.js frontend. It manages firewall rules, services, packages, users, cron jobs, DNS resolver config, and /etc/hosts via Ansible playbooks synced over SSH.
 
 ## Tech Stack
 
@@ -19,9 +19,9 @@ Barricade is a centralized Linux configuration management tool with a FastAPI ba
 ## Development Setup
 
 ```bash
-./dev.sh start       # Start everything (infra + backend + frontend)
-./dev.sh stop        # Stop everything
-./dev.sh migrate     # Run alembic upgrade head
+./dev/dev.sh start       # Start everything (infra + backend + frontend)
+./dev/dev.sh stop        # Stop everything
+./dev/dev.sh migrate     # Run alembic upgrade head
 ```
 
 Manual:
@@ -40,7 +40,7 @@ pytest tests/ --ignore=tests/integration -v    # unit/module tests
 pytest tests/integration/ -v -m integration     # integration tests
 ```
 
-Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`BARRICADE_SECURITY__SECRET_KEY`, `BARRICADE_SECURITY__ENCRYPTION_KEY`) before app modules are imported.
+Tests use testcontainers to auto-spin a PostgreSQL instance. The conftest.py `pytest_configure` hook sets test-safe security env vars (`LABDOG_SECURITY__SECRET_KEY`, `LABDOG_SECURITY__ENCRYPTION_KEY`) before app modules are imported.
 
 **Test session architecture**: Each test gets a database session wrapped in a savepoint that rolls back after the test. The `get_db` dependency is overridden to return this test session. Any `session.commit()` in application code translates to savepoint release/create (not actual commit) via `join_transaction_mode="create_savepoint"`.
 
@@ -55,7 +55,7 @@ npx playwright test --ui     # interactive mode
 
 ## Configuration
 
-Settings are loaded from `barricade.toml` (project root for dev, `/etc/barricade/barricade.toml` for production). Environment variables override TOML settings using `BARRICADE_` prefix with `__` separators (e.g., `BARRICADE_SECURITY__SECRET_KEY`).
+Settings are loaded from `dev/labdog.toml` (dev — set via `LABDOG_CONFIG` env var by `dev.sh`), or `/etc/labdog/labdog.toml` (production). Environment variables override TOML settings using `LABDOG_` prefix with `__` separators (e.g., `LABDOG_SECURITY__SECRET_KEY`).
 
 **Required secrets** (validated at startup — insecure defaults are rejected):
 - `security.secret_key` — JWT signing key
@@ -77,8 +77,86 @@ Groups have priorities (higher number wins). When a host belongs to multiple gro
 2. **Sync**: Generate and execute Ansible playbook to apply changes
 3. **Drift check**: Compare current host state against desired state
 
+#### Coalesced per-host sync (v0.2.0+, "option-c")
+Every sync — bulk and per-tab — flows through one orchestrator task
+per host that produces a single unified Ansible playbook covering
+every requested module. One ansible-runner invocation per sync, not
+seven. Per-host serialisation via PostgreSQL advisory lock; concurrent
+requests for the same host queue (`SyncJob.status="pending"`) and are
+dispatched in `created_at` order when the in-flight task finishes.
+
+- Entry points: `POST /api/sync/hosts/{id}/bulk` (multi-module) and
+  the seven per-tab endpoints (single-module). Per-tab endpoints
+  unchanged externally — internally their Celery tasks are one-line
+  delegators to `run_host_sync` with a single-module filter.
+- Orchestrator core: `app.sync.orchestrator.orchestrate_host_sync`
+  (pure-ish; DB reads + composition + dep-injected runner).
+- Celery wrapper: `app.tasks.host_sync_orchestrator.run_host_sync`
+  (claim-or-defer at start, atomic post-run write of `SyncJob` +
+  per-module `HostModuleStatus` + one `AuditLog` row, dispatch-next
+  in finally).
+- Composer: `app.ansible_runtime.composer` — `PlaybookFragment`
+  dataclass + 7 `fragment_<module>()` adapters that wrap each
+  per-module generator, plus `compose_playbook` that emits in
+  canonical order with `_inject_tags` per task and a `hosts`
+  sentinel rewritten at compose time.
+- Outcome aggregation: `app.ansible_runtime.outcomes`
+  (`aggregate_module_outcomes`) — resolves module identity from
+  `event_data.play` on ansible-runner events via the
+  `PLAY_NAME_TO_MODULE` map next to `CANONICAL_ORDER` in `composer.py`.
+  Both keys must move together when a play is renamed.
+- Audit shape: one `sync_triggered` row at API entry + one
+  `sync_completed` row at orchestrator finish; the completion row
+  carries `{module: outcome}` composite payload (per Decision B2).
+
 ### Discovery flow
 Network scanning is async via Celery tasks. Bulk-add requires SSH verification — each host must be reachable before being added.
+
+### Action packs (BYO playbooks)
+Action playbooks are supplied by pluggable packs, not the hardcoded
+registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
+module import. DB-backed packs are configured from the UI at
+`/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
+can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
+Pack role (`default` / `override`) derives the priority tier — admins
+never enter integers. See `app/packs/` for the subsystem, the user
+guide at `docs/ui/actions.md`, and starter packs at
+`docs/examples/action-packs/`.
+
+**Bundled pack mirrors `labdog-playbooks`.** The directory at
+`backend/app/ansible/` is a byte-identical mirror of
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+at the moment the container image is built. Do **not** edit it
+directly — change the upstream repo, then re-sync with
+`rsync -a --exclude='.git' --exclude='.gitignore' /path/to/labdog-playbooks/ backend/app/ansible/`.
+The `bundled-pack-mirror` CI job runs
+`scripts/check-bundled-mirrors-playbooks.sh` and fails the build on
+drift. The Python runtime that consumes packs (playbook generation,
+ansible-runner) lives separately at `backend/app/ansible_runtime/` and
+is *not* part of the mirror. A fresh install also auto-registers
+`labdog-playbooks` as a DB-backed override pack so deployed instances
+pick up newer playbooks than the in-image snapshot — operators that
+prefer a private fork delete the seeded row and add their own.
+
+## Working with `plans/`
+
+When picking up substantive design work that needs more than a
+[`TODO.md`](TODO.md) line can hold, use `plans/` as a branch-scoped
+scratchpad:
+
+1. Branch from `dev`.
+2. Add plan files under `plans/` on the branch and commit them so
+   later sessions / agents can read them.
+3. Implement. Capture the *why* and the design decisions in commit
+   messages — those are the permanent record, the plan is scaffolding.
+4. **Delete `plans/` before opening the PR.** `dev` and `main` must
+   never carry it.
+
+Roles of the four top-level tracking files: [`ROADMAP.md`](ROADMAP.md)
+(direction), [`TODO.md`](TODO.md) (open near-term tasks, open-only),
+[`BUGS.md`](BUGS.md) (open bug registry, open-only), `plans/` (private
+in-flight scratchpad on work branches). See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for the full workflow.
 
 ## Key Files
 
@@ -91,6 +169,10 @@ Network scanning is async via Celery tasks. Bulk-add requires SSH verification �
 | `frontend/lib/api.ts` | API client (`apiFetch`) |
 | `frontend/lib/auth.ts` | Auth context (`useAuth()`) |
 | `frontend/FRONTEND.md` | Frontend design and pattern reference |
+| `backend/app/packs/` | DB-backed action-pack subsystem (models, sync service, git auth, UI-entered credentials) |
+| `backend/app/actions/` | Pack loader, registry, manifest schema, git sync primitives |
+| `docs/ui/actions.md` | User guide for actions + packs |
+| `docs/examples/action-packs/` | Starter packs demonstrating the format |
 
 ## CI/CD
 

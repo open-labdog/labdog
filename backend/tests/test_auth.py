@@ -1,5 +1,5 @@
 """
-Authentication endpoint tests for Barricade.
+Authentication endpoint tests for LabDog.
 
 Tests cover:
 - User registration (POST /api/auth/register)
@@ -63,7 +63,7 @@ class TestAuth:
         assert "id" in data
 
     async def test_login_sets_cookie(self, client, db):
-        """Test that login sets the barricade_auth cookie."""
+        """Test that login sets the labdog_auth cookie."""
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
         password = "TestPass1!Secure"
 
@@ -87,7 +87,7 @@ class TestAuth:
 
         assert resp.status_code in (200, 204)
         # Check that the cookie is set in the response
-        assert "barricade_auth" in resp.cookies
+        assert "labdog_auth" in resp.cookies
 
     async def test_get_current_user(self, superuser_client):
         """Test retrieving current user info via GET /api/users/me."""

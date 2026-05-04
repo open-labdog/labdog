@@ -17,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Barricade - Firewall Management',
-  description: 'Ansible-based Linux firewall manager',
+  title: 'LabDog',
+  description: 'Self-hosted Linux configuration management',
 }
 
 export default function RootLayout({

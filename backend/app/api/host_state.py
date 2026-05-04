@@ -117,7 +117,7 @@ async def collect_state(
             username=ssh_key.ssh_user,
             client_keys=[imported_key],
         ) as probe:
-            host.barricade_source_ip = await get_source_ip(probe)
+            host.labdog_source_ip = await get_source_ip(probe)
     except (TimeoutError, OSError, asyncssh.Error) as e:
         msg = str(e) or "connection timed out"
         logger.warning("Host %d unreachable, skipping all collectors: %s", host_id, msg)
@@ -240,7 +240,7 @@ async def _drift_firewall(host: Host, hms: HostModuleStatus, db: AsyncSession) -
     desired, desired_policies = await _get_desired_state_for_host(
         host.id,
         db,
-        host_source_ip=host.barricade_source_ip,
+        host_source_ip=host.labdog_source_ip,
     )
     if not desired:
         hms.sync_status = "in_sync"
@@ -721,7 +721,7 @@ async def _detect_firewall_backend(
                     # firewalld uses nft under the hood
                     backend = "nftables"
                 messages.append(
-                    "firewalld detected but Barricade manages nftables directly. "
+                    "firewalld detected but LabDog manages nftables directly. "
                     "firewalld has been marked for disabling."
                 )
                 # Auto-add package rule to remove firewalld
@@ -737,7 +737,7 @@ async def _detect_firewall_backend(
                             host_id=host_id,
                             package_name="firewalld",
                             state=PackageState.absent,
-                            comment="Auto-disabled by Barricade: manages nftables directly",
+                            comment="Auto-disabled by LabDog: manages nftables directly",
                         )
                     )
                 # Auto-add service rule to stop firewalld
@@ -754,7 +754,7 @@ async def _detect_firewall_backend(
                             service_name="firewalld",
                             state=ServiceState.stopped,
                             enabled=False,
-                            comment="Auto-disabled by Barricade: manages nftables directly",
+                            comment="Auto-disabled by LabDog: manages nftables directly",
                         )
                     )
 
@@ -762,7 +762,7 @@ async def _detect_firewall_backend(
             r = await conn.run("command -v ufw || test -x /usr/sbin/ufw", check=False)
             if r.exit_status == 0:
                 messages.append(
-                    "ufw detected but Barricade manages iptables directly. "
+                    "ufw detected but LabDog manages iptables directly. "
                     "ufw has been marked for disabling."
                 )
                 if backend is None:
@@ -780,7 +780,7 @@ async def _detect_firewall_backend(
                             host_id=host_id,
                             package_name="ufw",
                             state=PackageState.absent,
-                            comment="Auto-disabled by Barricade: manages iptables directly",
+                            comment="Auto-disabled by LabDog: manages iptables directly",
                         )
                     )
                 # Auto-add service rule to stop ufw
@@ -797,7 +797,7 @@ async def _detect_firewall_backend(
                             service_name="ufw",
                             state=ServiceState.stopped,
                             enabled=False,
-                            comment="Auto-disabled by Barricade: manages iptables directly",
+                            comment="Auto-disabled by LabDog: manages iptables directly",
                         )
                     )
 

@@ -25,10 +25,15 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
 
     from app.db import task_session
     from app.gitops.git_service import cleanup_repo, clone_repo, read_file_at_sha
-    from app.gitops.importer import import_group_from_yaml
+    from app.gitops.importer import import_global_from_yaml, import_group_from_yaml
     from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
     from app.models.host_group import HostGroup
     from app.models.ssh_key import SSHKey
+
+    # Convention: the optional global YAML lives at the repo root.
+    # Operators who want a different layout can symlink to it, but the
+    # path itself is not user-configurable — keeps Phase 2 small.
+    GLOBAL_YAML_PATH = "_global.yaml"
 
     repo_dir: Path | None = None
 
@@ -61,6 +66,42 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
 
+            # Global YAML is optional; missing file is the common case.
+            # Failures here are logged but never abort the per-group loop —
+            # an operator typo in `_global.yaml` shouldn't block per-group
+            # rules from importing.
+            try:
+                global_yaml_content = read_file_at_sha(repo_dir, GLOBAL_YAML_PATH, commit_sha)
+            except FileNotFoundError:
+                global_yaml_content = None
+
+            if global_yaml_content is not None:
+                try:
+                    global_result = await import_global_from_yaml(
+                        repo_id=repo_id,
+                        yaml_content=global_yaml_content,
+                        commit_sha=commit_sha,
+                        db=db,
+                    )
+                    if not global_result.success:
+                        logger.warning(
+                            "GitOps: global import failed for repo %s: %s",
+                            repo.name,
+                            global_result.error_message,
+                        )
+                    else:
+                        logger.info(
+                            "GitOps: global import OK for repo %s (changes=%s)",
+                            repo.name,
+                            global_result.any_changes(),
+                        )
+                except Exception as e:
+                    logger.error(
+                        "GitOps: error importing _global.yaml for repo %s: %s",
+                        repo.name,
+                        e,
+                    )
+
             groups_result = await db.execute(
                 select(HostGroup).where(
                     HostGroup.git_repository_id == repo_id,
@@ -75,6 +116,12 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                 repo.last_sync_at = datetime.now(UTC)
                 await db.commit()
                 return
+
+            # BUG-37: collect dispatches across all groups, commit once, then
+            # dispatch. Per-group _trigger_group_sync stages SyncJob rows but
+            # does NOT call .delay(); the caller drains this list after the
+            # commit on line below.
+            pending_dispatches: list[tuple[int, int]] = []
 
             for group in groups:
                 try:
@@ -108,8 +155,8 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                         )
                         continue
 
-                    if import_result.diff and import_result.diff.has_changes:
-                        await _trigger_group_sync(group.id, db)
+                    if import_result.any_changes():
+                        pending_dispatches.extend(await _trigger_group_sync(group.id, db))
 
                 except Exception as e:
                     logger.error("GitOps: error processing group %s: %s", group.name, e)
@@ -120,6 +167,12 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             repo.last_commit_sha = commit_sha
             repo.last_sync_at = datetime.now(UTC)
             await db.commit()
+
+            from app.tasks.sync import run_sync_playbook  # noqa: PLC0415
+
+            for job_id, host_id in pending_dispatches:
+                run_sync_playbook.delay(job_id=job_id, host_id=host_id)
+                logger.info("GitOps: dispatched sync job %d for host %d", job_id, host_id)
 
             logger.info(
                 "GitOps: processed webhook for repo %s, SHA %s, %d groups",
@@ -133,12 +186,19 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
             cleanup_repo(repo_dir)
 
 
-async def _trigger_group_sync(group_id: int, db):
+async def _trigger_group_sync(group_id: int, db) -> list[tuple[int, int]]:
+    """Stage SyncJob rows for every eligible host in *group_id*.
+
+    Returns a list of `(job_id, host_id)` tuples for the caller to dispatch
+    AFTER `db.commit()`. BUG-37: dispatching `.delay()` before the commit
+    races with the Celery worker — the row is invisible to the worker's
+    connection until commit lands. The caller in `_process_webhook_async`
+    drains this list once per webhook delivery, after the outer commit.
+    """
     from sqlalchemy import select
 
     from app.models.host import HostGroupMembership
     from app.models.sync_job import SyncJob
-    from app.tasks.sync import run_sync_playbook
 
     host_result = await db.execute(
         select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
@@ -147,9 +207,9 @@ async def _trigger_group_sync(group_id: int, db):
 
     if not host_ids:
         logger.info("GitOps: no hosts in group %d, skipping sync", group_id)
-        return
+        return []
 
-    dispatched = 0
+    pending: list[tuple[int, int]] = []
     for host_id in host_ids:
         running = await db.execute(
             select(SyncJob).where(
@@ -170,9 +230,7 @@ async def _trigger_group_sync(group_id: int, db):
         )
         db.add(job)
         await db.flush()
+        pending.append((job.id, host_id))
 
-        run_sync_playbook.delay(job_id=job.id, host_id=host_id)
-        dispatched += 1
-        logger.info("GitOps: dispatched sync job %d for host %d", job.id, host_id)
-
-    logger.info("GitOps: dispatched %d sync tasks for group %d", dispatched, group_id)
+    logger.info("GitOps: staged %d sync tasks for group %d", len(pending), group_id)
+    return pending

@@ -33,11 +33,18 @@ class HostResponse(BaseModel):
     ssh_user: str
     firewall_backend: FirewallBackend
     sync_status: SyncStatus
-    barricade_source_ip: str | None
+    labdog_source_ip: str | None
     drift_check_enabled: bool
     last_sync_at: datetime | None
     last_drift_check_at: datetime | None
     ssh_key_id: int | None
+    os_codename: str | None
+    os_pretty_name: str | None
+    os_family: str | None
+    default_nic: str | None
+    kernel_version: str | None
+    kernel_release: str | None
+    os_facts_collected_at: datetime | None
     group_ids: list[int] = []
     created_at: datetime
     updated_at: datetime

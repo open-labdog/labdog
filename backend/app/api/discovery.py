@@ -11,6 +11,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.discovery.scanner import validate_cidr
+from app.discovery.verify import verify_ssh
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.ssh_key import SSHKey
@@ -24,7 +25,6 @@ from app.schemas.discovery import (
     ScanStatus,
 )
 from app.schemas.hosts import HostResponse
-from app.ssh_utils import ssh_connect
 from app.tasks import celery_app
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
@@ -117,9 +117,7 @@ async def add_discovered_hosts(
     _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Bulk-add discovered hosts to Barricade."""
-    import socket as _socket
-
+    """Bulk-add discovered hosts to LabDog."""
     # Validate request size
     if len(body.ips) > settings.discovery.max_bulk_add:
         raise HTTPException(
@@ -161,48 +159,20 @@ async def add_discovered_hosts(
             skipped += 1
             continue
 
-        # SSH verification is mandatory — we must be able to connect
-        hostname = None
-        source_ip = None
-        try:
-            async with ssh_connect(
-                ip,
-                port=body.ssh_port,
-                username=ssh_user,
-                client_keys=[imported_key],
-            ) as conn:
-                result = await conn.run("hostname", check=True)
-                hostname = result.stdout.strip()
-                from app.ssh_utils import get_source_ip
-
-                source_ip = await get_source_ip(conn)
-        except Exception as e:
-            error_msg = str(e)
-            if "Permission denied" in error_msg or "Auth" in error_msg:
-                error_msg = f"SSH auth failed for {ssh_user}@{ip}"
-            elif "refused" in error_msg.lower():
-                error_msg = f"SSH connection refused on {ip}:{body.ssh_port}"
-            elif "timed out" in error_msg.lower() or "Timeout" in error_msg:
-                error_msg = f"SSH connection timed out for {ip}"
-            else:
-                error_msg = f"SSH failed: {error_msg[:120]}"
-            failed.append(FailedHost(ip=ip, error=error_msg))
+        # SSH verification is mandatory — we must be able to connect.
+        ok, hostname, source_ip, ssh_err = await verify_ssh(
+            ip,
+            port=body.ssh_port,
+            username=ssh_user,
+            imported_key=imported_key,
+        )
+        if not ok:
+            failed.append(FailedHost(ip=ip, error=ssh_err or "SSH failed"))
             continue
 
-        # Fall back to reverse DNS if SSH returned empty hostname
-        if not hostname:
-            try:
-                fqdn = _socket.getfqdn(ip)
-                if fqdn != ip:
-                    hostname = fqdn
-            except Exception:
-                pass
-
-        if not hostname:
-            hostname = ip
-
         # Ensure hostname uniqueness
-        base_hostname = hostname
+        base_hostname = hostname or ip
+        hostname = base_hostname
         suffix = 1
         while True:
             hn_result = await db.execute(select(Host).where(Host.hostname == hostname))
@@ -217,7 +187,7 @@ async def add_discovered_hosts(
             ssh_port=body.ssh_port,
             ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
-            barricade_source_ip=source_ip,
+            labdog_source_ip=source_ip,
         )
         db.add(host)
         await db.flush()  # get host.id

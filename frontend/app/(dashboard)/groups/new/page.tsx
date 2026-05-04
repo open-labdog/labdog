@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useQueryClient } from "@tanstack/react-query"
 import { InfoIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -15,6 +16,7 @@ import { groupSchema, type GroupInput } from "@/lib/schemas"
 
 export default function NewGroupPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -38,6 +40,7 @@ export default function NewGroupPage() {
           priority: data.priority,
         }),
       })
+      await queryClient.invalidateQueries({ queryKey: ["groups-summary"] })
       router.push("/groups")
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create group")

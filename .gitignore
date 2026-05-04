@@ -52,3 +52,9 @@ packaging/.cache/
 
 # Playwright MCP
 .playwright-mcp/
+
+# Maintainer's local working notes — design drafts, exploratory
+# scaffolding, multi-agent plan docs. Public-facing roadmap and bug
+# registry live at TODO.md and BUGS.md at the repo root. See
+# CONTRIBUTING.md (`plans/` is local-only) for the policy.
+#/plans/

@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Loader2Icon, PlayIcon, ShieldCheckIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { ItemStateBadge } from "@/components/status-badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { DataTable } from "@/components/ui/data-table"
@@ -26,13 +27,6 @@ import type { CACertActionRun, CACertRule } from "@/lib/types"
 import { useDelayedLoading } from "@/lib/utils"
 
 
-function StateBadge({ state }: { state: "present" | "absent" }) {
-  return (
-    <Badge className={state === "present" ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-      {state === "present" ? "Present" : "Absent"}
-    </Badge>
-  )
-}
 
 function StatusBadge({ status }: { status: CACertActionRun["status"] }) {
   const map: Record<string, string> = {
@@ -258,7 +252,7 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
               key: "state",
               label: "State",
               accessor: (c) => c.state,
-              cell: (c) => <StateBadge state={c.state} />,
+              cell: (c) => <ItemStateBadge state={c.state} />,
               defaultWidth: 120,
               filter: { type: "enum", options: [{label:"Present",value:"present"},{label:"Absent",value:"absent"}] },
             },

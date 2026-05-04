@@ -4,7 +4,19 @@ from typing import Any
 
 import yaml
 
-from app.gitops.schema import BarricadeGroupYAML, FirewallRuleYAML
+from app.gitops.schema import (
+    CronJobYAML,
+    FirewallRuleYAML,
+    HostsEntryYAML,
+    LabDogGlobalYAML,
+    LabDogGroupYAML,
+    LinuxGroupYAML,
+    LinuxUserYAML,
+    PackageRepositoryYAML,
+    PackageYAML,
+    ServiceYAML,
+)
+from app.resolver.models import ResolverConfig
 from app.rules.model import FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -16,8 +28,8 @@ class YAMLParseError(Exception):
     pass
 
 
-def parse_yaml(yaml_str: str) -> BarricadeGroupYAML:
-    """Parse YAML string into validated BarricadeGroupYAML model.
+def parse_yaml(yaml_str: str) -> LabDogGroupYAML:
+    """Parse YAML string into validated LabDogGroupYAML model.
 
     Raises YAMLParseError with descriptive message on failure.
     Silently ignores unknown top-level keys (future modules).
@@ -31,7 +43,33 @@ def parse_yaml(yaml_str: str) -> BarricadeGroupYAML:
         raise YAMLParseError("YAML must be a mapping (key-value pairs)")
 
     try:
-        return BarricadeGroupYAML.model_validate(data)
+        return LabDogGroupYAML.model_validate(data)
+    except Exception as e:
+        raise YAMLParseError(f"YAML validation failed: {e}") from e
+
+
+def parse_global_yaml(yaml_str: str) -> LabDogGlobalYAML:
+    """Parse a ``_global.yaml`` payload into validated LabDogGlobalYAML.
+
+    Same error semantics as :func:`parse_yaml` — raises ``YAMLParseError``
+    for syntax failures, missing-mapping payloads, and pydantic validation
+    errors. Used by ``import_global_from_yaml`` for global-scope settings
+    (drift interval, scan configs).
+    """
+    try:
+        data = yaml.safe_load(yaml_str)
+    except yaml.YAMLError as e:
+        raise YAMLParseError(f"Invalid YAML syntax: {e}") from e
+
+    if data is None:
+        # Empty file — treat as an empty mapping; the importer will do nothing.
+        data = {}
+
+    if not isinstance(data, dict):
+        raise YAMLParseError("YAML must be a mapping (key-value pairs)")
+
+    try:
+        return LabDogGlobalYAML.model_validate(data)
     except Exception as e:
         raise YAMLParseError(f"YAML validation failed: {e}") from e
 
@@ -146,4 +184,264 @@ def specs_to_yaml(
         "priority": priority,
         "firewall": firewall,
     }
-    return f"# Managed by Barricade\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
+    return f"# Managed by LabDog\n{yaml.dump(data, default_flow_style=False, sort_keys=False)}"
+
+
+def package_specs_to_yaml(specs: list[PackageYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``PackageYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``version=None``, ``state="present"``,
+    ``package_manager="auto"``, ``priority=0``, ``comment=None``,
+    ``hold=False``.
+
+    Args:
+        specs: Validated ``PackageYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"package_name": spec.package_name}
+        if spec.version is not None:
+            entry["version"] = spec.version
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.package_manager != "auto":
+            entry["package_manager"] = spec.package_manager
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.hold:
+            entry["hold"] = spec.hold
+        result.append(entry)
+    return result
+
+
+def package_repo_specs_to_yaml(specs: list[PackageRepositoryYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``PackageRepositoryYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``key_url=None``, ``distribution=None``,
+    ``components=None``, ``state="present"``.
+
+    Args:
+        specs: Validated ``PackageRepositoryYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "name": spec.name,
+            "url": spec.url,
+            "repo_type": spec.repo_type,
+        }
+        if spec.key_url is not None:
+            entry["key_url"] = spec.key_url
+        if spec.distribution is not None:
+            entry["distribution"] = spec.distribution
+        if spec.components is not None:
+            entry["components"] = spec.components
+        if spec.state != "present":
+            entry["state"] = spec.state
+        result.append(entry)
+    return result
+
+
+def hosts_entry_specs_to_yaml(specs: list[HostsEntryYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``HostsEntryYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``host_ref_id=None``, ``ip_address=None``,
+    ``hostname=None``, ``aliases=[]``, ``comment=None``, ``priority=0``.
+
+    The two variants (literal and reference) are handled transparently — for
+    literal entries ``ip_address`` and ``hostname`` are always emitted; for
+    reference entries ``host_ref_id`` is emitted and the literal fields are
+    omitted (they are ``None``).
+
+    Args:
+        specs: Validated ``HostsEntryYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {}
+        if spec.host_ref_id is not None:
+            entry["host_ref_id"] = spec.host_ref_id
+        else:
+            entry["ip_address"] = spec.ip_address
+            entry["hostname"] = spec.hostname
+        if spec.aliases:
+            entry["aliases"] = list(spec.aliases)
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        result.append(entry)
+    return result
+
+
+def cron_job_specs_to_yaml(specs: list[CronJobYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``CronJobYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``user="root"``, ``environment={}``,
+    ``state="present"``, ``priority=0``, ``comment=None``.
+
+    Args:
+        specs: Validated ``CronJobYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "name": spec.name,
+            "schedule": spec.schedule,
+            "command": spec.command,
+        }
+        if spec.user != "root":
+            entry["user"] = spec.user
+        if spec.environment:
+            entry["environment"] = dict(spec.environment)
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        result.append(entry)
+    return result
+
+
+def linux_group_specs_to_yaml(specs: list[LinuxGroupYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``LinuxGroupYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``gid=None``, ``state="present"``, ``priority=0``.
+
+    Args:
+        specs: Validated ``LinuxGroupYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding under the ``linux_groups:`` key
+        of a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"groupname": spec.groupname}
+        if spec.gid is not None:
+            entry["gid"] = spec.gid
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        result.append(entry)
+    return result
+
+
+def linux_user_specs_to_yaml(specs: list[LinuxUserYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``LinuxUserYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``uid=None``, ``shell="/bin/bash"``, ``home_dir=None``,
+    ``state="present"``, ``comment=None``, ``sudo_rule=None``,
+    ``authorized_keys=[]``, ``supplementary_groups=[]``, ``priority=0``.
+
+    Args:
+        specs: Validated ``LinuxUserYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding under the ``users:`` key of a
+        group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {"username": spec.username}
+        if spec.uid is not None:
+            entry["uid"] = spec.uid
+        if spec.shell != "/bin/bash":
+            entry["shell"] = spec.shell
+        if spec.home_dir is not None:
+            entry["home_dir"] = spec.home_dir
+        if spec.state != "present":
+            entry["state"] = spec.state
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.sudo_rule is not None:
+            entry["sudo_rule"] = spec.sudo_rule
+        if spec.authorized_keys:
+            entry["authorized_keys"] = list(spec.authorized_keys)
+        if spec.supplementary_groups:
+            entry["supplementary_groups"] = list(spec.supplementary_groups)
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        result.append(entry)
+    return result
+
+
+def resolver_spec_to_yaml(config: ResolverConfig) -> dict[str, Any]:
+    """Convert a ``ResolverConfig`` ORM instance to a YAML-ready dict.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Defaults are: ``search_domains=[]``, ``options={}``,
+    ``resolver_type="resolv_conf"``, ``dns_over_tls=False``.
+
+    Args:
+        config: A ``ResolverConfig`` instance with ``group_id`` set.
+
+    Returns:
+        A dict suitable for embedding under the ``resolver:`` key of a
+        group YAML document.
+    """
+    entry: dict[str, Any] = {"nameservers": list(config.nameservers)}
+    if config.search_domains:
+        entry["search_domains"] = list(config.search_domains)
+    if config.options:
+        entry["options"] = dict(config.options)
+    if str(config.resolver_type) != "resolv_conf":
+        entry["resolver_type"] = str(config.resolver_type)
+    if config.dns_over_tls:
+        entry["dns_over_tls"] = config.dns_over_tls
+    return entry
+
+
+def service_specs_to_yaml(specs: list[ServiceYAML]) -> list[dict[str, Any]]:
+    """Convert a list of ``ServiceYAML`` models to YAML-ready dicts.
+
+    Only non-default fields are included to keep output clean and minimal.
+    Default values are: ``enabled=True``, ``priority=0``, ``comment=None``,
+    ``unit_content=None``, ``deploy_mode="override"``.
+
+    Args:
+        specs: Validated ``ServiceYAML`` instances to serialise.
+
+    Returns:
+        A list of dicts suitable for embedding in a group YAML document.
+    """
+    result: list[dict[str, Any]] = []
+    for spec in specs:
+        entry: dict[str, Any] = {
+            "service_name": spec.service_name,
+            "state": spec.state,
+        }
+        if not spec.enabled:
+            entry["enabled"] = spec.enabled
+        if spec.priority != 0:
+            entry["priority"] = spec.priority
+        if spec.comment is not None:
+            entry["comment"] = spec.comment
+        if spec.unit_content is not None:
+            entry["unit_content"] = spec.unit_content
+        if spec.deploy_mode != "override":
+            entry["deploy_mode"] = spec.deploy_mode
+        result.append(entry)
+    return result

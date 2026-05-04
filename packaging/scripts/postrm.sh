@@ -3,9 +3,9 @@ set -e
 
 case "$1" in
     purge)
-        rm -rf /var/lib/barricade /var/log/barricade /etc/barricade
-        if getent passwd barricade > /dev/null 2>&1; then
-            deluser --system barricade 2>/dev/null || userdel barricade 2>/dev/null || true
+        rm -rf /var/lib/labdog /var/log/labdog /etc/labdog
+        if getent passwd labdog > /dev/null 2>&1; then
+            deluser --system labdog 2>/dev/null || userdel labdog 2>/dev/null || true
         fi
         ;;
     remove|disappear)

@@ -3,6 +3,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
@@ -26,13 +27,11 @@ router = APIRouter(tags=["resolver"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/groups/{group_id}/resolver", response_model=ResolverConfigResponse)
+@router.get("/groups/{group_id}/resolver", response_model=ResolverConfigResponse | None)
 async def get_group_resolver(group_id: int, db: AsyncSession = Depends(get_db)):
+    """Return the group's resolver config, or `null` when none has been configured."""
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
-    config = result.scalar_one_or_none()
-    if not config:
-        raise HTTPException(status_code=404, detail="No resolver config for this group")
-    return config
+    return result.scalar_one_or_none()
 
 
 @router.put("/groups/{group_id}/resolver", response_model=ResolverConfigResponse)
@@ -42,6 +41,7 @@ async def upsert_group_resolver(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
+    await check_gitops_lock(group_id, db)
     grp = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
     if not grp:
         raise HTTPException(status_code=404, detail="Group not found")
@@ -88,6 +88,7 @@ async def delete_group_resolver(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(current_active_user),
 ):
+    await check_gitops_lock(group_id, db)
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.group_id == group_id))
     config = result.scalar_one_or_none()
     if not config:
@@ -114,13 +115,11 @@ async def delete_group_resolver(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/hosts/{host_id}/resolver", response_model=ResolverConfigResponse)
+@router.get("/hosts/{host_id}/resolver", response_model=ResolverConfigResponse | None)
 async def get_host_resolver(host_id: int, db: AsyncSession = Depends(get_db)):
+    """Return the host's resolver override, or `null` when none has been configured."""
     result = await db.execute(select(ResolverConfig).where(ResolverConfig.host_id == host_id))
-    config = result.scalar_one_or_none()
-    if not config:
-        raise HTTPException(status_code=404, detail="No resolver override for this host")
-    return config
+    return result.scalar_one_or_none()
 
 
 @router.put("/hosts/{host_id}/resolver", response_model=ResolverConfigResponse)
@@ -204,13 +203,15 @@ async def delete_host_resolver(
 
 @router.get(
     "/hosts/{host_id}/effective-resolver",
-    response_model=EffectiveResolverResponse,
+    response_model=EffectiveResolverResponse | None,
 )
 async def effective_resolver(host_id: int, db: AsyncSession = Depends(get_db)):
-    config = await get_effective_resolver(host_id, db)
-    if not config:
-        raise HTTPException(status_code=404, detail="No resolver config applies to this host")
-    return config
+    """Return the resolver merged from host override + group config, or `null`.
+
+    Returning `null` instead of 404 lets the host detail page render the
+    "no resolver configured" empty state without a console error.
+    """
+    return await get_effective_resolver(host_id, db)
 
 
 @router.get("/hosts/{host_id}/resolver-preview", response_class=PlainTextResponse)

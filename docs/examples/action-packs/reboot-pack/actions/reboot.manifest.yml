@@ -1,0 +1,25 @@
+key: reboot
+name: Reboot host
+description: >-
+  Reboots the target host and waits for SSH to come back. If the host
+  has a Proxmox VM mapping, LabDog takes a snapshot first and rolls
+  back on failure.
+icon: Zap
+playbook: reboot.yml
+version: "1.0"
+estimated_duration: "1–3 min"
+# destructive: true enables the snapshot / verify / rollback wrap.
+# If the host has no Proxmox VM mapping, the run still executes but
+# without snapshot protection (you'll see a "[snapshot] skipped" line
+# in the log).
+destructive: true
+supports_group: false
+supports_host: true
+parameters:
+  - key: wait_seconds
+    label: Max SSH wait after reboot
+    type: int
+    default: 300
+    help_text: >-
+      How long to wait for the host to come back before giving up.
+      Longer is safer for VMs that boot slowly from cold.

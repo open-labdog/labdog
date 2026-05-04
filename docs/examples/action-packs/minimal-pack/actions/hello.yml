@@ -1,0 +1,9 @@
+---
+- name: Say hello
+  hosts: all
+  become: false
+  gather_facts: false
+  tasks:
+    - name: Log a friendly message
+      ansible.builtin.debug:
+        msg: "Hello from the minimal example pack on {{ inventory_hostname }}"

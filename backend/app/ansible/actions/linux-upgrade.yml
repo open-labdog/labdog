@@ -1,0 +1,10 @@
+---
+- name: Upgrade Linux packages
+  hosts: all
+  become: true
+  roles:
+    - role: role-apt-upgrade
+  vars:
+    dist_upgrade: false
+    # auto_reboot, reboot_timeout, cleanup, reboot_skip_if_running
+    # are passed via --extra-vars at runtime

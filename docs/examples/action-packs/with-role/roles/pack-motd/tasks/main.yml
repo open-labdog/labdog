@@ -1,0 +1,8 @@
+---
+- name: Ensure /etc/motd contains the banner
+  ansible.builtin.copy:
+    dest: /etc/motd
+    content: "{{ banner_text }}\n"
+    owner: root
+    group: root
+    mode: "0644"

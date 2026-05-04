@@ -1,4 +1,4 @@
-"""Manages Celery worker+beat as a subprocess of the main Barricade process."""
+"""Manages Celery worker+beat as a subprocess of the main LabDog process."""
 
 from __future__ import annotations
 

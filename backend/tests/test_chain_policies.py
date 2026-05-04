@@ -224,28 +224,30 @@ class TestNftablesRendererPolicies:
 
 
 class TestIptablesRendererPolicies:
+    _COMMENT = '-m comment --comment "Managed by LabDog: default policy"'
+
     def test_default_policies(self):
         v4, _ = render_iptables_rules([])
-        assert ":BARRICADE-INPUT - [0:0]" in v4
-        assert ":BARRICADE-OUTPUT - [0:0]" in v4
-        assert "-A BARRICADE-INPUT -j DROP" in v4
-        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert ":LABDOG-INPUT - [0:0]" in v4
+        assert ":LABDOG-OUTPUT - [0:0]" in v4
+        assert f"-A LABDOG-INPUT {self._COMMENT} -j DROP" in v4
+        assert f"-A LABDOG-OUTPUT {self._COMMENT} -j ACCEPT" in v4
         assert ":FORWARD" not in v4
 
     def test_custom_input_accept(self):
         v4, _ = render_iptables_rules([], policies=ChainPolicies(input="accept"))
-        assert "-A BARRICADE-INPUT -j ACCEPT" in v4
-        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert f"-A LABDOG-INPUT {self._COMMENT} -j ACCEPT" in v4
+        assert f"-A LABDOG-OUTPUT {self._COMMENT} -j ACCEPT" in v4
 
     def test_custom_output_drop(self):
         v4, _ = render_iptables_rules([], policies=ChainPolicies(output="drop"))
-        assert "-A BARRICADE-INPUT -j DROP" in v4
-        assert "-A BARRICADE-OUTPUT -j DROP" in v4
+        assert f"-A LABDOG-INPUT {self._COMMENT} -j DROP" in v4
+        assert f"-A LABDOG-OUTPUT {self._COMMENT} -j DROP" in v4
 
     def test_none_uses_defaults(self):
         v4, _ = render_iptables_rules([], policies=None)
-        assert "-A BARRICADE-INPUT -j DROP" in v4
-        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert f"-A LABDOG-INPUT {self._COMMENT} -j DROP" in v4
+        assert f"-A LABDOG-OUTPUT {self._COMMENT} -j ACCEPT" in v4
 
 
 # ---------------------------------------------------------------------------

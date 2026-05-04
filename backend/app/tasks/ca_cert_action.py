@@ -24,8 +24,8 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
     """SECURITY: SSH key decrypted inside task, written to /dev/shm/, cleaned in finally."""
     import ansible_runner
 
-    private_data_dir = tempfile.mkdtemp(prefix="barricade-ca-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="barricade-ca-", suffix=".key")
+    private_data_dir = tempfile.mkdtemp(prefix="labdog-ca-")
+    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-ca-", suffix=".key")
     os.close(fd)
 
     try:
@@ -103,7 +103,9 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
                 )
                 if runner.status != "successful":
-                    job.error_message = f"Ansible runner status: {runner.status}, rc: {runner.rc}"
+                    from app.ansible_runtime.diagnose import interpret_runner_failure
+
+                    job.error_message = interpret_runner_failure(runner)
                 await db.commit()
 
         asyncio.run(_record_result())

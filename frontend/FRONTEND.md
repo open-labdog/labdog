@@ -1,6 +1,6 @@
-# Barricade Frontend — Design & Pattern Reference
+# LabDog Frontend — Design & Pattern Reference
 
-This document defines the frontend conventions for Barricade. All new pages, components, and modifications must follow these patterns.
+This document defines the frontend conventions for LabDog. All new pages, components, and modifications must follow these patterns.
 
 ---
 
@@ -664,4 +664,4 @@ Optimistic updates available via `optimisticUpdate` option (for simple delete/to
 | Dark/light toggle | Dark mode only, hardcoded `className="dark"` on `<html>`. |
 | Framer Motion | No animation library. CSS transitions only. |
 | Separate `/profile` page | Password change lives in sidebar dialog. |
-| Pagination | Tables show all data. Barricade manages tens/hundreds of items, not thousands. |
+| Pagination | Tables show all data. LabDog manages tens/hundreds of items, not thousands. |

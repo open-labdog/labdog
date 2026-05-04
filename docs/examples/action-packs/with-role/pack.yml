@@ -1,0 +1,6 @@
+name: role-example
+description: >-
+  Demonstrates a pack that ships its own Ansible role. LabDog joins
+  every loaded pack's roles/ directory into ANSIBLE_ROLES_PATH, so
+  playbooks can include_role / import_role by name without any extra
+  configuration.

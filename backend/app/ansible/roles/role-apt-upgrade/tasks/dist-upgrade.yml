@@ -1,0 +1,63 @@
+---
+# Distribution upgrade — runs only when dist_upgrade=true
+- name: "Dist-upgrade | Replace release codename in /etc/apt/sources.list"
+  ansible.builtin.replace:
+    path: /etc/apt/sources.list
+    regexp: "{{ ansible_facts['distribution_release'] }}"
+    replace: "{{ next_version }}"
+    backup: true
+
+- name: "Dist-upgrade | Find additional source list files"
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    file_type: file
+  register: sources_list_d_files
+
+- name: "Dist-upgrade | Replace release codename in sources.list.d files"
+  ansible.builtin.replace:
+    path: "{{ item.path }}"
+    regexp: "{{ ansible_facts['distribution_release'] }}"
+    replace: "{{ next_version }}"
+    backup: true
+  loop: "{{ sources_list_d_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: "Dist-upgrade | Update apt package index"
+  ansible.builtin.apt:
+    update_cache: true
+    update_cache_extra_args: "{{ apt_update_extra_args }}"
+  register: _apt_update_dist
+  failed_when: false
+
+- name: "Dist-upgrade | Abort if apt update failed after source rewrite"
+  ansible.builtin.fail:
+    msg: |
+      apt-get update failed after rewriting sources to {{ next_version }}.
+      Check that the target release codename is correct and repositories are reachable.
+      apt stderr: {{ _apt_update_dist.stderr | default('(none)') }}
+  when: _apt_update_dist is failed
+
+- name: "Dist-upgrade | Full-upgrade packages"
+  ansible.builtin.apt:
+    upgrade: full
+    dpkg_options: "force-confdef,force-confold"
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: "Dist-upgrade | Re-discover Python interpreter after major upgrade"
+  ansible.builtin.raw: command -v python3
+  register: _new_python
+  changed_when: false
+
+- name: "Dist-upgrade | Update interpreter for remaining tasks"
+  ansible.builtin.set_fact:
+    ansible_python_interpreter: "{{ _new_python.stdout | trim }}"
+
+- name: "Dist-upgrade | Record pre-reboot NIC name"
+  ansible.builtin.set_fact:
+    _pre_reboot_nic: "{{ ansible_facts['default_ipv4']['interface'] }}"
+
+- name: "Dist-upgrade | Include cleanup tasks"
+  ansible.builtin.include_tasks: cleanup.yml
+  when: cleanup | bool

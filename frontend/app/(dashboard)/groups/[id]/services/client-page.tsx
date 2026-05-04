@@ -5,8 +5,10 @@ import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { SystemdStateBadge, EnabledBadge } from "@/components/status-badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -26,21 +28,6 @@ import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import type { ServiceRule, HostGroup } from "@/lib/types"
 
-function StateBadge({ state }: { state: string }) {
-  return (
-    <Badge className={state === "running" ? "bg-green-600 text-white" : "bg-slate-600 text-white"}>
-      {state.charAt(0).toUpperCase() + state.slice(1)}
-    </Badge>
-  )
-}
-
-function EnabledBadge({ enabled }: { enabled: boolean }) {
-  return enabled ? (
-    <Badge className="bg-green-700 text-white">Enabled</Badge>
-  ) : (
-    <Badge variant="outline">Disabled</Badge>
-  )
-}
 
 export default function GroupServicesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const params = useParams()
@@ -65,6 +52,8 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
     queryFn: () => apiFetch<HostGroup>(`/api/groups/${id}`),
     enabled: !!id,
   })
+
+  const gitopsEnabled = !!group?.gitops_enabled
 
   const { data: services, isLoading, error } = useQuery<ServiceRule[]>({
     queryKey: ["services", id],
@@ -149,8 +138,18 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
         <div>
           <h1 className="text-2xl font-bold text-white">Service Rules</h1>
         </div>
-        <Button onClick={openCreateDialog}>Add Service</Button>
+        {!gitopsEnabled && <Button onClick={openCreateDialog}>Add Service</Button>}
       </div>
+
+      {gitopsEnabled && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-950 border border-blue-800">
+          <GitBranch className="h-5 w-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-blue-200 font-medium">GitOps Enabled</p>
+            <p className="text-blue-300 text-sm mt-1">Services are managed via GitOps. Changes must be pushed to Git.</p>
+          </div>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={5} columns={4} />}
 
@@ -177,7 +176,7 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
               key: "state",
               label: "State",
               accessor: (s) => s.state,
-              cell: (s) => <StateBadge state={s.state} />,
+              cell: (s) => <SystemdStateBadge state={s.state} titleCase />,
               defaultWidth: 120,
               filter: { type: "enum", options: [{label:"Running",value:"running"},{label:"Stopped",value:"stopped"}] },
             },
@@ -208,14 +207,21 @@ export default function GroupServicesPage({ embedded = false }: { embedded?: boo
               label: "Actions",
               cell: (service) => (
                 <div className="flex gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => openEditDialog(service)}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={gitopsEnabled}
+                    onClick={() => openEditDialog(service)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                  >
                     Edit
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={deleteMutation.isPending}
+                    disabled={deleteMutation.isPending || gitopsEnabled}
                     onClick={() => handleDelete(service)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
                     className="text-red-400 hover:text-red-300 hover:bg-red-950"
                   >
                     {deleteMutation.isPending ? "…" : "Delete"}

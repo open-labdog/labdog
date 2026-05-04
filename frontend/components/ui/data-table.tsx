@@ -148,6 +148,11 @@ export function DataTable<T>({
     return map
   }, [columns, data])
 
+  // Fixed-layout only kicks in once the user has manually resized a
+  // column. With auto-layout the browser can shrink columns to fit the
+  // container (the original 9ad650c fix). Forcing fixed-layout always
+  // would re-introduce a horizontal scrollbar on tables where column
+  // defaults sum just past the container width.
   const useFixedLayout = state.hasUserResized
 
   function headerContent(col: ColumnDef<T>) {
@@ -156,7 +161,7 @@ export function DataTable<T>({
     const arrow = isSorted ? (state.sortDir === "asc" ? "↑" : "↓") : ""
     return (
       <span className="inline-flex items-center gap-1 w-full">
-        <span className="truncate flex-1">{col.label}</span>
+        <span className="truncate flex-1">{col.header ?? col.label}</span>
         {sortable && arrow && <span className="text-slate-400 text-xs">{arrow}</span>}
         {col.filter && (
           <span className="relative">
@@ -220,10 +225,21 @@ export function DataTable<T>({
               const width = state.columnWidths[col.key] ?? col.defaultWidth
               const resizable = col.resizable !== false && col.defaultWidth != null
               const sortable = col.sortable !== false
+              // Width acts as a *preferred* width, not a hard floor. After the
+              // user resizes anything we switch to fixed-layout mode (see
+              // useFixedLayout below) and pin minWidth = width so dragged
+              // sizes hold; until then we let auto-layout shrink columns to
+              // fit the container, otherwise narrow viewports force a
+              // horizontal scrollbar even when there's nothing to scroll to.
+              const style = width
+                ? state.hasUserResized
+                  ? { width, minWidth: width }
+                  : { width }
+                : undefined
               return (
                 <TableHead
                   key={col.key}
-                  style={width ? { width, minWidth: width } : undefined}
+                  style={style}
                   className={cn(
                     "relative select-none",
                     col.align === "right" && "text-right",
@@ -282,6 +298,14 @@ export function DataTable<T>({
               <TableCell
                 key={col.key}
                 className={cn(
+                  // Pair with `table-layout: fixed` so cells whose
+                  // content exceeds the column width clip with an
+                  // ellipsis instead of widening the column. Cells
+                  // that need richer content (badges, multi-line
+                  // wrappers, custom truncation) can override via
+                  // `col.className` or by setting `whitespace-normal`
+                  // on the inner element.
+                  "truncate",
                   col.align === "right" && "text-right",
                   col.align === "center" && "text-center",
                   col.className,

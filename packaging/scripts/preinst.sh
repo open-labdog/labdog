@@ -3,15 +3,15 @@ set -e
 
 case "$1" in
     install|upgrade)
-        if ! getent passwd barricade > /dev/null 2>&1; then
+        if ! getent passwd labdog > /dev/null 2>&1; then
             adduser \
                 --system \
                 --group \
                 --no-create-home \
-                --home /var/lib/barricade \
+                --home /var/lib/labdog \
                 --shell /usr/sbin/nologin \
-                --gecos "Barricade service account" \
-                barricade
+                --gecos "LabDog service account" \
+                labdog
         fi
         ;;
 esac

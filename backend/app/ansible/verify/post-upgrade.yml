@@ -1,0 +1,104 @@
+---
+# Reusable post-upgrade verify playbook.
+#
+# Confirms the host survived whatever mutated it — SSH works, load is
+# reasonable, disk has headroom, and no systemd unit has slipped into a
+# failed state. Optionally asserts specific services are active and
+# specific packages are installed when the caller supplies the vars.
+#
+# Use from a manifest with:
+#
+#   verify_playbook: ../verify/post-upgrade.yml
+#
+# or by importing from your own verify playbook:
+#
+#   # my-verify.yml
+#   - import_playbook: ../../verify/post-upgrade.yml
+#   - name: App-specific checks
+#     hosts: all
+#     tasks: [...]
+#
+# All the thresholds and lists below are overridable via extra_vars.
+- name: Verify host is healthy after upgrade
+  hosts: all
+  become: false
+  gather_facts: false
+  vars:
+    # Fail the verify if 1-minute load exceeds this.
+    load_warn_threshold: 10.0
+    # Fail the verify if / is fuller than this percentage.
+    disk_warn_threshold_pct: 95
+    # Optional list of systemd units that must be 'active'. Empty =
+    # skip per-service checks (the failed-units check still runs).
+    expected_services: []
+    # Optional list of package names that must be installed. Empty =
+    # skip the package enumeration entirely.
+    expected_packages: []
+  tasks:
+    - name: SSH round-trip
+      ansible.builtin.ping:
+
+    - name: Read 1-minute load average
+      ansible.builtin.shell: awk '{print $1}' /proc/loadavg
+      register: loadavg
+      changed_when: false
+
+    - name: Assert load is below threshold
+      ansible.builtin.assert:
+        that: (loadavg.stdout | float) < (load_warn_threshold | float)
+        fail_msg: >-
+          1-min load {{ loadavg.stdout }} exceeds threshold
+          {{ load_warn_threshold }}
+
+    - name: Read root filesystem usage
+      ansible.builtin.command: df -P /
+      register: df
+      changed_when: false
+
+    - name: Assert root disk has headroom
+      ansible.builtin.assert:
+        that: >-
+          (df.stdout_lines[1].split()[4] | replace('%','') | int)
+          < (disk_warn_threshold_pct | int)
+        fail_msg: >-
+          Root disk usage {{ df.stdout_lines[1].split()[4] }} exceeds
+          threshold {{ disk_warn_threshold_pct }}%
+
+    - name: Collect systemd unit states
+      ansible.builtin.service_facts:
+
+    - name: Assert no systemd unit is in 'failed' state
+      ansible.builtin.assert:
+        that: >-
+          (ansible_facts.services.values()
+            | selectattr('state', 'defined')
+            | selectattr('state', 'equalto', 'failed')
+            | list | length) == 0
+        fail_msg: >-
+          One or more systemd units are failed:
+          {{ ansible_facts.services.values()
+             | selectattr('state', 'defined')
+             | selectattr('state', 'equalto', 'failed')
+             | map(attribute='name') | list }}
+
+    - name: Assert each expected service is active
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+      register: svc
+      loop: "{{ expected_services }}"
+      loop_control:
+        label: "{{ item }}"
+      failed_when: svc.status.ActiveState != 'active'
+
+    - name: Enumerate installed packages
+      ansible.builtin.package_facts:
+      when: expected_packages | length > 0
+
+    - name: Assert each expected package is installed
+      ansible.builtin.assert:
+        that: item in ansible_facts.packages
+        fail_msg: "Package '{{ item }}' is not installed"
+      loop: "{{ expected_packages }}"
+      loop_control:
+        label: "{{ item }}"
+      when: expected_packages | length > 0

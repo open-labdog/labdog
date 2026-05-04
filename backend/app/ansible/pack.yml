@@ -1,0 +1,7 @@
+name: labdog-default
+description: >-
+  Default action pack for LabDog. This repo is cloned by LabDog at startup
+  when [ansible.default_pack] is configured. Playbooks here override the
+  playbooks bundled inside the LabDog image and are themselves overridable
+  by user packs.
+priority: 10

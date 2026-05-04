@@ -107,8 +107,8 @@ def check_all_hosts_drift():
                             username=ssh_key.ssh_user,
                             client_keys=[imported_key],
                         ) as probe:
-                            if not host.barricade_source_ip:
-                                host.barricade_source_ip = await get_source_ip(probe)
+                            if not host.labdog_source_ip:
+                                host.labdog_source_ip = await get_source_ip(probe)
                             await _maybe_update_host_ip(probe, host, db)
                     except Exception:
                         pass

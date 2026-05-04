@@ -36,10 +36,18 @@ class TestNftablesRenderer:
     def test_contains_stateful_tracking(self):
         config = render_nftables_config(_sample_rules())
         assert "ct state established,related accept" in config
+        assert '"Managed by LabDog: stateful tracking"' in config
 
     def test_contains_loopback(self):
         config = render_nftables_config(_sample_rules())
         assert "iif lo accept" in config
+        assert '"Managed by LabDog: loopback"' in config
+
+    def test_user_rule_has_unified_comment(self):
+        config = render_nftables_config(_sample_rules())
+        assert 'comment "Managed by LabDog: SSH"' in config
+        assert 'comment "Managed by LabDog: HTTP"' in config
+        assert 'comment "Managed by LabDog: MySQL"' in config
 
     def test_contains_ssh_rule(self):
         config = render_nftables_config(_sample_rules())
@@ -75,18 +83,27 @@ class TestIptablesRenderer:
 
     def test_contains_default_policies(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert ":BARRICADE-INPUT - [0:0]" in v4
-        assert ":BARRICADE-OUTPUT - [0:0]" in v4
-        assert "-A BARRICADE-INPUT -j DROP" in v4
-        assert "-A BARRICADE-OUTPUT -j ACCEPT" in v4
+        assert ":LABDOG-INPUT - [0:0]" in v4
+        assert ":LABDOG-OUTPUT - [0:0]" in v4
+        comment = '-m comment --comment "Managed by LabDog: default policy"'
+        assert f"-A LABDOG-INPUT {comment} -j DROP" in v4
+        assert f"-A LABDOG-OUTPUT {comment} -j ACCEPT" in v4
 
     def test_contains_conntrack(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A BARRICADE-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT" in v4
+        assert "-m state --state ESTABLISHED,RELATED" in v4
+        assert '"Managed by LabDog: stateful tracking"' in v4
 
     def test_contains_loopback(self):
         v4, _ = render_iptables_rules(_sample_rules())
-        assert "-A BARRICADE-INPUT -i lo -j ACCEPT" in v4
+        assert "-A LABDOG-INPUT -i lo" in v4
+        assert '"Managed by LabDog: loopback"' in v4
+
+    def test_user_rule_has_comment(self):
+        v4, _ = render_iptables_rules(_sample_rules())
+        assert '-m comment --comment "Managed by LabDog: SSH"' in v4
+        assert '-m comment --comment "Managed by LabDog: HTTP"' in v4
+        assert '-m comment --comment "Managed by LabDog: MySQL"' in v4
 
     def test_ipv6_rule_goes_to_v6_file(self):
         rules = [

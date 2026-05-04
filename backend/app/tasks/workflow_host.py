@@ -74,7 +74,7 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
         WorkflowStep,
     )
 
-    ssh_key_path = f"/dev/shm/barricade-wf-{host_run_id}.key"
+    ssh_key_path = f"/dev/shm/labdog-wf-{host_run_id}.key"
 
     try:
         async with task_session() as db:
@@ -231,7 +231,12 @@ async def _run_host_workflow_async(run_id: int, host_run_id: int) -> None:
                         step_output[step_enum.value] = {"snapshot_name": snapshot_name}
 
                     elif step_enum == WorkflowStep.update:
-                        result = await _step_update(host, ssh_key_path)
+                        result = await _step_update(
+                            host,
+                            ssh_key_path,
+                            action_key=workflow.action_key,
+                            action_parameters=workflow.action_parameters or {},
+                        )
                         step_output[step_enum.value] = result
 
                     elif step_enum == WorkflowStep.reboot:
@@ -382,6 +387,8 @@ async def _step_snapshot(
 async def _step_update(
     host: Any,
     ssh_key_path: str,
+    action_key: str,
+    action_parameters: dict,
 ) -> dict[str, Any]:
     """Run the package update on the host via SSH.
 
@@ -392,18 +399,26 @@ async def _step_update(
     Args:
         host: Host ORM object.
         ssh_key_path: Path to the decrypted SSH private key on tmpfs.
+        action_key: Key used to look up the action playbook in the registry.
+        action_parameters: Extra vars forwarded to the Ansible playbook.
 
     Returns:
         Step result dict.
     """
+    import functools
+
     loop = asyncio.get_running_loop()
     result = await loop.run_in_executor(
         None,
-        run_system_update,
-        host.ip_address,
-        host.ssh_port or 22,
-        host.ssh_user or "root",
-        ssh_key_path,
+        functools.partial(
+            run_system_update,
+            host.ip_address,
+            host.ssh_port or 22,
+            host.ssh_user or "root",
+            ssh_key_path,
+            action_key=action_key,
+            action_parameters=action_parameters,
+        ),
     )
     if not result.get("success"):
         raise Exception(f"Update failed: {result.get('stdout', '')}")

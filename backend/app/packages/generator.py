@@ -1,4 +1,4 @@
-from app.ansible.inventory import generate_inventory
+from app.ansible_runtime.inventory import generate_inventory
 
 
 def generate_package_playbook(
@@ -175,7 +175,7 @@ def generate_package_playbook(
 
     playbook = [
         {
-            "name": "Barricade Package Management",
+            "name": "LabDog Package Management",
             "hosts": "all",
             "become": True,
             "gather_facts": True,

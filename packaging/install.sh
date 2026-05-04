@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Barricade installer — run from inside extracted tarball
+# LabDog installer — run from inside extracted tarball
 # Usage: sudo ./install.sh [--help]
 
 set -euo pipefail
 
-log() { echo "[barricade-install] $*" >&2; }
+log() { echo "[labdog-install] $*" >&2; }
 die() { echo "Error: $*" >&2; exit 1; }
 
 usage() {
     cat <<'EOF'
 Usage: sudo ./install.sh [--help]
 
-Installs Barricade to standard FHS paths:
-  /usr/lib/barricade         — application code
-  /etc/barricade             — configuration
-  /var/lib/barricade         — persistent data
-  /var/log/barricade         — log files
+Installs LabDog to standard FHS paths:
+  /usr/lib/labdog         — application code
+  /etc/labdog             — configuration
+  /var/lib/labdog         — persistent data
+  /var/log/labdog         — log files
   /usr/lib/systemd/system    — systemd unit files
 
 This script must be run as root from inside the extracted tarball directory.
@@ -40,43 +40,43 @@ fi
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # --- Verify tarball structure ---
-for required_dir in usr/lib/barricade systemd tmpfiles.d; do
+for required_dir in usr/lib/labdog systemd tmpfiles.d; do
     if [ ! -d "$SCRIPT_DIR/$required_dir" ]; then
         die "Expected directory '$required_dir' not found in $SCRIPT_DIR — are you running from the extracted tarball?"
     fi
 done
-if [ ! -f "$SCRIPT_DIR/etc/barricade.toml" ]; then
-    die "Expected file 'etc/barricade.toml' not found in $SCRIPT_DIR — are you running from the extracted tarball?"
+if [ ! -f "$SCRIPT_DIR/etc/labdog.toml" ]; then
+    die "Expected file 'etc/labdog.toml' not found in $SCRIPT_DIR — are you running from the extracted tarball?"
 fi
 
 # --- Create system user ---
-log "Creating barricade system user..."
-if id barricade >/dev/null 2>&1; then
-    log "User 'barricade' already exists, skipping"
+log "Creating labdog system user..."
+if id labdog >/dev/null 2>&1; then
+    log "User 'labdog' already exists, skipping"
 else
     if command -v adduser >/dev/null 2>&1 && adduser --help 2>&1 | grep -q -- '--system'; then
-        adduser --system --group --home /var/lib/barricade --no-create-home --shell /usr/sbin/nologin barricade
+        adduser --system --group --home /var/lib/labdog --no-create-home --shell /usr/sbin/nologin labdog
     elif command -v useradd >/dev/null 2>&1; then
-        useradd --system --user-group --home-dir /var/lib/barricade --no-create-home --shell /usr/sbin/nologin barricade
+        useradd --system --user-group --home-dir /var/lib/labdog --no-create-home --shell /usr/sbin/nologin labdog
     else
         die "Neither adduser nor useradd found — cannot create system user"
     fi
-    log "Created system user 'barricade'"
+    log "Created system user 'labdog'"
 fi
 
 # --- Install application files ---
-log "Installing application to /usr/lib/barricade..."
-cp -r "$SCRIPT_DIR/usr/lib/barricade" /usr/lib/
+log "Installing application to /usr/lib/labdog..."
+cp -r "$SCRIPT_DIR/usr/lib/labdog" /usr/lib/
 
 # --- Install configuration (preserve existing) ---
-if [ -f /etc/barricade/barricade.toml ]; then
-    log "Existing /etc/barricade/barricade.toml found — preserving (not overwritten)"
+if [ -f /etc/labdog/labdog.toml ]; then
+    log "Existing /etc/labdog/labdog.toml found — preserving (not overwritten)"
 else
-    log "Installing default configuration to /etc/barricade..."
-    mkdir -p /etc/barricade
-    cp "$SCRIPT_DIR/etc/barricade.toml" /etc/barricade/
-    chmod 640 /etc/barricade/barricade.toml
-    chown root:barricade /etc/barricade/barricade.toml
+    log "Installing default configuration to /etc/labdog..."
+    mkdir -p /etc/labdog
+    cp "$SCRIPT_DIR/etc/labdog.toml" /etc/labdog/
+    chmod 640 /etc/labdog/labdog.toml
+    chown root:labdog /etc/labdog/labdog.toml
 fi
 
 # --- Detect systemd unit path ---
@@ -90,25 +90,25 @@ else
 fi
 
 log "Installing systemd unit to $SYSTEMD_DIR..."
-cp "$SCRIPT_DIR"/systemd/barricade.service "$SYSTEMD_DIR/"
+cp "$SCRIPT_DIR"/systemd/labdog.service "$SYSTEMD_DIR/"
 
 # --- Install tmpfiles.d ---
 log "Installing tmpfiles.d configuration..."
 mkdir -p /usr/lib/tmpfiles.d
-cp "$SCRIPT_DIR/tmpfiles.d/barricade.conf" /usr/lib/tmpfiles.d/
+cp "$SCRIPT_DIR/tmpfiles.d/labdog.conf" /usr/lib/tmpfiles.d/
 
 # --- Create data directories ---
 log "Creating data directories..."
-mkdir -p /var/lib/barricade /var/log/barricade
-chown -R barricade:barricade /var/lib/barricade /var/log/barricade
+mkdir -p /var/lib/labdog /var/log/labdog
+chown -R labdog:labdog /var/lib/labdog /var/log/labdog
 
 # --- Create runtime directory ---
 log "Creating runtime directory..."
 if command -v systemd-tmpfiles >/dev/null 2>&1; then
-    systemd-tmpfiles --create barricade.conf 2>/dev/null || true
+    systemd-tmpfiles --create labdog.conf 2>/dev/null || true
 else
-    mkdir -p /run/barricade
-    chown barricade:barricade /run/barricade
+    mkdir -p /run/labdog
+    chown labdog:labdog /run/labdog
 fi
 
 # --- Reload systemd ---
@@ -122,19 +122,19 @@ log "Installation complete."
 
 cat <<'EOF'
 
-Barricade installed to /usr/lib/barricade
+LabDog installed to /usr/lib/labdog
 
 Next steps:
-  1. Edit /etc/barricade/barricade.toml with your settings:
+  1. Edit /etc/labdog/labdog.toml with your settings:
        - [security] secret_key and encryption_key: generate with: openssl rand -base64 32
        - [database] url: your PostgreSQL connection string
-       - [security] barricade_server_ip: this server's IP address
+       - [security] labdog_server_ip: this server's IP address
 
   2. Enable and start the service:
-       systemctl enable --now barricade.service
+       systemctl enable --now labdog.service
 
   3. Check status:
-       systemctl status barricade.service
-       journalctl -u barricade -f
+       systemctl status labdog.service
+       journalctl -u labdog -f
 
 EOF

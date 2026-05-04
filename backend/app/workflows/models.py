@@ -2,6 +2,7 @@ import enum
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -46,6 +47,12 @@ class UpdateWorkflow(Base):
     auto_rollback: Mapped[bool] = mapped_column(Boolean, default=True)
     verification_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
     auto_reboot: Mapped[bool] = mapped_column(Boolean, default=True)
+    action_key: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="linux-upgrade", server_default="linux-upgrade"
+    )
+    action_parameters: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}"
+    )
     enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

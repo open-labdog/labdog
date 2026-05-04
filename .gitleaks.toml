@@ -1,10 +1,51 @@
+# gitleaks config for LabDog
+#
+# Extends the default ruleset (so new leaks still get caught) and adds
+# narrow allowlist entries for known-fixture / known-historical
+# false positives.
+#
+# Add a fingerprint here ONLY after verifying the value is not a
+# real production secret. Fingerprint format:
+# `<commit>:<path>:<rule>:<line>` — stable for a given commit.
+
 [extend]
 useDefault = true
 
 [allowlist]
+description = "Test fixtures, dev compose values, and documented placeholders"
+
 paths = [
     '''\.gitlab-ci\.yml$''',
     '''^backend/tests/''',
     '''^frontend/e2e/''',
-    '''^barricade\.toml$''',
+    '''^labdog\.toml$''',
+    # Historical-only path. The plans/ directory has since been
+    # gitignored (see .gitignore + CONTRIBUTING.md) and no longer
+    # exists in the working tree, but commit 2c345a7 contains a
+    # multi-agent plan doc whose Section 6 step-8 inlined fake-PEM
+    # markers ("-----BEGIN/END OPENSSH PRIVATE KEY-----" wrapping
+    # the literal word "fake") to document what to mock in a unit
+    # test. gitleaks scans recent commit history, so this allowlist
+    # entry suppresses the historical false-positive without
+    # masking real findings in the current tree.
+    '''^plans/option-c-coalesced-per-host-sync\.md$''',
+]
+
+# Stable fingerprints for known-historical false positives the
+# default ruleset flags. Each verified non-production before listing.
+stopwords = []
+
+regexes = [
+    # CI test encryption key — string and its base64 form. Decodes to
+    # literal "ci-test-encryption-key-32bytes".
+    '''ci-test-encryption-key-32bytes''',
+    '''Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz''',
+    # Conftest test key (asserted in tests/conftest.py).
+    '''vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg=''',
+    # Test secret key string used by CI + tests.
+    '''(ci-)?test-secret-key-not-for-production''',
+    # Old Barricade-era dev compose values, never used in production
+    # and superseded by the rebranded LABDOG_* env vars in dev/labdog.toml.
+    '''BARRICADE_SECURITY__SECRET_KEY''',
+    '''BARRICADE_SECURITY__ENCRYPTION_KEY''',
 ]

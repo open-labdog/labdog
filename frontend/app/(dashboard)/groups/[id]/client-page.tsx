@@ -46,8 +46,9 @@ import GroupCACertsPage from "./ca-certs/client-page"
 import GroupResolverPage from "./resolver/client-page"
 import GroupSyncPage from "./sync/client-page"
 import WorkflowConfigPage from "./workflow/client-page"
+import GroupActionsPage from "./actions/client-page"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow" | "actions"
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -565,8 +566,9 @@ export default function GroupDetailPage() {
           ["packages", "Packages"],
           ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
-          ["sync", "Sync"],
+          ["sync", "Firewall Sync"],
           ["workflow", "Workflow"],
+          ["actions", "Actions"],
         ] as const).map(([key, label]) => (
           <button
             key={key}
@@ -732,6 +734,26 @@ export default function GroupDetailPage() {
                         {
                           key: "select",
                           label: "",
+                          header: (() => {
+                            const visibleIds = availableHosts.map(h => h.id)
+                            const selectedVisible = visibleIds.filter(id => addHostsSelected.has(id)).length
+                            const allChecked = visibleIds.length > 0 && selectedVisible === visibleIds.length
+                            const indeterminate = selectedVisible > 0 && !allChecked
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={allChecked}
+                                ref={(el) => { if (el) el.indeterminate = indeterminate }}
+                                onChange={() => {
+                                  if (allChecked) setAddHostsSelected(new Set())
+                                  else setAddHostsSelected(new Set(visibleIds))
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="rounded border-slate-600"
+                                aria-label="Select all visible hosts"
+                              />
+                            )
+                          })(),
                           cell: (host) => (
                             <input
                               type="checkbox"
@@ -801,6 +823,7 @@ export default function GroupDetailPage() {
       {activeTab === "dns" && <GroupResolverPage embedded />}
       {activeTab === "sync" && <GroupSyncPage embedded />}
       {activeTab === "workflow" && <WorkflowConfigPage embedded />}
+      {activeTab === "actions" && <GroupActionsPage embedded />}
 
       {confirmState && (
         <ConfirmDialog
@@ -819,7 +842,7 @@ export default function GroupDetailPage() {
         open={removeConfirmOpen}
         onOpenChange={(open) => { if (!open) setRemoveConfirmOpen(false) }}
         title={`Remove ${removeSelected.size} ${removeSelected.size === 1 ? "host" : "hosts"} from group?`}
-        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from Barricade.`}
+        description={`${removeSelected.size === 1 ? "This host" : "These hosts"} will be removed from ${group?.name ?? "this group"}. The ${removeSelected.size === 1 ? "host" : "hosts"} will not be deleted from LabDog.`}
         confirmLabel="Remove"
         variant="destructive"
         loading={removeLoading}

@@ -215,7 +215,7 @@ class TestNftablesParser:
                             "family": "inet",
                             "table": "filter",
                             "chain": "input",
-                            "comment": "Barricade: SSH lockout rule",
+                            "comment": "LabDog: SSH lockout rule",
                             "expr": [
                                 {
                                     "match": {
@@ -232,7 +232,7 @@ class TestNftablesParser:
         )
         rules = parse_nftables_json(data)
         assert len(rules) == 1
-        assert rules[0].comment == "Barricade: SSH lockout rule"
+        assert rules[0].comment == "LabDog: SSH lockout rule"
 
     def test_parse_nftables_expr_level_comment(self):
         """Older nftables puts comments as expressions — ensure fallback works."""

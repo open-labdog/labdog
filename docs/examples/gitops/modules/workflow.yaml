@@ -1,0 +1,106 @@
+# GitOps example: per-group update workflow schedule
+#
+# `workflow:` is a singleton section — at most one update workflow exists
+# per group. Omitting the section (or setting it to `null`) leaves the
+# existing DB row untouched. Explicit deletion is NOT supported via YAML
+# absence: disable GitOps on the group first, then delete via the UI.
+#
+# This file demonstrates every field, common edge cases, and how
+# ``action_key`` + ``action_parameters`` interact for action packs that
+# require parameters (e.g. ``linux-os-upgrade``).
+
+group: production-app-servers
+priority: 100
+
+workflow:
+  # -------------------------------------------------------------------------
+  # Schedule
+  # -------------------------------------------------------------------------
+  #
+  # `schedule_cron` is a standard 5-field cron expression. Set to `null`
+  # (or omit) for a manually-triggered-only workflow. The expression is
+  # validated by `croniter` at import time — typos will cause the GitOps
+  # import to fail with a clear error.
+  #
+  # Time zone: schedules run in the labdog server's local time zone.
+  # Examples:
+  #   "0 3 * * 0"       — Sundays at 03:00
+  #   "0 3 * * 1-5"     — weekdays at 03:00
+  #   "30 2 1 * *"      — first of every month at 02:30
+  #   "*/15 * * * *"    — every 15 minutes (don't actually do this for upgrades)
+  schedule_cron: "0 3 * * 0"
+
+  # `enabled: false` keeps the row but prevents the scheduler from firing.
+  # Useful for staging the configuration in git before turning it on, or
+  # for emergency disable without losing the schedule.
+  enabled: true
+
+  # -------------------------------------------------------------------------
+  # Batching
+  # -------------------------------------------------------------------------
+  #
+  # Number of hosts the workflow processes in parallel. `batch_size: 1`
+  # is safest (sequential) — recommended for production. Higher values
+  # are appropriate when hosts are independent (stateless web tier behind
+  # a load balancer, for example).
+  batch_size: 1
+
+  # -------------------------------------------------------------------------
+  # Snapshot / rollback
+  # -------------------------------------------------------------------------
+  #
+  # When `pre_update_snapshot: true`, labdog asks Proxmox for a snapshot of
+  # each host's mapped VM before the upgrade runs. Hosts without a Proxmox
+  # VM mapping are skipped with a warning. With `auto_rollback: true`, a
+  # failed verification step triggers `rollback_to_snapshot` on the same VM.
+  #
+  # NOTE: snapshots require the `qemu-guest-agent` package on the guest.
+  # GitOps does NOT auto-install it — declare it in your `packages:` section
+  # if you enable snapshots.
+  pre_update_snapshot: true
+  auto_rollback: true
+
+  # `auto_reboot: true` lets the workflow reboot a host between the upgrade
+  # step and the verify step when the upgrade requires it (e.g. new kernel).
+  # Set to `false` if your environment requires manual reboots.
+  auto_reboot: true
+
+  # -------------------------------------------------------------------------
+  # Verification (optional)
+  # -------------------------------------------------------------------------
+  #
+  # `verification_prompt` is an operator-readable note shown in the run
+  # detail UI to remind humans what to look for after the upgrade
+  # completes. Empty / null is fine.
+  verification_prompt: "Confirm app responds on /healthz and Prometheus targets are green."
+
+  # -------------------------------------------------------------------------
+  # Action selection
+  # -------------------------------------------------------------------------
+  #
+  # `action_key` is the registered action this workflow runs for each host.
+  # The default is `linux-upgrade` (apt/dnf full system upgrade from the
+  # bundled pack). Other built-in actions:
+  #
+  #   linux-upgrade        — full apt/dnf upgrade (default; no parameters)
+  #   linux-os-upgrade     — major OS version bump (REQUIRES parameters)
+  #   k8s-upgrade          — Kubernetes node upgrade
+  #
+  # Custom actions from a configured action pack can also be referenced
+  # by their `key` here. Unknown keys cause the GitOps import to fail.
+  action_key: linux-upgrade
+
+  # `action_parameters` is a free-form dict passed to the action playbook
+  # as Ansible extra-vars. Most actions accept none; some require specific
+  # keys.
+  #
+  # `linux-os-upgrade` requires `current_version` and `next_version`:
+  #
+  #   action_key: linux-os-upgrade
+  #   action_parameters:
+  #     current_version: "bookworm"
+  #     next_version: "trixie"
+  #
+  # The importer validates these requirements at YAML-parse time — missing
+  # keys will fail the GitOps import with an explicit error.
+  action_parameters: {}

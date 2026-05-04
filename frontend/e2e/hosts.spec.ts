@@ -28,7 +28,7 @@ test.describe("Hosts page", () => {
   test("cancel button on new host form returns to hosts list", async ({ page }) => {
     await page.goto("/hosts/new")
     await page.getByRole("button", { name: "Cancel" }).click()
-    await expect(page).toHaveURL(/\/hosts$/)
+    await expect(page).toHaveURL(/\/hosts\/?$/)
   })
 
   test("add host with SSH key and group", async ({ request, page }) => {
@@ -58,13 +58,18 @@ test.describe("Hosts page", () => {
     // Select SSH key from native select
     await page.locator("#ssh_key").selectOption({ value: String(sshKey.id) })
 
-    // Check the group checkbox
+    // GroupMultiSelect uses a custom dropdown — click the trigger to open it
+    await page.getByText("Select groups...").click()
+    // Now the dropdown is open — check the group by its label text
     await page.getByLabel(group.name).check()
+    // Close the dropdown by clicking outside the component (hostname field)
+    // so the floating dropdown doesn't intercept the submit button click
+    await page.locator("#hostname").click()
 
     await page.getByRole("button", { name: "Add Host" }).click()
 
-    await page.waitForURL("**/hosts")
-    await expect(page).toHaveURL(/\/hosts$/)
+    await page.waitForURL(/\/hosts\/?$/)
+    await expect(page).toHaveURL(/\/hosts\/?$/)
     await expect(page.getByText(hostname)).toBeVisible()
   })
 
@@ -90,6 +95,6 @@ test.describe("Hosts page", () => {
     const host = await hostRes.json()
 
     await page.goto(`/hosts/${host.id}`)
-    await expect(page.getByText(host.hostname)).toBeVisible()
+    await expect(page.getByText(host.hostname).first()).toBeVisible()
   })
 })

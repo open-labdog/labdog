@@ -1,6 +1,6 @@
 def render_resolv_conf(nameservers: list[str], search_domains: list[str], options: dict) -> str:
     """Render /etc/resolv.conf content."""
-    lines = ["# Managed by Barricade — do not edit manually"]
+    lines = ["# Managed by LabDog — do not edit manually"]
     for ns in nameservers:
         lines.append(f"nameserver {ns}")
     if search_domains:
@@ -22,7 +22,7 @@ def render_systemd_resolved(
 ) -> str:
     """Render /etc/systemd/resolved.conf content."""
     lines = [
-        "# Managed by Barricade — do not edit manually",
+        "# Managed by LabDog — do not edit manually",
         "[Resolve]",
         f"DNS={' '.join(nameservers)}",
     ]
@@ -35,9 +35,9 @@ def render_systemd_resolved(
 
 
 def render_networkmanager_conf(nameservers: list[str], search_domains: list[str]) -> str:
-    """Render /etc/NetworkManager/conf.d/90-barricade-dns.conf content."""
+    """Render /etc/NetworkManager/conf.d/90-labdog-dns.conf content."""
     lines = [
-        "# Managed by Barricade — do not edit manually",
+        "# Managed by LabDog — do not edit manually",
         "[global-dns-domain-*]",
         f"servers={','.join(nameservers)}",
     ]

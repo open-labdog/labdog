@@ -260,7 +260,12 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
                    min={1}
                    max={65535}
                    placeholder="e.g. 80"
-                   {...form.register("port_start", { setValueAs: (v: string) => v === "" ? null : parseInt(v, 10) })}
+                   {...form.register("port_start", { setValueAs: (v: unknown) => {
+    if (v == null || v === "") return null
+    const n = typeof v === "number" ? v : parseInt(String(v), 10)
+    return Number.isNaN(n) ? null : n
+  }
+})}
                    className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
                  />
                  {errors.port_start?.message && <p className="text-sm text-red-400">{errors.port_start.message}</p>}
@@ -273,7 +278,12 @@ export function RuleDialog({ open, onOpenChange, groupId, rule }: RuleDialogProp
                   min={1}
                   max={65535}
                   placeholder="e.g. 443"
-                  {...form.register("port_end", { setValueAs: (v: string) => v === "" ? null : parseInt(v, 10) })}
+                  {...form.register("port_end", { setValueAs: (v: unknown) => {
+    if (v == null || v === "") return null
+    const n = typeof v === "number" ? v : parseInt(String(v), 10)
+    return Number.isNaN(n) ? null : n
+  }
+})}
                   className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500"
                 />
                 {errors.port_end?.message && <p className="text-sm text-red-400">{errors.port_end.message}</p>}

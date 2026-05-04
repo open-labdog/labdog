@@ -1,0 +1,13 @@
+---
+- name: Deploy app and reload
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Pretend to install a new build
+      ansible.builtin.debug:
+        msg: "Installed build {{ version }}"
+    - name: Reload the service
+      ansible.builtin.systemd_service:
+        name: "{{ service_name }}"
+        state: restarted
