@@ -52,6 +52,176 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       against `app.actions.manifest.ActionManifest.model_validate`.
       Catches typos in pack contributions before they reach a
       labdog instance.
+
+---
+
+## Streamlined repo onboarding — auto-detect packs and gitops files
+
+**Context:** Today an operator adding a single git repo that contains
+both action packs and gitops YAML has to:
+1. Add the repo via *Integrations → Git Repos*.
+2. Go to *Action Packs*, click "Add Pack", point at the repo, set
+   `path`, set `role` (`default` / `override`), save.
+3. Repeat (2) for every additional pack in the same repo.
+4. Go to each `HostGroup` and configure GitOps separately
+   (`gitops_file_path`).
+
+The schema already supports a single repo serving both purposes
+(`ActionPack.git_repository_id` + `ActionPack.path`,
+`HostGroup.git_repository_id` + `HostGroup.gitops_file_path`). The
+gap is UX: there's no scan-and-suggest flow.
+
+**Goal:** adding a repo runs a one-shot scan that discovers everything
+in it, then presents the operator with an activation page where each
+finding is a checkbox with a sane default. Same-key packs default to
+`role=override`; different-key packs default to `role=default`. Gitops
+files are listed separately and can be bound to existing groups in
+the same flow.
+
+**Implementation sketch:**
+
+1. **New scan service** at `app.packs.repo_scanner.scan_repository`.
+   - Clones (or pulls) into a tmpdir using existing
+     `app.gitops.git_service.clone_repository` plumbing
+   - Walks the tree, returns:
+     ```python
+     ScanResult(
+         packs=[
+             DetectedPack(path="actions/upgrade",   key="linux-upgrade"),
+             DetectedPack(path="actions/k8s",       key="k8s-upgrade"),
+         ],
+         gitops_files=[
+             DetectedGitopsFile(path="groups/web.yaml",  group_name="web"),
+             DetectedGitopsFile(path="groups/db.yaml",   group_name="db"),
+         ],
+     )
+     ```
+   - Pack detection: locate every `pack.yml` (each marks a pack
+     root); within each, glob `actions/*.manifest.yml` and pull
+     `key:` from each manifest. If no `pack.yml` exists, treat the
+     repo root as a single pack.
+   - Gitops detection: every `*.yaml` / `*.yml` whose top-level keys
+     contain `group:` is a candidate; record the `group:` value as
+     suggested binding.
+   - Report parse errors as findings with `status="error"` rather
+     than raising — operator sees a clear "this manifest is broken"
+     row instead of a 500.
+
+2. **New endpoint** `POST /api/git-repos/{id}/scan` returns the
+   `ScanResult`. Idempotent — re-scan is safe; the UI can use the same
+   endpoint for "refresh detection" later. Requires superuser.
+
+3. **Conflict resolver** in the service decorates each `DetectedPack`
+   with `existing_pack_keys: set[str]` derived from the live
+   `ActionPack` registry plus the bundled pack constants. Frontend
+   uses this to pre-select `role=override` for matches and `default`
+   for new keys.
+
+4. **UI rework**:
+   - `/git-repos/new` becomes a wizard: (a) URL + auth, (b) auto-scan
+     with progress spinner, (c) review-and-activate step listing every
+     detected pack and gitops file with a checkbox + role/binding
+     selector.
+   - Existing repo's detail page gains a "Re-scan" button that opens
+     the same review step against the latest commit.
+
+5. **Activation** is a single transaction:
+   - Insert one `ActionPack` row per checked detected pack, with the
+     scan-resolved `path`, `role`, `key`.
+   - Set `gitops_file_path` + `git_repository_id` on each selected
+     `HostGroup` for checked gitops files.
+   - Emit one `audit_log` row per activation describing what was
+     created.
+
+6. **Subsequent updates** (webhook-driven): the existing per-pack
+   pull/sync logic still works; this plan doesn't touch the runtime
+   pack-resolution path. Only the *add* flow changes.
+
+**Open questions / design calls:**
+
+- Should the scan auto-activate same-key overrides, or always require
+  operator confirmation? Default: confirmation required, override is
+  pre-checked but can be unchecked.
+- What's the conflict semantics if the operator unchecks an override —
+  does the bundled pack take effect for that key? Should the resolver
+  warn?
+- Should we validate that no two checked packs in the same repo share
+  the same `key` (intra-repo conflict)? Likely yes, surface as a UI
+  warning.
+- Path conventions: do we require packs to live under `packs/<name>/`
+  or accept any subdir with a `pack.yml`? Lean toward "any subdir" —
+  matches what `labdog-playbooks` does today.
+
+---
+
+## Schedulable actions — fold UpdateWorkflow into the action system
+
+**Context:** `UpdateWorkflow` is the only entity in LabDog that can be
+scheduled (cron expression on a per-group basis). It carries
+`action_key` + `action_parameters` already, so it's already partially
+generic — but the task path, the UI, the model, and the audit shape
+all special-case "this is an update workflow." Meanwhile every other
+action type (sync runs, drift checks, ad-hoc actions, custom packs) is
+strictly on-demand.
+
+**Goal:** any action — pack-supplied, built-in (sync, drift), or
+custom — should be schedulable on the same machinery. Folding
+`UpdateWorkflow` into a unified `ScheduledAction` model is the obvious
+shape; the existing UpdateWorkflow rows migrate cleanly because they
+already carry `action_key` and `action_parameters`.
+
+**Implementation sketch:**
+
+1. **New `ScheduledAction` model** that subsumes `UpdateWorkflow`:
+   - `target_kind`: `"host"` | `"group"`
+   - `target_id`: int (host_id or group_id)
+   - `action_key`: registered action name
+   - `action_parameters`: JSONB
+   - `schedule_cron`: 5-field cron string
+   - `enabled`: bool
+   - `snapshot_enabled`, `verify_enabled`, `auto_rollback`: existing
+     UpdateWorkflow knobs (only meaningful for `destructive=true`
+     actions; for built-in `sync` / `drift_check` actions they're
+     ignored)
+   - `batch_size`: existing UpdateWorkflow knob
+   - `last_run_at`, `last_run_status`, `next_run_at`: scheduling state
+2. **Built-in pseudo-actions** registered alongside pack-supplied
+   actions:
+   - `_builtin.sync` — fan-out to the coalesced per-host orchestrator
+     (option-c). Parameters: `module_filter` list.
+   - `_builtin.drift_check` — current drift task, exposed as an action.
+   - `_builtin.collect_state` — current "Collect State" button logic.
+   - Convention: leading underscore in `action_key` denotes built-in;
+     scan-detected pack actions can't shadow them.
+3. **Scheduler / dispatcher**: existing `workflow_schedule` task
+   becomes the unified scheduler. RedBeat ticks it every minute; it
+   walks `ScheduledAction` rows, computes which are due, dispatches
+   the right Celery task per action_key.
+4. **UI**: the `/schedules` page (currently lists Update Workflows)
+   becomes a unified "Scheduled Actions" page listing every
+   `ScheduledAction` regardless of underlying action type. Filtering
+   by action category (sync / drift / pack action / custom).
+5. **Migration path**: backfill `ScheduledAction` rows from existing
+   `UpdateWorkflow` rows; `UpdateWorkflow` model is renamed/removed
+   in the same migration. The `WorkflowOrchestrator` task becomes a
+   thin shim or is deleted; the `action_orchestrator` task does all
+   the dispatch work.
+
+**Open questions / design calls:**
+
+- Do we delete `UpdateWorkflow` entirely or keep it as a deprecated
+  alias for one release? Lean delete — single PR, alembic migration
+  copies rows over and drops the old table.
+- Should `ScheduledAction.target_kind` allow `"fleet"` (every host)?
+  Probably yes for built-in `_builtin.drift_check`, but could be a
+  later commit.
+- How do we handle action_parameter validation per scheduled run vs.
+  per-action manifest? Likely: validate at insert/update time using
+  the action's manifest schema, fail loudly if it changes.
+- Should the snapshot/verify/rollback knobs become per-action-manifest
+  capability flags rather than per-schedule toggles? Cleaner data
+  model but a bigger refactor; defer.
+
 ---
 
 ## Bundled pack scope — keep 1:1 or slim down?
