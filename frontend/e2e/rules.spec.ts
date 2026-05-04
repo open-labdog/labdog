@@ -4,12 +4,24 @@ import { execSync } from "child_process"
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 function dbExec(sql: string) {
-  try {
-    execSync(
-      `docker exec labdog-postgres-1 psql -U labdog -d labdog -c '${sql.replace(/'/g, "'\\''")}'`,
-      { stdio: "pipe" }
-    )
-  } catch { /* ignore */ }
+  // Try each known container name. Same pattern as auth.setup.ts's dbExec.
+  // Silently ignoring failure here would mask test-setup bugs (a NULL
+  // is_system rule gets rendered as a normal rule, the disabled-button
+  // assertion fails, and the apparent UI defect is really a test that
+  // never wrote the DB row it claimed to). Throw on no-match.
+  const containers = ["labdog-postgres-1", "dev-postgres-1", "postgres"]
+  for (const container of containers) {
+    try {
+      execSync(
+        `docker exec ${container} psql -U labdog -d labdog -c '${sql.replace(/'/g, "'\\''")}'`,
+        { stdio: "pipe" }
+      )
+      return
+    } catch {
+      continue
+    }
+  }
+  throw new Error("Could not exec SQL — no postgres container reachable")
 }
 
 test.describe("Rules page", () => {
