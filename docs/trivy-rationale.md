@@ -1,6 +1,6 @@
 # Trivy Ignore Rationale
 
-Per-CVE notes for entries in [`.trivyignore`](../.trivyignore) at
+Per-CVE notes for entries in [`.trivyignore`](pathname:///../.trivyignore) at
 the repo root. The CI `trivy-scan` job (`.github/workflows/ci.yml`,
 around line 362) runs the Aqua `trivy-action` against the test
 image and gates on HIGH/CRITICAL findings; `.trivyignore` is picked

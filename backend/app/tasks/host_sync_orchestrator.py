@@ -141,7 +141,12 @@ def _make_tmpfs_workspace() -> tuple[str, str]:
     inside the working directory; the orchestrator writes the
     decrypted plaintext there.
     """
-    parent = "/dev/shm" if Path("/dev/shm").is_dir() else None
+    # /dev/shm is the preferred tmpfs for the SSH key (in-memory, never
+    # hits disk). The bandit B108 hits below are deliberate: we don't
+    # *write* to /dev/shm with a predictable filename — tempfile.mkdtemp
+    # generates a random suffix, and the parent dir is checked for
+    # existence before use.
+    parent = "/dev/shm" if Path("/dev/shm").is_dir() else None  # nosec B108
     private_data_dir = tempfile.mkdtemp(prefix="labdog-sync-", dir=parent)
     ssh_key_path = os.path.join(private_data_dir, "id_ssh")
     return private_data_dir, ssh_key_path

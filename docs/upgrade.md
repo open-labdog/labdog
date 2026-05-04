@@ -208,7 +208,7 @@ encrypted columns decrypt correctly against the restored DB.
 
 - [backup-restore.md](./backup-restore.md) — pre-upgrade backup
   procedure and full restore steps.
-- [Release process in CONTRIBUTING.md](../CONTRIBUTING.md#release-process)
+- [Release process in CONTRIBUTING.md](pathname:///../CONTRIBUTING.md#release-process)
   — how a new version gets cut, what's in the artifact set.
-- [CHANGELOG.md](../CHANGELOG.md) — per-release breaking-change
-  notes; read before every upgrade.
+- [CHANGELOG.md](pathname:///../CHANGELOG.md) — per-release
+  breaking-change notes; read before every upgrade.
