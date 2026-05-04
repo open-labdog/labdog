@@ -108,4 +108,5 @@ celery_app.conf.include = [
     "app.tasks.scan_schedule",
     "app.tasks.scan_run",
     "app.tasks.facts",
+    "app.tasks.sync_sweeper",
 ]
