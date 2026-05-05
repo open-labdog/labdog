@@ -107,8 +107,12 @@ function buildInitialState(
   scheduledAction: ScheduleActionDialogProps["scheduledAction"],
 ): State {
   if (scheduledAction) {
+    // Always start edit mode at the picker step too — both fields are
+    // locked, so the operator sees what they're editing before
+    // touching parameters. The explanation banner is rendered in
+    // PickerStep when both locks are active.
     return {
-      step: "parameters",
+      step: "picker",
       actionKey: scheduledAction.action_key,
       targetKind: scheduledAction.target_kind,
       targetId: scheduledAction.target_id,
@@ -121,10 +125,11 @@ function buildInitialState(
       batchSize: scheduledAction.batch_size,
     }
   }
-  const startStep: ScheduleStep =
-    preselected?.action_key && preselected?.target ? "parameters" : "picker"
+  // Always start at picker — even when preselected. The picker shows
+  // the locked fields and gives the operator one beat to confirm
+  // context before they're asked for parameters.
   return {
-    step: startStep,
+    step: "picker",
     actionKey: preselected?.action_key ?? null,
     targetKind: preselected?.target?.kind ?? null,
     targetId: preselected?.target?.id ?? null,
@@ -291,8 +296,9 @@ export function ScheduleActionDialog({
             onTargetChange={(kind, id) =>
               dispatch({ type: "SET_TARGET", kind, id })
             }
-            actionLocked={!!preselected?.action_key}
-            targetLocked={!!preselected?.target}
+            actionLocked={isEdit || !!preselected?.action_key}
+            targetLocked={isEdit || !!preselected?.target}
+            isEdit={isEdit}
           />
         )}
 
@@ -349,12 +355,13 @@ export function ScheduleActionDialog({
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-1.5 text-sm">
               <SummaryRow label="Schedule" value={state.scheduleCron} />
               <SummaryRow label="Enabled" value={state.enabled ? "Yes" : "No"} />
-              {Object.keys(state.parameters).length > 0 && (
+              {Object.entries(state.parameters).map(([k, v]) => (
                 <SummaryRow
-                  label="Parameters"
-                  value={JSON.stringify(state.parameters)}
+                  key={k}
+                  label={k}
+                  value={v === null || v === undefined ? "—" : String(v)}
                 />
-              )}
+              ))}
             </div>
 
             {action.destructive && (
@@ -412,7 +419,7 @@ export function ScheduleActionDialog({
         <DialogFooter className="mt-4">
           <div className="flex w-full items-center justify-between gap-2">
             <div>
-              {state.step !== "picker" && state.step !== getInitialStep(state, isEdit) && (
+              {state.step !== "picker" && (
                 <Button
                   type="button"
                   variant="outline"
@@ -474,6 +481,7 @@ function PickerStep({
   onTargetChange,
   actionLocked,
   targetLocked,
+  isEdit,
 }: {
   actions: ActionDefinition[]
   groups: HostGroup[]
@@ -487,6 +495,7 @@ function PickerStep({
   ) => void
   actionLocked: boolean
   targetLocked: boolean
+  isEdit: boolean
 }) {
   const action = actions.find((a) => a.key === actionKey) ?? null
   const builtin = actions.filter((a) => a.key.startsWith("_builtin."))
@@ -494,6 +503,14 @@ function PickerStep({
 
   return (
     <div className="mt-4 space-y-4">
+      {isEdit && (
+        <p className="rounded border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+          <span className="text-slate-300 font-medium">
+            Action and target are fixed.
+          </span>{" "}
+          To change them, delete this schedule and create a new one.
+        </p>
+      )}
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-200">Action</Label>
         <select
@@ -668,10 +685,4 @@ function prevStep(step: ScheduleStep): ScheduleStep {
   const order: ScheduleStep[] = ["picker", "parameters", "schedule", "review"]
   const i = order.indexOf(step)
   return order[Math.max(i - 1, 0)]
-}
-
-function getInitialStep(state: State, isEdit: boolean): ScheduleStep {
-  if (isEdit) return "parameters"
-  if (state.actionKey && state.targetKind) return "parameters"
-  return "picker"
 }
