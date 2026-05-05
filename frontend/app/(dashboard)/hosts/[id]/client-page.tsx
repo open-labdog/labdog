@@ -35,6 +35,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
+import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
@@ -753,7 +754,7 @@ function WorkflowStatusSection({ hostId }: { hostId: number }) {
   )
 }
 
-type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions"
+type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules"
 
 export default function HostDetailPage() {
   const params = useParams()
@@ -2310,6 +2311,18 @@ export default function HostDetailPage() {
           }`}
         >
           Actions
+        </button>
+        <button
+          role="tab"
+          aria-selected={activeTab === "schedules"}
+          onClick={() => setActiveTab("schedules")}
+          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
+            activeTab === "schedules"
+              ? "text-white border-b-2 border-white"
+              : "text-slate-400 hover:text-white"
+          }`}
+        >
+          Schedules
         </button>
       </div>
 
@@ -5337,6 +5350,10 @@ export default function HostDetailPage() {
 
       {activeTab === "actions" && (
         <ActionsTab scope="host" targetId={id} host={hostQuery.data} />
+      )}
+
+      {activeTab === "schedules" && (
+        <ScheduledActionsSection scope="host" targetId={id} />
       )}
 
       {confirmState && (
