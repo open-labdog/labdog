@@ -19,7 +19,7 @@ file per group:
 | Cron jobs | `cron_jobs` | list |
 | DNS resolver | `resolver` | singleton object |
 | Linux users + groups | `users` + `linux_groups` | two lists |
-| Update workflow schedule | `workflow` | singleton object |
+| Scheduled actions | `scheduled_actions` | list |
 
 Plus, in the optional global file `_global.yaml` at the repo root:
 
@@ -121,7 +121,7 @@ breaking older LabDog versions.
 | `users` | wipe | wipe |
 | `linux_groups` | wipe | wipe |
 | `resolver` | **leave alone** (singleton exception) | n/a |
-| `workflow` | **leave alone** (singleton exception) | n/a |
+| `scheduled_actions` | **leave alone** (list-shape exception) | wipe |
 | `drift` *(global)* | **leave alone** (singleton exception) | n/a |
 | `discovery` *(global)* | wipe | wipe |
 
@@ -140,7 +140,7 @@ See [modules/firewall.yaml](./modules/firewall.yaml),
 [modules/cron-jobs.yaml](./modules/cron-jobs.yaml),
 [modules/resolver.yaml](./modules/resolver.yaml),
 [modules/users.yaml](./modules/users.yaml),
-and [modules/workflow.yaml](./modules/workflow.yaml) for every field with
+and [modules/scheduled-actions.yaml](./modules/scheduled-actions.yaml) for every field with
 inline comments.
 
 ### System-owned rows
@@ -223,9 +223,10 @@ message appears on the group's overview page. Common causes:
 | Missing host ref | `Referenced host id 42 does not exist` | The host was deleted in LabDog; update the YAML |
 | SSH key prefix unknown | `Invalid SSH key: must start with ssh-rsa \| ssh-ed25519 \| …` | Only public-key formats are accepted |
 | Too many nameservers | `Maximum 3 nameservers allowed …` | Resolver's `/etc/resolv.conf` limit |
-| Unknown `action_key` in `workflow:` | `Unknown action_key: '<value>'` | The action isn't in the registry — fix the typo, or add the pack supplying it |
-| Missing `linux-os-upgrade` params | `linux-os-upgrade requires action_parameters: ['current_version', 'next_version']` | Add both keys under `action_parameters:` |
-| Invalid cron in `workflow.schedule_cron` | `Invalid cron expression: …` | 5-field cron only; `crontab.guru` is your friend |
+| Unknown `action_key` in `scheduled_actions:` | `Unknown action_key: '<value>'` | The action isn't in the registry — fix the typo, or add the pack supplying it |
+| Missing required parameters | `Invalid parameters for '<key>': …` | Add the keys the action's manifest requires under `parameters:` |
+| Invalid cron in `schedule_cron` | `Invalid cron expression: …` | 5-field cron only; `crontab.guru` is your friend |
+| Group-only target on host action | `Action '<key>' does not support group runs` | Use a different action or change the target — `linux-upgrade` is host-only |
 
 The error message is also available via `GET /api/groups/{group_id}` →
 `gitops_error_message` for scripted recovery.
