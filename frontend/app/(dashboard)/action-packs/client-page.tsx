@@ -39,16 +39,6 @@ interface PackFormState {
   enabled: boolean
 }
 
-const emptyForm: PackFormState = {
-  name: "",
-  source_type: "git",
-  git_repository_id: null,
-  path: "",
-  local_path: "",
-  role: "override",
-  enabled: true,
-}
-
 function statusChip(pack: ActionPack) {
   if (pack.last_sync_status === "ok") {
     return <span className="text-green-400 text-xs">OK</span>
@@ -67,7 +57,7 @@ function formatDate(iso: string | null) {
 export default function ActionPacksPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ActionPack | null>(null)
-  const [form, setForm] = useState<PackFormState>(emptyForm)
+  const [form, setForm] = useState<PackFormState | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [formSaving, setFormSaving] = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
@@ -106,13 +96,6 @@ export default function ActionPacksPage() {
     },
   })
 
-  function openCreate() {
-    setEditing(null)
-    setForm(emptyForm)
-    setFormError(null)
-    setDialogOpen(true)
-  }
-
   function openEdit(pack: ActionPack) {
     setEditing(pack)
     setForm({
@@ -128,39 +111,32 @@ export default function ActionPacksPage() {
     setDialogOpen(true)
   }
 
-  function buildPayload(): Record<string, unknown> {
+  function buildPayload(state: PackFormState): Record<string, unknown> {
     const p: Record<string, unknown> = {
-      name: form.name,
-      source_type: form.source_type,
-      role: form.role,
-      enabled: form.enabled,
+      name: state.name,
+      source_type: state.source_type,
+      role: state.role,
+      enabled: state.enabled,
     }
-    if (form.source_type === "git") {
-      p.git_repository_id = form.git_repository_id
-      p.path = form.path ?? ""
+    if (state.source_type === "git") {
+      p.git_repository_id = state.git_repository_id
+      p.path = state.path ?? ""
     } else {
-      p.local_path = form.local_path
+      p.local_path = state.local_path
     }
     return p
   }
 
   async function handleSave() {
+    if (!editing || !form) return
     setFormSaving(true)
     setFormError(null)
     try {
-      if (editing) {
-        await apiFetch(`/api/action-packs/${editing.id}`, {
-          method: "PUT",
-          json: buildPayload(),
-        })
-        showSuccess("Action pack updated")
-      } else {
-        await apiFetch("/api/action-packs", {
-          method: "POST",
-          json: buildPayload(),
-        })
-        showSuccess("Action pack created")
-      }
+      await apiFetch(`/api/action-packs/${editing.id}`, {
+        method: "PUT",
+        json: buildPayload(form),
+      })
+      showSuccess("Action pack updated")
       await queryClient.invalidateQueries({ queryKey: ["action-packs"] })
       await queryClient.invalidateQueries({ queryKey: ["actions"] })
       setDialogOpen(false)
@@ -223,14 +199,18 @@ export default function ActionPacksPage() {
           <h1 className="text-2xl font-bold text-white">Action Packs</h1>
           <p className="text-slate-400 text-sm mt-1">
             Collections of playbooks that supply actions to every host and
-            group. Git packs reference a repository configured under{" "}
+            group. New packs are added by connecting a repository under{" "}
             <Link href="/git-repos" className="underline hover:text-slate-200">
               Git Repos
-            </Link>
-            ; local packs point at a directory on the LabDog host.
+            </Link>{" "}
+            and picking the detected packs from the onboarding wizard. Edit
+            existing packs in the table below to rename, change role, or
+            disable.
           </p>
         </div>
-        <Button onClick={openCreate}>Add Pack</Button>
+        <Link href="/git-repos/new">
+          <Button>Connect a Repository</Button>
+        </Link>
       </div>
 
       {showLoading && <TableSkeleton rows={3} columns={6} />}
@@ -246,7 +226,14 @@ export default function ActionPacksPage() {
           tableId="action-packs"
           data={packs}
           emptyMessage={
-            <>No action packs configured. Click <strong>Add Pack</strong> to get started.</>
+            <>
+              No action packs configured. Connect a git repository under{" "}
+              <Link href="/git-repos" className="underline hover:text-white">
+                Git Repos
+              </Link>{" "}
+              and the wizard will detect and offer to activate the packs it
+              finds.
+            </>
           }
           getRowKey={(p) => p.id}
           columns={[
@@ -379,181 +366,164 @@ export default function ActionPacksPage() {
       >
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>
-              {editing ? "Edit Action Pack" : "Add Action Pack"}
-            </DialogTitle>
+            <DialogTitle>Edit Action Pack</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="pack-name">Name</Label>
-              <Input
-                id="pack-name"
-                placeholder="labdog-default"
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Source</Label>
-              <div className="flex gap-4 text-sm">
-                {(["git", "local"] as const).map((st) => (
-                  <label key={st} className="flex items-center gap-1 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="source_type"
-                      checked={form.source_type === st}
-                      onChange={() => setForm((p) => ({ ...p, source_type: st }))}
-                    />
-                    <span>
-                      {st === "git" && "Git repository"}
-                      {st === "local" && "Local directory"}
-                    </span>
-                  </label>
-                ))}
+          {form && (
+            <div className="space-y-4 mt-2">
+              <div className="space-y-2">
+                <Label htmlFor="pack-name">Name</Label>
+                <Input
+                  id="pack-name"
+                  placeholder="labdog-default"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm((p) => (p ? { ...p, name: e.target.value } : p))
+                  }
+                />
               </div>
-            </div>
 
-            {form.source_type === "git" && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="pack-repo">Git repository</Label>
-                  {!hasGitRepos ? (
-                    <p className="text-sm text-yellow-400">
-                      No git repositories configured yet. Add one under{" "}
-                      <Link
-                        href="/git-repos"
-                        className="underline hover:text-yellow-200"
+              {form.source_type === "git" && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="pack-repo">Git repository</Label>
+                    {!hasGitRepos ? (
+                      <p className="text-sm text-yellow-400">
+                        No git repositories configured yet. Add one under{" "}
+                        <Link
+                          href="/git-repos"
+                          className="underline hover:text-yellow-200"
+                        >
+                          Git Repos
+                        </Link>{" "}
+                        first.
+                      </p>
+                    ) : (
+                      <select
+                        id="pack-repo"
+                        value={form.git_repository_id ?? ""}
+                        onChange={(e) =>
+                          setForm((p) =>
+                            p
+                              ? {
+                                  ...p,
+                                  git_repository_id: e.target.value
+                                    ? Number(e.target.value)
+                                    : null,
+                                }
+                              : p,
+                          )
+                        }
+                        className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
                       >
-                        Git Repos
-                      </Link>{" "}
-                      first.
-                    </p>
-                  ) : (
-                    <select
-                      id="pack-repo"
-                      value={form.git_repository_id ?? ""}
-                      onChange={(e) =>
-                        setForm((p) => ({
-                          ...p,
-                          git_repository_id: e.target.value
-                            ? Number(e.target.value)
-                            : null,
-                        }))
-                      }
-                      className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      <option value="">— Select a repository —</option>
-                      {gitRepos!.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name} ({r.url} @ {r.branch})
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
+                        <option value="">— Select a repository —</option>
+                        {gitRepos!.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name} ({r.url} @ {r.branch})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
 
+                  <div className="space-y-2">
+                    <Label htmlFor="pack-path">Path inside the repo</Label>
+                    <Input
+                      id="pack-path"
+                      placeholder="(leave empty if the pack is at the repo root)"
+                      value={form.path}
+                      onChange={(e) =>
+                        setForm((p) => (p ? { ...p, path: e.target.value } : p))
+                      }
+                      className="font-mono"
+                    />
+                    <p className="text-xs text-slate-400">
+                      LabDog looks for <code>actions/*.manifest.yml</code> under
+                      this subpath.
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {form.source_type === "local" && (
                 <div className="space-y-2">
-                  <Label htmlFor="pack-path">Path inside the repo</Label>
+                  <Label htmlFor="pack-local-path">Filesystem path</Label>
                   <Input
-                    id="pack-path"
-                    placeholder="(leave empty if the pack is at the repo root)"
-                    value={form.path}
-                    onChange={(e) => setForm((p) => ({ ...p, path: e.target.value }))}
+                    id="pack-local-path"
+                    placeholder="/var/lib/labdog/my-pack"
+                    value={form.local_path}
+                    onChange={(e) =>
+                      setForm((p) => (p ? { ...p, local_path: e.target.value } : p))
+                    }
                     className="font-mono"
                   />
                   <p className="text-xs text-slate-400">
-                    LabDog looks for <code>actions/*.manifest.yml</code> under
-                    this subpath.
+                    Absolute path on the LabDog host. Nothing is cloned; the
+                    directory is read in place.
                   </p>
                 </div>
-              </>
-            )}
+              )}
 
-            {form.source_type === "local" && (
-              <div className="space-y-2">
-                <Label htmlFor="pack-local-path">Filesystem path</Label>
-                <Input
-                  id="pack-local-path"
-                  placeholder="/var/lib/labdog/my-pack"
-                  value={form.local_path}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, local_path: e.target.value }))
-                  }
-                  className="font-mono"
-                />
-                <p className="text-xs text-slate-400">
-                  Absolute path on the LabDog host. Nothing is cloned; the
-                  directory is read in place. Useful for BYO playbooks you
-                  maintain outside a git workflow.
-                </p>
-              </div>
-            )}
-
-            {form.source_type === "git" && (
-              <div className="space-y-2">
-                <Label>Role</Label>
-                <div className="flex gap-4 text-sm">
-                  {(["default", "override"] as const).map((r) => (
-                    <label
-                      key={r}
-                      className="flex items-center gap-1 cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="role"
-                        checked={form.role === r}
-                        onChange={() => setForm((p) => ({ ...p, role: r }))}
-                      />
-                      <span>
-                        {r === "default" && "Default (canonical baseline)"}
-                        {r === "override" && "Override (customises the default)"}
-                      </span>
-                    </label>
-                  ))}
+              {form.source_type === "git" && (
+                <div className="space-y-2">
+                  <Label>Role</Label>
+                  <div className="flex gap-4 text-sm">
+                    {(["default", "override"] as const).map((r) => (
+                      <label
+                        key={r}
+                        className="flex items-center gap-1 cursor-pointer"
+                      >
+                        <input
+                          type="radio"
+                          name="role"
+                          checked={form.role === r}
+                          onChange={() =>
+                            setForm((p) => (p ? { ...p, role: r } : p))
+                          }
+                        />
+                        <span>
+                          {r === "default" && "Default (canonical baseline)"}
+                          {r === "override" && "Override (customises the default)"}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Overrides win over defaults on action-key collisions.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-400">
-                  Overrides win over defaults on action-key collisions. Pick
-                  Default for your main source-of-truth pack, Override for
-                  layered customisations.
-                </p>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  id="pack-enabled"
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(e) =>
+                    setForm((p) => (p ? { ...p, enabled: e.target.checked } : p))
+                  }
+                  className="rounded border-input"
+                />
+                <Label htmlFor="pack-enabled">Enabled</Label>
               </div>
-            )}
 
-            <div className="flex items-center gap-2">
-              <input
-                id="pack-enabled"
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, enabled: e.target.checked }))
-                }
-                className="rounded border-input"
-              />
-              <Label htmlFor="pack-enabled">Enabled</Label>
+              {formError && <p className="text-sm text-red-400">{formError}</p>}
+
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setDialogOpen(false)
+                    setFormError(null)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button onClick={handleSave} disabled={formSaving}>
+                  {formSaving ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
             </div>
-
-            {formError && <p className="text-sm text-red-400">{formError}</p>}
-
-            <DialogFooter>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setDialogOpen(false)
-                  setFormError(null)
-                }}
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={formSaving}>
-                {formSaving
-                  ? "Saving..."
-                  : editing
-                    ? "Save Changes"
-                    : "Add Pack"}
-              </Button>
-            </DialogFooter>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
 
