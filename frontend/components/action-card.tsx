@@ -1,8 +1,9 @@
 "use client"
 
-import { ArrowUpFromLine, Layers, Network, Play, Zap } from "lucide-react"
+import { ArrowUpFromLine, CalendarClock, Layers, Network, Play, Zap } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Tooltip } from "@/components/ui/tooltip"
 import { PackBadge } from "@/components/pack-badge"
 import type { ActionDefinition } from "@/lib/types"
 
@@ -17,10 +18,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
 interface ActionCardProps {
   action: ActionDefinition
   onRun: (action: ActionDefinition) => void
+  onSchedule?: (action: ActionDefinition) => void
   lastRun?: { status: string; started_at: string } | null
 }
 
-export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
+export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardProps) {
   const Icon = ICON_MAP[action.icon] ?? Zap
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-800/50 p-4">
@@ -45,10 +47,26 @@ export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
         ) : (
           <span className="text-xs text-slate-600">Never run</span>
         )}
-        <Button size="sm" onClick={() => onRun(action)} className="gap-1.5">
-          <Play className="h-3 w-3" />
-          Run
-        </Button>
+        <div className="flex items-center gap-2">
+          {onSchedule && (
+            <Tooltip content="Add a recurring schedule for this action">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onSchedule(action)}
+                className="gap-1.5"
+                data-testid="schedule-action-button"
+              >
+                <CalendarClock className="h-3 w-3" />
+                Schedule…
+              </Button>
+            </Tooltip>
+          )}
+          <Button size="sm" onClick={() => onRun(action)} className="gap-1.5">
+            <Play className="h-3 w-3" />
+            Run
+          </Button>
+        </div>
       </div>
     </div>
   )
