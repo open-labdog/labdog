@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ManifestParameter(BaseModel):
@@ -42,7 +42,27 @@ class ActionManifest(BaseModel):
     destructive: bool = False
     supports_group: bool = True
     supports_host: bool = True
+    supports_fleet: bool = Field(
+        default=False,
+        description=(
+            "Whether the action makes sense across every host in the inventory. "
+            "Conservative default — flip to True only for truly fleet-wide work "
+            "like drift checks or state collection."
+        ),
+    )
     parameters: list[ManifestParameter] = Field(default_factory=list)
+
+    @field_validator("key")
+    @classmethod
+    def _reserved_underscore_prefix(cls, v: str) -> str:
+        if v.startswith("_"):
+            raise ValueError(
+                "Action keys starting with '_' are reserved for built-in "
+                "pseudo-actions (e.g. '_builtin.sync'). Pick a key that "
+                "begins with a letter."
+            )
+        return v
+
     verify_playbook: str | None = Field(
         default=None,
         description=(

@@ -78,6 +78,7 @@ def _manifest_to_definition(
         destructive=manifest.destructive,
         supports_group=manifest.supports_group,
         supports_host=manifest.supports_host,
+        supports_fleet=manifest.supports_fleet,
         parameters=tuple(
             ActionParameter(
                 key=p.key,
@@ -117,8 +118,28 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
         try:
             raw = yaml.safe_load(manifest_path.read_text()) or {}
             manifest = ActionManifest.model_validate(raw)
+        except (yaml.YAMLError, ValidationError) as exc:
+            logger.error(
+                "pack %r: failed to load manifest %s: %s",
+                pack.name,
+                manifest_path,
+                exc,
+            )
+            continue
+        # Defence-in-depth: ActionManifest already rejects underscore keys
+        # via field_validator, but a malformed-YAML-fallback path could in
+        # theory slip one through. Belt-and-braces.
+        if manifest.key.startswith("_"):
+            logger.warning(
+                "pack %r: skipping manifest %s — key %r is reserved for built-in pseudo-actions",
+                pack.name,
+                manifest_path,
+                manifest.key,
+            )
+            continue
+        try:
             defns.append(_manifest_to_definition(manifest, manifest_path, pack))
-        except (yaml.YAMLError, ValidationError, FileNotFoundError) as exc:
+        except FileNotFoundError as exc:
             logger.error(
                 "pack %r: failed to load manifest %s: %s",
                 pack.name,

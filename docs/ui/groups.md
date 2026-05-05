@@ -73,7 +73,7 @@ Shows whether this group is managed by a Git repository. Click **Enable** to lin
 | CA Certs | CA certificate deployment |
 | DNS Resolver | [DNS Resolver](#dns-resolver) |
 | Firewall Sync | [Firewall Sync](#firewall-sync) |
-| Workflow | [Update Workflows](workflows.md) |
+| Schedules | [Scheduled Actions](scheduled-actions.md) |
 
 ---
 

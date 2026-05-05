@@ -1,8 +1,10 @@
 "use client"
 
-import { ArrowUpFromLine, Layers, Network, Play, Zap } from "lucide-react"
+import { ArrowUpFromLine, CalendarClock, Layers, Network, Play, Zap } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Tooltip } from "@/components/ui/tooltip"
+import { PackBadge } from "@/components/pack-badge"
 import type { ActionDefinition } from "@/lib/types"
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -16,32 +18,11 @@ const ICON_MAP: Record<string, LucideIcon> = {
 interface ActionCardProps {
   action: ActionDefinition
   onRun: (action: ActionDefinition) => void
+  onSchedule?: (action: ActionDefinition) => void
   lastRun?: { status: string; started_at: string } | null
 }
 
-function PackBadge({ action }: { action: ActionDefinition }) {
-  const overridden = action.overridden_from ?? []
-  const hasOverride = overridden.length > 0
-  const tooltip = hasOverride
-    ? `Loaded from pack "${action.pack_name}". Overrides: ${overridden.join(", ")}`
-    : `Loaded from pack "${action.pack_name}"`
-  const classes = hasOverride
-    ? "border-amber-700/60 bg-amber-950/40 text-amber-300"
-    : "border-slate-700 bg-slate-900 text-slate-400"
-  const label = hasOverride
-    ? `from ${action.pack_name} (overrides ${overridden.length})`
-    : `from ${action.pack_name}`
-  return (
-    <span
-      title={tooltip}
-      className={`inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-medium ${classes}`}
-    >
-      {label}
-    </span>
-  )
-}
-
-export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
+export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardProps) {
   const Icon = ICON_MAP[action.icon] ?? Zap
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-slate-700 bg-slate-800/50 p-4">
@@ -66,10 +47,26 @@ export function ActionCard({ action, onRun, lastRun }: ActionCardProps) {
         ) : (
           <span className="text-xs text-slate-600">Never run</span>
         )}
-        <Button size="sm" onClick={() => onRun(action)} className="gap-1.5">
-          <Play className="h-3 w-3" />
-          Run
-        </Button>
+        <div className="flex items-center gap-2">
+          {onSchedule && (
+            <Tooltip content="Add a recurring schedule for this action">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onSchedule(action)}
+                className="gap-1.5"
+                data-testid="schedule-action-button"
+              >
+                <CalendarClock className="h-3 w-3" />
+                Schedule…
+              </Button>
+            </Tooltip>
+          )}
+          <Button size="sm" onClick={() => onRun(action)} className="gap-1.5">
+            <Play className="h-3 w-3" />
+            Run
+          </Button>
+        </div>
       </div>
     </div>
   )

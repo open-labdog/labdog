@@ -25,7 +25,7 @@
 # Settings → Drift Detection in the UI). Range: 1–1440.
 #
 # Missing or `null` ⇒ leaves the existing setting untouched. Same
-# precedent as `resolver:` / `workflow:` in per-group YAML — singleton
+# precedent as `resolver:` / `scheduled_actions:` in per-group YAML —
 # state is never wiped implicitly because the consequence (silently
 # falling back to a 30-minute default) is almost never what an operator
 # wanted.

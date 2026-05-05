@@ -45,10 +45,10 @@ import GroupPackagesPage from "./packages/client-page"
 import GroupCACertsPage from "./ca-certs/client-page"
 import GroupResolverPage from "./resolver/client-page"
 import GroupSyncPage from "./sync/client-page"
-import WorkflowConfigPage from "./workflow/client-page"
 import GroupActionsPage from "./actions/client-page"
+import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow" | "actions"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "schedules" | "actions"
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -567,7 +567,7 @@ export default function GroupDetailPage() {
           ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
           ["sync", "Firewall Sync"],
-          ["workflow", "Workflow"],
+          ["schedules", "Schedules"],
           ["actions", "Actions"],
         ] as const).map(([key, label]) => (
           <button
@@ -822,7 +822,9 @@ export default function GroupDetailPage() {
       {activeTab === "ca-certs" && <GroupCACertsPage embedded />}
       {activeTab === "dns" && <GroupResolverPage embedded />}
       {activeTab === "sync" && <GroupSyncPage embedded />}
-      {activeTab === "workflow" && <WorkflowConfigPage embedded />}
+      {activeTab === "schedules" && (
+        <ScheduledActionsSection scope="group" targetId={id} />
+      )}
       {activeTab === "actions" && <GroupActionsPage embedded />}
 
       {confirmState && (

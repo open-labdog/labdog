@@ -7,8 +7,8 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
 import { nextCodename } from "@/lib/os-upgrade-paths"
 import { toast } from "sonner"
@@ -140,63 +140,21 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           </div>
         )}
 
-        {action.parameters.length > 0 && (
-          <div className="space-y-4 py-2">
-            {action.parameters.map((p) => (
-              <div key={p.key} className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-200">
-                  {p.label}
-                  {p.required && <span className="text-red-400 ml-1">*</span>}
-                </Label>
-                {p.type === "bool" ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={p.key}
-                      checked={params[p.key] !== undefined ? Boolean(params[p.key]) : Boolean(p.default)}
-                      onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.checked }))}
-                      className="h-4 w-4 rounded border-slate-600"
-                    />
-                    <label htmlFor={p.key} className="text-sm text-slate-400">{p.help_text}</label>
-                  </div>
-                ) : p.type === "choice" && p.choices ? (
-                  <select
-                    value={String(params[p.key] ?? p.default ?? "")}
-                    onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.value }))}
-                    className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-                  >
-                    {p.choices.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                ) : (() => {
-                  const current = scope === "host" ? hostOsCodename : groupSingleCodename
-                  let prePopulated: string | undefined
-                  if (action.key === "linux-os-upgrade" && p.key === "current_version") {
-                    prePopulated = current ?? undefined
-                  } else if (action.key === "linux-os-upgrade" && p.key === "next_version") {
-                    prePopulated = nextCodename(current)
-                  }
-                  const displayValue = params[p.key] !== undefined ? String(params[p.key]) : (prePopulated ?? "")
-                  return (
-                    <Input
-                      type={p.type === "int" ? "number" : "text"}
-                      placeholder={prePopulated ?? String(p.default ?? "")}
-                      value={displayValue}
-                      onChange={(e) =>
-                        setParams((prev) => ({
-                          ...prev,
-                          [p.key]: p.type === "int" ? Number(e.target.value) : e.target.value,
-                        }))
-                      }
-                    />
-                  )
-                })()}
-                {p.help_text && p.type !== "bool" && (
-                  <p className="text-xs text-slate-500">{p.help_text}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        <ActionParameterForm
+          action={action}
+          values={params}
+          onChange={setParams}
+          placeholderFor={(p) => {
+            const current = scope === "host" ? hostOsCodename : groupSingleCodename
+            if (action.key === "linux-os-upgrade" && p.key === "current_version") {
+              return current ?? undefined
+            }
+            if (action.key === "linux-os-upgrade" && p.key === "next_version") {
+              return nextCodename(current)
+            }
+            return undefined
+          }}
+        />
 
         {scope === "group" && (
           <div className="space-y-1.5">

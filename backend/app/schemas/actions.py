@@ -26,6 +26,9 @@ class ActionDefinitionOut(BaseModel):
     destructive: bool
     supports_group: bool
     supports_host: bool
+    #: Whether this action makes sense across the entire fleet. Drives
+    #: the Fleet target option in the schedule dialog.
+    supports_fleet: bool = False
     parameters: list[ActionParameterOut]
     #: Pack whose manifest is currently active for this action key.
     pack_name: str
@@ -63,8 +66,16 @@ class ActionRunOut(BaseModel):
     action_version: str
     host_id: int | None
     group_id: int | None
+    #: NULL for ad-hoc runs; populated when the run was dispatched by
+    #: the unified scheduler or POST /api/scheduled-actions/{id}/run-now.
+    scheduled_action_id: int | None = None
     parameters: dict
     parallelism: int
+    #: Universal destructive-flow toggles, mirrored from the schedule
+    #: at dispatch time. Ignored when the action is non-destructive.
+    snapshot_enabled: bool = True
+    verify_enabled: bool = True
+    auto_rollback: bool = True
     status: str
     triggered_by_user_id: int | None
     started_at: datetime | None

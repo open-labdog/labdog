@@ -39,7 +39,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, Firewall Sync) |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
-| [ui/workflows.md](./ui/workflows.md) | Update Workflows — scheduled action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, custom packs) with snapshot/rollback |
+| [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Scheduled Actions — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
