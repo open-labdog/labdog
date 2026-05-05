@@ -16,6 +16,17 @@ from app.tasks import celery_app
 logger = logging.getLogger(__name__)
 
 
+# Per-host Celery task name for each built-in pseudo-action. Looked up
+# by the orchestrator's per-host fork; pack-supplied actions fall
+# through to the default ``app.tasks.action_host.run_action_host``.
+PER_HOST_TASK_FOR_BUILTIN: dict[str, str] = {
+    "_builtin.sync": "app.tasks.builtin_dispatchers.run_builtin_sync",
+    "_builtin.drift_check": "app.tasks.builtin_dispatchers.run_builtin_drift_check",
+    "_builtin.collect_state": "app.tasks.builtin_dispatchers.run_builtin_collect_state",
+}
+_DEFAULT_PER_HOST_TASK = "app.tasks.action_host.run_action_host"
+
+
 # ---------------------------------------------------------------------------
 # Celery task entry point
 # ---------------------------------------------------------------------------
@@ -57,6 +68,7 @@ async def _run_action_async(action_run_id: int) -> None:
     # Phase 1: initialise run and create per-host records                 #
     # ------------------------------------------------------------------ #
     host_run_ids: list[int] = []
+    per_host_task_name = _DEFAULT_PER_HOST_TASK
 
     try:
         async with task_session() as db:
@@ -76,15 +88,28 @@ async def _run_action_async(action_run_id: int) -> None:
                 await db.commit()
                 return
 
-            # Resolve target hosts
+            # Pick the per-host task: built-ins each have their own
+            # wrapper in app.tasks.builtin_dispatchers; pack-supplied
+            # actions go through the default Ansible playbook runner.
+            per_host_task_name = PER_HOST_TASK_FOR_BUILTIN.get(
+                run.action_key, _DEFAULT_PER_HOST_TASK
+            )
+
+            # Resolve target hosts. Fleet runs (both host_id and
+            # group_id NULL) are scheduled-only — the action_runs
+            # check constraint forbids ad-hoc fleet rows.
             if run.host_id is not None:
                 host_ids: list[int] = [run.host_id]
-            else:
+            elif run.group_id is not None:
                 hosts_result = await db.execute(
                     select(Host)
                     .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
                     .where(HostGroupMembership.c.group_id == run.group_id)
                 )
+                host_ids = [h.id for h in hosts_result.scalars().all()]
+            else:
+                # fleet — every registered host
+                hosts_result = await db.execute(select(Host))
                 host_ids = [h.id for h in hosts_result.scalars().all()]
 
             if not host_ids:
@@ -159,7 +184,7 @@ async def _run_action_async(action_run_id: int) -> None:
 
             tasks = celery_group(
                 celery_app.signature(
-                    "app.tasks.action_host.run_action_host",
+                    per_host_task_name,
                     args=[action_run_id, host_run_id],
                     queue="long_running",
                 )

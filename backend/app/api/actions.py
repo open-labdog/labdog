@@ -114,21 +114,11 @@ async def create_run(
     if action is None:
         raise HTTPException(status_code=400, detail="Unknown action")
 
-    # Playbook file must exist. Built-in pseudo-actions have
-    # ``playbook_path=None`` and are dispatched via dedicated per-host
-    # tasks, not Ansible playbooks; the routing for ad-hoc built-in runs
-    # lands in C5. Until then, reject ad-hoc built-in dispatch with a
-    # clear error.
-    if action.playbook_path is None:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Built-in actions cannot be dispatched ad-hoc through this "
-                "endpoint. Schedule them via /api/scheduled-actions or use "
-                "the dedicated per-tab buttons."
-            ),
-        )
-    if not action.playbook_path.is_file():
+    # Pack-supplied actions need a playbook on disk. Built-in
+    # pseudo-actions have ``playbook_path=None`` — they're dispatched
+    # via dedicated per-host wrappers in builtin_dispatchers.py and
+    # don't need the file-existence check.
+    if action.playbook_path is not None and not action.playbook_path.is_file():
         raise HTTPException(status_code=400, detail="Playbook file not found")
 
     # Check scope support
