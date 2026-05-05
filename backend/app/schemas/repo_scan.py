@@ -54,8 +54,8 @@ class RepoScanResponse(BaseModel):
     """The full annotated scan result the wizard renders in step (c).
 
     ``packs`` and ``gitops_files`` are the raw findings; the
-    ``existing_key_winners`` map pre-selects ``role=override`` for any
-    pack contributing a key that already has an owner; the
+    ``existing_key_winners`` map drives the wizard's per-key radio for
+    every pack contributing a key that already has an owner; the
     ``intra_repo_key_conflicts`` list disables the Activate button
     while any conflict still has both contributing packs checked.
     ``scan_errors`` covers infrastructure-level issues (e.g. clone
@@ -82,13 +82,38 @@ class ActivatePackSelection(BaseModel):
     is the desired ``ActionPack.name``; if it collides with an existing
     pack, the activation endpoint suffixes it (``-<repo_name>``, then
     ``-<short_sha>``) and reports the final name in the response.
-    ``role`` is the operator's chosen role (typically ``override`` for
-    same-key matches, ``default`` for novel keys).
+
+    Pack precedence is set by ``position`` — assigned server-side at
+    insert (highest existing + 1). Operators reorder via the
+    drag-to-reorder UI on ``/action-packs`` after activation.
     """
 
     path: str
     name: str
-    role: Literal["default", "override"]
+
+
+class ActivateKeyResolution(BaseModel):
+    """One operator decision for an action key contested by activation.
+
+    The wizard surfaces a per-key radio for every key contributed by
+    a newly-activated pack that collides with an existing pack
+    (including bundled). ``winner`` identifies which pack should win
+    the key on the rebuilt registry.
+
+    ``winner_pack_path`` references one of the submitted ``packs[].path``
+    entries — the activation endpoint resolves the path to the
+    just-inserted pack id and writes an ``action_resolution`` row.
+    Mutually exclusive with the bundled / existing-pack winner forms;
+    exactly one of the four winner fields must be set.
+    """
+
+    action_key: str
+    winner_pack_path: str | None = None
+    """Path inside the submitted activation set whose pack wins."""
+    winner_existing_pack_id: int | None = None
+    """An existing DB pack wins (operator kept the prior winner)."""
+    winner_is_bundled: bool = False
+    """Bundled wins — emits a row with ``pack_id NULL``."""
 
 
 class ActivateGitopsBinding(BaseModel):
@@ -101,6 +126,11 @@ class ActivateGitopsBinding(BaseModel):
 class RepoActivateRequest(BaseModel):
     packs: list[ActivatePackSelection] = []
     gitops_bindings: list[ActivateGitopsBinding] = []
+    key_resolutions: list[ActivateKeyResolution] = []
+    """Per-key winner decisions for keys contested by this activation.
+    The wizard must submit one row for every key that becomes
+    contested when the requested packs are added; the activation
+    endpoint rejects the request otherwise."""
 
 
 class ActivatedPackOut(BaseModel):
@@ -109,7 +139,7 @@ class ActivatedPackOut(BaseModel):
     pack_id: int
     name: str
     path: str
-    role: str
+    position: int
     requested_name: str
     name_was_disambiguated: bool
     model_config = ConfigDict(from_attributes=True)

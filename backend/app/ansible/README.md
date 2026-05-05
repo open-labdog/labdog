@@ -121,22 +121,25 @@ action along with its winning pack name and override history.
 
 ## Precedence recap
 
-Packs layer by semantic role, not numeric priority. The tiers are:
+Packs layer in a single linear ordering on the **Action Packs** page.
+The pack at the top of the list wins on action-key collisions; bundled
+sits implicitly at the bottom (no DB row).
 
 ```
-bundled pack (image-baked, priority 0)
-    └── overridden by →
-this repo (role=Default, priority 10)
-    └── overridden by →
-additional git packs (role=Override, priority 100)
-    └── overridden by →
-local-directory packs (priority 1000)
+my-local-pack         (top of list — highest position)
+    └── overrides →
+my-team-overrides
+    └── overrides →
+labdog-playbooks
+    └── overrides →
+bundled (image-baked, implicit position 0)
 ```
 
-Same action key → higher tier wins, shadowed packs still tracked for
-provenance (shown as amber badge in the UI). Different keys → both
-coexist in the registry. Admins pick the role in the UI; LabDog derives
-the integer tier.
+Same action key → highest-positioned pack wins, shadowed packs still
+tracked for provenance (shown as amber badge in the UI). Different
+keys → both coexist in the registry. Operators reorder packs by
+drag-and-drop; per-key pins are also available from the conflict
+banner at the top of the page.
 
 ## Examples
 

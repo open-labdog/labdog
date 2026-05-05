@@ -16,7 +16,7 @@ from sqlalchemy import select
 from app.models.audit_log import AuditLog
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.host_group import HostGroup
-from app.packs.models import ActionPack, PackRole, PackSourceType
+from app.packs.models import ActionPack, PackSourceType
 
 pytestmark = pytest.mark.integration
 
@@ -151,8 +151,8 @@ async def test_activate_happy_path_creates_packs_and_bindings(
         f"/api/git-repos/{repo.id}/activate",
         json={
             "packs": [
-                {"path": "packs/foo", "name": "foo-pack", "role": "default"},
-                {"path": "packs/bar", "name": "bar-pack", "role": "override"},
+                {"path": "packs/foo", "name": "foo-pack"},
+                {"path": "packs/bar", "name": "bar-pack"},
             ],
             "gitops_bindings": [
                 {"file_path": "groups/web.yaml", "host_group_id": group_id},
@@ -175,11 +175,12 @@ async def test_activate_happy_path_creates_packs_and_bindings(
     )
     assert len(rows) == 2
     by_name = {r.name: r for r in rows}
-    assert by_name["foo-pack"].role == PackRole.DEFAULT
     assert by_name["foo-pack"].path == "packs/foo"
     assert by_name["foo-pack"].source_type == PackSourceType.GIT
     assert by_name["foo-pack"].enabled is True
-    assert by_name["bar-pack"].role == PackRole.OVERRIDE
+    # Activation lays packs out as a contiguous block above existing rows.
+    positions = sorted(r.position for r in rows)
+    assert positions[1] == positions[0] + 1
 
     # HostGroup gitops binding applied.
     refreshed_group = (
@@ -223,7 +224,6 @@ async def test_activate_pack_name_collision_appends_suffix(
         name="foo-pack",
         source_type=PackSourceType.LOCAL,
         local_path="/tmp/dummy",
-        role=PackRole.DEFAULT,
         enabled=False,
     )
     db.add(pre_existing)
@@ -235,7 +235,7 @@ async def test_activate_pack_name_collision_appends_suffix(
     resp = await superuser_client.post(
         f"/api/git-repos/{repo.id}/activate",
         json={
-            "packs": [{"path": "packs/foo", "name": "foo-pack", "role": "default"}],
+            "packs": [{"path": "packs/foo", "name": "foo-pack"}],
             "gitops_bindings": [],
         },
     )
@@ -262,8 +262,8 @@ async def test_activate_rejects_intra_repo_conflict(
         f"/api/git-repos/{repo.id}/activate",
         json={
             "packs": [
-                {"path": "packs/a", "name": "a-pack", "role": "default"},
-                {"path": "packs/b", "name": "b-pack", "role": "default"},
+                {"path": "packs/a", "name": "a-pack"},
+                {"path": "packs/b", "name": "b-pack"},
             ],
             "gitops_bindings": [],
         },
@@ -284,7 +284,7 @@ async def test_activate_rejects_missing_pack_path(
     resp = await superuser_client.post(
         f"/api/git-repos/{repo.id}/activate",
         json={
-            "packs": [{"path": "packs/nonexistent", "name": "x", "role": "default"}],
+            "packs": [{"path": "packs/nonexistent", "name": "x"}],
             "gitops_bindings": [],
         },
     )

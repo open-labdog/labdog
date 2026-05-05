@@ -118,10 +118,14 @@ registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
 module import. DB-backed packs are configured from the UI at
 `/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
 can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
-Pack role (`default` / `override`) derives the priority tier — admins
-never enter integers. See `app/packs/` for the subsystem, the user
-guide at `docs/ui/actions.md`, and starter packs at
-`docs/examples/action-packs/`.
+Pack precedence is a single linear `ActionPack.position` (higher wins,
+bundled implicit at 0); operators reorder via drag-to-reorder on the
+**Action Packs** page. Per-key conflicts can also be pinned via
+`action_resolution` rows — the wizard captures them at activation and
+the registry rebuild auto-pins the previous winner if a sync introduces
+a fresh conflict (freeze-on-fresh-conflict, never silently flips).
+See `app/packs/` for the subsystem, the user guide at
+`docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
 
 **Bundled pack mirrors `labdog-playbooks`.** The directory at
 `backend/app/ansible/` is a byte-identical mirror of

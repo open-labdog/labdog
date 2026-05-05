@@ -131,7 +131,6 @@ export interface VMMapping {
 }
 
 export type PackSourceType = "git" | "local"
-export type PackRole = "default" | "override"
 
 export interface ActionPack {
   id: number
@@ -145,9 +144,9 @@ export interface ActionPack {
   path: string
   /** Absolute filesystem path for source_type=local. Null for git. */
   local_path: string | null
-  role: PackRole
-  /** Derived server-side from (source_type, role). Read-only. */
-  priority: number
+  /** Linear precedence ordering. Higher wins on action-key collisions.
+   * Bundled is implicit at 0. */
+  position: number
   enabled: boolean
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
@@ -162,6 +161,39 @@ export interface ActionPackSyncResponse {
   message: string
   current_sha: string | null
   last_synced_at: string | null
+}
+
+export interface ActionPackReorderRequest {
+  /** Top-to-bottom display order. The first id wins on action-key
+   * collisions (highest position). Must list every existing pack
+   * exactly once; bundled is implicit and never appears here. */
+  pack_ids: number[]
+}
+
+export interface ResolutionPack {
+  pack_id: number | null
+  pack_name: string
+  position: number
+}
+
+export interface ContestedActionKey {
+  action_key: string
+  candidates: ResolutionPack[]
+  current_winner: ResolutionPack
+  /** Operator's explicit pin, or null when the winner came from
+   * position-based default (no resolution row present). */
+  resolution: ResolutionPack | null
+  /** True when the live winner came from a freeze decision rather
+   * than the position default — the UI surfaces a "needs your
+   * decision" badge for these. */
+  is_frozen: boolean
+  decided_at: string | null
+  decided_by_user_id: number | null
+}
+
+export interface ActionResolutionRequest {
+  /** Null = bundled wins. */
+  pack_id: number | null
 }
 
 // ---------------------------------------------------------------------------
@@ -211,7 +243,16 @@ export interface RepoScanResponse {
 export interface ActivatePackSelection {
   path: string
   name: string
-  role: PackRole
+}
+
+export interface ActivateKeyResolution {
+  action_key: string
+  /** Path inside the submitted activation set whose pack wins. */
+  winner_pack_path?: string | null
+  /** An existing DB pack wins (operator kept the prior winner). */
+  winner_existing_pack_id?: number | null
+  /** Bundled wins. */
+  winner_is_bundled?: boolean
 }
 
 export interface ActivateGitopsBinding {
@@ -222,13 +263,16 @@ export interface ActivateGitopsBinding {
 export interface RepoActivateRequest {
   packs: ActivatePackSelection[]
   gitops_bindings: ActivateGitopsBinding[]
+  /** Per-key winner decisions for keys this activation makes
+   * contested. One row per such key — the server rejects otherwise. */
+  key_resolutions: ActivateKeyResolution[]
 }
 
 export interface ActivatedPackOut {
   pack_id: number
   name: string
   path: string
-  role: PackRole
+  position: number
   requested_name: string
   name_was_disambiguated: boolean
 }
