@@ -39,20 +39,19 @@ async def test_unknown_action_returns_400(superuser_client, db, stub_celery_disp
     assert "Unknown action" in resp.text
 
 
-async def test_builtin_action_rejected_at_runs_endpoint(
+async def test_builtin_action_dispatches_via_runs_endpoint(
     superuser_client, db, stub_celery_dispatch
 ):
-    """Built-ins go through /api/scheduled-actions (or its run-now), not
-    the ad-hoc /actions/runs path. C5 will eventually dispatch them via
-    a forked per-host task; until then they're cleanly rejected here."""
+    """C5 wired built-in dispatch — /api/actions/runs is now universal."""
     host = await create_host(db)
     resp = await superuser_client.post(
         "/api/actions/runs",
         json={"action_key": "_builtin.collect_state", "host_id": host.id},
     )
-    assert resp.status_code == 400
+    assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert "Built-in actions cannot be dispatched" in body["detail"]
+    assert body["action_key"] == "_builtin.collect_state"
+    assert body["status"] == "queued"
 
 
 async def test_missing_required_parameter_returns_422(
