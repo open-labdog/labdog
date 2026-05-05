@@ -138,6 +138,21 @@ is *not* part of the mirror. A fresh install also auto-registers
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
 
+### Scheduled actions
+
+Any registered action — pack-supplied or built-in — can be cron-
+scheduled through the unified `ScheduledAction` model
+(`app/models/scheduled_action.py`). The scheduler at
+`app/tasks/scheduled_action_schedule.py` ticks every 60s via RedBeat,
+walks the `scheduled_actions` table, and dispatches due rows through
+the same `app.tasks.action_orchestrator.run_action` Celery task that
+`POST /api/actions/runs` uses. Built-in pseudo-actions (`_builtin.sync`
+/ `_builtin.drift_check` / `_builtin.collect_state`, registered in
+`app/actions/builtins.py`) wrap existing Celery tasks via thin
+per-host wrappers in `app/tasks/builtin_dispatchers.py`. The legacy
+`UpdateWorkflow` model has been retired — its rows are backfilled on
+upgrade.
+
 ## Working with `plans/`
 
 When picking up substantive design work that needs more than a

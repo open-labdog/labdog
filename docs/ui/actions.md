@@ -4,19 +4,28 @@
 pages; management UI at `/action-packs` (sidebar → Integrations → Action
 Packs).
 
-Actions are **ad-hoc Ansible playbook runs** LabDog can trigger against a
-host or a group. They're distinct from [Update Workflows](workflows.md)
-(which are scheduled + opinionated about Linux/K8s upgrades) — actions
-are the generic "run this playbook on that host with these parameters,
-and optionally wrap it in a Proxmox snapshot so I can roll back if it
-goes wrong" primitive.
+Actions are **Ansible playbook runs** LabDog can trigger against a host,
+a group, or the entire fleet. Run them ad-hoc from the Actions tab, or
+schedule them via cron on the [Scheduled Actions page](#scheduled-actions).
+The same execution path serves both — there's no "ad-hoc only" or
+"schedule only" action.
 
-The catalog of actions comes from **packs** — pluggable collections of
-playbooks. LabDog ships with a bundled pack baked into the image; admins
-add their own packs (from a git repo or a local directory) via the UI to
-extend or override it.
+The catalog comes from two sources:
+
+- **Built-in pseudo-actions** (`_builtin.*`) wrap operations LabDog
+  already performs internally: `_builtin.sync` (coalesced per-host
+  module sync), `_builtin.drift_check` (compare desired vs current
+  state), and `_builtin.collect_state` (refresh cached host facts).
+  They have no Ansible playbook on disk — they're pure code dispatch
+  paths. The leading underscore is reserved; pack-supplied actions
+  cannot register a key starting with `_`.
+- **Pack-supplied actions** come from **packs** — pluggable collections
+  of playbooks. LabDog ships with a bundled pack baked into the image;
+  admins add their own packs (from a git repo or a local directory) to
+  extend or override it.
 
 - [Running actions](#running-actions)
+- [Scheduled actions](#scheduled-actions)
 - [Action packs](#action-packs)
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
@@ -51,8 +60,58 @@ Live stdout streams into the run-detail page; when it finishes you see a
 green/red status chip and the full captured output. Runs are stored in
 the DB — history is visible in the same tab.
 
-**Who can run actions:** any logged-in user. **Who can configure packs:**
-superusers only.
+**Who can run actions:** any logged-in user. **Who can configure packs
+or schedules:** superusers only.
+
+---
+
+## Scheduled actions
+
+`/schedules` (sidebar → **Scheduled Actions**) lists every cron-driven
+action across the fleet. Each row pairs an action_key with a target
+(host / group / fleet) and a 5-field cron expression. The unified
+scheduler ticks every 60 seconds, walks the table, and dispatches any
+row that's due into the same execution path as the ad-hoc Run button.
+
+**Three places to create a schedule:**
+
+- **+ New** on the Scheduled Actions page — pick action + target
+  through the wizard.
+- **Schedule…** button on an action card — preselects the action_key.
+- **Schedule action** on a host / group detail page — preselects the
+  target.
+
+**Targets:**
+
+- **Host** — runs against one host. Available for any action with
+  `supports_host: true` in its manifest.
+- **Group** — runs against every member of a host group. Requires
+  `supports_group: true`.
+- **Fleet** — runs against every host in the inventory. Reserved for
+  actions that explicitly opt in via `supports_fleet: true` — meaning
+  `_builtin.drift_check` and `_builtin.collect_state` today.
+  Pack-supplied actions default to `false`; flip the manifest field
+  if your action genuinely makes sense fleet-wide.
+
+**Run history** is the unified `action_runs` table: scheduled runs
+appear in the same drawer as ad-hoc runs, with a `scheduled_action_id`
+column tying them back to the row that fired them. Deleting a schedule
+sets that FK to NULL — history is preserved.
+
+**GitOps:** a group YAML file can declare `scheduled_actions:` as a
+list, one entry per action_key. The importer applies leave-alone-on-
+absence semantics: omitting the section preserves DB rows; an empty
+list deletes them all for that group.
+
+```yaml
+scheduled_actions:
+  - action_key: linux-upgrade
+    enabled: true
+    schedule_cron: "0 3 * * 0"
+    parameters: {}
+    snapshot_enabled: true
+    auto_rollback: true
+```
 
 ---
 
