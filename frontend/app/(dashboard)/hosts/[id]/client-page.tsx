@@ -701,59 +701,6 @@ function SyncStatusMessage({
   )
 }
 
-function WorkflowStatusSection({ hostId }: { hostId: number }) {
-  const { data: lastRun, isLoading } = useQuery<import("@/lib/types").WorkflowHostRun | null>({
-    queryKey: ["host-latest-workflow-run", hostId],
-    queryFn: async () => {
-      const res = await fetch(`/api/hosts/${hostId}/latest-workflow-run`, {
-        credentials: "include",
-      })
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`${res.status}`)
-      return res.json()
-    },
-    retry: false,
-  })
-
-  if (isLoading || lastRun === undefined) return null
-  if (lastRun === null) return null
-
-  const isFailed = lastRun.status === "failed"
-
-  return (
-    <div className={`rounded-lg border p-4 space-y-0 ${isFailed ? "border-red-700/50 bg-red-950/20" : "border-slate-700 bg-slate-900"}`}>
-      <div className="pb-3 mb-1 border-b border-slate-800">
-        <h3 className="text-sm font-semibold text-slate-200">Last Workflow Run</h3>
-      </div>
-      <InfoRow label="Step">
-        <Badge className={isFailed ? "bg-red-700 text-white" : "bg-green-700 text-white"}>
-          {lastRun.step.charAt(0).toUpperCase() + lastRun.step.slice(1)}
-        </Badge>
-      </InfoRow>
-      <InfoRow label="Status">
-        <Badge className={
-          lastRun.status === "success" ? "bg-green-600 text-white"
-            : lastRun.status === "failed" ? "bg-red-600 text-white"
-            : lastRun.status === "running" ? "bg-blue-600 text-white"
-            : "bg-slate-600 text-white"
-        }>
-          {lastRun.status.charAt(0).toUpperCase() + lastRun.status.slice(1)}
-        </Badge>
-      </InfoRow>
-      {lastRun.completed_at && (
-        <InfoRow label="Completed">
-          {new Date(lastRun.completed_at).toLocaleString()}
-        </InfoRow>
-      )}
-      {lastRun.error_message && (
-        <div className="pt-2">
-          <div className="text-red-400 text-sm">{lastRun.error_message}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules"
 
 export default function HostDetailPage() {
@@ -2428,8 +2375,7 @@ export default function HostDetailPage() {
           )}
           {host && <ProxmoxVMSection hostId={id} queryClient={queryClient} />}
           {host && <SyncStatusMessage host={host} modules={currentStateQuery.data} />}
-          {host && <WorkflowStatusSection hostId={id} />}
-        </>
+            </>
       )}
 
       {activeTab === "groups" && (
