@@ -9,19 +9,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
+import { RunStatusBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/utils"
 import type { ActionRun, ScheduledAction } from "@/lib/types"
 
-const STATUS_BADGE: Record<string, string> = {
-  succeeded: "bg-green-600 text-white",
-  failed: "bg-red-600 text-white",
-  partial: "bg-amber-600 text-white",
-  running: "bg-blue-600 text-white animate-pulse",
-  queued: "bg-blue-600/60 text-white",
-  cancelled: "bg-slate-600 text-white",
-}
+const RUN_LIMIT = 20
 
 interface RunHistoryDrawerProps {
   scheduledAction: ScheduledAction
@@ -38,19 +31,22 @@ export function RunHistoryDrawer({
     queryKey: ["scheduled-action-runs", scheduledAction.id],
     queryFn: () =>
       apiFetch<ActionRun[]>(
-        `/api/scheduled-actions/${scheduledAction.id}/runs?limit=20`,
+        `/api/scheduled-actions/${scheduledAction.id}/runs?limit=${RUN_LIMIT}`,
       ),
     enabled: open,
     refetchInterval: (query) => {
       const data = query.state.data
-      if (
-        data?.some((r) => r.status === "running" || r.status === "queued")
-      ) {
+      if (data?.some((r) => r.status === "running" || r.status === "queued")) {
         return 3000
       }
       return false
     },
   })
+
+  // The query returns at most RUN_LIMIT rows. If exactly that many came
+  // back there are probably more — flag it so operators don't audit
+  // against silently-truncated history.
+  const possiblyTruncated = (runs?.length ?? 0) >= RUN_LIMIT
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -79,16 +75,14 @@ export function RunHistoryDrawer({
         <div className="mt-4 space-y-2">
           {isLoading && <p className="text-sm text-slate-500">Loading…</p>}
           {!isLoading && runs && runs.length === 0 && (
-            <p className="text-sm text-slate-500">
-              No runs recorded yet.
-            </p>
+            <p className="text-sm text-slate-500">No runs recorded yet.</p>
           )}
           {runs?.map((run) => {
             const detailHref = run.host_id
               ? `/hosts/${run.host_id}/actions/runs/${run.id}`
               : run.group_id
-              ? `/groups/${run.group_id}/actions/runs/${run.id}`
-              : `/actions/runs/${run.id}`
+                ? `/groups/${run.group_id}/actions/runs/${run.id}`
+                : `/actions/runs/${run.id}`
             return (
               <Link
                 key={run.id}
@@ -96,9 +90,7 @@ export function RunHistoryDrawer({
                 className="flex items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm hover:border-slate-600"
               >
                 <div className="flex items-center gap-2">
-                  <Badge className={STATUS_BADGE[run.status] ?? "bg-slate-700"}>
-                    {run.status}
-                  </Badge>
+                  <RunStatusBadge status={run.status} />
                   <span className="text-slate-400">
                     {formatRelativeTime(run.started_at ?? run.created_at)}
                   </span>
@@ -108,6 +100,13 @@ export function RunHistoryDrawer({
             )
           })}
         </div>
+
+        {possiblyTruncated && (
+          <p className="mt-3 text-xs text-slate-500">
+            Showing the latest {RUN_LIMIT} runs. Older runs are still in the
+            audit log.
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   )
