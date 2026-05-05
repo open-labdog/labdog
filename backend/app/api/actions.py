@@ -5,10 +5,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
+from app.actions.validation import build_param_model
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
@@ -50,6 +52,7 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         destructive=defn.destructive,
         supports_group=defn.supports_group,
         supports_host=defn.supports_host,
+        supports_fleet=defn.supports_fleet,
         parameters=params,
         pack_name=defn.pack_name,
         overridden_from=list(defn.overridden_from),
@@ -140,13 +143,12 @@ async def create_run(
             detail="This action does not support group-scoped runs.",
         )
 
-    # Validate required parameters
-    missing = [p.key for p in action.parameters if p.required and p.key not in body.parameters]
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Missing required parameters: {', '.join(missing)}",
-        )
+    # Validate parameters against the action's manifest schema. Catches
+    # missing-required, type-mismatch, and unknown-key errors uniformly.
+    try:
+        build_param_model(action).model_validate(body.parameters)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
 
     # Advisory lock — prevents duplicate concurrent runs for same action+scope
     lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"
