@@ -6,7 +6,7 @@ Packs).
 
 Actions are **Ansible playbook runs** LabDog can trigger against a host,
 a group, or the entire fleet. Run them ad-hoc from the Actions tab, or
-schedule them via cron on the [Scheduled Actions page](#scheduled-actions).
+schedule them via cron on the [Schedules page](#scheduled-actions).
 The same execution path serves both — there's no "ad-hoc only" or
 "schedule only" action.
 
@@ -67,7 +67,7 @@ or schedules:** superusers only.
 
 ## Scheduled actions
 
-`/schedules` (sidebar → **Scheduled Actions**) lists every cron-driven
+`/schedules` (sidebar → **Schedules**) lists every cron-driven
 action across the fleet. Each row pairs an action_key with a target
 (host / group / fleet) and a 5-field cron expression. The unified
 scheduler ticks every 60 seconds, walks the table, and dispatches any
@@ -75,7 +75,7 @@ row that's due into the same execution path as the ad-hoc Run button.
 
 **Three places to create a schedule:**
 
-- **+ New** on the Scheduled Actions page — pick action + target
+- **+ New** on the Schedules page — pick action + target
   through the wizard.
 - **Schedule…** button on an action card — preselects the action_key.
 - **Schedule action** on a host / group detail page — preselects the

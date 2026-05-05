@@ -493,7 +493,7 @@ function PickerStep({
   const packs = actions.filter((a) => !a.key.startsWith("_builtin."))
 
   return (
-    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="mt-4 space-y-4">
       <div className="space-y-2">
         <Label className="text-sm font-medium text-slate-200">Action</Label>
         <select

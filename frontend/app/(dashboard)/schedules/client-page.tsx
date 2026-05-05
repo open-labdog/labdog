@@ -74,11 +74,11 @@ export default function SchedulesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Scheduled Actions" }]} />
+      <Breadcrumb items={[{ label: "Schedules" }]} />
 
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Scheduled Actions</h1>
+          <h1 className="text-2xl font-bold text-white">Schedules</h1>
           <p className="text-slate-400 text-sm mt-1">
             Cron-driven runs of any registered action across hosts, groups, or
             the entire fleet.
