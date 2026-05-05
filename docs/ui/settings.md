@@ -53,12 +53,11 @@ The Settings page controls operational behaviour that can be tuned without resta
 
 ---
 
-### Update Workflows
+### Scheduled Actions
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Schedule Check Interval | `workflow.schedule_check_interval_seconds` | `60` | 10 – 300 sec | How often the scheduler checks whether any workflow is due to run. Lower = more responsive scheduling; higher = less DB load. |
-| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before an update are automatically cleaned up after this many hours if the workflow completes successfully. |
+| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
 
 ---
 

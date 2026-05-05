@@ -1,0 +1,63 @@
+# GitOps example: per-group scheduled actions
+#
+# `scheduled_actions:` is a **list** — multiple schedules per group are
+# allowed (one per action_key). The importer applies leave-alone-on-
+# absence semantics: omitting the section preserves DB rows; an empty
+# list (`scheduled_actions: []`) deletes every schedule for the group.
+# Each entry is upserted by the composite key (target_kind='group',
+# target_id=this_group, action_key).
+#
+# This file demonstrates every field, common edge cases, and how
+# `action_key` + `parameters` interact for actions that require typed
+# parameters (e.g. `linux-os-upgrade`).
+
+group: production-app-servers
+priority: 100
+
+scheduled_actions:
+  # ---------------------------------------------------------------------------
+  # Weekly Linux package upgrade — destructive, snapshot-protected
+  # ---------------------------------------------------------------------------
+  - action_key: linux-upgrade
+    enabled: true
+
+    # 5-field cron, validated by `croniter` at import time.
+    # Time zone: schedules run in UTC.
+    #   "0 3 * * 0"       — Sundays at 03:00 UTC
+    #   "0 3 * * 1-5"     — weekdays at 03:00 UTC
+    #   "30 2 1 * *"      — first of every month at 02:30 UTC
+    schedule_cron: "0 3 * * 0"
+
+    # Number of hosts processed in parallel. `batch_size: 1` is safest.
+    # Increase for stateless tiers behind a load balancer.
+    batch_size: 1
+
+    # Destructive-flow toggles — the orchestrator only honours these
+    # when the action's manifest sets `destructive: true`. Non-destructive
+    # actions (e.g. `_builtin.drift_check`) ignore them.
+    snapshot_enabled: true
+    verify_enabled: true
+    auto_rollback: true
+
+    # Action parameters — free-form dict validated against the action's
+    # manifest schema at import time.
+    parameters: {}
+
+  # ---------------------------------------------------------------------------
+  # Hourly drift check — built-in pseudo-action, idempotent, no parameters
+  # ---------------------------------------------------------------------------
+  - action_key: _builtin.drift_check
+    enabled: true
+    schedule_cron: "0 * * * *"
+
+  # ---------------------------------------------------------------------------
+  # Major OS upgrade (paused) — typed parameters required
+  # ---------------------------------------------------------------------------
+  - action_key: linux-os-upgrade
+    enabled: false   # staged in git before flipping live
+    schedule_cron: null   # manually triggered for now
+    parameters:
+      current_version: "bookworm"
+      next_version: "trixie"
+    snapshot_enabled: true
+    auto_rollback: true

@@ -51,6 +51,72 @@ syncs and unblocks bulk-sync UX.
   endpoints now emit an audit row at the moment of trigger
   (separate from the existing `sync_completed` row at finish).
 
+#### Schedulable actions
+
+Folds the legacy `UpdateWorkflow` model into a unified `ScheduledAction`
+that can schedule any registered action — pack-supplied or built-in —
+against a host, a group, or the entire fleet.
+
+- **New `ScheduledAction` model** at
+  `app/models/scheduled_action.py` with `target_kind` (`host` /
+  `group` / `fleet`), `target_id`, `action_key`, `parameters`,
+  `schedule_cron`, plus the universal destructive-flow toggles
+  (`snapshot_enabled`, `verify_enabled`, `auto_rollback`,
+  `batch_size`). `action_runs` gets a nullable `scheduled_action_id`
+  FK and mirrors of the three toggles so per-host executors see
+  immutable run-time intent.
+- **Three built-in pseudo-actions** (`_builtin.sync`,
+  `_builtin.drift_check`, `_builtin.collect_state`) registered
+  alongside pack-supplied actions in
+  `app/actions/builtins.py`. The `_builtin.` namespace is reserved —
+  pack manifests with underscore-prefixed keys are rejected at
+  validation time. New `supports_fleet` capability flag on
+  `ActionDefinition` and `ActionManifest`; opt-in only.
+- **Unified scheduler** at
+  `app/tasks/scheduled_action_schedule.py:check_due` (replaces
+  `workflow_schedule.check_scheduled_workflows`). RedBeat ticks every
+  60 s; `last_dispatched_at` is the cron walk's reference, so a
+  missed tick doesn't fire-twice. Schedules with a non-terminal
+  `ActionRun` are skipped — no duplicate dispatch.
+- **Per-host built-in dispatchers** in
+  `app/tasks/builtin_dispatchers.py` — thin wrappers that delegate
+  to existing engines (`run_host_sync` for sync, the new
+  `_check_drift_for_one_host` helper for drift, `collect_host_facts`
+  for state) and write back `ActionHostRun.status`. `_builtin.sync`
+  creates the SyncJob row option-c expects.
+- **`POST /api/scheduled-actions/*` API** — CRUD plus run-now and
+  run-history-list endpoints. Superuser-only. Cross-cutting
+  validation enforces target compatibility (`supports_fleet/group/
+  host`), cron syntax via `croniter.is_valid`, and parameter shape
+  via the new `app.actions.validation.build_param_model` Pydantic
+  dynamic-model builder shared with `POST /actions/runs`.
+- **GitOps `scheduled_actions:` block** (replaces the legacy
+  singleton `workflow:`). List-shaped, leave-alone-on-absence
+  semantics: section absent ⇒ DB rows untouched; section present
+  ⇒ delete-and-replace by `(target_kind='group', target_id, action_key)`.
+- **Frontend** — rebuilt `/schedules` page with filter strip
+  (Built-in / Pack / Target / enabled-only / search) and a kebab
+  menu (Edit, Run now, View runs, Delete); shared
+  `<ScheduleActionDialog>` 4-step wizard reachable from `/schedules`
+  "+ New", action cards on host/group detail (preselects action),
+  and a new "Schedules" tab on host & group detail (preselects
+  target); the `<CronInput>` component posts to
+  `/api/scheduled-actions/validate-cron` for live next-fire-times
+  preview; new generic `/actions/runs/[runId]` route for fleet runs.
+
+**Migration:** alembic backfills `update_workflows` rows into
+`scheduled_actions` (target_kind=`group`, mapping
+`pre_update_snapshot`→`snapshot_enabled`) and drops the legacy
+`workflow_runs`, `workflow_host_runs`, `update_workflows` tables
+plus the three Postgres enums. **Breaking:** the legacy
+`/api/groups/{id}/workflow/*` endpoints are gone, the legacy YAML
+`workflow:` block is dropped (re-shape on next push), the
+`qemu-guest-agent` PackageRule auto-add side-effect is removed
+(footgun), and `verification_prompt` / `auto_reboot` columns are
+dropped (nothing read them). The dead
+`workflow.schedule_check_interval_seconds` setting is gone — the
+scheduler ticks at a hardcoded 60 s.
+
 #### Documentation & process
 
 - New top-level `ROADMAP.md` — high-altitude in-design / ideas /
