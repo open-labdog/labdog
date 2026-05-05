@@ -52,7 +52,7 @@ export function ScheduledActionsSection({
       {isLoading ? (
         <TableSkeleton rows={2} columns={6} />
       ) : (
-        <ScheduledActionsList rows={rows ?? []} />
+        <ScheduledActionsList rows={rows ?? []} hideColumns={["target"]} />
       )}
 
       {createOpen && (

@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Tooltip } from "@/components/ui/tooltip"
+import { EnabledBadge, RunStatusBadge } from "@/components/status-badge"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { showSuccess } from "@/lib/toast"
@@ -32,19 +33,21 @@ const STATUS_BORDER: Record<string, string> = {
   queued: "border-l-2 border-l-blue-500/40",
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  succeeded: "bg-green-600 text-white",
-  failed: "bg-red-600 text-white",
-  partial: "bg-amber-600 text-white",
-  running: "bg-blue-600 text-white animate-pulse",
-  queued: "bg-blue-600/60 text-white",
-}
-
 interface ScheduledActionsListProps {
   rows: ScheduledAction[]
+  /** When set, hides columns that are redundant in scope (e.g. the
+   *  Target column is always "this host" on a host detail page). */
+  hideColumns?: ("target" | "category")[]
+  /** Optional custom empty-state — used by /schedules to surface a CTA. */
+  emptyState?: React.ReactNode
 }
 
-export function ScheduledActionsList({ rows }: ScheduledActionsListProps) {
+export function ScheduledActionsList({
+  rows,
+  hideColumns = [],
+  emptyState,
+}: ScheduledActionsListProps) {
+  const showTarget = !hideColumns.includes("target")
   const [editing, setEditing] = useState<ScheduledAction | null>(null)
   const [historyFor, setHistoryFor] = useState<ScheduledAction | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<ScheduledAction | null>(null)
@@ -70,9 +73,13 @@ export function ScheduledActionsList({ rows }: ScheduledActionsListProps) {
 
   if (rows.length === 0) {
     return (
-      <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 text-center text-sm text-slate-400">
-        No scheduled actions yet.
-      </div>
+      <>
+        {emptyState ?? (
+          <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 text-center text-sm text-slate-400">
+            No schedules yet.
+          </div>
+        )}
+      </>
     )
   }
 
@@ -83,8 +90,9 @@ export function ScheduledActionsList({ rows }: ScheduledActionsListProps) {
           <thead className="border-b border-slate-700 text-left text-xs uppercase text-slate-500">
             <tr>
               <th className="px-3 py-2 font-medium">Action</th>
-              <th className="px-3 py-2 font-medium">Target</th>
+              {showTarget && <th className="px-3 py-2 font-medium">Target</th>}
               <th className="px-3 py-2 font-medium">Schedule</th>
+              <th className="px-3 py-2 font-medium">Enabled</th>
               <th className="px-3 py-2 font-medium">Last run</th>
               <th className="px-3 py-2 font-medium">Options</th>
               <th className="px-3 py-2 font-medium" />
@@ -95,6 +103,7 @@ export function ScheduledActionsList({ rows }: ScheduledActionsListProps) {
               <ScheduledActionRow
                 key={row.id}
                 row={row}
+                showTarget={showTarget}
                 openMenu={openMenu === row.id}
                 onOpenMenu={(v) => setOpenMenu(v ? row.id : null)}
                 onEdit={() => {
@@ -154,6 +163,7 @@ export function ScheduledActionsList({ rows }: ScheduledActionsListProps) {
 
 function ScheduledActionRow({
   row,
+  showTarget,
   openMenu,
   onOpenMenu,
   onEdit,
@@ -162,6 +172,7 @@ function ScheduledActionRow({
   onViewRuns,
 }: {
   row: ScheduledAction
+  showTarget: boolean
   openMenu: boolean
   onOpenMenu: (v: boolean) => void
   onEdit: () => void
@@ -196,9 +207,11 @@ function ScheduledActionRow({
           <span className="text-xs text-slate-500">from {row.pack_name}</span>
         )}
       </td>
-      <td className="px-3 py-2 align-top">
-        <TargetCell row={row} />
-      </td>
+      {showTarget && (
+        <td className="px-3 py-2 align-top">
+          <TargetCell row={row} />
+        </td>
+      )}
       <td className="px-3 py-2 align-top">
         {row.schedule_cron ? (
           <>
@@ -214,11 +227,12 @@ function ScheduledActionRow({
         )}
       </td>
       <td className="px-3 py-2 align-top">
+        <EnabledBadge enabled={row.enabled} />
+      </td>
+      <td className="px-3 py-2 align-top">
         {row.last_run ? (
           <div className="flex items-center gap-2">
-            <Badge className={STATUS_BADGE[row.last_run.status] ?? "bg-slate-700"}>
-              {row.last_run.status}
-            </Badge>
+            <RunStatusBadge status={row.last_run.status} />
             <span className="text-xs text-slate-400">
               {formatRelativeTime(
                 row.last_run.started_at ?? row.last_run.created_at,
