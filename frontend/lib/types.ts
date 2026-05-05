@@ -682,6 +682,9 @@ export interface ActionDefinition {
   destructive: boolean
   supports_group: boolean
   supports_host: boolean
+  /** Whether the action makes sense across the entire fleet. Drives the
+   *  Fleet target option on the schedule dialog. Conservative default. */
+  supports_fleet: boolean
   parameters: ActionParameter[]
   /** Pack whose manifest provided this action. */
   pack_name: string
@@ -707,8 +710,16 @@ export interface ActionRun {
   action_version: string
   host_id: number | null
   group_id: number | null
+  /** NULL for ad-hoc runs; populated when the run was dispatched by the
+   *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
+  scheduled_action_id: number | null
   parameters: Record<string, unknown>
   parallelism: number
+  /** Universal destructive-flow toggles, mirrored from the schedule
+   *  at dispatch time. Ignored when the action is non-destructive. */
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
   status: string
   triggered_by_user_id: number | null
   started_at: string | null
@@ -716,4 +727,64 @@ export interface ActionRun {
   error_message: string | null
   created_at: string
   host_runs: ActionHostRun[]
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled actions (unified cron-driven action dispatch)
+// ---------------------------------------------------------------------------
+
+export type ScheduledActionTargetKind = "host" | "group" | "fleet"
+
+export interface ScheduledActionRunSummary {
+  id: number
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+export interface ScheduledAction {
+  id: number
+  target_kind: ScheduledActionTargetKind
+  target_id: number | null
+  action_key: string
+  parameters: Record<string, unknown>
+  schedule_cron: string | null
+  enabled: boolean
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
+  batch_size: number
+  last_dispatched_at: string | null
+  created_at: string
+  updated_at: string
+  /** Server-resolved presentation helpers from /api/scheduled-actions. */
+  target_name: string | null
+  action_name: string | null
+  pack_name: string | null
+  destructive: boolean | null
+  last_run: ScheduledActionRunSummary | null
+}
+
+export interface ScheduledActionCreate {
+  target_kind: ScheduledActionTargetKind
+  target_id: number | null
+  action_key: string
+  parameters?: Record<string, unknown>
+  schedule_cron: string | null
+  enabled?: boolean
+  snapshot_enabled?: boolean
+  verify_enabled?: boolean
+  auto_rollback?: boolean
+  batch_size?: number
+}
+
+export type ScheduledActionUpdate = Partial<
+  Omit<ScheduledActionCreate, "action_key" | "target_kind" | "target_id">
+>
+
+export interface ValidateCronResponse {
+  valid: boolean
+  message: string | null
+  next_run_at: string[]
 }
