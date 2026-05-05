@@ -43,9 +43,7 @@ async def _begin_host_run(host_run_id: int) -> int | None:
 
     async with task_session() as db:
         host_run = (
-            await db.execute(
-                select(ActionHostRun).where(ActionHostRun.id == host_run_id)
-            )
+            await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
         ).scalar_one_or_none()
         if host_run is None:
             logger.warning("builtin_dispatchers: ActionHostRun %d not found", host_run_id)
@@ -57,9 +55,7 @@ async def _begin_host_run(host_run_id: int) -> int | None:
         return host_id
 
 
-async def _finish_host_run(
-    host_run_id: int, *, succeeded: bool, error: str | None = None
-) -> None:
+async def _finish_host_run(host_run_id: int, *, succeeded: bool, error: str | None = None) -> None:
     from sqlalchemy import select
 
     from app.db import task_session
@@ -67,9 +63,7 @@ async def _finish_host_run(
 
     async with task_session() as db:
         host_run = (
-            await db.execute(
-                select(ActionHostRun).where(ActionHostRun.id == host_run_id)
-            )
+            await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
         ).scalar_one_or_none()
         if host_run is None:
             return
@@ -109,9 +103,23 @@ def run_builtin_collect_state(action_run_id: int, host_run_id: int) -> dict:
 
 
 async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
+    from sqlalchemy import select
+
+    from app.db import task_session
+    from app.models.host import Host
+
     host_id = await _begin_host_run(host_run_id)
     if host_id is None:
         return
+
+    # Snapshot the host's os_facts_collected_at before the call so we
+    # can detect a silent SSH-error skip — collect_host_facts swallows
+    # SSH/OSError/TimeoutError internally and returns success from
+    # Celery's perspective even when no facts were collected.
+    async with task_session() as db:
+        host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+        before = host.os_facts_collected_at if host else None
+
     succeeded = True
     error: str | None = None
     try:
@@ -124,6 +132,21 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
         if result.failed():
             succeeded = False
             error = str(result.result)
+        else:
+            async with task_session() as db:
+                host = (
+                    await db.execute(select(Host).where(Host.id == host_id))
+                ).scalar_one_or_none()
+                after = host.os_facts_collected_at if host else None
+            if after == before:
+                # Collector ran but didn't advance the timestamp ⇒ SSH
+                # failure (or no SSH key configured) was silently
+                # swallowed. Surface as a failed ActionHostRun.
+                succeeded = False
+                error = (
+                    "facts collection returned without writing — likely "
+                    "SSH error or missing SSH key (see worker logs)"
+                )
     except Exception as exc:  # noqa: BLE001
         succeeded = False
         error = str(exc)
@@ -162,9 +185,7 @@ async def _drift_check_async(action_run_id: int, host_run_id: int) -> None:
     error: str | None = None
     try:
         async with task_session() as db:
-            host = (
-                await db.execute(select(Host).where(Host.id == host_id))
-            ).scalar_one_or_none()
+            host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
             if host is None:
                 succeeded = False
                 error = f"Host {host_id} not found"
@@ -216,9 +237,9 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
 
     params = await _load_action_run_parameters(action_run_id)
     raw_filter = params.get("module_filter") or ""
-    module_filter: list[str] | None = (
-        [m.strip() for m in raw_filter.split(",") if m.strip()] or None
-    )
+    module_filter: list[str] | None = [
+        m.strip() for m in raw_filter.split(",") if m.strip()
+    ] or None
 
     succeeded = True
     error: str | None = None
@@ -240,9 +261,23 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
             error = str(result.result)
         else:
             payload = result.result or {}
-            if payload.get("status") != "success":
+            status = payload.get("status")
+            if status == "success":
+                pass  # succeeded as initialised
+            elif status == "deferred":
+                # The advisory lock was held by another sync job — ours
+                # is queued behind it and the option-c dispatch-next
+                # chain will run it when the in-flight job finishes.
+                # The per-host work isn't done yet, but it's not a
+                # failure either; treat as succeeded with a note.
+                logger.info(
+                    "_builtin.sync deferred (job_id=%s host_id=%s) — queued behind in-flight sync",
+                    job_id,
+                    host_id,
+                )
+            else:
                 succeeded = False
-                error = "sync did not complete successfully"
+                error = f"sync did not complete successfully (status={status!r})"
 
         # Reflect job status back for observability (best-effort).
         async with task_session() as db:
@@ -254,9 +289,7 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
                 JobStatus.failed,
             ):
                 # The orchestrator should always finalise, but defensive.
-                logger.warning(
-                    "_builtin.sync: SyncJob %d still %s after run", job_id, sj.status
-                )
+                logger.warning("_builtin.sync: SyncJob %d still %s after run", job_id, sj.status)
     except Exception as exc:  # noqa: BLE001
         succeeded = False
         error = str(exc)

@@ -365,4 +365,5 @@ class LabDogGroupYAML(BaseModel):
     users: list[LinuxUserYAML] | None = None
     linux_groups: list[LinuxGroupYAML] | None = None
     scheduled_actions: list[ScheduledActionYAML] | None = None
-    model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys (incl. legacy `workflow:`)
+    # Ignore unknown top-level keys (incl. legacy ``workflow:``).
+    model_config = ConfigDict(extra="allow")

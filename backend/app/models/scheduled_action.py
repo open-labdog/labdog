@@ -42,22 +42,14 @@ class ScheduledAction(Base):
     # deletion hooks on host/group delete (see C9).
     target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     action_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    parameters: Mapped[dict] = mapped_column(
-        JSONB, nullable=False, server_default="{}"
-    )
+    parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     schedule_cron: Mapped[str | None] = mapped_column(String(100), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     # Universal columns. See module docstring.
-    snapshot_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
-    verify_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
-    auto_rollback: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
+    snapshot_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    verify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    auto_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     batch_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
     # Scheduler bookkeeping. ``last_dispatched_at`` is the cron walk's

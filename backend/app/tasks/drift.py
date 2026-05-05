@@ -82,9 +82,7 @@ async def _check_drift_for_one_host(host, db) -> bool:
 
         if not host.labdog_source_ip and host.ssh_key_id:
             try:
-                key_result = await db.execute(
-                    select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                )
+                key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
                 ssh_key = key_result.scalar_one_or_none()
                 if ssh_key:
                     private_key_pem = decrypt_ssh_key(

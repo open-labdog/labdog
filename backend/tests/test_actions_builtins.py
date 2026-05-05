@@ -121,11 +121,7 @@ def test_pack_loader_skips_underscore_keyed_manifests(tmp_path: Path) -> None:
 
 def test_action_definition_supports_fleet_default_is_false() -> None:
     """Pack-supplied actions default conservatively to supports_fleet=False."""
-    bundled_keys = [
-        d for d in ACTION_REGISTRY.values() if not d.is_builtin
-    ]
+    bundled_keys = [d for d in ACTION_REGISTRY.values() if not d.is_builtin]
     # The bundled pack's existing actions don't set supports_fleet.
     for defn in bundled_keys:
-        assert defn.supports_fleet is False, (
-            f"{defn.key} unexpectedly has supports_fleet=True"
-        )
+        assert defn.supports_fleet is False, f"{defn.key} unexpectedly has supports_fleet=True"

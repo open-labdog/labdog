@@ -62,6 +62,7 @@ class ActionManifest(BaseModel):
                 "begins with a letter."
             )
         return v
+
     verify_playbook: str | None = Field(
         default=None,
         description=(

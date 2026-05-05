@@ -23,8 +23,9 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def stub_celery_dispatch():
     """Block any Celery send_task during these tests."""
-    with patch("app.api.actions.celery_app", create=True), patch(
-        "celery.app.base.Celery.send_task"
+    with (
+        patch("app.api.actions.celery_app", create=True),
+        patch("celery.app.base.Celery.send_task"),
     ):
         yield
 
@@ -54,9 +55,7 @@ async def test_builtin_action_dispatches_via_runs_endpoint(
     assert body["status"] == "queued"
 
 
-async def test_missing_required_parameter_returns_422(
-    superuser_client, db, stub_celery_dispatch
-):
+async def test_missing_required_parameter_returns_422(superuser_client, db, stub_celery_dispatch):
     """linux-os-upgrade requires current_version and next_version."""
     host = await create_host(db)
     resp = await superuser_client.post(
@@ -77,9 +76,7 @@ async def test_missing_required_parameter_returns_422(
     assert ("next_version",) in missing_fields
 
 
-async def test_type_mismatched_parameter_returns_422(
-    superuser_client, db, stub_celery_dispatch
-):
+async def test_type_mismatched_parameter_returns_422(superuser_client, db, stub_celery_dispatch):
     """linux-os-upgrade.parameters has typed entries — passing the wrong
     type should reject before dispatch, not silently coerce."""
     host = await create_host(db)
@@ -96,9 +93,7 @@ async def test_type_mismatched_parameter_returns_422(
     assert resp.status_code == 422
 
 
-async def test_unknown_parameter_key_returns_422(
-    superuser_client, db, stub_celery_dispatch
-):
+async def test_unknown_parameter_key_returns_422(superuser_client, db, stub_celery_dispatch):
     """``extra='forbid'`` on the dynamic param model → unknown keys 422."""
     host = await create_host(db)
     resp = await superuser_client.post(

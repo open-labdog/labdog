@@ -473,7 +473,6 @@ class TestMultiModuleGroupYAML:
             )
             assert list(resolver2.nameservers) == ["1.1.1.1"]
 
-
         finally:
             for d in [bare_dir, clone_dir, import_dir]:
                 if d.exists():

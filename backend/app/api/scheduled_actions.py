@@ -9,23 +9,26 @@ Validation is shared with ``POST /api/actions/runs`` via
 rejected ad-hoc is also rejected at schedule-create time. Cron syntax
 is validated through ``croniter.is_valid``.
 
-Built-in dispatch routing for ``run-now`` lands in C5 — until then,
-``POST /api/scheduled-actions/{id}/run-now`` for a built-in returns
-202 with a stub error in the response body. Pack-supplied actions
-work today via the existing ``app.tasks.action_orchestrator.run_action``
-task.
+Both ``run-now`` and the unified scheduler dispatch through
+``app.tasks.action_orchestrator.run_action`` — the orchestrator's
+per-host fork (``app.tasks.builtin_dispatchers.*``) handles built-in
+pseudo-actions; pack-supplied actions go through the default Ansible
+runner. Concurrency: ``run-now`` takes a per-target advisory
+transaction lock that mirrors the one in ``POST /api/actions/runs``,
+so two concurrent run-now calls against the same schedule collide
+cleanly with a 409.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from croniter import croniter
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import ValidationError
-from sqlalchemy import desc, select
+from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, ActionDefinition
@@ -67,40 +70,26 @@ def _validate_request(body: ScheduledActionIn) -> ActionDefinition:
     """
     action = ACTION_REGISTRY.get(body.action_key)
     if action is None:
-        raise HTTPException(
-            status_code=400, detail=f"Unknown action_key: {body.action_key!r}"
-        )
+        raise HTTPException(status_code=400, detail=f"Unknown action_key: {body.action_key!r}")
 
     if body.target_kind == "fleet":
         if not action.supports_fleet:
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    f"Action {body.action_key!r} does not support fleet targeting"
-                ),
+                detail=(f"Action {body.action_key!r} does not support fleet targeting"),
             )
         if body.target_id is not None:
-            raise HTTPException(
-                status_code=422, detail="fleet target requires target_id=null"
-            )
+            raise HTTPException(status_code=422, detail="fleet target requires target_id=null")
     elif body.target_kind == "group":
         if not action.supports_group:
-            raise HTTPException(
-                status_code=422, detail="Action does not support group runs"
-            )
+            raise HTTPException(status_code=422, detail="Action does not support group runs")
         if body.target_id is None:
-            raise HTTPException(
-                status_code=422, detail="group target requires target_id"
-            )
+            raise HTTPException(status_code=422, detail="group target requires target_id")
     elif body.target_kind == "host":
         if not action.supports_host:
-            raise HTTPException(
-                status_code=422, detail="Action does not support host runs"
-            )
+            raise HTTPException(status_code=422, detail="Action does not support host runs")
         if body.target_id is None:
-            raise HTTPException(
-                status_code=422, detail="host target requires target_id"
-            )
+            raise HTTPException(status_code=422, detail="host target requires target_id")
 
     if body.schedule_cron is not None and not croniter.is_valid(body.schedule_cron):
         raise HTTPException(status_code=422, detail="Invalid cron expression")
@@ -233,9 +222,7 @@ async def list_scheduled_actions(
         stmt = stmt.where(~ScheduledAction.action_key.startswith("_builtin."))
 
     rows = (await db.execute(stmt)).scalars().all()
-    return [
-        await _hydrate(db, sa, include_last_run=include_last_run) for sa in rows
-    ]
+    return [await _hydrate(db, sa, include_last_run=include_last_run) for sa in rows]
 
 
 @router.post("", response_model=ScheduledActionOut, status_code=201)
@@ -386,11 +373,11 @@ async def run_now(
 ) -> ActionRunOut:
     """Create an immediate ActionRun for this schedule and dispatch it.
 
-    Bypasses the cron walk; same dispatch path as the scheduler. Built-in
-    actions are routed through the orchestrator's per-host fork that lands
-    in C5 — until then this endpoint will create the row, attempt
-    dispatch, and let the existing orchestrator surface "no playbook" if
-    the action is a built-in.
+    Bypasses the cron walk but takes the same per-target advisory
+    transaction lock that ``POST /api/actions/runs`` uses, so two
+    concurrent run-now calls against the same schedule collide cleanly
+    with a 409. Built-in actions and pack-supplied actions both flow
+    through ``app.tasks.action_orchestrator.run_action``.
     """
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -403,12 +390,41 @@ async def run_now(
             detail=f"Action {sa.action_key!r} is no longer registered",
         )
 
-    # Skip if a non-terminal run for this schedule already exists.
+    # Per-target advisory lock to make the in-flight check + insert
+    # race-free across concurrent requests. The lock is transactional
+    # — released on commit or rollback.
+    target_segment = "fleet" if sa.target_kind == "fleet" else f"{sa.target_kind}.{sa.target_id}"
+    lock_key = f"actions.{sa.action_key}.{target_segment}"
+    got_lock = await db.scalar(
+        text("SELECT pg_try_advisory_xact_lock(hashtext(:key))"),
+        {"key": lock_key},
+    )
+    if not got_lock:
+        in_flight = await db.scalar(
+            select(ActionRun.id)
+            .where(
+                ActionRun.scheduled_action_id == sa.id,
+                ActionRun.status.in_(["queued", "running"]),
+            )
+            .limit(1)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "detail": "An identical run is already in flight",
+                "running_run_id": in_flight,
+            },
+        )
+
+    # Belt-and-braces: even with the lock, an old row from before this
+    # transaction's snapshot might still be running. Reject if so.
     in_flight = await db.scalar(
-        select(ActionRun.id).where(
+        select(ActionRun.id)
+        .where(
             ActionRun.scheduled_action_id == sa.id,
             ActionRun.status.in_(["queued", "running"]),
-        ).limit(1)
+        )
+        .limit(1)
     )
     if in_flight is not None:
         raise HTTPException(
@@ -436,7 +452,7 @@ async def run_now(
     db.add(run)
     await db.flush()
     await db.refresh(run)
-    sa.last_dispatched_at = datetime.now(tz=run.created_at.tzinfo)
+    sa.last_dispatched_at = datetime.now(UTC)
     run_id = run.id
 
     await log_action(
@@ -454,9 +470,7 @@ async def run_now(
     try:
         from app.tasks import celery_app  # noqa: PLC0415
 
-        celery_app.send_task(
-            "app.tasks.action_orchestrator.run_action", args=[run_id]
-        )
+        celery_app.send_task("app.tasks.action_orchestrator.run_action", args=[run_id])
     except Exception as exc:  # noqa: BLE001
         logger.warning("Failed to dispatch scheduled run %d: %s", run_id, exc)
 
@@ -465,9 +479,7 @@ async def run_now(
     return out
 
 
-@router.get(
-    "/{scheduled_action_id}/runs", response_model=list[ActionRunOut]
-)
+@router.get("/{scheduled_action_id}/runs", response_model=list[ActionRunOut])
 async def list_runs(
     scheduled_action_id: int,
     limit: int = Query(default=20, ge=1, le=100),
@@ -480,14 +492,18 @@ async def list_runs(
         raise HTTPException(status_code=404, detail="Scheduled action not found")
 
     rows = (
-        await db.execute(
-            select(ActionRun)
-            .where(ActionRun.scheduled_action_id == sa.id)
-            .order_by(desc(ActionRun.created_at))
-            .offset(offset)
-            .limit(limit)
+        (
+            await db.execute(
+                select(ActionRun)
+                .where(ActionRun.scheduled_action_id == sa.id)
+                .order_by(desc(ActionRun.created_at))
+                .offset(offset)
+                .limit(limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     out: list[ActionRunOut] = []
     for r in rows:

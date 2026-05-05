@@ -55,13 +55,17 @@ async def _check_due_async() -> dict:
 
     async with task_session() as db:
         rows = (
-            await db.execute(
-                select(ScheduledAction).where(
-                    ScheduledAction.enabled.is_(True),
-                    ScheduledAction.schedule_cron.isnot(None),
+            (
+                await db.execute(
+                    select(ScheduledAction).where(
+                        ScheduledAction.enabled.is_(True),
+                        ScheduledAction.schedule_cron.isnot(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         for sa in rows:
             try:
@@ -137,9 +141,7 @@ async def _check_due_async() -> dict:
 
             except Exception:
                 # Don't let one bad schedule abort the rest of the walk.
-                logger.exception(
-                    "scheduler: failed to evaluate scheduled_action %d", sa.id
-                )
+                logger.exception("scheduler: failed to evaluate scheduled_action %d", sa.id)
 
     return {
         "dispatched": dispatched,
@@ -161,9 +163,7 @@ def _register_beat_schedule() -> None:
     # legacy task name keeps firing across an upgrade and produces
     # confusing 'task not registered' errors in the worker log.
     try:
-        legacy = RedBeatSchedulerEntry.from_key(
-            "redbeat:check-scheduled-workflows", app=celery_app
-        )
+        legacy = RedBeatSchedulerEntry.from_key("redbeat:check-scheduled-workflows", app=celery_app)
         legacy.delete()
     except Exception:
         # Already gone, or Redis is unreachable — fall through.
