@@ -17,4 +17,4 @@ in:
 | [cron-jobs.yaml](./cron-jobs.yaml) | Cron jobs | Environment dict order-insensitive diff, byte-identical schedule preservation, per-user variants, common schedule patterns |
 | [resolver.yaml](./resolver.yaml) | DNS resolver (singleton) | Three backend types (`resolv_conf` / `systemd_resolved` / `networkmanager`), DNS-over-TLS silent-falsify, options validation, leave-alone semantics |
 | [users.yaml](./users.yaml) | Linux users + groups | `authorized_keys` sort-copy diff, `supplementary_groups` cross-reference warning, protected-name rejection, service-account `/usr/sbin/nologin` shell |
-| [workflow.yaml](./workflow.yaml) | Update workflow schedule (singleton) | Cron schedule validation, batch size, snapshot + rollback toggles, `linux-os-upgrade` parameter requirements, leave-alone semantics |
+| [scheduled-actions.yaml](./scheduled-actions.yaml) | Cron-driven scheduled actions (list) | Multiple schedules per group, action_key validation against the live registry, typed parameters, snapshot + verify + rollback toggles for destructive actions, leave-alone-on-absence semantics |
