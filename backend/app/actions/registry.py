@@ -58,6 +58,7 @@ def reload_registry() -> dict[str, ActionDefinition]:
     touch the network — call ``reload_registry_async`` via the service
     layer if you want a re-sync + reload.
     """
+    from app.actions.builtins import register_builtins  # noqa: PLC0415
     from app.actions.packs import Pack, load_packs  # noqa: PLC0415
     from app.packs.service import checkout_path_for  # noqa: PLC0415
 
@@ -81,6 +82,7 @@ def reload_registry() -> dict[str, ActionDefinition]:
             packs.append(Pack(name=row["name"], path=path, priority=row["priority"]))
 
     new_registry = load_packs(packs)
+    register_builtins(new_registry)
     ACTION_REGISTRY.clear()
     ACTION_REGISTRY.update(new_registry)
     logger.info(
@@ -125,6 +127,7 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     Prefer this from FastAPI handlers so the reload participates in the
     request's DB context instead of opening a separate sync connection.
     """
+    from app.actions.builtins import register_builtins  # noqa: PLC0415
     from app.actions.packs import load_packs  # noqa: PLC0415
     from app.packs.service import load_db_packs  # noqa: PLC0415
 
@@ -132,6 +135,7 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     packs.extend(await load_db_packs(db))
 
     new_registry = load_packs(packs)
+    register_builtins(new_registry)
     ACTION_REGISTRY.clear()
     ACTION_REGISTRY.update(new_registry)
     logger.info(
@@ -142,12 +146,15 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     return ACTION_REGISTRY
 
 
-# Populate with bundled pack at import time so the registry is never
-# empty. DB-backed packs join on FastAPI startup / Celery worker startup.
+# Populate with bundled pack + built-ins at import time so the registry
+# is never empty. DB-backed packs join on FastAPI startup / Celery
+# worker startup via reload_registry / reload_registry_async.
 def _load_bundled_only() -> None:
+    from app.actions.builtins import register_builtins  # noqa: PLC0415
     from app.actions.packs import load_packs  # noqa: PLC0415
 
     new_registry = load_packs([_bundled_pack()])
+    register_builtins(new_registry)
     ACTION_REGISTRY.clear()
     ACTION_REGISTRY.update(new_registry)
 
