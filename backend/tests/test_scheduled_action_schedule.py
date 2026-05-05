@@ -73,10 +73,10 @@ async def test_due_schedule_dispatches_run(db):
 
     # Run row exists, FK linked back, host_id propagated.
     runs = (
-        await db.execute(
-            select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)))
+        .scalars()
+        .all()
+    )
     assert len(runs) == 1
     run = runs[0]
     assert run.host_id == host.id
@@ -173,10 +173,10 @@ async def test_idempotency_second_call_is_noop(db):
 
     # Mark the run terminal so the next tick isn't blocked by in-flight.
     runs = (
-        await db.execute(
-            select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)))
+        .scalars()
+        .all()
+    )
     assert len(runs) == 1
     runs[0].status = "succeeded"
     await db.commit()
@@ -205,9 +205,7 @@ async def test_fleet_schedule_creates_fleet_run(db):
     assert result["dispatched"] == 1
 
     run = (
-        await db.execute(
-            select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)
-        )
+        await db.execute(select(ActionRun).where(ActionRun.scheduled_action_id == sa.id))
     ).scalar_one()
     # Fleet runs have both target IDs NULL — host fan-out happens in
     # the orchestrator, not at scheduler-create time.

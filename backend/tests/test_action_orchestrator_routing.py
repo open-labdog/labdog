@@ -20,8 +20,8 @@ import pytest
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.scheduled_action import ScheduledAction
 from app.tasks.action_orchestrator import (
-    PER_HOST_TASK_FOR_BUILTIN,
     _DEFAULT_PER_HOST_TASK,
+    PER_HOST_TASK_FOR_BUILTIN,
     _run_action_async,
 )
 from tests.conftest import create_host
@@ -64,15 +64,14 @@ class _FakeRedis:
 
 @pytest.fixture
 def stub_celery_dispatch():
-    with patch("celery.app.base.Celery.send_task"), patch(
-        "redis.from_url", return_value=_FakeRedis()
+    with (
+        patch("celery.app.base.Celery.send_task"),
+        patch("redis.from_url", return_value=_FakeRedis()),
     ):
         yield
 
 
-async def test_builtin_action_routes_to_dispatcher(
-    superuser_client, db, stub_celery_dispatch
-):
+async def test_builtin_action_routes_to_dispatcher(superuser_client, db, stub_celery_dispatch):
     """When action_key=_builtin.collect_state, the per-host signature
     uses run_builtin_collect_state, not run_action_host."""
     host = await create_host(db)
@@ -107,18 +106,17 @@ async def test_builtin_action_routes_to_dispatcher(
     assert resp.status_code == 201
     run_id = resp.json()["id"]
 
-    with patch(
-        "app.tasks.action_orchestrator.celery_app.signature", side_effect=signature
-    ), patch("celery.group", side_effect=_group):
+    with (
+        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
+        patch("celery.group", side_effect=_group),
+    ):
         await _run_action_async(run_id)
 
     assert "app.tasks.builtin_dispatchers.run_builtin_collect_state" in captured
     assert _DEFAULT_PER_HOST_TASK not in captured
 
 
-async def test_pack_action_routes_to_default_runner(
-    superuser_client, db, stub_celery_dispatch
-):
+async def test_pack_action_routes_to_default_runner(superuser_client, db, stub_celery_dispatch):
     """linux-upgrade is pack-supplied → default per-host task."""
     host = await create_host(db)
     await db.commit()
@@ -155,9 +153,10 @@ async def test_pack_action_routes_to_default_runner(
     assert resp.status_code == 201
     run_id = resp.json()["id"]
 
-    with patch(
-        "app.tasks.action_orchestrator.celery_app.signature", side_effect=signature
-    ), patch("celery.group", side_effect=_group):
+    with (
+        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
+        patch("celery.group", side_effect=_group),
+    ):
         await _run_action_async(run_id)
 
     assert _DEFAULT_PER_HOST_TASK in captured
@@ -215,9 +214,10 @@ async def test_fleet_resolves_to_all_hosts(db, stub_celery_dispatch):
 
         return _G()
 
-    with patch(
-        "app.tasks.action_orchestrator.celery_app.signature", side_effect=signature
-    ), patch("celery.group", side_effect=_group):
+    with (
+        patch("app.tasks.action_orchestrator.celery_app.signature", side_effect=signature),
+        patch("celery.group", side_effect=_group),
+    ):
         await _run_action_async(run_id)
 
     # One signature per host_run; 3 hosts × 1 signature each.
@@ -226,9 +226,9 @@ async def test_fleet_resolves_to_all_hosts(db, stub_celery_dispatch):
     from sqlalchemy import select
 
     host_runs = (
-        await db.execute(
-            select(ActionHostRun).where(ActionHostRun.action_run_id == run_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ActionHostRun).where(ActionHostRun.action_run_id == run_id)))
+        .scalars()
+        .all()
+    )
     host_ids = {hr.host_id for hr in host_runs}
     assert host_ids == {h1.id, h2.id, h3.id}

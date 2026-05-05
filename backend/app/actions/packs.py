@@ -131,8 +131,7 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
         # theory slip one through. Belt-and-braces.
         if manifest.key.startswith("_"):
             logger.warning(
-                "pack %r: skipping manifest %s — key %r is reserved for "
-                "built-in pseudo-actions",
+                "pack %r: skipping manifest %s — key %r is reserved for built-in pseudo-actions",
                 pack.name,
                 manifest_path,
                 manifest.key,

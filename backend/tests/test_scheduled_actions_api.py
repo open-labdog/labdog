@@ -7,7 +7,6 @@ from unittest.mock import patch
 import pytest
 
 from app.models.action_run import ActionRun
-from app.models.scheduled_action import ScheduledAction
 from tests.conftest import create_group, create_host
 
 pytestmark = pytest.mark.integration
@@ -329,9 +328,7 @@ async def test_delete_returns_204_and_runs_history_survives(superuser_client, db
     # here we assert at least one ActionRun row exists for the host).
     from sqlalchemy import select
 
-    rows = (
-        await db.execute(select(ActionRun).where(ActionRun.host_id == host.id))
-    ).scalars().all()
+    rows = (await db.execute(select(ActionRun).where(ActionRun.host_id == host.id))).scalars().all()
     assert len(rows) == 1
     assert rows[0].scheduled_action_id is None
 

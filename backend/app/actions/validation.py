@@ -53,9 +53,7 @@ def build_param_model(action: ActionDefinition) -> type[BaseModel]:
     typo.
     """
     fields = {p.key: _annotation_for(p) for p in action.parameters}
-    model_name = "ActionParams_" + "".join(
-        c if c.isalnum() else "_" for c in action.key
-    )
+    model_name = "ActionParams_" + "".join(c if c.isalnum() else "_" for c in action.key)
     return create_model(  # type: ignore[call-overload]
         model_name,
         __config__=ConfigDict(extra="forbid"),
