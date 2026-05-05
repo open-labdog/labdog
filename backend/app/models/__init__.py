@@ -14,6 +14,7 @@ from app.models.host import FirewallBackend, Host, HostGroupMembership, SyncStat
 from app.models.host_group import HostGroup
 from app.models.host_module_status import HostModuleStatus
 from app.models.scan_config import PendingHost, ScanConfig
+from app.models.scheduled_action import ScheduledAction
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import JobStatus, SyncJob
 from app.models.user import User
@@ -90,6 +91,7 @@ __all__ = [
     "GitAuthType",
     "GitOpsStatus",
     "HostModuleStatus",
+    "ScheduledAction",
     "ServiceRule",
     "HostsEntry",
     "CronJob",
