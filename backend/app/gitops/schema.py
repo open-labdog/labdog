@@ -226,6 +226,41 @@ class LinuxUserYAML(BaseModel):
     priority: int = Field(default=0, ge=0, le=10000)
 
 
+class ScheduledActionYAML(BaseModel):
+    """YAML model for one entry in the per-group ``scheduled_actions:`` list.
+
+    Replaces the legacy ``workflow:`` singleton. Multiple entries are
+    allowed per group — one per (action_key) — since the unified
+    ``ScheduledAction`` model lifts the singleton-per-group constraint
+    that ``UpdateWorkflow`` carried.
+
+    The importer applies **list-shaped, leave-alone-on-absence**
+    semantics: section absent ⇒ DB rows untouched; section present
+    (even an empty list ``[]``) ⇒ delete-and-replace among rows where
+    ``target_kind='group' AND target_id=<this group>``.
+    """
+
+    action_key: str
+    enabled: bool = False
+    schedule_cron: str | None = None
+    parameters: dict = Field(default_factory=dict)
+    batch_size: int = Field(default=1, ge=1)
+    snapshot_enabled: bool = True
+    verify_enabled: bool = True
+    auto_rollback: bool = True
+
+    @field_validator("schedule_cron")
+    @classmethod
+    def _validate_cron(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        from croniter import croniter
+
+        if not croniter.is_valid(v):
+            raise ValueError(f"Invalid cron expression: {v!r}")
+        return v
+
+
 class WorkflowYAML(BaseModel):
     """YAML model for the per-group update workflow schedule.
 
@@ -369,5 +404,6 @@ class LabDogGroupYAML(BaseModel):
     resolver: ResolverYAML | None = None
     users: list[LinuxUserYAML] | None = None
     linux_groups: list[LinuxGroupYAML] | None = None
-    workflow: WorkflowYAML | None = None
+    workflow: WorkflowYAML | None = None  # Deprecated — see scheduled_actions
+    scheduled_actions: list[ScheduledActionYAML] | None = None
     model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys
