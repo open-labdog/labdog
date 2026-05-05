@@ -88,7 +88,28 @@ duplicated on the pack. Configure the repo once under
 pack only carries its own metadata — name, source type, a subpath,
 role, enabled flag.
 
-**Action Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
+**Recommended path — the repo onboarding wizard.** When the repo
+contains action packs (and optionally GitOps group YAML), use
+**Integrations → Git Repos → Add Repository**. The three-step wizard
+clones the repo, walks the tree, and presents every detected pack
+and gitops file as a checkbox row with sane defaults: same-key
+matches are pre-checked with `role=override`, novel keys default to
+`role=default`, and gitops files auto-bind to the `HostGroup` whose
+name matches the file's top-level `group:` value. The same review
+panel is reachable later from a repo's detail page via **Re-scan**,
+so newly-pushed packs can be picked up without re-onboarding.
+
+The wizard treats any directory containing a `pack.yml` as a pack
+root and walks the whole repo to find them — `packs/<name>/`,
+`actions/<name>/`, the repo root itself, all work. If no `pack.yml`
+exists anywhere but the repo root has an `actions/*.manifest.yml`
+tree, the repo is treated as a single root-level pack (matches the
+[`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+convention).
+
+**Per-pack alternative.** When you want to add a single pack, or the
+repo's layout doesn't match the wizard's conventions, use **Action
+Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 
 | Field | What it is |
 |---|---|

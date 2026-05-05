@@ -1,0 +1,6 @@
+group: bad-group
+firewall:
+  rules:
+    - action: not-a-real-action
+      protocol: tcp
+      direction: input

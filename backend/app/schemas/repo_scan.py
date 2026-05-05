@@ -1,0 +1,136 @@
+"""Pydantic response schemas for the repo-scan endpoint.
+
+These mirror the dataclasses in ``app.packs.repo_scanner`` and
+``app.packs.scan_conflicts``. Kept as a separate module so the API
+surface evolves independently of the internal scan types — the
+internal layer can grow fields freely as long as the schema layer
+maps what the wizard needs.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict
+
+
+class ScanErrorOut(BaseModel):
+    file: str
+    message: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DetectedPackOut(BaseModel):
+    path: str
+    name: str
+    contributed_keys: list[str]
+    pack_yml_present: bool
+    errors: list[ScanErrorOut] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DetectedGitopsFileOut(BaseModel):
+    path: str
+    group_name: str | None
+    errors: list[ScanErrorOut] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KeyOwnerOut(BaseModel):
+    key: str
+    source: Literal["bundled", "db_pack"]
+    pack_name: str
+    pack_id: int | None = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KeyConflictOut(BaseModel):
+    key: str
+    contributing_packs: list[str]
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RepoScanResponse(BaseModel):
+    """The full annotated scan result the wizard renders in step (c).
+
+    ``packs`` and ``gitops_files`` are the raw findings; the
+    ``existing_key_winners`` map pre-selects ``role=override`` for any
+    pack contributing a key that already has an owner; the
+    ``intra_repo_key_conflicts`` list disables the Activate button
+    while any conflict still has both contributing packs checked.
+    ``scan_errors`` covers infrastructure-level issues (e.g. clone
+    path not a directory) — should be empty in the happy path.
+    """
+
+    packs: list[DetectedPackOut]
+    gitops_files: list[DetectedGitopsFileOut]
+    existing_key_winners: dict[str, KeyOwnerOut]
+    intra_repo_key_conflicts: list[KeyConflictOut]
+    scan_errors: list[ScanErrorOut]
+    head_sha: str | None
+
+
+# ---------------------------------------------------------------------------
+# Activation request / response
+# ---------------------------------------------------------------------------
+
+
+class ActivatePackSelection(BaseModel):
+    """One operator-selected pack to activate from a scan result.
+
+    ``path`` matches the corresponding ``DetectedPackOut.path``. ``name``
+    is the desired ``ActionPack.name``; if it collides with an existing
+    pack, the activation endpoint suffixes it (``-<repo_name>``, then
+    ``-<short_sha>``) and reports the final name in the response.
+    ``role`` is the operator's chosen role (typically ``override`` for
+    same-key matches, ``default`` for novel keys).
+    """
+
+    path: str
+    name: str
+    role: Literal["default", "override"]
+
+
+class ActivateGitopsBinding(BaseModel):
+    """Bind one detected gitops file to one existing HostGroup."""
+
+    file_path: str
+    host_group_id: int
+
+
+class RepoActivateRequest(BaseModel):
+    packs: list[ActivatePackSelection] = []
+    gitops_bindings: list[ActivateGitopsBinding] = []
+
+
+class ActivatedPackOut(BaseModel):
+    """One pack as actually persisted (with the post-collision name)."""
+
+    pack_id: int
+    name: str
+    path: str
+    role: str
+    requested_name: str
+    name_was_disambiguated: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ActivatedGitopsBindingOut(BaseModel):
+    host_group_id: int
+    file_path: str
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RepoActivateResponse(BaseModel):
+    """What the wizard's Activate step renders in the success toast.
+
+    Lists every pack that was actually inserted (disambiguated names
+    visible) and every group binding that was applied. ``head_sha``
+    is the commit the activation was validated against — operator
+    can compare against the scan's ``head_sha`` to confirm nothing
+    moved underneath them.
+    """
+
+    activated_packs: list[ActivatedPackOut]
+    activated_gitops_bindings: list[ActivatedGitopsBindingOut]
+    head_sha: str | None
