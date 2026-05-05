@@ -33,7 +33,7 @@ export function ScheduledActionsSection({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold text-white">Scheduled actions</h2>
+          <h2 className="text-base font-semibold text-white">Schedules</h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Cron-driven runs scoped to this {scope}.
           </p>

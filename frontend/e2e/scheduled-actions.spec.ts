@@ -236,15 +236,15 @@ async function setupCommonMocks(
   })
 }
 
-test.describe("Scheduled Actions", () => {
+test.describe("Schedules", () => {
   test("sidebar label and /schedules page render", async ({ page }) => {
     await setupCommonMocks(page)
     await page.goto("/schedules")
     await expect(
-      page.getByRole("heading", { name: "Scheduled Actions" }),
+      page.getByRole("heading", { name: "Schedules" }),
     ).toBeVisible()
     await expect(
-      page.getByRole("link", { name: "Scheduled Actions" }),
+      page.getByRole("link", { name: "Schedules" }),
     ).toBeVisible()
   })
 
