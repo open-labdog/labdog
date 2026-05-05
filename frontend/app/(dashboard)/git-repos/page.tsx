@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
+import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -16,7 +17,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
@@ -24,7 +24,8 @@ import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading, formatRelativeTime } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { gitRepoSchema, type GitRepoInput } from "@/lib/schemas"
-import type { GitRepository, GitRepoCreate, GitRepoUpdate, SSHKey, HostGroup } from "@/lib/types"
+import { detectAuthFromUrl } from "@/lib/git-repos"
+import type { GitRepository, GitRepoUpdate, SSHKey, HostGroup } from "@/lib/types"
 
 function syncHealth(repo: GitRepository): "healthy" | "stale" | "never" {
   if (!repo.last_sync_at) return "never"
@@ -47,17 +48,10 @@ const defaultFormValues: GitRepoInput = {
   webhook_secret: "",
 }
 
-function detectAuthFromUrl(url: string): "ssh_key" | "https" | "unknown" {
-  if (url.startsWith("git@") || url.startsWith("ssh://")) return "ssh_key"
-  if (url.startsWith("https://")) return "https"
-  return "unknown"
-}
-
 export default function GitReposPage() {
-  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingRepo, setEditingRepo] = useState<GitRepository | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
-  const [showWebhooks, setShowWebhooks] = useState(false)
   const [webhookRepoId, setWebhookRepoId] = useState<number | null>(null)
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null)
 
@@ -94,42 +88,25 @@ export default function GitReposPage() {
   }, [groups])
 
   const saveMutation = useApiMutation({
-    mutationFn: ({ editId, data }: { editId: number | null; data: GitRepoInput }) => {
+    mutationFn: ({ editId, data }: { editId: number; data: GitRepoInput }) => {
       const auth = detectAuthFromUrl(data.url)
       const sshKeyId = auth === "ssh_key" && data.ssh_key_id ? Number(data.ssh_key_id) : null
       const token = auth === "https" && data.https_token ? data.https_token : undefined
-
-      if (editId) {
-        const body: GitRepoUpdate = {
-          name: data.name,
-          url: data.url,
-          branch: data.branch,
-          ssh_key_id: sshKeyId,
-          webhook_secret: data.webhook_secret || null,
-        }
-        if (token) body.https_token = token
-        return apiFetch(`/api/git-repos/${editId}`, { method: "PUT", body: JSON.stringify(body) })
-      } else {
-        const body: GitRepoCreate = {
-          name: data.name,
-          url: data.url,
-          branch: data.branch,
-          ssh_key_id: sshKeyId,
-          webhook_secret: data.webhook_secret || null,
-        }
-        if (token) body.https_token = token
-        return apiFetch("/api/git-repos", { method: "POST", body: JSON.stringify(body) })
+      const body: GitRepoUpdate = {
+        name: data.name,
+        url: data.url,
+        branch: data.branch,
+        ssh_key_id: sshKeyId,
+        webhook_secret: data.webhook_secret || null,
       }
+      if (token) body.https_token = token
+      return apiFetch(`/api/git-repos/${editId}`, { method: "PUT", body: JSON.stringify(body) })
     },
     invalidateKeys: [["git-repos"]],
-    onSuccess: (_data, variables) => {
-      if (variables.editId) {
-        setDialogOpen(false)
-        form.reset(defaultFormValues)
-        setEditingRepo(null)
-      } else {
-        setShowWebhooks(true)
-      }
+    onSuccess: () => {
+      setEditDialogOpen(false)
+      form.reset(defaultFormValues)
+      setEditingRepo(null)
     },
   })
 
@@ -139,14 +116,6 @@ export default function GitReposPage() {
     invalidateKeys: [["git-repos"]],
     onSuccess: () => setDeleteConfirmId(null),
   })
-
-  function openCreateDialog() {
-    form.reset(defaultFormValues)
-    setEditingRepo(null)
-    saveMutation.reset()
-    setShowWebhooks(false)
-    setDialogOpen(true)
-  }
 
   function openEditDialog(repo: GitRepository) {
     setEditingRepo(repo)
@@ -159,12 +128,12 @@ export default function GitReposPage() {
       webhook_secret: repo.webhook_secret || "",
     })
     saveMutation.reset()
-    setShowWebhooks(false)
-    setDialogOpen(true)
+    setEditDialogOpen(true)
   }
 
   const onSubmit = form.handleSubmit((data) => {
-    saveMutation.mutate({ editId: editingRepo?.id ?? null, data })
+    if (!editingRepo) return
+    saveMutation.mutate({ editId: editingRepo.id, data })
   })
 
   function handleDelete(id: number) {
@@ -194,129 +163,114 @@ export default function GitReposPage() {
           <h1 className="text-2xl font-bold text-white">Git Repositories</h1>
           <p className="text-slate-400 text-sm mt-1">Manage git repositories for GitOps</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => {
-          setDialogOpen(open)
-          if (!open) { form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false); saveMutation.reset() }
-        }}>
-          <DialogTrigger render={<Button />} onClick={openCreateDialog}>
-            Add Repository
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingRepo ? "Edit Repository" : "Add Repository"}</DialogTitle>
-            </DialogHeader>
-
-            {showWebhooks && !editingRepo ? (
-              <div className="space-y-4 mt-2">
-                <p className="text-sm text-slate-400">
-                  Repository created. Configure a webhook in your git provider using one of these URLs:
-                </p>
-                <div className="space-y-3">
-                  {webhookUrls.map((wh) => (
-                    <div key={wh.label} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800 px-3 py-2">
-                      <div>
-                        <span className="text-xs text-slate-400">{wh.label}</span>
-                        <p className="text-sm font-mono text-white break-all">{wh.url}</p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => copyToClipboard(wh.url)}
-                      >
-                        {copiedUrl === wh.url ? "Copied!" : "Copy"}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex gap-3 pt-2">
-                  <Button onClick={() => { setDialogOpen(false); form.reset(defaultFormValues); setEditingRepo(null); setShowWebhooks(false) }}>
-                    Done
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={onSubmit} noValidate className="space-y-4 mt-2">
-                <div className="space-y-2">
-                  <Label htmlFor="repo-name">Name</Label>
-                  <Input id="repo-name" type="text" placeholder="e.g. infra-config" {...form.register("name")} />
-                  {form.formState.errors.name && <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="repo-url">URL</Label>
-                  <Input id="repo-url" type="text" placeholder="git@github.com:org/repo.git" {...form.register("url")} />
-                  {form.formState.errors.url && <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="repo-branch">Branch</Label>
-                  <Input id="repo-branch" type="text" placeholder="main" {...form.register("branch")} />
-                </div>
-
-                {detectedAuth === "ssh_key" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="ssh-key-select">SSH Key</Label>
-                    <select
-                      id="ssh-key-select"
-                      {...form.register("ssh_key_id")}
-                      className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
-                    >
-                      <option value="">Select an SSH key...</option>
-                      {sshKeys?.map((key) => (
-                        <option key={key.id} value={key.id}>
-                          {key.name}{key.is_default ? " (default)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    {form.formState.errors.ssh_key_id && (
-                      <p className="text-sm text-red-400">{form.formState.errors.ssh_key_id.message}</p>
-                    )}
-                    <p className="text-xs text-slate-500">SSH URL detected — pick the deploy key LabDog should use.</p>
-                  </div>
-                )}
-
-                {detectedAuth === "https" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="https-token">Personal Access Token (optional)</Label>
-                    <Input
-                      id="https-token"
-                      type="password"
-                      placeholder={editingRepo ? "Leave blank to keep existing token" : "Leave blank for public repos"}
-                      {...form.register("https_token")}
-                    />
-                    <p className="text-xs text-slate-500">
-                      HTTPS URL detected — leave the token blank for public repos.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
-                  <Input id="webhook-secret" type="text" placeholder="Optional webhook secret" {...form.register("webhook_secret")} />
-                </div>
-
-                {saveMutation.error && (
-                  <p className="text-sm text-red-400">{saveMutation.error.message}</p>
-                )}
-
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => { setDialogOpen(false); form.reset(defaultFormValues); setEditingRepo(null) }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={saveMutation.isPending}>
-                    {saveMutation.isPending ? "Saving..." : editingRepo ? "Update Repository" : "Add Repository"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            )}
-          </DialogContent>
-        </Dialog>
+        <Link href="/git-repos/new">
+          <Button>Add Repository</Button>
+        </Link>
       </div>
+
+      <Dialog
+        open={editDialogOpen}
+        onOpenChange={(open) => {
+          setEditDialogOpen(open)
+          if (!open) {
+            form.reset(defaultFormValues)
+            setEditingRepo(null)
+            saveMutation.reset()
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Repository</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={onSubmit} noValidate className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="repo-name">Name</Label>
+              <Input id="repo-name" type="text" placeholder="e.g. infra-config" {...form.register("name")} />
+              {form.formState.errors.name && (
+                <p className="text-sm text-red-400">{form.formState.errors.name.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="repo-url">URL</Label>
+              <Input id="repo-url" type="text" placeholder="git@github.com:org/repo.git" {...form.register("url")} />
+              {form.formState.errors.url && (
+                <p className="text-sm text-red-400">{form.formState.errors.url.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="repo-branch">Branch</Label>
+              <Input id="repo-branch" type="text" placeholder="main" {...form.register("branch")} />
+            </div>
+
+            {detectedAuth === "ssh_key" && (
+              <div className="space-y-2">
+                <Label htmlFor="ssh-key-select">SSH Key</Label>
+                <select
+                  id="ssh-key-select"
+                  {...form.register("ssh_key_id")}
+                  className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
+                >
+                  <option value="">Select an SSH key...</option>
+                  {sshKeys?.map((key) => (
+                    <option key={key.id} value={key.id}>
+                      {key.name}
+                      {key.is_default ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {form.formState.errors.ssh_key_id && (
+                  <p className="text-sm text-red-400">{form.formState.errors.ssh_key_id.message}</p>
+                )}
+                <p className="text-xs text-slate-500">SSH URL detected — pick the deploy key LabDog should use.</p>
+              </div>
+            )}
+
+            {detectedAuth === "https" && (
+              <div className="space-y-2">
+                <Label htmlFor="https-token">Personal Access Token (optional)</Label>
+                <Input
+                  id="https-token"
+                  type="password"
+                  placeholder="Leave blank to keep existing token"
+                  {...form.register("https_token")}
+                />
+                <p className="text-xs text-slate-500">
+                  HTTPS URL detected — leave the token blank for public repos.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
+              <Input id="webhook-secret" type="text" placeholder="Optional webhook secret" {...form.register("webhook_secret")} />
+            </div>
+
+            {saveMutation.error && (
+              <p className="text-sm text-red-400">{saveMutation.error.message}</p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setEditDialogOpen(false)
+                  form.reset(defaultFormValues)
+                  setEditingRepo(null)
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Saving..." : "Update Repository"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {showLoading && <TableSkeleton rows={3} columns={5} />}
       {error && <div className="text-red-400 py-8 text-center">Failed to load repositories</div>}
@@ -335,7 +289,9 @@ export default function GitReposPage() {
                   LabDog imports changes automatically when a webhook fires or a manual sync is triggered.
                 </p>
               </div>
-              <Button onClick={openCreateDialog} className="mt-2">Add Repository</Button>
+              <Link href="/git-repos/new" className="mt-2">
+                <Button>Add Repository</Button>
+              </Link>
             </div>
           }
           getRowKey={(r) => r.id}
@@ -347,7 +303,12 @@ export default function GitReposPage() {
               accessor: (r) => r.name,
               cell: (r) => (
                 <div>
-                  <span className="text-sm font-medium text-white">{r.name}</span>
+                  <Link
+                    href={`/git-repos/${r.id}`}
+                    className="text-sm font-medium text-white hover:text-blue-300"
+                  >
+                    {r.name}
+                  </Link>
                   {r.last_commit_sha && (
                     <div className="font-mono text-[11px] text-slate-500 mt-0.5" title={r.last_commit_sha}>
                       {r.last_commit_sha.slice(0, 7)}
