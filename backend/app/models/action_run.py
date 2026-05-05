@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -28,8 +29,28 @@ class ActionRun(Base):
     group_id: Mapped[int | None] = mapped_column(
         ForeignKey("host_groups.id", ondelete="SET NULL"), nullable=True
     )
+    # Set when the run was created by the unified scheduler or by
+    # POST /api/scheduled-actions/{id}/run-now. NULL for ad-hoc runs.
+    # ``ON DELETE SET NULL`` so deleting a schedule preserves run history.
+    scheduled_action_id: Mapped[int | None] = mapped_column(
+        ForeignKey("scheduled_actions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     parallelism: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Universal columns mirrored from ScheduledAction at dispatch time so
+    # per-host executors see immutable run-time intent without a join.
+    # Ignored when the underlying action is non-destructive.
+    snapshot_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    verify_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    auto_rollback: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     # status values: queued | running | succeeded | partial | failed | cancelled
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     triggered_by_user_id: Mapped[int | None] = mapped_column(
@@ -43,8 +64,13 @@ class ActionRun(Base):
     )
 
     __table_args__ = (
+        # Ad-hoc runs require exactly one of host_id/group_id. Fleet runs
+        # (both NULL) are only allowed when scheduled_action_id is set —
+        # there's no ad-hoc fleet run path through POST /api/actions/runs.
         CheckConstraint(
-            "(host_id IS NOT NULL)::int + (group_id IS NOT NULL)::int = 1",
+            "(host_id IS NOT NULL AND group_id IS NULL) OR "
+            "(host_id IS NULL AND group_id IS NOT NULL) OR "
+            "(host_id IS NULL AND group_id IS NULL AND scheduled_action_id IS NOT NULL)",
             name="ck_action_runs_scope",
         ),
     )
