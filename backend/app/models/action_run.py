@@ -42,15 +42,9 @@ class ActionRun(Base):
     # Universal columns mirrored from ScheduledAction at dispatch time so
     # per-host executors see immutable run-time intent without a join.
     # Ignored when the underlying action is non-destructive.
-    snapshot_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
-    verify_enabled: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
-    auto_rollback: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default="true"
-    )
+    snapshot_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    verify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    auto_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     # status values: queued | running | succeeded | partial | failed | cancelled
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     triggered_by_user_id: Mapped[int | None] = mapped_column(

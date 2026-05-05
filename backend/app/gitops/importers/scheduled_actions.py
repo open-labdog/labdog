@@ -61,9 +61,7 @@ _TRACKED_FIELDS = (
 
 
 def _row_snapshot(sa: ScheduledAction) -> dict:
-    return {f: getattr(sa, f) for f in _TRACKED_FIELDS} | {
-        "action_key": sa.action_key
-    }
+    return {f: getattr(sa, f) for f in _TRACKED_FIELDS} | {"action_key": sa.action_key}
 
 
 def _entry_to_dict(entry: ScheduledActionYAML) -> dict:
@@ -119,9 +117,7 @@ async def import_scheduled_actions(
     if duplicates:
         return ModuleImportResult(
             module="scheduled_actions",
-            error_message=(
-                f"Duplicate action_key in scheduled_actions: {duplicates[0]!r}"
-            ),
+            error_message=(f"Duplicate action_key in scheduled_actions: {duplicates[0]!r}"),
         )
 
     # Validate every entry against the live registry up front.
@@ -131,13 +127,17 @@ async def import_scheduled_actions(
             return ModuleImportResult(module="scheduled_actions", error_message=err)
 
     existing = (
-        await db.execute(
-            select(ScheduledAction).where(
-                ScheduledAction.target_kind == "group",
-                ScheduledAction.target_id == group.id,
+        (
+            await db.execute(
+                select(ScheduledAction).where(
+                    ScheduledAction.target_kind == "group",
+                    ScheduledAction.target_id == group.id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     by_key: dict[str, ScheduledAction] = {sa.action_key: sa for sa in existing}
 
     desired_keys = {e.action_key for e in desired}

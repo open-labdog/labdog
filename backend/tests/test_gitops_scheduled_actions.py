@@ -40,10 +40,10 @@ async def test_section_absent_leaves_db_untouched(db):
     assert result.changed is False
 
     rows = (
-        await db.execute(
-            select(ScheduledAction).where(ScheduledAction.target_id == group.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ScheduledAction).where(ScheduledAction.target_id == group.id)))
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
 
 
@@ -64,10 +64,10 @@ async def test_empty_list_removes_all(db):
     assert result.removed == 1
 
     rows = (
-        await db.execute(
-            select(ScheduledAction).where(ScheduledAction.target_id == group.id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ScheduledAction).where(ScheduledAction.target_id == group.id)))
+        .scalars()
+        .all()
+    )
     assert rows == []
 
 
@@ -88,9 +88,7 @@ async def test_create_new_entry(db):
     assert result.added == 1
 
     sa = (
-        await db.execute(
-            select(ScheduledAction).where(ScheduledAction.target_id == group.id)
-        )
+        await db.execute(select(ScheduledAction).where(ScheduledAction.target_id == group.id))
     ).scalar_one()
     assert sa.action_key == "_builtin.collect_state"
     assert sa.enabled is True
@@ -155,9 +153,7 @@ async def test_unchanged_entry_is_idempotent(db):
 
 async def test_unknown_action_key_rejected(db):
     group = await create_group(db, name="gf")
-    yaml = _yaml(
-        [{"action_key": "no-such-action", "schedule_cron": "0 * * * *"}]
-    )
+    yaml = _yaml([{"action_key": "no-such-action", "schedule_cron": "0 * * * *"}])
     result = await import_scheduled_actions(group, yaml, None, db)
     assert result.error_message is not None
     assert "Unknown action_key" in result.error_message
@@ -166,9 +162,7 @@ async def test_unknown_action_key_rejected(db):
 async def test_host_only_action_rejected_for_group(db):
     """linux-upgrade has supports_group=False — can't bind to a group."""
     group = await create_group(db, name="gg")
-    yaml = _yaml(
-        [{"action_key": "linux-upgrade", "schedule_cron": "0 * * * *"}]
-    )
+    yaml = _yaml([{"action_key": "linux-upgrade", "schedule_cron": "0 * * * *"}])
     result = await import_scheduled_actions(group, yaml, None, db)
     assert result.error_message is not None
     assert "does not support group runs" in result.error_message

@@ -39,7 +39,9 @@ async def test_scheduled_action_round_trip(db):
     assert sa.batch_size == 1
     assert sa.last_dispatched_at is None
 
-    fetched = (await db.execute(select(ScheduledAction).where(ScheduledAction.id == sa.id))).scalar_one()
+    fetched = (
+        await db.execute(select(ScheduledAction).where(ScheduledAction.id == sa.id))
+    ).scalar_one()
     assert fetched.action_key == "_builtin.drift_check"
 
 

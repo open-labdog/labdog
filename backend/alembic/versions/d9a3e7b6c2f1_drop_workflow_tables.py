@@ -32,9 +32,18 @@ flag toggled).
 
 The downgrade path recreates the three legacy tables and reverse-
 migrates ``scheduled_actions`` rows whose shape matches the upgrade-
-flow contract. It is **lossy** on built-in pseudo-action rows
-(``_builtin.*``) — those didn't exist pre-migration and have no place
-in ``update_workflows``.
+flow contract. It is **lossy** in two ways:
+
+- Built-in pseudo-action rows (``_builtin.*``) didn't exist
+  pre-migration and have no place in ``update_workflows``.
+- ``update_workflows`` had ``UNIQUE(group_id)`` (one workflow row
+  per group). After the migration a group can carry multiple
+  ``scheduled_actions`` rows (one per action_key); on downgrade only
+  the first one per group survives via ``ON CONFLICT DO NOTHING``.
+  The selection is non-deterministic — there's no "primary" row to
+  pick. Operators downgrading a fully-populated install should
+  expect data loss they'll have to re-create from the upstream
+  snapshot.
 """
 
 from collections.abc import Sequence
