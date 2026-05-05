@@ -23,6 +23,7 @@ from app.api.cron_sync import router as cron_sync_router
 from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api._repo_scan import router as repo_scan_router
+from app.api.scheduled_actions import router as scheduled_actions_router
 from app.api.git_repos import router as git_repos_router
 from app.api.groups import router as groups_router
 from app.api.host_state import router as host_state_router
@@ -379,6 +380,7 @@ def create_app() -> FastAPI:
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
     app.include_router(repo_scan_router, prefix="/api")
+    app.include_router(scheduled_actions_router, prefix="/api")
     app.include_router(scans_router, prefix="/api")
     app.include_router(admin_users_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
