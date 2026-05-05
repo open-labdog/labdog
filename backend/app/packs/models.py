@@ -24,25 +24,6 @@ class PackSourceType(enum.StrEnum):
     LOCAL = "local"
 
 
-class PackRole(enum.StrEnum):
-    """Semantic position of a pack in the override hierarchy.
-
-    ``default`` — a canonical/baseline pack that downstream packs can
-    override. Typically one per install (e.g. ``labdog-default``).
-    ``override`` — customisations or extensions layered on top of the
-    default. Multiple allowed.
-
-    Role is only meaningful for git-backed packs. Local packs are
-    always placed above both tiers (they're the fastest way to
-    iterate on a playbook you're actively editing). The integer
-    priority shown to the loader is derived from ``(source_type,
-    role)`` — admins never see raw numbers.
-    """
-
-    DEFAULT = "default"
-    OVERRIDE = "override"
-
-
 class ActionPack(Base):
     """A pack of playbooks LabDog treats as a source of action
     definitions.
@@ -55,6 +36,11 @@ class ActionPack(Base):
 
     For local packs: ``local_path`` is the absolute filesystem path on
     the LabDog host where the pack directory lives. No clone, no auth.
+
+    ``position`` defines a single linear ordering across all packs.
+    Higher position wins on action-key collisions. The bundled pack is
+    implicit at position 0 (no DB row); every DB pack starts above it.
+    Operators reorder packs via drag-to-reorder on ``/action-packs``.
     """
 
     __tablename__ = "action_packs"
@@ -86,17 +72,12 @@ class ActionPack(Base):
     #: host. For 'git': NULL.
     local_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    # Role tiers the pack in the override hierarchy. Only applied for
-    # git packs; local packs are always placed above all git tiers
-    # regardless of this value.
-    role: Mapped[PackRole] = mapped_column(
-        SAEnum(
-            PackRole,
-            name="packrole",
-            values_callable=lambda e: [m.value for m in e],
-        ),
-        default=PackRole.OVERRIDE,
+    #: Linear precedence ordering. Higher wins on collisions. New packs
+    #: default to ``MAX(position) + 1`` (server-assigned at insert).
+    position: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", index=True
     )
+
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -112,4 +93,73 @@ class ActionPack(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class ActionResolution(Base):
+    """Explicit per-key "this pack wins" decision.
+
+    Two write paths feed this table:
+
+    1. **Wizard onboarding** — the operator picks per-key winners when
+       adding a pack that conflicts with existing packs. The wizard's
+       per-key radio writes a row here.
+    2. **Sync-time freeze** — when ``reload_registry`` detects that a
+       previously-uncontested key just became contested (a pack's
+       upstream pushed a new manifest that conflicts with another
+       pack), it auto-writes a row pinning the **previous winner**.
+       Behaviour does not silently flip; the operator resolves via the
+       conflict UI on ``/action-packs``.
+
+    A row's presence overrides position-based default. ``pack_id NULL``
+    means "use bundled" — supported because position-based default
+    always favours DB packs over bundled, so the only way to make
+    bundled win for a contested key is an explicit resolution.
+
+    Deletion of the chosen pack drops the resolution row (CASCADE);
+    position-based default takes over for the next rebuild.
+    """
+
+    __tablename__ = "action_resolution"
+
+    action_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pack_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("action_packs.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    decided_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+    )
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+
+class ActionRegistrySnapshot(Base):
+    """Last-known winner per action key.
+
+    Bookkeeping only — the registry rebuild reads this before computing
+    the new state, then writes the new winners atomically. Used to
+    detect "previously uncontested key just became contested" so the
+    freeze logic in :class:`ActionResolution` can pin the previous
+    winner without surprise flips.
+
+    ``pack_id NULL`` means bundled was the winner (it has no DB row).
+    """
+
+    __tablename__ = "action_registry_snapshot"
+
+    action_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    pack_id: Mapped[int | None] = mapped_column(
+        Integer,
+        ForeignKey("action_packs.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
     )

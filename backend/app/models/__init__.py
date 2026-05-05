@@ -35,8 +35,9 @@ _EXTERNAL_MODELS = {
     "ProxmoxNode": "app.proxmox.models",
     "VMMapping": "app.proxmox.vm_mapping",
     "ActionPack": "app.packs.models",
+    "ActionResolution": "app.packs.models",
+    "ActionRegistrySnapshot": "app.packs.models",
     "PackSourceType": "app.packs.models",
-    "PackRole": "app.packs.models",
 }
 
 
@@ -102,6 +103,7 @@ __all__ = [
     "ProxmoxNode",
     "VMMapping",
     "ActionPack",
+    "ActionResolution",
+    "ActionRegistrySnapshot",
     "PackSourceType",
-    "PackRole",
 ]
