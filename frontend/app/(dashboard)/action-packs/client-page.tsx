@@ -39,6 +39,16 @@ interface PackFormState {
   enabled: boolean
 }
 
+const emptyForm: PackFormState = {
+  name: "",
+  source_type: "git",
+  git_repository_id: null,
+  path: "",
+  local_path: "",
+  role: "override",
+  enabled: true,
+}
+
 function statusChip(pack: ActionPack) {
   if (pack.last_sync_status === "ok") {
     return <span className="text-green-400 text-xs">OK</span>
@@ -96,6 +106,13 @@ export default function ActionPacksPage() {
     },
   })
 
+  function openCreate() {
+    setEditing(null)
+    setForm(emptyForm)
+    setFormError(null)
+    setDialogOpen(true)
+  }
+
   function openEdit(pack: ActionPack) {
     setEditing(pack)
     setForm({
@@ -128,15 +145,23 @@ export default function ActionPacksPage() {
   }
 
   async function handleSave() {
-    if (!editing || !form) return
+    if (!form) return
     setFormSaving(true)
     setFormError(null)
     try {
-      await apiFetch(`/api/action-packs/${editing.id}`, {
-        method: "PUT",
-        json: buildPayload(form),
-      })
-      showSuccess("Action pack updated")
+      if (editing) {
+        await apiFetch(`/api/action-packs/${editing.id}`, {
+          method: "PUT",
+          json: buildPayload(form),
+        })
+        showSuccess("Action pack updated")
+      } else {
+        await apiFetch("/api/action-packs", {
+          method: "POST",
+          json: buildPayload(form),
+        })
+        showSuccess("Action pack created")
+      }
       await queryClient.invalidateQueries({ queryKey: ["action-packs"] })
       await queryClient.invalidateQueries({ queryKey: ["actions"] })
       setDialogOpen(false)
@@ -199,18 +224,15 @@ export default function ActionPacksPage() {
           <h1 className="text-2xl font-bold text-white">Action Packs</h1>
           <p className="text-slate-400 text-sm mt-1">
             Collections of playbooks that supply actions to every host and
-            group. New packs are added by connecting a repository under{" "}
+            group. Each pack points at a path inside a registered{" "}
             <Link href="/git-repos" className="underline hover:text-slate-200">
-              Git Repos
-            </Link>{" "}
-            and picking the detected packs from the onboarding wizard. Edit
-            existing packs in the table below to rename, change role, or
-            disable.
+              Git Repository
+            </Link>
+            ; to bulk-add several packs from the same repo at once, use the
+            scan wizard from the Git Repos page.
           </p>
         </div>
-        <Link href="/git-repos/new">
-          <Button>Connect a Repository</Button>
-        </Link>
+        <Button onClick={openCreate}>Add Pack</Button>
       </div>
 
       {showLoading && <TableSkeleton rows={3} columns={6} />}
@@ -226,14 +248,7 @@ export default function ActionPacksPage() {
           tableId="action-packs"
           data={packs}
           emptyMessage={
-            <>
-              No action packs configured. Connect a git repository under{" "}
-              <Link href="/git-repos" className="underline hover:text-white">
-                Git Repos
-              </Link>{" "}
-              and the wizard will detect and offer to activate the packs it
-              finds.
-            </>
+            <>No action packs configured. Click <strong>Add Pack</strong> to get started.</>
           }
           getRowKey={(p) => p.id}
           columns={[
@@ -366,7 +381,7 @@ export default function ActionPacksPage() {
       >
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Edit Action Pack</DialogTitle>
+            <DialogTitle>{editing ? "Edit Action Pack" : "Add Action Pack"}</DialogTitle>
           </DialogHeader>
           {form && (
             <div className="space-y-4 mt-2">
@@ -463,7 +478,7 @@ export default function ActionPacksPage() {
                 </div>
               )}
 
-              {form.source_type === "git" && (
+              {editing && form.source_type === "git" && (
                 <div className="space-y-2">
                   <Label>Role</Label>
                   <div className="flex gap-4 text-sm">
@@ -519,7 +534,7 @@ export default function ActionPacksPage() {
                   Cancel
                 </Button>
                 <Button onClick={handleSave} disabled={formSaving}>
-                  {formSaving ? "Saving..." : "Save Changes"}
+                  {formSaving ? "Saving..." : editing ? "Save Changes" : "Add Pack"}
                 </Button>
               </DialogFooter>
             </div>
