@@ -48,7 +48,6 @@ from app.resolver.models import ResolverConfig
 from app.services.models import ServiceRule
 from app.settings_service import invalidate_cache
 from app.user_mgmt.models import LinuxGroup, LinuxUser
-from app.workflows.models import UpdateWorkflow
 from tests.conftest import create_group, create_ssh_key
 
 pytestmark = pytest.mark.integration
@@ -381,10 +380,9 @@ class TestMultiModuleGroupYAML:
             assert resolver is not None
             assert list(resolver.nameservers) == ["1.1.1.1", "9.9.9.9"]
 
-            wf = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group.id))
-            assert wf is not None
-            assert wf.enabled is False
-            assert wf.batch_size == 1
+            # Workflow imports are now exercised through scheduled_actions
+            # in test_gitops_scheduled_actions.py — the legacy `workflow:`
+            # block is dropped from this fixture.
 
             await db.refresh(group)
             assert group.gitops_status == GitOpsStatus.synced
@@ -475,10 +473,6 @@ class TestMultiModuleGroupYAML:
             )
             assert list(resolver2.nameservers) == ["1.1.1.1"]
 
-            # Workflow: enabled flipped, batch_size bumped.
-            wf2 = await db.scalar(select(UpdateWorkflow).where(UpdateWorkflow.group_id == group.id))
-            assert wf2.enabled is True
-            assert wf2.batch_size == 2
 
         finally:
             for d in [bare_dir, clone_dir, import_dir]:

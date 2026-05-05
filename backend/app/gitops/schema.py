@@ -261,46 +261,6 @@ class ScheduledActionYAML(BaseModel):
         return v
 
 
-class WorkflowYAML(BaseModel):
-    """YAML model for the per-group update workflow schedule.
-
-    Mirrors ``app.workflows.models.UpdateWorkflow`` — at most one workflow
-    row exists per group (``UpdateWorkflow.group_id`` is a unique FK), so
-    this section is **singleton** with **leave-alone** semantics: omission
-    (or explicit ``null``) preserves the current DB state. Explicit
-    deletion of a GitOps-managed workflow is **not** supported via YAML
-    absence — disable GitOps on the group first, then delete via the UI
-    or DELETE endpoint.
-
-    ``schedule_cron`` is validated for syntactic correctness here; the
-    importer additionally validates ``action_key`` against the live
-    action registry and enforces per-action parameter requirements
-    (e.g. ``linux-os-upgrade`` needs ``current_version`` and
-    ``next_version``).
-    """
-
-    enabled: bool = False
-    schedule_cron: str | None = None
-    batch_size: int = Field(default=1, ge=1)
-    pre_update_snapshot: bool = True
-    auto_rollback: bool = True
-    auto_reboot: bool = True
-    verification_prompt: str | None = None
-    action_key: str = "linux-upgrade"
-    action_parameters: dict = Field(default_factory=dict)
-
-    @field_validator("schedule_cron")
-    @classmethod
-    def validate_schedule_cron(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        from croniter import croniter
-
-        if not croniter.is_valid(v):
-            raise ValueError(f"Invalid cron expression: {v!r}")
-        return v
-
-
 class DriftYAML(BaseModel):
     """Global drift-detection schedule.
 
@@ -404,6 +364,5 @@ class LabDogGroupYAML(BaseModel):
     resolver: ResolverYAML | None = None
     users: list[LinuxUserYAML] | None = None
     linux_groups: list[LinuxGroupYAML] | None = None
-    workflow: WorkflowYAML | None = None  # Deprecated — see scheduled_actions
     scheduled_actions: list[ScheduledActionYAML] | None = None
-    model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys
+    model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys (incl. legacy `workflow:`)

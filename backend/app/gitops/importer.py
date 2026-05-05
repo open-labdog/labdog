@@ -15,7 +15,6 @@ from app.gitops.importers.resolver import import_resolver
 from app.gitops.importers.services import import_services
 from app.gitops.importers.users import import_users
 from app.gitops.importers.scheduled_actions import import_scheduled_actions
-from app.gitops.importers.workflow import import_workflow
 from app.gitops.serializer import YAMLParseError, parse_global_yaml, parse_yaml
 from app.models.git_repository import GitOpsStatus
 from app.models.host_group import HostGroup
@@ -121,13 +120,6 @@ async def import_group_from_yaml(
 
         users_result = await import_users(group, parsed, commit_sha, db)
         module_results.append(users_result)
-
-        # Legacy workflow: importer kept temporarily for backwards
-        # compatibility with deployments that still have the old YAML
-        # field; it short-circuits when scheduled_actions: is also
-        # present. Both call sites go in C9.
-        workflow_result = await import_workflow(group, parsed, commit_sha, db)
-        module_results.append(workflow_result)
 
         scheduled_actions_result = await import_scheduled_actions(
             group, parsed, commit_sha, db
