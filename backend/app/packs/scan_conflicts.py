@@ -1,8 +1,8 @@
 """Annotate a ``ScanResult`` with conflict info: same-key collisions
-against the live ``ACTION_REGISTRY`` (so the wizard can pre-select
-``role=override``) and intra-repo collisions where two scanned packs
-in the same tree contribute the same key (a hard error the operator
-must resolve before activation).
+against the live ``ACTION_REGISTRY`` (so the wizard can surface a
+per-key radio for the operator) and intra-repo collisions where two
+scanned packs in the same tree contribute the same key (a hard error
+the operator must resolve before activation).
 
 The registry's freshness is whatever the orchestrator ran into last
 — we don't force a reload here. A pack added five seconds ago that
