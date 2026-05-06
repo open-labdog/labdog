@@ -183,13 +183,13 @@ export default function ActionPacksPage() {
         method: "POST",
         json: { pack_ids: packIds },
       }),
-    invalidateKeys: [["action-packs"], ["actions"], ["action-resolutions"]],
+    invalidateKeys: [["action-packs"], ["actions-catalog"], ["action-resolutions"]],
   })
 
   const deleteMutation = useApiMutation<unknown, number, ActionPack>({
     mutationFn: (packId) =>
       apiFetch(`/api/action-packs/${packId}`, { method: "DELETE" }),
-    invalidateKeys: [["action-packs"], ["actions"], ["action-resolutions"]],
+    invalidateKeys: [["action-packs"], ["actions-catalog"], ["action-resolutions"]],
     successMessage: "Action pack deleted",
     optimisticUpdate: {
       queryKey: ["action-packs"],
@@ -262,7 +262,7 @@ export default function ActionPacksPage() {
         showSuccess("Action pack created")
       }
       await queryClient.invalidateQueries({ queryKey: ["action-packs"] })
-      await queryClient.invalidateQueries({ queryKey: ["actions"] })
+      await queryClient.invalidateQueries({ queryKey: ["actions-catalog"] })
       await queryClient.invalidateQueries({ queryKey: ["action-resolutions"] })
       setDialogOpen(false)
     } catch (err) {
@@ -305,7 +305,7 @@ export default function ActionPacksPage() {
         showError(`Sync failed: ${result.message}`)
       }
       await queryClient.invalidateQueries({ queryKey: ["action-packs"] })
-      await queryClient.invalidateQueries({ queryKey: ["actions"] })
+      await queryClient.invalidateQueries({ queryKey: ["actions-catalog"] })
       await queryClient.invalidateQueries({ queryKey: ["action-resolutions"] })
     } catch (err) {
       showError(err instanceof Error ? err.message : "Sync failed")
