@@ -669,6 +669,16 @@ export interface ActionDefinition {
   pack_name: string
   /** Packs whose entries for this key were shadowed. Empty when uncontested. */
   overridden_from: string[]
+  /** ``per_host`` (default) or ``cluster`` (single ansible run against
+   *  the whole group with a multi-host inventory; e.g. k8s-upgrade). */
+  execution_mode: "per_host" | "cluster"
+}
+
+export type MembershipRole = "control_plane" | "worker"
+
+export interface GroupMembership {
+  host_id: number
+  role: MembershipRole | null
 }
 
 export interface ActionHostRun {

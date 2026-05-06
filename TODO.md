@@ -167,74 +167,24 @@ gives homelab users the K8s story with zero LabDog feature creep.
 
 ---
 
-## Multi-host coordination — upgrade a K8s cluster in one click
+## k8s-upgrade — broaden OS support
 
-**Context:** LabDog's action system fans out per-host — each host
-gets its own `ActionHostRun`, runs its playbook independently, and
-exits. That's fine for `linux-upgrade` but wrong for anything where
-hosts need to coordinate: K8s cluster upgrade drains one node at a
-time and needs the control plane up throughout; the existing local
-terraform/k8s install scaffolding uses a single playbook against
-all hosts with shared facts via a dummy host.
+**Context:** The bundled `k8s-upgrade` action is currently apt-only;
+the role refuses to run on `ansible_os_family != "Debian"` with a
+clear error. RHEL / Rocky / Alma-family hosts are the obvious next
+target — `dnf` plus `dnf versionlock` instead of `apt` + `apt-mark
+hold`, otherwise the kubeadm flow is identical.
 
-**User's real target:** "upgrade a K8s cluster with a single click."
-Not the full provisioning story — just lifecycle ops on an existing
-cluster. Similar needs to one-click provisioning but with narrower
-scope.
+**Sketch:**
 
-**Decisions needed before implementing:**
-
-1. **Single-playbook-many-hosts vs. staged per-host.** Two shapes:
-   - **Group-level execution:** one ansible-runner invocation with
-     an inventory containing every host in the group. Playbook uses
-     `serial:`, `when:`, `delegate_to:` to orchestrate. Matches how
-     Ansible was designed to be used. Requires a new execution path
-     distinct from the current per-host fanout.
-   - **DB-mediated baton pass:** per-host runs as today, but they
-     read/write shared state (Redis key? DB row?) to hand off
-     tokens/state. Fragile; forces playbook authors to learn a
-     LabDog-specific coordination protocol. Reject.
-2. **Ordering.** Some actions need control-plane nodes upgraded
-   before workers. Does the manifest declare ordering, or is the
-   playbook responsible via `hosts:` patterns and `serial:`? Lean:
-   let the playbook handle it (matches Ansible idiom); LabDog just
-   builds the multi-host inventory from the selected group.
-3. **Snapshot semantics for group runs.** Take a snapshot of every
-   mapped VM before the run, roll back all on any failure? Or per
-   host, and leave partially-upgraded clusters to the operator?
-   Probably all-snapshots-up-front, bulk-rollback on failure.
-   Expensive on storage; possibly opt-in via manifest.
-4. **Progress reporting.** The UI today shows per-host progress.
-   A single ansible-runner invocation produces one log stream —
-   the UI needs a different view ("cluster upgrade" rather than
-   "3 hosts running the same thing").
-5. **Failure atomicity.** What happens if host 3 of 5 fails? The
-   current answer for per-host runs is "keep going, each host's
-   state is independent." For cluster ops the answer is
-   "half-upgraded K8s control plane is worse than not-upgraded —
-   stop and roll back." Manifest flag `stop_on_first_failure`?
-
-**Implementation sketch (pre-plan):**
-
-- New manifest flag `execution: per_host | group` (default
-  `per_host`; existing actions stay as they are).
-- When `execution=group`: the orchestrator creates a single
-  `ActionRun` with no `ActionHostRun` fanout; a new
-  `GroupActionExecution` record carries the single stream.
-- `run_ansible()` called once with a multi-host inventory generated
-  from every host in the selected group. Bundled role paths stay
-  the same.
-- Snapshot orchestration: sequential `create_snapshot` per mapped
-  VM before the run; `rollback_to_snapshot` for each on failure.
-  Budget this carefully — 10 nodes × 30s snapshot latency is real.
-- UI: new run-detail layout that shows ansible-runner's play
-  recap per host instead of one-stream-per-host.
-
-**Blast radius / risk:** meaningful. Touches the orchestrator, task
-runner, SSE shape, UI run detail. Not a weekend feature.
-
-**Priority:** high, but gate behind a proper plan document (do
-Phase 1 exploration + design agent before implementing). K8s
-upgrade is the concrete first customer; a one-off special case for
-that playbook is tempting but would bifurcate the action system.
-Solve the general case or don't solve it at all.
+- Split `tasks/upgrade-control-plane.yml`,
+  `tasks/upgrade-worker.yml`, and `tasks/upgrade-packages.yml` into
+  per-distro subtasks (`-debian.yml` / `-redhat.yml`) with
+  `ansible.builtin.import_tasks` selected on `ansible_os_family`.
+- Drop the `Refuse non-Debian-family hosts` task in
+  `tasks/main.yml`.
+- Verify the kubeadm + kubelet + kubectl repo at `pkgs.k8s.io`
+  serves the requested `target_version` for the host's OS family
+  in `tasks/preflight.yml`.
+- Smoke-test on at least one Rocky 9 + Debian 12 mixed cluster
+  before declaring done.

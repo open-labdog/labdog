@@ -1,17 +1,17 @@
 {
   "errors": [],
-  "generated_at": "2026-05-06T07:52:00Z",
+  "generated_at": "2026-05-06T19:38:33Z",
   "metrics": {
     "_totals": {
       "CONFIDENCE.HIGH": 49,
       "CONFIDENCE.LOW": 5,
-      "CONFIDENCE.MEDIUM": 13,
+      "CONFIDENCE.MEDIUM": 14,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 50,
-      "SEVERITY.MEDIUM": 17,
+      "SEVERITY.MEDIUM": 18,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 29911,
+      "loc": 30524,
       "nosec": 0,
       "skipped_tests": 3
     },
@@ -89,7 +89,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 72,
+      "loc": 84,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -102,7 +102,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 276,
+      "loc": 277,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -128,7 +128,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 41,
+      "loc": 42,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -206,7 +206,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 36,
+      "loc": 85,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -310,7 +310,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 273,
+      "loc": 327,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -440,7 +440,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 124,
+      "loc": 139,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -453,7 +453,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 428,
+      "loc": 516,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1675,7 +1675,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 74,
+      "loc": 89,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2312,7 +2312,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 64,
+      "loc": 65,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2719,6 +2719,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/tasks/action_cluster.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 289,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/tasks/action_host.py": {
       "CONFIDENCE.HIGH": 1,
       "CONFIDENCE.LOW": 0,
@@ -2741,7 +2754,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 244,
+      "loc": 332,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -4078,6 +4091,26 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
+    },
+    {
+      "code": "193                 fd, key_path = tempfile.mkstemp(\n194                     dir=\"/dev/shm\", prefix=\"labdog-cluster-\", suffix=\".key\"\n195                 )\n",
+      "col_offset": 24,
+      "end_col_offset": 34,
+      "filename": "app/tasks/action_cluster.py",
+      "issue_confidence": "MEDIUM",
+      "issue_cwe": {
+        "id": 377,
+        "link": "https://cwe.mitre.org/data/definitions/377.html"
+      },
+      "issue_severity": "MEDIUM",
+      "issue_text": "Probable insecure usage of temp file/directory.",
+      "line_number": 194,
+      "line_range": [
+        194
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
+      "test_id": "B108",
+      "test_name": "hardcoded_tmp_directory"
     },
     {
       "code": "76     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-action-\")\n77     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-action-\", suffix=\".key\")\n78     os.close(fd)\n",
