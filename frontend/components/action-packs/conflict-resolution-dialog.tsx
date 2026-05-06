@@ -43,7 +43,7 @@ export function ConflictResolutionDialog({ open, onClose }: Props) {
       ),
     invalidateKeys: [
       ["action-resolutions"],
-      ["actions"],
+      ["actions-catalog"],
       ["action-packs"],
     ],
   })
@@ -56,7 +56,7 @@ export function ConflictResolutionDialog({ open, onClose }: Props) {
       ),
     invalidateKeys: [
       ["action-resolutions"],
-      ["actions"],
+      ["actions-catalog"],
       ["action-packs"],
     ],
   })
