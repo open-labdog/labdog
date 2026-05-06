@@ -64,8 +64,14 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, host?.id, host?.os_facts_collected_at])
 
-  const filteredCatalog = (catalog ?? []).filter((a) =>
-    scope === "host" ? a.supports_host : a.supports_group
+  // Built-in pseudo-actions (sync / drift_check / collect_state) are
+  // dispatched from their own UI surfaces (Sync button, drift card,
+  // facts refresh) and never need to appear in the Actions catalog.
+  // The schedule dialog still surfaces them — they're scheduleable.
+  const filteredCatalog = (catalog ?? []).filter(
+    (a) =>
+      !a.key.startsWith("_builtin.") &&
+      (scope === "host" ? a.supports_host : a.supports_group),
   )
 
   const runColumns: ColumnDef<ActionRun>[] = [
