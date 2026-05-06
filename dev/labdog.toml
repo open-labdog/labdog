@@ -47,3 +47,8 @@ max_tasks_per_child = 100 # Recycle worker after N tasks (prevents memory leaks)
 [discovery]
 min_prefix = 20
 max_bulk_add = 50
+
+[ansible]
+# Dev-writable checkout dir for git-backed action packs. Production
+# defaults to /var/lib/labdog/packs which dev users can't write to.
+packs_root_dir = "/tmp/labdog-dev-packs"
