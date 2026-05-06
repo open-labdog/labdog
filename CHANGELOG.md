@@ -7,6 +7,55 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+#### Cluster-mode actions and one-click Kubernetes upgrade
+
+Actions now declare `execution_mode: per_host` (default) or `cluster`
+in their manifest. Cluster-mode actions are dispatched as a single
+ansible-playbook invocation against a multi-host inventory, with the
+playbook driving serialisation via Ansible's `serial:` keyword. The
+existing per-host fan-out is unchanged for everything else.
+
+- **`host_group_memberships.role`** — new nullable `String(32)`
+  column with a CHECK constraint allowing `control_plane`,
+  `worker`, or NULL (migration `f4a8e2b1c7d3`). Per-member role
+  drives the multi-host inventory shape (`all.children.{control_plane,
+  workers}`) for cluster-mode actions.
+- **Membership endpoints** —
+  `GET /api/groups/{id}/memberships` returns the lightweight
+  `(host_id, role)` view; `PUT /api/groups/{id}/hosts/{host_id}/role`
+  sets or clears the role (superuser-only — bad role assignments
+  can take down a Kubernetes cluster).
+- **Cluster-mode dispatch path** — when `action.execution_mode ==
+  "cluster"`, the orchestrator skips the per-host batching loop,
+  validates every member has a non-null role and there's at least
+  one control plane, and dispatches a new
+  `app.tasks.action_cluster.run_action_cluster` Celery task with a
+  single `ActionHostRun` anchored to the first control-plane host
+  (the "driver"). API `POST /actions/runs` rejects cluster-mode
+  submissions that target a single host or a group with unassigned
+  roles, surfacing the failure in the dialog before any task is
+  queued.
+- **Production `k8s-upgrade` playbook** — replaces the placeholder
+  stub at `backend/app/ansible/actions/k8s-upgrade.yml` with a
+  vendored role at `backend/app/ansible/actions/k8s-upgrade/`.
+  Drives the canonical kubeadm upgrade flow: control-plane nodes
+  serially (first runs `kubeadm upgrade plan + apply`; subsequent
+  run `kubeadm upgrade node`), then workers serially. `kubectl`-
+  driven tasks (drain / uncordon / Ready-wait) delegate to the
+  first control-plane host so no kubeconfig has to ship to other
+  nodes. Apt-only for now; RHEL/Rocky/Alma support tracked in
+  `TODO.md`.
+- **Frontend** — group's Members table grows a per-row role picker
+  (None / control_plane / worker); the run-create dialog gains a
+  cluster-mode branch that pre-flights role counts, hides the
+  parallelism picker, and refuses to submit unless the group is
+  fully assigned. The run-detail page hides the per-host status
+  grid for runs with a single `ActionHostRun` (host runs already
+  show their host in the header; cluster runs put per-node
+  progress in the streamed ansible stdout).
+
 ### Changed
 
 #### Action pack precedence: drop role, add position + per-key resolutions
