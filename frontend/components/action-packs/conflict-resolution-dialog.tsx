@@ -1,7 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
-import { AlertTriangle, RotateCcw } from "lucide-react"
+import { AlertTriangle, CheckCircle, RotateCcw } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -86,6 +86,8 @@ export function ConflictResolutionDialog({ open, onClose }: Props) {
           {rows?.map((row) => {
             const pendingForKey =
               upsertMutation.isPending || deleteMutation.isPending
+            const operatorResolved =
+              row.resolution !== null && row.decided_by_user_id !== null
             return (
               <div
                 key={row.action_key}
@@ -96,10 +98,16 @@ export function ConflictResolutionDialog({ open, onClose }: Props) {
                     <span className="font-mono text-sm text-white truncate">
                       {row.action_key}
                     </span>
-                    {row.is_frozen && (
+                    {row.is_frozen && !operatorResolved && (
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-950/60 border border-amber-800 px-1.5 py-0.5 text-[11px] text-amber-300 flex-shrink-0">
                         <AlertTriangle className="h-3 w-3" />
                         frozen
+                      </span>
+                    )}
+                    {operatorResolved && (
+                      <span className="inline-flex items-center gap-1 rounded-md bg-emerald-950/60 border border-emerald-800 px-1.5 py-0.5 text-[11px] text-emerald-300 flex-shrink-0">
+                        <CheckCircle className="h-3 w-3" />
+                        resolved
                       </span>
                     )}
                   </div>
