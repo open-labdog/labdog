@@ -2,7 +2,7 @@ key: linux-os-upgrade
 name: Upgrade OS release
 description: >-
   Upgrades to a new major OS release (e.g. Debian 12→13, Ubuntu
-  22.04→24.04). Includes NIC rename fix.
+  22.04→24.04).
 icon: Layers
 playbook: linux-os-upgrade.yml
 version: "1.0"

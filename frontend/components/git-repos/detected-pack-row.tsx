@@ -3,9 +3,9 @@
 import { AlertTriangleIcon, FolderIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip } from "@/components/ui/tooltip"
-import type { DetectedPack, KeyOwner, PackRole } from "@/lib/types"
+import type { DetectedPack, KeyOwner } from "@/lib/types"
 
-export type PackSelection = { checked: boolean; role: PackRole }
+export type PackSelection = { checked: boolean }
 
 export function DetectedPackRow({
   pack,
@@ -54,27 +54,28 @@ export function DetectedPackRow({
           <div className="flex items-center gap-2 flex-wrap">
             <FolderIcon className="h-3.5 w-3.5 text-slate-500" />
             <span className="text-sm font-medium text-white truncate">{pack.name}</span>
-            <span className="font-mono text-xs text-slate-500" title={pack.path || "(repo root)"}>
+            <span
+              className="font-mono text-xs text-slate-500"
+              title={pack.path || "(repo root)"}
+            >
               {pack.path || "(repo root)"}
             </span>
-            <Tooltip
-              content={
-                selection.role === "override"
-                  ? "Same-key match: this pack will override the existing action."
-                  : "Novel key: this pack contributes new actions."
-              }
-            >
-              <Badge
-                variant="outline"
-                className={
-                  selection.role === "override"
-                    ? "border-amber-500/60 text-amber-300"
-                    : "border-slate-600 text-slate-300"
+            {sameKeyMatches.length > 0 && (
+              <Tooltip
+                content={
+                  sameKeyMatches.length === 1
+                    ? `Action key "${sameKeyMatches[0]}" already has an owner — you'll choose the winner below.`
+                    : `${sameKeyMatches.length} action keys already have owners — you'll choose winners below.`
                 }
               >
-                {selection.role}
-              </Badge>
-            </Tooltip>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/60 text-amber-300"
+                >
+                  contested
+                </Badge>
+              </Tooltip>
+            )}
             {!pack.pack_yml_present && (
               <Tooltip content="No pack.yml found at this path; treating the repo root as a single pack.">
                 <Badge variant="outline" className="border-slate-600 text-slate-400">
@@ -123,28 +124,23 @@ export function DetectedPackRow({
             </div>
           )}
 
-          {sameKeyMatches.length > 0 && !selection.checked && (
-            <p className="mt-2 text-xs text-slate-500">
-              {sameKeyMatches.length === 1
-                ? `If unchecked, the existing "${sameKeyMatches[0]}" action will be used.`
-                : `If unchecked, the existing actions for ${sameKeyMatches.map((k) => `"${k}"`).join(", ")} will be used.`}
-            </p>
-          )}
-
           {hasErrors && (
             <ul className="mt-2 space-y-1">
               {pack.errors.map((err, idx) => (
-                <li key={idx} className="flex items-start gap-1.5 text-xs text-amber-300">
+                <li
+                  key={idx}
+                  className="flex items-start gap-1.5 text-xs text-amber-300"
+                >
                   <AlertTriangleIcon className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-mono text-amber-200">{err.file}</span> — {err.message}
+                    <span className="font-mono text-amber-200">{err.file}</span>{" "}
+                    — {err.message}
                   </span>
                 </li>
               ))}
             </ul>
           )}
         </div>
-
       </div>
     </div>
   )

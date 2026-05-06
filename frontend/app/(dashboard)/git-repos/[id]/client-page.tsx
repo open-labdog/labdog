@@ -236,7 +236,7 @@ export default function GitRepoDetailPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Badge variant="outline" className="border-slate-600 text-slate-300">
-                    {p.role}
+                    position {p.position}
                   </Badge>
                   {!p.enabled && <Badge className="bg-slate-700 text-slate-300">disabled</Badge>}
                 </div>
