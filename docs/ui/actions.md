@@ -26,6 +26,7 @@ The catalog comes from two sources:
 
 - [Running actions](#running-actions)
 - [Scheduled actions](#scheduled-actions)
+- [Cluster-mode actions](#cluster-mode-actions)
 - [Action packs](#action-packs)
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
@@ -62,6 +63,34 @@ the DB — history is visible in the same tab.
 
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
+
+### Cluster-mode actions
+
+Most actions fan out per-host: LabDog dispatches one Celery task per
+target host with a single-host inventory and a parallelism setting
+controls how many run concurrently. A few actions need the whole
+group's hosts visible to a single ansible run — for example,
+`k8s-upgrade` drains, upgrades, and re-admits each node in turn while
+the rest of the cluster keeps serving traffic. Such actions declare
+`execution_mode: cluster` in their manifest.
+
+**What's different in the UI:**
+
+- The action card only appears on group views (cluster-mode actions
+  set `supports_host: false`).
+- Every group member must carry a **cluster role** — `control_plane`
+  or `worker`. Set them on the group's Members tab via the per-row
+  role picker. The Run dialog refuses to submit until every member
+  is assigned and at least one `control_plane` exists.
+- The parallelism picker is hidden — cluster runs are always one
+  ansible-runner invocation against a multi-host inventory; the
+  playbook decides ordering with Ansible's `serial:` keyword.
+- The run-detail page hides the per-host status grid (there's exactly
+  one `ActionHostRun` anchored to the first control-plane host as the
+  driver). Watch the streamed ansible stdout for per-node progress.
+
+The bundled `k8s-upgrade` is currently **apt-only** — Debian and
+Ubuntu nodes. RHEL / Rocky / Alma support is on the roadmap.
 
 ---
 

@@ -159,10 +159,31 @@ async def test_unknown_action_key_rejected(db):
     assert "Unknown action_key" in result.error_message
 
 
-async def test_host_only_action_rejected_for_group(db):
-    """linux-upgrade has supports_group=False — can't bind to a group."""
+async def test_host_only_action_rejected_for_group(db, monkeypatch):
+    """An action with supports_group=False can't bind to a group."""
+    from pathlib import Path
+
+    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.types import ActionDefinition
+
+    fake = ActionDefinition(
+        key="host-only-fixture",
+        name="Host-Only Fixture",
+        description="",
+        icon="ArrowUpFromLine",
+        playbook_path=Path("/tmp/labdog-test-host-only.yml"),
+        version="1.0",
+        estimated_duration="1 min",
+        destructive=False,
+        supports_group=False,
+        supports_host=True,
+        supports_fleet=False,
+    )
+    Path("/tmp/labdog-test-host-only.yml").touch()
+    monkeypatch.setitem(ACTION_REGISTRY, "host-only-fixture", fake)
+
     group = await create_group(db, name="gg")
-    yaml = _yaml([{"action_key": "linux-upgrade", "schedule_cron": "0 * * * *"}])
+    yaml = _yaml([{"action_key": "host-only-fixture", "schedule_cron": "0 * * * *"}])
     result = await import_scheduled_actions(group, yaml, None, db)
     assert result.error_message is not None
     assert "does not support group runs" in result.error_message

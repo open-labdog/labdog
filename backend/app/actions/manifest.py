@@ -51,6 +51,18 @@ class ActionManifest(BaseModel):
         ),
     )
     parameters: list[ManifestParameter] = Field(default_factory=list)
+    execution_mode: Literal["per_host", "cluster"] = Field(
+        default="per_host",
+        description=(
+            "Per-host (default) actions are dispatched once per target host "
+            "with a single-host inventory; the orchestrator fans out across "
+            "hosts in a group with a parallelism setting. Cluster-mode "
+            "actions are invoked once per group with a multi-host inventory "
+            "(e.g. ``k8s-upgrade``); group members must carry roles "
+            "(``control_plane`` / ``worker``) and the action runs serially "
+            "by Ansible's own ``serial`` keyword."
+        ),
+    )
 
     @field_validator("key")
     @classmethod

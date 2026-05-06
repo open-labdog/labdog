@@ -59,6 +59,11 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: ``per_host`` (default) — orchestrator fans the action across one
+    #: target host at a time. ``cluster`` — a single ansible-playbook
+    #: invocation runs against the whole group with a multi-host
+    #: inventory (currently used by ``k8s-upgrade``).
+    execution_mode: Literal["per_host", "cluster"] = "per_host"
 
     @property
     def is_builtin(self) -> bool:
