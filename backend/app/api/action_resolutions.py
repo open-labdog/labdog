@@ -59,9 +59,7 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
         resolution_out: ActionResolutionPackOut | None = None
         winner = default_winner
         if resolution_row is not None:
-            match = next(
-                (c for c in contribs if c.pack_id == resolution_row.pack_id), None
-            )
+            match = next((c for c in contribs if c.pack_id == resolution_row.pack_id), None)
             if match is not None:
                 resolution_out = _to_pack_out(match)
                 winner = match
@@ -73,13 +71,10 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
                 current_winner=_to_pack_out(winner),
                 resolution=resolution_out,
                 is_frozen=(
-                    resolution_out is not None
-                    and resolution_out.pack_id != default_winner.pack_id
+                    resolution_out is not None and resolution_out.pack_id != default_winner.pack_id
                 ),
                 decided_at=resolution_row.decided_at if resolution_row else None,
-                decided_by_user_id=(
-                    resolution_row.decided_by_user_id if resolution_row else None
-                ),
+                decided_by_user_id=(resolution_row.decided_by_user_id if resolution_row else None),
             )
         )
     out.sort(key=lambda r: r.action_key)
@@ -136,9 +131,7 @@ async def upsert_action_resolution(
             },
         )
     if body.pack_id is not None:
-        exists = await db.scalar(
-            select(ActionPack.id).where(ActionPack.id == body.pack_id)
-        )
+        exists = await db.scalar(select(ActionPack.id).where(ActionPack.id == body.pack_id))
         if exists is None:
             raise HTTPException(
                 status_code=404,
@@ -146,13 +139,9 @@ async def upsert_action_resolution(
             )
 
     existing = (
-        await db.execute(
-            select(ActionResolution).where(ActionResolution.action_key == action_key)
-        )
+        await db.execute(select(ActionResolution).where(ActionResolution.action_key == action_key))
     ).scalar_one_or_none()
-    before_state = (
-        {"pack_id": existing.pack_id} if existing is not None else None
-    )
+    before_state = {"pack_id": existing.pack_id} if existing is not None else None
     if existing is not None:
         existing.pack_id = body.pack_id
         existing.decided_by_user_id = user.id
@@ -202,9 +191,7 @@ async def delete_action_resolution(
     were freshly seen and lets position-based default win.
     """
     existing = (
-        await db.execute(
-            select(ActionResolution).where(ActionResolution.action_key == action_key)
-        )
+        await db.execute(select(ActionResolution).where(ActionResolution.action_key == action_key))
     ).scalar_one_or_none()
     if existing is None:
         raise HTTPException(status_code=404, detail="No resolution for that key")
@@ -212,9 +199,7 @@ async def delete_action_resolution(
     await db.delete(existing)
     snapshot_row = (
         await db.execute(
-            select(ActionRegistrySnapshot).where(
-                ActionRegistrySnapshot.action_key == action_key
-            )
+            select(ActionRegistrySnapshot).where(ActionRegistrySnapshot.action_key == action_key)
         )
     ).scalar_one_or_none()
     if snapshot_row is not None:

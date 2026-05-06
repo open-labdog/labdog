@@ -132,9 +132,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
             name=op.f("fk_action_registry_snapshot_pack_id_action_packs"),
         ),
-        sa.PrimaryKeyConstraint(
-            "action_key", name=op.f("pk_action_registry_snapshot")
-        ),
+        sa.PrimaryKeyConstraint("action_key", name=op.f("pk_action_registry_snapshot")),
     )
 
 

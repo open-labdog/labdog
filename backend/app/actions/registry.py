@@ -204,9 +204,7 @@ def _load_resolutions_and_snapshot_sync(
 
     res = conn.execute(select(ActionResolution.action_key, ActionResolution.pack_id))
     resolutions = {row.action_key: row.pack_id for row in res}
-    snap = conn.execute(
-        select(ActionRegistrySnapshot.action_key, ActionRegistrySnapshot.pack_id)
-    )
+    snap = conn.execute(select(ActionRegistrySnapshot.action_key, ActionRegistrySnapshot.pack_id))
     prior = {row.action_key: row.pack_id for row in snap}
     return resolutions, prior
 
@@ -289,9 +287,7 @@ async def _persist_merge_outcome_async(db, result) -> None:
 def _load_bundled_only() -> None:
     from app.actions.packs import load_packs_with_resolutions  # noqa: PLC0415
 
-    result = load_packs_with_resolutions(
-        [_bundled_pack()], resolutions={}, prior_winners={}
-    )
+    result = load_packs_with_resolutions([_bundled_pack()], resolutions={}, prior_winners={})
     _install(result)
 
 
