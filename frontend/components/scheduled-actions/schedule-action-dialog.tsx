@@ -498,8 +498,14 @@ function PickerStep({
   isEdit: boolean
 }) {
   const action = actions.find((a) => a.key === actionKey) ?? null
-  const builtin = actions.filter((a) => a.key.startsWith("_builtin."))
-  const packs = actions.filter((a) => !a.key.startsWith("_builtin."))
+  // Built-in pseudo-actions (sync / drift_check / collect_state) have
+  // their own UI entry points — they're not surfaced for new
+  // schedules. Legacy rows that already target a builtin (created
+  // before this filter landed) still need to render in edit mode so
+  // the locked picker can show the current value.
+  const packs = actions.filter(
+    (a) => !a.key.startsWith("_builtin.") || a.key === actionKey,
+  )
 
   return (
     <div className="mt-4 space-y-4">
@@ -521,24 +527,11 @@ function PickerStep({
           data-testid="action-picker"
         >
           <option value="">Select an action…</option>
-          {builtin.length > 0 && (
-            <optgroup label="Built-in">
-              {builtin.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          {packs.length > 0 && (
-            <optgroup label="Pack-supplied">
-              {packs.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name} — {a.pack_name}
-                </option>
-              ))}
-            </optgroup>
-          )}
+          {packs.map((a) => (
+            <option key={a.key} value={a.key}>
+              {a.name} — {a.pack_name}
+            </option>
+          ))}
         </select>
         {action && (
           <p className="text-xs text-slate-500">{action.description}</p>
