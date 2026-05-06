@@ -348,17 +348,13 @@ async def reorder_action_packs(
     something else mutated the table mid-edit and the operator should
     refresh.
     """
-    rows = list(
-        (await db.execute(select(ActionPack))).scalars().all()
-    )
+    rows = list((await db.execute(select(ActionPack))).scalars().all())
     existing_ids = {r.id for r in rows}
     submitted_ids = set(body.pack_ids)
     if existing_ids != submitted_ids or len(body.pack_ids) != len(submitted_ids):
         missing = sorted(existing_ids - submitted_ids)
         unknown = sorted(submitted_ids - existing_ids)
-        duplicates = sorted(
-            {pid for pid in body.pack_ids if body.pack_ids.count(pid) > 1}
-        )
+        duplicates = sorted({pid for pid in body.pack_ids if body.pack_ids.count(pid) > 1})
         raise HTTPException(
             status_code=409,
             detail={

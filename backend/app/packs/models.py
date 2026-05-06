@@ -74,9 +74,7 @@ class ActionPack(Base):
 
     #: Linear precedence ordering. Higher wins on collisions. New packs
     #: default to ``MAX(position) + 1`` (server-assigned at insert).
-    position: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0", index=True
-    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
