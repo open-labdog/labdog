@@ -36,26 +36,20 @@ from app.crypto import decrypt_ssh_key, get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.ssh_key import SSHKey
 from app.packs.git_auth import git_auth_context
-from app.packs.models import ActionPack, PackRole, PackSourceType
+from app.packs.models import ActionPack, PackSourceType
 from app.packs.redact import redact
 
 logger = logging.getLogger(__name__)
 
 
-#: Load-order tiers (bigger = wins on collision). Bundled stays at 0
-#: via ``BUNDLED_PACK_PRIORITY`` in ``app.actions.registry``.
-PRIORITY_DEFAULT_GIT = 10
-PRIORITY_OVERRIDE_GIT = 100
-PRIORITY_LOCAL = 1000
-
-
 def derive_priority(pack: ActionPack) -> int:
-    """Map a pack's source+role to its numeric load priority."""
-    if pack.source_type == PackSourceType.LOCAL:
-        return PRIORITY_LOCAL
-    if pack.role == PackRole.DEFAULT:
-        return PRIORITY_DEFAULT_GIT
-    return PRIORITY_OVERRIDE_GIT
+    """Map a pack's row to its numeric load priority.
+
+    Bundled is implicit at 0 via ``BUNDLED_PACK_PRIORITY`` in
+    ``app.actions.registry``; every DB pack starts at ``position + 1``
+    so the lowest-positioned DB pack still beats bundled.
+    """
+    return pack.position + 1
 
 
 def checkout_path_for(pack_id: int) -> Path:
@@ -247,7 +241,14 @@ async def load_db_packs(db: AsyncSession) -> list[Pack]:
         path = effective_path_for(row)
         if not path.is_dir():
             continue
-        packs.append(Pack(name=row.name, path=path, priority=derive_priority(row)))
+        packs.append(
+            Pack(
+                name=row.name,
+                path=path,
+                priority=derive_priority(row),
+                pack_id=row.id,
+            )
+        )
     return packs
 
 

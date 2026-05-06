@@ -14,7 +14,7 @@ const STEPS: { id: ScheduleStep; label: string }[] = [
 export function WizardStepIndicator({ current }: { current: ScheduleStep }) {
   const idx = STEPS.findIndex((s) => s.id === current)
   return (
-    <ol className="flex items-center gap-2 flex-wrap" aria-label="Schedule wizard progress">
+    <ol className="flex items-center gap-3 flex-wrap" aria-label="Schedule wizard progress">
       {STEPS.map((step, i) => {
         const done = i < idx
         const active = i === idx
@@ -40,7 +40,7 @@ export function WizardStepIndicator({ current }: { current: ScheduleStep }) {
             </span>
             <span className={`text-sm ${label}`}>{step.label}</span>
             {i < STEPS.length - 1 && (
-              <span className="ml-1 h-px w-6 bg-slate-700" aria-hidden="true" />
+              <span className="ml-1 h-px w-8 bg-slate-700" aria-hidden="true" />
             )}
           </li>
         )

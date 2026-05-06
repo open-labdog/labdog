@@ -8,7 +8,7 @@ The sidebar is always visible on desktop (collapses on mobile). It has three sec
 
 | Section | Items |
 |---------|-------|
-| **Manage** | Dashboard, Hosts, Groups, Scheduled Actions |
+| **Manage** | Dashboard, Hosts, Groups, Schedules |
 | **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox |
 | **Admin** | Users, Audit Log, Settings |
 
@@ -33,7 +33,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Linux Users](groups.md#linux-users) | User accounts, SSH keys, sudo rules |
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
 | [Firewall Sync](groups.md#firewall-sync) | Preview and apply firewall rule changes per group (other modules sync from their own per-tab buttons; v0.2.0+ all per-tab syncs route through one per-host orchestrator with PostgreSQL serialisation) |
-| [Scheduled Actions](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions |
+| [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |

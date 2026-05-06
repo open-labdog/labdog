@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { apiFetch } from "@/lib/api"
 import { cronToHuman } from "@/lib/cron"
 import type { ValidateCronResponse } from "@/lib/types"
@@ -11,15 +12,29 @@ interface CronInputProps {
   onChange: (next: string) => void
 }
 
-const QUICK_PICKS: { label: string; cron: string }[] = [
+// Custom is the sentinel — selecting it leaves the cron input as the
+// authoritative source. Any other value writes the cron string verbatim.
+const CUSTOM = "__custom__"
+
+const PRESETS: { label: string; cron: string }[] = [
+  { label: "Every 15 minutes", cron: "*/15 * * * *" },
+  { label: "Every 30 minutes", cron: "*/30 * * * *" },
   { label: "Hourly", cron: "0 * * * *" },
-  { label: "Nightly 03:00 UTC", cron: "0 3 * * *" },
-  { label: "Weekly Sun 03:00", cron: "0 3 * * 0" },
-  { label: "Monthly 1st 03:00", cron: "0 3 1 * *" },
+  { label: "Nightly (03:00 UTC)", cron: "0 3 * * *" },
+  { label: "Weekdays 03:00 UTC", cron: "0 3 * * 1-5" },
+  { label: "Weekly Sun 03:00 UTC", cron: "0 3 * * 0" },
+  { label: "Monthly 1st 03:00 UTC", cron: "0 3 1 * *" },
 ]
 
+function presetForCron(cron: string): string {
+  const match = PRESETS.find((p) => p.cron === cron)
+  return match ? match.cron : CUSTOM
+}
+
 export function CronInput({ value, onChange }: CronInputProps) {
-  const [validation, setValidation] = useState<ValidateCronResponse | null>(null)
+  const [validation, setValidation] = useState<ValidateCronResponse | null>(
+    null,
+  )
   const [validating, setValidating] = useState(false)
 
   // Debounced server-side validation. The endpoint is cheap; the
@@ -40,7 +55,11 @@ export function CronInput({ value, onChange }: CronInputProps) {
         if (!cancelled) setValidation(resp)
       } catch {
         if (!cancelled) {
-          setValidation({ valid: false, message: "Validation failed", next_run_at: [] })
+          setValidation({
+            valid: false,
+            message: "Validation failed",
+            next_run_at: [],
+          })
         }
       } finally {
         if (!cancelled) setValidating(false)
@@ -52,32 +71,47 @@ export function CronInput({ value, onChange }: CronInputProps) {
     }
   }, [value])
 
+  const presetValue = presetForCron(value)
+
   return (
     <div className="space-y-2">
-      <Input
-        type="text"
-        placeholder="0 3 * * *"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="font-mono"
-        aria-label="Cron expression"
-      />
-      <div className="flex flex-wrap gap-1">
-        {QUICK_PICKS.map((q) => (
-          <button
-            key={q.cron}
-            type="button"
-            onClick={() => onChange(q.cron)}
-            className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800"
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase text-slate-500">Preset</Label>
+          <select
+            value={presetValue}
+            onChange={(e) => {
+              if (e.target.value === CUSTOM) return
+              onChange(e.target.value)
+            }}
+            className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+            aria-label="Cron preset"
           >
-            {q.label}
-          </button>
-        ))}
+            <option value={CUSTOM}>Custom…</option>
+            {PRESETS.map((p) => (
+              <option key={p.cron} value={p.cron}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs uppercase text-slate-500">
+            Cron expression
+          </Label>
+          <Input
+            type="text"
+            placeholder="0 3 * * *"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="font-mono"
+            aria-label="Cron expression"
+          />
+        </div>
       </div>
+
       {value && (
-        <p className="text-xs text-slate-400">
-          {cronToHuman(value)}
-        </p>
+        <p className="text-xs text-slate-400">{cronToHuman(value)}</p>
       )}
       {validation && !validation.valid && (
         <p className="text-xs text-red-400">

@@ -17,7 +17,7 @@ export default function GenericActionRunPage() {
       <ActionRunDetail
         runId={runId}
         backHref="/schedules"
-        backLabel="Back to Scheduled Actions"
+        backLabel="Back to Schedules"
       />
     </div>
   )

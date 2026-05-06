@@ -13,6 +13,7 @@ from starlette.responses import FileResponse, RedirectResponse
 
 from app.api._repo_scan import router as repo_scan_router
 from app.api.action_packs import router as action_packs_router
+from app.api.action_resolutions import router as action_resolutions_router
 from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
@@ -368,6 +369,7 @@ def create_app() -> FastAPI:
 
     app.include_router(actions_router, prefix="/api")
     app.include_router(action_packs_router, prefix="/api")
+    app.include_router(action_resolutions_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(host_state_router, prefix="/api")

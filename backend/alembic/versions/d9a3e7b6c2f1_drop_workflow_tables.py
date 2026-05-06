@@ -94,12 +94,10 @@ def downgrade() -> None:
     """Recreate legacy tables and best-effort reverse-migrate rows."""
     # Recreate the three Postgres enums.
     op.execute(
-        "CREATE TYPE workflowrunstatus AS ENUM "
-        "('pending','running','completed','failed','partial')"
+        "CREATE TYPE workflowrunstatus AS ENUM ('pending','running','completed','failed','partial')"
     )
     op.execute(
-        "CREATE TYPE workflowhoststatus AS ENUM "
-        "('pending','running','success','failed','skipped')"
+        "CREATE TYPE workflowhoststatus AS ENUM ('pending','running','success','failed','skipped')"
     )
     op.execute(
         "CREATE TYPE workflowstep AS ENUM "
@@ -112,9 +110,7 @@ def downgrade() -> None:
         sa.Column("group_id", sa.Integer(), nullable=False),
         sa.Column("batch_size", sa.Integer(), server_default="1", nullable=False),
         sa.Column("schedule_cron", sa.String(length=100), nullable=True),
-        sa.Column(
-            "pre_update_snapshot", sa.Boolean(), server_default="true", nullable=False
-        ),
+        sa.Column("pre_update_snapshot", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("auto_rollback", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("verification_prompt", sa.Text(), nullable=True),
         sa.Column("auto_reboot", sa.Boolean(), server_default="true", nullable=False),

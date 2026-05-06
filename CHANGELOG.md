@@ -7,6 +7,54 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Changed
+
+#### Action pack precedence: drop role, add position + per-key resolutions
+
+The `default` / `override` role concept is gone. Pack precedence is now
+a single linear `ActionPack.position` integer (higher wins; bundled
+implicit at 0); operators reorder packs by drag-and-drop on the
+**Action Packs** page, matching the firewall-rules UX. Per-key
+conflicts have a dedicated resolution path so adding or syncing a
+pack never silently flips behaviour.
+
+- **`ActionPack.role` column dropped, `position` added.** Migration
+  `e7b2c4f9a3d1` backfills positions in stable, behaviour-preserving
+  order (today's local > override > default precedence). Local packs
+  lose their implicit "always wins" status — operators can now demote
+  a local pack below other packs.
+- **`POST /api/action-packs/reorder`** — atomic full-list rewrite of
+  pack positions. Submitted ids must match the current set exactly;
+  the UI builds the body from its full sorted list.
+- **`action_resolution` table + endpoints.** `GET/PUT/DELETE
+  /api/action-resolutions[/{action_key}]` lets operators inspect
+  contested keys and pin which pack wins each one. `pack_id NULL`
+  pins bundled. Pack delete cascades — pinned-to-deleted-pack rows go
+  away automatically.
+- **`action_registry_snapshot` table + freeze-on-fresh-conflict.** The
+  registry rebuild reads the snapshot of last-known winners; when a
+  sync introduces a new manifest that turns a previously-uncontested
+  key into a contested one, LabDog auto-pins the previous winner via
+  an `action_resolution` row. Behaviour does not silently flip — the
+  conflict banner on **Action Packs** flags frozen rows for operator
+  review. Resetting a resolution clears the snapshot row so the next
+  rebuild treats the key fresh.
+- **Wizard now requires per-key picks.** When activating a repo whose
+  packs collide with existing keys, the review step shows a
+  per-key winner radio (one row per contested key). Activation
+  rejects 409 if any contested key has no decision. The old
+  pre-checked `role=override` semantics are gone — every contested
+  key is an explicit operator choice.
+- **`/action-packs` page rewrite.** Drag-to-reorder, info banner
+  explaining priority, conflict banner that links to a
+  per-key resolution dialog, no role radio in the Add/Edit form.
+  Bundled is implicit (no row) — the info banner explains the
+  ordering convention.
+
+Drop the role concept outright (no deprecation shim). Existing
+installs lose pack-level role configuration but keep the same
+effective ordering on first boot via the migration backfill.
+
 ### Added
 
 #### Coalesced per-host sync (option-c)

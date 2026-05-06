@@ -53,7 +53,7 @@ The Settings page controls operational behaviour that can be tuned without resta
 
 ---
 
-### Scheduled Actions
+### Schedules
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|

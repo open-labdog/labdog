@@ -183,10 +183,12 @@ async def activate_repo(
     ``reload_registry_async`` once at the end. Failures in the
     post-commit hooks are logged but the rows persist.
     """
+    from sqlalchemy import func
+
     from app.actions.registry import reload_registry_async
     from app.audit.logger import log_action
     from app.models.host_group import GitOpsStatus, HostGroup
-    from app.packs.models import ActionPack, PackRole, PackSourceType
+    from app.packs.models import ActionPack, ActionResolution, PackSourceType
     from app.packs.service import sync_pack
     from app.schemas.repo_scan import ActivatedGitopsBindingOut, ActivatedPackOut
 
@@ -221,10 +223,7 @@ async def activate_repo(
             raise HTTPException(status_code=502, detail=scrubbed) from None
 
         scan = scan_repository(clone_dir, repo_name=repo.name)
-        # annotate_scan is called only for its side-effect of validating
-        # that the scan tooling still works against this repo; the
-        # submitted set itself is what we authorise on.
-        await annotate_scan(db, scan)
+        annotated = await annotate_scan(db, scan)
 
         # Validate each submitted pack still exists in the scan.
         scanned_pack_paths = {p.path for p in scan.packs}
@@ -304,10 +303,60 @@ async def activate_repo(
                     },
                 )
 
+        # Validate the operator has resolved every key this activation
+        # makes contested. A key is "newly contested" when something
+        # already owns it (existing DB pack or bundled, per
+        # existing_key_winners) AND a submitted pack also contributes
+        # it. The wizard surfaces a per-key radio for these and must
+        # echo the operator's pick in body.key_resolutions.
+        contested_keys: dict[str, list[str]] = {}
+        for sel in body.packs:
+            for k in scanned_packs_by_path[sel.path].contributed_keys:
+                if k in annotated.existing_key_winners:
+                    contested_keys.setdefault(k, []).append(sel.path)
+        resolved_keys = {r.action_key for r in body.key_resolutions}
+        unresolved = sorted(set(contested_keys) - resolved_keys)
+        if unresolved:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "kind": "unresolved_key_conflicts",
+                    "action_keys": unresolved,
+                    "message": (
+                        "Activation introduces action-key collisions that "
+                        "have no operator decision. Submit a winner for "
+                        "each contested key in key_resolutions."
+                    ),
+                },
+            )
+        for r in body.key_resolutions:
+            picks = sum(
+                1 for v in (r.winner_pack_path, r.winner_existing_pack_id, r.winner_is_bundled) if v
+            )
+            if picks != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "kind": "ambiguous_key_resolution",
+                        "action_key": r.action_key,
+                        "message": (
+                            "Exactly one of winner_pack_path, "
+                            "winner_existing_pack_id, winner_is_bundled "
+                            "must be set."
+                        ),
+                    },
+                )
+
+        # Compute the starting position so the activation block forms a
+        # contiguous run above every existing pack — operator can shuffle
+        # afterwards. ``func.coalesce`` handles the empty-table case.
+        max_pos = (await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))) or 0
+
         # Insert packs (with name-collision suffix logic).
         activated_packs: list[ActivatedPackOut] = []
+        path_to_pack_id: dict[str, int] = {}
         existing_names = {row[0] for row in (await db.execute(select(ActionPack.name))).all()}
-        for sel in body.packs:
+        for offset, sel in enumerate(body.packs, start=1):
             final_name = await _disambiguate_pack_name(
                 requested=sel.name,
                 repo_name=repo.name,
@@ -319,12 +368,13 @@ async def activate_repo(
                 source_type=PackSourceType.GIT,
                 git_repository_id=repo_id,
                 path=sel.path,
-                role=PackRole(sel.role),
+                position=max_pos + offset,
                 enabled=True,
             )
             db.add(pack_row)
             await db.flush()
             existing_names.add(final_name)
+            path_to_pack_id[sel.path] = pack_row.id
 
             await log_action(
                 db=db,
@@ -335,7 +385,7 @@ async def activate_repo(
                 after_state={
                     "name": final_name,
                     "path": sel.path,
-                    "role": sel.role,
+                    "position": pack_row.position,
                     "contributed_keys": list(scanned_packs_by_path[sel.path].contributed_keys),
                     "repo_id": repo_id,
                 },
@@ -345,9 +395,37 @@ async def activate_repo(
                     pack_id=pack_row.id,
                     name=final_name,
                     path=sel.path,
-                    role=sel.role,
+                    position=pack_row.position,
                     requested_name=sel.name,
                     name_was_disambiguated=(final_name != sel.name),
+                )
+            )
+
+        # Persist per-key resolutions. Wizard already validated the
+        # picks are consistent with the submitted set; we resolve
+        # winner_pack_path → just-inserted pack id here.
+        for r in body.key_resolutions:
+            if r.winner_pack_path is not None:
+                pack_id = path_to_pack_id.get(r.winner_pack_path)
+                if pack_id is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail={
+                            "kind": "key_resolution_unknown_pack",
+                            "action_key": r.action_key,
+                            "winner_pack_path": r.winner_pack_path,
+                        },
+                    )
+                resolved_pack_id: int | None = pack_id
+            elif r.winner_existing_pack_id is not None:
+                resolved_pack_id = r.winner_existing_pack_id
+            else:
+                resolved_pack_id = None  # bundled wins
+            db.add(
+                ActionResolution(
+                    action_key=r.action_key,
+                    pack_id=resolved_pack_id,
+                    decided_by_user_id=user_id,
                 )
             )
 

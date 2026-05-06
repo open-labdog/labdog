@@ -6,7 +6,7 @@ Packs).
 
 Actions are **Ansible playbook runs** LabDog can trigger against a host,
 a group, or the entire fleet. Run them ad-hoc from the Actions tab, or
-schedule them via cron on the [Scheduled Actions page](#scheduled-actions).
+schedule them via cron on the [Schedules page](#scheduled-actions).
 The same execution path serves both — there's no "ad-hoc only" or
 "schedule only" action.
 
@@ -29,7 +29,7 @@ The catalog comes from two sources:
 - [Action packs](#action-packs)
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
-  - [Roles: default vs override vs local](#roles-default-vs-override-vs-local)
+  - [Pack precedence and resolving conflicts](#pack-precedence-and-resolving-conflicts)
   - [Provenance: which pack won?](#provenance-which-pack-won)
 - [Writing your own playbook (BYO)](#writing-your-own-playbook-byo)
   - [Pack layout](#pack-layout)
@@ -67,7 +67,7 @@ or schedules:** superusers only.
 
 ## Scheduled actions
 
-`/schedules` (sidebar → **Scheduled Actions**) lists every cron-driven
+`/schedules` (sidebar → **Schedules**) lists every cron-driven
 action across the fleet. Each row pairs an action_key with a target
 (host / group / fleet) and a 5-field cron expression. The unified
 scheduler ticks every 60 seconds, walks the table, and dispatches any
@@ -75,7 +75,7 @@ row that's due into the same execution path as the ad-hoc Run button.
 
 **Three places to create a schedule:**
 
-- **+ New** on the Scheduled Actions page — pick action + target
+- **+ New** on the Schedules page — pick action + target
   through the wizard.
 - **Schedule…** button on an action card — preselects the action_key.
 - **Schedule action** on a host / group detail page — preselects the
@@ -119,9 +119,10 @@ scheduled_actions:
 
 A pack is a collection of playbooks + their LabDog manifests. Each
 action key in the registry comes from exactly one pack. When two packs
-declare the same key, the pack with the higher role wins (see
-[below](#roles-default-vs-override-vs-local)); the shadowed pack's copy
-is still contributed to the registry history for debugging.
+declare the same key, the pack at the top of the list on
+**Action Packs** wins (see
+[below](#pack-precedence-and-resolving-conflicts)); the shadowed pack's
+copy is still contributed to the registry history for debugging.
 
 ### Bundled pack
 
@@ -136,8 +137,8 @@ actions:
 
 The bundled pack is immutable — you can't edit or delete it from the UI.
 It exists as a safety net so LabDog keeps working even if all other
-packs are unreachable. You override its actions by adding a higher-role
-pack that redeclares the same keys.
+packs are unreachable. You override its actions by adding a pack —
+any pack listed on **Action Packs** sits above bundled by default.
 
 ### Adding a pack
 
@@ -145,15 +146,17 @@ Git repository configuration (URL, branch, credentials) is **not**
 duplicated on the pack. Configure the repo once under
 [Git Repos](gitops-ui.md), then point one or more packs at it. The
 pack only carries its own metadata — name, source type, a subpath,
-role, enabled flag.
+position, enabled flag.
 
 **Recommended path — the repo onboarding wizard.** When the repo
 contains action packs (and optionally GitOps group YAML), use
 **Integrations → Git Repos → Add Repository**. The three-step wizard
 clones the repo, walks the tree, and presents every detected pack
-and gitops file as a checkbox row with sane defaults: same-key
-matches are pre-checked with `role=override`, novel keys default to
-`role=default`, and gitops files auto-bind to the `HostGroup` whose
+and gitops file as a checkbox row. For action keys the new pack(s)
+contribute that already have an owner, the wizard shows a per-key
+**winner radio**: pick the pack from this activation, or keep the
+existing winner. The wizard refuses to activate until every contested
+key has a decision. GitOps files auto-bind to the `HostGroup` whose
 name matches the file's top-level `group:` value. The same review
 panel is reachable later from a repo's detail page via **Re-scan**,
 so newly-pushed packs can be picked up without re-onboarding.
@@ -177,8 +180,11 @@ Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 | Git repository | Dropdown of configured `GitRepository` rows. Only shown for source = Git. If empty, add one under [Git Repos](gitops-ui.md) first. |
 | Path inside the repo | Subpath where the pack lives (e.g. `packs/labdog-default`). Leave empty when the pack is at the repo root. Only shown for source = Git. |
 | Filesystem path | Absolute path on the LabDog host. Only shown for source = Local. LabDog reads the directory in place — nothing is cloned. |
-| Role | `Default` (canonical baseline) or `Override` (layered customisations). See [below](#roles-default-vs-override-vs-local). Only shown for source = Git; local packs are always top-tier. |
 | Enabled | Uncheck to keep the pack configured but out of the registry. |
+
+A new pack lands at the top of the list (highest position). Drag rows
+to reorder afterwards — see
+[below](#pack-precedence-and-resolving-conflicts).
 
 On save, LabDog resolves the linked repository's URL, branch, and
 credentials; clones into `<packs_root>/<pack_id>/`; and folds the
@@ -195,37 +201,50 @@ using that repo at the next sync — no per-pack duplication.
 consistent with the rest of LabDog's git integration. Packs don't
 require pasted `known_hosts`.
 
-### Roles: default vs override vs local
+### Pack precedence and resolving conflicts
 
-Packs layer additively with four tiers:
+Packs layer additively. The **Action Packs** page shows a single
+ordered list — top of the list wins on action-key collisions. The
+bundled pack sits implicitly below every listed pack and never
+appears as a row. On keys that only appear in one pack, nothing
+conflicts — both contribute freely and the registry is the union.
 
-| Tier | Where it comes from | Typical use |
-|---|---|---|
-| **Bundled** (tier 0) | Baked into the LabDog image | Fallback; always present |
-| **Default** (tier 10) | Git pack with role = Default | Your canonical set (e.g. `labdog-playbooks`) |
-| **Override** (tier 100) | Git pack with role = Override | Team / customer-specific customisations |
-| **Local** (tier 1000) | Local directory pack | Admin's local experiments |
-
-On an action-key collision, higher-tier wins. On keys that only appear
-in one pack, nothing conflicts — both contribute freely and the registry
-is the union.
+Drag rows to reorder. Top-first ordering matches the firewall-rules
+page convention: the row at the top has the highest priority.
 
 **Common pattern:**
 
 ```
-bundled         ← linux-upgrade, linux-os-upgrade, k8s-upgrade
-  ↓ overridden by
-labdog-default  ← adds: reboot-host, rotate-certs
-  ↓ overridden by
+my-local-pack   ← a playbook I'm still iterating on (top)
+  ↓ overrides
 my-team-pack    ← redeclares linux-upgrade (drains K8s first),
                   adds: deploy-frontend, rotate-secrets
-  ↓ overridden by
-local-pack      ← a playbook I'm still iterating on
+  ↓ overrides
+labdog-default  ← adds: reboot-host, rotate-certs
+  ↓ overrides
+bundled         ← linux-upgrade, linux-os-upgrade, k8s-upgrade
+                  (implicit; not shown on the page)
 ```
 
-Priority is **not** a number you type — admins pick a semantic role, and
-LabDog derives the tier. This is by design: numeric priorities drift
-and invite clever-but-fragile schemes.
+#### Operator-pinned winners
+
+Drag-to-reorder is the default mechanism, but every contested key
+can also be pinned individually. The **conflict banner** at the top
+of **Action Packs** lists keys contributed by more than one pack —
+click it to open the resolution modal. Each row offers a radio per
+candidate pack (including bundled when it contributes). The pin
+sticks across reorders and survives sync until you reset it.
+
+#### Freeze-on-fresh-conflict
+
+LabDog never silently flips a winner. When a sync introduces a new
+manifest that turns a previously-uncontested key into a contested
+one, LabDog **freezes** the winner to whichever pack was previously
+serving that key — even if position-based default would now favour
+the newcomer. The conflict banner highlights frozen rows with a
+"frozen" badge so you can confirm the choice (or pick a different
+pack). Once you set or clear a resolution explicitly, the freeze
+clears.
 
 ### Provenance: which pack won?
 
@@ -280,7 +299,7 @@ A playbook without a matching manifest is silently ignored.
 ### Manifest schema
 
 ```yaml
-key: my-action               # stable identifier; collisions resolve by pack role
+key: my-action               # stable identifier; collisions resolve by pack position (or operator pin)
 name: My Action              # shown on the action card
 description: >-              # one-paragraph description; shown under name
   Does a thing to the host.
