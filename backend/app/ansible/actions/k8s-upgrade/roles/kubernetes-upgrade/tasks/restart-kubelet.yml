@@ -1,0 +1,19 @@
+---
+# Force handlers so the kubelet restart from upgrade-packages.yml
+# fires before we check the node back into the API server. We also
+# want the daemon-reload to land before kubelet starts, otherwise the
+# new unit file (if changed) wouldn't be picked up.
+
+- name: Flush handlers — daemon-reload + restart kubelet now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for kubelet to be active again
+  ansible.builtin.systemd_service:
+    name: kubelet
+    state: started
+  register: kubelet_after
+  until:
+    - kubelet_after.status is defined
+    - kubelet_after.status.ActiveState | default("inactive") == "active"
+  retries: 30
+  delay: 2

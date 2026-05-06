@@ -275,8 +275,16 @@ def test_bundled_pack_exposes_expected_actions():
     assert {"linux-upgrade", "linux-os-upgrade", "k8s-upgrade"} <= set(ACTION_REGISTRY)
     linux = ACTION_REGISTRY["linux-upgrade"]
     assert linux.destructive is True
-    assert linux.supports_group is False
+    # linux-upgrade is now group-supported — package upgrades fan out
+    # across hosts identically; restricting it to host-only was an
+    # accident.
+    assert linux.supports_group is True
     assert linux.playbook_path.name == "linux-upgrade.yml"
     assert linux.playbook_path.is_file()
     param_keys = {p.key for p in linux.parameters}
     assert param_keys == {"auto_reboot", "reboot_timeout", "cleanup"}
+    # k8s-upgrade is the cluster-mode action — surfaces only on groups.
+    k8s = ACTION_REGISTRY["k8s-upgrade"]
+    assert k8s.execution_mode == "cluster"
+    assert k8s.supports_host is False
+    assert k8s.supports_group is True

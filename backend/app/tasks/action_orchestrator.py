@@ -88,6 +88,15 @@ async def _run_action_async(action_run_id: int) -> None:
                 await db.commit()
                 return
 
+            # Cluster-mode actions (currently just k8s-upgrade) have a
+            # short-circuited dispatch path: one ActionHostRun anchored
+            # to the first control_plane member, one Celery task that
+            # invokes ansible-playbook against a multi-host inventory.
+            # The per-host batching loop is skipped entirely.
+            if action.execution_mode == "cluster":
+                await _dispatch_cluster_run(db, run)
+                return
+
             # Pick the per-host task: built-ins each have their own
             # wrapper in app.tasks.builtin_dispatchers; pack-supplied
             # actions go through the default Ansible playbook runner.
@@ -275,6 +284,105 @@ async def _run_action_async(action_run_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
+
+
+async def _dispatch_cluster_run(db, run) -> None:
+    """Validate a cluster-mode run and dispatch the single cluster task.
+
+    Cluster-mode actions (manifest's ``execution_mode: cluster``) must
+    target a group whose members all have a ``role`` assignment and at
+    least one ``control_plane`` member. The orchestrator anchors the
+    run to the first control-plane host (the "driver") via a single
+    ``ActionHostRun`` row; per-node detail lives in the streamed
+    ansible stdout.
+
+    The submit-time API validator catches the same conditions earlier
+    and surfaces them to the user; this layer is defence-in-depth for
+    scheduled runs and any direct DB inserts that bypass the API.
+    """
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun
+    from app.models.host import Host, HostGroupMembership
+
+    if run.host_id is not None:
+        run.status = "failed"
+        run.error_message = (
+            "cluster-mode actions cannot target a single host (got "
+            f"host_id={run.host_id}); they require a group with role "
+            "assignments"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+    if run.group_id is None:
+        run.status = "failed"
+        run.error_message = "cluster-mode actions require group_id"
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    rows = (
+        await db.execute(
+            select(
+                HostGroupMembership.c.host_id,
+                HostGroupMembership.c.role,
+            ).where(HostGroupMembership.c.group_id == run.group_id)
+        )
+    ).all()
+    if not rows:
+        run.status = "failed"
+        run.error_message = (
+            f"group {run.group_id} has no members; cluster-mode actions "
+            "need at least one control_plane and one worker"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    unassigned = [r.host_id for r in rows if r.role is None]
+    if unassigned:
+        run.status = "failed"
+        run.error_message = (
+            f"{len(unassigned)} member(s) of group {run.group_id} have no "
+            "role assignment; set every member to control_plane or worker "
+            "before triggering a cluster upgrade"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    cps = [r.host_id for r in rows if r.role == "control_plane"]
+    if not cps:
+        run.status = "failed"
+        run.error_message = (
+            f"group {run.group_id} has no control_plane members; cluster-"
+            "mode actions need at least one"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    # Driver = the lowest-id control-plane host so the choice is
+    # deterministic across reruns.
+    driver_id = min(cps)
+    driver = (await db.execute(select(Host).where(Host.id == driver_id))).scalar_one()
+
+    host_run = ActionHostRun(
+        action_run_id=run.id,
+        host_id=driver.id,
+        status="queued",
+    )
+    db.add(host_run)
+    await db.flush()
+    host_run_id = host_run.id
+    await db.commit()
+
+    celery_app.send_task(
+        "app.tasks.action_cluster.run_action_cluster",
+        args=[run.id, host_run_id],
+        queue="long_running",
+    )
 
 
 async def _mark_run_failed(action_run_id: int, error_message: str) -> None:

@@ -1,0 +1,41 @@
+---
+# The play layer (site.yml) supplies ``node_role`` per-play. We branch
+# off it here rather than splitting the role into two roles — the work
+# is 80% identical and the two specialisations (first CP runs
+# ``kubeadm upgrade plan/apply``; everyone else runs
+# ``kubeadm upgrade node``) are 4-line diffs.
+
+- name: Refuse non-Debian-family hosts (apt-only for now)
+  # The role uses apt + apt-mark + apt cache modules. RHEL/Rocky/Alma
+  # support is tracked in TODO.md; until it lands, fail loudly so the
+  # operator doesn't end up with a half-upgraded cluster.
+  ansible.builtin.fail:
+    msg: >-
+      k8s-upgrade currently supports apt-based hosts only
+      (Debian / Ubuntu). This host reports os_family={{ ansible_os_family }}.
+      RHEL / Rocky / Alma support is on the roadmap.
+  when: ansible_os_family != "Debian"
+
+- name: Pre-flight checks
+  ansible.builtin.import_tasks: preflight.yml
+  when: not skip_preflight | bool
+
+- name: Drain {{ inventory_hostname }}
+  ansible.builtin.import_tasks: drain.yml
+
+- name: Install new kubeadm and run kubeadm upgrade
+  ansible.builtin.import_tasks: upgrade-control-plane.yml
+  when: node_role == "control_plane"
+
+- name: Install new kubeadm and run kubeadm upgrade node
+  ansible.builtin.import_tasks: upgrade-worker.yml
+  when: node_role == "worker"
+
+- name: Upgrade kubelet and kubectl to the same target version
+  ansible.builtin.import_tasks: upgrade-packages.yml
+
+- name: Restart kubelet and wait for the node to settle
+  ansible.builtin.import_tasks: restart-kubelet.yml
+
+- name: Uncordon {{ inventory_hostname }}
+  ansible.builtin.import_tasks: uncordon.yml
