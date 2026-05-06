@@ -1,0 +1,28 @@
+---
+# Drains run from the first control-plane node — that's where the
+# operator's ``admin.conf`` lives and where kubectl works without extra
+# kubeconfig plumbing. ``become: true`` because admin.conf is
+# root-owned.
+
+- name: Cordon {{ inventory_hostname }}
+  ansible.builtin.command: kubectl cordon {{ inventory_hostname }}
+  delegate_to: "{{ groups['control_plane'] | first }}"
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: true
+
+- name: Drain {{ inventory_hostname }}
+  # ``--ignore-daemonsets`` is required (DaemonSet pods can't be
+  # evicted). ``--delete-emptydir-data`` keeps drain from stalling on
+  # ephemeral state — the canonical kubeadm playbook does the same.
+  ansible.builtin.command: >-
+    kubectl drain {{ inventory_hostname }}
+    --ignore-daemonsets
+    --delete-emptydir-data
+    --timeout={{ drain_timeout }}s
+  delegate_to: "{{ groups['control_plane'] | first }}"
+  become: true
+  environment:
+    KUBECONFIG: /etc/kubernetes/admin.conf
+  changed_when: true

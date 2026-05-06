@@ -1,0 +1,9 @@
+---
+- name: reload-systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+
+- name: restart-kubelet
+  ansible.builtin.systemd_service:
+    name: kubelet
+    state: restarted

@@ -67,6 +67,23 @@ backend-sast:
       changes:
         - backend/**/*
 
+ansible-lint:
+  stage: lint
+  image: python:3.12-slim
+  cache:
+    key: backend-pip-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cache/pip
+  script:
+    - pip install -U pip -q
+    - pip install "ansible-lint>=24" "ansible-core>=2.16" -q
+    - ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
+  rules:
+    - *rules-dev-web-trigger
+    - if: $CI_COMMIT_BRANCH == "dev"
+      changes:
+        - backend/app/ansible/**/*
+
 frontend-lint:
   stage: lint
   image: node:20-alpine

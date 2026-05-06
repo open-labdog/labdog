@@ -1,0 +1,26 @@
+---
+# After kubeadm has rewritten the cluster's control-plane components
+# (or the node's local kubelet config), bring kubelet + kubectl to the
+# matching version. They MUST be the same minor as kubeadm to keep the
+# kubelet talking to the API server.
+
+- name: Unhold kubelet + kubectl
+  ansible.builtin.command: apt-mark unhold kubelet kubectl
+  changed_when: true
+  failed_when: false
+
+- name: Install kubelet = {{ target_version }}, kubectl = {{ target_version }}
+  ansible.builtin.apt:
+    name:
+      - "kubelet={{ target_version }}-{{ kube_apt_version_suffix }}"
+      - "kubectl={{ target_version }}-{{ kube_apt_version_suffix }}"
+    state: present
+    allow_change_held_packages: true
+    update_cache: false
+  notify:
+    - reload-systemd
+    - restart-kubelet
+
+- name: Hold kubelet + kubectl
+  ansible.builtin.command: apt-mark hold kubelet kubectl
+  changed_when: true
