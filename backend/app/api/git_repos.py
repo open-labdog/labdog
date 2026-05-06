@@ -138,10 +138,10 @@ async def delete_git_repo(
         raise HTTPException(status_code=400, detail="Cannot delete repository with linked groups")
 
     pack_names = (
-        await db.execute(
-            select(ActionPack.name).where(ActionPack.git_repository_id == repo_id)
-        )
-    ).scalars().all()
+        (await db.execute(select(ActionPack.name).where(ActionPack.git_repository_id == repo_id)))
+        .scalars()
+        .all()
+    )
     if pack_names:
         raise HTTPException(
             status_code=409,
