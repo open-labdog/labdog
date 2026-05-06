@@ -315,8 +315,17 @@ export default function ActionPacksPage() {
   }
 
   const hasGitRepos = (gitRepos?.length ?? 0) > 0
-  const frozenCount = (contested ?? []).filter((c) => c.is_frozen).length
-  const contestedCount = contested?.length ?? 0
+  // "Needs attention" = key is contested AND the operator hasn't
+  // explicitly picked a winner. That covers the freeze-on-fresh-conflict
+  // case (auto-pinned, decided_by_user_id IS NULL) and any contested key
+  // with no resolution row at all (default-position-wins). Once the
+  // operator clicks through the modal and picks a winner, the key drops
+  // out of this count and the banner clears for it.
+  const unresolvedConflicts = (contested ?? []).filter(
+    (c) => c.resolution === null || c.decided_by_user_id === null,
+  )
+  const frozenCount = unresolvedConflicts.filter((c) => c.is_frozen).length
+  const unresolvedCount = unresolvedConflicts.length
 
   return (
     <div className="space-y-6">
@@ -348,7 +357,7 @@ export default function ActionPacksPage() {
         </div>
       </div>
 
-      {contestedCount > 0 && (
+      {unresolvedCount > 0 && (
         <button
           type="button"
           onClick={() => setConflictOpen(true)}
@@ -359,12 +368,12 @@ export default function ActionPacksPage() {
             <p className="text-amber-200 font-medium text-sm">
               {frozenCount > 0
                 ? `${frozenCount} action ${frozenCount === 1 ? "key needs" : "keys need"} your decision`
-                : `${contestedCount} contested action ${contestedCount === 1 ? "key" : "keys"}`}
+                : `${unresolvedCount} unresolved action ${unresolvedCount === 1 ? "key" : "keys"}`}
             </p>
             <p className="text-amber-300/80 text-xs mt-0.5">
               {frozenCount > 0
                 ? "LabDog is using the previous winner until you confirm. Click to review."
-                : "Multiple packs contribute the same action keys. Click to review the assignment."}
+                : "Multiple packs contribute the same action keys and no winner has been confirmed. Click to review."}
             </p>
           </div>
         </button>
