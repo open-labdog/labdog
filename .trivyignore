@@ -1,4 +1,4 @@
-# No fix available upstream for these CVEs as of 2026-05-04.
+# No fix available upstream for these CVEs as of 2026-05-06.
 # Each entry should have a corresponding rationale paragraph in
 # docs/trivy-rationale.md. The Trivy CI gate runs with
 # `ignore-unfixed: true`, so these unfixed-upstream CVEs are
@@ -28,3 +28,7 @@ CVE-2026-4878
 
 # libgnutls30t64: TLS-side issue, no fix released as of 2026-05-04
 CVE-2026-33845
+
+# libgnutls30t64: DoS via heap buffer overflow in DTLS handshake,
+# no fix released as of 2026-05-06
+CVE-2026-33846
