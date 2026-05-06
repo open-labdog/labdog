@@ -224,6 +224,7 @@ function ReviewStepInner({
       ["git-repos"],
       ["action-packs"],
       ["action-resolutions"],
+      ["actions-catalog"],
       ["groups"],
     ],
     onSuccess: (data) => {
