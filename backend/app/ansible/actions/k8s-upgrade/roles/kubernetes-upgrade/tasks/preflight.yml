@@ -3,7 +3,7 @@
 # prerequisites`` covers cluster-wide invariants once on the driver;
 # this file runs per node and verifies the node itself is upgradeable.
 
-- name: kubelet is running
+- name: Verify kubelet is running
   ansible.builtin.systemd_service:
     name: kubelet
     state: started

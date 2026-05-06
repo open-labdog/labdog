@@ -5,7 +5,7 @@
 # the cluster-wide control-plane API has already been bumped by the
 # first node.
 
-- name: Hold {{ kube_packages | join(', ') }} so apt doesn't surprise us
+- name: Apt-mark unhold the kube packages
   # We unhold + install + re-hold deliberately. Holding kubelet across
   # an unrelated unattended-upgrade run prevents drift; we lift the hold
   # only for this controlled upgrade.
@@ -16,18 +16,18 @@
   # nothing is held, and we don't want a fresh node (no holds yet) to
   # break the playbook.
 
-- name: Install kubeadm = {{ target_version }}
+- name: Install kubeadm pinned to {{ target_version }}
   ansible.builtin.apt:
     name: "kubeadm={{ target_version }}-{{ kube_apt_version_suffix }}"
     state: present
     allow_change_held_packages: true
     update_cache: false
 
-- name: Hold kubeadm again
+- name: Apt-mark hold kubeadm again
   ansible.builtin.command: apt-mark hold kubeadm
   changed_when: true
 
-- name: kubeadm upgrade plan (first CP only — others have nothing to plan against)
+- name: Run kubeadm upgrade plan on the first CP
   ansible.builtin.command: kubeadm upgrade plan v{{ target_version }}
   when: inventory_hostname == groups['control_plane'][0]
   register: kubeadm_plan
@@ -36,12 +36,12 @@
   # operator has misconfigured the target version (skipped a minor,
   # incompatible kubeadm/kubelet, etc.). Surface the error and stop.
 
-- name: kubeadm upgrade apply v{{ target_version }} (first CP only)
+- name: Run kubeadm upgrade apply on the first CP — v{{ target_version }}
   ansible.builtin.command: kubeadm upgrade apply v{{ target_version }} --yes
   when: inventory_hostname == groups['control_plane'][0]
   changed_when: true
 
-- name: kubeadm upgrade node (subsequent CPs)
+- name: Run kubeadm upgrade node on subsequent CPs
   ansible.builtin.command: kubeadm upgrade node
   when: inventory_hostname != groups['control_plane'][0]
   changed_when: true
