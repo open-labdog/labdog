@@ -42,19 +42,11 @@ def upgrade() -> None:
         ),
         sa.Column("schedule_cron", sa.String(length=100), nullable=True),
         sa.Column("enabled", sa.Boolean(), server_default="false", nullable=False),
-        sa.Column(
-            "snapshot_enabled", sa.Boolean(), server_default="true", nullable=False
-        ),
-        sa.Column(
-            "verify_enabled", sa.Boolean(), server_default="true", nullable=False
-        ),
-        sa.Column(
-            "auto_rollback", sa.Boolean(), server_default="true", nullable=False
-        ),
+        sa.Column("snapshot_enabled", sa.Boolean(), server_default="true", nullable=False),
+        sa.Column("verify_enabled", sa.Boolean(), server_default="true", nullable=False),
+        sa.Column("auto_rollback", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("batch_size", sa.Integer(), server_default="1", nullable=False),
-        sa.Column(
-            "last_dispatched_at", sa.DateTime(timezone=True), nullable=True
-        ),
+        sa.Column("last_dispatched_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),

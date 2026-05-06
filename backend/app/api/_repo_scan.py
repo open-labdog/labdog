@@ -331,9 +331,7 @@ async def activate_repo(
             )
         for r in body.key_resolutions:
             picks = sum(
-                1
-                for v in (r.winner_pack_path, r.winner_existing_pack_id, r.winner_is_bundled)
-                if v
+                1 for v in (r.winner_pack_path, r.winner_existing_pack_id, r.winner_is_bundled) if v
             )
             if picks != 1:
                 raise HTTPException(
@@ -352,9 +350,7 @@ async def activate_repo(
         # Compute the starting position so the activation block forms a
         # contiguous run above every existing pack — operator can shuffle
         # afterwards. ``func.coalesce`` handles the empty-table case.
-        max_pos = (
-            await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))
-        ) or 0
+        max_pos = (await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))) or 0
 
         # Insert packs (with name-collision suffix logic).
         activated_packs: list[ActivatedPackOut] = []

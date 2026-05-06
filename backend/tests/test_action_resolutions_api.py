@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.git_repository import GitAuthType, GitRepository
-from app.packs.models import ActionPack, ActionResolution
+from app.packs.models import ActionResolution
 
 
 def _git(cwd: Path, args: list[str]) -> None:
@@ -77,9 +77,7 @@ async def two_local_packs(superuser_client, local_pack_a, local_pack_b):
 # ---------------------------------------------------------------------------
 
 
-async def test_reorder_rewrites_positions_top_first_wins(
-    superuser_client, two_local_packs
-):
+async def test_reorder_rewrites_positions_top_first_wins(superuser_client, two_local_packs):
     pack_a, pack_b = two_local_packs
 
     # By default, the freeze pins pack-a (the previous winner) when
@@ -95,7 +93,8 @@ async def test_reorder_rewrites_positions_top_first_wins(
     assert r.status_code == 200, r.text
     assert r.json() == {"reordered": len(desired)}
 
-    after = {p["id"]: p["position"] for p in (await superuser_client.get("/api/action-packs")).json()}
+    listing_after = (await superuser_client.get("/api/action-packs")).json()
+    after = {p["id"]: p["position"] for p in listing_after}
     # First in desired list gets the highest position number.
     assert after[pack_b["id"]] > after[pack_a["id"]]
 
@@ -139,9 +138,7 @@ async def test_reorder_requires_superuser(regular_user_client):
 # ---------------------------------------------------------------------------
 
 
-async def test_fresh_conflict_writes_freeze_resolution_row(
-    superuser_client, two_local_packs, db
-):
+async def test_fresh_conflict_writes_freeze_resolution_row(superuser_client, two_local_packs, db):
     """When pack-b is added contributing the same key as pack-a, the
     rebuild auto-creates an ``action_resolution`` row pinning the
     previous winner (pack-a) so behaviour does not silently flip."""
@@ -153,9 +150,7 @@ async def test_fresh_conflict_writes_freeze_resolution_row(
     assert by_key["hello"].decided_by_user_id is None  # auto-pinned, not operator-driven
 
 
-async def test_contested_keys_view_surfaces_conflict(
-    superuser_client, two_local_packs
-):
+async def test_contested_keys_view_surfaces_conflict(superuser_client, two_local_packs):
     pack_a, pack_b = two_local_packs
     r = await superuser_client.get("/api/action-resolutions")
     assert r.status_code == 200
@@ -175,9 +170,7 @@ async def test_contested_keys_view_surfaces_conflict(
 # ---------------------------------------------------------------------------
 
 
-async def test_upsert_resolution_changes_winner(
-    superuser_client, two_local_packs
-):
+async def test_upsert_resolution_changes_winner(superuser_client, two_local_packs):
     pack_a, pack_b = two_local_packs
     r = await superuser_client.put(
         "/api/action-resolutions/hello",
@@ -194,9 +187,7 @@ async def test_upsert_resolution_changes_winner(
     assert hello["pack_name"] == "pack-b"
 
 
-async def test_upsert_rejects_pack_not_contributor(
-    superuser_client, two_local_packs, git_repo_row
-):
+async def test_upsert_rejects_pack_not_contributor(superuser_client, two_local_packs, git_repo_row):
     """Pinning a pack that doesn't contribute the key is rejected."""
     r = await superuser_client.put(
         "/api/action-resolutions/hello",
@@ -205,9 +196,7 @@ async def test_upsert_rejects_pack_not_contributor(
     assert r.status_code in (404, 409)
 
 
-async def test_delete_resolution_falls_back_to_default(
-    superuser_client, two_local_packs
-):
+async def test_delete_resolution_falls_back_to_default(superuser_client, two_local_packs):
     pack_a, pack_b = two_local_packs
     # Drop the freeze. Default = highest position. pack-b was inserted
     # second so it has the higher position — it wins by default.
@@ -225,9 +214,7 @@ async def test_delete_unknown_resolution_returns_404(superuser_client):
     assert r.status_code == 404
 
 
-async def test_pack_delete_cascades_resolution_row(
-    superuser_client, two_local_packs, db
-):
+async def test_pack_delete_cascades_resolution_row(superuser_client, two_local_packs, db):
     pack_a, pack_b = two_local_packs
     # Delete pack-a (the one pinned by the freeze).
     r = await superuser_client.delete(f"/api/action-packs/{pack_a['id']}")
@@ -251,9 +238,7 @@ async def test_pack_delete_cascades_resolution_row(
 
 async def test_resolutions_router_requires_superuser(regular_user_client):
     r1 = await regular_user_client.get("/api/action-resolutions")
-    r2 = await regular_user_client.put(
-        "/api/action-resolutions/hello", json={"pack_id": None}
-    )
+    r2 = await regular_user_client.put("/api/action-resolutions/hello", json={"pack_id": None})
     r3 = await regular_user_client.delete("/api/action-resolutions/hello")
     for r in (r1, r2, r3):
         assert r.status_code in (401, 403)

@@ -286,11 +286,7 @@ def load_packs_with_resolutions(
                 # contributes this key — drop the row and fall through.
                 stale.add(key)
 
-        if (
-            not resolved_explicitly
-            and len(candidates) > 1
-            and key in prior_winners
-        ):
+        if not resolved_explicitly and len(candidates) > 1 and key in prior_winners:
             prev_id = prior_winners[key]
             prev_match = next((c for c in candidates if c[0].pack_id == prev_id), None)
             if prev_match is not None and prev_match[0] is not default_pack:
