@@ -144,7 +144,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         { href: "/hosts", label: "Hosts", children: hostsChildren },
         { href: "/hosts/discovery", label: "Discovery" },
         { href: "/groups", label: "Groups" },
-        { href: "/schedules", label: "Scheduled Actions" },
+        { href: "/schedules", label: "Schedules" },
       ],
     },
     {

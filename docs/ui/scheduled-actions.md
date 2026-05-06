@@ -1,4 +1,4 @@
-# Scheduled Actions
+# Schedules
 
 **Path:** `/schedules` (sidebar) and `/hosts/{id}/?tab=schedules` /
 `/groups/{id}/?tab=schedules` (per-target tabs).
