@@ -35,7 +35,7 @@
   environment:
     KUBECONFIG: /etc/kubernetes/admin.conf
   tasks:
-    - name: target_version is a semver
+    - name: Verify target_version is a semver
       ansible.builtin.assert:
         that:
           - target_version is defined
@@ -44,7 +44,7 @@
           target_version must be set to a semver like "1.30.4". Got:
           {{ target_version | default('<unset>') }}
 
-    - name: kubectl is on PATH on the driver node
+    - name: Verify kubectl is on PATH on the driver node
       ansible.builtin.command: kubectl version --client=true -o json
       changed_when: false
       register: kubectl_probe
