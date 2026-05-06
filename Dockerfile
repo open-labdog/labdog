@@ -36,6 +36,11 @@ RUN useradd -m -u 1000 labdog \
 # Python packages from builder
 COPY --from=backend-builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
+# uv / uvx are install-time only — drop them from the runtime image.
+# Their bundled rustls-webpki has produced HIGH-severity advisories
+# (e.g. GHSA-82j2-j2ch-gfr8) that we'd otherwise need to track in
+# .trivyignore for a binary that's never actually invoked at runtime.
+RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx
 
 # Backend source (app + alembic)
 COPY --chown=labdog:labdog backend/app/ app/
