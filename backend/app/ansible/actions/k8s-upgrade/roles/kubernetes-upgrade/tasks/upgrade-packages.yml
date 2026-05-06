@@ -9,7 +9,7 @@
   changed_when: true
   failed_when: false
 
-- name: Install kubelet = {{ target_version }}, kubectl = {{ target_version }}
+- name: Install kubelet and kubectl pinned to {{ target_version }}
   ansible.builtin.apt:
     name:
       - "kubelet={{ target_version }}-{{ kube_apt_version_suffix }}"
@@ -18,8 +18,8 @@
     allow_change_held_packages: true
     update_cache: false
   notify:
-    - reload-systemd
-    - restart-kubelet
+    - Reload systemd
+    - Restart kubelet
 
 - name: Hold kubelet + kubectl
   ansible.builtin.command: apt-mark hold kubelet kubectl
