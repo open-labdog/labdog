@@ -19,10 +19,6 @@ Use GitHub's private vulnerability reporting on the repository —
 **Security → Advisories → Report a vulnerability**. This creates a
 confidential discussion visible only to you and the maintainers.
 
-If GitHub private reporting isn't suitable, email the maintainer
-directly: **dennis.tyresson@norce.io** with `[labdog-security]` in
-the subject line. PGP isn't required; use it if you prefer.
-
 ### What to include
 
 - A description of the vulnerability and its impact.
