@@ -242,3 +242,215 @@ async def test_bulk_sync_requires_auth(client, db: AsyncSession, mock_run_host_s
 
     assert resp.status_code == 401, resp.text
     assert mock_run_host_sync.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# POST /api/sync/groups/{group_id}/bulk — multi-host bulk sync
+# ---------------------------------------------------------------------------
+
+
+async def test_group_bulk_sync_dispatches_one_job_per_host(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    """Fresh group with N hosts → N pending bulk SyncJobs, N dispatches."""
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    h1 = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    h2 = await create_host(db, ip="10.0.0.2", ssh_key_id=ssh_key.id, group_ids=[group.id])
+    h3 = await create_host(db, ip="10.0.0.3", ssh_key_id=ssh_key.id, group_ids=[group.id])
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": None},
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["group_id"] == group.id
+    assert len(body["triggered_job_ids"]) == 3
+    assert body["skipped_host_ids"] == []
+    assert body["module_filter"] is None
+
+    # Three SyncJob rows, all module_type=bulk, all pending.
+    rows = (
+        (
+            await db.execute(
+                select(SyncJob).where(
+                    SyncJob.host_id.in_([h1.id, h2.id, h3.id]),
+                    SyncJob.module_type == "bulk",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 3
+    assert all(r.group_id == group.id for r in rows)
+
+    # Three dispatches, one per host.
+    assert mock_run_host_sync.call_count == 3
+    dispatched_host_ids = {c.kwargs["host_id"] for c in mock_run_host_sync.call_args_list}
+    assert dispatched_host_ids == {h1.id, h2.id, h3.id}
+
+
+async def test_group_bulk_sync_skips_hosts_with_in_flight_bulk(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    """Hosts that already have a pending or running bulk job are skipped, not duplicated."""
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    h_busy = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    h_free = await create_host(db, ip="10.0.0.2", ssh_key_id=ssh_key.id, group_ids=[group.id])
+
+    # Pre-existing bulk SyncJob for h_busy. triggered_by_user_id=None
+    # avoids the users-table FK; the existing job's identity doesn't
+    # matter for the skip-detection logic.
+    pre_existing = SyncJob(
+        host_id=h_busy.id,
+        status="pending",
+        module_type="bulk",
+        triggered_by_user_id=None,
+    )
+    db.add(pre_existing)
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": ["firewall"]},
+    )
+
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert body["skipped_host_ids"] == [h_busy.id]
+    assert len(body["triggered_job_ids"]) == 1
+    assert body["module_filter"] == ["firewall"]
+
+    # Only one new dispatch — for h_free.
+    assert mock_run_host_sync.call_count == 1
+    assert mock_run_host_sync.call_args.kwargs["host_id"] == h_free.id
+    assert mock_run_host_sync.call_args.kwargs["module_filter"] == ["firewall"]
+
+
+async def test_group_bulk_sync_404_for_missing_group(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    resp = await superuser_client.post(
+        "/api/sync/groups/99999/bulk",
+        json={"module_filter": None},
+    )
+    assert resp.status_code == 404
+    assert mock_run_host_sync.call_count == 0
+
+
+async def test_group_bulk_sync_400_for_empty_group(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    from tests.conftest import create_group
+
+    group = await create_group(db)
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": None},
+    )
+    assert resp.status_code == 400
+    assert "no hosts" in resp.text.lower()
+    assert mock_run_host_sync.call_count == 0
+
+
+async def test_group_bulk_sync_rejects_empty_filter(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": []},
+    )
+    assert resp.status_code == 400
+    assert "must be null or non-empty" in resp.text
+
+
+async def test_group_bulk_sync_rejects_unknown_module(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": ["nonsense"]},
+    )
+    assert resp.status_code == 400
+    assert "nonsense" in resp.text
+
+
+async def test_group_bulk_sync_emits_audit_row(
+    superuser_client, db: AsyncSession, mock_run_host_sync
+):
+    """SEC-05: a single trigger-time audit row scoped to the group."""
+    from app.models.audit_log import AuditLog
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    h1 = await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    h2 = await create_host(db, ip="10.0.0.2", ssh_key_id=ssh_key.id, group_ids=[group.id])
+    await db.commit()
+
+    resp = await superuser_client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": None},
+    )
+    assert resp.status_code == 201
+
+    rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "host_group",
+                    AuditLog.entity_id == group.id,
+                    AuditLog.action == "sync_triggered",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+    after = rows[0].after_state
+    assert set(after["hosts"]) == {h1.id, h2.id}
+    assert after["trigger_kind"] == "group_bulk"
+    assert after["module_filter"] is None
+    assert len(after["sync_job_ids"]) == 2
+
+
+async def test_group_bulk_sync_requires_auth(client, db: AsyncSession, mock_run_host_sync):
+    from tests.conftest import create_group
+
+    ssh_key = await create_ssh_key(db)
+    group = await create_group(db)
+    await create_host(db, ssh_key_id=ssh_key.id, group_ids=[group.id])
+    await db.commit()
+
+    resp = await client.post(
+        f"/api/sync/groups/{group.id}/bulk",
+        json={"module_filter": None},
+    )
+    assert resp.status_code == 401
+    assert mock_run_host_sync.call_count == 0

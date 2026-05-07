@@ -118,10 +118,14 @@ registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
 module import. DB-backed packs are configured from the UI at
 `/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
 can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
-Pack role (`default` / `override`) derives the priority tier — admins
-never enter integers. See `app/packs/` for the subsystem, the user
-guide at `docs/ui/actions.md`, and starter packs at
-`docs/examples/action-packs/`.
+Pack precedence is a single linear `ActionPack.position` (higher wins,
+bundled implicit at 0); operators reorder via drag-to-reorder on the
+**Action Packs** page. Per-key conflicts can also be pinned via
+`action_resolution` rows — the wizard captures them at activation and
+the registry rebuild auto-pins the previous winner if a sync introduces
+a fresh conflict (freeze-on-fresh-conflict, never silently flips).
+See `app/packs/` for the subsystem, the user guide at
+`docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
 
 **Bundled pack mirrors `labdog-playbooks`.** The directory at
 `backend/app/ansible/` is a byte-identical mirror of
@@ -137,6 +141,36 @@ is *not* part of the mirror. A fresh install also auto-registers
 `labdog-playbooks` as a DB-backed override pack so deployed instances
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
+
+### Cluster-mode actions
+
+Most actions fan out per-host (one Celery task per target host with a
+single-host inventory + parallelism). Actions whose manifest declares
+`execution_mode: cluster` are dispatched as a single ansible-playbook
+invocation against a multi-host inventory grouped under
+`all.children.{control_plane, workers}`; the playbook serialises with
+Ansible's `serial:` keyword. The first concrete user is `k8s-upgrade`.
+Per-member roles live on `host_group_memberships.role` (NULL /
+`control_plane` / `worker`); the orchestrator creates one
+`ActionHostRun` anchored to the first control-plane host as the
+"driver" and dispatches `app.tasks.action_cluster.run_action_cluster`.
+`POST /actions/runs` rejects cluster-mode submissions targeting a
+host or a group missing role assignments.
+
+### Scheduled actions
+
+Any registered action — pack-supplied or built-in — can be cron-
+scheduled through the unified `ScheduledAction` model
+(`app/models/scheduled_action.py`). The scheduler at
+`app/tasks/scheduled_action_schedule.py` ticks every 60s via RedBeat,
+walks the `scheduled_actions` table, and dispatches due rows through
+the same `app.tasks.action_orchestrator.run_action` Celery task that
+`POST /api/actions/runs` uses. Built-in pseudo-actions (`_builtin.sync`
+/ `_builtin.drift_check` / `_builtin.collect_state`, registered in
+`app/actions/builtins.py`) wrap existing Celery tasks via thin
+per-host wrappers in `app/tasks/builtin_dispatchers.py`. The legacy
+`UpdateWorkflow` model has been retired — its rows are backfilled on
+upgrade.
 
 ## Working with `plans/`
 

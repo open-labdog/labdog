@@ -3,9 +3,10 @@
 Default action pack for [LabDog](https://github.com/open-labdog/labdog).
 
 LabDog admins add this repo as an action pack through the UI
-(**Integrations → Action Packs → Add Pack**) with role `Default`.
-Playbooks here override the bundled pack inside the LabDog image and
-are themselves overridable by additional user packs.
+(**Integrations → Action Packs → Add Pack**). Playbooks here override
+the bundled pack inside the LabDog image and are themselves overridable
+by additional user packs — pack precedence is managed by drag-to-
+reorder on the **Action Packs** page (top wins).
 
 For the full user-facing guide — how packs load, how collisions
 resolve, how to write your own — see
@@ -45,8 +46,13 @@ version: "1.0"                     # bump on breaking parameter changes
 estimated_duration: "5–15 min"
 destructive: true                  # enables snapshot/verify/rollback when
                                    # the host has a Proxmox VM mapping
-supports_group: false              # can target a group of hosts?
+supports_group: true               # can target a group of hosts?
 supports_host: true                # can target a single host?
+execution_mode: per_host           # per_host (default) or cluster.
+                                   # cluster = single ansible run against
+                                   # the whole group with a multi-host
+                                   # inventory; see "Cluster-mode actions"
+                                   # below.
 verify_playbook: ../verify/post-upgrade.yml   # (optional) pack-supplied
 verify_timeout_seconds: 180                   # verify hook; replaces the
                                               # built-in SSH/services/
@@ -97,7 +103,8 @@ Either:
 - **Git sync flow** — push your branch somewhere LabDog can reach,
   add a GitRepository under **Integrations → Git Repos** with any
   credentials the repo needs, then add an Action Pack pointing at
-  that repo with role = Default.
+  that repo. New packs land at the top of the precedence list; drag
+  to reorder.
 - **Local filesystem flow** — add a pack via the UI with
   `source_type = local` and point `repo_url` at the absolute path of
   your working copy. No clone happens; LabDog reads manifests in
@@ -109,8 +116,10 @@ action along with its winning pack name and override history.
 
 ## Playbook conventions
 
-- `hosts: all` — LabDog generates a single-host inventory per run; the
-  host is the only member.
+- `hosts: all` — for per-host actions LabDog generates a single-host
+  inventory per run. Cluster-mode actions get a multi-host inventory
+  shaped under ``all.children.{control_plane,workers}``; see the
+  Cluster-mode actions section below.
 - `become: true` when you need root.
 - Parameters arrive as top-level Ansible variables from `--extra-vars`.
 - `ansible_check_mode=true` is set on dry runs — respect it if the
@@ -121,22 +130,56 @@ action along with its winning pack name and override history.
 
 ## Precedence recap
 
-Packs layer by semantic role, not numeric priority. The tiers are:
+Packs layer in a single linear ordering on the **Action Packs** page.
+The pack at the top of the list wins on action-key collisions; bundled
+sits implicitly at the bottom (no DB row).
 
 ```
-bundled pack (image-baked, priority 0)
-    └── overridden by →
-this repo (role=Default, priority 10)
-    └── overridden by →
-additional git packs (role=Override, priority 100)
-    └── overridden by →
-local-directory packs (priority 1000)
+my-local-pack         (top of list — highest position)
+    └── overrides →
+my-team-overrides
+    └── overrides →
+labdog-playbooks
+    └── overrides →
+bundled (image-baked, implicit position 0)
 ```
 
-Same action key → higher tier wins, shadowed packs still tracked for
-provenance (shown as amber badge in the UI). Different keys → both
-coexist in the registry. Admins pick the role in the UI; LabDog derives
-the integer tier.
+Same action key → highest-positioned pack wins, shadowed packs still
+tracked for provenance (shown as amber badge in the UI). Different
+keys → both coexist in the registry. Operators reorder packs by
+drag-and-drop; per-key pins are also available from the conflict
+banner at the top of the page.
+
+## Cluster-mode actions
+
+Actions whose manifest declares ``execution_mode: cluster`` are
+dispatched as a single ``ansible-playbook`` invocation against a
+multi-host inventory (rather than the per-host fan-out used for
+``per_host`` actions). The bundled
+[`actions/k8s-upgrade/`](./actions/k8s-upgrade) is the canonical
+example — it drains, ``kubeadm``-upgrades, and re-admits each node
+serially via Ansible's own ``serial:`` keyword across the
+``control_plane`` and ``workers`` groups.
+
+For a cluster-mode pack:
+
+- Set ``execution_mode: cluster`` plus ``supports_host: false`` and
+  ``supports_group: true`` in the manifest.
+- Provide a directory at ``actions/<key>/`` instead of a flat
+  ``actions/<key>.yml``. Point ``playbook:`` at the entry file
+  (e.g. ``<key>/site.yml``).
+- The play layer does the orchestration with ``serial:``, ``hosts:``,
+  ``delegate_to:``. LabDog hands you a ``control_plane`` and
+  ``workers`` group in the inventory; the operator assigns the role
+  on each member from the group's Members tab.
+- Cluster-wide ``kubectl`` tasks are easy: ``delegate_to:
+  "{{ groups['control_plane'] | first }}"`` so the playbook doesn't
+  need a kubeconfig on every node.
+
+The k8s-upgrade role under
+[`actions/k8s-upgrade/roles/kubernetes-upgrade/`](./actions/k8s-upgrade/roles/kubernetes-upgrade/)
+is a good template — it's apt-only today; RHEL support is on the
+LabDog roadmap.
 
 ## Examples
 

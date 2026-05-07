@@ -6,7 +6,13 @@ import { useParams, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import type { HostGroup, Host, GitRepository } from "@/lib/types"
+import type {
+  GroupMembership,
+  HostGroup,
+  Host,
+  GitRepository,
+  MembershipRole,
+} from "@/lib/types"
 import { SyncStatusBadge, FirewallBadge, GitOpsStatusBadge } from "@/components/status-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -45,10 +51,10 @@ import GroupPackagesPage from "./packages/client-page"
 import GroupCACertsPage from "./ca-certs/client-page"
 import GroupResolverPage from "./resolver/client-page"
 import GroupSyncPage from "./sync/client-page"
-import WorkflowConfigPage from "./workflow/client-page"
 import GroupActionsPage from "./actions/client-page"
+import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "workflow" | "actions"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "schedules" | "actions"
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -88,6 +94,31 @@ export default function GroupDetailPage() {
   const { data: hosts, isLoading: hostsLoading } = useQuery<Host[]>({
     queryKey: ["hosts"],
     queryFn: () => apiFetch<Host[]>("/api/hosts"),
+  })
+
+  // Per-membership roles. Drives the Cluster role column on the
+  // members list and the cluster-mode action-run dialog's preflight.
+  const { data: memberships } = useQuery<GroupMembership[]>({
+    queryKey: ["group-memberships", id],
+    queryFn: () => apiFetch<GroupMembership[]>(`/api/groups/${id}/memberships`),
+    enabled: !Number.isNaN(id),
+  })
+  const roleByHostId = useMemo(() => {
+    const m = new Map<number, MembershipRole | null>()
+    for (const row of memberships ?? []) m.set(row.host_id, row.role)
+    return m
+  }, [memberships])
+
+  const setRoleMutation = useApiMutation<
+    GroupMembership,
+    { host_id: number; role: MembershipRole | null }
+  >({
+    mutationFn: ({ host_id, role }) =>
+      apiFetch<GroupMembership>(
+        `/api/groups/${id}/hosts/${host_id}/role`,
+        { method: "PUT", body: JSON.stringify({ role }) },
+      ),
+    invalidateKeys: [["group-memberships", id]],
   })
   const showGroupLoading = useDelayedLoading(groupsLoading)
   const showHostsLoading = useDelayedLoading(hostsLoading)
@@ -567,7 +598,7 @@ export default function GroupDetailPage() {
           ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
           ["sync", "Firewall Sync"],
-          ["workflow", "Workflow"],
+          ["schedules", "Schedules"],
           ["actions", "Actions"],
         ] as const).map(([key, label]) => (
           <button
@@ -685,6 +716,43 @@ export default function GroupDetailPage() {
                       cell: (h) => <SyncStatusBadge status={h.sync_status} />,
                       defaultWidth: 140,
                       filter: { type: "enum", options: [{label:"Pending",value:"pending"},{label:"In Sync",value:"in_sync"},{label:"Out of Sync",value:"out_of_sync"},{label:"Unknown",value:"unknown"},{label:"Error",value:"error"}] },
+                    },
+                    {
+                      key: "cluster_role",
+                      label: "Cluster role",
+                      accessor: (h) => roleByHostId.get(h.id) ?? "",
+                      cell: (h) => {
+                        const value = roleByHostId.get(h.id) ?? ""
+                        return (
+                          <select
+                            value={value}
+                            disabled={setRoleMutation.isPending}
+                            onChange={(e) => {
+                              const next = e.target.value
+                              setRoleMutation.mutate({
+                                host_id: h.id,
+                                role: next === "" ? null : (next as MembershipRole),
+                              })
+                            }}
+                            className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200"
+                            aria-label={`Cluster role for ${h.hostname}`}
+                          >
+                            <option value="">—</option>
+                            <option value="control_plane">control_plane</option>
+                            <option value="worker">worker</option>
+                          </select>
+                        )
+                      },
+                      defaultWidth: 150,
+                      sortable: false,
+                      filter: {
+                        type: "enum",
+                        options: [
+                          { label: "Unassigned", value: "" },
+                          { label: "control_plane", value: "control_plane" },
+                          { label: "worker", value: "worker" },
+                        ],
+                      },
                     },
                     {
                       key: "actions",
@@ -822,7 +890,9 @@ export default function GroupDetailPage() {
       {activeTab === "ca-certs" && <GroupCACertsPage embedded />}
       {activeTab === "dns" && <GroupResolverPage embedded />}
       {activeTab === "sync" && <GroupSyncPage embedded />}
-      {activeTab === "workflow" && <WorkflowConfigPage embedded />}
+      {activeTab === "schedules" && (
+        <ScheduledActionsSection scope="group" targetId={id} />
+      )}
       {activeTab === "actions" && <GroupActionsPage embedded />}
 
       {confirmState && (

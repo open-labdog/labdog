@@ -5,7 +5,7 @@ Snapshots created by the workflow follow the naming convention::
     labdog-{run_id}-{unix_timestamp}
 
 A snapshot is considered orphaned when:
-- No active (pending/running) WorkflowHostRun references it, AND
+- No active (queued/running) ActionHostRun references it, AND
 - Its embedded timestamp is older than the configured max-age threshold.
 """
 
@@ -17,15 +17,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
+from app.models.action_run import ActionHostRun
 from app.proxmox.client import ProxmoxClient, ProxmoxError
 from app.proxmox.models import ProxmoxNode
 from app.settings_service import get_setting_typed
-from app.workflows.models import WorkflowHostRun, WorkflowHostStatus
 
 logger = logging.getLogger(__name__)
 
 _SNAPSHOT_PREFIX = "labdog-"
-_ACTIVE_STATUSES = {WorkflowHostStatus.pending, WorkflowHostStatus.running}
+# ActionHostRun status strings that indicate the snapshot is still in use.
+_ACTIVE_STATUSES = ("queued", "running")
 
 
 def _parse_snapshot_timestamp(snapshot_name: str) -> datetime | None:
@@ -59,7 +60,7 @@ async def find_orphaned_snapshots(
     each PVE node, and inspects their snapshots.  A snapshot whose name starts
     with ``labdog-`` is treated as orphaned when:
 
-    1. No :class:`WorkflowHostRun` with status *pending* or *running* references
+    1. No :class:`ActionHostRun` with status *pending* or *running* references
        the snapshot by name, AND
     2. The timestamp embedded in the snapshot name is older than *max_age_hours*.
 
@@ -80,10 +81,12 @@ async def find_orphaned_snapshots(
     now = datetime.now(tz=UTC)
 
     # Collect all snapshot_names that belong to active host runs.
+    # Post-C9 the canonical run table is action_host_runs; the legacy
+    # workflow_host_runs table is gone.
     active_result = await db.execute(
-        select(WorkflowHostRun.snapshot_name).where(
-            WorkflowHostRun.status.in_(_ACTIVE_STATUSES),
-            WorkflowHostRun.snapshot_name.isnot(None),
+        select(ActionHostRun.snapshot_name).where(
+            ActionHostRun.status.in_(_ACTIVE_STATUSES),
+            ActionHostRun.snapshot_name.isnot(None),
         )
     )
     active_snapshots: set[str] = {row[0] for row in active_result.all()}

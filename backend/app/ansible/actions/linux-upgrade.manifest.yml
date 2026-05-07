@@ -8,7 +8,7 @@ playbook: linux-upgrade.yml
 version: "1.0"
 estimated_duration: "5–15 min"
 destructive: true
-supports_group: false
+supports_group: true
 supports_host: true
 # Post-run verify: SSH ping, load / disk thresholds, no systemd units
 # in 'failed' state. See ../verify/README.md for the full template.

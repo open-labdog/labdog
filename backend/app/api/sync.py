@@ -11,6 +11,7 @@ from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
+from app.models.host_group import HostGroup
 from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
@@ -494,6 +495,122 @@ async def trigger_bulk_sync(
     return BulkSyncResponse(
         job_id=job.id,
         status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        module_filter=module_filter,
+    )
+
+
+class GroupBulkSyncResponse(BaseModel):
+    group_id: int
+    triggered_job_ids: list[int]
+    skipped_host_ids: list[int]
+    module_filter: list[str] | None
+
+
+@router.post("/groups/{group_id}/bulk", response_model=GroupBulkSyncResponse, status_code=201)
+async def trigger_group_bulk_sync(
+    group_id: int,
+    body: BulkSyncRequest,
+    user: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger a coalesced multi-module sync for every host in a group.
+
+    For each host in the group that doesn't already have a bulk
+    SyncJob in flight, creates ``SyncJob(module_type="bulk")`` and
+    dispatches ``run_host_sync`` with the supplied ``module_filter``.
+    Returns the dispatched job ids and any host ids skipped because a
+    bulk sync was already pending or running for that host.
+
+    Hosts skipped by the partial unique index get a fresh audit
+    ``sync_triggered`` row anyway under the host entity, so the
+    operator's intent at retry time is recorded even when no new
+    SyncJob is created.
+    """
+    # Validate module_filter early (same shape as trigger_bulk_sync).
+    module_filter = body.module_filter
+    if module_filter is not None:
+        if len(module_filter) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="module_filter must be null or non-empty",
+            )
+        unknown = [m for m in module_filter if m not in _BULK_ALLOWED_MODULES]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown module(s) in module_filter: {unknown}",
+            )
+
+    group_result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
+    group = group_result.scalar_one_or_none()
+    if group is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    memberships = await db.execute(
+        select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
+    )
+    host_ids = [r[0] for r in memberships.all()]
+    if not host_ids:
+        raise HTTPException(status_code=400, detail="No hosts in this group")
+
+    user_id = user.id
+
+    # Per-host pre-check + insert. We can't rely on the partial unique
+    # index alone here because we want to report which hosts were
+    # skipped — explicitly check first, insert second.
+    triggered: list[tuple[int, int]] = []  # (job_id, host_id)
+    skipped_host_ids: list[int] = []
+    for hid in host_ids:
+        existing = await db.execute(
+            select(SyncJob).where(
+                SyncJob.host_id == hid,
+                SyncJob.module_type == "bulk",
+                SyncJob.status.in_(["pending", "running"]),
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            skipped_host_ids.append(hid)
+            continue
+        job = SyncJob(
+            host_id=hid,
+            group_id=group_id,
+            status="pending",
+            module_type="bulk",
+            triggered_by_user_id=user_id,
+        )
+        db.add(job)
+        await db.flush()
+        triggered.append((job.id, hid))
+
+    # SEC-05: emit one trigger-time audit row scoped to the group.
+    if triggered:
+        await log_action(
+            db,
+            action="sync_triggered",
+            entity_type="host_group",
+            entity_id=group_id,
+            user_id=user_id,
+            before_state=None,
+            after_state={
+                "sync_job_ids": [jid for jid, _ in triggered],
+                "hosts": [hid for _, hid in triggered],
+                "skipped_hosts": skipped_host_ids,
+                "module_filter": module_filter,
+                "trigger_kind": "group_bulk",
+            },
+        )
+
+    await db.commit()
+
+    from app.tasks.host_sync_orchestrator import run_host_sync
+
+    for job_id, hid in triggered:
+        run_host_sync.delay(job_id=job_id, host_id=hid, module_filter=module_filter)
+
+    return GroupBulkSyncResponse(
+        group_id=group_id,
+        triggered_job_ids=[jid for jid, _ in triggered],
+        skipped_host_ids=skipped_host_ids,
         module_filter=module_filter,
     )
 

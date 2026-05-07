@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ActionCard } from "@/components/action-card"
 import { ActionRunDialog } from "@/components/action-run-dialog"
+import { ScheduleActionDialog } from "@/components/scheduled-actions/schedule-action-dialog"
 import { RunStatusBadge } from "@/components/status-badge"
 import { DataTable } from "@/components/ui/data-table"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -11,7 +12,6 @@ import { apiFetch } from "@/lib/api"
 import { formatRelativeTime } from "@/lib/utils"
 import type { ColumnDef } from "@/components/ui/data-table"
 import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 interface ActionsTabProps {
@@ -32,6 +32,7 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
   const router = useRouter()
   const [selectedAction, setSelectedAction] = useState<ActionDefinition | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [scheduleAction, setScheduleAction] = useState<ActionDefinition | null>(null)
 
   const { data: catalog, isLoading: catalogLoading } = useQuery<ActionDefinition[]>({
     queryKey: ["actions-catalog"],
@@ -63,8 +64,14 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, host?.id, host?.os_facts_collected_at])
 
-  const filteredCatalog = (catalog ?? []).filter((a) =>
-    scope === "host" ? a.supports_host : a.supports_group
+  // Built-in pseudo-actions (sync / drift_check / collect_state) are
+  // dispatched from their own UI surfaces (Sync button, drift card,
+  // facts refresh) and never need to appear in the Actions catalog.
+  // The schedule dialog still surfaces them — they're scheduleable.
+  const filteredCatalog = (catalog ?? []).filter(
+    (a) =>
+      !a.key.startsWith("_builtin.") &&
+      (scope === "host" ? a.supports_host : a.supports_group),
   )
 
   const runColumns: ColumnDef<ActionRun>[] = [
@@ -104,17 +111,6 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
 
   return (
     <div className="space-y-6">
-      {/* T8 — Disambiguation note */}
-      {scope === "group" && (
-        <p className="text-xs text-slate-500">
-          Looking for scheduled, snapshot-backed upgrades on Proxmox VMs?{" "}
-          <Link href="/schedules" className="text-blue-400 hover:text-blue-300">
-            See Update Workflows
-          </Link>
-          .
-        </p>
-      )}
-
       {/* Catalog + recent runs two-column layout */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-5">
         {/* Catalog — 60% */}
@@ -132,6 +128,7 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
                   key={action.key}
                   action={action}
                   onRun={(a) => { setSelectedAction(a); setDialogOpen(true) }}
+                  onSchedule={(a) => setScheduleAction(a)}
                   lastRun={lastRun ? { status: lastRun.status, started_at: lastRun.created_at } : null}
                 />
               )
@@ -166,6 +163,17 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
         onClose={() => { setDialogOpen(false); setSelectedAction(null) }}
         hostOsCodename={scope === "host" ? host?.os_codename : undefined}
       />
+
+      {scheduleAction && (
+        <ScheduleActionDialog
+          open
+          onOpenChange={(o) => !o && setScheduleAction(null)}
+          preselected={{
+            action_key: scheduleAction.key,
+            target: { kind: scope, id: targetId },
+          }}
+        />
+      )}
     </div>
   )
 }

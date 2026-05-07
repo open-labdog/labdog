@@ -63,29 +63,6 @@ export interface HostSummary extends Host {
   override_counts: ModuleCounts
 }
 
-export interface WorkflowLastRun {
-  id: number
-  status: string
-  started_at: string | null
-  completed_at: string | null
-  created_at: string | null
-}
-
-export interface WorkflowSummary {
-  id: number
-  group_id: number
-  group_name: string
-  group_category: string | null
-  batch_size: number
-  schedule_cron: string | null
-  pre_update_snapshot: boolean
-  auto_rollback: boolean
-  auto_reboot: boolean
-  enabled: boolean
-  host_count: number
-  last_run: WorkflowLastRun | null
-}
-
 export interface ModuleCurrentState {
   module_type: string
   sync_status: string
@@ -154,7 +131,6 @@ export interface VMMapping {
 }
 
 export type PackSourceType = "git" | "local"
-export type PackRole = "default" | "override"
 
 export interface ActionPack {
   id: number
@@ -168,9 +144,9 @@ export interface ActionPack {
   path: string
   /** Absolute filesystem path for source_type=local. Null for git. */
   local_path: string | null
-  role: PackRole
-  /** Derived server-side from (source_type, role). Read-only. */
-  priority: number
+  /** Linear precedence ordering. Higher wins on action-key collisions.
+   * Bundled is implicit at 0. */
+  position: number
   enabled: boolean
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
@@ -185,6 +161,131 @@ export interface ActionPackSyncResponse {
   message: string
   current_sha: string | null
   last_synced_at: string | null
+}
+
+export interface ActionPackReorderRequest {
+  /** Top-to-bottom display order. The first id wins on action-key
+   * collisions (highest position). Must list every existing pack
+   * exactly once; bundled is implicit and never appears here. */
+  pack_ids: number[]
+}
+
+export interface ResolutionPack {
+  pack_id: number | null
+  pack_name: string
+  position: number
+}
+
+export interface ContestedActionKey {
+  action_key: string
+  candidates: ResolutionPack[]
+  current_winner: ResolutionPack
+  /** Operator's explicit pin, or null when the winner came from
+   * position-based default (no resolution row present). */
+  resolution: ResolutionPack | null
+  /** True when the live winner came from a freeze decision rather
+   * than the position default — the UI surfaces a "needs your
+   * decision" badge for these. */
+  is_frozen: boolean
+  decided_at: string | null
+  decided_by_user_id: number | null
+}
+
+export interface ActionResolutionRequest {
+  /** Null = bundled wins. */
+  pack_id: number | null
+}
+
+// ---------------------------------------------------------------------------
+// Repo onboarding scan / activate
+// ---------------------------------------------------------------------------
+
+export interface ScanError {
+  file: string
+  message: string
+}
+
+export interface DetectedPack {
+  path: string
+  name: string
+  contributed_keys: string[]
+  pack_yml_present: boolean
+  errors: ScanError[]
+}
+
+export interface DetectedGitopsFile {
+  path: string
+  group_name: string | null
+  errors: ScanError[]
+}
+
+export interface KeyOwner {
+  key: string
+  source: "bundled" | "db_pack"
+  pack_name: string
+  pack_id: number | null
+}
+
+export interface KeyConflict {
+  key: string
+  contributing_packs: string[]
+}
+
+export interface RepoScanResponse {
+  packs: DetectedPack[]
+  gitops_files: DetectedGitopsFile[]
+  existing_key_winners: Record<string, KeyOwner>
+  intra_repo_key_conflicts: KeyConflict[]
+  scan_errors: ScanError[]
+  head_sha: string | null
+}
+
+export interface ActivatePackSelection {
+  path: string
+  name: string
+}
+
+export interface ActivateKeyResolution {
+  action_key: string
+  /** Path inside the submitted activation set whose pack wins. */
+  winner_pack_path?: string | null
+  /** An existing DB pack wins (operator kept the prior winner). */
+  winner_existing_pack_id?: number | null
+  /** Bundled wins. */
+  winner_is_bundled?: boolean
+}
+
+export interface ActivateGitopsBinding {
+  file_path: string
+  host_group_id: number
+}
+
+export interface RepoActivateRequest {
+  packs: ActivatePackSelection[]
+  gitops_bindings: ActivateGitopsBinding[]
+  /** Per-key winner decisions for keys this activation makes
+   * contested. One row per such key — the server rejects otherwise. */
+  key_resolutions: ActivateKeyResolution[]
+}
+
+export interface ActivatedPackOut {
+  pack_id: number
+  name: string
+  path: string
+  position: number
+  requested_name: string
+  name_was_disambiguated: boolean
+}
+
+export interface ActivatedGitopsBindingOut {
+  host_group_id: number
+  file_path: string
+}
+
+export interface RepoActivateResponse {
+  activated_packs: ActivatedPackOut[]
+  activated_gitops_bindings: ActivatedGitopsBindingOut[]
+  head_sha: string | null
 }
 
 export interface FirewallRule {
@@ -450,48 +551,6 @@ export interface EffectiveResolverConfig extends ResolverConfig {
   source_name: string
 }
 
-export interface UpdateWorkflow {
-  id: number
-  group_id: number
-  batch_size: number
-  schedule_cron: string | null
-  pre_update_snapshot: boolean
-  auto_rollback: boolean
-  verification_prompt: string | null
-  auto_reboot: boolean
-  enabled: boolean
-  action_key: string
-  action_parameters: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowRun {
-  id: number
-  workflow_id: number
-  status: string
-  started_at: string | null
-  completed_at: string | null
-  triggered_by: number | null
-  created_at: string
-}
-
-export interface WorkflowHostRun {
-  id: number
-  host_id: number
-  hostname: string
-  step: string
-  status: string
-  snapshot_name: string | null
-  error_message: string | null
-  started_at: string | null
-  completed_at: string | null
-}
-
-export interface WorkflowRunDetail extends WorkflowRun {
-  host_runs: WorkflowHostRun[]
-}
-
 // ── CA certificates ─────────────────────────────────────────────────────────
 
 export interface CACertRule {
@@ -602,11 +661,24 @@ export interface ActionDefinition {
   destructive: boolean
   supports_group: boolean
   supports_host: boolean
+  /** Whether the action makes sense across the entire fleet. Drives the
+   *  Fleet target option on the schedule dialog. Conservative default. */
+  supports_fleet: boolean
   parameters: ActionParameter[]
   /** Pack whose manifest provided this action. */
   pack_name: string
   /** Packs whose entries for this key were shadowed. Empty when uncontested. */
   overridden_from: string[]
+  /** ``per_host`` (default) or ``cluster`` (single ansible run against
+   *  the whole group with a multi-host inventory; e.g. k8s-upgrade). */
+  execution_mode: "per_host" | "cluster"
+}
+
+export type MembershipRole = "control_plane" | "worker"
+
+export interface GroupMembership {
+  host_id: number
+  role: MembershipRole | null
 }
 
 export interface ActionHostRun {
@@ -627,8 +699,16 @@ export interface ActionRun {
   action_version: string
   host_id: number | null
   group_id: number | null
+  /** NULL for ad-hoc runs; populated when the run was dispatched by the
+   *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
+  scheduled_action_id: number | null
   parameters: Record<string, unknown>
   parallelism: number
+  /** Universal destructive-flow toggles, mirrored from the schedule
+   *  at dispatch time. Ignored when the action is non-destructive. */
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
   status: string
   triggered_by_user_id: number | null
   started_at: string | null
@@ -636,4 +716,64 @@ export interface ActionRun {
   error_message: string | null
   created_at: string
   host_runs: ActionHostRun[]
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled actions (unified cron-driven action dispatch)
+// ---------------------------------------------------------------------------
+
+export type ScheduledActionTargetKind = "host" | "group" | "fleet"
+
+export interface ScheduledActionRunSummary {
+  id: number
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+}
+
+export interface ScheduledAction {
+  id: number
+  target_kind: ScheduledActionTargetKind
+  target_id: number | null
+  action_key: string
+  parameters: Record<string, unknown>
+  schedule_cron: string | null
+  enabled: boolean
+  snapshot_enabled: boolean
+  verify_enabled: boolean
+  auto_rollback: boolean
+  batch_size: number
+  last_dispatched_at: string | null
+  created_at: string
+  updated_at: string
+  /** Server-resolved presentation helpers from /api/scheduled-actions. */
+  target_name: string | null
+  action_name: string | null
+  pack_name: string | null
+  destructive: boolean | null
+  last_run: ScheduledActionRunSummary | null
+}
+
+export interface ScheduledActionCreate {
+  target_kind: ScheduledActionTargetKind
+  target_id: number | null
+  action_key: string
+  parameters?: Record<string, unknown>
+  schedule_cron: string | null
+  enabled?: boolean
+  snapshot_enabled?: boolean
+  verify_enabled?: boolean
+  auto_rollback?: boolean
+  batch_size?: number
+}
+
+export type ScheduledActionUpdate = Partial<
+  Omit<ScheduledActionCreate, "action_key" | "target_kind" | "target_id">
+>
+
+export interface ValidateCronResponse {
+  valid: boolean
+  message: string | null
+  next_run_at: string[]
 }

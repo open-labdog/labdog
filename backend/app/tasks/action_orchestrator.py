@@ -16,6 +16,17 @@ from app.tasks import celery_app
 logger = logging.getLogger(__name__)
 
 
+# Per-host Celery task name for each built-in pseudo-action. Looked up
+# by the orchestrator's per-host fork; pack-supplied actions fall
+# through to the default ``app.tasks.action_host.run_action_host``.
+PER_HOST_TASK_FOR_BUILTIN: dict[str, str] = {
+    "_builtin.sync": "app.tasks.builtin_dispatchers.run_builtin_sync",
+    "_builtin.drift_check": "app.tasks.builtin_dispatchers.run_builtin_drift_check",
+    "_builtin.collect_state": "app.tasks.builtin_dispatchers.run_builtin_collect_state",
+}
+_DEFAULT_PER_HOST_TASK = "app.tasks.action_host.run_action_host"
+
+
 # ---------------------------------------------------------------------------
 # Celery task entry point
 # ---------------------------------------------------------------------------
@@ -57,6 +68,7 @@ async def _run_action_async(action_run_id: int) -> None:
     # Phase 1: initialise run and create per-host records                 #
     # ------------------------------------------------------------------ #
     host_run_ids: list[int] = []
+    per_host_task_name = _DEFAULT_PER_HOST_TASK
 
     try:
         async with task_session() as db:
@@ -76,15 +88,37 @@ async def _run_action_async(action_run_id: int) -> None:
                 await db.commit()
                 return
 
-            # Resolve target hosts
+            # Cluster-mode actions (currently just k8s-upgrade) have a
+            # short-circuited dispatch path: one ActionHostRun anchored
+            # to the first control_plane member, one Celery task that
+            # invokes ansible-playbook against a multi-host inventory.
+            # The per-host batching loop is skipped entirely.
+            if action.execution_mode == "cluster":
+                await _dispatch_cluster_run(db, run)
+                return
+
+            # Pick the per-host task: built-ins each have their own
+            # wrapper in app.tasks.builtin_dispatchers; pack-supplied
+            # actions go through the default Ansible playbook runner.
+            per_host_task_name = PER_HOST_TASK_FOR_BUILTIN.get(
+                run.action_key, _DEFAULT_PER_HOST_TASK
+            )
+
+            # Resolve target hosts. Fleet runs (both host_id and
+            # group_id NULL) are scheduled-only — the action_runs
+            # check constraint forbids ad-hoc fleet rows.
             if run.host_id is not None:
                 host_ids: list[int] = [run.host_id]
-            else:
+            elif run.group_id is not None:
                 hosts_result = await db.execute(
                     select(Host)
                     .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
                     .where(HostGroupMembership.c.group_id == run.group_id)
                 )
+                host_ids = [h.id for h in hosts_result.scalars().all()]
+            else:
+                # fleet — every registered host
+                hosts_result = await db.execute(select(Host))
                 host_ids = [h.id for h in hosts_result.scalars().all()]
 
             if not host_ids:
@@ -159,7 +193,7 @@ async def _run_action_async(action_run_id: int) -> None:
 
             tasks = celery_group(
                 celery_app.signature(
-                    "app.tasks.action_host.run_action_host",
+                    per_host_task_name,
                     args=[action_run_id, host_run_id],
                     queue="long_running",
                 )
@@ -250,6 +284,105 @@ async def _run_action_async(action_run_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
+
+
+async def _dispatch_cluster_run(db, run) -> None:
+    """Validate a cluster-mode run and dispatch the single cluster task.
+
+    Cluster-mode actions (manifest's ``execution_mode: cluster``) must
+    target a group whose members all have a ``role`` assignment and at
+    least one ``control_plane`` member. The orchestrator anchors the
+    run to the first control-plane host (the "driver") via a single
+    ``ActionHostRun`` row; per-node detail lives in the streamed
+    ansible stdout.
+
+    The submit-time API validator catches the same conditions earlier
+    and surfaces them to the user; this layer is defence-in-depth for
+    scheduled runs and any direct DB inserts that bypass the API.
+    """
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun
+    from app.models.host import Host, HostGroupMembership
+
+    if run.host_id is not None:
+        run.status = "failed"
+        run.error_message = (
+            "cluster-mode actions cannot target a single host (got "
+            f"host_id={run.host_id}); they require a group with role "
+            "assignments"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+    if run.group_id is None:
+        run.status = "failed"
+        run.error_message = "cluster-mode actions require group_id"
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    rows = (
+        await db.execute(
+            select(
+                HostGroupMembership.c.host_id,
+                HostGroupMembership.c.role,
+            ).where(HostGroupMembership.c.group_id == run.group_id)
+        )
+    ).all()
+    if not rows:
+        run.status = "failed"
+        run.error_message = (
+            f"group {run.group_id} has no members; cluster-mode actions "
+            "need at least one control_plane and one worker"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    unassigned = [r.host_id for r in rows if r.role is None]
+    if unassigned:
+        run.status = "failed"
+        run.error_message = (
+            f"{len(unassigned)} member(s) of group {run.group_id} have no "
+            "role assignment; set every member to control_plane or worker "
+            "before triggering a cluster upgrade"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    cps = [r.host_id for r in rows if r.role == "control_plane"]
+    if not cps:
+        run.status = "failed"
+        run.error_message = (
+            f"group {run.group_id} has no control_plane members; cluster-"
+            "mode actions need at least one"
+        )
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        return
+
+    # Driver = the lowest-id control-plane host so the choice is
+    # deterministic across reruns.
+    driver_id = min(cps)
+    driver = (await db.execute(select(Host).where(Host.id == driver_id))).scalar_one()
+
+    host_run = ActionHostRun(
+        action_run_id=run.id,
+        host_id=driver.id,
+        status="queued",
+    )
+    db.add(host_run)
+    await db.flush()
+    host_run_id = host_run.id
+    await db.commit()
+
+    celery_app.send_task(
+        "app.tasks.action_cluster.run_action_cluster",
+        args=[run.id, host_run_id],
+        queue="long_running",
+    )
 
 
 async def _mark_run_failed(action_run_id: int, error_message: str) -> None:

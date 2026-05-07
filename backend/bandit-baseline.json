@@ -1,19 +1,19 @@
 {
   "errors": [],
-  "generated_at": "2026-04-27T11:54:25Z",
+  "generated_at": "2026-05-06T19:38:33Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 55,
+      "CONFIDENCE.HIGH": 49,
       "CONFIDENCE.LOW": 5,
-      "CONFIDENCE.MEDIUM": 21,
+      "CONFIDENCE.MEDIUM": 14,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 56,
-      "SEVERITY.MEDIUM": 25,
+      "SEVERITY.LOW": 50,
+      "SEVERITY.MEDIUM": 18,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 27956,
+      "loc": 30524,
       "nosec": 0,
-      "skipped_tests": 0
+      "skipped_tests": 3
     },
     "app/__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -54,6 +54,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/actions/builtins.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 96,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/actions/git_sync.py": {
       "CONFIDENCE.HIGH": 2,
       "CONFIDENCE.LOW": 0,
@@ -76,7 +89,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 54,
+      "loc": 84,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -89,7 +102,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 141,
+      "loc": 277,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -102,7 +115,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 114,
+      "loc": 222,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -115,7 +128,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 36,
+      "loc": 42,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/actions/validation.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 46,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -129,6 +155,32 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 3,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/ansible_runtime/composer.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 226,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/ansible_runtime/diagnose.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 95,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -154,7 +206,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 36,
+      "loc": 85,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/ansible_runtime/outcomes.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 72,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -197,6 +262,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/api/_repo_scan.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 437,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/api/action_packs.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -206,7 +284,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 239,
+      "loc": 293,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/api/action_resolutions.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 191,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -219,7 +310,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 272,
+      "loc": 327,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -310,7 +401,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 262,
+      "loc": 263,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -349,7 +440,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 124,
+      "loc": 139,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -362,7 +453,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 428,
+      "loc": 516,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -427,7 +518,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 169,
+      "loc": 170,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -466,7 +557,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 268,
+      "loc": 269,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -531,7 +622,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 235,
+      "loc": 236,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -544,7 +635,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 411,
+      "loc": 281,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -558,6 +649,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 275,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/api/scheduled_actions.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 442,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -596,7 +700,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 163,
+      "loc": 164,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -661,7 +765,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 269,
+      "loc": 523,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -674,7 +778,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 311,
+      "loc": 312,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -688,19 +792,6 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 162,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/api/workflows.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 331,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1276,6 +1367,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/gitops/importers/scheduled_actions.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 170,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/gitops/importers/services.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1302,19 +1406,6 @@
       "nosec": 0,
       "skipped_tests": 0
     },
-    "app/gitops/importers/workflow.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 151,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
     "app/gitops/pipeline.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1337,7 +1428,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 298,
+      "loc": 293,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1480,7 +1571,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 399,
+      "loc": 403,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1493,7 +1584,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 98,
+      "loc": 96,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1506,7 +1597,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 58,
+      "loc": 69,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1584,7 +1675,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 74,
+      "loc": 89,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1624,6 +1715,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 64,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/models/scheduled_action.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 66,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1805,7 +1909,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 82,
+      "loc": 120,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1822,6 +1926,32 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/packs/repo_scanner.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 217,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/packs/scan_conflicts.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 89,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/packs/schemas.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -1831,7 +1961,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 134,
+      "loc": 179,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -1844,7 +1974,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 220,
+      "loc": 224,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2065,7 +2195,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 80,
+      "loc": 78,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2078,7 +2208,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 116,
+      "loc": 217,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2117,7 +2247,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 58,
+      "loc": 75,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2130,7 +2260,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 66,
+      "loc": 71,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2182,7 +2312,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 59,
+      "loc": 65,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2238,6 +2368,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/schemas/repo_scan.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 119,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/schemas/rules.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -2261,6 +2404,19 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 171,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/schemas/scheduled_actions.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 57,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2403,7 +2559,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 220,
+      "loc": 213,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2498,6 +2654,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/sync/orchestrator.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 241,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/sync/parsers/__init__.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -2520,9 +2689,9 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 99,
+      "loc": 110,
       "nosec": 0,
-      "skipped_tests": 0
+      "skipped_tests": 1
     },
     "app/sync/parsers/nftables.py": {
       "CONFIDENCE.HIGH": 0,
@@ -2546,7 +2715,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 95,
+      "loc": 96,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/tasks/action_cluster.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 289,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2572,7 +2754,20 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 231,
+      "loc": 332,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/tasks/builtin_dispatchers.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 205,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2585,7 +2780,7 @@
       "SEVERITY.LOW": 1,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 117,
+      "loc": 118,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2603,15 +2798,15 @@
       "skipped_tests": 0
     },
     "app/tasks/cron_sync.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 151,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2637,7 +2832,7 @@
       "SEVERITY.LOW": 2,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 111,
+      "loc": 131,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2650,7 +2845,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 112,
+      "loc": 114,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2663,9 +2858,22 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 176,
+      "loc": 186,
       "nosec": 0,
       "skipped_tests": 0
+    },
+    "app/tasks/host_sync_orchestrator.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 581,
+      "nosec": 0,
+      "skipped_tests": 2
     },
     "app/tasks/hosts_drift.py": {
       "CONFIDENCE.HIGH": 2,
@@ -2681,15 +2889,15 @@
       "skipped_tests": 0
     },
     "app/tasks/hosts_sync.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 155,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2707,15 +2915,15 @@
       "skipped_tests": 0
     },
     "app/tasks/package_sync.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 184,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2733,15 +2941,15 @@
       "skipped_tests": 0
     },
     "app/tasks/resolver_sync.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 150,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2771,6 +2979,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "app/tasks/scheduled_action_schedule.py": {
+      "CONFIDENCE.HIGH": 2,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 2,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 142,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "app/tasks/service_drift.py": {
       "CONFIDENCE.HIGH": 2,
       "CONFIDENCE.LOW": 0,
@@ -2785,28 +3006,41 @@
       "skipped_tests": 0
     },
     "app/tasks/service_sync.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 160,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
     "app/tasks/sync.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 24,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
+    "app/tasks/sync_sweeper.py": {
       "CONFIDENCE.HIGH": 1,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
+      "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 187,
+      "loc": 110,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2824,32 +3058,6 @@
       "skipped_tests": 0
     },
     "app/tasks/user_sync.py": {
-      "CONFIDENCE.HIGH": 1,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 1,
-      "SEVERITY.MEDIUM": 1,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 154,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/tasks/workflow_host.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 1,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 426,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/tasks/workflow_orchestrator.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
@@ -2858,20 +3066,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 181,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/tasks/workflow_schedule.py": {
-      "CONFIDENCE.HIGH": 2,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 2,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 87,
+      "loc": 12,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -2989,32 +3184,6 @@
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 0,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/workflows/models.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 89,
-      "nosec": 0,
-      "skipped_tests": 0
-    },
-    "app/workflows/schemas.py": {
-      "CONFIDENCE.HIGH": 0,
-      "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 0,
-      "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 0,
-      "SEVERITY.MEDIUM": 0,
-      "SEVERITY.UNDEFINED": 0,
-      "loc": 60,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -3924,6 +4093,26 @@
       "test_name": "try_except_pass"
     },
     {
+      "code": "193                 fd, key_path = tempfile.mkstemp(\n194                     dir=\"/dev/shm\", prefix=\"labdog-cluster-\", suffix=\".key\"\n195                 )\n",
+      "col_offset": 24,
+      "end_col_offset": 34,
+      "filename": "app/tasks/action_cluster.py",
+      "issue_confidence": "MEDIUM",
+      "issue_cwe": {
+        "id": 377,
+        "link": "https://cwe.mitre.org/data/definitions/377.html"
+      },
+      "issue_severity": "MEDIUM",
+      "issue_text": "Probable insecure usage of temp file/directory.",
+      "line_number": 194,
+      "line_range": [
+        194
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
+      "test_id": "B108",
+      "test_name": "hardcoded_tmp_directory"
+    },
+    {
       "code": "76     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-action-\")\n77     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-action-\", suffix=\".key\")\n78     os.close(fd)\n",
       "col_offset": 44,
       "end_col_offset": 54,
@@ -3985,7 +4174,7 @@
       "test_name": "hardcoded_tmp_directory"
     },
     {
-      "code": "139             asyncio.run(_mark_failed())\n140         except Exception:\n141             pass\n142 \n",
+      "code": "141             asyncio.run(_mark_failed())\n142         except Exception:\n143             pass\n144 \n",
       "col_offset": 8,
       "end_col_offset": 16,
       "filename": "app/tasks/ca_cert_action.py",
@@ -3996,10 +4185,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 140,
+      "line_number": 142,
       "line_range": [
-        140,
-        141
+        142,
+        143
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4048,50 +4237,9 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/cron_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 15,
-      "line_range": [
-        15
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "180             asyncio.run(_mark_failed())\n181         except Exception:\n182             pass\n183 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/cron_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 181,
-      "line_range": [
-        181,
-        182
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "90                                     host.labdog_source_ip = await get_source_ip(probe)\n91                         except Exception:\n92                             pass\n93                     await db.commit()\n",
-      "col_offset": 24,
-      "end_col_offset": 32,
+      "code": "98                         host.labdog_source_ip = await get_source_ip(probe)\n99             except Exception:\n100                 pass\n101         await db.commit()\n",
+      "col_offset": 12,
+      "end_col_offset": 20,
       "filename": "app/tasks/drift.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
@@ -4100,17 +4248,17 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 91,
+      "line_number": 99,
       "line_range": [
-        91,
-        92
+        99,
+        100
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
       "test_name": "try_except_pass"
     },
     {
-      "code": "130     _register_beat_schedule()\n131 except Exception:\n132     # Fallback: Redis may not be available at import time (e.g., during tests)\n133     pass\n",
+      "code": "159     _register_beat_schedule()\n160 except Exception:\n161     # Fallback: Redis may not be available at import time (e.g., during tests)\n162     pass\n",
       "col_offset": 0,
       "end_col_offset": 8,
       "filename": "app/tasks/drift.py",
@@ -4121,11 +4269,11 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 131,
+      "line_number": 160,
       "line_range": [
-        131,
-        132,
-        133
+        160,
+        161,
+        162
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4175,47 +4323,6 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n26     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/hosts_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 25,
-      "line_range": [
-        25
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "199             asyncio.run(_mark_failed())\n200         except Exception:\n201             pass  # Best effort status update\n202 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/hosts_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 200,
-      "line_range": [
-        200,
-        201
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
       "code": "82                                 host.labdog_source_ip = await get_source_ip(probe)\n83                         except Exception:\n84                             pass\n85                 except (OSError, asyncssh.Error, TimeoutError) as e:\n",
       "col_offset": 24,
       "end_col_offset": 32,
@@ -4252,47 +4359,6 @@
       "line_range": [
         124,
         125
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "50     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n51     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n52     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/package_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 51,
-      "line_range": [
-        51
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "223             asyncio.run(_mark_failed())\n224         except Exception:\n225             pass\n226 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/package_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 224,
-      "line_range": [
-        224,
-        225
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4363,47 +4429,6 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/resolver_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 15,
-      "line_range": [
-        15
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "178             asyncio.run(_mark_failed())\n179         except Exception:\n180             pass\n181 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/resolver_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 179,
-      "line_range": [
-        179,
-        180
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
       "code": "96                     dispatched += 1\n97             except Exception:\n98                 # Do not let one bad config block the rest.\n99                 pass\n100 \n",
       "col_offset": 12,
       "end_col_offset": 20,
@@ -4442,6 +4467,50 @@
         126,
         127,
         128
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
+      "test_id": "B110",
+      "test_name": "try_except_pass"
+    },
+    {
+      "code": "167         legacy.delete()\n168     except Exception:\n169         # Already gone, or Redis is unreachable \u2014 fall through.\n170         pass\n171 \n",
+      "col_offset": 4,
+      "end_col_offset": 12,
+      "filename": "app/tasks/scheduled_action_schedule.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Pass detected.",
+      "line_number": 168,
+      "line_range": [
+        168,
+        169,
+        170
+      ],
+      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
+      "test_id": "B110",
+      "test_name": "try_except_pass"
+    },
+    {
+      "code": "182     _register_beat_schedule()\n183 except Exception:\n184     # Redis may not be available at import time (e.g. during tests).\n185     pass\n",
+      "col_offset": 0,
+      "end_col_offset": 8,
+      "filename": "app/tasks/scheduled_action_schedule.py",
+      "issue_confidence": "HIGH",
+      "issue_cwe": {
+        "id": 703,
+        "link": "https://cwe.mitre.org/data/definitions/703.html"
+      },
+      "issue_severity": "LOW",
+      "issue_text": "Try, Except, Pass detected.",
+      "line_number": 183,
+      "line_range": [
+        183,
+        184,
+        185
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4491,30 +4560,10 @@
       "test_name": "try_except_pass"
     },
     {
-      "code": "24     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n25     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n26     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/service_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 25,
-      "line_range": [
-        25
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "204             asyncio.run(_mark_failed())\n205         except Exception:\n206             pass  # Best effort status update\n207 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/service_sync.py",
+      "code": "163     _register_beat_schedule()\n164 except Exception:\n165     pass\n",
+      "col_offset": 0,
+      "end_col_offset": 8,
+      "filename": "app/tasks/sync_sweeper.py",
       "issue_confidence": "HIGH",
       "issue_cwe": {
         "id": 703,
@@ -4522,51 +4571,10 @@
       },
       "issue_severity": "LOW",
       "issue_text": "Try, Except, Pass detected.",
-      "line_number": 205,
+      "line_number": 164,
       "line_range": [
-        205,
-        206
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "22     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n23     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n24     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 23,
-      "line_range": [
-        23
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "231             asyncio.run(_mark_failed())\n232         except Exception:\n233             pass  # Best effort status update\n234 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 232,
-      "line_range": [
-        232,
-        233
+        164,
+        165
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",
@@ -4609,111 +4617,6 @@
       "line_range": [
         138,
         139
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "14     private_data_dir = tempfile.mkdtemp(prefix=\"labdog-\")\n15     fd, ssh_key_path = tempfile.mkstemp(dir=\"/dev/shm\", prefix=\"labdog-\", suffix=\".key\")\n16     os.close(fd)\n",
-      "col_offset": 44,
-      "end_col_offset": 54,
-      "filename": "app/tasks/user_sync.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 15,
-      "line_range": [
-        15
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "183             asyncio.run(_mark_failed())\n184         except Exception:\n185             pass\n186 \n",
-      "col_offset": 8,
-      "end_col_offset": 16,
-      "filename": "app/tasks/user_sync.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 184,
-      "line_range": [
-        184,
-        185
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "76 \n77     ssh_key_path = f\"/dev/shm/labdog-wf-{host_run_id}.key\"\n78 \n",
-      "col_offset": 19,
-      "end_col_offset": 58,
-      "filename": "app/tasks/workflow_host.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 377,
-        "link": "https://cwe.mitre.org/data/definitions/377.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Probable insecure usage of temp file/directory.",
-      "line_number": 77,
-      "line_range": [
-        77
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b108_hardcoded_tmp_directory.html",
-      "test_id": "B108",
-      "test_name": "hardcoded_tmp_directory"
-    },
-    {
-      "code": "90 \n91                 except Exception:\n92                     # Do not let one bad workflow block the rest\n93                     pass\n94 \n",
-      "col_offset": 16,
-      "end_col_offset": 24,
-      "filename": "app/tasks/workflow_schedule.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 91,
-      "line_range": [
-        91,
-        92,
-        93
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
-      "test_id": "B110",
-      "test_name": "try_except_pass"
-    },
-    {
-      "code": "116     _register_beat_schedule()\n117 except Exception:\n118     # Fallback: Redis may not be available at import time (e.g., during tests)\n119     pass\n",
-      "col_offset": 0,
-      "end_col_offset": 8,
-      "filename": "app/tasks/workflow_schedule.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 703,
-        "link": "https://cwe.mitre.org/data/definitions/703.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Try, Except, Pass detected.",
-      "line_number": 117,
-      "line_range": [
-        117,
-        118,
-        119
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html",
       "test_id": "B110",

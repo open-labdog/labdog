@@ -1,0 +1,11 @@
+key: k8s-upgrade
+name: Upgrade Kubernetes cluster
+description: Drain and upgrade nodes one at a time.
+icon: Box
+playbook: k8s-upgrade.yml
+version: "1.0"
+estimated_duration: "30+ min"
+destructive: true
+supports_group: true
+supports_host: false
+parameters: []

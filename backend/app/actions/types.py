@@ -29,12 +29,21 @@ class ActionDefinition:
     name: str
     description: str
     icon: str
-    playbook_path: Path
+    #: ``None`` for built-in pseudo-actions (``_builtin.*``) which don't
+    #: have an Ansible playbook on disk — their per-host work is handled
+    #: by dedicated Celery tasks in ``app.tasks.*`` (see C5 dispatch
+    #: routing). Pack-supplied actions always have a path.
+    playbook_path: Path | None
     version: str
     estimated_duration: str
     destructive: bool = False
     supports_group: bool = True
     supports_host: bool = True
+    #: Whether this action makes sense across the entire fleet. Conservative
+    #: default ``False`` — operators rarely want every host to run an
+    #: action at once. The built-in ``_builtin.drift_check`` and
+    #: ``_builtin.collect_state`` set this to ``True``.
+    supports_fleet: bool = False
     parameters: tuple[ActionParameter, ...] = field(default_factory=tuple)
     pack_name: str = "bundled"
     roles_paths: tuple[Path, ...] = field(default_factory=tuple)
@@ -50,3 +59,13 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: ``per_host`` (default) — orchestrator fans the action across one
+    #: target host at a time. ``cluster`` — a single ansible-playbook
+    #: invocation runs against the whole group with a multi-host
+    #: inventory (currently used by ``k8s-upgrade``).
+    execution_mode: Literal["per_host", "cluster"] = "per_host"
+
+    @property
+    def is_builtin(self) -> bool:
+        """``True`` for keys in the reserved ``_builtin.*`` namespace."""
+        return self.key.startswith("_builtin.")

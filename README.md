@@ -24,8 +24,9 @@ Centralized Linux configuration management via Ansible. Manage firewall rules, s
 - **Audit trail**: Append-only log of all actions with before/after state
 - **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
 - **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
-- **Action packs (BYO playbooks)**: Extend the built-in action catalog by pointing LabDog at a git repo or a local directory; credentials encrypted at rest, overrides resolved by semantic role (default / override / local), provenance surfaced in the UI
-- **Update Workflows**: Schedule per-group action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, or any pack-supplied action) on a cron cadence with optional Proxmox snapshot, verify, and auto-rollback
+- **Action packs (BYO playbooks)**: Extend the built-in action catalog by pointing LabDog at a git repo or a local directory; credentials encrypted at rest, overrides resolved by drag-to-reorder pack precedence with per-key conflict resolution, provenance surfaced in the UI
+- **Cluster-mode actions**: One-click Kubernetes cluster upgrade (`k8s-upgrade`) — drains, upgrades, and re-admits each node serially via a single multi-host inventory; per-member `control_plane` / `worker` role drives ordering
+- **Scheduled actions**: Schedule per-host / per-group / fleet action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, or any pack-supplied action) on a cron cadence with optional Proxmox snapshot, verify, and auto-rollback
 
 ## Documentation
 
@@ -45,7 +46,7 @@ Direct entry points:
 - [Precedence](docs/examples/precedence/README.md) — worked examples for multi-group merges
 - [Actions & Action Packs](docs/ui/actions.md) — ad-hoc playbook runs and bring-your-own pack guide
 - [Action-pack examples](docs/examples/action-packs/README.md) — three working starter packs
-- [Update Workflows](docs/ui/workflows.md) — scheduling Linux/Kubernetes/custom upgrades with snapshot + rollback
+- [Scheduled actions](docs/ui/scheduled-actions.md) — cron-driven host/group/fleet runs with optional snapshot + verify + rollback
 
 ## License
 
