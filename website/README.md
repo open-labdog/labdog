@@ -39,14 +39,11 @@ No manual copy step.
 
 ## Deployment
 
-- **GitHub Pages:** the `docs-deploy` job in
-  [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) builds
-  this directory and publishes to GitHub Pages on every push. The
-  `docs-build-check` job runs on every PR as a link-validity gate.
-- **GitLab Pages (legacy):** the `pages` job in
-  [`../.gitlab-ci.yml`](../.gitlab-ci.yml) is kept while the GitLab
-  pipeline lingers; will be removed alongside `.gitlab-ci.yml` once
-  the migration window closes (see `TODO.md`).
+The `pages-build` and `pages-deploy` jobs in
+[`../.github/workflows/ci.yml`](../.github/workflows/ci.yml) build
+this directory and publish to GitHub Pages on every push to `main`.
+The `docs-build-check` job runs on every PR to `dev` as a
+link-validity gate.
 
 ## Updating the docs
 

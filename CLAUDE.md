@@ -210,11 +210,21 @@ in-flight scratchpad on work branches). See
 
 ## CI/CD
 
-GitLab CI pipeline (`.gitlab-ci.yml`):
-- **test**: Backend pytest + frontend build check (on `dev` branch)
-- **build**: Docker image (on `main` branch or tags)
-- **package**: .deb, .rpm, .tar.gz (on version tags)
-- **release**: GitLab release with package assets (on version tags)
+GitHub Actions pipeline (`.github/workflows/ci.yml`):
+- **lint + test + scan**: ruff, bandit, ansible-lint, ESLint, pytest,
+  frontend build check, docs build check, gitleaks, pip-audit, npm
+  audit, bundled-pack-mirror — runs on PRs to `dev` and `workflow_dispatch`
+- **build-test-image**: pushes a `:test-<sha>` Docker image and feeds
+  trivy — runs on PRs to `dev` and `workflow_dispatch`
+- **build-image**: publishes `:latest` and `:<sha>` to Docker Hub —
+  runs on push to `main` (PR-from-dev merges only; direct pushes are
+  blocked by branch protection)
+- **pages-build / pages-deploy**: builds the docusaurus site under
+  `website/` and deploys to GitHub Pages — runs on push to `main`
+- **release-artifacts**: builds `.tar.gz`, `.deb`, `.rpm`, `SHA256SUMS`
+  via `packaging/build.sh` and attaches them to a GitHub Release —
+  runs on tag pushes matching `v*` (or `workflow_dispatch` for a
+  dry-run build with no release created)
 
 ---
 
