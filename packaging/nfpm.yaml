@@ -4,15 +4,15 @@ arch: amd64
 platform: linux
 version: ${VERSION}
 release: "1"
-maintainer: "LabDog <labdog@labdog.io>"
+maintainer: "LabDog Maintainers <noreply@github.com>"
 description: |
   LabDog — a homelabber's best friend.
   Linux node configuration management platform. Manages firewall rules,
   services, users, cron jobs, /etc/hosts, and more using Ansible under
   the hood with a web UI and drift detection.
   Requires PostgreSQL 14+ and Redis 6+.
-homepage: https://github.com/labdog/labdog
-license: MIT
+homepage: https://github.com/open-labdog/labdog
+license: AGPL-3.0-or-later
 
 # Runtime deps (Python deps bundled in venv)
 depends:
