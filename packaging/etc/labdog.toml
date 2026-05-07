@@ -121,3 +121,16 @@ max_bulk_add = 50
 [drift]
 # Automatic drift check interval in minutes (0 = disabled)
 check_interval_minutes = 30
+
+# ── Celery (background workers) ─────────────────────────────
+[celery]
+# Number of worker processes
+concurrency = 4
+# Recycle worker after N tasks (prevents memory leaks)
+max_tasks_per_child = 100
+
+# ── Ansible / Action packs ──────────────────────────────────
+[ansible]
+# Working directory for git-backed action pack checkouts.
+# Must be writable by the labdog user.
+packs_root_dir = "/var/lib/labdog/packs"
