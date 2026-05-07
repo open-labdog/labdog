@@ -32,3 +32,7 @@ CVE-2026-33845
 # libgnutls30t64: DoS via heap buffer overflow in DTLS handshake,
 # no fix released as of 2026-05-06
 CVE-2026-33846
+
+# libgnutls30t64: policy bypass via case-sensitive nameConstraints comparison,
+# no fix released as of 2026-05-07
+CVE-2026-3833
