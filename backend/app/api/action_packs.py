@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import reload_registry_async
@@ -23,6 +23,7 @@ from app.models.user import User
 from app.packs.models import ActionPack, PackSourceType
 from app.packs.schemas import (
     ActionPackCreate,
+    ActionPackReorderRequest,
     ActionPackResponse,
     ActionPackSyncResponse,
     ActionPackUpdate,
@@ -41,7 +42,7 @@ def _audit_snapshot(pack: ActionPack) -> dict:
         "git_repository_id": pack.git_repository_id,
         "path": pack.path,
         "local_path": pack.local_path,
-        "role": pack.role.value,
+        "position": pack.position,
         "enabled": pack.enabled,
     }
 
@@ -74,8 +75,8 @@ def _apply_create(body: ActionPackCreate, pack: ActionPack) -> None:
     pack.git_repository_id = body.git_repository_id
     pack.path = body.path or ""
     pack.local_path = body.local_path
-    pack.role = body.role
     pack.enabled = body.enabled
+    # position is server-assigned at insert time (see create_action_pack).
 
 
 def _apply_update(body: ActionPackUpdate, pack: ActionPack) -> tuple[bool, bool]:
@@ -107,8 +108,6 @@ def _apply_update(body: ActionPackUpdate, pack: ActionPack) -> tuple[bool, bool]
     if body.local_path is not None and body.local_path != pack.local_path:
         pack.local_path = body.local_path
         needs_resync = True
-    if body.role is not None:
-        pack.role = body.role
     if body.enabled is not None and body.enabled != pack.enabled:
         pack.enabled = body.enabled
         needs_resync = True
@@ -170,8 +169,10 @@ async def create_action_pack(
     if body.source_type == PackSourceType.GIT and body.git_repository_id is not None:
         await _ensure_git_repo(db, body.git_repository_id)
 
+    max_pos = await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))
     pack = ActionPack()
     _apply_create(body, pack)
+    pack.position = (max_pos or 0) + 1
     db.add(pack)
     await db.flush()
 
@@ -256,7 +257,7 @@ async def update_action_pack(
     if needs_resync and pack.enabled:
         await sync_pack(db, pack)
         await reload_registry_async(db)
-    elif body.role is not None or body.enabled is not None:
+    elif body.enabled is not None:
         await reload_registry_async(db)
 
     return await _response(db, pack)
@@ -321,3 +322,69 @@ async def sync_action_pack(
         current_sha=pack.current_sha,
         last_synced_at=pack.last_synced_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Reorder
+# ---------------------------------------------------------------------------
+
+
+@router.post("/reorder", status_code=200)
+async def reorder_action_packs(
+    body: ActionPackReorderRequest,
+    user: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rewrite ``ActionPack.position`` for every pack in one shot.
+
+    The submitted list is the desired top-to-bottom display order;
+    the first id wins on action-key collisions and gets the highest
+    position. Bundled is implicit at position 0 and never appears in
+    the list.
+
+    Rejects the request unless the submitted set exactly matches the
+    set of existing pack ids — partial reorders aren't supported. The
+    UI builds the payload from its full sorted list; any drift means
+    something else mutated the table mid-edit and the operator should
+    refresh.
+    """
+    rows = list((await db.execute(select(ActionPack))).scalars().all())
+    existing_ids = {r.id for r in rows}
+    submitted_ids = set(body.pack_ids)
+    if existing_ids != submitted_ids or len(body.pack_ids) != len(submitted_ids):
+        missing = sorted(existing_ids - submitted_ids)
+        unknown = sorted(submitted_ids - existing_ids)
+        duplicates = sorted({pid for pid in body.pack_ids if body.pack_ids.count(pid) > 1})
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "reorder_set_mismatch",
+                "missing_pack_ids": missing,
+                "unknown_pack_ids": unknown,
+                "duplicate_pack_ids": duplicates,
+                "message": (
+                    "Reorder request must list every existing pack id "
+                    "exactly once. Refresh the page and try again."
+                ),
+            },
+        )
+
+    by_id = {r.id: r for r in rows}
+    before_state = {r.id: r.position for r in rows}
+    n = len(body.pack_ids)
+    for idx, pid in enumerate(body.pack_ids):
+        # First id (top of table) gets the highest position.
+        by_id[pid].position = n - idx
+
+    await log_action(
+        db=db,
+        action="reorder",
+        entity_type="action_pack",
+        entity_id=None,
+        user_id=user.id,
+        before_state={"positions": before_state},
+        after_state={"positions": {pid: n - idx for idx, pid in enumerate(body.pack_ids)}},
+    )
+    await db.commit()
+    await reload_registry_async(db)
+    return {"reordered": n}

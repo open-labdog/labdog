@@ -8,6 +8,7 @@ from app.db import get_db
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.host_group import HostGroup
 from app.models.user import User
+from app.packs.models import ActionPack
 from app.schemas.git_repos import (
     GitRepoCreate,
     GitRepoResponse,
@@ -135,6 +136,21 @@ async def delete_git_repo(
     linked = await db.execute(select(HostGroup).where(HostGroup.git_repository_id == repo_id))
     if linked.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Cannot delete repository with linked groups")
+
+    pack_names = (
+        (await db.execute(select(ActionPack.name).where(ActionPack.git_repository_id == repo_id)))
+        .scalars()
+        .all()
+    )
+    if pack_names:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot delete: still referenced by action pack(s): "
+                f"{', '.join(sorted(pack_names))}. Delete or reassign them first "
+                f"on the Action Packs page."
+            ),
+        )
 
     await db.delete(repo)
     await db.commit()

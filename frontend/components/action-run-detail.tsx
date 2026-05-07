@@ -183,8 +183,11 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
         </div>
       )}
 
-      {/* Per-host status grid (group runs only) */}
-      {isGroupRun && run && run.host_runs.length > 0 && (
+      {/* Per-host status grid. Hidden for runs with a single host_run —
+          host-scoped runs already show the host in the header, and
+          cluster-mode runs (k8s-upgrade) anchor the run to a single
+          driver host_run that doesn't represent per-node progress. */}
+      {isGroupRun && run && run.host_runs.length >= 2 && (
         <div>
           <h3 className="text-sm font-semibold text-slate-200 mb-3">Host Status</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">

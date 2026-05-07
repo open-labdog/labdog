@@ -9,6 +9,103 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+#### Cluster-mode actions and one-click Kubernetes upgrade
+
+Actions now declare `execution_mode: per_host` (default) or `cluster`
+in their manifest. Cluster-mode actions are dispatched as a single
+ansible-playbook invocation against a multi-host inventory, with the
+playbook driving serialisation via Ansible's `serial:` keyword. The
+existing per-host fan-out is unchanged for everything else.
+
+- **`host_group_memberships.role`** — new nullable `String(32)`
+  column with a CHECK constraint allowing `control_plane`,
+  `worker`, or NULL (migration `f4a8e2b1c7d3`). Per-member role
+  drives the multi-host inventory shape (`all.children.{control_plane,
+  workers}`) for cluster-mode actions.
+- **Membership endpoints** —
+  `GET /api/groups/{id}/memberships` returns the lightweight
+  `(host_id, role)` view; `PUT /api/groups/{id}/hosts/{host_id}/role`
+  sets or clears the role (superuser-only — bad role assignments
+  can take down a Kubernetes cluster).
+- **Cluster-mode dispatch path** — when `action.execution_mode ==
+  "cluster"`, the orchestrator skips the per-host batching loop,
+  validates every member has a non-null role and there's at least
+  one control plane, and dispatches a new
+  `app.tasks.action_cluster.run_action_cluster` Celery task with a
+  single `ActionHostRun` anchored to the first control-plane host
+  (the "driver"). API `POST /actions/runs` rejects cluster-mode
+  submissions that target a single host or a group with unassigned
+  roles, surfacing the failure in the dialog before any task is
+  queued.
+- **Production `k8s-upgrade` playbook** — replaces the placeholder
+  stub at `backend/app/ansible/actions/k8s-upgrade.yml` with a
+  vendored role at `backend/app/ansible/actions/k8s-upgrade/`.
+  Drives the canonical kubeadm upgrade flow: control-plane nodes
+  serially (first runs `kubeadm upgrade plan + apply`; subsequent
+  run `kubeadm upgrade node`), then workers serially. `kubectl`-
+  driven tasks (drain / uncordon / Ready-wait) delegate to the
+  first control-plane host so no kubeconfig has to ship to other
+  nodes. Apt-only for now; RHEL/Rocky/Alma support tracked in
+  `TODO.md`.
+- **Frontend** — group's Members table grows a per-row role picker
+  (None / control_plane / worker); the run-create dialog gains a
+  cluster-mode branch that pre-flights role counts, hides the
+  parallelism picker, and refuses to submit unless the group is
+  fully assigned. The run-detail page hides the per-host status
+  grid for runs with a single `ActionHostRun` (host runs already
+  show their host in the header; cluster runs put per-node
+  progress in the streamed ansible stdout).
+
+### Changed
+
+#### Action pack precedence: drop role, add position + per-key resolutions
+
+The `default` / `override` role concept is gone. Pack precedence is now
+a single linear `ActionPack.position` integer (higher wins; bundled
+implicit at 0); operators reorder packs by drag-and-drop on the
+**Action Packs** page, matching the firewall-rules UX. Per-key
+conflicts have a dedicated resolution path so adding or syncing a
+pack never silently flips behaviour.
+
+- **`ActionPack.role` column dropped, `position` added.** Migration
+  `e7b2c4f9a3d1` backfills positions in stable, behaviour-preserving
+  order (today's local > override > default precedence). Local packs
+  lose their implicit "always wins" status — operators can now demote
+  a local pack below other packs.
+- **`POST /api/action-packs/reorder`** — atomic full-list rewrite of
+  pack positions. Submitted ids must match the current set exactly;
+  the UI builds the body from its full sorted list.
+- **`action_resolution` table + endpoints.** `GET/PUT/DELETE
+  /api/action-resolutions[/{action_key}]` lets operators inspect
+  contested keys and pin which pack wins each one. `pack_id NULL`
+  pins bundled. Pack delete cascades — pinned-to-deleted-pack rows go
+  away automatically.
+- **`action_registry_snapshot` table + freeze-on-fresh-conflict.** The
+  registry rebuild reads the snapshot of last-known winners; when a
+  sync introduces a new manifest that turns a previously-uncontested
+  key into a contested one, LabDog auto-pins the previous winner via
+  an `action_resolution` row. Behaviour does not silently flip — the
+  conflict banner on **Action Packs** flags frozen rows for operator
+  review. Resetting a resolution clears the snapshot row so the next
+  rebuild treats the key fresh.
+- **Wizard now requires per-key picks.** When activating a repo whose
+  packs collide with existing keys, the review step shows a
+  per-key winner radio (one row per contested key). Activation
+  rejects 409 if any contested key has no decision. The old
+  pre-checked `role=override` semantics are gone — every contested
+  key is an explicit operator choice.
+- **`/action-packs` page rewrite.** Drag-to-reorder, info banner
+  explaining priority, conflict banner that links to a
+  per-key resolution dialog, no role radio in the Add/Edit form.
+  Bundled is implicit (no row) — the info banner explains the
+  ordering convention.
+
+Drop the role concept outright (no deprecation shim). Existing
+installs lose pack-level role configuration but keep the same
+effective ordering on first boot via the migration backfill.
+
+### Added
+
 #### Coalesced per-host sync (option-c)
 
 Replaces the seven independent per-module Celery sync tasks with one
@@ -38,9 +135,84 @@ syncs and unblocks bulk-sync UX.
   has a running sync are queued (status `pending`); the running
   task dispatches the oldest pending one when it finishes. UI sees
   the queued state immediately.
+- **Stale-job sweeper** — periodic Celery beat task
+  (`app.tasks.sync_sweeper.sweep_stale_syncs`, every 5 minutes)
+  that finds `SyncJob` rows stuck in `running` for longer than
+  30 minutes (2× the worst-case orchestrator timeout), flips
+  them to `failed`, marks every seeded `HostModuleStatus` as
+  `error`, emits a `sync_failed` audit row, and dispatches the
+  queued successor. Closes the crash-recovery hole left open by
+  the option-c chain: a worker dying mid-task no longer blocks
+  the host's queue indefinitely.
 - **`sync_triggered` audit events** — bulk and per-tab sync API
   endpoints now emit an audit row at the moment of trigger
   (separate from the existing `sync_completed` row at finish).
+
+#### Schedulable actions
+
+Folds the legacy `UpdateWorkflow` model into a unified `ScheduledAction`
+that can schedule any registered action — pack-supplied or built-in —
+against a host, a group, or the entire fleet.
+
+- **New `ScheduledAction` model** at
+  `app/models/scheduled_action.py` with `target_kind` (`host` /
+  `group` / `fleet`), `target_id`, `action_key`, `parameters`,
+  `schedule_cron`, plus the universal destructive-flow toggles
+  (`snapshot_enabled`, `verify_enabled`, `auto_rollback`,
+  `batch_size`). `action_runs` gets a nullable `scheduled_action_id`
+  FK and mirrors of the three toggles so per-host executors see
+  immutable run-time intent.
+- **Three built-in pseudo-actions** (`_builtin.sync`,
+  `_builtin.drift_check`, `_builtin.collect_state`) registered
+  alongside pack-supplied actions in
+  `app/actions/builtins.py`. The `_builtin.` namespace is reserved —
+  pack manifests with underscore-prefixed keys are rejected at
+  validation time. New `supports_fleet` capability flag on
+  `ActionDefinition` and `ActionManifest`; opt-in only.
+- **Unified scheduler** at
+  `app/tasks/scheduled_action_schedule.py:check_due` (replaces
+  `workflow_schedule.check_scheduled_workflows`). RedBeat ticks every
+  60 s; `last_dispatched_at` is the cron walk's reference, so a
+  missed tick doesn't fire-twice. Schedules with a non-terminal
+  `ActionRun` are skipped — no duplicate dispatch.
+- **Per-host built-in dispatchers** in
+  `app/tasks/builtin_dispatchers.py` — thin wrappers that delegate
+  to existing engines (`run_host_sync` for sync, the new
+  `_check_drift_for_one_host` helper for drift, `collect_host_facts`
+  for state) and write back `ActionHostRun.status`. `_builtin.sync`
+  creates the SyncJob row option-c expects.
+- **`POST /api/scheduled-actions/*` API** — CRUD plus run-now and
+  run-history-list endpoints. Superuser-only. Cross-cutting
+  validation enforces target compatibility (`supports_fleet/group/
+  host`), cron syntax via `croniter.is_valid`, and parameter shape
+  via the new `app.actions.validation.build_param_model` Pydantic
+  dynamic-model builder shared with `POST /actions/runs`.
+- **GitOps `scheduled_actions:` block** (replaces the legacy
+  singleton `workflow:`). List-shaped, leave-alone-on-absence
+  semantics: section absent ⇒ DB rows untouched; section present
+  ⇒ delete-and-replace by `(target_kind='group', target_id, action_key)`.
+- **Frontend** — rebuilt `/schedules` page with filter strip
+  (Built-in / Pack / Target / enabled-only / search) and a kebab
+  menu (Edit, Run now, View runs, Delete); shared
+  `<ScheduleActionDialog>` 4-step wizard reachable from `/schedules`
+  "+ New", action cards on host/group detail (preselects action),
+  and a new "Schedules" tab on host & group detail (preselects
+  target); the `<CronInput>` component posts to
+  `/api/scheduled-actions/validate-cron` for live next-fire-times
+  preview; new generic `/actions/runs/[runId]` route for fleet runs.
+
+**Migration:** alembic backfills `update_workflows` rows into
+`scheduled_actions` (target_kind=`group`, mapping
+`pre_update_snapshot`→`snapshot_enabled`) and drops the legacy
+`workflow_runs`, `workflow_host_runs`, `update_workflows` tables
+plus the three Postgres enums. **Breaking:** the legacy
+`/api/groups/{id}/workflow/*` endpoints are gone, the legacy YAML
+`workflow:` block is dropped (re-shape on next push), the
+`qemu-guest-agent` PackageRule auto-add side-effect is removed
+(footgun), and `verification_prompt` / `auto_reboot` columns are
+dropped (nothing read them). The dead
+`workflow.schedule_check_interval_seconds` setting is gone — the
+scheduler ticks at a hardcoded 60 s.
 
 #### Documentation & process
 

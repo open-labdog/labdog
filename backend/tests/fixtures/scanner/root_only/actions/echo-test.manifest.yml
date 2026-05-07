@@ -1,0 +1,11 @@
+key: echo-test
+name: Echo Test
+description: Trivial action for the root-only fixture.
+icon: Box
+playbook: echo-test.yml
+version: "0.1"
+estimated_duration: "<1 min"
+destructive: false
+supports_group: true
+supports_host: true
+parameters: []

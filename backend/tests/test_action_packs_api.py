@@ -93,7 +93,7 @@ async def test_list_returns_seeded_labdog_playbooks_pack(superuser_client):
     assert len(packs) == 1
     assert packs[0]["name"] == "labdog-playbooks"
     assert packs[0]["source_type"] == "git"
-    assert packs[0]["role"] == "override"
+    assert packs[0]["position"] >= 1
 
 
 async def test_regular_user_cannot_manage_packs(regular_user_client):
@@ -121,7 +121,6 @@ async def test_create_git_pack_syncs_and_adds_action(
             "name": "demo-pack",
             "source_type": "git",
             "git_repository_id": git_repo_row.id,
-            "role": "default",
             "enabled": True,
         },
     )
@@ -131,8 +130,7 @@ async def test_create_git_pack_syncs_and_adds_action(
     assert body["git_repository_id"] == git_repo_row.id
     assert body["git_repository_name"] == "test-repo"
     assert body["path"] == ""
-    assert body["role"] == "default"
-    assert body["priority"] == 10
+    assert body["position"] >= 1
     assert body["last_sync_status"] == "ok"
     assert body["current_sha"]
 
@@ -164,25 +162,29 @@ async def test_create_git_pack_with_nonexistent_repo_rejected(superuser_client):
     assert "9999" in resp.text
 
 
-async def test_override_role_derives_priority_100(
+async def test_create_assigns_position_above_all_existing(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):
+    """New packs land above every existing one; operators reorder via
+    drag-to-reorder afterwards."""
     from app.config import settings
 
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
 
+    seeded = (await superuser_client.get("/api/action-packs")).json()
+    max_existing = max((p["position"] for p in seeded), default=0)
+
     resp = await superuser_client.post(
         "/api/action-packs",
         json={
-            "name": "override-pack",
+            "name": "new-pack",
             "source_type": "git",
             "git_repository_id": git_repo_row.id,
         },
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["role"] == "override"
-    assert body["priority"] == 100
+    assert body["position"] == max_existing + 1
 
 
 async def test_create_rejects_bundled_name(superuser_client):
@@ -230,7 +232,7 @@ async def test_create_local_pack_registers_action(superuser_client, local_pack_d
     assert body["source_type"] == "local"
     assert body["git_repository_id"] is None
     assert body["local_path"] == str(local_pack_dir)
-    assert body["priority"] == 1000
+    assert body["position"] >= 1
     assert body["last_sync_status"] == "ok"
 
     actions = (await superuser_client.get("/api/actions/")).json()
@@ -447,11 +449,15 @@ async def test_manual_sync_after_upstream_change(
 # ---------------------------------------------------------------------------
 
 
-async def test_collision_surfaces_override_history_in_api(
+async def test_fresh_conflict_freezes_previous_winner(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):
-    """Git pack + local pack contributing the same key → local wins,
-    git listed in overridden_from."""
+    """When a newly-added pack contributes a key already owned by an
+    existing pack, the registry must NOT silently flip to the
+    higher-positioned newcomer. Behaviour is frozen to the previous
+    winner until the operator resolves the conflict via the
+    ``/action-packs`` UI. The newer pack still appears in
+    ``overridden_from`` for provenance."""
     from app.config import settings
 
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
@@ -493,5 +499,5 @@ async def test_collision_surfaces_override_history_in_api(
 
     actions = (await superuser_client.get("/api/actions/")).json()
     demo = next(a for a in actions if a["key"] == "demo")
-    assert demo["pack_name"] == "local-demo"
-    assert demo["overridden_from"] == ["git-demo"]
+    assert demo["pack_name"] == "git-demo"
+    assert "local-demo" in demo["overridden_from"]

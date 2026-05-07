@@ -5,13 +5,16 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
+from app.actions.validation import build_param_model
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
+from app.models.host import HostGroupMembership
 from app.models.user import User
 from app.schemas.actions import (
     ActionDefinitionOut,
@@ -50,9 +53,11 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         destructive=defn.destructive,
         supports_group=defn.supports_group,
         supports_host=defn.supports_host,
+        supports_fleet=defn.supports_fleet,
         parameters=params,
         pack_name=defn.pack_name,
         overridden_from=list(defn.overridden_from),
+        execution_mode=defn.execution_mode,
     )
 
 
@@ -111,8 +116,11 @@ async def create_run(
     if action is None:
         raise HTTPException(status_code=400, detail="Unknown action")
 
-    # Playbook file must exist
-    if not action.playbook_path.is_file():
+    # Pack-supplied actions need a playbook on disk. Built-in
+    # pseudo-actions have ``playbook_path=None`` — they're dispatched
+    # via dedicated per-host wrappers in builtin_dispatchers.py and
+    # don't need the file-existence check.
+    if action.playbook_path is not None and not action.playbook_path.is_file():
         raise HTTPException(status_code=400, detail="Playbook file not found")
 
     # Check scope support
@@ -127,13 +135,68 @@ async def create_run(
             detail="This action does not support group-scoped runs.",
         )
 
-    # Validate required parameters
-    missing = [p.key for p in action.parameters if p.required and p.key not in body.parameters]
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Missing required parameters: {', '.join(missing)}",
-        )
+    # Validate parameters against the action's manifest schema. Catches
+    # missing-required, type-mismatch, and unknown-key errors uniformly.
+    try:
+        build_param_model(action).model_validate(body.parameters)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    # Cluster-mode actions (e.g. k8s-upgrade) need a group with role
+    # assignments. Validate at submit so the operator gets a clear
+    # error in the dialog rather than a queued-then-failed run.
+    if action.execution_mode == "cluster":
+        if body.host_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Cluster-mode actions cannot target a single host. "
+                    "Pick a group whose members carry control_plane / "
+                    "worker role assignments."
+                ),
+            )
+        if body.group_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Cluster-mode actions require group_id.",
+            )
+        member_rows = (
+            await db.execute(
+                select(
+                    HostGroupMembership.c.host_id,
+                    HostGroupMembership.c.role,
+                ).where(HostGroupMembership.c.group_id == body.group_id)
+            )
+        ).all()
+        if not member_rows:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Group has no members. Cluster-mode actions need at "
+                    "least one control_plane member."
+                ),
+            )
+        unassigned = [r.host_id for r in member_rows if r.role is None]
+        if unassigned:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "members_missing_role",
+                    "host_ids": unassigned,
+                    "message": (
+                        f"{len(unassigned)} group member(s) have no role "
+                        "assignment. Set every member to control_plane "
+                        "or worker before triggering a cluster upgrade."
+                    ),
+                },
+            )
+        if not any(r.role == "control_plane" for r in member_rows):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Group has no control_plane members. Cluster-mode actions need at least one."
+                ),
+            )
 
     # Advisory lock — prevents duplicate concurrent runs for same action+scope
     lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"

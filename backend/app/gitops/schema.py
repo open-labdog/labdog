@@ -226,37 +226,32 @@ class LinuxUserYAML(BaseModel):
     priority: int = Field(default=0, ge=0, le=10000)
 
 
-class WorkflowYAML(BaseModel):
-    """YAML model for the per-group update workflow schedule.
+class ScheduledActionYAML(BaseModel):
+    """YAML model for one entry in the per-group ``scheduled_actions:`` list.
 
-    Mirrors ``app.workflows.models.UpdateWorkflow`` — at most one workflow
-    row exists per group (``UpdateWorkflow.group_id`` is a unique FK), so
-    this section is **singleton** with **leave-alone** semantics: omission
-    (or explicit ``null``) preserves the current DB state. Explicit
-    deletion of a GitOps-managed workflow is **not** supported via YAML
-    absence — disable GitOps on the group first, then delete via the UI
-    or DELETE endpoint.
+    Replaces the legacy ``workflow:`` singleton. Multiple entries are
+    allowed per group — one per (action_key) — since the unified
+    ``ScheduledAction`` model lifts the singleton-per-group constraint
+    that ``UpdateWorkflow`` carried.
 
-    ``schedule_cron`` is validated for syntactic correctness here; the
-    importer additionally validates ``action_key`` against the live
-    action registry and enforces per-action parameter requirements
-    (e.g. ``linux-os-upgrade`` needs ``current_version`` and
-    ``next_version``).
+    The importer applies **list-shaped, leave-alone-on-absence**
+    semantics: section absent ⇒ DB rows untouched; section present
+    (even an empty list ``[]``) ⇒ delete-and-replace among rows where
+    ``target_kind='group' AND target_id=<this group>``.
     """
 
+    action_key: str
     enabled: bool = False
     schedule_cron: str | None = None
+    parameters: dict = Field(default_factory=dict)
     batch_size: int = Field(default=1, ge=1)
-    pre_update_snapshot: bool = True
+    snapshot_enabled: bool = True
+    verify_enabled: bool = True
     auto_rollback: bool = True
-    auto_reboot: bool = True
-    verification_prompt: str | None = None
-    action_key: str = "linux-upgrade"
-    action_parameters: dict = Field(default_factory=dict)
 
     @field_validator("schedule_cron")
     @classmethod
-    def validate_schedule_cron(cls, v: str | None) -> str | None:
+    def _validate_cron(cls, v: str | None) -> str | None:
         if v is None:
             return v
         from croniter import croniter
@@ -369,5 +364,6 @@ class LabDogGroupYAML(BaseModel):
     resolver: ResolverYAML | None = None
     users: list[LinuxUserYAML] | None = None
     linux_groups: list[LinuxGroupYAML] | None = None
-    workflow: WorkflowYAML | None = None
-    model_config = ConfigDict(extra="allow")  # Ignore unknown top-level keys
+    scheduled_actions: list[ScheduledActionYAML] | None = None
+    # Ignore unknown top-level keys (incl. legacy ``workflow:``).
+    model_config = ConfigDict(extra="allow")

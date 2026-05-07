@@ -1,0 +1,3 @@
+# Not a gitops group file (no top-level `group:` key) — should be skipped.
+drift:
+  check_interval_minutes: 30
