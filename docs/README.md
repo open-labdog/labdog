@@ -552,9 +552,9 @@ labdog/
 │   │   ├── sync/            # Firewall plan/diff engine
 │   │   ├── tasks/           # Celery tasks (sync + drift)
 │   │   ├── user_mgmt/       # Linux user/group management
-│   │   └── workflows/       # Proxmox workflow execution
+│   │   └── workflows/       # Proxmox snapshot / verify / rollback steps
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite (755 tests)
+│   ├── tests/               # pytest suite (~1000 tests)
 │   │   ├── integration/     # Integration tests (require full stack)
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile

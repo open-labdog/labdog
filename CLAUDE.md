@@ -142,6 +142,21 @@ is *not* part of the mirror. A fresh install also auto-registers
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
 
+### Cluster-mode actions
+
+Most actions fan out per-host (one Celery task per target host with a
+single-host inventory + parallelism). Actions whose manifest declares
+`execution_mode: cluster` are dispatched as a single ansible-playbook
+invocation against a multi-host inventory grouped under
+`all.children.{control_plane, workers}`; the playbook serialises with
+Ansible's `serial:` keyword. The first concrete user is `k8s-upgrade`.
+Per-member roles live on `host_group_memberships.role` (NULL /
+`control_plane` / `worker`); the orchestrator creates one
+`ActionHostRun` anchored to the first control-plane host as the
+"driver" and dispatches `app.tasks.action_cluster.run_action_cluster`.
+`POST /actions/runs` rejects cluster-mode submissions targeting a
+host or a group missing role assignments.
+
 ### Scheduled actions
 
 Any registered action — pack-supplied or built-in — can be cron-
