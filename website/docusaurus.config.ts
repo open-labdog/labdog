@@ -52,7 +52,7 @@ const config: Config = {
           // Serve docs at the site root (no `/docs/` prefix).
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          editUrl: `${REPO_URL}/-/edit/${EDIT_BRANCH}/`,
+          editUrl: `${REPO_URL}/edit/${EDIT_BRANCH}/docs/`,
         },
         // No blog.
         blog: false,
@@ -64,16 +64,11 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/docusaurus-social-card.jpg',
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
       title: 'LabDog',
-      logo: {
-        alt: 'LabDog',
-        src: 'img/logo.svg',
-      },
       items: [
         {
           type: 'docSidebar',
