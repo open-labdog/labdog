@@ -5,11 +5,17 @@
 
 Scheduled Actions are cron-driven runs of any registered
 [Action](actions.md) — pack-supplied (e.g. `linux-upgrade`,
-`linux-os-upgrade`, `k8s-upgrade`) or built-in (`_builtin.sync`,
-`_builtin.drift_check`, `_builtin.collect_state`). The scheduler ticks
-every 60 s, walks the `scheduled_actions` table, and dispatches due
-rows through the same execution path as the ad-hoc Run button. There's
-no separate "scheduled-only" or "ad-hoc-only" action type.
+`linux-os-upgrade`, `k8s-upgrade`). The scheduler ticks every 60 s,
+walks the `scheduled_actions` table, and dispatches due rows through
+the same execution path as the ad-hoc Run button. There's no separate
+"scheduled-only" or "ad-hoc-only" action type.
+
+> Built-in pseudo-actions (`_builtin.sync`, `_builtin.drift_check`,
+> `_builtin.collect_state`) are **not** surfaced in the new-schedule
+> dialog — they have dedicated UI entry points (Sync button, drift
+> card, facts refresh). The data model still accepts them, so a
+> GitOps YAML can declare a `_builtin.*` schedule and existing rows
+> targeting them keep firing.
 
 > **Scheduled Actions vs. [Actions](actions.md):** Actions are the
 > primitive — a playbook + manifest (or a built-in pseudo-action) you
@@ -77,7 +83,7 @@ The dialog is a four-step wizard:
 
 | Step | What |
 |------|------|
-| **Action & target** | Action picker (grouped: Built-in / Pack-supplied), target radio (Host / Group / Fleet — Fleet greyed when the action doesn't `supports_fleet`), and the host or group selector. |
+| **Action & target** | Action picker (pack-supplied actions only — `_builtin.*` pseudo-actions have their own UI surfaces and are hidden here), target radio (Host / Group / Fleet — Fleet greyed when the action doesn't `supports_fleet`), and the host or group selector. |
 | **Parameters** | Form generated from the action's manifest. String / int / bool / choice — same shape as the ad-hoc Run dialog. |
 | **Schedule** | 5-field cron input. Live `cronToHuman` preview, server-validated next-3-fire-times, plus quick-pick chips ("Hourly", "Nightly 03:00 UTC", etc.). |
 | **Review** | Read-only summary. **Destructive options block** is shown only when `action.destructive=true`: snapshot, verify, auto_rollback toggles + batch_size for non-host targets. |

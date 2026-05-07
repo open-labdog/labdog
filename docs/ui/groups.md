@@ -63,7 +63,7 @@ Shows whether this group is managed by a Git repository. Click **Enable** to lin
 
 | Tab | Page |
 |-----|------|
-| Overview | Hosts table + GitOps status |
+| Overview | Members table + GitOps status. Each row carries a per-member **Cluster role** picker (`control_plane` / `worker` / `—`); cluster-mode actions (e.g. [`k8s-upgrade`](actions.md#cluster-mode-actions)) refuse to run until every member is assigned. |
 | Rules | [Firewall Rules](#firewall-rules) |
 | Services | [Service Rules](#services) |
 | Hosts File | [/etc/hosts entries](#hosts-file) |
