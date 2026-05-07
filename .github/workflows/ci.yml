@@ -1,13 +1,14 @@
 name: CI
 
-# Mirrors the old .gitlab-ci.yml stages: lint → test → build → scan.
+# Trigger model:
+#   * pull_request to dev  → full suite: lint, test, build test image, scans
+#   * push to main         → build and publish prod image + deploy docs
+#   * tag push (v*)        → build release artifacts
+#   * workflow_dispatch    → full suite (manual run from the Actions tab)
 #
-# Triggers:
-#   * push to main     → run everything, publish prod image (latest + sha)
-#   * push to dev      → run everything, publish test image (test + test-sha)
-#   * pull_request to  → run lint + test + build-test-image + scans
-#       main / dev
-#   * workflow_dispatch → manual trigger from the Actions tab
+# Direct pushes to main are blocked by branch protection. All changes
+# flow through dev PRs; by the time a dev→main PR merges, every check
+# has already passed.
 #
 # Secrets required (configure in repo Settings → Secrets and variables):
 #   * DOCKER_HUB_PAT  — Docker Hub personal access token (secret)
@@ -19,10 +20,10 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main]
     tags: ["v*"]
   pull_request:
-    branches: [main, dev]
+    branches: [dev]
   workflow_dispatch:
 
 concurrency:
@@ -37,6 +38,7 @@ jobs:
   # ---- LINT -------------------------------------------------------------
 
   backend-lint:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +56,7 @@ jobs:
         run: ruff format --check .
 
   backend-sast:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +70,22 @@ jobs:
         working-directory: backend
         run: bandit -r app/ -l --baseline bandit-baseline.json
 
+  ansible-lint:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install ansible-lint
+        run: pip install -U pip "ansible-lint>=24" "ansible-core>=2.16" -q
+      - name: ansible-lint
+        run: ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
+
   frontend-lint:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,6 +105,7 @@ jobs:
   # ---- TEST -------------------------------------------------------------
 
   backend-test:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -133,6 +152,7 @@ jobs:
         run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
 
   frontend-build-check:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -149,6 +169,7 @@ jobs:
         run: npm run build
 
   docs-build-check:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -167,27 +188,28 @@ jobs:
 
   # ---- BUILD & PUBLISH --------------------------------------------------
   #
-  # build-image runs only on push to main; build-test-image on push to dev
-  # and on workflow_dispatch. Both log into Docker Hub using DOCKER_HUB_PAT.
+  # build-image runs on push to main (tests already passed on the dev PR).
+  # build-test-image runs on PRs to dev and workflow_dispatch for trivy.
+  # Both log into Docker Hub using DOCKER_HUB_PAT.
   # The username is extracted from the first segment of DOCKER_HUB_REPO.
 
   build-image:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-test, frontend-build-check]
     steps:
       - uses: actions/checkout@v4
       - name: Derive Docker Hub username from DOCKER_HUB_REPO
+        id: hub
         run: |
           if [ -z "${{ vars.DOCKER_HUB_REPO }}" ]; then
             echo "::error::DOCKER_HUB_REPO variable is not set"
             exit 1
           fi
-          echo "DOCKER_HUB_USER=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_ENV"
+          echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          username: ${{ env.DOCKER_HUB_USER }}
+          username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
       - uses: docker/build-push-action@v6
         with:
@@ -201,9 +223,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-test-image:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/dev')
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: [backend-lint, backend-test, frontend-build-check]
     outputs:
@@ -211,16 +231,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Derive Docker Hub username from DOCKER_HUB_REPO
+        id: hub
         run: |
           if [ -z "${{ vars.DOCKER_HUB_REPO }}" ]; then
             echo "::error::DOCKER_HUB_REPO variable is not set"
             exit 1
           fi
-          echo "DOCKER_HUB_USER=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_ENV"
+          echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
-          username: ${{ env.DOCKER_HUB_USER }}
+          username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
       - id: meta
         run: |
@@ -239,11 +260,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   pages-build:
-    # Build the docs site on every push that could affect it. Deploy step
-    # is separate and only runs on main.
+    # Build and upload the docs site artifact on push to main. Deploy step
+    # follows immediately after.
     runs-on: ubuntu-latest
-    needs: [docs-build-check]
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -292,7 +312,6 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-build-check]
     permissions:
       contents: write  # required for action-gh-release to create the release
     steps:
@@ -388,7 +407,7 @@ jobs:
   # ---- SECURITY SCANS ---------------------------------------------------
 
   trivy-scan:
-    # Only runs when a test image was just built (dev push or manual run).
+    # Only runs when a test image was just built (PR to dev or manual run).
     if: >-
       always() &&
       needs.build-test-image.result == 'success'
@@ -411,6 +430,7 @@ jobs:
           ignore-unfixed: "true"
 
   gitleaks:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -421,6 +441,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   bundled-pack-mirror:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     # Verify the in-image bundled pack at backend/app/ansible/ stays
     # byte-identical to a tagged release of open-labdog/labdog-playbooks.
     # The script no-ops cleanly until labdog-playbooks publishes its
@@ -435,6 +456,7 @@ jobs:
         run: ./scripts/check-bundled-mirrors-playbooks.sh
 
   backend-audit:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -463,6 +485,7 @@ jobs:
         run: pip-audit --progress-spinner off --ignore-vuln GHSA-58qw-9mgm-455v
 
   frontend-audit:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

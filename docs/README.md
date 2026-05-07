@@ -579,7 +579,6 @@ labdog/
 │   └── .env                 # Local secrets (gitignored — copy from .env.example)
 ├── dev.sh                   # Thin wrapper → dev/dev.sh
 ├── .env.example             # Environment variable template
-├── .gitlab-ci.yml           # GitLab CI/CD pipelines
 └── Dockerfile
 ```
 
@@ -609,9 +608,8 @@ LabDog uses a modular extension architecture. Each module follows the same patte
 
 ## CI/CD
 
-LabDog runs CI on GitHub Actions (`.github/workflows/ci.yml`). The
-legacy `.gitlab-ci.yml` is kept for repo mirrors. Stages: lint → test →
-build → scan.
+LabDog runs CI on GitHub Actions (`.github/workflows/ci.yml`). Stages:
+lint → test → build → scan.
 
 - **Lint**: ruff (backend) + ESLint/tsc (frontend) + gitleaks
 - **Test**: backend pytest (unit + integration via testcontainers) +
