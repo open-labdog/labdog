@@ -39,9 +39,11 @@ Process for adding a new entry:
 | `CVE-2026-27135` | `libnghttp2-14` | 2026-04-24 | Post-session-termination DoS; affected, no fix released as of the add date. nghttp2 is pulled in by `curl` / HTTP/2 client libs in the runtime image. | Debian ships a patched `libnghttp2-14`. |
 | `CVE-2026-4878`  | `libcap2` | 2026-05-04 | Capability-handling flaw; affected, no fix released. `libcap2` is pulled in by the base image runtime (used by systemd / process tooling); not removable. | Debian ships a patched `libcap2`. |
 | `CVE-2026-33845` | `libgnutls30t64` | 2026-05-04 | TLS-side issue; affected, no fix released. `libgnutls30t64` is a transitive base-image dependency. | Debian ships a patched `libgnutls30t64`. |
+| `CVE-2026-33846` | `libgnutls30t64` | 2026-05-06 | DoS via heap buffer overflow in DTLS handshake; affected, no fix released. Same package + transitive base-image dependency as `CVE-2026-33845`. | Debian ships a patched `libgnutls30t64`. |
+| `CVE-2026-3833`  | `libgnutls30t64` | 2026-05-07 | Policy bypass via case-sensitive nameConstraints comparison; affected, no fix released. Same transitive base-image dependency as the two entries above. | Debian ships a patched `libgnutls30t64`. |
 
-Last full review: **2026-05-04** (add date of the most recent
-entries). Next review: **2026-08-04**, or whenever a new release is
+Last full review: **2026-05-07** (add date of the most recent
+entries). Next review: **2026-08-07**, or whenever a new release is
 cut, whichever is sooner.
 
 ---

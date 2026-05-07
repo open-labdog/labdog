@@ -1,0 +1,11 @@
+key: linux-upgrade
+name: Upgrade Linux packages
+description: Upgrade all packages on a host via apt or dnf.
+icon: ArrowUpFromLine
+playbook: linux-upgrade.yml
+version: "1.0"
+estimated_duration: "5–15 min"
+destructive: true
+supports_group: false
+supports_host: true
+parameters: []

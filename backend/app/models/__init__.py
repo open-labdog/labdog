@@ -14,6 +14,7 @@ from app.models.host import FirewallBackend, Host, HostGroupMembership, SyncStat
 from app.models.host_group import HostGroup
 from app.models.host_module_status import HostModuleStatus
 from app.models.scan_config import PendingHost, ScanConfig
+from app.models.scheduled_action import ScheduledAction
 from app.models.ssh_key import SSHKey
 from app.models.sync_job import JobStatus, SyncJob
 from app.models.user import User
@@ -33,12 +34,10 @@ _EXTERNAL_MODELS = {
     "AppSetting": "app.models.app_setting",
     "ProxmoxNode": "app.proxmox.models",
     "VMMapping": "app.proxmox.vm_mapping",
-    "UpdateWorkflow": "app.workflows.models",
-    "WorkflowRun": "app.workflows.models",
-    "WorkflowHostRun": "app.workflows.models",
     "ActionPack": "app.packs.models",
+    "ActionResolution": "app.packs.models",
+    "ActionRegistrySnapshot": "app.packs.models",
     "PackSourceType": "app.packs.models",
-    "PackRole": "app.packs.models",
 }
 
 
@@ -90,6 +89,7 @@ __all__ = [
     "GitAuthType",
     "GitOpsStatus",
     "HostModuleStatus",
+    "ScheduledAction",
     "ServiceRule",
     "HostsEntry",
     "CronJob",
@@ -102,10 +102,8 @@ __all__ = [
     "ResolverType",
     "ProxmoxNode",
     "VMMapping",
-    "UpdateWorkflow",
-    "WorkflowRun",
-    "WorkflowHostRun",
     "ActionPack",
+    "ActionResolution",
+    "ActionRegistrySnapshot",
     "PackSourceType",
-    "PackRole",
 ]

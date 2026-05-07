@@ -11,7 +11,9 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.responses import FileResponse, RedirectResponse
 
+from app.api._repo_scan import router as repo_scan_router
 from app.api.action_packs import router as action_packs_router
+from app.api.action_resolutions import router as action_resolutions_router
 from app.api.actions import router as actions_router
 from app.api.admin_users import router as admin_users_router
 from app.api.audit import router as audit_router
@@ -39,6 +41,7 @@ from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
 from app.api.rules import router as rules_router
 from app.api.scans import router as scans_router
+from app.api.scheduled_actions import router as scheduled_actions_router
 from app.api.service_drift import router as service_drift_router
 from app.api.service_live import router as service_live_router
 from app.api.service_sync import router as service_sync_router
@@ -49,7 +52,6 @@ from app.api.ssh_terminal import router as ssh_terminal_router
 from app.api.sync import router as sync_router
 from app.api.user_sync import router as user_sync_router
 from app.api.webhooks import router as webhooks_router
-from app.api.workflows import router as workflows_router
 from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.config import settings
@@ -367,6 +369,7 @@ def create_app() -> FastAPI:
 
     app.include_router(actions_router, prefix="/api")
     app.include_router(action_packs_router, prefix="/api")
+    app.include_router(action_resolutions_router, prefix="/api")
     app.include_router(groups_router, prefix="/api")
     app.include_router(hosts_router, prefix="/api")
     app.include_router(host_state_router, prefix="/api")
@@ -377,6 +380,8 @@ def create_app() -> FastAPI:
     app.include_router(audit_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
+    app.include_router(repo_scan_router, prefix="/api")
+    app.include_router(scheduled_actions_router, prefix="/api")
     app.include_router(scans_router, prefix="/api")
     app.include_router(admin_users_router, prefix="/api")
     app.include_router(settings_router, prefix="/api")
@@ -400,7 +405,6 @@ def create_app() -> FastAPI:
     app.include_router(resolver_sync_router, prefix="/api")
     app.include_router(proxmox_nodes_router, prefix="/api")
     app.include_router(proxmox_discovery_router, prefix="/api")
-    app.include_router(workflows_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 
     app.include_router(webhooks_router)

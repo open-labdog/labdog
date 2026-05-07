@@ -7,12 +7,17 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
 import { nextCodename } from "@/lib/os-upgrade-paths"
 import { toast } from "sonner"
-import type { ActionDefinition, ActionRun, Host } from "@/lib/types"
+import type {
+  ActionDefinition,
+  ActionRun,
+  GroupMembership,
+  Host,
+} from "@/lib/types"
 
 interface ActionRunDialogProps {
   action: ActionDefinition | null
@@ -36,6 +41,41 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     enabled: scope === "group" && open && action?.key === "linux-os-upgrade",
     staleTime: 30_000,
   })
+
+  // Cluster-mode: pull memberships so we can show role counts and
+  // disable submit when any member is unassigned. The submit-time API
+  // validator catches the same conditions; this is a UX nicety.
+  const isClusterMode = action?.execution_mode === "cluster"
+  const { data: clusterMemberships } = useQuery<GroupMembership[]>({
+    queryKey: ["group-memberships", targetId],
+    queryFn: () =>
+      apiFetch<GroupMembership[]>(`/api/groups/${targetId}/memberships`),
+    enabled: scope === "group" && open && isClusterMode,
+    staleTime: 10_000,
+  })
+  const clusterCounts = (() => {
+    const rows = clusterMemberships ?? []
+    return {
+      control_plane: rows.filter((m) => m.role === "control_plane").length,
+      workers: rows.filter((m) => m.role === "worker").length,
+      unassigned: rows.filter((m) => m.role === null).length,
+      total: rows.length,
+    }
+  })()
+  const clusterReady =
+    clusterCounts.total > 0 &&
+    clusterCounts.unassigned === 0 &&
+    clusterCounts.control_plane > 0
+  const clusterBlockedReason = (() => {
+    if (clusterCounts.total === 0) return "Group has no members."
+    if (clusterCounts.unassigned > 0) {
+      return `${clusterCounts.unassigned} member(s) have no cluster role assigned.`
+    }
+    if (clusterCounts.control_plane === 0) {
+      return "Group has no control_plane members."
+    }
+    return null
+  })()
 
   const uniqueCodenames = [...new Set(
     (groupHosts ?? []).map((h) => h.os_codename).filter((c): c is string => Boolean(c))
@@ -95,7 +135,12 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         body.host_id = targetId
       } else {
         body.group_id = targetId
-        body.parallelism = parallelism
+        // Cluster-mode actions don't fan out per-host — they run as
+        // one ansible-playbook invocation. Skip the parallelism knob
+        // (the backend's cluster path ignores it anyway).
+        if (!isClusterMode) {
+          body.parallelism = parallelism
+        }
       }
 
       const run = await apiFetch<ActionRun>("/api/actions/runs", {
@@ -140,65 +185,47 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           </div>
         )}
 
-        {action.parameters.length > 0 && (
-          <div className="space-y-4 py-2">
-            {action.parameters.map((p) => (
-              <div key={p.key} className="space-y-1.5">
-                <Label className="text-sm font-medium text-slate-200">
-                  {p.label}
-                  {p.required && <span className="text-red-400 ml-1">*</span>}
-                </Label>
-                {p.type === "bool" ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      id={p.key}
-                      checked={params[p.key] !== undefined ? Boolean(params[p.key]) : Boolean(p.default)}
-                      onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.checked }))}
-                      className="h-4 w-4 rounded border-slate-600"
-                    />
-                    <label htmlFor={p.key} className="text-sm text-slate-400">{p.help_text}</label>
-                  </div>
-                ) : p.type === "choice" && p.choices ? (
-                  <select
-                    value={String(params[p.key] ?? p.default ?? "")}
-                    onChange={(e) => setParams((prev) => ({ ...prev, [p.key]: e.target.value }))}
-                    className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-                  >
-                    {p.choices.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                ) : (() => {
-                  const current = scope === "host" ? hostOsCodename : groupSingleCodename
-                  let prePopulated: string | undefined
-                  if (action.key === "linux-os-upgrade" && p.key === "current_version") {
-                    prePopulated = current ?? undefined
-                  } else if (action.key === "linux-os-upgrade" && p.key === "next_version") {
-                    prePopulated = nextCodename(current)
-                  }
-                  const displayValue = params[p.key] !== undefined ? String(params[p.key]) : (prePopulated ?? "")
-                  return (
-                    <Input
-                      type={p.type === "int" ? "number" : "text"}
-                      placeholder={prePopulated ?? String(p.default ?? "")}
-                      value={displayValue}
-                      onChange={(e) =>
-                        setParams((prev) => ({
-                          ...prev,
-                          [p.key]: p.type === "int" ? Number(e.target.value) : e.target.value,
-                        }))
-                      }
-                    />
-                  )
-                })()}
-                {p.help_text && p.type !== "bool" && (
-                  <p className="text-xs text-slate-500">{p.help_text}</p>
-                )}
-              </div>
-            ))}
+        <ActionParameterForm
+          action={action}
+          values={params}
+          onChange={setParams}
+          placeholderFor={(p) => {
+            const current = scope === "host" ? hostOsCodename : groupSingleCodename
+            if (action.key === "linux-os-upgrade" && p.key === "current_version") {
+              return current ?? undefined
+            }
+            if (action.key === "linux-os-upgrade" && p.key === "next_version") {
+              return nextCodename(current)
+            }
+            return undefined
+          }}
+        />
+
+        {scope === "group" && isClusterMode && (
+          <div
+            className={`rounded-lg border p-3 text-sm ${
+              clusterReady
+                ? "border-slate-700 bg-slate-800/50"
+                : "border-amber-700 bg-amber-950/40"
+            }`}
+          >
+            <p className="font-medium text-slate-200">Cluster role assignments</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {clusterCounts.control_plane} control_plane,{" "}
+              {clusterCounts.workers} workers,{" "}
+              {clusterCounts.unassigned} unassigned ({clusterCounts.total}{" "}
+              total).
+            </p>
+            {clusterBlockedReason && (
+              <p className="mt-2 text-xs text-amber-300">
+                {clusterBlockedReason} Set roles on the group&apos;s Members
+                tab before running.
+              </p>
+            )}
           </div>
         )}
 
-        {scope === "group" && (
+        {scope === "group" && !isClusterMode && (
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-slate-200">Parallelism</Label>
             <select
@@ -215,10 +242,17 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         )}
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => handleSubmit(true)} disabled={submitting}>
+          <Button
+            variant="outline"
+            onClick={() => handleSubmit(true)}
+            disabled={submitting || (isClusterMode && !clusterReady)}
+          >
             Preview (dry-run)
           </Button>
-          <Button onClick={() => handleSubmit(false)} disabled={submitting}>
+          <Button
+            onClick={() => handleSubmit(false)}
+            disabled={submitting || (isClusterMode && !clusterReady)}
+          >
             {submitting ? "Starting…" : "Run"}
           </Button>
         </DialogFooter>
