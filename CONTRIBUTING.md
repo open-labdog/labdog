@@ -133,8 +133,9 @@ out of the repo on its own.
 
 Be decent. Disagree with ideas, not people. Harassment in issues,
 PRs, or project spaces gets you blocked. If something's off, raise
-it with the maintainer privately
-(noreply@github.com).
+it with the maintainers via GitHub's private vulnerability
+reporting (Security → Advisories → Report a vulnerability) or by
+opening a confidential discussion.
 
 ## Release process
 
