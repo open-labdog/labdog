@@ -188,3 +188,53 @@ hold`, otherwise the kubeadm flow is identical.
   in `tasks/preflight.yml`.
 - Smoke-test on at least one Rocky 9 + Debian 12 mixed cluster
   before declaring done.
+
+---
+
+## Action manifests — opt-in post-run module sync
+
+**Context:** Actions mutate host state. LabDog's modules (firewall,
+services, packages, cron, hosts-file, users, resolver) track desired
+state and reconcile via the existing sync / drift pipeline. The two
+systems don't currently talk to each other — an action that installs
+a package, opens a port, or adds a cron entry leaves the relevant
+module's view stale until the next periodic drift check (or a manual
+sync) catches up.
+
+**Sketch:**
+
+- Extend `ActionManifest` (`backend/app/actions/manifest.py`) and
+  `ActionDefinition` (`backend/app/actions/types.py`) with an optional
+  `post_run_sync: list[Literal["firewall", "services", "packages",
+  "cron", "hosts_file", "users", "resolver"]] = []`.
+- Plumb through `_manifest_to_definition` in `app/actions/packs.py`
+  and the API `ActionDefinitionOut`.
+- After a successful action run (both per-host and cluster-mode
+  paths), if `post_run_sync` is non-empty, dispatch the corresponding
+  module sync against the same target via the existing
+  `host_sync_orchestrator` / option-c pipeline. Reuses everything:
+  the per-host advisory lock, the coalesced playbook, the audit log,
+  the SSE channel.
+- Failures of a post-run sync are surfaced on the `ActionRun` as a
+  warning, not a status flip — the action itself succeeded; only the
+  reconciliation didn't.
+- UI: action cards / run-detail show a small chip listing the modules
+  that re-synced after the run (`packages ✓`, `services ✓`).
+
+**Why it's worth doing:** the alternatives are (a) ad-hoc API
+callbacks from inside playbooks (security + reachability + coupling
+issues), or (b) operators remembering to click Sync after every
+action. (b) is what we have today and it drifts in practice; (a) is
+much more invasive than this is. Manifest-driven post-run sync keeps
+the contract local to the action manifest and reuses the entire
+existing pipeline.
+
+**Open questions:**
+
+1. Does `post_run_sync` run on dry-run / `__dry_run`? Probably no —
+   no state changed, no reconciliation needed.
+2. Cluster-mode runs target a group; the post-run sync should fan out
+   per-host across the group (not on the driver node only).
+3. Should the manifest also support `pre_run_sync` (sync to converge
+   *before* the action runs, so the action sees a known baseline)?
+   Probably yes for symmetry, but punt until a concrete need surfaces.
