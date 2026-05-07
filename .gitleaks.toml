@@ -15,7 +15,6 @@ useDefault = true
 description = "Test fixtures, dev compose values, and documented placeholders"
 
 paths = [
-    '''\.gitlab-ci\.yml$''',
     '''^backend/tests/''',
     '''^frontend/e2e/''',
     '''^labdog\.toml$''',
