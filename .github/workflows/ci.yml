@@ -1,10 +1,13 @@
 name: CI
 
-# Trigger model:
-#   * pull_request to dev  → full suite: lint, test, build test image, scans
-#   * push to main         → build and publish prod image + deploy docs
-#   * tag push (v*)        → build release artifacts
-#   * workflow_dispatch    → full suite (manual run from the Actions tab)
+# Trigger model — workflow_dispatch mirrors the natural trigger for
+# the chosen ref:
+#   * PR to dev OR dispatch on a feature/dev branch
+#       → full suite: lint, test, build test image, scans
+#   * push OR dispatch on main
+#       → build and publish prod image + deploy docs
+#   * push OR dispatch on a v* tag
+#       → build release artifacts
 #
 # Direct pushes to main are blocked by branch protection. All changes
 # flow through dev PRs; by the time a dev→main PR merges, every check
@@ -38,7 +41,11 @@ jobs:
   # ---- LINT -------------------------------------------------------------
 
   backend-lint:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,7 +63,11 @@ jobs:
         run: ruff format --check .
 
   backend-sast:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,7 +82,11 @@ jobs:
         run: bandit -r app/ -l --baseline bandit-baseline.json
 
   ansible-lint:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +100,11 @@ jobs:
         run: ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
 
   frontend-lint:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +124,11 @@ jobs:
   # ---- TEST -------------------------------------------------------------
 
   backend-test:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -152,7 +175,11 @@ jobs:
         run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
 
   frontend-build-check:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +196,11 @@ jobs:
         run: npm run build
 
   docs-build-check:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -194,7 +225,9 @@ jobs:
   # The username is extracted from the first segment of DOCKER_HUB_REPO.
 
   build-image:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -223,7 +256,11 @@ jobs:
           cache-to: type=gha,mode=max
 
   build-test-image:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     needs: [backend-lint, backend-test, frontend-build-check]
     outputs:
@@ -260,10 +297,12 @@ jobs:
           cache-to: type=gha,mode=max
 
   pages-build:
-    # Build and upload the docs site artifact on push to main. Deploy step
+    # Build and upload the docs site artifact for main. Deploy step
     # follows immediately after.
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -284,7 +323,9 @@ jobs:
     # Publishes the built docs site to GitHub Pages on main only.
     # Requires the repository to have Pages enabled in Settings → Pages,
     # with "Build and deployment → Source" set to "GitHub Actions".
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     needs: [pages-build]
     runs-on: ubuntu-latest
     permissions:
@@ -300,17 +341,14 @@ jobs:
 
   # ---- RELEASE ARTIFACTS ------------------------------------------------
   #
-  # Runs on tag pushes matching v* and produces .tar.gz / .deb / .rpm /
-  # SHA256SUMS via packaging/build.sh. On a real tag push, creates a
-  # GitHub Release and attaches the artifacts via softprops/action-gh-
-  # release. workflow_dispatch does the build only (no release created),
-  # which lets us smoke-test the packaging path without cutting a
-  # release.
+  # Runs on push or dispatch of a v* tag and produces .tar.gz / .deb /
+  # .rpm / SHA256SUMS via packaging/build.sh, then attaches them to an
+  # auto-created GitHub Release via softprops/action-gh-release. To
+  # smoke-test the packaging path without cutting a real release, run
+  # ./packaging/build.sh locally — there's no longer a CI dry-run mode.
 
   release-artifacts:
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-      github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write  # required for action-gh-release to create the release
@@ -334,23 +372,13 @@ jobs:
       - name: Derive version string
         id: ver
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          else
-            # Manual dry-run — build with a dev-flavoured version so
-            # the resulting artifact filenames don't collide with real
-            # releases.
-            VERSION="0.0.0-dev.$(git rev-parse --short=8 HEAD)"
-          fi
+          VERSION="${GITHUB_REF#refs/tags/v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Building release artifacts for version $VERSION"
       - name: Sync version files to tag
-        # On tag pushes only: rewrite backend/pyproject.toml and
-        # frontend/package.json so the in-tree version strings match
-        # the tag before the build step bakes them into the artifacts.
-        # Skipped for workflow_dispatch dry-runs so the working tree
-        # isn't mutated when no tag exists.
-        if: startsWith(github.ref, 'refs/tags/v')
+        # Rewrite backend/pyproject.toml and frontend/package.json so
+        # the in-tree version strings match the tag before the build
+        # step bakes them into the artifacts.
         env:
           V: ${{ steps.ver.outputs.version }}
         run: |
@@ -383,16 +411,14 @@ jobs:
       - name: List artifacts
         run: ls -la packaging/dist/
       - name: Upload artifacts to workflow run
-        # Gives a way to inspect the outputs of workflow_dispatch runs
-        # (which don't create a Release). Kept on tag runs too so a
-        # failed release-create still lets you download what was built.
+        # Mirror the artifacts onto the workflow run so a failed
+        # release-create still lets you download what was built.
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts-${{ steps.ver.outputs.version }}
           path: packaging/dist/
           retention-days: 7
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
@@ -430,7 +456,11 @@ jobs:
           ignore-unfixed: "true"
 
   gitleaks:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -441,7 +471,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   bundled-pack-mirror:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     # Verify the in-image bundled pack at backend/app/ansible/ stays
     # byte-identical to a tagged release of open-labdog/labdog-playbooks.
     # The script no-ops cleanly until labdog-playbooks publishes its
@@ -456,7 +490,11 @@ jobs:
         run: ./scripts/check-bundled-mirrors-playbooks.sh
 
   backend-audit:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -485,7 +523,11 @@ jobs:
         run: pip-audit --progress-spinner off --ignore-vuln GHSA-58qw-9mgm-455v
 
   frontend-audit:
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch'
+       && github.ref != 'refs/heads/main'
+       && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
