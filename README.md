@@ -1,63 +1,82 @@
+<p align="left">
+  <img src="assets/logo.svg" alt="LabDog" width="72" height="72" />
+</p>
+
 # LabDog
 
-## *A homelabber's best friend.*
+> **A homelabber's best friend.** Centralized Linux configuration management via Ansible — preview changes, detect drift, and sync to hosts over SSH from one web UI.
 
-Centralized Linux configuration management via Ansible. Manage firewall rules, systemd services, `/etc/hosts`, and more from a web UI — preview changes before applying, detect drift, and sync to hosts over SSH.
+[![docker pulls](https://img.shields.io/docker/pulls/openlabdog/labdog?style=for-the-badge&logo=docker&logoColor=white&color=2563eb)](https://hub.docker.com/r/openlabdog/labdog)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-d97706?style=for-the-badge)](LICENSE)
+[![docs](https://img.shields.io/badge/docs-labdog-1e293b?style=for-the-badge)](https://open-labdog.github.io/labdog/)
 
-## Features
+Manage firewall rules, systemd services, `/etc/hosts`, packages, users and more from a single web UI. Declare state in groups, preview the exact Ansible diff before applying, detect drift, and roll it back if something looks wrong.
 
-- **Firewall management**: nftables and iptables — same rules, either backend
-- **Service management**: Declare systemd service states (running/stopped, enabled/disabled), manage unit files (full deploy or drop-in overrides via `systemctl edit`), sync via Ansible, detect drift, orphan cleanup
-- **/etc/hosts management**: Manage host file entries with full-file rendering, system entry protection, and file preview
-- **Package management**: Declare package states (installed/absent) via apt/dnf/yum (auto-detected)
-- **Linux user management**: System users, SSH authorized_keys, sudo rules, and group membership
-- **Cron job management**: Declarative cron scheduling with diff-based sync
-- **DNS resolver management**: Configure resolv.conf, systemd-resolved, or NetworkManager DNS settings
-- **Host discovery**: Scan network ranges for SSH-reachable hosts, bulk-add with SSH verification
-- **Proxmox integration**: Discover and manage VMs/containers from Proxmox VE hypervisors
-- **GitOps**: Import configuration from Git repositories with webhook-driven sync
-- **Web shell**: Browser-based SSH terminal via xterm.js + WebSocket + asyncssh
-- **Plan-before-apply**: Preview exact changes before syncing to remote hosts
-- **Coalesced sync**: One Ansible playbook per host covering every requested module — bulk-sync a host or per-tab single-module sync, both run through the same per-host orchestrator with PostgreSQL-backed serialisation. No SSH races between concurrent module syncs.
-- **SSH lockout prevention**: Auto-injected system rule ensures SSH access is never accidentally blocked
-- **Drift detection**: Periodic and manual checks for out-of-sync hosts across all modules
-- **Audit trail**: Append-only log of all actions with before/after state
-- **Priority-based merge**: Groups with higher priority override lower ones on shared hosts; host-level overrides replace group rules
-- **Protected service deny-list**: Critical services (sshd, systemd-*) blocked from accidental management
-- **Action packs (BYO playbooks)**: Extend the built-in action catalog by pointing LabDog at a git repo or a local directory; credentials encrypted at rest, overrides resolved by drag-to-reorder pack precedence with per-key conflict resolution, provenance surfaced in the UI
-- **Cluster-mode actions**: One-click Kubernetes cluster upgrade (`k8s-upgrade`) — drains, upgrades, and re-admits each node serially via a single multi-host inventory; per-member `control_plane` / `worker` role drives ordering
-- **Scheduled actions**: Schedule per-host / per-group / fleet action runs (linux-upgrade, linux-os-upgrade, k8s-upgrade, or any pack-supplied action) on a cron cadence with optional Proxmox snapshot, verify, and auto-rollback
+## Try it in 30 seconds
 
-## Documentation
+```bash
+docker run -d --name labdog -p 8080/8080 \
+  -v labdog-data:/var/lib/labdog \
+  openlabdog/labdog:latest
+```
 
-Everything technical — installation, configuration, architecture, API surface, local development, testing, and the GitOps / precedence guides — lives under [`docs/`](docs/).
+Then open <http://localhost:8080> and register the first admin user.
 
-Start with the documentation index:
+→ **[Docker Hub](https://hub.docker.com/r/openlabdog/labdog)** for image tags, signed digests, and `compose` examples
 
-**→ [docs/README.md](docs/README.md)**
+→ **[Full installation guide](https://open-labdog.github.io/labdog/#installation)** — `.deb`, `.rpm`, tarball, or Docker
 
-Direct entry points:
+## 📦 Install
 
-- [How configuration is applied](docs/README.md#how-configuration-is-applied) — groups, priorities, host overrides, sync semantics
-- [Installation](docs/README.md#installation) — .deb / .rpm / tarball / Docker
-- [Local development](docs/README.md#local-development) — `dev.sh`, manual setup, Celery
-- [API endpoints](docs/README.md#api-endpoints) — full REST surface
-- [GitOps guide](docs/examples/gitops/README.md) — webhook setup + YAML schema for every module
-- [Precedence](docs/examples/precedence/README.md) — worked examples for multi-group merges
-- [Actions & Action Packs](docs/ui/actions.md) — ad-hoc playbook runs and bring-your-own pack guide
-- [Action-pack examples](docs/examples/action-packs/README.md) — three working starter packs
-- [Scheduled actions](docs/ui/scheduled-actions.md) — cron-driven host/group/fleet runs with optional snapshot + verify + rollback
+| Method | Where |
+|---|---|
+| 🐳 **Docker** (recommended) | [`openlabdog/labdog`](https://hub.docker.com/r/openlabdog/labdog) on Docker Hub — `:latest`, semver tags, signed digests |
+| 📁 **`.deb` / `.rpm`** | [Installation guide](https://open-labdog.github.io/labdog/#installation) |
+| 📦 **Tarball** | [Installation guide](https://open-labdog.github.io/labdog/#installation) |
+| 🛠 **From source** | [Local development](https://open-labdog.github.io/labdog/#local-development) |
 
-## License
+## ✨ What you get
 
-LabDog is licensed under the GNU Affero General Public License v3.0 or
-later (**AGPL-3.0-or-later**). See [LICENSE](LICENSE) for the full
-text.
+**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver`
 
-The AGPL's network-use clause means anyone running a modified version
-of LabDog as a service must make the source of their modifications
-available to its users. Private internal deployments without
-modifications carry no extra obligations beyond those of any
-AGPL-licensed program.
+Declare state per host or per group. Everything goes through Ansible. Same rule format for nftables and iptables.
+
+**Operations** &nbsp;`plan` · `apply` · `drift` · `audit`
+
+- **Plan-before-apply** — see the exact diff before pushing changes
+- **Coalesced sync** — one playbook per host covering every requested module; PostgreSQL-serialised so concurrent module syncs never race over SSH
+- **Drift detection** — periodic + on-demand, across every module
+- **Audit trail** — append-only, before / after state, every action
+
+**Safety rails**
+
+- SSH lockout prevention (auto-injected system rule)
+- Protected service deny-list (sshd, systemd-\*)
+- Priority-based merge with host-level overrides
+
+**Extensibility**
+
+- **GitOps** — webhook-driven sync from any Git repo (see the [YAML schema](https://open-labdog.github.io/labdog/examples/gitops/))
+- **Action packs** — BYO Ansible playbooks; drag-to-reorder precedence, encrypted credentials at rest
+- **Cluster-mode `k8s-upgrade`** — drains, upgrades, re-admits each node serially
+- **Scheduled actions** — cron-driven runs with optional Proxmox snapshot + verify + auto-rollback
+
+**Integrations** &nbsp; Proxmox VE (discover VMs/containers for automatic snapshots) · web SSH terminal (xterm.js + asyncssh)
+
+## 📚 Documentation
+
+All technical content lives under **[the documentation site](https://open-labdog.github.io/labdog/)**:
+
+- **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
+- **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
+- **Integrations** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/)
+
+## 🐛 Found a bug?
+
+See **[BUGS.md](BUGS.md)** for known issues and **[CONTRIBUTING.md](CONTRIBUTING.md)** to file a new report or send a patch. Security-sensitive issues: **[SECURITY.md](SECURITY.md)**.
+
+## 📜 License
+
+**AGPL-3.0-or-later.** See [LICENSE](LICENSE). The network-use clause means anyone running a modified version of LabDog as a service must make the source of their modifications available to its users. Private internal deployments without modifications carry no extra obligations.
 
 Copyright © 2026 Dennis Tyresson and contributors.
