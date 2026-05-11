@@ -1,17 +1,17 @@
-# Managed by LabDog — Firewall module reference
+# Managed by LabDog -- Firewall module reference
 #
 # Exhaustive per-field example.  Rule semantics (iptables / nftables):
-#   • action:    allow | deny | reject
+#   * action:    allow | deny | reject
 #       - allow  = ACCEPT
 #       - deny   = DROP (packets silently discarded)
 #       - reject = REJECT (sends ICMP port-unreachable / RST)
-#   • protocol:  tcp | udp | icmp | any
-#   • direction: input | output
-#   • source:    CIDR string (IPv4 or IPv6). Omit = any source.
-#   • dest:      CIDR string. Omit = any destination.
-#   • port:      integer, OR "start-end" for a range.  Omitted or null = any port.
-#                ICMP rules MUST NOT set port — parse error if they do.
-#   • comment:   free-text, shown in the UI.  Optional.
+#   * protocol:  tcp | udp | icmp | any
+#   * direction: input | output
+#   * source:    CIDR string (IPv4 or IPv6). Omit = any source.
+#   * dest:      CIDR string. Omit = any destination.
+#   * port:      integer, OR "start-end" for a range.  Omitted or null = any port.
+#                ICMP rules MUST NOT set port -- parse error if they do.
+#   * comment:   free-text, shown in the UI.  Optional.
 #
 # Merge semantics: two rules with the same
 #   (protocol, direction, port range, source CIDR, destination CIDR)
@@ -27,9 +27,9 @@ priority: 100
 
 firewall:
   rules:
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     # Inbound TCP
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     - action: allow
       protocol: tcp
       direction: input
@@ -38,43 +38,43 @@ firewall:
       comment: "SSH from internal"
 
     # Port range (string with dash). Quotes required because YAML would
-    # otherwise treat "80-81" as a literal scalar — safer to always quote.
+    # otherwise treat "80-81" as a literal scalar -- safer to always quote.
     - action: allow
       protocol: tcp
       direction: input
       port: "8000-8999"
       comment: "Dev HTTP ports"
 
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     # Inbound UDP
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     - action: allow
       protocol: udp
       direction: input
       port: 51820
       comment: "WireGuard VPN"
 
-    # ────────────────────────────────────────────────────────────────
-    # Inbound ICMP — NEVER set `port` on ICMP rules.
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
+    # Inbound ICMP -- NEVER set `port` on ICMP rules.
+    # ----------------------------------------------------------------
     - action: allow
       protocol: icmp
       direction: input
       comment: "Ping"
 
-    # ────────────────────────────────────────────────────────────────
-    # Reject vs deny — reject sends ICMP unreachable, deny silently drops.
+    # ----------------------------------------------------------------
+    # Reject vs deny -- reject sends ICMP unreachable, deny silently drops.
     # Choose reject for faster upstream failover; deny for stealth.
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     - action: reject
       protocol: tcp
       direction: input
       port: 25
-      comment: "SMTP — reject so senders fail fast"
+      comment: "SMTP -- reject so senders fail fast"
 
-    # ────────────────────────────────────────────────────────────────
-    # IPv6 — CIDR format identical, just use IPv6 notation.
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
+    # IPv6 -- CIDR format identical, just use IPv6 notation.
+    # ----------------------------------------------------------------
     - action: allow
       protocol: tcp
       direction: input
@@ -82,9 +82,9 @@ firewall:
       port: 22
       comment: "SSH over IPv6 ULA"
 
-    # ────────────────────────────────────────────────────────────────
-    # Destination CIDR — useful for egress filtering.
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
+    # Destination CIDR -- useful for egress filtering.
+    # ----------------------------------------------------------------
     - action: allow
       protocol: tcp
       direction: output
@@ -92,10 +92,10 @@ firewall:
       port: 5432
       comment: "Postgres subnet only"
 
-    # ────────────────────────────────────────────────────────────────
-    # protocol: any — no port, matches everything at that direction.
+    # ----------------------------------------------------------------
+    # protocol: any -- no port, matches everything at that direction.
     # Typically used for a default-deny at the end of the chain.
-    # ────────────────────────────────────────────────────────────────
+    # ----------------------------------------------------------------
     - action: deny
       protocol: any
       direction: input

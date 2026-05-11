@@ -1,28 +1,28 @@
-# Managed by LabDog — Cron jobs reference
+# Managed by LabDog -- Cron jobs reference
 #
 # Fields:
-#   name         string    — required; matches [a-zA-Z0-9][a-zA-Z0-9_-]*,
+#   name         string    -- required; matches [a-zA-Z0-9][a-zA-Z0-9_-]*,
 #                            max 100 chars.  Used as the file name in
 #                            /etc/cron.d/ after being prefixed with
 #                            `labdog-`.
-#   user         string    — default "root".  The user the cron job runs
+#   user         string    -- default "root".  The user the cron job runs
 #                            as.  Must match [a-zA-Z0-9_][a-zA-Z0-9_.-]*
 #                            (no shell metacharacters), max 32 chars.
-#   schedule     string    — required.  Any valid cron expression
+#   schedule     string    -- required.  Any valid cron expression
 #                            (5 fields: min hour dom mon dow).  Schedule
 #                            strings are preserved BYTE-IDENTICALLY
-#                            across imports — do not rely on `*/5` and
+#                            across imports -- do not rely on `*/5` and
 #                            `0/5` being treated as equivalent.
-#   command      string    — required; non-empty.  The shell snippet
+#   command      string    -- required; non-empty.  The shell snippet
 #                            executed on the schedule.
-#   environment  dict      — default {}.  Env vars passed to the command.
+#   environment  dict      -- default {}.  Env vars passed to the command.
 #                            Key order in YAML is NOT significant for
 #                            the diff (sorted before compare).
-#   state        enum      — present | absent.  Default: present.
+#   state        enum      -- present | absent.  Default: present.
 #                            `absent` causes Ansible to remove the job
 #                            file on next sync.
-#   priority     int       — 0..10000, default 0.
-#   comment      string    — optional; shown in the UI.
+#   priority     int       -- 0..10000, default 0.
+#   comment      string    -- optional; shown in the UI.
 #
 # Merge identity key: (`name`, `user`).  Same job name with different
 # users (e.g. root vs postgres) coexist; same name + user conflict is
@@ -32,9 +32,9 @@ group: cron-jobs-reference
 priority: 100
 
 cron_jobs:
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   # Simple daily job
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - name: log-rotate
     user: root
     schedule: "0 0 * * *"
@@ -42,10 +42,10 @@ cron_jobs:
     state: present
     comment: "Rotate system logs at midnight"
 
-  # ─────────────────────────────────────────────────────────────
-  # Job with environment — PATH is especially useful because cron's
+  # -------------------------------------------------------------
+  # Job with environment -- PATH is especially useful because cron's
   # default PATH is minimal.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - name: cert-renew
     user: root
     schedule: "0 3 * * 0"
@@ -56,10 +56,10 @@ cron_jobs:
     state: present
     comment: "Weekly ACME cert renewal"
 
-  # ─────────────────────────────────────────────────────────────
-  # Running as a non-root service user — common pattern for DB
+  # -------------------------------------------------------------
+  # Running as a non-root service user -- common pattern for DB
   # backups so pg_dump picks up peer auth.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - name: pgdump-nightly
     user: postgres
     schedule: "0 1 * * *"
@@ -69,10 +69,10 @@ cron_jobs:
     state: present
     comment: "Logical DB backup"
 
-  # ─────────────────────────────────────────────────────────────
-  # Same `name`, different `user` — coexist.  Useful when you want
+  # -------------------------------------------------------------
+  # Same `name`, different `user` -- coexist.  Useful when you want
   # per-user variants of a named task.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - name: backup
     user: root
     schedule: "0 2 * * *"
@@ -85,9 +85,9 @@ cron_jobs:
     command: "pg_dump mydb > /tmp/mydb.sql"
     state: present
 
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   # Common schedule patterns.  All are byte-stable round-trip.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
 
   # Every 5 minutes
   - name: metrics-push
@@ -110,13 +110,13 @@ cron_jobs:
     command: "/opt/audit/run.sh"
     state: present
 
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   # Remove an old job (explicit absent).  LabDog will delete
   # /etc/cron.d/labdog-old-job on next sync.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - name: old-job
     user: root
     schedule: "0 0 * * *"
     command: "/usr/bin/true"
     state: absent
-    comment: "Retired — leave entry so removal is explicit for one cycle"
+    comment: "Retired -- leave entry so removal is explicit for one cycle"

@@ -7,7 +7,7 @@
 # discover hosts on a network range.
 #
 # The file is OPTIONAL. If it doesn't exist, only per-group YAML files
-# are imported and global state is left alone — exactly the behaviour
+# are imported and global state is left alone -- exactly the behaviour
 # Phase 1 of LabDog GitOps had before this file existed.
 #
 # Per-group YAML files (e.g. `groups/web-servers.yaml`) and this file
@@ -18,14 +18,14 @@
 # can put a symlink at the convention path.
 
 # -------------------------------------------------------------------------
-# drift — singleton, leave-alone semantics
+# drift -- singleton, leave-alone semantics
 # -------------------------------------------------------------------------
 #
 # Sets `drift.check_interval_minutes` (the same setting reachable from
-# Settings → Drift Detection in the UI). Range: 1–1440.
+# Settings -> Drift Detection in the UI). Range: 1-1440.
 #
-# Missing or `null` ⇒ leaves the existing setting untouched. Same
-# precedent as `resolver:` / `scheduled_actions:` in per-group YAML —
+# Missing or `null` => leaves the existing setting untouched. Same
+# precedent as `resolver:` / `scheduled_actions:` in per-group YAML --
 # state is never wiped implicitly because the consequence (silently
 # falling back to a 30-minute default) is almost never what an operator
 # wanted.
@@ -33,31 +33,31 @@ drift:
   check_interval_minutes: 15
 
 # -------------------------------------------------------------------------
-# discovery — list, wipe semantics
+# discovery -- list, wipe semantics
 # -------------------------------------------------------------------------
 #
 # Each entry becomes a `ScanConfig` row. A scan periodically scans a set
 # of CIDRs for SSH-reachable hosts and either auto-adds them or queues
 # them for review.
 #
-# Missing, `null`, or `[]` ⇒ ALL existing scan configs are deleted.
+# Missing, `null`, or `[]` => ALL existing scan configs are deleted.
 # Same precedent as firewall / services / packages: GitOps is the
 # source of truth, so silently dropping the section means "I have no
 # discovery scans, please mirror that into the DB." If you want some
 # scans managed via UI and some via GitOps, the answer is to manage all
-# of them via GitOps — mixing is unsupported because there's no way for
+# of them via GitOps -- mixing is unsupported because there's no way for
 # the importer to tell which UI-created scans were "intentionally
 # excluded" from YAML.
 #
 # Cross-references resolve by NAME, not numeric ID:
 #
 #   ssh_key:        the `name` of an `SSHKey` (admin-created from the
-#                   Integrations → SSH Keys page). Required.
+#                   Integrations -> SSH Keys page). Required.
 #   default_groups: list of `HostGroup` names. Newly-discovered hosts
 #                   that get auto-added join these groups. Optional.
 #
 # Both `SSHKey.name` and `HostGroup.name` carry a unique constraint, so
-# the lookup is unambiguous. Unknown names abort the import cleanly —
+# the lookup is unambiguous. Unknown names abort the import cleanly --
 # you'll get a clear error message instead of a silent wipe.
 discovery:
   - name: dmz-discovery
@@ -75,7 +75,7 @@ discovery:
       - dmz
       - edge
 
-    # Schedule — exactly one of `interval_minutes` or `cron_expression`
+    # Schedule -- exactly one of `interval_minutes` or `cron_expression`
     # must be set (XOR enforced by the API and a CHECK constraint in
     # the DB).
     interval_minutes: 60
@@ -88,13 +88,13 @@ discovery:
 
     # `auto_add: true` registers discovered hosts immediately as fleet
     # members. `auto_add: false` (the default) puts them in the Pending
-    # Approval queue for manual review — recommended for production
+    # Approval queue for manual review -- recommended for production
     # environments where a misconfigured CIDR could otherwise flood
     # your inventory.
     auto_add: false
 
   # ---------------------------------------------------------------------
-  # Second scan — cron schedule example, with auto-add enabled.
+  # Second scan -- cron schedule example, with auto-add enabled.
   # ---------------------------------------------------------------------
   - name: lab-network-cron
     cidrs:
@@ -103,4 +103,4 @@ discovery:
     cron_expression: "0 */4 * * *"  # every 4 hours
     auto_add: true
     enabled: true
-    # `default_groups` omitted ⇒ discovered hosts land ungrouped.
+    # `default_groups` omitted => discovered hosts land ungrouped.

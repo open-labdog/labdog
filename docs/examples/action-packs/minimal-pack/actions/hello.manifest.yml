@@ -13,5 +13,5 @@ destructive: false
 # Runs equally on a single host or every member of a group.
 supports_group: true
 supports_host: true
-# No user-facing parameters — the action has none.
+# No user-facing parameters -- the action has none.
 parameters: []
