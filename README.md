@@ -1,21 +1,19 @@
 <p align="left">
-  <img src="assets/logo.svg" alt="LabDog" width="72" height="72" />
+  <img src="assets/logo-banner.svg" alt="LabDog — A homelabber's best friend" width="100%" />
 </p>
 
 # LabDog
 
-> **A homelabber's best friend.** Centralized Linux configuration management via Ansible — preview changes, detect drift, and sync to hosts over SSH from one web UI.
-
 [![docker pulls](https://img.shields.io/docker/pulls/openlabdog/labdog?style=for-the-badge&logo=docker&logoColor=white&color=2563eb)](https://hub.docker.com/r/openlabdog/labdog)
-[![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-d97706?style=for-the-badge)](LICENSE)
 [![docs](https://img.shields.io/badge/docs-labdog-1e293b?style=for-the-badge)](https://open-labdog.github.io/labdog/)
+[![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-d97706?style=for-the-badge)](LICENSE)
 
 Manage firewall rules, systemd services, `/etc/hosts`, packages, users and more from a single web UI. Declare state in groups, preview the exact Ansible diff before applying, detect drift, and roll it back if something looks wrong.
 
 ## Try it in 30 seconds
 
 ```bash
-docker run -d --name labdog -p 8080/8080 \
+docker run -d --name labdog -p 8080:8080 \
   -v labdog-data:/var/lib/labdog \
   openlabdog/labdog:latest
 ```
@@ -28,12 +26,7 @@ Then open <http://localhost:8080> and register the first admin user.
 
 ## 📦 Install
 
-| Method | Where |
-|---|---|
-| 🐳 **Docker** (recommended) | [`openlabdog/labdog`](https://hub.docker.com/r/openlabdog/labdog) on Docker Hub — `:latest`, semver tags, signed digests |
-| 📁 **`.deb` / `.rpm`** | [Installation guide](https://open-labdog.github.io/labdog/#installation) |
-| 📦 **Tarball** | [Installation guide](https://open-labdog.github.io/labdog/#installation) |
-| 🛠 **From source** | [Local development](https://open-labdog.github.io/labdog/#local-development) |
+The Docker command above is the fastest path — see [`openlabdog/labdog`](https://hub.docker.com/r/openlabdog/labdog) on Docker Hub for image tags, signed digests, and `compose` examples. For `.deb` / `.rpm` / tarball / from source, see the **[installation guide](https://open-labdog.github.io/labdog/#installation)**.
 
 ## ✨ What you get
 
@@ -57,11 +50,16 @@ Declare state per host or per group. Everything goes through Ansible. Same rule 
 **Extensibility**
 
 - **GitOps** — webhook-driven sync from any Git repo (see the [YAML schema](https://open-labdog.github.io/labdog/examples/gitops/))
-- **Action packs** — BYO Ansible playbooks; drag-to-reorder precedence, encrypted credentials at rest
-- **Cluster-mode `k8s-upgrade`** — drains, upgrades, re-admits each node serially
+- **Action packs** — BYO Ansible playbooks as one-click actions
 - **Scheduled actions** — cron-driven runs with optional Proxmox snapshot + verify + auto-rollback
 
-**Integrations** &nbsp; Proxmox VE (discover VMs/containers for automatic snapshots) · web SSH terminal (xterm.js + asyncssh)
+**Integrations**
+
+- **Ansible** — every change is applied via `ansible-runner`; standard playbook YAML, no LabDog-specific DSL
+- **SSH** — push config to hosts and serve an in-browser terminal (asyncssh + xterm.js)
+- **Git** — pull GitOps configs and Action packs from any Git server; SSH key or HTTPS PAT auth, credentials encrypted at rest
+- **Proxmox VE** — automatic snapshot + rollback, VM discovery
+- **Webhooks** — inbound triggers from your Git host for GitOps sync
 
 ## 📚 Documentation
 
@@ -69,7 +67,7 @@ All technical content lives under **[the documentation site](https://open-labdog
 
 - **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
 - **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Integrations** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/)
+- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/)
 
 ## 🐛 Found a bug?
 
