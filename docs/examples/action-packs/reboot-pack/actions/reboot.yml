@@ -4,7 +4,7 @@
   become: true
   gather_facts: false
   # Parameters from the UI arrive as top-level vars.
-  # wait_seconds — max time to wait for SSH after boot.
+  # wait_seconds -- max time to wait for SSH after boot.
   tasks:
     - name: Reboot
       ansible.builtin.reboot:
