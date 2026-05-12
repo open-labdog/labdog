@@ -31,6 +31,7 @@ The catalog comes from two sources:
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
   - [Pack precedence and resolving conflicts](#pack-precedence-and-resolving-conflicts)
+  - [Active Action Catalog](#active-action-catalog)
   - [Provenance: which pack won?](#provenance-which-pack-won)
 - [Writing your own playbook (BYO)](#writing-your-own-playbook-byo)
   - [Pack layout](#pack-layout)
@@ -275,6 +276,27 @@ the newcomer. The conflict banner highlights frozen rows with a
 pack). Once you set or clear a resolution explicitly, the freeze
 clears.
 
+### Active Action Catalog
+
+The lower half of `/action-packs` shows the **Active Action Catalog**
+— every action key in the live registry with its winning pack and
+any shadowed candidates. One row per key, sorted alphabetically:
+
+| Column | Meaning |
+|---|---|
+| Action key | Stable identifier from the manifest (`linux-upgrade`, `k8s-upgrade`, …). |
+| Winning pack | Name of the pack currently serving this key. |
+| Status | `Uncontested` (only one pack contributes) or a clickable `Contested` chip (multiple packs declare the key — opens the per-key resolution dialog). |
+| Shadowed candidates | Other packs that declare this key but lost. Empty when uncontested. |
+
+The Contested chip opens the same per-key conflict resolution
+dialog reachable from the conflict banner above the pack list, so
+operators can audit precedence without drilling into every host or
+group page. The catalog is the canonical "what will actually run if
+I click this action key?" view — useful when packs ship overlapping
+keys or when validating that a freshly added pack didn't silently
+shadow a built-in.
+
 ### Provenance: which pack won?
 
 Every action card shows a small badge with the pack that supplied it:
@@ -499,9 +521,12 @@ to parse the rest still load — check the API server logs for
 `pack 'X': failed to load manifest …`.
 
 **"The wrong version of an action ran."** The amber badge tells you
-which pack won. If that's not what you want, either raise the winning
-pack's role (Override → Default is a demotion, confusingly — Override
-beats Default on collision) or disable the winning pack.
+which pack won. If that's not what you want, drag the pack you want
+above it on the **Action Packs** page (top wins), or pin a specific
+winner via the per-key resolution dialog (open from the Contested
+chip in the Active Action Catalog or the conflict banner above the
+pack list). Disabling the winning pack works too if you don't need
+it at all.
 
 **"The action doesn't show up on a host but shows on groups."** Check
 the manifest's `supports_host` / `supports_group` flags.

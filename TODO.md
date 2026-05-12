@@ -25,15 +25,15 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Container-based packaging smoke test in CI.** Hand-tested
-      smoke pass landed for v0.2.0 (commits 0d094dcc / f71e5121 /
-      b1a29c6a — surfaced and fixed three install-path bugs). Still
-      open: add `packaging/tests/` with a containerised harness
-      (Ubuntu 24.04 .deb, Rocky 9 .rpm, Ubuntu 24.04 tarball-via-
-      install.sh) and a new CI job that runs it after `release-
-      artifacts`. Mirrors the smoke procedure that was run by hand —
-      see the smoke scripts kept under /tmp/labdog-pkg-test/ during
-      v0.2.0 prep for the shape they should take.
+- [ ] **Container-based packaging smoke test in CI.** A hand-run
+      smoke pass during v0.2.0 prep surfaced and fixed three
+      install-path bugs (see `git log --grep packaging` for the
+      individual fix commits). Still open: add `packaging/tests/`
+      with a containerised harness (Ubuntu 24.04 .deb, Rocky 9 .rpm,
+      Ubuntu 24.04 tarball-via-install.sh) and a new CI job that
+      runs it after `release-artifacts`, so the smoke procedure that
+      was run by hand for v0.2.0 becomes a permanent gate on
+      subsequent releases.
 - [ ] **Mark `version-check` as a required status check on `main`.**
       The new release pipeline gates release PRs on a `version-check`
       job that asserts `VERSION` is bumped, semver-shaped, and the
