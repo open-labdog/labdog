@@ -175,6 +175,20 @@ but internally delegate to the same orchestrator.
 
 Pre-built packages are available on the [Releases](https://github.com/open-labdog/labdog/releases) page for each tagged version.
 
+**Supported distros** — the bundled venv requires `python3.12` to be
+installed at `/usr/bin/python3.12`. That's available out of the box on:
+
+| Distro | Notes |
+|---|---|
+| Ubuntu 24.04+ | `python3.12` package in main repo |
+| Debian 13+ (trixie) | `python3.12` package in main repo |
+| RHEL / Rocky / Alma 9+ | `python3.12` package in AppStream — `dnf install python3.12` |
+| Fedora 39+ | `python3.12` package in main repo |
+
+Older Debian (12 / bookworm) does not ship python3.12 in any official
+repo and is **not supported by the .deb / .rpm install path** — use
+the [Docker image](#quick-start-docker) on those hosts.
+
 **Debian / Ubuntu (.deb)**
 
 ```bash
