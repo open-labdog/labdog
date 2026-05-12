@@ -131,6 +131,14 @@ tarball: build
 	cp -r $(DESTDIR)/. $(DIST)/$(TARBALL_DIR)/
 	cp install.sh uninstall.sh $(DIST)/$(TARBALL_DIR)/
 	chmod +x $(DIST)/$(TARBALL_DIR)/install.sh $(DIST)/$(TARBALL_DIR)/uninstall.sh
+	@# install.sh expects systemd/, tmpfiles.d/, and etc/ at the
+	@# tarball root (parallel to install.sh). nfpm pulls these into
+	@# the .deb / .rpm directly via nfpm.yaml; the tarball has to
+	@# bundle them here.
+	@mkdir -p $(DIST)/$(TARBALL_DIR)/systemd $(DIST)/$(TARBALL_DIR)/tmpfiles.d $(DIST)/$(TARBALL_DIR)/etc
+	cp systemd/labdog.service $(DIST)/$(TARBALL_DIR)/systemd/
+	cp tmpfiles.d/labdog.conf $(DIST)/$(TARBALL_DIR)/tmpfiles.d/
+	cp etc/labdog.toml $(DIST)/$(TARBALL_DIR)/etc/
 	@echo "[tarball] Creating archive..."
 	tar -czf $(DIST)/$(TARBALL_NAME) -C $(DIST) $(TARBALL_DIR)
 	rm -rf $(DIST)/$(TARBALL_DIR)
