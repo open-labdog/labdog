@@ -17,22 +17,34 @@ in the main labdog repo. This README covers the pack-author angle only.
 
 ```
 .
-├── pack.yml                 metadata (name, description — not load-critical)
+├── pack.yml                       metadata (name, description — not load-critical)
 ├── actions/
-│   ├── <key>.yml            Ansible playbook
-│   └── <key>.manifest.yml   LabDog action definition (sidecar)
-├── verify/                  reusable verify playbooks (see verify/README.md)
+│   └── <key>/                     one directory per action
+│       ├── manifest.yml           LabDog action definition
+│       ├── playbook.yml           Ansible playbook
+│       └── roles/                 (optional) action-private roles
+│           └── <role-name>/       auto-resolved by Ansible
+├── verify/                        reusable verify playbooks (see verify/README.md)
 │   ├── post-upgrade.yml
 │   ├── host-reachable.yml
 │   └── services-active.yml
-└── roles/                   Ansible roles referenced by playbooks
+└── roles/                         shared roles, reusable across actions
     └── <role-name>/
 ```
 
-LabDog discovers actions by globbing `actions/*.manifest.yml`. A
-playbook without a matching manifest is ignored. Every manifest is
-validated against a pydantic schema with `extra="forbid"` — typos fail
-loudly rather than silently.
+An **action is a directory**: one folder under `actions/` per action,
+containing a `manifest.yml` and a `playbook.yml` at minimum. To override
+a single action in a downstream pack, copy that one directory.
+
+LabDog discovers actions by globbing `actions/*/manifest.yml`. Every
+manifest is validated against a pydantic schema with `extra="forbid"` —
+typos fail loudly rather than silently.
+
+**Roles.** Put a role under `actions/<key>/roles/<role-name>/` when it
+is private to one action (Ansible's playbook-adjacent role search picks
+it up with zero configuration). Use the top-level `roles/` for roles
+that are genuinely shared across actions — LabDog adds it to
+`ANSIBLE_ROLES_PATH` for every playbook in the pack.
 
 ## Manifest schema
 
@@ -41,7 +53,7 @@ key: linux-upgrade                 # stable identifier
 name: Upgrade Linux packages       # shown in the UI
 description: …                     # one-paragraph description
 icon: ArrowUpFromLine              # lucide-react icon name
-playbook: linux-upgrade.yml        # filename relative to this manifest
+playbook: playbook.yml             # filename relative to this manifest
 version: "1.0"                     # bump on breaking parameter changes
 estimated_duration: "5–15 min"
 destructive: true                  # enables snapshot/verify/rollback when
@@ -53,7 +65,7 @@ execution_mode: per_host           # per_host (default) or cluster.
                                    # the whole group with a multi-host
                                    # inventory; see "Cluster-mode actions"
                                    # below.
-verify_playbook: ../verify/post-upgrade.yml   # (optional) pack-supplied
+verify_playbook: ../../verify/post-upgrade.yml   # (optional) pack-supplied
 verify_timeout_seconds: 180                   # verify hook; replaces the
                                               # built-in SSH/services/
                                               # packages check. See
@@ -73,7 +85,7 @@ Full manifest field reference and edge cases:
 ## Verify playbooks
 
 The [`verify/`](./verify/) directory holds reusable verify playbooks
-admins can point their manifests at (`verify_playbook: ../verify/…`),
+admins can point their manifests at (`verify_playbook: ../../verify/…`),
 or pack authors can `import_playbook:` from their own custom verify
 files. They cover the same ground as LabDog's built-in Python verify
 (SSH round-trip, load, disk, systemd failed-unit detection, explicit
@@ -84,10 +96,14 @@ usage patterns.
 
 ## Adding a new action
 
-1. Drop `actions/<key>.yml` and `actions/<key>.manifest.yml` into place.
-2. If your playbook needs a role, put it under `roles/` — LabDog joins
-   every loaded pack's `roles/` dir into `ANSIBLE_ROLES_PATH`, so
-   `include_role: name: <role>` just works.
+1. Create `actions/<key>/` with `manifest.yml` and `playbook.yml`.
+2. If your playbook needs a role:
+   - **Action-private** (used only by this action): put it under
+     `actions/<key>/roles/<role-name>/`. Ansible auto-resolves it via
+     playbook-adjacent role search — no config needed.
+   - **Shared** (used by multiple actions): put it under the top-level
+     `roles/` — LabDog joins every loaded pack's `roles/` dir into
+     `ANSIBLE_ROLES_PATH`, so `include_role: name: <role>` just works.
 3. If the action is destructive and you want a custom success gate,
    add a `verify_playbook:` to the manifest pointing at one of the
    templates in `verify/` or your own.
@@ -165,13 +181,12 @@ For a cluster-mode pack:
 
 - Set ``execution_mode: cluster`` plus ``supports_host: false`` and
   ``supports_group: true`` in the manifest.
-- Provide a directory at ``actions/<key>/`` instead of a flat
-  ``actions/<key>.yml``. Point ``playbook:`` at the entry file
-  (e.g. ``<key>/site.yml``).
-- The play layer does the orchestration with ``serial:``, ``hosts:``,
-  ``delegate_to:``. LabDog hands you a ``control_plane`` and
-  ``workers`` group in the inventory; the operator assigns the role
-  on each member from the group's Members tab.
+- Multi-play orchestration goes in `playbook.yml` itself (one file
+  with multiple plays). The play layer does the orchestration with
+  ``serial:``, ``hosts:``, ``delegate_to:``. LabDog hands you a
+  ``control_plane`` and ``workers`` group in the inventory; the
+  operator assigns the role on each member from the group's Members
+  tab.
 - Cluster-wide ``kubectl`` tasks are easy: ``delegate_to:
   "{{ groups['control_plane'] | first }}"`` so the playbook doesn't
   need a kubeconfig on every node.

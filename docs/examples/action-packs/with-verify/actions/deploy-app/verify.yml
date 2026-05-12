@@ -1,5 +1,5 @@
 ---
-# Runs after deploy-app.yml. LabDog takes ansible-runner's exit status
+# Runs after playbook.yml. LabDog takes ansible-runner's exit status
 # as the verification result: any failed task fails the action run and
 # triggers a snapshot rollback. Same inventory, same extra_vars, same
 # pack roles as the main playbook -- no special setup.

@@ -29,15 +29,17 @@ def _make_pack_tree(root: Path, pack_subpath: str, pack_name: str, action_key: s
     pack = root / pack_subpath
     pack.mkdir(parents=True)
     (pack / "pack.yml").write_text(f"name: {pack_name}\n")
-    actions = pack / "actions"
-    actions.mkdir()
-    (actions / f"{action_key}.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
-    (actions / f"{action_key}.manifest.yml").write_text(
+    action_dir = pack / "actions" / action_key
+    action_dir.mkdir(parents=True)
+    (action_dir / "playbook.yml").write_text(
+        "---\n- name: x\n  hosts: all\n  tasks: []\n"
+    )
+    (action_dir / "manifest.yml").write_text(
         f"key: {action_key}\n"
         f"name: {action_key}\n"
         "description: ''\n"
         "icon: Box\n"
-        f"playbook: {action_key}.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "5 min"\n'
         "destructive: false\n"

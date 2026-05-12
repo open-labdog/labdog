@@ -138,8 +138,8 @@ def test_scan_broken_manifest_yields_error_findings_no_raise():
     assert len(pack.errors) == 2
     error_files = sorted(e.file for e in pack.errors)
     assert error_files == [
-        "actions/bad/actions/missing-required-fields.manifest.yml",
-        "actions/bad/actions/yaml-syntax-error.manifest.yml",
+        "actions/bad/actions/missing-required-fields/manifest.yml",
+        "actions/bad/actions/yaml-syntax-error/manifest.yml",
     ]
 
 

@@ -193,7 +193,7 @@ so newly-pushed packs can be picked up without re-onboarding.
 The wizard treats any directory containing a `pack.yml` as a pack
 root and walks the whole repo to find them — `packs/<name>/`,
 `actions/<name>/`, the repo root itself, all work. If no `pack.yml`
-exists anywhere but the repo root has an `actions/*.manifest.yml`
+exists anywhere but the repo root has an `actions/*/manifest.yml`
 tree, the repo is treated as a single root-level pack (matches the
 [`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
 convention).
@@ -313,17 +313,27 @@ bread and butter:
 
 ```
 <pack>/
-├── pack.yml              (optional; metadata only, not load-critical)
+├── pack.yml                  (optional; metadata only, not load-critical)
 ├── actions/
-│   ├── <key>.yml         (the Ansible playbook)
-│   └── <key>.manifest.yml  (the LabDog action definition)
-└── roles/                (optional)
-    └── <role-name>/      (standard Ansible role layout)
+│   └── <key>/                (one directory per action)
+│       ├── manifest.yml      (the LabDog action definition)
+│       ├── playbook.yml      (the Ansible playbook)
+│       └── roles/            (optional; action-private roles)
+│           └── <role-name>/  (auto-resolved by Ansible)
+└── roles/                    (optional; pack-shared roles)
+    └── <role-name>/          (added to ANSIBLE_ROLES_PATH)
 ```
 
-LabDog discovers actions by globbing `actions/*.manifest.yml`. Each
-manifest names a `playbook` file relative to the manifest's directory.
-A playbook without a matching manifest is silently ignored.
+LabDog discovers actions by globbing `actions/*/manifest.yml`. Each
+manifest names a `playbook` file relative to its own directory
+(conventionally `playbook.yml`). An action is a directory: copy
+`actions/<key>/` into another pack to override that action wholesale.
+
+**Action-private vs shared roles.** Put a role under
+`actions/<key>/roles/<role-name>/` when it is private to one action —
+Ansible's playbook-adjacent role search picks it up automatically with
+zero config. Use the top-level `<pack>/roles/` only for roles genuinely
+reused across multiple actions.
 
 ### Manifest schema
 
@@ -333,7 +343,7 @@ name: My Action              # shown on the action card
 description: >-              # one-paragraph description; shown under name
   Does a thing to the host.
 icon: Zap                    # lucide-react icon name (Zap, Layers, Network, etc.)
-playbook: my-action.yml      # filename relative to this manifest
+playbook: playbook.yml       # filename relative to this manifest
 version: "1.0"               # bump on breaking parameter changes
 estimated_duration: "30 sec" # human-readable; shown on the card
 destructive: false           # see "Destructive actions" below
@@ -418,12 +428,12 @@ failed task fails the verify, which fails the action, which triggers
 rollback.
 
 ```yaml
-# actions/deploy-app.manifest.yml
+# actions/deploy-app/manifest.yml
 key: deploy-app
 name: Deploy app
 destructive: true
-playbook: deploy-app.yml
-verify_playbook: deploy-app-verify.yml  # runs after deploy-app.yml
+playbook: playbook.yml
+verify_playbook: verify.yml             # sibling of playbook.yml in the same action dir
 verify_timeout_seconds: 120             # budget; default 300
 # ...rest of the manifest
 ```
@@ -433,7 +443,7 @@ same pack roles** as the main playbook — no special plumbing needed.
 Typical patterns:
 
 ```yaml
-# actions/deploy-app-verify.yml
+# actions/deploy-app/verify.yml
 - name: Verify the deploy worked
   hosts: all
   gather_facts: false
@@ -466,7 +476,8 @@ installed). The full working example is
 **Reusable verify templates** ship in the `labdog-playbooks` repo
 under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/verify)
 — point `verify_playbook:` at one of them (e.g.
-`../verify/post-upgrade.yml`) and pass overrides through manifest
+`../../verify/post-upgrade.yml` — `../../` reaches the pack root from
+inside the action directory) and pass overrides through manifest
 parameters. The bundled `linux-upgrade` action in that repo uses
 `verify/post-upgrade.yml` and is the reference implementation.
 
@@ -481,7 +492,7 @@ the repo. The credentials live on the linked repo — fix them under
 **Git Repos**, then hit **Sync** on the pack.
 
 **"No actions appear after adding a pack."** Check: (1) the pack's
-`actions/` directory exists and contains `*.manifest.yml` sidecars, (2)
+`actions/` directory exists and contains `<key>/manifest.yml` files, (2)
 each manifest's `playbook:` field names a file that actually exists,
 (3) the pack is `Enabled` in the list view. If a single manifest fails
 to parse the rest still load — check the API server logs for

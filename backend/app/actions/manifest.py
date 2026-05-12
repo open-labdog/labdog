@@ -1,13 +1,15 @@
 """Manifest schema for action playbooks.
 
-An action manifest is a YAML sidecar that sits next to a playbook file and
-declares how LabDog should present and invoke it: display name, version,
-parameters, and safety flags. Manifests are the data-driven replacement for
-the hardcoded ``register()`` calls that used to live in ``registry.py``.
+An action manifest is a YAML file that declares how LabDog should present
+and invoke a playbook: display name, version, parameters, and safety flags.
+Manifests are the data-driven replacement for the hardcoded ``register()``
+calls that used to live in ``registry.py``.
 
-Convention: a playbook at ``<pack>/actions/foo.yml`` is paired with a manifest
-at ``<pack>/actions/foo.manifest.yml``. The pack loader discovers manifests by
-glob and resolves the playbook file named in ``playbook``.
+Convention: each action lives in its own directory under ``<pack>/actions/``.
+The manifest is ``<pack>/actions/<key>/manifest.yml``; it names a playbook
+relative to its own directory (conventionally ``playbook.yml``). The pack
+loader discovers manifests by globbing ``actions/*/manifest.yml`` and
+resolves the playbook file named in ``playbook``.
 """
 
 from __future__ import annotations

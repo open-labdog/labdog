@@ -22,11 +22,11 @@ recommended opt-in replacement.
 ## Referencing a template from your pack
 
 ```yaml
-# your-pack/actions/my-action.manifest.yml
+# your-pack/actions/my-action/manifest.yml
 key: my-action
-playbook: my-action.yml
+playbook: playbook.yml
 destructive: true
-verify_playbook: ../verify/post-upgrade.yml    # path relative to manifest
+verify_playbook: ../../verify/post-upgrade.yml    # path relative to manifest
 verify_timeout_seconds: 180
 ```
 
@@ -41,11 +41,11 @@ them via manifest parameters. For example, to make `post-upgrade.yml`
 assert a specific service is active:
 
 ```yaml
-# actions/upgrade-web.manifest.yml
+# actions/upgrade-web/manifest.yml
 key: upgrade-web
-playbook: upgrade-web.yml
+playbook: playbook.yml
 destructive: true
-verify_playbook: ../verify/post-upgrade.yml
+verify_playbook: ../../verify/post-upgrade.yml
 parameters:
   - key: expected_services
     label: Services that must stay active
@@ -53,7 +53,7 @@ parameters:
     default: "nginx,postgresql"
 ```
 
-Then inside `upgrade-web.yml` (or a small adapter playbook) convert
+Then inside `playbook.yml` (or a small adapter playbook) convert
 the CSV parameter to a list Ansible can iterate. The cleanest way is
 to use a list-typed parameter — at the moment LabDog's UI supports
 `string | int | bool | choice`, so list inputs need CSV parsing. If
@@ -66,8 +66,8 @@ hardcode the list in the playbook `vars:` block.
 with `import_playbook` at the top level:
 
 ```yaml
-# your-pack/actions/my-action-verify.yml
-- import_playbook: ../../verify/post-upgrade.yml
+# your-pack/actions/my-action/verify.yml
+- import_playbook: ../../verify/post-upgrade.yml    # ../../  = pack root
 - name: Extra app-specific checks
   hosts: all
   become: false
