@@ -34,6 +34,19 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       artifacts`. Mirrors the smoke procedure that was run by hand —
       see the smoke scripts kept under /tmp/labdog-pkg-test/ during
       v0.2.0 prep for the shape they should take.
+- [ ] **Mark `version-check` as a required status check on `main`.**
+      The new release pipeline gates release PRs on a `version-check`
+      job that asserts `VERSION` is bumped, semver-shaped, and the
+      `vX.Y.Z` tag isn't already taken. The gate only enforces if
+      branch protection on `main` lists `version-check` as a required
+      status check — otherwise a maintainer can merge a PR even when
+      the job fails or is skipped. Configure in
+      **Settings → Branches → main → Branch protection rules →
+      Require status checks to pass before merging → search for
+      "version-check"**. Same screen, also confirm "Require branches
+      to be up to date" so the check runs against the actual merge
+      commit. This is GitHub repo config, not a code change — won't
+      land in any commit; needs a maintainer with admin rights.
 
 ---
 
