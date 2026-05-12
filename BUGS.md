@@ -40,30 +40,4 @@ when filing a new entry.
 
 ## Open
 
-### Medium
-
-- [ ] **BUG-45** `backend/app/crypto/key_management.py:13` — `ENCRYPTION_KEY` decoder silently truncates url-safe base64 input
-
-  Symptom: when `LABDOG_SECURITY__ENCRYPTION_KEY` contains `-` or `_`
-  (i.e. url-safe base64 — what `secrets.token_urlsafe()` or
-  `base64.urlsafe_b64encode()` produces), startup succeeds and most
-  endpoints work, but any operation that encrypts/decrypts via the
-  master key fails. Visible failure mode: `POST /api/ssh-keys` returns
-  500 with `ValueError: ENCRYPTION_KEY must decode to exactly 32
-  bytes, got 30` in the backend logs.
-
-  Root cause: `base64.b64decode(raw)` defaults to `validate=False`, so
-  the `-` and `_` characters (not in the standard alphabet) are
-  silently dropped, producing a shorter byte string. The length check
-  catches the symptom but not the cause, and the error message doesn't
-  mention which base64 variant is expected.
-
-  The env var name, `generate_master_key()`, and any docs don't
-  specify standard vs url-safe — Python developers commonly reach for
-  url-safe by default, so this is easy to hit.
-
-  Fix candidates: (a) pass `validate=True` to `b64decode` so invalid
-  chars raise a clear error, (b) accept both alphabets by trying
-  `urlsafe_b64decode` as a fallback, or (c) document the standard-
-  base64 requirement and reject url-safe input with an explicit
-  message at parse time. Worth doing the same audit for `SECRET_KEY`.
+_No open bugs._

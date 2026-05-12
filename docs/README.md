@@ -223,7 +223,7 @@ sudo nano /etc/labdog/labdog.toml
 | Setting | Description | How to generate |
 |---------|-------------|-----------------|
 | `[security] secret_key` | JWT signing key | `openssl rand -base64 32` |
-| `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes, base64) | `openssl rand -base64 32` |
+| `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes; standard or url-safe base64) | `openssl rand -base64 32` |
 | `[security] labdog_server_ip` | This server's IP (used in SSH lockout prevention rule) | `ip route get 1 \| awk '{print $7; exit}'` |
 | `[database] url` | PostgreSQL async connection string | — |
 
@@ -323,7 +323,7 @@ sudo ./uninstall.sh --purge  # removes everything
 |----------|----------|---------|-------------|
 | `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password |
 | `SECRET_KEY` | Yes (production) | `change-me-in-production` | JWT signing key |
-| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes, base64) |
+| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes; standard or url-safe base64) |
 | `LABDOG_SERVER_IP` | Yes | `127.0.0.1` | IP of the LabDog server (used in SSH lockout rule) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://localhost:8000` | Backend API URL |
 | `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://labdog:labdog@localhost:5432/labdog` | Async PostgreSQL connection string |

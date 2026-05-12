@@ -30,8 +30,11 @@ LabDog's database (`ssh_keys.encrypted_private_key`,
    python -m app.crypto.key_management
    ```
 
-   This prints a fresh base64-encoded 32-byte key.  Store it somewhere
-   secure (password manager, secrets vault) before proceeding.
+   This prints a fresh base64-encoded 32-byte key (standard alphabet).
+   Url-safe base64 is also accepted at load time if you prefer
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+   Store it somewhere secure (password manager, secrets vault) before
+   proceeding.
 
 3. **Have both keys to hand** — the old key (current value of
    `LABDOG_SECURITY__ENCRYPTION_KEY` in production) and the new key generated
