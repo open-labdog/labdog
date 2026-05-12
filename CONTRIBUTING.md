@@ -139,26 +139,35 @@ opening a confidential discussion.
 
 ## Release process
 
-Maintainer-only. Short form:
+Maintainer-only. Releases are triggered by **merging a release PR
+into `main`**; there's no separate tag-push step. The flow:
 
-1. Update [`CHANGELOG.md`](CHANGELOG.md): rename `[Unreleased]` to
-   `[X.Y.Z] — YYYY-MM-DD`, add a fresh empty `[Unreleased]` block
-   above it, and update the comparison link refs at the bottom.
-   This is what populates the GitHub Release body — without it the
-   release page renders blank.
-2. Commit the changelog on `main`. **Do not hand-bump
-   `backend/pyproject.toml` or `frontend/package.json`** — the
-   `release-artifacts` CI job rewrites both files from the tag
-   before building, so `labdog --version` and the .deb/.rpm
-   filenames stay in lockstep automatically.
-3. Tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. The `release-artifacts` workflow job syncs the version files,
-   builds `.tar.gz`, `.deb`, `.rpm`, and `SHA256SUMS` via
-   `./packaging/build.sh`, and attaches them to the auto-created
-   Release via `softprops/action-gh-release`.
-5. To smoke-test the packaging path without cutting a real
-   release, run the workflow manually (**Actions → CI → Run
-   workflow**). The same job builds artifacts with a dev-flavoured
-   version (`0.0.0-dev.<short-sha>`) and uploads them to the
-   workflow-run artifacts for download, but skips both the
-   version-sync and release-create steps.
+1. On `dev`, edit the [`VERSION`](VERSION) file at the repo root to
+   the new version (e.g. `0.2.0`). One line, no `v` prefix.
+2. Update [`CHANGELOG.md`](CHANGELOG.md) on `dev`: rename
+   `[Unreleased]` to `[X.Y.Z] — YYYY-MM-DD`, add a fresh empty
+   `[Unreleased]` block above it, and update the comparison link
+   refs at the bottom. The `softprops/action-gh-release` step
+   currently uses `generate_release_notes: true` (auto-derives from
+   commits), but a curated CHANGELOG is the canonical history.
+3. Open a PR `dev` → `main`. The `version-check` job blocks the
+   merge unless `VERSION` is bumped relative to `main`, is valid
+   semver, and the resulting `vX.Y.Z` tag does not already exist
+   upstream.
+4. Merge the PR. The merge to `main` triggers `release-artifacts`,
+   which:
+   - syncs `backend/pyproject.toml` and `frontend/package.json`
+     from `VERSION` (so `/api/version` and the package filenames
+     stay in lockstep — **do not hand-bump** these files),
+   - runs `./packaging/build.sh` to produce `.tar.gz` / `.deb` /
+     `.rpm` / `SHA256SUMS`,
+   - tags the merge commit `vX.Y.Z` and pushes the tag,
+   - creates a GitHub Release at that tag with the four files
+     attached and auto-generated release notes.
+
+The job is idempotent on tag presence: if `vX.Y.Z` already exists
+(e.g. you re-ran a previous merge's workflow), it skips with a
+notice instead of double-releasing.
+
+To smoke-test the packaging path without cutting a real release,
+run `./packaging/build.sh` locally — there is no CI dry-run mode.
