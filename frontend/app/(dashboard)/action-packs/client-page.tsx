@@ -38,10 +38,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { TableRow } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { DataTable } from "@/components/ui/data-table"
 import { ConflictResolutionDialog } from "@/components/action-packs/conflict-resolution-dialog"
 import type {
+  ActionDefinition,
   ActionPack,
   ActionPackSyncResponse,
   ContestedActionKey,
@@ -169,6 +177,12 @@ export default function ActionPacksPage() {
   const { data: contested } = useQuery<ContestedActionKey[]>({
     queryKey: ["action-resolutions"],
     queryFn: () => apiFetch<ContestedActionKey[]>("/api/action-resolutions"),
+  })
+
+  const { data: catalogActions, isLoading: catalogLoading } = useQuery<ActionDefinition[]>({
+    queryKey: ["actions-catalog"],
+    queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"),
+    staleTime: 30_000,
   })
 
   // Top-to-bottom display order: highest position first.
@@ -701,6 +715,92 @@ export default function ActionPacksPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Active Action Catalog */}
+      <div className="rounded-lg border border-slate-700 bg-slate-900">
+        <div className="px-4 py-3 border-b border-slate-700">
+          <h2 className="text-sm font-semibold text-white">
+            Active Action Catalog
+          </h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Every action key in the live registry, with the pack that wins it.
+          </p>
+        </div>
+
+        {catalogLoading && (
+          <p className="text-slate-400 text-sm px-4 py-6 text-center">
+            Loading…
+          </p>
+        )}
+
+        {!catalogLoading && (!catalogActions || catalogActions.length === 0) && (
+          <p className="text-slate-400 text-sm px-4 py-6 text-center">
+            No actions in the registry yet. Add and sync an action pack to
+            populate this list.
+          </p>
+        )}
+
+        {!catalogLoading && catalogActions && catalogActions.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-700">
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Action Key
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Winning Pack
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Status
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Shadowed Candidates
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {catalogActions
+                .slice()
+                .sort((a, b) => a.key.localeCompare(b.key))
+                .map((action) => {
+                  const isContested = action.overridden_from.length > 0
+                  return (
+                    <TableRow key={action.key} className="border-slate-700">
+                      <TableCell>
+                        <span className="font-mono text-slate-300 text-xs">
+                          {action.key}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-slate-300 text-xs">
+                        {action.pack_name}
+                      </TableCell>
+                      <TableCell>
+                        {isContested ? (
+                          <button
+                            type="button"
+                            onClick={() => setConflictOpen(true)}
+                            className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-600 text-white hover:bg-amber-500 transition-colors"
+                          >
+                            Contested
+                          </button>
+                        ) : (
+                          <span className="text-slate-500 text-xs">
+                            Uncontested
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-slate-400 text-xs">
+                        {isContested
+                          ? action.overridden_from.join(", ")
+                          : <span className="text-slate-600">—</span>}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+            </TableBody>
+          </Table>
+        )}
+      </div>
 
       <ConflictResolutionDialog
         open={conflictOpen}
