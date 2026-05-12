@@ -25,14 +25,15 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Smoke-test the packaging artifacts.** A static audit pass over
-      `packaging/` is done (license/homepage/maintainer fixed, maintainer
-      scripts made deb+rpm portable, systemd unit hardened, TOML config
-      brought in line with dev). Still TODO: actually build the .deb /
-      .rpm / .tar.gz and verify they install cleanly on Debian 12 and
-      Rocky 9, the service starts, and `--purge` / `rpm -e` clean up
-      properly. Add `packaging/tests/` with a container-based smoke test
-      so the CI release-artifacts job can gate on it.
+- [ ] **Container-based packaging smoke test in CI.** Hand-tested
+      smoke pass landed for v0.2.0 (commits 0d094dcc / f71e5121 /
+      b1a29c6a — surfaced and fixed three install-path bugs). Still
+      open: add `packaging/tests/` with a containerised harness
+      (Ubuntu 24.04 .deb, Rocky 9 .rpm, Ubuntu 24.04 tarball-via-
+      install.sh) and a new CI job that runs it after `release-
+      artifacts`. Mirrors the smoke procedure that was run by hand —
+      see the smoke scripts kept under /tmp/labdog-pkg-test/ during
+      v0.2.0 prep for the shape they should take.
 - [ ] **Manifest-validation CI check on labdog-playbooks.** Add a
       GitHub Actions job that validates every `*.manifest.yml`
       against `app.actions.manifest.ActionManifest.model_validate`.
