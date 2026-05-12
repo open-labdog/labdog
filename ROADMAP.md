@@ -6,29 +6,6 @@ high-altitude view.
 
 ---
 
-## In design — targeting v0.2.0
-
-Concrete next-step plans, not committed milestones. The working specs
-live on the implementation branches under `plans/` (see
-[CONTRIBUTING.md](CONTRIBUTING.md)); commit messages during the work
-capture the decisions and rationale.
-
-- **Coalesced per-host sync** — replace seven independent per-module
-  Celery sync tasks with one orchestrator task per host that produces
-  a single unified Ansible playbook covering every module the caller
-  asked for. Eliminates the per-host SSH race between concurrent
-  module syncs and unblocks bulk-sync UX.
-- **Kubernetes cluster upgrade action** — wire a `kubeadm`-based
-  drain-upgrade-uncordon runbook into the action system as a
-  group-scoped (not per-host) execution. Adds the missing
-  `host_group_memberships.role` column (`control_plane` / `worker`)
-  required for the two-play structure.
-
-The K8s upgrade depends on the cluster-scoped execution path that
-coalesced sync introduces, so the natural order is sync first.
-
----
-
 ## Companion repos
 
 LabDog ships a small core. Pluggable behaviour lives in companion
@@ -47,8 +24,10 @@ Currently bundled:
 - `linux-upgrade` — apt/dnf system package upgrade with optional reboot
 - `linux-os-upgrade` — Debian major-version upgrade (e.g. 12 → 13)
   with NIC-rename safety
-- `k8s-upgrade` — stub today; real `kubeadm` upgrade lands when the
-  in-design plan above ships
+- `k8s-upgrade` — `kubeadm`-based drain-upgrade-uncordon runbook,
+  dispatched as a cluster-mode action against a group with
+  `control_plane` / `worker` member roles. Currently apt-only;
+  broadening to `dnf` is tracked in [TODO.md](TODO.md).
 
 Planned additions:
 - **`grafana-alloy`** — install and configure

@@ -127,6 +127,13 @@ a fresh conflict (freeze-on-fresh-conflict, never silently flips).
 See `app/packs/` for the subsystem, the user guide at
 `docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
 
+The **Action Packs** page also renders an *Active Action Catalog*
+panel listing every action key in the live registry alongside its
+winning pack and any shadowed candidates. Per-key conflicts surface a
+"Resolve" affordance that reuses the existing
+`ConflictResolutionDialog`, so the same pinning flow drives both
+activation-time and post-hoc overrides.
+
 **Bundled pack mirrors `labdog-playbooks`.** The directory at
 `backend/app/ansible/` is a byte-identical mirror of
 [`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
@@ -156,6 +163,19 @@ Per-member roles live on `host_group_memberships.role` (NULL /
 "driver" and dispatches `app.tasks.action_cluster.run_action_cluster`.
 `POST /actions/runs` rejects cluster-mode submissions targeting a
 host or a group missing role assignments.
+
+### About / version surface
+
+`GET /api/version` is a public (no-auth) endpoint exposing
+`{version, commit_sha, commit_sha_short, build_date, license,
+repo_url}`. The frontend renders it at `/settings/about`. The
+backend reads `version` via
+`importlib.metadata.version("labdog-backend")`; `commit_sha` and
+`build_date` come from env vars `LABDOG_COMMIT_SHA` /
+`LABDOG_BUILD_DATE` (set in Docker via build args) or, for
+`.deb` / `.rpm` / `.tar.gz` installs, from a build-time-generated
+`backend/app/_build_info.py` written by the `bake-build-info`
+target in `packaging/Makefile`.
 
 ### Scheduled actions
 
@@ -222,9 +242,12 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 - **pages-build / pages-deploy**: builds the docusaurus site under
   `website/` and deploys to GitHub Pages — runs on push to `main`
 - **release-artifacts**: builds `.tar.gz`, `.deb`, `.rpm`, `SHA256SUMS`
-  via `packaging/build.sh` and attaches them to a GitHub Release —
-  runs on tag pushes matching `v*` (or `workflow_dispatch` for a
-  dry-run build with no release created)
+  via `packaging/build.sh`, auto-creates the `vX.Y.Z` tag from the
+  repo-root `VERSION` file, and publishes a GitHub Release with the
+  artifacts attached — runs on push to `main` (i.e. when a `dev` →
+  `main` PR merges). Idempotent: if the `vX.Y.Z` tag already exists
+  the job skips with a notice. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+  for the full release flow.
 
 ---
 

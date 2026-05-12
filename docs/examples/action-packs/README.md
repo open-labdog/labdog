@@ -36,8 +36,10 @@ Then in the LabDog UI:
 2. Click **Add Pack**.
 3. Either point at a git URL, or pick **Local directory** and paste the
    filesystem path.
-4. Leave Role as **Override** (you're not replacing a default pack).
-5. Save. The action will appear on any host's detail page under the
+4. Save. The pack lands at the top of the list (highest position) —
+   drag rows on **Action Packs** to reorder if a different pack
+   should win contested keys. Bundled sits implicitly at the bottom.
+5. The action will appear on any host's detail page under the
    **Actions** tab.
 
 ## Pack layout recap

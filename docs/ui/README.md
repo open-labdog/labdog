@@ -41,6 +41,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |
+| [About](settings.md#about) | Build metadata — version, commit SHA, build date, license, repo URL (`/settings/about`) |
 
 ---
 

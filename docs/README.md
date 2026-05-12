@@ -192,7 +192,7 @@ the [Docker image](#quick-start-docker) on those hosts.
 **Debian / Ubuntu (.deb)**
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 ```
@@ -200,7 +200,7 @@ sudo apt install ./labdog_${VERSION}-1_amd64.deb
 **RHEL / Fedora / Rocky (.rpm)**
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 ```
@@ -210,7 +210,7 @@ After package install, skip to [Post-install configuration](#post-install-config
 ### From Tarball
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
 tar -xzf labdog-${VERSION}-linux-amd64.tar.gz
 cd labdog-${VERSION}-linux-amd64
@@ -397,7 +397,7 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v          # 755 unit/module tests
+pytest tests/ --ignore=tests/integration -v           # unit/module tests
 pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
 ```
 
@@ -412,7 +412,7 @@ npx playwright test          # requires running Docker stack
 npx playwright test --ui     # interactive test runner
 ```
 
-15 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
+E2E spec files cover auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
@@ -545,10 +545,13 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 labdog/
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # FastAPI route handlers
-│   │   ├── ansible/         # Playbook + inventory generators
+│   │   ├── actions/         # Pack loader, registry, manifest schema, git sync
+│   │   ├── ansible/         # Bundled action pack (mirror of labdog-playbooks)
+│   │   ├── ansible_runtime/ # Playbook composer + ansible-runner wrapper
+│   │   ├── api/             # FastAPI route handlers (incl. /api/version)
 │   │   ├── audit/           # Audit logging
 │   │   ├── auth/            # JWT auth (cookie-based)
+│   │   ├── ca_certs/        # Trusted CA certificate deployment module
 │   │   ├── cron/            # Cron job management module
 │   │   ├── crypto/          # AES-256-GCM encryption
 │   │   ├── discovery/       # Host network discovery
@@ -557,18 +560,19 @@ labdog/
 │   │   ├── hosts_mgmt/      # /etc/hosts management module
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── packages/        # Package management module
+│   │   ├── packs/           # DB-backed action-pack subsystem
 │   │   ├── proxmox/         # Proxmox VE hypervisor integration
 │   │   ├── resolver/        # DNS resolver module
 │   │   ├── rules/           # Firewall rule validation, renderers, merge
 │   │   ├── schemas/         # Pydantic request/response schemas
 │   │   ├── services/        # Service management module
 │   │   ├── ssh_terminal/    # Web shell (WebSocket SSH terminal)
-│   │   ├── sync/            # Firewall plan/diff engine
-│   │   ├── tasks/           # Celery tasks (sync + drift)
+│   │   ├── sync/            # Per-host orchestrator + bulk sync entry point
+│   │   ├── tasks/           # Celery tasks (sync orchestrator, drift, scheduled actions)
 │   │   ├── user_mgmt/       # Linux user/group management
 │   │   └── workflows/       # Proxmox snapshot / verify / rollback steps
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite (~1000 tests)
+│   ├── tests/               # pytest suite
 │   │   ├── integration/     # Integration tests (require full stack)
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
@@ -576,7 +580,7 @@ labdog/
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
 │   ├── components/          # React components (shadcn/ui)
-│   ├── e2e/                 # Playwright E2E tests (15 spec files)
+│   ├── e2e/                 # Playwright E2E tests
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
@@ -589,7 +593,7 @@ labdog/
 │   ├── build.sh             # Local Docker build script
 │   ├── deploy.sh            # Local Docker deploy script
 │   ├── docker-compose.yml   # Local dev stack (postgres + redis)
-│   ├── labdog.toml       # Dev configuration
+│   ├── labdog.toml          # Dev configuration
 │   └── .env                 # Local secrets (gitignored — copy from .env.example)
 ├── dev.sh                   # Thin wrapper → dev/dev.sh
 ├── .env.example             # Environment variable template
@@ -631,7 +635,12 @@ lint → test → build → scan.
 - **Build**: Docker images for backend and frontend; published to
   Docker Hub on `main` (`latest` + `<sha>`) and `dev` (`test` +
   `test-<sha>`)
-- **Package**: tarball, .deb, .rpm artifacts on `v*` tags (workflow:
-  release)
-- **Release**: GitHub release with package download links and
-  SHA256SUMS
+- **Release** (`release-artifacts`): triggered by push to `main`
+  (i.e. when a `dev` → `main` PR merges). Builds the `.tar.gz`,
+  `.deb`, `.rpm`, and `SHA256SUMS` set via `packaging/build.sh`,
+  auto-tags the merge commit `vX.Y.Z` from the repo-root
+  [`VERSION`](../VERSION) file, pushes the tag, and publishes a
+  GitHub Release with the artifacts attached. Idempotent on tag
+  presence — re-running a previous merge's workflow skips with a
+  notice instead of double-releasing. See
+  [CONTRIBUTING.md → Release process](../CONTRIBUTING.md#release-process).

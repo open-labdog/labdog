@@ -124,9 +124,10 @@ Deleting a schedule sets `action_runs.scheduled_action_id` to NULL via
 - The cron walk skips a schedule if a non-terminal `ActionRun`
   (`status IN ('queued', 'running')`) already exists for it. No
   double-dispatch when the previous run hasn't finished.
-- Per-host work is serialised via the option-c PostgreSQL advisory
-  lock (`pg_try_advisory_lock(hashtext('host_sync.{host_id}'))`) for
-  `_builtin.sync`. The two read-only built-ins
+- Per-host work is serialised via a PostgreSQL advisory lock
+  (`pg_try_advisory_lock(hashtext('host_sync.{host_id}'))`) for
+  `_builtin.sync` — the same per-host orchestrator used by every
+  module sync. The two read-only built-ins
   (`_builtin.drift_check`, `_builtin.collect_state`) are idempotent
   and don't need it.
 - `last_dispatched_at` is the cron walk's reference, not "wall-clock
