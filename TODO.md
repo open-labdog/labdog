@@ -39,16 +39,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       against `app.actions.manifest.ActionManifest.model_validate`.
       Catches typos in pack contributions before they reach a
       labdog instance.
-- [ ] **Surface the active action catalog on `/action-packs`.** Today
-      the only way to see which actions a pack contributes — and which
-      pack ultimately wins each key — is to open a host or group and
-      look at its Actions tab. Add a panel on the **Action Packs**
-      page that lists every key in the live registry with its winning
-      pack, the candidates it shadows, and a link to the resolution
-      modal when contested. Lets operators audit pack precedence
-      without picking an arbitrary host first. Data is already there
-      via `GET /api/actions/` (winners + `overridden_from`) and
-      `GET /api/action-resolutions` (contests).
 
 ---
 
