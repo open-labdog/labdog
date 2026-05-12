@@ -54,13 +54,14 @@ log "Creating labdog system user..."
 if id labdog >/dev/null 2>&1; then
     log "User 'labdog' already exists, skipping"
 else
-    if command -v adduser >/dev/null 2>&1 && adduser --help 2>&1 | grep -q -- '--system'; then
-        adduser --system --group --home /var/lib/labdog --no-create-home --shell /usr/sbin/nologin labdog
-    elif command -v useradd >/dev/null 2>&1; then
-        useradd --system --user-group --home-dir /var/lib/labdog --no-create-home --shell /usr/sbin/nologin labdog
-    else
-        die "Neither adduser nor useradd found — cannot create system user"
+    # useradd is universally available on both Debian/Ubuntu (passwd
+    # package) and RHEL/Rocky (shadow-utils) and accepts the same flags
+    # on both — preferred over adduser, which on RPM-family is a
+    # useradd wrapper that rejects Debian-style flags.
+    if ! command -v useradd >/dev/null 2>&1; then
+        die "useradd not found — cannot create system user"
     fi
+    useradd --system --user-group --home-dir /var/lib/labdog --no-create-home --shell /usr/sbin/nologin --comment "LabDog service account" labdog
     log "Created system user 'labdog'"
 fi
 
@@ -114,7 +115,10 @@ fi
 # --- Reload systemd ---
 if command -v systemctl >/dev/null 2>&1; then
     log "Reloading systemd daemon..."
-    systemctl daemon-reload
+    # Tolerate environments where systemd isn't running as PID 1
+    # (containers, chroots, CI). The unit is on disk either way; on
+    # a real production host the reload succeeds.
+    systemctl daemon-reload || true
 fi
 
 # --- Success ---
