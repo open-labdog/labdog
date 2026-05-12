@@ -25,11 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Add an "About" section to the UI.** Show version, license
-      (AGPL-3.0-or-later), commit SHA / build date, and a link to the
-      project repo. Useful for support ("which version are you on?")
-      and required for AGPL attribution surfacing. Likely lives under
-      Settings or as a footer link.
 - [ ] **Smoke-test the packaging artifacts.** A static audit pass over
       `packaging/` is done (license/homepage/maintainer fixed, maintainer
       scripts made deb+rpm portable, systemd unit hardened, TOML config
