@@ -4,14 +4,19 @@ name: CI
 # the chosen ref:
 #   * PR to dev OR dispatch on a feature/dev branch
 #       → full suite: lint, test, build test image, scans
-#   * push OR dispatch on main
-#       → build and publish prod image + deploy docs
-#   * push OR dispatch on a v* tag
-#       → build release artifacts
+#   * PR to main (release PR from dev)
+#       → full suite + version-check job (validates VERSION file is
+#         bumped, semver-shaped, and the resulting v$VERSION tag is
+#         not already taken)
+#   * push OR dispatch on main (= a release PR merged)
+#       → build and publish prod image + deploy docs + cut release
+#         (read VERSION → build .deb/.rpm/.tar.gz → tag the merge
+#         commit v$VERSION → create GitHub Release with packages)
 #
-# Direct pushes to main are blocked by branch protection. All changes
-# flow through dev PRs; by the time a dev→main PR merges, every check
-# has already passed.
+# Direct pushes to main are blocked by branch protection. Releases
+# are triggered ONLY by the merge of a release PR to main; there is
+# no longer a separate "push a v* tag" path. The tag is created
+# automatically as a side effect of the release job.
 #
 # Secrets required (configure in repo Settings → Secrets and variables):
 #   * DOCKER_HUB_PAT  — Docker Hub personal access token (secret)
@@ -24,9 +29,8 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
-    branches: [dev]
+    branches: [dev, main]
   workflow_dispatch:
 
 concurrency:
@@ -37,6 +41,54 @@ permissions:
   contents: read
 
 jobs:
+
+  # ---- RELEASE GATE -----------------------------------------------------
+
+  # Runs only on PRs to main (= release PRs). Blocks the merge unless:
+  #   1. A `VERSION` file exists at repo root with valid semver content
+  #      (X.Y.Z optionally with a -prerelease suffix).
+  #   2. The version is bumped relative to main's current `VERSION`
+  #      (or main has no VERSION file yet — first-time bootstrap allowed).
+  #   3. No `v$VERSION` tag already exists upstream.
+  # Passing this job is what makes the merge meaningful — the merge
+  # itself triggers `release-artifacts` below.
+  version-check:
+    if: >-
+      github.event_name == 'pull_request'
+      && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate VERSION bump
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          if [ ! -f VERSION ]; then
+            echo "::error file=VERSION::VERSION file is missing at repo root."
+            exit 1
+          fi
+          HEAD_V=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$HEAD_V" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.+-]+)?$ ]]; then
+            echo "::error file=VERSION::'$HEAD_V' is not valid semver. Use X.Y.Z or X.Y.Z-prerelease."
+            exit 1
+          fi
+          BASE_V=$(git show "origin/${BASE_REF}:VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+          if [ -z "$BASE_V" ]; then
+            echo "::notice::No VERSION file on ${BASE_REF} — first-time bootstrap of '$HEAD_V'."
+          elif [ "$HEAD_V" = "$BASE_V" ]; then
+            echo "::error file=VERSION::VERSION not bumped (${BASE_REF} has '$BASE_V'). Bump VERSION before merging."
+            exit 1
+          else
+            echo "Version bump: $BASE_V → $HEAD_V"
+          fi
+          if git ls-remote --tags origin "refs/tags/v${HEAD_V}" | grep -q .; then
+            echo "::error file=VERSION::Tag v${HEAD_V} already exists upstream. Bump VERSION further."
+            exit 1
+          fi
+          echo "Version check passed: v${HEAD_V} will be released on merge."
 
   # ---- LINT -------------------------------------------------------------
 
@@ -350,51 +402,81 @@ jobs:
 
   # ---- RELEASE ARTIFACTS ------------------------------------------------
   #
-  # Runs on push or dispatch of a v* tag and produces .tar.gz / .deb /
-  # .rpm / SHA256SUMS via packaging/build.sh, then attaches them to an
-  # auto-created GitHub Release via softprops/action-gh-release. To
-  # smoke-test the packaging path without cutting a real release, run
-  # ./packaging/build.sh locally — there's no longer a CI dry-run mode.
+  # Runs on every push to main (= a release PR was just merged). Reads
+  # the version from `VERSION` at repo root, builds .tar.gz / .deb /
+  # .rpm / SHA256SUMS via packaging/build.sh, tags the merge commit
+  # `v$VERSION`, and creates a GitHub Release with the packages
+  # attached. Skips cleanly (with a notice) if the v$VERSION tag
+  # already exists — covers re-runs of the same merge commit.
+  #
+  # The version-check job above gates the PR so that this job almost
+  # never sees a missing/duplicate VERSION on main; the runtime checks
+  # below are belt-and-braces. To smoke-test packaging locally, run
+  # ./packaging/build.sh — there is no CI dry-run mode.
 
   release-artifacts:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # required for action-gh-release to create the release
+      contents: write  # push the auto-tag and create the release
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need full history + tags for the duplicate-tag check and
+          # the tag-push step.
+          fetch-depth: 0
+      - name: Read VERSION
+        id: ver
+        run: |
+          set -euo pipefail
+          if [ ! -f VERSION ]; then
+            echo "::error file=VERSION::VERSION file missing at repo root — release skipped."
+            exit 1
+          fi
+          V=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.+-]+)?$ ]]; then
+            echo "::error file=VERSION::'$V' is not valid semver."
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # Skip cleanly on re-run of the same commit (or any case
+          # where the tag already exists).
+          if git rev-parse "refs/tags/v$V" >/dev/null 2>&1; then
+            echo "::notice::Tag v$V already exists. Release was already cut for this version — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Building release v$V from commit ${GITHUB_SHA}"
+          fi
       - uses: actions/setup-python@v5
+        if: steps.ver.outputs.skip != 'true'
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
+        if: steps.ver.outputs.skip != 'true'
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install nfpm (for .deb / .rpm)
+        if: steps.ver.outputs.skip != 'true'
         run: |
           NFPM_VERSION=2.41.3
           curl -sSL \
             "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
             | sudo tar -xzC /usr/local/bin nfpm
           nfpm --version
-      - name: Derive version string
-        id: ver
-        run: |
-          VERSION="${GITHUB_REF#refs/tags/v}"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building release artifacts for version $VERSION"
-      - name: Sync version files to tag
+      - name: Sync version files to VERSION
         # Rewrite backend/pyproject.toml and frontend/package.json so
-        # the in-tree version strings match the tag before the build
-        # step bakes them into the artifacts.
+        # the in-tree version strings match the VERSION file before
+        # the build step bakes them into the artifacts. Mirrors what
+        # /api/version reads at runtime via importlib.metadata.
+        if: steps.ver.outputs.skip != 'true'
         env:
           V: ${{ steps.ver.outputs.version }}
         run: |
-          # backend/pyproject.toml — sed regex anchored to start of
-          # line. The file has exactly one top-level `version = "..."`
-          # entry under [project]; the assertion below fails the build
-          # if a future edit introduces a second match.
           MATCHES=$(grep -c '^version = ' backend/pyproject.toml)
           if [ "$MATCHES" != "1" ]; then
             echo "::error::expected exactly 1 top-level version line in backend/pyproject.toml, found $MATCHES"
@@ -403,33 +485,49 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"${V}\"/" backend/pyproject.toml
           python -c "import tomllib; d=tomllib.load(open('backend/pyproject.toml','rb')); assert d['project']['version']=='${V}', d['project']['version']"
 
-          # frontend/package.json — JSON.parse + JSON.stringify
-          # round-trip. Preserves 2-space indent and trailing newline.
           node -e "const f='frontend/package.json'; const j=JSON.parse(require('fs').readFileSync(f,'utf8')); j.version=process.env.V; require('fs').writeFileSync(f, JSON.stringify(j, null, 2)+'\n')"
           node -e "const j=JSON.parse(require('fs').readFileSync('frontend/package.json','utf8')); if(j.version!==process.env.V){console.error('version mismatch:',j.version);process.exit(1)}"
 
           echo "Synced backend/pyproject.toml and frontend/package.json to ${V}"
       - name: Build release artifacts
+        if: steps.ver.outputs.skip != 'true'
         run: ./packaging/build.sh --version="${{ steps.ver.outputs.version }}"
       - name: Generate unified SHA256SUMS
+        if: steps.ver.outputs.skip != 'true'
         working-directory: packaging/dist
         run: |
           sha256sum labdog-* labdog_* > SHA256SUMS
           echo "=== SHA256SUMS ==="
           cat SHA256SUMS
       - name: List artifacts
+        if: steps.ver.outputs.skip != 'true'
         run: ls -la packaging/dist/
       - name: Upload artifacts to workflow run
         # Mirror the artifacts onto the workflow run so a failed
         # release-create still lets you download what was built.
+        if: steps.ver.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: release-artifacts-${{ steps.ver.outputs.version }}
           path: packaging/dist/
           retention-days: 7
+      - name: Tag merge commit and push
+        # Auto-tag is the only way the v$VERSION tag enters the repo
+        # under the new flow; humans never push tags by hand.
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${V}" -m "Release v${V}"
+          git push origin "v${V}"
       - name: Create GitHub Release
+        if: steps.ver.outputs.skip != 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
           files: |
             packaging/dist/*.tar.gz
             packaging/dist/*.deb
