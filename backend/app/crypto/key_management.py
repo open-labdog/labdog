@@ -1,4 +1,5 @@
 import base64
+import binascii
 import os
 
 from cryptography.exceptions import UnsupportedAlgorithm
@@ -7,15 +8,33 @@ from app.config import settings
 
 
 def get_master_key() -> bytes:
-    """Load master key from ENCRYPTION_KEY env var. Must be 32 bytes base64-encoded."""
+    """Load master key from ENCRYPTION_KEY env var.
+
+    Must decode to exactly 32 bytes. Accepts both standard
+    (``+``/``/``) and url-safe (``-``/``_``) base64 alphabets, with
+    or without ``=`` padding. Invalid characters are rejected with a
+    clear error rather than being silently dropped.
+    """
     raw = settings.security.encryption_key
+    # Normalise url-safe chars to standard so a single strict decode
+    # accepts either alphabet. Without validate=True, b64decode would
+    # silently drop unknown chars and produce a shorter byte string —
+    # the original BUG-45 failure mode.
+    normalised = raw.translate(_URLSAFE_TO_STANDARD)
+    padded = normalised + "=" * (-len(normalised) % 4)
     try:
-        key = base64.b64decode(raw)
-    except Exception as e:
-        raise ValueError(f"ENCRYPTION_KEY is not valid base64: {e}") from e
+        key = base64.b64decode(padded, validate=True)
+    except binascii.Error as e:
+        raise ValueError(
+            "ENCRYPTION_KEY is not valid base64 "
+            f"(standard or url-safe, 32 bytes): {e}"
+        ) from e
     if len(key) != 32:
         raise ValueError(f"ENCRYPTION_KEY must decode to exactly 32 bytes, got {len(key)}")
     return key
+
+
+_URLSAFE_TO_STANDARD = str.maketrans({"-": "+", "_": "/"})
 
 
 def generate_master_key() -> str:
