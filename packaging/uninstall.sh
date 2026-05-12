@@ -68,8 +68,11 @@ rm -rf /usr/lib/labdog
 rm -rf /run/labdog
 
 # --- Reload systemd ---
+# Tolerate environments where systemd isn't running as PID 1 — the
+# unit file is already gone, so a failed reload doesn't matter, and
+# the --purge block below would otherwise be silently skipped.
 if command -v systemctl >/dev/null 2>&1; then
-    systemctl daemon-reload
+    systemctl daemon-reload || true
 fi
 
 # --- Purge (config, data, logs, user) ---
