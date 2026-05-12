@@ -11,8 +11,16 @@ DESTDIR      ?= $(CURDIR)/staging
 PREFIX       ?= /usr/lib/labdog
 DIST         ?= $(CURDIR)/dist
 
+# Build metadata baked into backend/app/_build_info.py at package time
+# so the runtime /api/version endpoint can report it for non-Docker
+# installs (.deb / .rpm / .tar.gz). Defaults come from the local git
+# checkout and the wall clock; override from CI to inject the canonical
+# release SHA + build date.
+COMMIT_SHA   ?= $(shell git rev-parse HEAD 2>/dev/null || echo "")
+BUILD_DATE   ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+
 # --- Phony targets ---
-.PHONY: help build build-venv _build-venv build-frontend _build-frontend clean deb rpm tarball all
+.PHONY: help build build-venv _build-venv build-frontend _build-frontend bake-build-info clean deb rpm tarball all
 
 # --- Default ---
 help:
@@ -32,7 +40,22 @@ help:
 	@echo "  DESTDIR=$(DESTDIR)  PREFIX=$(PREFIX)"
 
 # --- Aggregate ---
-build: build-venv build-frontend
+build: build-venv build-frontend bake-build-info
+
+# --- bake-build-info ---
+# Always re-runs (no skip-if-cached check) so a rebuild with a fresh
+# COMMIT_SHA / BUILD_DATE updates the staged file. Skips silently when
+# COMMIT_SHA is empty (e.g. building outside a git checkout) — the
+# runtime then reports a "dev build".
+bake-build-info:
+	@if [ -z "$(COMMIT_SHA)" ]; then \
+		echo "[bake-build-info] COMMIT_SHA empty — skipping (runtime will report dev build)"; \
+	else \
+		echo "[bake-build-info] Writing _build_info.py (sha=$(COMMIT_SHA), date=$(BUILD_DATE))"; \
+		mkdir -p $(DESTDIR)$(PREFIX)/backend/app; \
+		printf 'COMMIT_SHA = "%s"\nBUILD_DATE = "%s"\n' "$(COMMIT_SHA)" "$(BUILD_DATE)" \
+			> $(DESTDIR)$(PREFIX)/backend/app/_build_info.py; \
+	fi
 
 # --- build-venv ---
 build-venv:
