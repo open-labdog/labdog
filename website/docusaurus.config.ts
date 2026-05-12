@@ -64,11 +64,16 @@ const config: Config = {
   ],
 
   themeConfig: {
+    image: 'img/social-card.png',
     colorMode: {
       respectPrefersColorScheme: true,
     },
     navbar: {
       title: 'LabDog',
+      logo: {
+        alt: 'LabDog',
+        src: 'img/logo.svg',
+      },
       items: [
         {
           type: 'docSidebar',

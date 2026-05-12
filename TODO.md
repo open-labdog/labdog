@@ -25,10 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Replace website favicon and social card.** `website/static/img/favicon.ico`
-      is the Docusaurus default. Replace with a LabDog favicon and add a
-      proper `image:` social card in `website/docusaurus.config.ts` once
-      branding assets exist.
 - [ ] **Add an "About" section to the UI.** Show version, license
       (AGPL-3.0-or-later), commit SHA / build date, and a link to the
       project repo. Useful for support ("which version are you on?")
