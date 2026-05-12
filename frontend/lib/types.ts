@@ -777,3 +777,16 @@ export interface ValidateCronResponse {
   message: string | null
   next_run_at: string[]
 }
+
+// ---------------------------------------------------------------------------
+// Version / build metadata  (GET /api/version — public, no auth)
+// ---------------------------------------------------------------------------
+
+export interface VersionInfo {
+  version: string
+  commit_sha: string | null
+  commit_sha_short: string | null
+  build_date: string | null
+  license: string
+  repo_url: string
+}

@@ -253,6 +253,13 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
       </nav>
 
       <div className="mt-auto border-t border-slate-700 pt-4 space-y-3">
+        <Link
+          href="/settings/about"
+          onClick={onNavigation}
+          className="block text-xs text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          About LabDog
+        </Link>
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-300 truncate">{user?.email}</div>
           <Button

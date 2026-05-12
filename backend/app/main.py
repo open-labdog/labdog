@@ -51,6 +51,7 @@ from app.api.ssh_keys import router as ssh_keys_router
 from app.api.ssh_terminal import router as ssh_terminal_router
 from app.api.sync import router as sync_router
 from app.api.user_sync import router as user_sync_router
+from app.api.version import router as version_router
 from app.api.webhooks import router as webhooks_router
 from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
@@ -407,6 +408,7 @@ def create_app() -> FastAPI:
     app.include_router(proxmox_discovery_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 
+    app.include_router(version_router)
     app.include_router(webhooks_router)
 
     @app.get("/health")
