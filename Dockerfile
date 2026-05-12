@@ -50,6 +50,14 @@ COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
 # Frontend static files
 COPY --from=frontend-builder --chown=labdog:labdog /app/out/ /usr/lib/labdog/frontend/out/
 
+# Build metadata. CI passes both via --build-arg in the build-image and
+# build-test-image jobs; a local `docker build` without them yields empty
+# values and /api/version reports a "dev build".
+ARG GIT_SHA=""
+ARG BUILD_DATE=""
+ENV LABDOG_COMMIT_SHA=$GIT_SHA \
+    LABDOG_BUILD_DATE=$BUILD_DATE
+
 USER labdog
 EXPOSE 8000
 CMD ["python", "-m", "app"]
