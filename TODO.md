@@ -34,11 +34,18 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       artifacts`. Mirrors the smoke procedure that was run by hand —
       see the smoke scripts kept under /tmp/labdog-pkg-test/ during
       v0.2.0 prep for the shape they should take.
-- [ ] **Manifest-validation CI check on labdog-playbooks.** Add a
-      GitHub Actions job that validates every `*.manifest.yml`
-      against `app.actions.manifest.ActionManifest.model_validate`.
-      Catches typos in pack contributions before they reach a
-      labdog instance.
+- [ ] **Land manifest-validation CI in labdog-playbooks.** Workflow
+      + validator script produced during v0.2.0 prep (sit under
+      `/tmp/labdog-pkg-test/labdog-playbooks-ci/` with
+      `LAND-INSTRUCTIONS.md`). Validator checks every
+      `actions/*/manifest.yml` against
+      `app.actions.manifest.ActionManifest` by checking out
+      `open-labdog/labdog@main` and importing the model directly —
+      zero schema duplication. Verified locally against the bundled
+      pack (3/3 pass) and against a deliberately-broken manifest
+      (correct `::error file=…::` annotation, exit 1). Still open:
+      copy the two files into `open-labdog/labdog-playbooks` and
+      confirm the gate fires on a real PR.
 
 ---
 
