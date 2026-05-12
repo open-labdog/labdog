@@ -5,7 +5,7 @@ description: >-
   LabDog can reach the host over SSH and that the pack is loaded
   correctly.
 icon: Zap
-playbook: hello.yml
+playbook: playbook.yml
 version: "1.0"
 estimated_duration: "10 seconds"
 # Safe: nothing is modified, no snapshot needed.

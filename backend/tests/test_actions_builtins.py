@@ -82,34 +82,38 @@ def test_pack_loader_skips_underscore_keyed_manifests(tmp_path: Path) -> None:
     actions_dir.mkdir(parents=True)
 
     # Bad manifest with reserved-prefix key (rejected by validator).
-    (actions_dir / "_evil.manifest.yml").write_text(
+    evil_dir = actions_dir / "evil"
+    evil_dir.mkdir()
+    (evil_dir / "manifest.yml").write_text(
         yaml.safe_dump(
             {
                 "key": "_evil",
                 "name": "x",
                 "description": "x",
                 "icon": "Box",
-                "playbook": "evil.yml",
+                "playbook": "playbook.yml",
                 "version": "1.0",
                 "estimated_duration": "1m",
             }
         )
     )
     # A second, valid manifest in the same pack — must still load.
-    (actions_dir / "good.manifest.yml").write_text(
+    good_dir = actions_dir / "good"
+    good_dir.mkdir()
+    (good_dir / "manifest.yml").write_text(
         yaml.safe_dump(
             {
                 "key": "good",
                 "name": "Good",
                 "description": "ok",
                 "icon": "Box",
-                "playbook": "good.yml",
+                "playbook": "playbook.yml",
                 "version": "1.0",
                 "estimated_duration": "1m",
             }
         )
     )
-    (actions_dir / "good.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
+    (good_dir / "playbook.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
 
     pack = Pack(name="evil-pack", path=pack_dir, priority=10)
     defns = load_pack(pack)

@@ -44,14 +44,17 @@ Then in the LabDog UI:
 
 ```
 <pack>/
-├── pack.yml              (optional — pack metadata)
+├── pack.yml                  (optional — pack metadata)
 ├── actions/
-│   ├── <key>.yml         (the Ansible playbook)
-│   └── <key>.manifest.yml  (the LabDog action definition)
-└── roles/                (optional)
-    └── <role-name>/      (standard Ansible role layout)
+│   └── <key>/                (one directory per action)
+│       ├── manifest.yml      (the LabDog action definition)
+│       ├── playbook.yml      (the Ansible playbook)
+│       └── roles/            (optional — action-private roles)
+└── roles/                    (optional — pack-shared roles)
+    └── <role-name>/
 ```
 
-Every manifest is a sidecar next to its playbook, named
-`<same-stem>.manifest.yml`. LabDog discovers actions by globbing
-`actions/*.manifest.yml` — a playbook without a manifest is ignored.
+An action is a directory: each contains its `manifest.yml` and
+`playbook.yml` side by side. LabDog discovers actions by globbing
+`actions/*/manifest.yml` — a directory without a `manifest.yml` is
+ignored.

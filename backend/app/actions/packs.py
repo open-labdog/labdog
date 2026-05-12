@@ -5,10 +5,13 @@ A pack is a directory shaped like::
     <pack>/
         pack.yml                    # optional — pack metadata
         actions/
-            foo.yml                 # the playbook
-            foo.manifest.yml        # LabDog action manifest
-        roles/                      # optional — Ansible roles referenced by
-            role-something/         # this pack's playbooks
+            <key>/                  # one directory per action
+                manifest.yml        # LabDog action manifest
+                playbook.yml        # the Ansible playbook
+                roles/              # optional — action-private roles
+                    <role-name>/
+        roles/                      # optional — pack-shared Ansible roles
+            <role-name>/
 
 Packs are loaded in priority order. When two packs expose the same action key,
 the higher-priority pack wins. The bundled pack shipped with LabDog has the
@@ -106,7 +109,7 @@ def _manifest_to_definition(
 def load_pack(pack: Pack) -> list[ActionDefinition]:
     """Load all action definitions from a single pack.
 
-    Scans ``<pack>/actions/*.manifest.yml`` and returns an ActionDefinition per
+    Scans ``<pack>/actions/*/manifest.yml`` and returns an ActionDefinition per
     valid manifest. Bad manifests are logged and skipped so one malformed file
     can't take down the whole pack.
     """
@@ -119,7 +122,7 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
         return []
 
     defns: list[ActionDefinition] = []
-    for manifest_path in sorted(pack.actions_dir.glob("*.manifest.yml")):
+    for manifest_path in sorted(pack.actions_dir.glob("*/manifest.yml")):
         try:
             raw = yaml.safe_load(manifest_path.read_text()) or {}
             manifest = ActionManifest.model_validate(raw)

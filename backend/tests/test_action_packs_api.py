@@ -23,20 +23,21 @@ def _git(cwd: Path, args: list[str]) -> None:
 @pytest.fixture
 def origin_repo(tmp_path: Path) -> Path:
     """Initialise a local git repo with one commit, shaped as an action pack
-    (actions/demo.yml + actions/demo.manifest.yml at the root)."""
+    (actions/demo/manifest.yml + actions/demo/playbook.yml at the root)."""
     path = tmp_path / "origin"
     path.mkdir()
     _git(path, ["init", "-b", "main"])
     _git(path, ["config", "user.email", "test@example.com"])
     _git(path, ["config", "user.name", "Test"])
-    (path / "actions").mkdir()
-    (path / "actions" / "demo.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
-    (path / "actions" / "demo.manifest.yml").write_text(
+    demo_dir = path / "actions" / "demo"
+    demo_dir.mkdir(parents=True)
+    (demo_dir / "playbook.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
+    (demo_dir / "manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
         "description: Demo action\n"
         "icon: Box\n"
-        "playbook: demo.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -64,14 +65,17 @@ async def git_repo_row(db, origin_repo: Path) -> GitRepository:
 def local_pack_dir(tmp_path: Path) -> Path:
     """Materialise a ready-to-load local pack directory (no git)."""
     p = tmp_path / "my-local-pack"
-    (p / "actions").mkdir(parents=True)
-    (p / "actions" / "hello.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
-    (p / "actions" / "hello.manifest.yml").write_text(
+    hello_dir = p / "actions" / "hello"
+    hello_dir.mkdir(parents=True)
+    (hello_dir / "playbook.yml").write_text(
+        "---\n- name: hello\n  hosts: all\n  tasks: []\n"
+    )
+    (hello_dir / "manifest.yml").write_text(
         "key: hello-local\n"
         "name: Hello from local\n"
         "description: Demo\n"
         "icon: Box\n"
-        "playbook: hello.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -296,16 +300,17 @@ async def test_git_pack_with_subpath(superuser_client, tmp_path, db, monkeypatch
     _git(origin, ["init", "-b", "main"])
     _git(origin, ["config", "user.email", "t@example.com"])
     _git(origin, ["config", "user.name", "Test"])
-    (origin / "vendor" / "my-pack" / "actions").mkdir(parents=True)
-    (origin / "vendor" / "my-pack" / "actions" / "nested.yml").write_text(
+    nested_dir = origin / "vendor" / "my-pack" / "actions" / "nested"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "playbook.yml").write_text(
         "---\n- name: nested\n  hosts: all\n  tasks: []\n"
     )
-    (origin / "vendor" / "my-pack" / "actions" / "nested.manifest.yml").write_text(
+    (nested_dir / "manifest.yml").write_text(
         "key: nested\n"
         "name: Nested\n"
         "description: From a subpath\n"
         "icon: Box\n"
-        "playbook: nested.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -463,16 +468,17 @@ async def test_fresh_conflict_freezes_previous_winner(
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
 
     local_override = tmp_path / "local-override"
-    (local_override / "actions").mkdir(parents=True)
-    (local_override / "actions" / "demo.yml").write_text(
+    demo_dir = local_override / "actions" / "demo"
+    demo_dir.mkdir(parents=True)
+    (demo_dir / "playbook.yml").write_text(
         "---\n- name: demo\n  hosts: all\n  tasks: []\n"
     )
-    (local_override / "actions" / "demo.manifest.yml").write_text(
+    (demo_dir / "manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
         "description: Local override\n"
         "icon: Box\n"
-        "playbook: demo.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )

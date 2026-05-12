@@ -30,16 +30,17 @@ def _make_local_pack(
     action_key: str,
     description: str = "demo",
 ) -> Path:
-    (root / "actions").mkdir(parents=True)
-    (root / "actions" / f"{action_key}.yml").write_text(
+    action_dir = root / "actions" / action_key
+    action_dir.mkdir(parents=True)
+    (action_dir / "playbook.yml").write_text(
         f"---\n- name: {action_key}\n  hosts: all\n  tasks: []\n"
     )
-    (root / "actions" / f"{action_key}.manifest.yml").write_text(
+    (action_dir / "manifest.yml").write_text(
         f"key: {action_key}\n"
         f"name: {action_key}\n"
         f"description: {description}\n"
         "icon: Box\n"
-        f"playbook: {action_key}.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )

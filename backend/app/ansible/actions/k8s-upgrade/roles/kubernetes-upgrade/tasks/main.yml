@@ -1,5 +1,5 @@
 ---
-# The play layer (site.yml) supplies ``node_role`` per-play. We branch
+# The play layer (playbook.yml) supplies ``node_role`` per-play. We branch
 # off it here rather than splitting the role into two roles — the work
 # is 80% identical and the two specialisations (first CP runs
 # ``kubeadm upgrade plan/apply``; everyone else runs
