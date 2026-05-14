@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -35,10 +35,6 @@ class ActionDefinitionOut(BaseModel):
     #: Pack names whose entries for the same key were shadowed by this
     #: one, in processing order. Non-empty only on collisions.
     overridden_from: list[str] = []
-    #: Per-host (the default) or cluster (a single ansible run against
-    #: the whole group with a multi-host inventory). Cluster-mode
-    #: actions require ``group_id`` at submit and refuse host_id.
-    execution_mode: Literal["per_host", "cluster"] = "per_host"
 
 
 class RunCreateBody(BaseModel):

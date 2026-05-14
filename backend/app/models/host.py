@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     Column,
     DateTime,
     Enum,
@@ -31,12 +30,7 @@ class SyncStatus(enum.StrEnum):
     error = "error"
 
 
-# Join table for Host <-> HostGroup many-to-many
-#
-# ``role`` is optional and currently used only by cluster-mode actions
-# (e.g. ``k8s-upgrade``). The CHECK constraint backs the application
-# enum: ``control_plane``, ``worker``, or NULL. Per-host actions
-# ignore the field entirely.
+# Join table for Host <-> HostGroup many-to-many.
 HostGroupMembership = Table(
     "host_group_memberships",
     Base.metadata,
@@ -51,11 +45,6 @@ HostGroupMembership = Table(
         Integer,
         ForeignKey("host_groups.id", ondelete="CASCADE"),
         primary_key=True,
-    ),
-    Column("role", String(length=32), nullable=True),
-    CheckConstraint(
-        "role IS NULL OR role IN ('control_plane', 'worker')",
-        name="ck_host_group_memberships_role_valid",
     ),
 )
 

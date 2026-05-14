@@ -12,7 +12,6 @@ estimated_duration: "5–20 min per node"
 destructive: true
 supports_group: true
 supports_host: false
-execution_mode: cluster
 parameters:
   - key: target_version
     label: Target Kubernetes version

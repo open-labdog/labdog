@@ -102,7 +102,6 @@ def _manifest_to_definition(
         roles_paths=roles_paths,
         verify_playbook_path=verify_playbook_path,
         verify_timeout_seconds=manifest.verify_timeout_seconds,
-        execution_mode=manifest.execution_mode,
     )
 
 

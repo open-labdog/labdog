@@ -59,12 +59,13 @@ estimated_duration: "5–15 min"
 destructive: true                  # enables snapshot/verify/rollback when
                                    # the host has a Proxmox VM mapping
 supports_group: true               # can target a group of hosts?
-supports_host: true                # can target a single host?
-execution_mode: per_host           # per_host (default) or cluster.
-                                   # cluster = single ansible run against
-                                   # the whole group with a multi-host
-                                   # inventory; see "Cluster-mode actions"
-                                   # below.
+supports_host: true                # can target a single host? Set to
+                                   # false to make this a group-only
+                                   # action: LabDog will dispatch as a
+                                   # single ansible-playbook invocation
+                                   # against a flat all-hosts inventory
+                                   # (instead of fanning out per-host).
+                                   # See "Group-dispatch actions" below.
 verify_playbook: ../../verify/post-upgrade.yml   # (optional) pack-supplied
 verify_timeout_seconds: 180                   # verify hook; replaces the
                                               # built-in SSH/services/
@@ -133,9 +134,10 @@ action along with its winning pack name and override history.
 ## Playbook conventions
 
 - `hosts: all` — for per-host actions LabDog generates a single-host
-  inventory per run. Cluster-mode actions get a multi-host inventory
-  shaped under ``all.children.{control_plane,workers}``; see the
-  Cluster-mode actions section below.
+  inventory per run. Group-dispatch actions (`supports_host: false`
+  in the manifest) get a flat multi-host inventory under ``all`` —
+  every member host as a peer, no `children` grouping. See the
+  Group-dispatch actions section below.
 - `become: true` when you need root.
 - Parameters arrive as top-level Ansible variables from `--extra-vars`.
 - `ansible_check_mode=true` is set on dry runs — respect it if the
@@ -166,30 +168,33 @@ keys → both coexist in the registry. Operators reorder packs by
 drag-and-drop; per-key pins are also available from the conflict
 banner at the top of the page.
 
-## Cluster-mode actions
+## Group-dispatch actions
 
-Actions whose manifest declares ``execution_mode: cluster`` are
+Actions whose manifest declares ``supports_host: false`` are
 dispatched as a single ``ansible-playbook`` invocation against a
-multi-host inventory (rather than the per-host fan-out used for
-``per_host`` actions). The bundled
+flat multi-host inventory (rather than the per-host fan-out used for
+``supports_host: true`` actions). The bundled
 [`actions/k8s-upgrade/`](./actions/k8s-upgrade) is the canonical
 example — it drains, ``kubeadm``-upgrades, and re-admits each node
-serially via Ansible's own ``serial:`` keyword across the
-``control_plane`` and ``workers`` groups.
+serially via Ansible's own ``serial:`` keyword.
 
-For a cluster-mode pack:
+For a group-dispatch pack:
 
-- Set ``execution_mode: cluster`` plus ``supports_host: false`` and
-  ``supports_group: true`` in the manifest.
-- Multi-play orchestration goes in `playbook.yml` itself (one file
-  with multiple plays). The play layer does the orchestration with
-  ``serial:``, ``hosts:``, ``delegate_to:``. LabDog hands you a
-  ``control_plane`` and ``workers`` group in the inventory; the
-  operator assigns the role on each member from the group's Members
-  tab.
-- Cluster-wide ``kubectl`` tasks are easy: ``delegate_to:
-  "{{ groups['control_plane'] | first }}"`` so the playbook doesn't
-  need a kubeconfig on every node.
+- Set ``supports_host: false`` plus ``supports_group: true`` in the
+  manifest. LabDog will refuse host-target submissions and dispatch
+  group-target submissions in a single invocation.
+- LabDog hands you a flat ``all`` group containing every member host.
+  The pack does its own topology discovery (e.g. ``add_host`` based
+  on a stat probe) and uses Ansible primitives (``serial:``,
+  ``delegate_to:``, ``run_once:``) for cluster-wide coordination.
+- For ``kubectl``-style tasks that should only run from one node:
+  combine ``add_host`` (build a dynamic role group in a setup play)
+  with ``delegate_to: "{{ groups['<your-group>'] | first }}"``.
+- **Destructive group-dispatched actions get NO LabDog-managed
+  snapshot/verify/rollback envelope.** A per-host snapshot doesn't
+  compose cleanly with multi-node coordination (rolling kubeadm
+  upgrades, primary/replica failover, etc.). The pack's playbook
+  owns its own safety story.
 
 The k8s-upgrade role under
 [`actions/k8s-upgrade/roles/kubernetes-upgrade/`](./actions/k8s-upgrade/roles/kubernetes-upgrade/)
