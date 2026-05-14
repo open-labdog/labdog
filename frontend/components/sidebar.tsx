@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { ChevronRightIcon } from "lucide-react"
+import { ChevronRightIcon, InfoIcon } from "lucide-react"
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
@@ -256,9 +256,10 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         <Link
           href="/settings/about"
           onClick={onNavigation}
-          className="block text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          className="flex items-center gap-1.5 text-sm text-slate-300 hover:text-white transition-colors"
         >
-          About LabDog
+          <InfoIcon className="w-3.5 h-3.5" />
+          <span>About LabDog</span>
         </Link>
         <div className="flex items-center justify-between">
           <div className="text-sm text-slate-300 truncate">{user?.email}</div>

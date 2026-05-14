@@ -9,8 +9,6 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-import pytest
-
 from app.actions.manifest import ActionManifest
 from app.actions.packs import (
     Pack,
@@ -81,22 +79,24 @@ def test_manifest_parses_minimal_fields():
     assert m.parameters == []
 
 
-def test_manifest_rejects_unknown_fields():
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        ActionManifest.model_validate(
-            {
-                "key": "demo",
-                "name": "Demo",
-                "description": "d",
-                "icon": "Box",
-                "playbook": "playbook.yml",
-                "version": "1.0",
-                "estimated_duration": "1 min",
-                "mystery_field": "oops",
-            }
-        )
+def test_manifest_ignores_unknown_fields():
+    """Unknown fields (e.g. retired ``execution_mode``) are silently
+    dropped so old manifests on disk don't break a fresh build."""
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "playbook.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+            "mystery_field": "oops",
+            "execution_mode": "cluster",
+        }
+    )
+    assert not hasattr(m, "mystery_field")
+    assert not hasattr(m, "execution_mode")
 
 
 def test_manifest_accepts_verify_playbook_fields():
@@ -282,7 +282,7 @@ def test_non_colliding_actions_have_no_override_history(tmp_path: Path):
 
 
 def test_bundled_pack_exposes_expected_actions():
-    """Sanity check — the shipped bundled pack still produces the three
+    """Sanity check — the shipped bundled pack still produces the
     actions LabDog has always had. Protects against manifest regressions."""
     from app.actions.registry import ACTION_REGISTRY
 
@@ -297,8 +297,3 @@ def test_bundled_pack_exposes_expected_actions():
     assert linux.playbook_path.is_file()
     param_keys = {p.key for p in linux.parameters}
     assert param_keys == {"auto_reboot", "reboot_timeout", "cleanup"}
-    # k8s-upgrade is the cluster-mode action — surfaces only on groups.
-    k8s = ACTION_REGISTRY["k8s-upgrade"]
-    assert k8s.execution_mode == "cluster"
-    assert k8s.supports_host is False
-    assert k8s.supports_group is True

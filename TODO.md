@@ -123,7 +123,7 @@ sync) catches up.
   "cron", "hosts_file", "users", "resolver"]] = []`.
 - Plumb through `_manifest_to_definition` in `app/actions/packs.py`
   and the API `ActionDefinitionOut`.
-- After a successful action run (both per-host and cluster-mode
+- After a successful action run (both per-host and group-dispatch
   paths), if `post_run_sync` is non-empty, dispatch the corresponding
   module sync against the same target via the existing
   `host_sync_orchestrator` / option-c pipeline. Reuses everything:

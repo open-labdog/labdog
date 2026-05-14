@@ -149,20 +149,32 @@ is *not* part of the mirror. A fresh install also auto-registers
 pick up newer playbooks than the in-image snapshot — operators that
 prefer a private fork delete the seeded row and add their own.
 
-### Cluster-mode actions
+### Group-dispatch actions
 
 Most actions fan out per-host (one Celery task per target host with a
 single-host inventory + parallelism). Actions whose manifest declares
-`execution_mode: cluster` are dispatched as a single ansible-playbook
-invocation against a multi-host inventory grouped under
-`all.children.{control_plane, workers}`; the playbook serialises with
-Ansible's `serial:` keyword. The first concrete user is `k8s-upgrade`.
-Per-member roles live on `host_group_memberships.role` (NULL /
-`control_plane` / `worker`); the orchestrator creates one
-`ActionHostRun` anchored to the first control-plane host as the
-"driver" and dispatches `app.tasks.action_cluster.run_action_cluster`.
-`POST /actions/runs` rejects cluster-mode submissions targeting a
-host or a group missing role assignments.
+`supports_host: false` are dispatched as a single ansible-playbook
+invocation against a flat `all` Ansible inventory of every member of
+the targeted group (no `children`/`control_plane`/`workers` shaping —
+labdog has no per-member roles). The pack's playbook owns all
+cluster-wide coordination via Ansible primitives (`serial:`,
+`add_host`, `delegate_to`, `run_once`). The first concrete user is
+`k8s-upgrade`, which probes for
+`/etc/kubernetes/manifests/kube-apiserver.yaml` in a discovery play
+to build dynamic `k8s_control_plane` / `k8s_worker` subgroups, then
+runs the kubeadm upgrade `serial: 1` across each.
+
+The orchestrator picks the dispatch shape from the action's
+`supports_host` flag: `true` (or any group target with
+`supports_host: true`) → per-host fan-out via
+`app.tasks.action_orchestrator`; group target with
+`supports_host: false` → single invocation via
+`app.tasks.action_group.run_action_group`. One `ActionHostRun`
+record is still created per host either way; group-dispatch routes
+per-host events back to those rows by inventory hostname. Destructive
+group-dispatched actions are NOT wrapped in labdog's per-host
+snapshot/verify/rollback envelope — multi-node playbooks own their
+own safety.
 
 ### About / version surface
 

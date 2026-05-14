@@ -15,7 +15,6 @@ import { toast } from "sonner"
 import type {
   ActionDefinition,
   ActionRun,
-  GroupMembership,
   Host,
 } from "@/lib/types"
 
@@ -41,41 +40,6 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     enabled: scope === "group" && open && action?.key === "linux-os-upgrade",
     staleTime: 30_000,
   })
-
-  // Cluster-mode: pull memberships so we can show role counts and
-  // disable submit when any member is unassigned. The submit-time API
-  // validator catches the same conditions; this is a UX nicety.
-  const isClusterMode = action?.execution_mode === "cluster"
-  const { data: clusterMemberships } = useQuery<GroupMembership[]>({
-    queryKey: ["group-memberships", targetId],
-    queryFn: () =>
-      apiFetch<GroupMembership[]>(`/api/groups/${targetId}/memberships`),
-    enabled: scope === "group" && open && isClusterMode,
-    staleTime: 10_000,
-  })
-  const clusterCounts = (() => {
-    const rows = clusterMemberships ?? []
-    return {
-      control_plane: rows.filter((m) => m.role === "control_plane").length,
-      workers: rows.filter((m) => m.role === "worker").length,
-      unassigned: rows.filter((m) => m.role === null).length,
-      total: rows.length,
-    }
-  })()
-  const clusterReady =
-    clusterCounts.total > 0 &&
-    clusterCounts.unassigned === 0 &&
-    clusterCounts.control_plane > 0
-  const clusterBlockedReason = (() => {
-    if (clusterCounts.total === 0) return "Group has no members."
-    if (clusterCounts.unassigned > 0) {
-      return `${clusterCounts.unassigned} member(s) have no cluster role assigned.`
-    }
-    if (clusterCounts.control_plane === 0) {
-      return "Group has no control_plane members."
-    }
-    return null
-  })()
 
   const uniqueCodenames = [...new Set(
     (groupHosts ?? []).map((h) => h.os_codename).filter((c): c is string => Boolean(c))
@@ -135,12 +99,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
         body.host_id = targetId
       } else {
         body.group_id = targetId
-        // Cluster-mode actions don't fan out per-host — they run as
-        // one ansible-playbook invocation. Skip the parallelism knob
-        // (the backend's cluster path ignores it anyway).
-        if (!isClusterMode) {
-          body.parallelism = parallelism
-        }
+        body.parallelism = parallelism
       }
 
       const run = await apiFetch<ActionRun>("/api/actions/runs", {
@@ -201,31 +160,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           }}
         />
 
-        {scope === "group" && isClusterMode && (
-          <div
-            className={`rounded-lg border p-3 text-sm ${
-              clusterReady
-                ? "border-slate-700 bg-slate-800/50"
-                : "border-amber-700 bg-amber-950/40"
-            }`}
-          >
-            <p className="font-medium text-slate-200">Cluster role assignments</p>
-            <p className="mt-1 text-xs text-slate-400">
-              {clusterCounts.control_plane} control_plane,{" "}
-              {clusterCounts.workers} workers,{" "}
-              {clusterCounts.unassigned} unassigned ({clusterCounts.total}{" "}
-              total).
-            </p>
-            {clusterBlockedReason && (
-              <p className="mt-2 text-xs text-amber-300">
-                {clusterBlockedReason} Set roles on the group&apos;s Members
-                tab before running.
-              </p>
-            )}
-          </div>
-        )}
-
-        {scope === "group" && !isClusterMode && (
+        {scope === "group" && (
           <div className="space-y-1.5">
             <Label className="text-sm font-medium text-slate-200">Parallelism</Label>
             <select
@@ -245,13 +180,13 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           <Button
             variant="outline"
             onClick={() => handleSubmit(true)}
-            disabled={submitting || (isClusterMode && !clusterReady)}
+            disabled={submitting}
           >
             Preview (dry-run)
           </Button>
           <Button
             onClick={() => handleSubmit(false)}
-            disabled={submitting || (isClusterMode && !clusterReady)}
+            disabled={submitting}
           >
             {submitting ? "Starting…" : "Run"}
           </Button>

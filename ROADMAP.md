@@ -24,9 +24,10 @@ Currently bundled:
 - `linux-upgrade` — apt/dnf system package upgrade with optional reboot
 - `linux-os-upgrade` — Debian major-version upgrade (e.g. 12 → 13)
   with NIC-rename safety
-- `k8s-upgrade` — `kubeadm`-based drain-upgrade-uncordon runbook,
-  dispatched as a cluster-mode action against a group with
-  `control_plane` / `worker` member roles. Currently apt-only;
+- `k8s-upgrade` — `kubeadm`-based drain-upgrade-uncordon runbook
+  dispatched against a labdog group containing every cluster node.
+  The playbook self-discovers control-plane vs worker by probing each
+  node — no per-member roles in labdog. Currently apt-only;
   broadening to `dnf` is tracked in [TODO.md](TODO.md).
 
 Planned additions:
