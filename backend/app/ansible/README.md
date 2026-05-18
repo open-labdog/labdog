@@ -190,11 +190,16 @@ For a group-dispatch pack:
 - For ``kubectl``-style tasks that should only run from one node:
   combine ``add_host`` (build a dynamic role group in a setup play)
   with ``delegate_to: "{{ groups['<your-group>'] | first }}"``.
-- **Destructive group-dispatched actions get NO LabDog-managed
-  snapshot/verify/rollback envelope.** A per-host snapshot doesn't
-  compose cleanly with multi-node coordination (rolling kubeadm
-  upgrades, primary/replica failover, etc.). The pack's playbook
-  owns its own safety story.
+- **Destructive group-dispatched actions get the same per-host
+  snapshot/verify/rollback envelope as per-host actions.** LabDog
+  snapshots every member with a VM mapping pre-action, runs verify
+  (your ``verify_playbook`` if declared, else the built-in
+  SSH/services/packages check) per-host post-action, and rolls back
+  any host whose action or verify failed (per-host policy — successes
+  keep their state). Make the playbook idempotent so the operator
+  can re-run it against the same group after fixing a partial
+  failure (e.g. probe the node's current state and short-circuit if
+  it's already where the playbook would leave it).
 
 The k8s-upgrade role under
 [`actions/k8s-upgrade/roles/kubernetes-upgrade/`](./actions/k8s-upgrade/roles/kubernetes-upgrade/)
