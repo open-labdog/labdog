@@ -983,7 +983,7 @@ SCHEMA_STATEMENTS = (
 
 SEED_STATEMENTS = (
     """INSERT INTO public.git_repositories (id, name, url, branch, auth_type, ssh_key_id, encrypted_https_token, webhook_secret, last_commit_sha, last_sync_at, created_at, updated_at) VALUES (1, 'labdog-playbooks', 'https://github.com/open-labdog/labdog-playbooks', 'main', 'none', NULL, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-    """INSERT INTO public.action_packs (id, name, enabled, last_synced_at, last_sync_status, last_sync_error, current_sha, created_at, updated_at, source_type, git_repository_id, path, local_path, "position") VALUES (1, 'labdog-playbooks', true, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'git', 1, '', NULL, 1)""",
+    """INSERT INTO public.action_packs (id, name, enabled, last_synced_at, last_sync_status, last_sync_error, current_sha, created_at, updated_at, source_type, git_repository_id, path, local_path, "position") VALUES (1, 'labdog-playbooks', true, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'git', 1, '', NULL, 0)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (1, 'drift.check_interval_minutes', '30', 'int', 'Minutes between automatic drift checks', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (2, 'ssh.connect_timeout', '10', 'int', 'SSH connection timeout in seconds', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (3, 'ansible.playbook_timeout', '300', 'int', 'Ansible playbook execution timeout in seconds', CURRENT_TIMESTAMP, NULL)""",

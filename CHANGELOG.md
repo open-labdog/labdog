@@ -7,6 +7,61 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Changed
+
+#### Action pack precedence: drop positional ordering, pure per-key pinning
+
+**Breaking change to the action-pack precedence model.** The
+`ActionPack.position` column and the drag-to-reorder UI on
+`/action-packs` are gone. Each action key now has at most one
+source pack chosen by an explicit operator pin (the
+`action_resolution` table). Contested keys without a pin are
+*unresolved* — the action is unrunnable until the operator picks a
+winner. Uncontested keys still win automatically.
+
+- **Schema migration `0004_drop_pack_position`** drops the
+  `action_packs.position` column. Before dropping, the migration
+  backfills `action_resolution` rows from the current
+  `action_registry_snapshot` so existing positional defaults
+  become explicit pins — operators see no behavioural change at
+  upgrade time. Pins they don't want can be edited or deleted in
+  the UI later. Downgrade re-adds the column with default 0
+  (best-effort; perfect roundtrip impossible because pins may
+  have been edited between up/down).
+- **`POST /api/action-packs/reorder` deleted.** The endpoint and
+  its `ActionPackReorderRequest` schema are gone.
+- **`POST /api/action-packs/{id}/claim-all-keys` added.** Bulk-pin
+  every key a pack contributes via this pack; returns
+  `{created, updated, skipped}` counts. Idempotent.
+  Confirmation dialog on `/action-packs` shows the diff before
+  commit. Overwrites pins on other packs for the same keys.
+- **`POST /api/actions/runs` rejects unresolved actions** with
+  HTTP 409 and a clear message directing the operator to
+  `/action-packs` to pick a winner.
+- **`GET /api/actions/`** gains `winning_pack_id: int | None` and
+  `unresolved: bool` on every `ActionDefinitionOut`. The frontend
+  reads these to disable the Run button + show an Unresolved
+  badge on action cards.
+- **`GET /api/action-resolutions`** gains `is_unresolved: bool`
+  on each row; `current_winner` is `null` when unresolved.
+- **`/action-packs` page rewritten.** Top: Action Registry table
+  (every action key, winner, inline radio picker when contested).
+  Bottom: Pack Sources table (add/sync/edit/delete + "Make
+  winner for all keys" button per row). The bundled pack appears
+  as a read-only built-in row. No drag handles, no position
+  column. Conflict resolution flows inline — the standalone
+  `ConflictResolutionDialog` component is gone.
+- **Run dialog and action cards.** When an action's
+  `winning_pack_id` is null (and it's not a built-in), the action
+  card shows an "Unresolved" badge with a link to `/action-packs`
+  and the Run button is disabled. The Run dialog refuses to
+  submit with the same message inline.
+
+Migration is one-way safe — existing installs become explicit pins
+that mirror the prior positional winner. The freeze-on-fresh-
+conflict behaviour is unchanged (auto-pin previous winner; UI
+surfaces "Frozen" until the operator confirms).
+
 ## [0.2.0] — 2026-05-13
 
 ### Added

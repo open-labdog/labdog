@@ -115,7 +115,7 @@ def test_pack_loader_skips_underscore_keyed_manifests(tmp_path: Path) -> None:
     )
     (good_dir / "playbook.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
 
-    pack = Pack(name="evil-pack", path=pack_dir, priority=10)
+    pack = Pack(name="evil-pack", path=pack_dir)
     defns = load_pack(pack)
 
     keys = [d.key for d in defns]

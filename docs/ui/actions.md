@@ -31,7 +31,6 @@ The catalog comes from two sources:
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
   - [Pack precedence and resolving conflicts](#pack-precedence-and-resolving-conflicts)
-  - [Active Action Catalog](#active-action-catalog)
   - [Provenance: which pack won?](#provenance-which-pack-won)
 - [Writing your own playbook (BYO)](#writing-your-own-playbook-byo)
   - [Pack layout](#pack-layout)
@@ -161,10 +160,11 @@ scheduled_actions:
 
 A pack is a collection of playbooks + their LabDog manifests. Each
 action key in the registry comes from exactly one pack. When two packs
-declare the same key, the pack at the top of the list on
-**Action Packs** wins (see
-[below](#pack-precedence-and-resolving-conflicts)); the shadowed pack's
-copy is still contributed to the registry history for debugging.
+declare the same key, the operator pins which pack wins via a per-key
+*resolution*; until pinned, the key is **unresolved** and the action
+is unrunnable (see
+[below](#pack-precedence-and-resolving-conflicts)). There is no
+global pack ordering.
 
 ### Bundled pack
 
@@ -179,8 +179,13 @@ actions:
 
 The bundled pack is immutable — you can't edit or delete it from the UI.
 It exists as a safety net so LabDog keeps working even if all other
-packs are unreachable. You override its actions by adding a pack —
-any pack listed on **Action Packs** sits above bundled by default.
+packs are unreachable. It appears as a read-only row in the **Pack
+Sources** table on `/action-packs` (no Sync / Edit / Delete buttons —
+just a "built-in" badge) so its always-present-candidate status is
+discoverable.
+
+To override a bundled action, add a pack that declares the same key
+and pin the per-key resolution to your pack on `/action-packs`.
 
 ### Adding a pack
 
@@ -188,7 +193,7 @@ Git repository configuration (URL, branch, credentials) is **not**
 duplicated on the pack. Configure the repo once under
 [Git Repos](gitops-ui.md), then point one or more packs at it. The
 pack only carries its own metadata — name, source type, a subpath,
-position, enabled flag.
+enabled flag.
 
 **Recommended path — the repo onboarding wizard.** When the repo
 contains action packs (and optionally GitOps group YAML), use
@@ -224,8 +229,10 @@ Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 | Filesystem path | Absolute path on the LabDog host. Only shown for source = Local. LabDog reads the directory in place — nothing is cloned. |
 | Enabled | Uncheck to keep the pack configured but out of the registry. |
 
-A new pack lands at the top of the list (highest position). Drag rows
-to reorder afterwards — see
+A new pack joins the **Pack Sources** table — packs are unordered.
+Any action key the pack contributes that doesn't collide with an
+existing pack wins automatically. Keys that *do* collide become
+*unresolved* (you must pin a winner). See
 [below](#pack-precedence-and-resolving-conflicts).
 
 On save, LabDog resolves the linked repository's URL, branch, and
@@ -245,87 +252,84 @@ require pasted `known_hosts`.
 
 ### Pack precedence and resolving conflicts
 
-Packs layer additively. The **Action Packs** page shows a single
-ordered list — top of the list wins on action-key collisions. The
-bundled pack sits implicitly below every listed pack and never
-appears as a row. On keys that only appear in one pack, nothing
-conflicts — both contribute freely and the registry is the union.
+Packs are **unordered**. Each action key has at most one source
+pack — the **winner** that the registry serves. There are three
+cases:
 
-Drag rows to reorder. Top-first ordering matches the firewall-rules
-page convention: the row at the top has the highest priority.
+| Case | What happens |
+|---|---|
+| **Uncontested** — one pack declares the key | That pack wins automatically. Status `OK`. No picker. |
+| **Contested + pinned** — multiple packs declare the key, operator has chosen a winner | The pinned pack wins. Status `Pinned` (or `Frozen` for auto-pins LabDog wrote on a fresh sync conflict, awaiting your confirmation). |
+| **Contested + unresolved** — multiple packs declare the key, no pin yet | Action is *unrunnable*: `POST /api/actions/runs` returns 409, the Run button is disabled on host/group action cards, and the row is amber-tinted in the registry table with a "Pick winner" prompt. |
 
-**Common pattern:**
+The **Action Packs** page is two surfaces stacked vertically:
 
-```
-my-local-pack   ← a playbook I'm still iterating on (top)
-  ↓ overrides
-my-team-pack    ← redeclares linux-upgrade (drains K8s first),
-                  adds: deploy-frontend, rotate-secrets
-  ↓ overrides
-labdog-default  ← adds: reboot-host, rotate-certs
-  ↓ overrides
-bundled         ← linux-upgrade, linux-os-upgrade, k8s-upgrade
-                  (implicit; not shown on the page)
-```
+1. **Action Registry** (primary surface). One row per action key:
+   action key, winner, status. Contested rows expand on click into
+   an inline radio group with every candidate pack — pick one and
+   it auto-saves via `POST /api/action-resolutions/{key}`.
+   Uncontested rows are plain text — there's no picker because the
+   key has only one contributor; if and when another pack appears
+   later, freeze-on-fresh-conflict kicks in and you pin then.
+2. **Pack Sources** (management-only). Add, sync, edit, delete
+   packs. Each row also has a **Make winner for all keys** button
+   that bulk-pins every key the pack contributes via `POST
+   /api/action-packs/{id}/claim-all-keys` — a confirmation dialog
+   shows the diff (how many keys are already pinned here, how many
+   would be moved from other packs) before commit. The bundled pack
+   is a read-only row here so its presence is discoverable.
 
-#### Operator-pinned winners
+#### Bulk-pin: "Make winner for all keys"
 
-Drag-to-reorder is the default mechanism, but every contested key
-can also be pinned individually. The **conflict banner** at the top
-of **Action Packs** lists keys contributed by more than one pack —
-click it to open the resolution modal. Each row offers a radio per
-candidate pack (including bundled when it contributes). The pin
-sticks across reorders and survives sync until you reset it.
+When you add a new pack that should own every key it contributes,
+clicking **Make winner for all keys** in the Pack Sources row is
+the one-click flow. The endpoint writes one `action_resolution` row
+per key the pack contributes (creating new rows where the key was
+unresolved, overwriting rows that pointed at other packs, leaving
+rows that already pointed here untouched). The confirmation dialog
+shows the per-category counts before commit and the toast surfaces
+the final `{created, updated, skipped}` numbers.
 
 #### Freeze-on-fresh-conflict
 
 LabDog never silently flips a winner. When a sync introduces a new
 manifest that turns a previously-uncontested key into a contested
-one, LabDog **freezes** the winner to whichever pack was previously
-serving that key — even if position-based default would now favour
-the newcomer. The conflict banner highlights frozen rows with a
-"frozen" badge so you can confirm the choice (or pick a different
-pack). Once you set or clear a resolution explicitly, the freeze
-clears.
+one, the rebuild **freezes** the winner to whichever pack was
+previously serving that key by writing an `action_resolution` row
+pinning it. The row's `decided_by_user_id` is `NULL`, which the UI
+surfaces as a **Frozen** status — you can confirm by re-pinning the
+same pack (which sets `decided_by_user_id` to you and clears the
+Frozen badge) or switch to a different candidate. Without the
+freeze, an upstream sync could turn a working action into an
+unresolved one — frozen behaviour preserves status quo until you
+look.
 
-### Active Action Catalog
+#### Pack disappears
 
-The lower half of `/action-packs` shows the **Active Action Catalog**
-— every action key in the live registry with its winning pack and
-any shadowed candidates. One row per key, sorted alphabetically:
-
-| Column | Meaning |
-|---|---|
-| Action key | Stable identifier from the manifest (`linux-upgrade`, `k8s-upgrade`, …). |
-| Winning pack | Name of the pack currently serving this key. |
-| Status | `Uncontested` (only one pack contributes) or a clickable `Contested` chip (multiple packs declare the key — opens the per-key resolution dialog). |
-| Shadowed candidates | Other packs that declare this key but lost. Empty when uncontested. |
-
-The Contested chip opens the same per-key conflict resolution
-dialog reachable from the conflict banner above the pack list, so
-operators can audit precedence without drilling into every host or
-group page. The catalog is the canonical "what will actually run if
-I click this action key?" view — useful when packs ship overlapping
-keys or when validating that a freshly added pack didn't silently
-shadow a built-in.
+If the pack a resolution points at is deleted, disabled, or
+removed by a sync, the resolution row CASCADEs away (or is swept
+by the registry rebuild's stale-resolution check). The key reverts
+to either uncontested (one remaining contributor wins
+automatically) or unresolved (multiple remaining contributors,
+needs a new pick). The action becomes unrunnable in the unresolved
+case until you re-pin.
 
 ### Provenance: which pack won?
 
-Every action card shows a small badge with the pack that supplied it:
+Every action card shows a small badge with the pack that supplied
+it, plus an extra "Unresolved" badge when the key has multiple
+contributors and no winner pinned:
 
 | Badge | Meaning |
 |---|---|
 | Grey: `from <pack>` | The action is uncontested — only one pack declares this key. |
-| Amber: `from <pack> (overrides N)` | The action collided; this pack's version won. Hover the badge for the list of shadowed packs. |
+| Amber: `from <pack> (overrides N)` | The action is contested and pinned; this pack's version won. Hover for the list of other contributors. |
+| Amber: `Unresolved` (on host/group action cards) | Multiple packs declare this key and no winner is pinned. Run is disabled. Click through to `/action-packs` to pick. |
 
-The API exposes this at `GET /api/actions/` as `pack_name` and
-`overridden_from` fields on each action. Logs also record the override
-chain when the registry loads:
-
-```
-INFO app.actions.packs action 'linux-upgrade' from pack 'labdog-default' overrides pack 'bundled'
-INFO app.actions.packs action 'linux-upgrade' from pack 'my-team-pack' overrides pack 'labdog-default'
-```
+The API exposes this at `GET /api/actions/` as `pack_name`,
+`winning_pack_id` (the `ActionPack.id` of the winner, `null` for
+unresolved keys and bundled-pack actions), `unresolved` (boolean),
+and `overridden_from` (every other contributor's name).
 
 ---
 
@@ -372,7 +376,7 @@ reused across multiple actions.
 ### Manifest schema
 
 ```yaml
-key: my-action               # stable identifier; collisions resolve by pack position (or operator pin)
+key: my-action               # stable identifier; collisions require an operator-pinned winner per key
 name: My Action              # shown on the action card
 description: >-              # one-paragraph description; shown under name
   Does a thing to the host.

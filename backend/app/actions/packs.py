@@ -13,9 +13,10 @@ A pack is a directory shaped like::
         roles/                      # optional — pack-shared Ansible roles
             <role-name>/
 
-Packs are loaded in priority order. When two packs expose the same action key,
-the higher-priority pack wins. The bundled pack shipped with LabDog has the
-lowest priority so user packs can override built-in actions.
+Packs have **no inherent precedence**. When multiple packs declare the
+same action key the operator pins which pack wins via an
+``action_resolution`` row. Until pinned, the key is *unresolved* and
+the action cannot be run. Uncontested keys win automatically.
 """
 
 from __future__ import annotations
@@ -37,7 +38,6 @@ logger = logging.getLogger(__name__)
 class Pack:
     name: str
     path: Path
-    priority: int = 0
     pack_id: int | None = None
     """Database id of the matching ``ActionPack`` row, or ``None`` for
     the in-image bundled pack. Used as the natural key for the
@@ -156,43 +156,6 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
     return defns
 
 
-def load_packs(packs: list[Pack]) -> dict[str, ActionDefinition]:
-    """Merge actions from multiple packs into a single registry dict.
-
-    Packs are processed in ascending priority order — actions from higher
-    priority packs overwrite equal-keyed actions from lower priority packs.
-    Ties broken by iteration order (later wins), so callers should pass packs
-    in the order they want ties resolved.
-
-    Each surviving ``ActionDefinition`` is returned with ``overridden_from``
-    populated: the names of packs whose entries for the same key were
-    shadowed, in processing order. Callers (API, logs) use this for
-    provenance in the UI.
-    """
-    from dataclasses import replace  # noqa: PLC0415
-
-    ordered = sorted(packs, key=lambda p: p.priority)
-    registry: dict[str, ActionDefinition] = {}
-    # key → list of pack names in processing order; last is the winner
-    history: dict[str, list[str]] = {}
-    for pack in ordered:
-        for defn in load_pack(pack):
-            if defn.key in history:
-                prev_winner = history[defn.key][-1]
-                logger.info(
-                    "action %r from pack %r overrides pack %r",
-                    defn.key,
-                    pack.name,
-                    prev_winner,
-                )
-            history.setdefault(defn.key, []).append(pack.name)
-            registry[defn.key] = defn
-    return {
-        key: replace(defn, overridden_from=tuple(history[key][:-1]))
-        for key, defn in registry.items()
-    }
-
-
 @dataclass(frozen=True)
 class PackContributor:
     """One pack's participation in a particular action key, for the
@@ -200,9 +163,6 @@ class PackContributor:
 
     pack_id: int | None
     pack_name: str
-    position: int
-    """``Pack.priority`` at merge time. Bundled is 0; DB packs are
-    ``ActionPack.position + 1``."""
 
 
 @dataclass(frozen=True)
@@ -210,16 +170,26 @@ class ResolutionMergeResult:
     """Outcome of :func:`load_packs_with_resolutions`.
 
     ``registry`` — final ``key → ActionDefinition`` map for installation
-    into ``ACTION_REGISTRY``.
-    ``new_snapshot`` — ``key → pack_id`` (None=bundled) the caller
-    persists into ``action_registry_snapshot`` to drive the next
-    rebuild's freeze logic.
+    into ``ACTION_REGISTRY``. Contested keys without a resolution
+    appear here as **unresolved** placeholders: ``playbook_path=None``,
+    ``winning_pack_id=None``, ``overridden_from=`` every contributor.
+    The API surfaces this state; the orchestrator refuses to dispatch.
+
+    ``new_snapshot`` — ``key → pack_id`` (None=bundled) for keys with
+    a resolved winner. The caller persists this into
+    ``action_registry_snapshot`` to drive the next rebuild's freeze
+    logic. Unresolved keys are deliberately omitted so a later
+    rebuild treats them fresh.
+
     ``fresh_freezes`` — keys where rebuild detected a fresh conflict
-    and pinned the previous winner; caller writes one
-    ``action_resolution`` row per entry to make the freeze durable.
+    (an uncontested key just became contested) and auto-pinned the
+    previous winner; caller writes one ``action_resolution`` row per
+    entry to make the freeze durable.
+
     ``stale_resolution_keys`` — resolution rows whose chosen pack no
-    longer contributes the key (pack deleted / renamed away);
-    caller deletes these rows.
+    longer contributes the key (pack deleted / renamed away); caller
+    deletes these rows.
+
     ``contributors`` — ``key → [PackContributor, ...]`` covering every
     pack that supplied a manifest for the key. Cached so the
     ``/api/action-resolutions`` view doesn't need to re-scan manifests.
@@ -232,6 +202,29 @@ class ResolutionMergeResult:
     contributors: dict[str, list[PackContributor]]
 
 
+def _unresolved_placeholder(
+    defn: ActionDefinition,
+    losers: tuple[str, ...],
+) -> ActionDefinition:
+    """Return a placeholder ActionDefinition for an unresolved key.
+
+    Carries the manifest's display metadata (name / description / icon
+    / parameters) from one of the candidates so the UI can render
+    something useful while the operator is picking, but with
+    ``playbook_path=None`` and ``winning_pack_id=None`` so any code
+    that tries to actually run the action sees the unresolved state
+    and refuses.
+    """
+    from dataclasses import replace  # noqa: PLC0415
+
+    return replace(
+        defn,
+        playbook_path=None,
+        winning_pack_id=None,
+        overridden_from=losers,
+    )
+
+
 def load_packs_with_resolutions(
     packs: list[Pack],
     *,
@@ -241,29 +234,30 @@ def load_packs_with_resolutions(
     """Merge packs into a registry honouring explicit per-key resolutions
     and freeze-on-fresh-conflict semantics.
 
-    Resolution semantics:
+    Resolution semantics (post-position refactor):
 
-    1. **Explicit resolution wins.** When ``resolutions[key]`` names a
-       pack that still contributes the key, that pack wins regardless
-       of position. ``pack_id=None`` resolves to bundled.
-    2. **Stale resolutions are flagged.** When the pinned pack no
-       longer contributes the key, the row is queued for deletion and
-       we fall through to the freeze / default logic.
-    3. **Fresh-conflict freeze.** A key with multiple contributors and
-       no live resolution checks the snapshot: if the previous winner
-       is still a contributor and would be unseated by the new
-       position-based default, we freeze to the previous winner and
-       emit a freeze entry. This stops a sync-introduced manifest
-       from silently flipping behaviour — the operator resolves it
-       via the ``/action-packs`` conflict UI.
-    4. **Default.** Otherwise the highest-priority contributor wins.
+    1. **Uncontested key** (one contributor) — that pack wins.
+    2. **Contested + explicit resolution** — pinned pack wins.
+       ``pack_id=None`` resolves to bundled.
+    3. **Contested + no resolution** — *unresolved*. The registry
+       entry is a placeholder with no playbook; the orchestrator
+       refuses to dispatch and the UI prompts the operator.
+    4. **Stale resolutions** — rows whose chosen pack no longer
+       contributes the key are queued for deletion; the key falls
+       through to (3) on the next rebuild.
+    5. **Fresh-conflict freeze** — a previously-uncontested key that
+       just became contested auto-pins the previous winner so a sync
+       cannot silently introduce an unresolved key; the operator can
+       confirm or change the pin via the UI.
     """
     from dataclasses import replace  # noqa: PLC0415
 
     # Gather contributors per key, preserving load_pack's logging on
     # malformed manifests.
     contributors: dict[str, list[tuple[Pack, ActionDefinition]]] = {}
-    for pack in packs:
+    # Pack iteration order is stable (sorted by name) so contested-key
+    # placeholders and overridden_from lists are deterministic.
+    for pack in sorted(packs, key=lambda p: p.name):
         for defn in load_pack(pack):
             contributors.setdefault(defn.key, []).append((pack, defn))
 
@@ -273,50 +267,79 @@ def load_packs_with_resolutions(
     stale: set[str] = set()
 
     for key, candidates in contributors.items():
-        candidates.sort(key=lambda c: c[0].priority)
-        default_pack, default_defn = candidates[-1]
-        winner_pack, winner_defn = default_pack, default_defn
-        resolved_explicitly = False
+        # Sort candidates by pack name for stable display ordering of
+        # losers / placeholders.
+        candidates.sort(key=lambda c: c[0].name)
 
+        # Uncontested: single contributor wins automatically.
+        if len(candidates) == 1:
+            sole_pack, sole_defn = candidates[0]
+            registry[key] = replace(
+                sole_defn,
+                winning_pack_id=sole_pack.pack_id,
+                overridden_from=(),
+            )
+            new_snapshot[key] = sole_pack.pack_id
+            continue
+
+        # Contested. Look for an explicit resolution that names a
+        # current contributor.
+        winner: tuple[Pack, ActionDefinition] | None = None
         if key in resolutions:
             chosen_id = resolutions[key]
             match = next((c for c in candidates if c[0].pack_id == chosen_id), None)
             if match is not None:
-                winner_pack, winner_defn = match
-                resolved_explicitly = True
+                winner = match
             else:
                 # Resolution points at a pack that's gone or no longer
-                # contributes this key — drop the row and fall through.
+                # contributes this key — drop the row.
                 stale.add(key)
 
-        if not resolved_explicitly and len(candidates) > 1 and key in prior_winners:
+        # Freeze-on-fresh-conflict: no explicit resolution but the
+        # previous snapshot has a winner that's still a contributor.
+        # Auto-pin it so behaviour doesn't change silently.
+        if winner is None and key in prior_winners:
             prev_id = prior_winners[key]
             prev_match = next((c for c in candidates if c[0].pack_id == prev_id), None)
-            if prev_match is not None and prev_match[0] is not default_pack:
+            if prev_match is not None:
                 logger.warning(
-                    "action %r: fresh conflict — freezing winner to pack %r "
-                    "(default would have been %r). Operator must resolve "
-                    "via /action-packs.",
+                    "action %r: fresh conflict — freezing winner to pack %r. "
+                    "Operator must confirm via /action-packs.",
                     key,
                     prev_match[0].name,
-                    default_pack.name,
                 )
-                winner_pack, winner_defn = prev_match
+                winner = prev_match
                 fresh_freezes[key] = prev_match[0].pack_id
 
-        # Build overridden_from in priority-ascending order, names of
-        # losers only — the winner is excluded.
-        losers = tuple(c[0].name for c in candidates if c[0] is not winner_pack)
-        registry[key] = replace(winner_defn, overridden_from=losers)
-        new_snapshot[key] = winner_pack.pack_id
+        if winner is not None:
+            winner_pack, winner_defn = winner
+            losers = tuple(c[0].name for c in candidates if c[0] is not winner_pack)
+            registry[key] = replace(
+                winner_defn,
+                winning_pack_id=winner_pack.pack_id,
+                overridden_from=losers,
+            )
+            new_snapshot[key] = winner_pack.pack_id
+        else:
+            # Contested + no resolution + no usable snapshot →
+            # unresolved. Use the first candidate's manifest for
+            # display metadata; mark playbook_path None and
+            # winning_pack_id None so any runtime code sees the
+            # unresolved state.
+            _placeholder_pack, placeholder_defn = candidates[0]
+            losers = tuple(c[0].name for c in candidates)
+            registry[key] = _unresolved_placeholder(placeholder_defn, losers)
+            # Deliberately omit unresolved keys from new_snapshot —
+            # the next rebuild treats them fresh.
+            logger.info(
+                "action %r: unresolved — %d contributing packs, no operator pin",
+                key,
+                len(candidates),
+            )
 
     contributors_view: dict[str, list[PackContributor]] = {
         key: [
-            PackContributor(
-                pack_id=p.pack_id,
-                pack_name=p.name,
-                position=p.priority,
-            )
+            PackContributor(pack_id=p.pack_id, pack_name=p.name)
             for p, _ in candidates
         ]
         for key, candidates in contributors.items()

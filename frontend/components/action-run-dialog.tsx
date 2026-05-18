@@ -3,6 +3,8 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { AlertTriangle } from "lucide-react"
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -126,6 +128,28 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           <DialogTitle>{action.name}</DialogTitle>
         </DialogHeader>
 
+        {action.unresolved && (
+          <div className="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm space-y-1.5">
+            <p className="flex items-center gap-2 text-amber-200 font-medium">
+              <AlertTriangle className="h-4 w-4" />
+              Unresolved — pick a winner first
+            </p>
+            <p className="text-amber-300/80 text-xs">
+              Multiple packs declare action key{" "}
+              <code className="font-mono">{action.key}</code>. Choose which
+              pack wins on{" "}
+              <Link
+                href="/action-packs"
+                className="underline hover:text-amber-200"
+                onClick={onClose}
+              >
+                /action-packs
+              </Link>
+              {" "}before running.
+            </p>
+          </div>
+        )}
+
         {scope === "group" && action.key === "linux-os-upgrade" && (
           <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm">
             {groupMixedCodenames ? (
@@ -180,13 +204,13 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           <Button
             variant="outline"
             onClick={() => handleSubmit(true)}
-            disabled={submitting}
+            disabled={submitting || action.unresolved}
           >
             Preview (dry-run)
           </Button>
           <Button
             onClick={() => handleSubmit(false)}
-            disabled={submitting}
+            disabled={submitting || action.unresolved}
           >
             {submitting ? "Starting…" : "Run"}
           </Button>

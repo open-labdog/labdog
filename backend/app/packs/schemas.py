@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 from app.packs.models import PackSourceType
 
@@ -117,12 +117,6 @@ class ActionPackResponse(BaseModel):
     render this directly instead of having to look up the repo by id."""
     path: str
     local_path: str | None
-    position: int = Field(
-        description=(
-            "Linear precedence ordering. Higher wins on action-key "
-            "collisions. The bundled pack is implicit at position 0."
-        )
-    )
     enabled: bool
 
     last_synced_at: datetime | None
@@ -142,7 +136,6 @@ class ActionPackResponse(BaseModel):
             git_repository_name=repo_name,
             path=row.path,
             local_path=row.local_path,
-            position=row.position,
             enabled=row.enabled,
             last_synced_at=row.last_synced_at,
             last_sync_status=row.last_sync_status,
@@ -162,23 +155,24 @@ class ActionPackSyncResponse(BaseModel):
     last_synced_at: datetime | None = None
 
 
-class ActionPackReorderRequest(BaseModel):
-    """Drag-to-reorder payload for ``POST /api/action-packs/reorder``.
+class ClaimAllKeysResponse(BaseModel):
+    """Outcome of ``POST /api/action-packs/{id}/claim-all-keys``.
 
-    ``pack_ids`` is the desired top-to-bottom display order — the
-    first id wins on action-key collisions. Server rewrites
-    ``ActionPack.position`` so the first id gets the highest number,
-    last id gets ``1``. Bundled is implicit at ``0`` and never appears
-    in the list.
+    The endpoint pins every action key contributed by the pack to
+    this pack via ``action_resolution`` rows, overwriting any prior
+    pins on other packs. Idempotent.
 
-    Body must list every existing pack id exactly once; partial
-    reorders aren't supported (the UI builds the submission from the
-    full sorted list).
+    - ``created`` — number of brand-new resolution rows inserted.
+    - ``updated`` — number of pre-existing rows flipped to this pack.
+    - ``skipped`` — number of keys that already pointed at this pack
+      (no write needed).
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    pack_ids: list[int] = Field(min_length=1)
+    created: int
+    updated: int
+    skipped: int
 
 
 class ActionResolutionRequest(BaseModel):
@@ -203,29 +197,31 @@ class ActionResolutionPackOut(BaseModel):
     pack_id: int | None
     """``None`` for bundled — bundled has no DB row."""
     pack_name: str
-    position: int
-    """Effective priority at last rebuild. Higher wins by default."""
 
 
 class ContestedActionKeyOut(BaseModel):
     """One row in ``GET /api/action-resolutions``.
 
     Surfaces every action key currently contributed by more than one
-    pack, with the live winner, the candidates, and the operator's
-    explicit pick (if any). Drives the conflict UI on
-    ``/action-packs``.
+    pack, with the candidates, the operator's explicit pick (if any),
+    and whether the key is currently unresolved (no winner; the
+    action is unrunnable).
     """
 
     action_key: str
     candidates: list[ActionResolutionPackOut]
-    current_winner: ActionResolutionPackOut
+    current_winner: ActionResolutionPackOut | None = None
+    """The pinned winner, or ``None`` when the key is unresolved."""
     resolution: ActionResolutionPackOut | None = None
     """Set when an explicit ``action_resolution`` row pins a winner;
-    ``None`` means the current winner is from position-based default
-    or freeze."""
+    ``None`` means there is no pin (and the key is unresolved)."""
     is_frozen: bool = False
-    """True when the live winner came from a freeze decision (explicit
-    resolution pinning the previous winner) rather than the default.
-    The UI surfaces a "needs your decision" badge for these."""
+    """True when the live winner was auto-pinned by the
+    freeze-on-fresh-conflict logic (a sync introduced a fresh
+    contestant; the previous winner was pinned to preserve behaviour).
+    The UI surfaces a "needs your confirmation" badge for these."""
+    is_unresolved: bool = False
+    """True when the key has multiple contributors and no operator pin.
+    The action is unrunnable until ``resolution`` is set."""
     decided_at: datetime | None = None
     decided_by_user_id: int | None = None

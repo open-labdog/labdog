@@ -1,8 +1,12 @@
-"""Tests for the reorder + action-resolutions endpoints.
+"""Tests for the action-resolutions endpoints and the
+claim-all-keys bulk-pin endpoint on the action-packs router.
 
-Exercises the freeze-on-fresh-conflict behaviour, the reorder endpoint
-that rewrites ``ActionPack.position``, and the per-key resolution CRUD
-that drives the conflict UI on ``/action-packs``.
+Exercises the per-key resolution CRUD that drives the conflict UI on
+``/action-packs``, the freeze-on-fresh-conflict behaviour that pins
+the previous winner when a sync introduces a new contestant, and the
+new "pure per-key pinning, no global ordering" model where contested
+keys without a pin are *unresolved* (no winner; the action is
+unrunnable).
 
 Local file:// origin pattern matches ``test_action_packs_api.py`` so
 no network access is required.
@@ -74,64 +78,10 @@ async def two_local_packs(superuser_client, local_pack_a, local_pack_b):
 
 
 # ---------------------------------------------------------------------------
-# Reorder endpoint
+# Reorder endpoint removed — the precedence model is pure per-key
+# pinning now, with no global pack ordering. Tests covering positions
+# / reorder are gone with the column.
 # ---------------------------------------------------------------------------
-
-
-async def test_reorder_rewrites_positions_top_first_wins(superuser_client, two_local_packs):
-    pack_a, pack_b = two_local_packs
-
-    # By default, the freeze pins pack-a (the previous winner) when
-    # pack-b joined. Reorder so pack-b is first (top of table) — the
-    # request includes both pack ids in the desired order.
-    listing = (await superuser_client.get("/api/action-packs")).json()
-    seeded_ids = [p["id"] for p in listing if p["name"] == "labdog-playbooks"]
-    desired = [pack_b["id"], pack_a["id"], *seeded_ids]
-    r = await superuser_client.post(
-        "/api/action-packs/reorder",
-        json={"pack_ids": desired},
-    )
-    assert r.status_code == 200, r.text
-    assert r.json() == {"reordered": len(desired)}
-
-    listing_after = (await superuser_client.get("/api/action-packs")).json()
-    after = {p["id"]: p["position"] for p in listing_after}
-    # First in desired list gets the highest position number.
-    assert after[pack_b["id"]] > after[pack_a["id"]]
-
-
-async def test_reorder_rejects_set_mismatch(superuser_client, two_local_packs):
-    pack_a, _pack_b = two_local_packs
-    # Submit only one of the two packs — the server requires the full set.
-    r = await superuser_client.post(
-        "/api/action-packs/reorder",
-        json={"pack_ids": [pack_a["id"]]},
-    )
-    assert r.status_code == 409
-    detail = r.json()["detail"]
-    assert detail["kind"] == "reorder_set_mismatch"
-    assert detail["missing_pack_ids"]
-
-
-async def test_reorder_rejects_unknown_id(superuser_client, two_local_packs):
-    pack_a, pack_b = two_local_packs
-    listing = (await superuser_client.get("/api/action-packs")).json()
-    all_ids = [p["id"] for p in listing]
-    r = await superuser_client.post(
-        "/api/action-packs/reorder",
-        json={"pack_ids": [*all_ids, 99999]},
-    )
-    assert r.status_code == 409
-    detail = r.json()["detail"]
-    assert 99999 in detail["unknown_pack_ids"]
-
-
-async def test_reorder_requires_superuser(regular_user_client):
-    r = await regular_user_client.post(
-        "/api/action-packs/reorder",
-        json={"pack_ids": [1]},
-    )
-    assert r.status_code in (401, 403)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +113,10 @@ async def test_contested_keys_view_surfaces_conflict(superuser_client, two_local
     assert candidate_ids == {pack_a["id"], pack_b["id"]}
     assert row["resolution"] is not None
     assert row["resolution"]["pack_id"] == pack_a["id"]
-    assert row["is_frozen"] is True  # frozen against the position-based default
+    # is_frozen is True when the pin was auto-written by
+    # freeze-on-fresh-conflict (decided_by_user_id IS NULL).
+    assert row["is_frozen"] is True
+    assert row["is_unresolved"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -181,11 +134,17 @@ async def test_upsert_resolution_changes_winner(superuser_client, two_local_pack
     body = r.json()
     assert body["current_winner"]["pack_id"] == pack_b["id"]
     assert body["resolution"]["pack_id"] == pack_b["id"]
-    assert body["is_frozen"] is False  # operator-chosen winner = position default
+    # is_frozen reflects "decided_by_user_id IS NULL" (auto-pinned by
+    # the freeze logic, awaiting operator confirmation). An operator
+    # upsert flips it false.
+    assert body["is_frozen"] is False
+    assert body["is_unresolved"] is False
 
     actions = (await superuser_client.get("/api/actions/")).json()
     hello = next(a for a in actions if a["key"] == "hello")
     assert hello["pack_name"] == "pack-b"
+    assert hello["winning_pack_id"] == pack_b["id"]
+    assert hello["unresolved"] is False
 
 
 async def test_upsert_rejects_pack_not_contributor(superuser_client, two_local_packs, git_repo_row):
@@ -197,17 +156,24 @@ async def test_upsert_rejects_pack_not_contributor(superuser_client, two_local_p
     assert r.status_code in (404, 409)
 
 
-async def test_delete_resolution_falls_back_to_default(superuser_client, two_local_packs):
+async def test_delete_resolution_leaves_key_unresolved(superuser_client, two_local_packs):
+    """In the per-key-pinning model there is no global ordering to
+    fall back on. Dropping the resolution leaves the key unresolved —
+    no winner, action unrunnable until the operator pins again."""
     pack_a, pack_b = two_local_packs
-    # Drop the freeze. Default = highest position. pack-b was inserted
-    # second so it has the higher position — it wins by default.
     r = await superuser_client.delete("/api/action-resolutions/hello")
     assert r.status_code == 204
 
     rows = (await superuser_client.get("/api/action-resolutions")).json()
     hello = next(row for row in rows if row["action_key"] == "hello")
     assert hello["resolution"] is None
-    assert hello["current_winner"]["pack_id"] == pack_b["id"]
+    assert hello["current_winner"] is None
+    assert hello["is_unresolved"] is True
+
+    actions = (await superuser_client.get("/api/actions/")).json()
+    hello_def = next(a for a in actions if a["key"] == "hello")
+    assert hello_def["unresolved"] is True
+    assert hello_def["winning_pack_id"] is None
 
 
 async def test_delete_unknown_resolution_returns_404(superuser_client):
@@ -243,6 +209,161 @@ async def test_resolutions_router_requires_superuser(regular_user_client):
     r3 = await regular_user_client.delete("/api/action-resolutions/hello")
     for r in (r1, r2, r3):
         assert r.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# Pure per-key-pinning model: contested-without-resolution = unresolved
+# ---------------------------------------------------------------------------
+
+
+async def test_contested_without_resolution_is_unresolved(superuser_client, two_local_packs):
+    """Drop the auto-pin from freeze-on-fresh-conflict; the key must
+    flip to unresolved (no winner) and the action must vanish from
+    the runnable surface."""
+    pack_a, pack_b = two_local_packs
+
+    # Drop the resolution that freeze-on-fresh-conflict wrote on
+    # pack-b creation. Now the key is contested with no pin.
+    r = await superuser_client.delete("/api/action-resolutions/hello")
+    assert r.status_code == 204
+
+    contested = (await superuser_client.get("/api/action-resolutions")).json()
+    hello = next(row for row in contested if row["action_key"] == "hello")
+    assert hello["current_winner"] is None
+    assert hello["resolution"] is None
+    assert hello["is_unresolved"] is True
+    assert hello["is_frozen"] is False
+
+    actions = (await superuser_client.get("/api/actions/")).json()
+    hello_def = next(a for a in actions if a["key"] == "hello")
+    assert hello_def["unresolved"] is True
+    assert hello_def["winning_pack_id"] is None
+
+
+async def test_submit_unresolved_action_rejected_with_409(superuser_client, two_local_packs, db):
+    """``POST /api/actions/runs`` refuses to dispatch an unresolved
+    action with a clear 409 directing the operator to ``/action-packs``."""
+    pack_a, pack_b = two_local_packs
+
+    # Drop the freeze pin so the key is unresolved.
+    await superuser_client.delete("/api/action-resolutions/hello")
+
+    # Need a host to target — minimum viable test host.
+    from app.models.host import Host
+
+    host = Host(hostname="t1.example.com", ip_address="10.0.0.99", ssh_port=22, ssh_user="root")
+    db.add(host)
+    await db.flush()
+
+    r = await superuser_client.post(
+        "/api/actions/runs",
+        json={"action_key": "hello", "host_id": host.id, "parameters": {}},
+    )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert detail["kind"] == "action_unresolved"
+    assert detail["action_key"] == "hello"
+    assert "/action-packs" in detail["message"]
+
+
+async def test_winning_pack_deleted_marks_action_unresolved(superuser_client, two_local_packs):
+    """When the pack the resolution points at is deleted, the
+    resolution row goes away (CASCADE), and the contested key — now
+    with only one contributor — flips to **uncontested**: the surviving
+    pack wins. But if BOTH contestants are gone the key vanishes from
+    the registry entirely. We cover the in-between case here: delete
+    the pinned pack, the other pack becomes the sole contributor and
+    wins automatically."""
+    pack_a, pack_b = two_local_packs
+    # Freeze pinned pack-a; delete pack-a.
+    r = await superuser_client.delete(f"/api/action-packs/{pack_a['id']}")
+    assert r.status_code == 204
+
+    actions = (await superuser_client.get("/api/actions/")).json()
+    hello_def = next(a for a in actions if a["key"] == "hello")
+    # Sole contributor now — uncontested, pack-b wins automatically.
+    assert hello_def["unresolved"] is False
+    assert hello_def["winning_pack_id"] == pack_b["id"]
+    assert hello_def["pack_name"] == "pack-b"
+
+
+# Note: a three-contributor "delete pinned pack → unresolved" test
+# was considered but kept off the suite for now — it runs into the
+# pre-existing test_action_packs id=1 collision pattern documented at
+# the top of this file, and the simpler two-contributor case above
+# covers the same code path (resolution cascade + recompute).
+
+
+# ---------------------------------------------------------------------------
+# Bulk-pin endpoint: POST /api/action-packs/{id}/claim-all-keys
+# ---------------------------------------------------------------------------
+
+
+async def test_claim_all_keys_pins_every_contributed_key(superuser_client, two_local_packs):
+    """Calling claim-all-keys on pack-b flips the freeze pin from
+    pack-a to pack-b. Returns counts the UI can surface in a toast."""
+    pack_a, pack_b = two_local_packs
+
+    r = await superuser_client.post(
+        f"/api/action-packs/{pack_b['id']}/claim-all-keys"
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # The freeze created one row pointing at pack-a; we update it.
+    assert body["updated"] == 1
+    assert body["created"] == 0
+    # No keys skipped — pack-b wasn't the prior pin for any key.
+    assert body["skipped"] == 0
+
+    contested = (await superuser_client.get("/api/action-resolutions")).json()
+    hello = next(row for row in contested if row["action_key"] == "hello")
+    assert hello["current_winner"]["pack_id"] == pack_b["id"]
+    assert hello["resolution"]["pack_id"] == pack_b["id"]
+    assert hello["is_frozen"] is False  # operator-driven now
+
+
+async def test_claim_all_keys_is_idempotent(superuser_client, two_local_packs):
+    pack_a, pack_b = two_local_packs
+
+    # First call flips the pin to pack-b.
+    r1 = await superuser_client.post(f"/api/action-packs/{pack_b['id']}/claim-all-keys")
+    assert r1.status_code == 200
+    # Second call is a no-op: pack-b already wins every key it
+    # contributes, nothing to create or update.
+    r2 = await superuser_client.post(f"/api/action-packs/{pack_b['id']}/claim-all-keys")
+    assert r2.status_code == 200
+    body = r2.json()
+    assert body == {"created": 0, "updated": 0, "skipped": 1}
+
+
+async def test_claim_all_keys_404_for_unknown_pack(superuser_client):
+    r = await superuser_client.post("/api/action-packs/99999/claim-all-keys")
+    assert r.status_code == 404
+
+
+async def test_claim_all_keys_requires_superuser(regular_user_client, two_local_packs):
+    pack_a, pack_b = two_local_packs
+    r = await regular_user_client.post(
+        f"/api/action-packs/{pack_b['id']}/claim-all-keys"
+    )
+    assert r.status_code in (401, 403)
+
+
+async def test_claim_all_keys_with_no_contributions(superuser_client, db, tmp_path):
+    """A pack that doesn't contribute any action keys (empty actions/
+    dir, or all manifests malformed) returns zero counts."""
+    empty_pack = tmp_path / "empty-pack"
+    (empty_pack / "actions").mkdir(parents=True)
+    r = await superuser_client.post(
+        "/api/action-packs",
+        json={"name": "empty", "source_type": "local", "local_path": str(empty_pack)},
+    )
+    assert r.status_code == 201
+    pack_id = r.json()["id"]
+
+    r2 = await superuser_client.post(f"/api/action-packs/{pack_id}/claim-all-keys")
+    assert r2.status_code == 200
+    assert r2.json() == {"created": 0, "updated": 0, "skipped": 0}
 
 
 # ---------------------------------------------------------------------------

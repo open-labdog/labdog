@@ -180,9 +180,8 @@ async def test_activate_happy_path_creates_packs_and_bindings(
     assert by_name["foo-pack"].path == "packs/foo"
     assert by_name["foo-pack"].source_type == PackSourceType.GIT
     assert by_name["foo-pack"].enabled is True
-    # Activation lays packs out as a contiguous block above existing rows.
-    positions = sorted(r.position for r in rows)
-    assert positions[1] == positions[0] + 1
+    # Pack rows no longer have a position column — precedence is
+    # per-key via action_resolution.
 
     # HostGroup gitops binding applied.
     refreshed_group = (

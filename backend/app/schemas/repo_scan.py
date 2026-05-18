@@ -83,9 +83,10 @@ class ActivatePackSelection(BaseModel):
     pack, the activation endpoint suffixes it (``-<repo_name>``, then
     ``-<short_sha>``) and reports the final name in the response.
 
-    Pack precedence is set by ``position`` — assigned server-side at
-    insert (highest existing + 1). Operators reorder via the
-    drag-to-reorder UI on ``/action-packs`` after activation.
+    Packs have no inherent precedence — per-key pins via
+    ``action_resolution`` decide every contested winner. The
+    activation endpoint also writes a pin row for every key the
+    submitted ``key_resolutions`` list identifies.
     """
 
     path: str
@@ -139,7 +140,6 @@ class ActivatedPackOut(BaseModel):
     pack_id: int
     name: str
     path: str
-    position: int
     requested_name: str
     name_was_disambiguated: bool
     model_config = ConfigDict(from_attributes=True)

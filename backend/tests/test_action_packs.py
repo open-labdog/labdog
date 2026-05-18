@@ -1,7 +1,7 @@
 """Tests for the action pack loader.
 
 These are pure unit tests — no DB, no Celery — exercising the manifest
-schema, the on-disk pack layout, and the override-by-priority contract.
+schema, the on-disk pack layout, and the per-key resolution contract.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from app.actions.manifest import ActionManifest
 from app.actions.packs import (
     Pack,
     load_pack,
-    load_packs,
+    load_packs_with_resolutions,
 )
 
 
@@ -189,7 +189,7 @@ def test_load_pack_returns_action_definition(tmp_path: Path):
         actions={"demo": SIMPLE_ACTION},
         roles=["role-demo"],
     )
-    pack = Pack(name="p1", path=tmp_path / "p1", priority=50)
+    pack = Pack(name="p1", path=tmp_path / "p1")
     defns = load_pack(pack)
     assert len(defns) == 1
     d = defns[0]
@@ -228,7 +228,10 @@ def test_load_pack_skips_invalid_yaml(tmp_path: Path, caplog):
     assert keys == {"demo"}
 
 
-def test_higher_priority_pack_overrides_lower(tmp_path: Path):
+def test_contested_key_with_explicit_resolution_wins(tmp_path: Path):
+    """When the operator pins a contested key to a specific pack, that
+    pack's manifest is returned and the other pack appears in
+    ``overridden_from`` for provenance."""
     bundled_manifest = SIMPLE_MANIFEST.replace("Demo action", "Bundled demo")
     user_manifest = SIMPLE_MANIFEST.replace("Demo action", "User demo")
     _write_pack(
@@ -241,44 +244,97 @@ def test_higher_priority_pack_overrides_lower(tmp_path: Path):
         "user",
         actions={"demo": {"manifest.yml": user_manifest, "playbook.yml": SIMPLE_PLAYBOOK}},
     )
-    bundled = Pack(name="bundled", path=tmp_path / "bundled", priority=0)
-    user = Pack(name="user", path=tmp_path / "user", priority=100)
+    bundled = Pack(name="bundled", path=tmp_path / "bundled", pack_id=None)
+    user = Pack(name="user", path=tmp_path / "user", pack_id=1)
 
-    registry = load_packs([user, bundled])
-    assert registry["demo"].name == "User demo"
-    assert registry["demo"].pack_name == "user"
-    assert registry["demo"].overridden_from == ("bundled",)
-
-
-def test_override_chain_records_full_history(tmp_path: Path):
-    """Three packs contribute the same key; the surviving entry knows
-    about both shadowed packs in processing order."""
-    for name in ("bundled", "default", "user"):
-        _write_pack(
-            tmp_path,
-            name,
-            actions={"demo": SIMPLE_ACTION},
-        )
-    packs = [
-        Pack(name="bundled", path=tmp_path / "bundled", priority=0),
-        Pack(name="default", path=tmp_path / "default", priority=10),
-        Pack(name="user", path=tmp_path / "user", priority=100),
-    ]
-    registry = load_packs(packs)
-    assert registry["demo"].pack_name == "user"
-    # Shadowed packs in processing order (lowest priority first).
-    assert registry["demo"].overridden_from == ("bundled", "default")
-
-
-def test_non_colliding_actions_have_no_override_history(tmp_path: Path):
-    _write_pack(
-        tmp_path,
-        "p1",
-        actions={"demo": SIMPLE_ACTION},
+    # Operator pinned pack 1 ("user") for the demo key.
+    result = load_packs_with_resolutions(
+        [user, bundled],
+        resolutions={"demo": 1},
+        prior_winners={},
     )
-    pack = Pack(name="p1", path=tmp_path / "p1", priority=10)
-    registry = load_packs([pack])
-    assert registry["demo"].overridden_from == ()
+    defn = result.registry["demo"]
+    assert defn.name == "User demo"
+    assert defn.pack_name == "user"
+    assert defn.winning_pack_id == 1
+    assert defn.overridden_from == ("bundled",)
+    assert defn.playbook_path is not None
+    assert defn.is_unresolved is False
+
+
+def test_contested_key_with_no_resolution_is_unresolved(tmp_path: Path):
+    """Pure per-key-pinning: contested keys without a resolution have
+    no winner. The registry entry is a placeholder with no playbook
+    and ``winning_pack_id=None``."""
+    for name in ("a", "b", "c"):
+        _write_pack(tmp_path, name, actions={"demo": SIMPLE_ACTION})
+    packs = [
+        Pack(name="a", path=tmp_path / "a", pack_id=1),
+        Pack(name="b", path=tmp_path / "b", pack_id=2),
+        Pack(name="c", path=tmp_path / "c", pack_id=3),
+    ]
+    result = load_packs_with_resolutions(packs, resolutions={}, prior_winners={})
+    defn = result.registry["demo"]
+    assert defn.is_unresolved is True
+    assert defn.winning_pack_id is None
+    assert defn.playbook_path is None
+    # Every contributor listed for provenance.
+    assert set(defn.overridden_from) == {"a", "b", "c"}
+    # Unresolved keys do not get a snapshot row — they're "open
+    # questions" the next rebuild treats fresh.
+    assert "demo" not in result.new_snapshot
+
+
+def test_uncontested_key_wins_automatically(tmp_path: Path):
+    """A key contributed by exactly one pack wins with no resolution
+    row needed; ``overridden_from`` is empty."""
+    _write_pack(tmp_path, "p1", actions={"demo": SIMPLE_ACTION})
+    pack = Pack(name="p1", path=tmp_path / "p1", pack_id=7)
+    result = load_packs_with_resolutions([pack], resolutions={}, prior_winners={})
+    defn = result.registry["demo"]
+    assert defn.is_unresolved is False
+    assert defn.winning_pack_id == 7
+    assert defn.overridden_from == ()
+    assert defn.playbook_path is not None
+    assert result.new_snapshot["demo"] == 7
+
+
+def test_freeze_on_fresh_conflict_pins_previous_winner(tmp_path: Path):
+    """Two packs now declare a key that previously had one. The merge
+    auto-pins the previous winner (from the snapshot) so behaviour
+    doesn't silently flip into an unresolved state. The freeze entry
+    is reported so the caller can persist a durable resolution row."""
+    for name in ("old", "new"):
+        _write_pack(tmp_path, name, actions={"demo": SIMPLE_ACTION})
+    packs = [
+        Pack(name="old", path=tmp_path / "old", pack_id=1),
+        Pack(name="new", path=tmp_path / "new", pack_id=2),
+    ]
+    # Previous rebuild saw only `old` as a contributor.
+    result = load_packs_with_resolutions(
+        packs, resolutions={}, prior_winners={"demo": 1}
+    )
+    defn = result.registry["demo"]
+    assert defn.is_unresolved is False
+    assert defn.winning_pack_id == 1
+    assert result.fresh_freezes == {"demo": 1}
+
+
+def test_stale_resolution_falls_through_to_unresolved(tmp_path: Path):
+    """A pin pointing at a pack that no longer contributes the key is
+    queued for deletion; the key becomes unresolved (no fallback)."""
+    for name in ("a", "b"):
+        _write_pack(tmp_path, name, actions={"demo": SIMPLE_ACTION})
+    packs = [
+        Pack(name="a", path=tmp_path / "a", pack_id=1),
+        Pack(name="b", path=tmp_path / "b", pack_id=2),
+    ]
+    # Resolution pins pack id 99 — not a current contributor.
+    result = load_packs_with_resolutions(
+        packs, resolutions={"demo": 99}, prior_winners={}
+    )
+    assert "demo" in result.stale_resolution_keys
+    assert result.registry["demo"].is_unresolved is True
 
 
 def test_bundled_pack_exposes_expected_actions():

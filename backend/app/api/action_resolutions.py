@@ -1,15 +1,24 @@
 """Per-key action-resolution endpoints.
 
-Resolution rows pin which pack wins a contested action key. Two write
-paths feed the table: the wizard (operator picks per-key when
-activating a repo with conflicts) and the freeze logic in
-``app.actions.registry`` (auto-pin previous winner on fresh sync
-conflicts so behaviour doesn't silently flip). The endpoints here let
-operators inspect contested keys, change their picks, or drop a row.
+Resolution rows pin which pack wins a contested action key. In the
+pure-per-key-pinning model these rows are the **only** resolver —
+without an applicable row a contested key is *unresolved* and the
+action is unrunnable.
+
+Three write paths feed the table:
+
+1. The wizard at activation time (operator picks per-key when
+   adding a pack that collides with existing keys).
+2. The freeze-on-fresh-conflict logic in ``app.actions.registry``
+   (auto-pin previous winner so a sync doesn't flip behaviour).
+3. The endpoints here (operator inspect/edit/clear pins) and the
+   bulk-pin endpoint on the action-packs router
+   (``POST /api/action-packs/{id}/claim-all-keys``).
 
 Read endpoints expose every action key contributed by more than one
-pack — the conflict view banner on ``/action-packs`` consumes this to
-flag keys awaiting an operator decision.
+pack — the registry table on ``/action-packs`` consumes this to
+flag keys awaiting an operator decision and to render the per-key
+radio picker.
 """
 
 from __future__ import annotations
@@ -42,37 +51,50 @@ def _to_pack_out(contributor) -> ActionResolutionPackOut:
     return ActionResolutionPackOut(
         pack_id=contributor.pack_id,
         pack_name=contributor.pack_name,
-        position=contributor.position,
     )
 
 
 async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]:
+    """Build the contested-keys view.
+
+    Every action key with more than one contributor appears here.
+    When no resolution row pins a winner the key is *unresolved* —
+    ``current_winner=None``, ``is_unresolved=True``. The frontend
+    blocks runs and prompts the operator.
+    """
     resolutions = await _load_resolutions(db)
     out: list[ContestedActionKeyOut] = []
     for action_key, contribs in ACTION_REGISTRY_CONTRIBUTORS.items():
         if len(contribs) < 2:
             continue
-        sorted_by_priority = sorted(contribs, key=lambda c: c.position)
-        default_winner = sorted_by_priority[-1]
+        sorted_contribs = sorted(contribs, key=lambda c: c.pack_name)
 
         resolution_row = resolutions.get(action_key)
         resolution_out: ActionResolutionPackOut | None = None
-        winner = default_winner
+        winner_out: ActionResolutionPackOut | None = None
         if resolution_row is not None:
-            match = next((c for c in contribs if c.pack_id == resolution_row.pack_id), None)
+            match = next(
+                (c for c in sorted_contribs if c.pack_id == resolution_row.pack_id), None
+            )
             if match is not None:
                 resolution_out = _to_pack_out(match)
-                winner = match
+                winner_out = resolution_out
 
         out.append(
             ContestedActionKeyOut(
                 action_key=action_key,
-                candidates=[_to_pack_out(c) for c in sorted_by_priority],
-                current_winner=_to_pack_out(winner),
+                candidates=[_to_pack_out(c) for c in sorted_contribs],
+                current_winner=winner_out,
                 resolution=resolution_out,
+                # "Frozen" only applies when the operator hasn't yet
+                # confirmed the auto-pin from freeze-on-fresh-conflict.
+                # ``decided_by_user_id IS NULL`` is how the freeze logic
+                # marks its rows.
                 is_frozen=(
-                    resolution_out is not None and resolution_out.pack_id != default_winner.pack_id
+                    resolution_row is not None
+                    and resolution_row.decided_by_user_id is None
                 ),
+                is_unresolved=(winner_out is None),
                 decided_at=resolution_row.decided_at if resolution_row else None,
                 decided_by_user_id=(resolution_row.decided_by_user_id if resolution_row else None),
             )
@@ -182,13 +204,16 @@ async def delete_action_resolution(
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Drop the resolution row. Position-based default takes over on
-    the next rebuild — which this endpoint triggers.
+    """Drop the resolution row for a contested key.
+
+    The key reverts to **unresolved** on the next rebuild (which this
+    endpoint triggers) — there is no global ordering to fall back on.
+    The action becomes unrunnable until the operator pins a winner
+    again.
 
     Also clears the matching ``action_registry_snapshot`` row so the
-    freeze logic does not immediately re-create a resolution pinning
-    the previous winner. The next rebuild treats the key as if it
-    were freshly seen and lets position-based default win.
+    next rebuild treats the key as if it were freshly seen, instead
+    of the freeze logic immediately re-pinning the previous winner.
     """
     existing = (
         await db.execute(select(ActionResolution).where(ActionResolution.action_key == action_key))

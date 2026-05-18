@@ -3,24 +3,7 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core"
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import { GripVertical, Info, AlertTriangle } from "lucide-react"
+import { AlertTriangle, ChevronDown, ChevronRight, Lock } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { useDelayedLoading } from "@/lib/utils"
@@ -47,11 +30,11 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { DataTable } from "@/components/ui/data-table"
-import { ConflictResolutionDialog } from "@/components/action-packs/conflict-resolution-dialog"
 import type {
   ActionDefinition,
   ActionPack,
   ActionPackSyncResponse,
+  ClaimAllKeysResponse,
   ContestedActionKey,
   GitRepository,
   PackSourceType,
@@ -75,6 +58,27 @@ const emptyForm: PackFormState = {
   enabled: true,
 }
 
+// Synthetic row for the always-present bundled pack. The bundled pack
+// has no ``ActionPack`` DB row but it IS a candidate for every key it
+// contributes — surfacing it in the Pack Sources table makes that
+// reality discoverable.
+interface BundledPackRow {
+  id: number
+  name: string
+  isBundled: true
+}
+type PackRow = ActionPack | BundledPackRow
+
+function isBundledRow(p: PackRow): p is BundledPackRow {
+  return "isBundled" in p && p.isBundled === true
+}
+
+const BUNDLED_PACK_ROW: BundledPackRow = {
+  id: -1,
+  name: "bundled",
+  isBundled: true,
+}
+
 function statusChip(pack: ActionPack) {
   if (pack.last_sync_status === "ok") {
     return <span className="text-green-400 text-xs">OK</span>
@@ -90,51 +94,9 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString()
 }
 
-function SortableRow({
-  pack,
-  children,
-}: {
-  pack: ActionPack
-  children: React.ReactNode
-}) {
-  const { attributes, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: pack.id })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: "relative" as const,
-    zIndex: isDragging ? 10 : undefined,
-    background: isDragging ? "rgba(59, 130, 246, 0.08)" : undefined,
-    outline: isDragging ? "1px solid rgba(59, 130, 246, 0.3)" : undefined,
-    borderRadius: isDragging ? "6px" : undefined,
-  }
-
-  return (
-    <TableRow
-      ref={setNodeRef}
-      style={style}
-      className="border-slate-700"
-      {...attributes}
-    >
-      {children}
-    </TableRow>
-  )
-}
-
-function DragHandleCell({ pack }: { pack: ActionPack }) {
-  const { attributes, listeners } = useSortable({ id: pack.id })
-  return (
-    <button
-      {...attributes}
-      {...listeners}
-      className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 p-0.5 rounded transition-colors"
-      aria-label="Drag to reorder"
-    >
-      <GripVertical className="h-4 w-4" />
-    </button>
-  )
+function packLabel(pack: { pack_id: number | null; pack_name: string }): string {
+  if (pack.pack_id === null) return `${pack.pack_name} (bundled)`
+  return pack.pack_name
 }
 
 export default function ActionPacksPage() {
@@ -144,7 +106,15 @@ export default function ActionPacksPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [formSaving, setFormSaving] = useState(false)
   const [syncingId, setSyncingId] = useState<number | null>(null)
-  const [conflictOpen, setConflictOpen] = useState(false)
+  const [expandedRow, setExpandedRow] = useState<string | null>(null)
+  const [claimDialog, setClaimDialog] = useState<{
+    pack: ActionPack
+    pinnedHere: number
+    pinnedElsewhere: number
+    uncontested: number
+    contested: number
+  } | null>(null)
+  const [claiming, setClaiming] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -154,10 +124,6 @@ export default function ActionPacksPage() {
   } | null>(null)
 
   const queryClient = useQueryClient()
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
 
   const {
     data: packs,
@@ -185,19 +151,26 @@ export default function ActionPacksPage() {
     staleTime: 30_000,
   })
 
-  // Top-to-bottom display order: highest position first.
   const orderedPacks = useMemo(() => {
-    return [...(packs ?? [])].sort((a, b) => b.position - a.position)
+    return [...(packs ?? [])].sort((a, b) => a.name.localeCompare(b.name))
   }, [packs])
-  const sortableIds = useMemo(() => orderedPacks.map((p) => p.id), [orderedPacks])
 
-  const reorderMutation = useApiMutation<unknown, number[]>({
-    mutationFn: (packIds) =>
-      apiFetch("/api/action-packs/reorder", {
-        method: "POST",
-        json: { pack_ids: packIds },
+  const contestedByKey = useMemo(() => {
+    const m: Record<string, ContestedActionKey> = {}
+    for (const c of contested ?? []) m[c.action_key] = c
+    return m
+  }, [contested])
+
+  const upsertResolution = useApiMutation<
+    unknown,
+    { action_key: string; pack_id: number | null }
+  >({
+    mutationFn: ({ action_key, pack_id }) =>
+      apiFetch(`/api/action-resolutions/${encodeURIComponent(action_key)}`, {
+        method: "PUT",
+        json: { pack_id },
       }),
-    invalidateKeys: [["action-packs"], ["actions-catalog"], ["action-resolutions"]],
+    invalidateKeys: [["action-resolutions"], ["actions-catalog"], ["action-packs"]],
   })
 
   const deleteMutation = useApiMutation<unknown, number, ActionPack>({
@@ -210,16 +183,6 @@ export default function ActionPacksPage() {
       updater: (old, packId) => old.filter((p) => p.id !== packId),
     },
   })
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const oldIndex = orderedPacks.findIndex((p) => p.id === active.id)
-    const newIndex = orderedPacks.findIndex((p) => p.id === over.id)
-    if (oldIndex < 0 || newIndex < 0) return
-    const next = arrayMove(orderedPacks, oldIndex, newIndex)
-    reorderMutation.mutate(next.map((p) => p.id))
-  }
 
   function openCreate() {
     setEditing(null)
@@ -290,7 +253,7 @@ export default function ActionPacksPage() {
     setConfirmState({
       open: true,
       title: "Delete Action Pack",
-      description: `Delete "${pack.name}"? The pack's checkout will be removed and any actions it provided will disappear from the registry. The linked Git repository (if any) is not affected.`,
+      description: `Delete "${pack.name}"? The pack's checkout will be removed, any actions it provided will disappear from the registry, and any keys pinned to this pack become unresolved (action unrunnable until you pick a new winner). The linked Git repository (if any) is not affected.`,
       action: async () => {
         setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
@@ -328,18 +291,73 @@ export default function ActionPacksPage() {
     }
   }
 
+  function openClaimDialog(pack: ActionPack) {
+    // Pre-compute the diff for the confirmation dialog.
+    const keysThisPackContributes = (catalogActions ?? []).filter((a) =>
+      a.pack_name === pack.name ||
+      a.overridden_from.includes(pack.name),
+    )
+    let pinnedHere = 0
+    let pinnedElsewhere = 0
+    let uncontested = 0
+    let contested = 0
+    for (const action of keysThisPackContributes) {
+      const c = contestedByKey[action.key]
+      if (!c) {
+        // Uncontested — this pack is the sole contributor and the
+        // claim is a no-op for the resolver (but still pins
+        // explicitly for future contestants).
+        uncontested += 1
+        continue
+      }
+      contested += 1
+      if (c.resolution?.pack_id === pack.id) {
+        pinnedHere += 1
+      } else if (c.resolution !== null) {
+        pinnedElsewhere += 1
+      }
+    }
+    setClaimDialog({ pack, pinnedHere, pinnedElsewhere, uncontested, contested })
+  }
+
+  async function handleClaim() {
+    if (!claimDialog) return
+    setClaiming(true)
+    try {
+      const result = await apiFetch<ClaimAllKeysResponse>(
+        `/api/action-packs/${claimDialog.pack.id}/claim-all-keys`,
+        { method: "POST" },
+      )
+      showSuccess(
+        `Pinned ${claimDialog.pack.name}: ${result.created} new, ${result.updated} updated, ${result.skipped} unchanged.`,
+      )
+      await queryClient.invalidateQueries({ queryKey: ["action-resolutions"] })
+      await queryClient.invalidateQueries({ queryKey: ["actions-catalog"] })
+      setClaimDialog(null)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Claim failed")
+    } finally {
+      setClaiming(false)
+    }
+  }
+
   const hasGitRepos = (gitRepos?.length ?? 0) > 0
-  // "Needs attention" = key is contested AND the operator hasn't
-  // explicitly picked a winner. That covers the freeze-on-fresh-conflict
-  // case (auto-pinned, decided_by_user_id IS NULL) and any contested key
-  // with no resolution row at all (default-position-wins). Once the
-  // operator clicks through the modal and picks a winner, the key drops
-  // out of this count and the banner clears for it.
-  const unresolvedConflicts = (contested ?? []).filter(
-    (c) => c.resolution === null || c.decided_by_user_id === null,
-  )
-  const frozenCount = unresolvedConflicts.filter((c) => c.is_frozen).length
-  const unresolvedCount = unresolvedConflicts.length
+
+  // Build the action registry view. One row per action key.
+  // Built-in pseudo-actions (_builtin.*) are management-page noise —
+  // they're never pack-supplied and never contested. Skip them here.
+  const registryRows = useMemo(() => {
+    const rows = (catalogActions ?? [])
+      .filter((a) => !a.key.startsWith("_builtin."))
+      .map((a) => {
+        const contestedRow = contestedByKey[a.key] ?? null
+        return { action: a, contested: contestedRow }
+      })
+    rows.sort((x, y) => x.action.key.localeCompare(y.action.key))
+    return rows
+  }, [catalogActions, contestedByKey])
+
+  const unresolvedRows = registryRows.filter((r) => r.action.unresolved)
 
   return (
     <div className="space-y-6">
@@ -349,9 +367,10 @@ export default function ActionPacksPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Action Packs</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Collections of playbooks that supply actions to every host and
-            group. To bulk-add several packs from the same repo, use the scan
-            wizard from the{" "}
+            Each action key has at most one source pack. When multiple packs
+            declare the same key, pick a winner per key below. There is no
+            global pack ordering — pack rows are unranked. To bulk-add
+            several packs from one repo, use the scan wizard from the{" "}
             <Link href="/git-repos" className="underline hover:text-slate-200">
               Git Repos
             </Link>{" "}
@@ -361,151 +380,301 @@ export default function ActionPacksPage() {
         <Button onClick={openCreate}>Add Pack</Button>
       </div>
 
-      <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-900 border border-slate-700">
-        <Info className="h-5 w-5 text-slate-400 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-slate-300">
-          <strong>Pack precedence:</strong> drag rows to reorder. The pack at
-          the <em>top</em> wins on action-key collisions. The bundled pack
-          ships with LabDog and is implicit at the bottom — it loses to any
-          listed pack contributing the same key.
-        </div>
-      </div>
-
-      {unresolvedCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setConflictOpen(true)}
-          className="flex w-full items-start gap-3 p-3 rounded-lg bg-amber-950/40 border border-amber-800 hover:bg-amber-950/60 text-left"
-        >
+      {unresolvedRows.length > 0 && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-950/40 border border-amber-800">
           <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-amber-200 font-medium text-sm">
-              {frozenCount > 0
-                ? `${frozenCount} action ${frozenCount === 1 ? "key needs" : "keys need"} your decision`
-                : `${unresolvedCount} unresolved action ${unresolvedCount === 1 ? "key" : "keys"}`}
+          <div className="text-sm">
+            <p className="text-amber-200 font-medium">
+              {unresolvedRows.length} action{" "}
+              {unresolvedRows.length === 1 ? "key needs" : "keys need"} a
+              decision
             </p>
-            <p className="text-amber-300/80 text-xs mt-0.5">
-              {frozenCount > 0
-                ? "LabDog is using the previous winner until you confirm. Click to review."
-                : "Multiple packs contribute the same action keys and no winner has been confirmed. Click to review."}
+            <p className="text-amber-300/80 mt-0.5">
+              Pick a winning pack below for each unresolved key. Until then
+              these actions are blocked.
+            </p>
+            <p className="mt-2 text-amber-200/90 font-mono text-xs">
+              {unresolvedRows.map((r) => r.action.key).join(", ")}
             </p>
           </div>
-        </button>
-      )}
-
-      {showLoading && <TableSkeleton rows={3} columns={6} />}
-
-      {error && (
-        <div className="text-red-400 py-8 text-center">
-          Failed to load action packs
         </div>
       )}
 
-      {reorderMutation.error && (
-        <div className="text-red-400 text-sm">
-          {reorderMutation.error.message}
+      {/* ---- Action Registry — the primary surface ---- */}
+      <section className="rounded-lg border border-slate-700 bg-slate-900">
+        <div className="px-4 py-3 border-b border-slate-700">
+          <h2 className="text-sm font-semibold text-white">Action Registry</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Every action key the live registry knows about, and which pack
+            owns it. Uncontested keys win automatically; contested keys
+            require a per-key pin.
+          </p>
         </div>
-      )}
 
-      {!isLoading && !error && (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={sortableIds}
-            strategy={verticalListSortingStrategy}
-          >
-            <DataTable<ActionPack>
-              tableId="action-packs"
-              data={orderedPacks}
-              emptyMessage={
-                <>
-                  No action packs configured. Click <strong>Add Pack</strong>{" "}
-                  to get started.
-                </>
-              }
-              getRowKey={(p) => p.id}
-              renderRow={(pack, _idx, defaultCells) => (
-                <SortableRow key={pack.id} pack={pack}>
-                  {defaultCells}
-                </SortableRow>
-              )}
-              columns={[
-                {
-                  key: "drag",
-                  label: "",
-                  cell: (pack) => <DragHandleCell pack={pack} />,
-                  defaultWidth: 40,
-                  resizable: false,
-                  sortable: false,
-                },
-                {
-                  key: "name",
-                  label: "Name",
-                  accessor: (p) => p.name,
-                  cell: (p) => (
-                    <span className="font-medium text-white">{p.name}</span>
-                  ),
-                  defaultWidth: 180,
-                  sortable: false,
-                },
-                {
-                  key: "source",
-                  label: "Source",
-                  accessor: (p) =>
-                    p.source_type === "local"
-                      ? p.local_path ?? ""
-                      : p.git_repository_name ?? "",
-                  cell: (p) => (
-                    <div className="flex flex-col">
-                      {p.source_type === "local" ? (
-                        <>
-                          <span className="font-mono text-slate-300 text-sm truncate">
-                            {p.local_path}
-                          </span>
-                          <span className="text-xs text-slate-500">
-                            local directory
-                          </span>
-                        </>
+        {catalogLoading && (
+          <p className="text-slate-400 text-sm px-4 py-6 text-center">
+            Loading…
+          </p>
+        )}
+
+        {!catalogLoading && registryRows.length === 0 && (
+          <p className="text-slate-400 text-sm px-4 py-6 text-center">
+            No actions in the registry yet. Add and sync an action pack to
+            populate this list.
+          </p>
+        )}
+
+        {!catalogLoading && registryRows.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-700">
+                <TableHead className="text-slate-400 text-xs font-medium w-8" />
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Action Key
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Winner
+                </TableHead>
+                <TableHead className="text-slate-400 text-xs font-medium">
+                  Status
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {registryRows.flatMap((row) => {
+                const { action, contested } = row
+                const isContested = contested !== null
+                const isUnresolved = action.unresolved
+                const isExpanded = expandedRow === action.key
+                const rowClass = isUnresolved
+                  ? "border-slate-700 bg-amber-950/20"
+                  : "border-slate-700"
+
+                const main = (
+                  <TableRow key={action.key} className={rowClass}>
+                    <TableCell className="align-top">
+                      {isContested ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedRow(isExpanded ? null : action.key)
+                          }
+                          className="text-slate-400 hover:text-slate-200"
+                          aria-label={isExpanded ? "Collapse" : "Expand"}
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-4 w-4" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4" />
+                          )}
+                        </button>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      <span className="font-mono text-slate-300 text-xs">
+                        {action.key}
+                      </span>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      {isUnresolved ? (
+                        <span className="text-amber-300 text-xs italic">
+                          (no winner pinned)
+                        </span>
                       ) : (
-                        <>
-                          <span className="text-slate-300 text-sm truncate">
-                            {p.git_repository_name ?? "(missing)"}
-                            {p.path ? (
-                              <span className="font-mono text-slate-500">
-                                {" "}
-                                / {p.path}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span className="text-xs text-slate-500">git repo</span>
-                        </>
+                        <span className="text-slate-200 text-xs">
+                          {action.pack_name}
+                          {action.winning_pack_id === null &&
+                          action.pack_name === "bundled" ? (
+                            <span className="ml-1 text-[10px] text-slate-500">
+                              (bundled)
+                            </span>
+                          ) : null}
+                        </span>
                       )}
+                    </TableCell>
+                    <TableCell className="align-top">
+                      {isUnresolved ? (
+                        <span className="text-amber-300 text-xs font-medium">
+                          Pick winner
+                        </span>
+                      ) : isContested && contested?.is_frozen ? (
+                        <span className="text-amber-300 text-xs">Frozen</span>
+                      ) : isContested ? (
+                        <span className="text-slate-500 text-xs">Pinned</span>
+                      ) : (
+                        <span className="text-emerald-400 text-xs">OK</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+
+                if (!isContested || !isExpanded || contested === null) {
+                  return [main]
+                }
+
+                // Inline radio group for contested rows.
+                const expansion = (
+                  <TableRow
+                    key={`${action.key}-detail`}
+                    className="border-slate-700 bg-slate-950/40"
+                  >
+                    <TableCell />
+                    <TableCell colSpan={3} className="py-3">
+                      <div className="space-y-1.5">
+                        {contested.candidates.map((c) => {
+                          const checked =
+                            contested.resolution?.pack_id === c.pack_id
+                          return (
+                            <label
+                              key={`${action.key}-${c.pack_id ?? "bundled"}`}
+                              className="flex items-center gap-2 text-sm cursor-pointer rounded px-2 py-1 hover:bg-slate-800"
+                            >
+                              <input
+                                type="radio"
+                                name={`winner-${action.key}`}
+                                checked={checked}
+                                disabled={upsertResolution.isPending}
+                                onChange={() =>
+                                  upsertResolution.mutate({
+                                    action_key: action.key,
+                                    pack_id: c.pack_id,
+                                  })
+                                }
+                              />
+                              <span className="text-slate-200 flex-1">
+                                {packLabel(c)}
+                              </span>
+                            </label>
+                          )
+                        })}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+
+                return [main, expansion]
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </section>
+
+      {/* ---- Pack Sources — management-only ---- */}
+      <section>
+        <h2 className="text-sm font-semibold text-white">Pack Sources</h2>
+        <p className="text-xs text-slate-400 mt-0.5 mb-3">
+          Where the packs come from. Add, sync, edit, or delete here. Use
+          &ldquo;Make winner for all keys&rdquo; to pin every key a pack
+          contributes to that pack in one click.
+        </p>
+
+        {showLoading && <TableSkeleton rows={3} columns={5} />}
+
+        {error && (
+          <div className="text-red-400 py-8 text-center">
+            Failed to load action packs
+          </div>
+        )}
+
+        {!isLoading && !error && (
+          <DataTable<PackRow>
+            tableId="action-packs"
+            data={[BUNDLED_PACK_ROW, ...orderedPacks]}
+            emptyMessage={
+              <>
+                No action packs configured. Click <strong>Add Pack</strong>{" "}
+                to add one.
+              </>
+            }
+            getRowKey={(p) => p.id}
+            columns={[
+              {
+                key: "name",
+                label: "Name",
+                cell: (p) => {
+                  const bundled = isBundledRow(p)
+                  return (
+                    <div className="flex items-center gap-2">
+                      {bundled ? <Lock className="h-3 w-3 text-slate-500" /> : null}
+                      <span className="font-medium text-white">{p.name}</span>
+                      {bundled ? (
+                        <span className="ml-1 text-[10px] rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-slate-400">
+                          built-in
+                        </span>
+                      ) : null}
                     </div>
-                  ),
-                  defaultWidth: 320,
-                  sortable: false,
+                  )
                 },
-                {
-                  key: "enabled",
-                  label: "Enabled",
-                  accessor: (p) => p.enabled,
-                  cell: (p) =>
-                    p.enabled ? (
-                      <span className="text-green-400 text-sm">Yes</span>
-                    ) : (
-                      <span className="text-yellow-400 text-sm">No</span>
-                    ),
-                  defaultWidth: 100,
-                  sortable: false,
+                defaultWidth: 200,
+                sortable: false,
+              },
+              {
+                key: "source",
+                label: "Source",
+                cell: (p) => {
+                  if (isBundledRow(p)) {
+                    return (
+                      <span className="text-xs text-slate-500">
+                        baked into the container image
+                      </span>
+                    )
+                  }
+                  if (p.source_type === "local") {
+                    return (
+                      <div className="flex flex-col">
+                        <span className="font-mono text-slate-300 text-sm truncate">
+                          {p.local_path}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          local directory
+                        </span>
+                      </div>
+                    )
+                  }
+                  return (
+                    <div className="flex flex-col">
+                      <span className="text-slate-300 text-sm truncate">
+                        {p.git_repository_name ?? "(missing)"}
+                        {p.path ? (
+                          <span className="font-mono text-slate-500">
+                            {" "}
+                            / {p.path}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="text-xs text-slate-500">git repo</span>
+                    </div>
+                  )
                 },
-                {
-                  key: "status",
-                  label: "Last Sync",
-                  accessor: (p) => p.last_synced_at ?? "",
-                  cell: (p) => (
+                defaultWidth: 320,
+                sortable: false,
+              },
+              {
+                key: "enabled",
+                label: "Enabled",
+                cell: (p) => {
+                  if (isBundledRow(p)) {
+                    return <span className="text-slate-500 text-sm">—</span>
+                  }
+                  return p.enabled ? (
+                    <span className="text-green-400 text-sm">Yes</span>
+                  ) : (
+                    <span className="text-yellow-400 text-sm">No</span>
+                  )
+                },
+                defaultWidth: 100,
+                sortable: false,
+              },
+              {
+                key: "status",
+                label: "Last Sync",
+                cell: (p) => {
+                  if (isBundledRow(p)) {
+                    return (
+                      <span className="text-xs text-slate-500">at build</span>
+                    )
+                  }
+                  return (
                     <div className="flex flex-col gap-0.5">
                       {statusChip(p)}
                       <span className="text-xs text-slate-500">
@@ -517,15 +686,24 @@ export default function ActionPacksPage() {
                         </span>
                       )}
                     </div>
-                  ),
-                  defaultWidth: 180,
-                  sortable: false,
+                  )
                 },
-                {
-                  key: "actions",
-                  label: "Actions",
-                  cell: (pack) => (
-                    <div className="flex gap-1">
+                defaultWidth: 180,
+                sortable: false,
+              },
+              {
+                key: "actions",
+                label: "Actions",
+                cell: (pack) => {
+                  if (isBundledRow(pack)) {
+                    return (
+                      <span className="text-xs text-slate-600">
+                        immutable
+                      </span>
+                    )
+                  }
+                  return (
+                    <div className="flex gap-1 flex-wrap">
                       <Button
                         size="sm"
                         variant="ghost"
@@ -533,6 +711,14 @@ export default function ActionPacksPage() {
                         onClick={() => handleSync(pack)}
                       >
                         {syncingId === pack.id ? "Syncing..." : "Sync"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openClaimDialog(pack)}
+                        title="Pin every key this pack contributes to this pack"
+                      >
+                        Make winner for all keys
                       </Button>
                       <Button
                         size="sm"
@@ -551,16 +737,16 @@ export default function ActionPacksPage() {
                         Delete
                       </Button>
                     </div>
-                  ),
-                  defaultWidth: 240,
-                  resizable: false,
-                  sortable: false,
+                  )
                 },
-              ]}
-            />
-          </SortableContext>
-        </DndContext>
-      )}
+                defaultWidth: 360,
+                resizable: false,
+                sortable: false,
+              },
+            ]}
+          />
+        )}
+      </section>
 
       <Dialog
         open={dialogOpen}
@@ -716,96 +902,44 @@ export default function ActionPacksPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Active Action Catalog */}
-      <div className="rounded-lg border border-slate-700 bg-slate-900">
-        <div className="px-4 py-3 border-b border-slate-700">
-          <h2 className="text-sm font-semibold text-white">
-            Active Action Catalog
-          </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Every action key in the live registry, with the pack that wins it.
-          </p>
-        </div>
-
-        {catalogLoading && (
-          <p className="text-slate-400 text-sm px-4 py-6 text-center">
-            Loading…
-          </p>
-        )}
-
-        {!catalogLoading && (!catalogActions || catalogActions.length === 0) && (
-          <p className="text-slate-400 text-sm px-4 py-6 text-center">
-            No actions in the registry yet. Add and sync an action pack to
-            populate this list.
-          </p>
-        )}
-
-        {!catalogLoading && catalogActions && catalogActions.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Action Key
-                </TableHead>
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Winning Pack
-                </TableHead>
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Status
-                </TableHead>
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Shadowed Candidates
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {catalogActions
-                .slice()
-                .sort((a, b) => a.key.localeCompare(b.key))
-                .map((action) => {
-                  const isContested = action.overridden_from.length > 0
-                  return (
-                    <TableRow key={action.key} className="border-slate-700">
-                      <TableCell>
-                        <span className="font-mono text-slate-300 text-xs">
-                          {action.key}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-slate-300 text-xs">
-                        {action.pack_name}
-                      </TableCell>
-                      <TableCell>
-                        {isContested ? (
-                          <button
-                            type="button"
-                            onClick={() => setConflictOpen(true)}
-                            className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium bg-amber-600 text-white hover:bg-amber-500 transition-colors"
-                          >
-                            Contested
-                          </button>
-                        ) : (
-                          <span className="text-slate-500 text-xs">
-                            Uncontested
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-slate-400 text-xs">
-                        {isContested
-                          ? action.overridden_from.join(", ")
-                          : <span className="text-slate-600">—</span>}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      <ConflictResolutionDialog
-        open={conflictOpen}
-        onClose={() => setConflictOpen(false)}
-      />
+      {claimDialog && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setClaimDialog(null)}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                Make {claimDialog.pack.name} winner for all its keys
+              </DialogTitle>
+            </DialogHeader>
+            <div className="text-sm text-slate-300 space-y-2">
+              <p>This pack contributes to <strong>{claimDialog.contested + claimDialog.uncontested}</strong> action key{claimDialog.contested + claimDialog.uncontested === 1 ? "" : "s"}.</p>
+              <ul className="ml-4 list-disc text-slate-400 text-xs space-y-0.5">
+                <li>{claimDialog.uncontested} uncontested (no-op for the resolver, but pinned explicitly so future contestants don&apos;t auto-claim them)</li>
+                <li>{claimDialog.contested} contested:
+                  {" "}
+                  <span className="text-emerald-300">{claimDialog.pinnedHere} already pinned here</span>,
+                  {" "}
+                  <span className="text-amber-300">{claimDialog.pinnedElsewhere} pinned elsewhere (will be overwritten)</span>,
+                  {" "}
+                  <span className="text-slate-300">
+                    {claimDialog.contested - claimDialog.pinnedHere - claimDialog.pinnedElsewhere} unpinned (will become pinned here)
+                  </span>
+                </li>
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setClaimDialog(null)} disabled={claiming}>
+                Cancel
+              </Button>
+              <Button onClick={handleClaim} disabled={claiming}>
+                {claiming ? "Pinning…" : "Pin all keys"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {confirmState && (
         <ConfirmDialog
