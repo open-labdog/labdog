@@ -210,3 +210,43 @@ ignores operator choices in the run dialog. An operator who unticks
 "Take snapshot" for a quick local change still gets a snapshot
 taken — surprising at best.
 
+
+---
+
+## Action runtime — surface `pending_reason` on blocked runs
+
+**Context:** When an action run lands in `ActionRun.status='pending'`
+the claim-or-defer decided some other op is in flight on the
+target host. The UI shows an amber "Host busy" badge but doesn't
+say *which* op is blocking — the operator has to go hunt across
+the syncs and active actions to find the offender. The badge alone
+is a partial answer; the operator's next question is "blocked by
+what?" and we don't answer it.
+
+**Sketch:**
+
+- Add `ActionRun.pending_reason: str | None` (and the same on
+  `ActionHostRun`) — `String(255)`, nullable, no migration if the
+  column is added as `nullable=True` from the start.
+- In `app/tasks/host_lock.py` `check_host_busy` / `check_hosts_busy`:
+  return not just a bool / int, but also enough to identify the
+  blocking row — e.g. `(busy_kind, busy_id)` where `busy_kind` is
+  one of `sync` / `action_host` / `action_group`.
+- Action defer paths in `action_host.py` / `action_group.py`
+  format that into a human-readable string ("waiting on sync job
+  47 on host node-1") and write it to `pending_reason` along with
+  the status flip.
+- `RunStatusBadge` in `frontend/components/status-badge.tsx` reads
+  `run.pending_reason` (or a new prop) and renders it as a
+  tooltip; the action run-detail page surfaces it as a banner
+  with a link to the blocking op (so the operator can click
+  through to see when it started, ETA if it's a long-running
+  action with `estimated_duration`).
+- Tests: defer path writes the right reason; UI renders the
+  tooltip / banner correctly.
+
+**Why it matters:** Today an operator submits an action, sees the
+amber "Host busy" badge, and is left guessing what's blocking them.
+On a busy server with multiple operations in flight this is
+genuinely frustrating — they don't know if it's a 30-second sync
+or a 30-minute upgrade ahead of them in the queue.

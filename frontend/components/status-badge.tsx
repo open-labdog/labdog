@@ -103,8 +103,13 @@ export function SystemdStateBadge({
 }
 
 const RUN_STATUS_COLORS: Record<string, string> = {
-  pending: "bg-slate-600 text-white",
   queued: "bg-slate-600 text-white",
+  // `pending` means claim-or-defer decided another op is running on
+  // the target host; the run is waiting for the per-host queue to
+  // free up. Amber to set apart from generic "Queued" (worker pool
+  // wait) so an operator can tell at a glance that something on the
+  // host is blocking them.
+  pending: "bg-amber-600 text-white",
   running: "bg-blue-600 text-white",
   succeeded: "bg-green-600 text-white",
   completed: "bg-green-600 text-white",
@@ -114,10 +119,18 @@ const RUN_STATUS_COLORS: Record<string, string> = {
   skipped: "bg-slate-400 text-white",
 }
 
+// Override the default Title-Cased status string where the literal
+// status name is ambiguous on its own. Falls back to capitalised
+// status when not listed.
+const RUN_STATUS_LABELS: Record<string, string> = {
+  pending: "Host busy",
+}
+
 export function RunStatusBadge({ status }: { status: string }) {
+  const label = RUN_STATUS_LABELS[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
   return (
     <Badge className={RUN_STATUS_COLORS[status] ?? "bg-slate-600 text-white"}>
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {label}
     </Badge>
   )
 }
