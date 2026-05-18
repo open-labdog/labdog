@@ -45,7 +45,15 @@ class ActionRun(Base):
     snapshot_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     verify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     auto_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    # status values: queued | running | succeeded | partial | failed | cancelled
+    # status values: queued | pending | running | succeeded | partial | failed | cancelled
+    #
+    # ``queued``: Celery hasn't picked the run up yet (newly inserted).
+    # ``pending``: Celery picked it up, claim-or-defer decided the
+    #              target host (or some member of a group target) is in
+    #              use by another op, waiting for dispatch-next-pending
+    #              to re-fire when the in-flight op finishes.
+    # ``running``: the action is in flight.
+    # terminal: ``succeeded`` | ``partial`` | ``failed`` | ``cancelled``.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     triggered_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -78,7 +86,12 @@ class ActionHostRun(Base):
         ForeignKey("action_runs.id", ondelete="CASCADE"), nullable=False
     )
     host_id: Mapped[int] = mapped_column(ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False)
-    # status values: queued | running | succeeded | failed | skipped | cancelled
+    # status values: queued | pending | running | succeeded | failed | skipped | cancelled
+    #
+    # ``pending`` mirrors the parent ActionRun.status: Celery picked the
+    # parent task up but found the target host busy and deferred. The
+    # per-host row sits in ``pending`` until dispatch-next-pending
+    # re-fires the parent.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

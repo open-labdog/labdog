@@ -173,6 +173,11 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from app.models.host import Host, HostGroupMembership
     from app.models.ssh_key import SSHKey
     from app.settings_service import get_setting_sync_typed
+    from app.tasks.host_lock import (
+        acquire_host_locks,
+        check_hosts_busy,
+        dispatch_next_pending_for_host,
+    )
 
     r = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
@@ -181,6 +186,10 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     # Per-host SSH key files written to tmpfs; tracked for cleanup.
     ssh_key_paths: list[str] = []
 
+    # Track member host ids we successfully claimed so the finally block
+    # can release each via dispatch-next-pending. Empty on the defer path.
+    claimed_member_ids: list[int] = []
+
     try:
         # ------------------------------------------------------------------ #
         # Pre-flight cancel check                                             #
@@ -188,6 +197,63 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         if r.exists(f"actions.cancel.{action_run_id}"):
             await _mark_run_cancelled(action_run_id, channel, r)
             return
+
+        # ------------------------------------------------------------------ #
+        # Claim-or-defer all members atomically. If any member is busy with #
+        # another op (sync, host action, or another group action that      #
+        # includes it), mark the ActionRun + every pre-created             #
+        # ActionHostRun as ``pending`` and return. The in-flight op's      #
+        # finally hook will re-fire us once it frees up.                   #
+        # ------------------------------------------------------------------ #
+        async with task_session() as db:
+            run_peek = (
+                await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+            ).scalar_one_or_none()
+            if run_peek is None:
+                logger.warning("action_group: action_run %d not found at claim", action_run_id)
+                return
+            if run_peek.group_id is None:
+                # The main loader below will fail this run cleanly with
+                # the existing "no group_id" branch — let it run.
+                pass
+            else:
+                hosts_peek = await db.execute(
+                    select(Host.id)
+                    .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
+                    .where(HostGroupMembership.c.group_id == run_peek.group_id)
+                    .order_by(Host.id)
+                )
+                member_ids_peek = [hid for hid in hosts_peek.scalars().all()]
+                if member_ids_peek:
+                    await acquire_host_locks(db, member_ids_peek)
+                    busy_host = await check_hosts_busy(db, member_ids_peek)
+                    if busy_host is not None:
+                        # Defer: mark parent + any pre-created per-host rows
+                        # as ``pending``. The pre-created rows only exist if
+                        # an earlier dispatch flipped them; first-time runs
+                        # will have none yet (the main loader creates them).
+                        run_peek.status = "pending"
+                        existing_hrs = (
+                            await db.execute(
+                                select(ActionHostRun).where(
+                                    ActionHostRun.action_run_id == action_run_id
+                                )
+                            )
+                        ).scalars().all()
+                        for hr in existing_hrs:
+                            if hr.status in ("queued", "running"):
+                                hr.status = "pending"
+                        await db.commit()
+                        logger.info(
+                            "action_group: deferred action_run=%d "
+                            "(host %d busy with another op)",
+                            action_run_id,
+                            busy_host,
+                        )
+                        return
+                    # All free → record what we claimed for the finally release.
+                    claimed_member_ids = list(member_ids_peek)
+                    await db.commit()
 
         # ------------------------------------------------------------------ #
         # Phase 1: load run + action + group members + ssh keys, mark running #
@@ -591,6 +657,25 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         return
 
     finally:
+        # Dispatch-next-pending per claimed member. Each freed host can
+        # unblock a different queued op; we honour exclude_action_run_id
+        # so our own row (already finalised in a prior commit) doesn't
+        # re-pick itself. Failures here are swallowed so they never
+        # mask the real task outcome.
+        for host_id in claimed_member_ids:
+            try:
+                async with task_session() as db:
+                    await dispatch_next_pending_for_host(
+                        db, host_id, exclude_action_run_id=action_run_id
+                    )
+            except Exception:
+                logger.exception(
+                    "action_group: dispatch-next-pending failed for host_id=%s "
+                    "after action_run_id=%s; queue may be stuck until next op triggers it",
+                    host_id,
+                    action_run_id,
+                )
+
         # CRITICAL: always remove SSH keys from tmpfs.
         for key_path in ssh_key_paths:
             try:
