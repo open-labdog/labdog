@@ -257,7 +257,12 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     from app.tasks.host_lock import acquire_host_lock, check_host_busy
 
     await acquire_host_lock(db, host_id)
-    return not await check_host_busy(db, host_id)
+    # ``check_host_busy`` now returns ``BlockerInfo | None`` (TODO B —
+    # surface pending_reason). The sync side doesn't yet capture the
+    # blocker on SyncJob; a follow-up will add ``SyncJob.pending_reason``
+    # and pipe the BlockerInfo into it the same way the action paths do.
+    # For now we just truthy-check that any blocker exists.
+    return (await check_host_busy(db, host_id)) is None
 
 
 async def _dispatch_next_pending_for_host(

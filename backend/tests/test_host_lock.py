@@ -5,10 +5,13 @@ These cover the five public helpers in ``app.tasks.host_lock``:
 - ``acquire_host_lock``: actually acquires the PG advisory lock so a
   concurrent ``pg_try_advisory_xact_lock`` on the same key fails.
 - ``acquire_host_locks``: dedups + sorts ids before locking.
-- ``check_host_busy``: returns True for each of the three sources
-  (SyncJob, host-targeted ActionRun, group-targeted ActionHostRun) and
-  False otherwise.
-- ``check_hosts_busy``: returns the smallest busy id; None when all free.
+- ``check_host_busy``: returns a :class:`BlockerInfo` for each of the
+  three sources (SyncJob, host-targeted ActionRun, group-targeted
+  ActionHostRun) and ``None`` otherwise. The returned dataclass carries
+  the kind, blocker id, host id, and action key (None for sync) so the
+  caller can format a ``pending_reason`` diagnostic.
+- ``check_hosts_busy``: returns the BlockerInfo for the smallest busy
+  host id; ``None`` when all free.
 - ``dispatch_next_pending_for_host``: picks oldest by created_at across
   both queues, returns None on empty queues, honors excludes, is
   defensive when a picked row's host has been deleted.
@@ -201,7 +204,7 @@ async def test_check_host_busy_false_when_nothing_running(db: AsyncSession):
 
     ssh = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh.id)
-    assert (await check_host_busy(db, host.id)) is False
+    assert (await check_host_busy(db, host.id)) is None
 
 
 async def test_check_host_busy_true_for_running_sync_job(db: AsyncSession):
@@ -209,8 +212,13 @@ async def test_check_host_busy_true_for_running_sync_job(db: AsyncSession):
 
     ssh = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh.id)
-    await _create_running_sync_job(db, host.id)
-    assert (await check_host_busy(db, host.id)) is True
+    sync_id = await _create_running_sync_job(db, host.id)
+    blocker = await check_host_busy(db, host.id)
+    assert blocker is not None
+    assert blocker.kind == "sync"
+    assert blocker.id == sync_id
+    assert blocker.host_id == host.id
+    assert blocker.action_key is None
 
 
 async def test_check_host_busy_true_for_running_host_action(db: AsyncSession):
@@ -218,8 +226,15 @@ async def test_check_host_busy_true_for_running_host_action(db: AsyncSession):
 
     ssh = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh.id)
-    await _create_action_run(db, host_id=host.id, status="running")
-    assert (await check_host_busy(db, host.id)) is True
+    run_id = await _create_action_run(
+        db, host_id=host.id, status="running", action_key="_builtin.collect_state"
+    )
+    blocker = await check_host_busy(db, host.id)
+    assert blocker is not None
+    assert blocker.kind == "action_host"
+    assert blocker.id == run_id
+    assert blocker.host_id == host.id
+    assert blocker.action_key == "_builtin.collect_state"
 
 
 async def test_check_host_busy_true_for_running_group_action_member(db: AsyncSession):
@@ -229,9 +244,16 @@ async def test_check_host_busy_true_for_running_group_action_member(db: AsyncSes
     group = await create_group(db)
     ssh = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
-    run_id = await _create_action_run(db, group_id=group.id, status="running")
+    run_id = await _create_action_run(
+        db, group_id=group.id, status="running", action_key="k8s-upgrade"
+    )
     await _create_action_host_run(db, run_id, host.id, status="running")
-    assert (await check_host_busy(db, host.id)) is True
+    blocker = await check_host_busy(db, host.id)
+    assert blocker is not None
+    assert blocker.kind == "action_group"
+    assert blocker.id == run_id
+    assert blocker.host_id == host.id
+    assert blocker.action_key == "k8s-upgrade"
 
 
 async def test_check_host_busy_ignores_other_hosts(db: AsyncSession):
@@ -241,8 +263,8 @@ async def test_check_host_busy_ignores_other_hosts(db: AsyncSession):
     host_a = await create_host(db, ssh_key_id=ssh.id, ip="10.0.0.10")
     host_b = await create_host(db, ssh_key_id=ssh.id, ip="10.0.0.11")
     await _create_running_sync_job(db, host_a.id)
-    assert (await check_host_busy(db, host_a.id)) is True
-    assert (await check_host_busy(db, host_b.id)) is False
+    assert (await check_host_busy(db, host_a.id)) is not None
+    assert (await check_host_busy(db, host_b.id)) is None
 
 
 # ---------------------------------------------------------------------------
@@ -259,11 +281,23 @@ async def test_check_hosts_busy_returns_smallest_busy(db: AsyncSession):
     h3 = await create_host(db, ssh_key_id=ssh.id, ip="10.0.0.23")
 
     # Mark h2 and h3 busy via different sources; the smallest busy id wins.
-    await _create_running_sync_job(db, h3.id)
-    await _create_action_run(db, host_id=h2.id, status="running")
+    sync_id = await _create_running_sync_job(db, h3.id)
+    action_id = await _create_action_run(
+        db, host_id=h2.id, status="running", action_key="_builtin.drift_check"
+    )
 
-    busy_id = await check_hosts_busy(db, [h1.id, h2.id, h3.id])
-    assert busy_id == min(h2.id, h3.id)
+    blocker = await check_hosts_busy(db, [h1.id, h2.id, h3.id])
+    assert blocker is not None
+    assert blocker.host_id == min(h2.id, h3.id)
+    # The winner's identity matches the row we inserted on that host.
+    if blocker.host_id == h2.id:
+        assert blocker.kind == "action_host"
+        assert blocker.id == action_id
+        assert blocker.action_key == "_builtin.drift_check"
+    else:
+        assert blocker.kind == "sync"
+        assert blocker.id == sync_id
+        assert blocker.action_key is None
 
 
 async def test_check_hosts_busy_none_when_all_free(db: AsyncSession):
@@ -279,6 +313,73 @@ async def test_check_hosts_busy_empty_returns_none(db: AsyncSession):
     from app.tasks.host_lock import check_hosts_busy
 
     assert (await check_hosts_busy(db, [])) is None
+
+
+async def test_check_hosts_busy_picks_group_action_when_first(db: AsyncSession):
+    """When the smallest busy member is held by a group-dispatch action,
+    the returned BlockerInfo identifies the group ActionRun + action_key."""
+    from app.tasks.host_lock import check_hosts_busy
+    from tests.conftest import create_group
+
+    group = await create_group(db)
+    ssh = await create_ssh_key(db)
+    # Two hosts in the group, both members.
+    h1 = await create_host(db, ssh_key_id=ssh.id, ip="10.0.0.41", group_ids=[group.id])
+    h2 = await create_host(db, ssh_key_id=ssh.id, ip="10.0.0.42", group_ids=[group.id])
+    run_id = await _create_action_run(
+        db, group_id=group.id, status="running", action_key="k8s-upgrade"
+    )
+    # Mark BOTH members as held by the running group run.
+    await _create_action_host_run(db, run_id, h1.id, status="running")
+    await _create_action_host_run(db, run_id, h2.id, status="running")
+
+    blocker = await check_hosts_busy(db, [h1.id, h2.id])
+    assert blocker is not None
+    assert blocker.host_id == min(h1.id, h2.id)
+    assert blocker.kind == "action_group"
+    assert blocker.id == run_id
+    assert blocker.action_key == "k8s-upgrade"
+
+
+# ---------------------------------------------------------------------------
+# format_pending_reason
+# ---------------------------------------------------------------------------
+
+
+async def test_format_pending_reason_sync_uses_hostname(db: AsyncSession):
+    """A ``sync`` blocker renders without an action_key suffix."""
+    from app.tasks.host_lock import BlockerInfo, format_pending_reason
+
+    ssh = await create_ssh_key(db)
+    host = await create_host(db, hostname="node-fmt-1", ssh_key_id=ssh.id)
+    blocker = BlockerInfo(kind="sync", id=47, host_id=host.id, action_key=None)
+    reason = await format_pending_reason(db, blocker)
+    assert reason == "Waiting for sync 47 on host node-fmt-1"
+
+
+async def test_format_pending_reason_action_includes_key(db: AsyncSession):
+    """An action blocker (host or group) includes ``(action_key)`` suffix."""
+    from app.tasks.host_lock import BlockerInfo, format_pending_reason
+
+    ssh = await create_ssh_key(db)
+    host = await create_host(db, hostname="node-fmt-2", ssh_key_id=ssh.id)
+    blocker = BlockerInfo(
+        kind="action_group", id=12, host_id=host.id, action_key="k8s-upgrade"
+    )
+    reason = await format_pending_reason(db, blocker)
+    assert reason == "Waiting for action_group 12 on host node-fmt-2 (k8s-upgrade)"
+
+
+async def test_format_pending_reason_falls_back_when_host_deleted(db: AsyncSession):
+    """When the blocker references a missing host id we still produce a
+    usable diagnostic (host id placeholder) rather than crashing."""
+    from app.tasks.host_lock import BlockerInfo, format_pending_reason
+
+    # 999_999 is unlikely to map to a real host in the test session.
+    blocker = BlockerInfo(kind="sync", id=3, host_id=999_999, action_key=None)
+    reason = await format_pending_reason(db, blocker)
+    assert "999999" in reason or "host:999999" in reason
+    assert "sync 3" in reason
 
 
 # ---------------------------------------------------------------------------

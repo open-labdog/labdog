@@ -67,11 +67,18 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
         host_id = host_run.host_id
 
         if with_lock:
-            from app.tasks.host_lock import acquire_host_lock, check_host_busy
+            from app.tasks.host_lock import (
+                acquire_host_lock,
+                check_host_busy,
+                format_pending_reason,
+            )
 
             await acquire_host_lock(db, host_id)
-            if await check_host_busy(db, host_id):
+            blocker = await check_host_busy(db, host_id)
+            if blocker is not None:
+                reason = await format_pending_reason(db, blocker)
                 host_run.status = "pending"
+                host_run.pending_reason = reason
                 # Mark parent ActionRun pending too if it's a single-host
                 # target; for multi-host (group with supports_host=True)
                 # the parent reflects the aggregate, not one member.
@@ -85,11 +92,13 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
                     "running",
                 ):
                     run_row.status = "pending"
+                    run_row.pending_reason = reason
                 await db.commit()
                 logger.info(
-                    "builtin_dispatchers: deferred host_run=%d (host %d busy)",
+                    "builtin_dispatchers: deferred host_run=%d (host %d busy: %s)",
                     host_run_id,
                     host_id,
+                    reason,
                 )
                 return None
 

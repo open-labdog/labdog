@@ -123,7 +123,7 @@ export function RunHistoryDrawer({
                     className="flex items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm hover:border-slate-600"
                   >
                     <div className="flex items-center gap-2">
-                      <RunStatusBadge status={run.status} />
+                      <RunStatusBadge status={run.status} reason={run.pending_reason} />
                       <span className="text-slate-400">
                         {formatRelativeTime(run.started_at ?? run.created_at)}
                       </span>

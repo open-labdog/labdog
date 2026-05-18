@@ -73,6 +73,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         acquire_host_lock,
         check_host_busy,
         dispatch_next_pending_for_host,
+        format_pending_reason,
     )
 
     r = redis_lib.from_url(settings.redis.url)
@@ -126,8 +127,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 return
             host_id_for_lock = hr_row.host_id
             await acquire_host_lock(db, host_id_for_lock)
-            if await check_host_busy(db, host_id_for_lock):
+            blocker = await check_host_busy(db, host_id_for_lock)
+            if blocker is not None:
+                reason = await format_pending_reason(db, blocker)
                 hr_row.status = "pending"
+                hr_row.pending_reason = reason
                 # Only flip the parent ActionRun to ``pending`` when this
                 # is the sole per-host row (single-host target). For the
                 # group-with-supports_host=True dispatch shape the parent
@@ -142,13 +146,15 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     "running",
                 ):
                     run_row.status = "pending"
+                    run_row.pending_reason = reason
                 await db.commit()
                 logger.info(
                     "action_host: deferred action_run=%d host_run=%d "
-                    "(host %d busy with another op)",
+                    "(host %d busy: %s)",
                     action_run_id,
                     host_run_id,
                     host_id_for_lock,
+                    reason,
                 )
                 return
             # Free → claim by leaving the row in queued/running; the
@@ -231,13 +237,25 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             action_roles_paths: tuple = action.roles_paths
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            # Run-time toggles mirrored from ScheduledAction at dispatch time.
+            # Honoured the same way as action_group.py — see Phases A/D/E.
+            # Ignored when the action is non-destructive (no envelope runs).
+            run_snapshot_enabled: bool = bool(run.snapshot_enabled)
+            run_verify_enabled: bool = bool(run.verify_enabled)
+            run_auto_rollback: bool = bool(run.auto_rollback)
 
         # ------------------------------------------------------------------ #
-        # Load Proxmox VM mapping if the action is destructive. A snapshot is
-        # taken before the playbook runs and rolled back on failure — same
-        # safety net scheduled workflows use, without the extra workflow-level
-        # config knobs (auto_rollback / pre_update_snapshot are always ON for
-        # destructive actions when a mapping exists).
+        # Load Proxmox VM mapping if the action is destructive AND snapshots #
+        # are enabled for this run. The snapshot is taken before the playbook #
+        # runs and (when ``auto_rollback`` is on) reverted on failure. Toggle #
+        # semantics mirror ``action_group.py`` Phases A/D/E:                  #
+        #                                                                     #
+        # * ``snapshot_enabled=False``  → skip Phase A (no Proxmox client     #
+        #   loaded, no snapshot taken). Rollback can't run without a          #
+        #   snapshot so it is implicitly disabled too.                        #
+        # * ``verify_enabled=False``    → skip Phase D (no post-run verify).  #
+        # * ``auto_rollback=False``     → skip Phase E (snapshot left in      #
+        #   place on failure instead of reverted).                            #
         # ------------------------------------------------------------------ #
         proxmox_client = None
         pve_node: str | None = None
@@ -269,7 +287,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     exc_info=True,
                 )
 
-        if action_destructive:
+        if action_destructive and run_snapshot_enabled:
             try:
                 from app.proxmox.client import ProxmoxClient  # noqa: PLC0415
                 from app.proxmox.models import ProxmoxNode  # noqa: PLC0415
@@ -390,6 +408,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     ),
                 )
                 return
+        elif action_destructive and not run_snapshot_enabled:
+            # Destructive action with snapshot_enabled=False — operator
+            # opted out. Log it so the run history reflects the choice.
+            _log_step(
+                "[snapshot] skipped — snapshot_enabled=false "
+                "(no rollback available on failure)"
+            )
         elif action_destructive:
             # Destructive action but no Proxmox VM mapping — snapshot-wrap is
             # skipped. Surface this in the log so users know no rollback is
@@ -445,12 +470,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
 
         # ------------------------------------------------------------------ #
         # Post-run verification (only when we also took a snapshot — i.e.     #
-        # destructive + VM mapped). Mirrors workflow_host.py's verify step    #
-        # but without a verification_prompt, so only SSH hard checks run.     #
+        # destructive + VM mapped — AND verify_enabled is on). Mirrors        #
+        # workflow_host.py's verify step but without a verification_prompt,   #
+        # so only SSH hard checks run.                                        #
         # ------------------------------------------------------------------ #
         verification_passed = True
         verification_error: str | None = None
-        if playbook_success and snapshot_name is not None:
+        if playbook_success and snapshot_name is not None and run_verify_enabled:
             if action_verify_playbook_path is not None:
                 # Pack-supplied verify: run it the same way as the main
                 # playbook. Any non-zero rc or ansible-runner status other
@@ -559,7 +585,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         elif not verification_passed:
             error_msg = verification_error
 
-        if not success and snapshot_name is not None and proxmox_client is not None:
+        if (
+            not success
+            and snapshot_name is not None
+            and proxmox_client is not None
+            and run_auto_rollback
+        ):
             from app.workflows.steps.rollback import rollback_to_snapshot  # noqa: PLC0415
 
             _log_step(f"[rollback] restoring {snapshot_name}")
@@ -580,6 +611,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     exc,
                 )
                 _log_step(f"[rollback] ERROR: {exc}")
+        elif not success and snapshot_name is not None and not run_auto_rollback:
+            # Snapshot present but auto_rollback=False — leave it in place so
+            # the operator can inspect/revert manually. Logged so the run
+            # output reflects the choice rather than silently keeping it.
+            _log_step(
+                f"[rollback] skipped — auto_rollback=false "
+                f"(snapshot {snapshot_name} retained for manual recovery)"
+            )
 
         if success and snapshot_name is not None and proxmox_client is not None:
             from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415

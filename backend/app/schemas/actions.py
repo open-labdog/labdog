@@ -56,6 +56,9 @@ class ActionHostRunOut(BaseModel):
     exit_code: int | None
     error_message: str | None
     snapshot_name: str | None = None
+    #: Populated when ``status='pending'`` — human-readable string naming
+    #: the in-flight op holding the host. NULL otherwise.
+    pending_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -81,6 +84,9 @@ class ActionRunOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error_message: str | None
+    #: Populated when ``status='pending'`` — human-readable string naming
+    #: the in-flight op holding the target host. NULL otherwise.
+    pending_reason: str | None = None
     created_at: datetime
     host_runs: list[ActionHostRunOut] = []
 
