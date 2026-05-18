@@ -179,6 +179,29 @@ declared, else built-ins) per-host post-action, per-host rollback
 policy on failure (only the failed hosts revert; successes keep
 their state and their snapshots get cleaned up).
 
+### Per-host serialization
+
+Every host-writing operation participates in one shared per-host
+queue: syncs, host-targeted action runs, group-targeted action runs
+(locks every member), and the built-in `drift_check` /
+`collect_state` pseudo-actions. Shared helpers live at
+`app/tasks/host_lock.py`. The pattern (lifted from the older
+sync-only orchestrator and extended): each Celery task opens a short
+transaction, takes a transaction-level Postgres advisory lock keyed
+on `host_id`, checks whether any other op on that host is currently
+`running` (across `SyncJob` and `ActionRun` / `ActionHostRun`), and
+either claims the host (status → `running`) or defers (status →
+`pending`). On finish, the just-finished task picks the oldest
+pending op for that host (FIFO across both queues by `created_at`)
+and re-dispatches it. The advisory lock is held only for the
+check-and-flip — the actual "host is busy" state lives in the row
+statuses. Group-targeted actions acquire locks for all members in
+sorted-host-id order to avoid deadlock against overlapping group
+ops. The built-in `_builtin.sync` opts out of the outer lock (its
+inner `run_host_sync.apply()` already participates via the sync
+orchestrator) — see the comment on `with_lock=` in
+`builtin_dispatchers.py`.
+
 ### About / version surface
 
 `GET /api/version` is a public (no-auth) endpoint exposing

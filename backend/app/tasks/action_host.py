@@ -49,7 +49,7 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
+async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:  # noqa: C901, PLR0912, PLR0915
     """Drive a single ActionHostRun through ansible-runner, optionally
     wrapping the run in a Proxmox snapshot → verify → rollback envelope
     when the action is destructive and the host has a VM mapping.
@@ -69,6 +69,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
     from app.settings_service import get_setting_sync_typed
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        dispatch_next_pending_for_host,
+    )
 
     r = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
@@ -76,6 +81,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     private_data_dir = tempfile.mkdtemp(prefix="labdog-action-")
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-action-", suffix=".key")
     os.close(fd)
+
+    # Track whether we claimed the host so the finally block knows whether
+    # to release it via dispatch-next-pending. On the defer path we leave
+    # the queue ownership to the in-flight op's finally hook.
+    claimed = False
+    claimed_host_id: int | None = None
 
     try:
         # ------------------------------------------------------------------ #
@@ -97,6 +108,55 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                 ),
             )
             return
+
+        # ------------------------------------------------------------------ #
+        # Per-host claim-or-defer: serialize against any in-flight op on     #
+        # this host (sync, host-targeted action, or group-targeted action    #
+        # that includes this host as a member). On busy → mark ActionRun +  #
+        # ActionHostRun as ``pending`` and return; dispatch-next-pending on  #
+        # the in-flight op's finally hook will re-fire us when the host     #
+        # frees up.                                                          #
+        # ------------------------------------------------------------------ #
+        async with task_session() as db:
+            hr_row = (
+                await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
+            ).scalar_one_or_none()
+            if hr_row is None:
+                logger.warning("action_host: host_run %d missing — exiting", host_run_id)
+                return
+            host_id_for_lock = hr_row.host_id
+            await acquire_host_lock(db, host_id_for_lock)
+            if await check_host_busy(db, host_id_for_lock):
+                hr_row.status = "pending"
+                # Only flip the parent ActionRun to ``pending`` when this
+                # is the sole per-host row (single-host target). For the
+                # group-with-supports_host=True dispatch shape the parent
+                # ActionRun has many ActionHostRuns and our defer is
+                # per-row; the parent's status should reflect the union,
+                # not just one member.
+                run_row = (
+                    await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+                ).scalar_one_or_none()
+                if run_row is not None and run_row.host_id is not None and run_row.status in (
+                    "queued",
+                    "running",
+                ):
+                    run_row.status = "pending"
+                await db.commit()
+                logger.info(
+                    "action_host: deferred action_run=%d host_run=%d "
+                    "(host %d busy with another op)",
+                    action_run_id,
+                    host_run_id,
+                    host_id_for_lock,
+                )
+                return
+            # Free → claim by leaving the row in queued/running; the
+            # main loader below will flip it to running atomically with
+            # the rest of the run-state writes.
+            claimed = True
+            claimed_host_id = host_id_for_lock
+            await db.commit()
 
         # ------------------------------------------------------------------ #
         # Load all required data from DB in a single session                  #
@@ -614,6 +674,24 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         raise
 
     finally:
+        # Dispatch the next pending op on this host (if we claimed it).
+        # Runs even on the orchestrator-raised path so the per-host queue
+        # never stalls. Failures here are swallowed — they must not mask
+        # the real outcome of the task.
+        if claimed and claimed_host_id is not None:
+            try:
+                async with task_session() as db:
+                    await dispatch_next_pending_for_host(
+                        db, claimed_host_id, exclude_action_run_id=action_run_id
+                    )
+            except Exception:
+                logger.exception(
+                    "action_host: dispatch-next-pending failed for host_id=%s "
+                    "after action_run_id=%s; queue may be stuck until next op triggers it",
+                    claimed_host_id,
+                    action_run_id,
+                )
+
         # CRITICAL: always remove the SSH key from tmpfs
         if os.path.exists(ssh_key_path):
             os.unlink(ssh_key_path)
