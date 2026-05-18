@@ -57,9 +57,10 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 ship the same three actions today. An operator adding
 `labdog-playbooks` as a git Action Pack under Integrations → Git
 Repos + Action Packs will then have the same three keys from two
-sources; the external pack wins by position (it sits above bundled) and the bundled
-copy becomes a pure safety net for when the pack's GitRepository is
-unreachable at boot.
+sources. With the per-key-pinning precedence model the migration
+seeds `action_resolution` rows pinning the external pack as winner
+for the overlapping keys, so the bundled copy becomes a pure
+safety net for when the pack's GitRepository is unreachable at boot.
 
 **Decision needed:** what goes in the safety net?
 

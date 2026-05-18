@@ -11,22 +11,22 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.registry import reload_registry_async
+from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
 from app.audit.logger import log_action
 from app.auth.users import current_superuser
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.user import User
-from app.packs.models import ActionPack, PackSourceType
+from app.packs.models import ActionPack, ActionResolution, PackSourceType
 from app.packs.schemas import (
     ActionPackCreate,
-    ActionPackReorderRequest,
     ActionPackResponse,
     ActionPackSyncResponse,
     ActionPackUpdate,
+    ClaimAllKeysResponse,
 )
 from app.packs.service import delete_checkout, sync_pack
 
@@ -42,7 +42,6 @@ def _audit_snapshot(pack: ActionPack) -> dict:
         "git_repository_id": pack.git_repository_id,
         "path": pack.path,
         "local_path": pack.local_path,
-        "position": pack.position,
         "enabled": pack.enabled,
     }
 
@@ -76,7 +75,6 @@ def _apply_create(body: ActionPackCreate, pack: ActionPack) -> None:
     pack.path = body.path or ""
     pack.local_path = body.local_path
     pack.enabled = body.enabled
-    # position is server-assigned at insert time (see create_action_pack).
 
 
 def _apply_update(body: ActionPackUpdate, pack: ActionPack) -> tuple[bool, bool]:
@@ -169,10 +167,8 @@ async def create_action_pack(
     if body.source_type == PackSourceType.GIT and body.git_repository_id is not None:
         await _ensure_git_repo(db, body.git_repository_id)
 
-    max_pos = await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))
     pack = ActionPack()
     _apply_create(body, pack)
-    pack.position = (max_pos or 0) + 1
     db.add(pack)
     await db.flush()
 
@@ -325,66 +321,105 @@ async def sync_action_pack(
 
 
 # ---------------------------------------------------------------------------
-# Reorder
+# Bulk-pin (claim all keys this pack contributes)
 # ---------------------------------------------------------------------------
 
 
-@router.post("/reorder", status_code=200)
-async def reorder_action_packs(
-    body: ActionPackReorderRequest,
+@router.post("/{pack_id}/claim-all-keys", response_model=ClaimAllKeysResponse)
+async def claim_all_keys(
+    pack_id: int,
     user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
-    """Rewrite ``ActionPack.position`` for every pack in one shot.
+    """Pin every action key this pack contributes to this pack.
 
-    The submitted list is the desired top-to-bottom display order;
-    the first id wins on action-key collisions and gets the highest
-    position. Bundled is implicit at position 0 and never appears in
-    the list.
+    Writes (or overwrites) an ``action_resolution`` row for each key
+    the pack appears in as a contributor. Other packs' resolutions
+    for the same keys are flipped to point at this pack. Keys this
+    pack does not contribute are not touched.
 
-    Rejects the request unless the submitted set exactly matches the
-    set of existing pack ids — partial reorders aren't supported. The
-    UI builds the payload from its full sorted list; any drift means
-    something else mutated the table mid-edit and the operator should
-    refresh.
+    The endpoint is idempotent — re-running with no other pack
+    changes returns ``created=0 updated=0 skipped=N`` and is a no-op.
+
+    Returns ``{created, updated, skipped}`` for the UI to surface in
+    a confirmation toast and to drive the bulk-pick diff dialog.
     """
-    rows = list((await db.execute(select(ActionPack))).scalars().all())
-    existing_ids = {r.id for r in rows}
-    submitted_ids = set(body.pack_ids)
-    if existing_ids != submitted_ids or len(body.pack_ids) != len(submitted_ids):
-        missing = sorted(existing_ids - submitted_ids)
-        unknown = sorted(submitted_ids - existing_ids)
-        duplicates = sorted({pid for pid in body.pack_ids if body.pack_ids.count(pid) > 1})
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "kind": "reorder_set_mismatch",
-                "missing_pack_ids": missing,
-                "unknown_pack_ids": unknown,
-                "duplicate_pack_ids": duplicates,
-                "message": (
-                    "Reorder request must list every existing pack id "
-                    "exactly once. Refresh the page and try again."
-                ),
-            },
-        )
+    pack = (
+        await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
+    ).scalar_one_or_none()
+    if pack is None:
+        raise HTTPException(status_code=404, detail="Action pack not found")
 
-    by_id = {r.id: r for r in rows}
-    before_state = {r.id: r.position for r in rows}
-    n = len(body.pack_ids)
-    for idx, pid in enumerate(body.pack_ids):
-        # First id (top of table) gets the highest position.
-        by_id[pid].position = n - idx
+    # Find every action key the pack currently contributes by scanning
+    # the in-memory contributors view (built at the last registry
+    # rebuild). Uncontested keys are included — their resolution
+    # row is a no-op for the resolver but makes the operator's intent
+    # ("I want this pack to own these keys, even if another pack
+    # appears later") durable.
+    claimed_keys = [
+        key
+        for key, contribs in ACTION_REGISTRY_CONTRIBUTORS.items()
+        if any(c.pack_id == pack_id for c in contribs)
+    ]
+    if not claimed_keys:
+        await log_action(
+            db=db,
+            action="resolution.claim_all_keys",
+            entity_type="action_pack",
+            entity_id=pack.id,
+            user_id=user.id,
+            after_state={"pack_id": pack.id, "claimed_keys": []},
+        )
+        await db.commit()
+        return ClaimAllKeysResponse(created=0, updated=0, skipped=0)
+
+    existing_rows = (
+        await db.execute(
+            select(ActionResolution).where(ActionResolution.action_key.in_(claimed_keys))
+        )
+    ).scalars().all()
+    existing_by_key = {r.action_key: r for r in existing_rows}
+
+    created = 0
+    updated = 0
+    skipped = 0
+    before_state: dict[str, int | None] = {}
+    after_state: dict[str, int | None] = {}
+    for key in claimed_keys:
+        prev = existing_by_key.get(key)
+        if prev is None:
+            db.add(
+                ActionResolution(
+                    action_key=key,
+                    pack_id=pack_id,
+                    decided_by_user_id=user.id,
+                )
+            )
+            created += 1
+            before_state[key] = None
+            after_state[key] = pack_id
+        elif prev.pack_id == pack_id:
+            skipped += 1
+        else:
+            before_state[key] = prev.pack_id
+            after_state[key] = pack_id
+            prev.pack_id = pack_id
+            prev.decided_by_user_id = user.id
+            updated += 1
 
     await log_action(
         db=db,
-        action="reorder",
+        action="resolution.claim_all_keys",
         entity_type="action_pack",
-        entity_id=None,
+        entity_id=pack.id,
         user_id=user.id,
-        before_state={"positions": before_state},
-        after_state={"positions": {pid: n - idx for idx, pid in enumerate(body.pack_ids)}},
+        before_state={"resolutions": before_state} if before_state else None,
+        after_state={
+            "pack_id": pack_id,
+            "claimed_keys": claimed_keys,
+            "resolutions": after_state,
+        },
     )
     await db.commit()
     await reload_registry_async(db)
-    return {"reordered": n}
+    return ClaimAllKeysResponse(created=created, updated=updated, skipped=skipped)

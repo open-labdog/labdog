@@ -42,16 +42,6 @@ from app.packs.redact import redact
 logger = logging.getLogger(__name__)
 
 
-def derive_priority(pack: ActionPack) -> int:
-    """Map a pack's row to its numeric load priority.
-
-    Bundled is implicit at 0 via ``BUNDLED_PACK_PRIORITY`` in
-    ``app.actions.registry``; every DB pack starts at ``position + 1``
-    so the lowest-positioned DB pack still beats bundled.
-    """
-    return pack.position + 1
-
-
 def checkout_path_for(pack_id: int) -> Path:
     """Deterministic on-disk location for a git pack's checkout.
 
@@ -245,7 +235,6 @@ async def load_db_packs(db: AsyncSession) -> list[Pack]:
             Pack(
                 name=row.name,
                 path=path,
-                priority=derive_priority(row),
                 pack_id=row.id,
             )
         )

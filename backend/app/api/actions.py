@@ -55,6 +55,8 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         supports_fleet=defn.supports_fleet,
         parameters=params,
         pack_name=defn.pack_name,
+        winning_pack_id=defn.winning_pack_id,
+        unresolved=defn.is_unresolved,
         overridden_from=list(defn.overridden_from),
     )
 
@@ -113,6 +115,23 @@ async def create_run(
     action = ACTION_REGISTRY.get(body.action_key)
     if action is None:
         raise HTTPException(status_code=400, detail="Unknown action")
+
+    # Reject unresolved contested keys before doing anything else.
+    # ``is_unresolved`` means "multiple packs declare this key and the
+    # operator hasn't pinned a winner" — there is no playbook to
+    # dispatch and no global ordering to fall back on.
+    if action.is_unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "action_unresolved",
+                "action_key": action.key,
+                "message": (
+                    f"Action {action.key!r} has multiple candidate packs and "
+                    "no winner pinned. Visit /action-packs to choose one."
+                ),
+            },
+        )
 
     # Pack-supplied actions need a playbook on disk. Built-in
     # pseudo-actions have ``playbook_path=None`` — they're dispatched

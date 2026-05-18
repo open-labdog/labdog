@@ -97,7 +97,9 @@ async def test_list_returns_seeded_labdog_playbooks_pack(superuser_client):
     assert len(packs) == 1
     assert packs[0]["name"] == "labdog-playbooks"
     assert packs[0]["source_type"] == "git"
-    assert packs[0]["position"] >= 1
+    # Pack rows no longer carry a ``position`` field — precedence is
+    # per-key via ``action_resolution``.
+    assert "position" not in packs[0]
 
 
 async def test_regular_user_cannot_manage_packs(regular_user_client):
@@ -134,7 +136,7 @@ async def test_create_git_pack_syncs_and_adds_action(
     assert body["git_repository_id"] == git_repo_row.id
     assert body["git_repository_name"] == "test-repo"
     assert body["path"] == ""
-    assert body["position"] >= 1
+    assert "position" not in body  # column dropped in migration 0004
     assert body["last_sync_status"] == "ok"
     assert body["current_sha"]
 
@@ -166,17 +168,15 @@ async def test_create_git_pack_with_nonexistent_repo_rejected(superuser_client):
     assert "9999" in resp.text
 
 
-async def test_create_assigns_position_above_all_existing(
+async def test_create_no_longer_assigns_position(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):
-    """New packs land above every existing one; operators reorder via
-    drag-to-reorder afterwards."""
+    """The position column is gone; the response shape no longer
+    carries it. Packs are unordered — per-key resolution rows decide
+    every contested winner."""
     from app.config import settings
 
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
-
-    seeded = (await superuser_client.get("/api/action-packs")).json()
-    max_existing = max((p["position"] for p in seeded), default=0)
 
     resp = await superuser_client.post(
         "/api/action-packs",
@@ -188,7 +188,7 @@ async def test_create_assigns_position_above_all_existing(
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["position"] == max_existing + 1
+    assert "position" not in body
 
 
 async def test_create_rejects_bundled_name(superuser_client):
@@ -236,7 +236,7 @@ async def test_create_local_pack_registers_action(superuser_client, local_pack_d
     assert body["source_type"] == "local"
     assert body["git_repository_id"] is None
     assert body["local_path"] == str(local_pack_dir)
-    assert body["position"] >= 1
+    assert "position" not in body
     assert body["last_sync_status"] == "ok"
 
     actions = (await superuser_client.get("/api/actions/")).json()

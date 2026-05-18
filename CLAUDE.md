@@ -118,21 +118,29 @@ registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
 module import. DB-backed packs are configured from the UI at
 `/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
 can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
-Pack precedence is a single linear `ActionPack.position` (higher wins,
-bundled implicit at 0); operators reorder via drag-to-reorder on the
-**Action Packs** page. Per-key conflicts can also be pinned via
-`action_resolution` rows — the wizard captures them at activation and
-the registry rebuild auto-pins the previous winner if a sync introduces
-a fresh conflict (freeze-on-fresh-conflict, never silently flips).
+
+**Precedence is pure per-key pinning, no global ordering.** Each
+action key has at most one source pack. When multiple packs declare
+the same key, the operator pins which pack wins via an
+`action_resolution` row; until pinned, the key is *unresolved* and
+the action is unrunnable (`POST /api/actions/runs` returns 409 and
+the Run button is disabled with a "Pick winner first" prompt). There
+is no `ActionPack.position` and no drag-to-reorder UX.
+
+The registry rebuild still applies **freeze-on-fresh-conflict**:
+when a sync introduces a new contestant for a previously-uncontested
+key, the previous winner is auto-pinned via a fresh
+`action_resolution` row (decided_by_user_id=NULL, surfaced as
+"Frozen" in the UI) so behaviour doesn't silently flip. The
+**Action Packs** page is the primary surface — top-level action
+registry table with per-row pickers + a demoted "Pack Sources"
+table that exposes `POST /api/action-packs/{id}/claim-all-keys` for
+bulk-pinning every key a pack contributes. The bundled pack appears
+as a read-only row in Pack Sources so its always-present-candidate
+status is discoverable.
+
 See `app/packs/` for the subsystem, the user guide at
 `docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
-
-The **Action Packs** page also renders an *Active Action Catalog*
-panel listing every action key in the live registry alongside its
-winning pack and any shadowed candidates. Per-key conflicts surface a
-"Resolve" affordance that reuses the existing
-`ConflictResolutionDialog`, so the same pinning flow drives both
-activation-time and post-hoc overrides.
 
 **Bundled pack mirrors `labdog-playbooks`.** The directory at
 `backend/app/ansible/` is a byte-identical mirror of

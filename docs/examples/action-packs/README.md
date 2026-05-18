@@ -36,9 +36,11 @@ Then in the LabDog UI:
 2. Click **Add Pack**.
 3. Either point at a git URL, or pick **Local directory** and paste the
    filesystem path.
-4. Save. The pack lands at the top of the list (highest position) —
-   drag rows on **Action Packs** to reorder if a different pack
-   should win contested keys. Bundled sits implicitly at the bottom.
+4. Save. The pack joins the **Pack Sources** table — packs are
+   unordered. Uncontested keys win automatically. Contested keys
+   (multiple packs declare the same action key) require a per-key
+   pin via the Action Registry table on the same page; until pinned
+   the action is *unresolved* and unrunnable.
 5. The action will appear on any host's detail page under the
    **Actions** tab.
 
