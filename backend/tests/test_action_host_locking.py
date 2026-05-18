@@ -90,7 +90,9 @@ async def _make_action_run_on_host(db, host_id: int, *, action_key: str = "_buil
 
 
 async def test_action_host_defers_when_sync_running_on_same_host(db, fake_redis):
-    """A sync running on host X causes action_host on X to defer."""
+    """A sync running on host X causes action_host on X to defer, and
+    both the parent ActionRun and the per-host row are stamped with a
+    pending_reason naming the blocking sync."""
     from app.tasks.action_host import _run_action_host_async
 
     host = await _make_host(db)
@@ -100,6 +102,7 @@ async def test_action_host_defers_when_sync_running_on_same_host(db, fake_redis)
     db.add(sj)
     await db.flush()
     await db.commit()
+    blocking_sync_id = sj.id
 
     run_id, hr_id = await _make_action_run_on_host(db, host.id)
 
@@ -110,11 +113,15 @@ async def test_action_host_defers_when_sync_running_on_same_host(db, fake_redis)
     # ansible-runner never invoked.
     run_ansible_mock.assert_not_called()
 
-    # ActionHostRun + ActionRun status flipped to pending.
+    # ActionHostRun + ActionRun status flipped to pending and stamped
+    # with a useful diagnostic naming the sync that holds the host.
     hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
     run = (await db.execute(select(ActionRun).where(ActionRun.id == run_id))).scalar_one()
     assert hr.status == "pending"
     assert run.status == "pending"
+    expected = f"Waiting for sync {blocking_sync_id} on host {host.hostname}"
+    assert hr.pending_reason == expected
+    assert run.pending_reason == expected
 
 
 async def test_action_host_runs_when_no_op_on_host(db, fake_redis):

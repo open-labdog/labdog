@@ -176,77 +176,47 @@ time (see BUG-45).
 - Optionally: expose a per-host "TLS verify" toggle for the escape
   hatch (`verify=False`) behind a visible warning in the UI.
 
----
 
-## Action runtime — honour run-time toggles in `action_host.py`
-
-**Context:** `ActionRun` carries three operator-controllable toggles
-for destructive actions: `snapshot_enabled`, `verify_enabled`, and
-`auto_rollback`. They're exposed in the run-create dialog and the
-schedule wizard. The group-dispatch path
-(`app/tasks/action_group.py`) consults them before applying each
-phase of the snapshot/verify/rollback envelope. The per-host path
-(`app/tasks/action_host.py`) does not — it unconditionally applies
-the envelope whenever the action is `destructive: true` and the
-host has a Proxmox VM mapping. The UI presents the toggles as
-controls but they have no effect on host-targeted runs.
-
-**Sketch:**
-
-- In `_run_action_host_async` (or wherever the per-host snapshot /
-  verify / rollback logic lives), read `run.snapshot_enabled`,
-  `run.verify_enabled`, `run.auto_rollback` and gate the
-  corresponding phase on each. Match the pattern in
-  `app/tasks/action_group.py` — the phases are the same shape,
-  just N=1 instead of N=members.
-- Extend an existing test in `tests/test_action_host.py` (or
-  whichever file covers the per-host envelope) to verify each
-  toggle suppresses its phase: `snapshot_enabled=false` skips
-  Phase A; `verify_enabled=false` skips Phase D;
-  `auto_rollback=false` leaves the snapshot in place on failure.
-
-**Why it matters:** Without this, the per-host path silently
-ignores operator choices in the run dialog. An operator who unticks
-"Take snapshot" for a quick local change still gets a snapshot
-taken — surprising at best.
 
 
 ---
 
-## Action runtime — surface `pending_reason` on blocked runs
+## Sync side — populate `SyncJob.pending_reason` for queue parity
 
-**Context:** When an action run lands in `ActionRun.status='pending'`
-the claim-or-defer decided some other op is in flight on the
-target host. The UI shows an amber "Host busy" badge but doesn't
-say *which* op is blocking — the operator has to go hunt across
-the syncs and active actions to find the offender. The badge alone
-is a partial answer; the operator's next question is "blocked by
-what?" and we don't answer it.
+**Context:** The action runtime now writes a `pending_reason`
+string on every deferred `ActionRun` / `ActionHostRun` so the UI
+can show "Waiting for sync 47 on host node-1" instead of just an
+amber "Host busy" badge. The sync side (`SyncJob`) was
+intentionally left alone in that change to keep scope tight —
+`host_sync_orchestrator._claim_or_defer` now consumes the new
+`BlockerInfo | None` return shape but doesn't write anything back
+to `SyncJob`.
+
+For the same operator-clarity reason that motivated
+`ActionRun.pending_reason`, the sync queue should expose the
+blocker too: today a deferred `SyncJob` shows status="pending" in
+the sync queue UI with no indication of what it's waiting on.
 
 **Sketch:**
 
-- Add `ActionRun.pending_reason: str | None` (and the same on
-  `ActionHostRun`) — `String(255)`, nullable, no migration if the
-  column is added as `nullable=True` from the start.
-- In `app/tasks/host_lock.py` `check_host_busy` / `check_hosts_busy`:
-  return not just a bool / int, but also enough to identify the
-  blocking row — e.g. `(busy_kind, busy_id)` where `busy_kind` is
-  one of `sync` / `action_host` / `action_group`.
-- Action defer paths in `action_host.py` / `action_group.py`
-  format that into a human-readable string ("waiting on sync job
-  47 on host node-1") and write it to `pending_reason` along with
-  the status flip.
-- `RunStatusBadge` in `frontend/components/status-badge.tsx` reads
-  `run.pending_reason` (or a new prop) and renders it as a
-  tooltip; the action run-detail page surfaces it as a banner
-  with a link to the blocking op (so the operator can click
-  through to see when it started, ETA if it's a long-running
-  action with `estimated_duration`).
-- Tests: defer path writes the right reason; UI renders the
-  tooltip / banner correctly.
+- Add `SyncJob.pending_reason: str | None` (`String(255)`,
+  nullable). Same shape as `ActionRun.pending_reason`. Migration
+  is additive — combine with any other pending sync-side schema
+  changes if convenient.
+- In `host_sync_orchestrator._claim_or_defer` (and any other sync
+  defer paths), format the message via the existing
+  `app.tasks.host_lock.format_pending_reason(db, blocker)` helper
+  and write to the row alongside the status flip. The helper
+  already knows how to render every kind (sync / action_host /
+  action_group) with the host name and action_key suffix.
+- Expose `pending_reason` in the sync queue API response and the
+  sync-job summary type the UI consumes.
+- UI: the sync queue table / sync-status badge for pending rows
+  shows the reason on hover (mirror the pattern in
+  `frontend/components/status-badge.tsx` `RunStatusBadge`).
 
-**Why it matters:** Today an operator submits an action, sees the
-amber "Host busy" badge, and is left guessing what's blocking them.
-On a busy server with multiple operations in flight this is
-genuinely frustrating — they don't know if it's a 30-second sync
-or a 30-minute upgrade ahead of them in the queue.
+**Why it matters:** Operator clarity parity between action and
+sync queues. Today an action that was deferred by a sync says
+"Waiting for sync 47 on host node-1"; a sync that was deferred by
+an action just says "Pending" — same situation, different
+diagnostic.

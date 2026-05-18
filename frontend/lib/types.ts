@@ -681,6 +681,9 @@ export interface ActionHostRun {
   exit_code: number | null
   error_message: string | null
   snapshot_name: string | null
+  /** Populated when status='pending' — human-readable string naming
+   *  the in-flight op holding the host. NULL otherwise. */
+  pending_reason: string | null
 }
 
 export interface ActionRun {
@@ -704,6 +707,9 @@ export interface ActionRun {
   started_at: string | null
   finished_at: string | null
   error_message: string | null
+  /** Populated when status='pending' — human-readable string naming
+   *  the in-flight op holding the target host. NULL otherwise. */
+  pending_reason: string | null
   created_at: string
   host_runs: ActionHostRun[]
 }

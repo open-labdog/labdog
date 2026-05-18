@@ -177,6 +177,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         acquire_host_locks,
         check_hosts_busy,
         dispatch_next_pending_for_host,
+        format_pending_reason,
     )
 
     r = redis_lib.from_url(settings.redis.url)
@@ -226,13 +227,19 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 member_ids_peek = [hid for hid in hosts_peek.scalars().all()]
                 if member_ids_peek:
                     await acquire_host_locks(db, member_ids_peek)
-                    busy_host = await check_hosts_busy(db, member_ids_peek)
-                    if busy_host is not None:
+                    blocker = await check_hosts_busy(db, member_ids_peek)
+                    if blocker is not None:
+                        reason = await format_pending_reason(db, blocker)
                         # Defer: mark parent + any pre-created per-host rows
-                        # as ``pending``. The pre-created rows only exist if
+                        # as ``pending`` and stamp them with the blocker
+                        # diagnostic. The pre-created rows only exist if
                         # an earlier dispatch flipped them; first-time runs
                         # will have none yet (the main loader creates them).
+                        # Every per-host row gets the same string — the
+                        # defer is run-level (one busy member blocks the
+                        # whole group), not host-level.
                         run_peek.status = "pending"
+                        run_peek.pending_reason = reason
                         existing_hrs = (
                             await db.execute(
                                 select(ActionHostRun).where(
@@ -243,12 +250,14 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                         for hr in existing_hrs:
                             if hr.status in ("queued", "running"):
                                 hr.status = "pending"
+                                hr.pending_reason = reason
                         await db.commit()
                         logger.info(
                             "action_group: deferred action_run=%d "
-                            "(host %d busy with another op)",
+                            "(host %d busy: %s)",
                             action_run_id,
-                            busy_host,
+                            blocker.host_id,
+                            reason,
                         )
                         return
                     # All free → record what we claimed for the finally release.

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { Tooltip } from "@/components/ui/tooltip"
 import type { SyncStatus, FirewallBackend, GitOpsStatus } from "@/lib/types"
 
 export function SyncStatusBadge({ status }: { status: SyncStatus }) {
@@ -126,11 +127,25 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   pending: "Host busy",
 }
 
-export function RunStatusBadge({ status }: { status: string }) {
+export function RunStatusBadge({
+  status,
+  reason,
+}: {
+  status: string
+  /** Optional human-readable diagnostic. When supplied AND non-null,
+   *  the badge is wrapped in a tooltip rendering this string on hover.
+   *  Currently surfaced for ``status='pending'`` (the deferred-by-busy
+   *  reason); other statuses ignore it. */
+  reason?: string | null
+}) {
   const label = RUN_STATUS_LABELS[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
-  return (
+  const badge = (
     <Badge className={RUN_STATUS_COLORS[status] ?? "bg-slate-600 text-white"}>
       {label}
     </Badge>
   )
+  if (reason) {
+    return <Tooltip content={reason}>{badge}</Tooltip>
+  }
+  return badge
 }

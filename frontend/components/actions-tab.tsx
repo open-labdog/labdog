@@ -86,7 +86,7 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
     {
       key: "status",
       label: "Status",
-      cell: (r) => <RunStatusBadge status={r.status} />,
+      cell: (r) => <RunStatusBadge status={r.status} reason={r.pending_reason} />,
       defaultWidth: 100,
     },
     {

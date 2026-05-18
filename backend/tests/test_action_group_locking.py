@@ -108,13 +108,15 @@ async def _make_group_action_run(db, group_id: int) -> int:
 
 
 async def test_group_action_defers_when_sync_running_on_member(db, fake_redis):
-    """Group action on [h1, h2, h3] defers when a sync runs on h2."""
+    """Group action on [h1, h2, h3] defers when a sync runs on h2 and
+    surfaces a pending_reason naming the specific busy member."""
     group, hosts = await _make_group_with_hosts(db, count=3)
 
     sj = SyncJob(host_id=hosts[1].id, status="running", module_type="firewall")
     db.add(sj)
     await db.flush()
     await db.commit()
+    blocking_sync_id = sj.id
 
     run_id = await _make_group_action_run(db, group.id)
 
@@ -125,9 +127,43 @@ async def test_group_action_defers_when_sync_running_on_member(db, fake_redis):
     # No ansible invocation on the defer path.
     run_ansible_mock.assert_not_called()
 
-    # Parent ActionRun in pending state.
+    # Parent ActionRun in pending state with the blocker named.
     run = (await db.execute(select(ActionRun).where(ActionRun.id == run_id))).scalar_one()
     assert run.status == "pending"
+    expected = f"Waiting for sync {blocking_sync_id} on host {hosts[1].hostname}"
+    assert run.pending_reason == expected
+
+
+async def test_group_action_first_blocker_wins_when_multiple_busy(db, fake_redis):
+    """When multiple members are busy, the smallest-host-id blocker is
+    surfaced in pending_reason (deterministic across runs)."""
+    group, hosts = await _make_group_with_hosts(db, count=3)
+
+    # Mark the smallest- and largest-id members busy. The smallest-id
+    # one should win the diagnostic.
+    busy_low = min(hosts, key=lambda h: h.id)
+    busy_high = max(hosts, key=lambda h: h.id)
+    assert busy_low.id != busy_high.id  # sanity for 3-host setup
+
+    sj_low = SyncJob(host_id=busy_low.id, status="running", module_type="firewall")
+    sj_high = SyncJob(host_id=busy_high.id, status="running", module_type="firewall")
+    db.add(sj_low)
+    db.add(sj_high)
+    await db.flush()
+    await db.commit()
+
+    run_id = await _make_group_action_run(db, group.id)
+
+    run_ansible_mock = MagicMock()
+    with patch("app.ansible_runtime.runner.run_ansible", new=run_ansible_mock):
+        await _run_action_group_async(run_id)
+
+    run_ansible_mock.assert_not_called()
+    run = (await db.execute(select(ActionRun).where(ActionRun.id == run_id))).scalar_one()
+    assert run.status == "pending"
+    # The first-by-sorted-host-id blocker wins.
+    expected = f"Waiting for sync {sj_low.id} on host {busy_low.hostname}"
+    assert run.pending_reason == expected
 
 
 async def test_two_group_actions_overlap_serialize_no_deadlock(db, fake_redis):

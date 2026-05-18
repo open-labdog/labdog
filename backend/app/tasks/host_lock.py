@@ -51,12 +51,49 @@ acquiring transaction).
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Literal
 
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Public types
+# ---------------------------------------------------------------------------
+
+
+BlockerKind = Literal["sync", "action_host", "action_group"]
+
+
+@dataclass(frozen=True, slots=True)
+class BlockerInfo:
+    """Identity of the running op that prevents a host from being claimed.
+
+    Returned by ``check_host_busy`` / ``check_hosts_busy`` so callers can
+    build a human-readable ``pending_reason`` string (e.g. "Waiting for
+    sync 47 on host node-1") and write it to the deferred row.
+
+    ``kind`` reflects which queue the blocker came from:
+
+    * ``sync``         — ``SyncJob`` is running on this host.
+    * ``action_host``  — host-targeted ``ActionRun`` is running on this host.
+    * ``action_group`` — group-targeted ``ActionRun`` is running and this
+      host is one of its members.
+
+    ``id`` is the primary key of the blocking row (``SyncJob.id`` or
+    ``ActionRun.id``). ``host_id`` is the host being blocked (matters
+    for group dispatch — names the specific busy member, not the run's
+    nominal target). ``action_key`` is the action key for the two
+    ``action_*`` kinds; ``None`` for ``sync``.
+    """
+
+    kind: BlockerKind
+    id: int
+    host_id: int
+    action_key: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -121,10 +158,10 @@ async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def check_host_busy(db: AsyncSession, host_id: int) -> bool:
-    """True if any sync or action is currently running on ``host_id``.
+async def check_host_busy(db: AsyncSession, host_id: int) -> BlockerInfo | None:
+    """First blocker on ``host_id``, or None if the host is free.
 
-    Walks three sources, returns True at the first hit:
+    Walks three sources, returns at the first hit:
 
     1. ``SyncJob`` with ``status='running'`` and ``host_id=X``
        (the existing sync queue).
@@ -150,7 +187,10 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> bool:
         host_id: Host id to check.
 
     Returns:
-        True if any running op is found, else False.
+        A :class:`BlockerInfo` describing the running op holding the
+        host, or ``None`` when the host is free. Callers should
+        ``is not None`` truthy-check (the return is a frozen dataclass,
+        not a bool).
     """
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.sync_job import JobStatus, SyncJob
@@ -164,26 +204,31 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> bool:
         )
     ).scalar_one_or_none()
     if sync_hit is not None:
-        return True
+        return BlockerInfo(kind="sync", id=sync_hit, host_id=host_id, action_key=None)
 
     # 2. Host-targeted ActionRun running on this host.
     host_action_hit = (
         await db.execute(
-            select(ActionRun.id)
+            select(ActionRun.id, ActionRun.action_key)
             .where(ActionRun.host_id == host_id, ActionRun.status == "running")
             .limit(1)
         )
-    ).scalar_one_or_none()
+    ).first()
     if host_action_hit is not None:
-        return True
+        return BlockerInfo(
+            kind="action_host",
+            id=host_action_hit.id,
+            host_id=host_id,
+            action_key=host_action_hit.action_key,
+        )
 
     # 3. Group-targeted ActionHostRun running for this host (parent ActionRun
     # must also be running — finished runs may leave per-host rows around
     # but the run itself is no longer holding the host).
     group_action_hit = (
         await db.execute(
-            select(ActionHostRun.id)
-            .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+            select(ActionRun.id, ActionRun.action_key)
+            .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
             .where(
                 ActionHostRun.host_id == host_id,
                 ActionHostRun.status == "running",
@@ -191,21 +236,30 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> bool:
             )
             .limit(1)
         )
-    ).scalar_one_or_none()
-    return group_action_hit is not None
+    ).first()
+    if group_action_hit is not None:
+        return BlockerInfo(
+            kind="action_group",
+            id=group_action_hit.id,
+            host_id=host_id,
+            action_key=group_action_hit.action_key,
+        )
+    return None
 
 
-async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> int | None:
-    """First busy host id from a set, or None if all are free.
+async def check_hosts_busy(
+    db: AsyncSession, host_ids: list[int]
+) -> BlockerInfo | None:
+    """First-blocker (by sorted host id) across a set of hosts, or None.
 
     Group-action variant of `check_host_busy`. Used after
     `acquire_host_locks` to check every member of a group target at
-    once. Returns the first (sorted-order) busy host id so the caller
-    can include a useful diagnostic in the per-run notice
-    ("deferred — host 42 in use by sync-job 7").
+    once. Returns a :class:`BlockerInfo` for the smallest busy host id
+    so the caller can include a useful diagnostic in the per-run notice
+    ("Waiting for sync 7 on host node-1").
 
-    Equivalent to `any(check_host_busy(...) for id in host_ids)` but
-    expressed as a single query so we don't N+1 the busy lookup.
+    Equivalent to scanning each host via `check_host_busy` but
+    expressed as three queries instead of ``3N``.
 
     Args:
         db: An open async session inside a transaction holding locks
@@ -215,8 +269,9 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> int | None:
             returned "first busy" is deterministic.
 
     Returns:
-        The smallest host id (by value) that is currently busy, or
-        None if all hosts in the input are free.
+        A :class:`BlockerInfo` for the smallest busy host id (so the
+        caller's diagnostic is deterministic across runs), or ``None``
+        when all hosts in the input are free.
     """
     if not host_ids:
         return None
@@ -225,42 +280,115 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> int | None:
     from app.models.sync_job import JobStatus, SyncJob
 
     ordered = sorted(set(host_ids))
-    busy: set[int] = set()
 
-    sync_busy = (
+    # host_id → (kind, id, action_key) for the FIRST hit per host.
+    # We accept any one of the three sources hitting first (the lock
+    # invariant means a host has at most one running op anyway).
+    blockers: dict[int, BlockerInfo] = {}
+
+    sync_rows = (
         await db.execute(
-            select(SyncJob.host_id).where(
+            select(SyncJob.id, SyncJob.host_id).where(
                 SyncJob.host_id.in_(ordered), SyncJob.status == JobStatus.running
             )
         )
-    ).scalars().all()
-    busy.update(sync_busy)
+    ).all()
+    for row in sync_rows:
+        blockers.setdefault(
+            row.host_id,
+            BlockerInfo(kind="sync", id=row.id, host_id=row.host_id, action_key=None),
+        )
 
-    host_action_busy = (
+    host_action_rows = (
         await db.execute(
-            select(ActionRun.host_id).where(
+            select(ActionRun.id, ActionRun.host_id, ActionRun.action_key).where(
                 ActionRun.host_id.in_(ordered), ActionRun.status == "running"
             )
         )
-    ).scalars().all()
-    busy.update(h for h in host_action_busy if h is not None)
+    ).all()
+    for row in host_action_rows:
+        if row.host_id is None:
+            continue
+        blockers.setdefault(
+            row.host_id,
+            BlockerInfo(
+                kind="action_host",
+                id=row.id,
+                host_id=row.host_id,
+                action_key=row.action_key,
+            ),
+        )
 
-    group_action_busy = (
+    group_action_rows = (
         await db.execute(
-            select(ActionHostRun.host_id)
-            .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+            select(ActionRun.id, ActionHostRun.host_id, ActionRun.action_key)
+            .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
             .where(
                 ActionHostRun.host_id.in_(ordered),
                 ActionHostRun.status == "running",
                 ActionRun.status == "running",
             )
         )
-    ).scalars().all()
-    busy.update(group_action_busy)
+    ).all()
+    for row in group_action_rows:
+        blockers.setdefault(
+            row.host_id,
+            BlockerInfo(
+                kind="action_group",
+                id=row.id,
+                host_id=row.host_id,
+                action_key=row.action_key,
+            ),
+        )
 
-    if not busy:
+    if not blockers:
         return None
-    return min(busy)
+    first_host = min(blockers.keys())
+    return blockers[first_host]
+
+
+# ---------------------------------------------------------------------------
+# pending_reason formatting
+# ---------------------------------------------------------------------------
+
+
+async def format_pending_reason(
+    db: AsyncSession, blocker: BlockerInfo
+) -> str:
+    """Return a short human-readable diagnostic for a deferred row.
+
+    Format mirrors the shape the frontend renders in the amber "Host
+    busy" badge tooltip and the run-detail banner:
+
+    * sync         — ``"Waiting for sync 47 on host node-1"``
+    * action_host  — ``"Waiting for action_host 12 on host node-1 (k8s-upgrade)"``
+    * action_group — ``"Waiting for action_group 12 on host node-1 (k8s-upgrade)"``
+
+    The hostname is resolved from ``Host.id``. If the host has been
+    deleted (FK ON DELETE) the bare host id is used — the diagnostic is
+    cosmetic, not load-bearing. The string is capped at 255 chars to
+    match the column width on ``ActionRun.pending_reason``.
+
+    Args:
+        db: An open async session (any read-capable transaction).
+        blocker: The :class:`BlockerInfo` returned by ``check_host_busy``
+            or ``check_hosts_busy``.
+
+    Returns:
+        A diagnostic string suitable for writing to
+        ``ActionRun.pending_reason`` and ``ActionHostRun.pending_reason``.
+    """
+    from app.models.host import Host
+
+    hostname = (
+        await db.execute(select(Host.hostname).where(Host.id == blocker.host_id))
+    ).scalar_one_or_none()
+    host_display = hostname or f"host:{blocker.host_id}"
+    suffix = f" ({blocker.action_key})" if blocker.action_key else ""
+    reason = f"Waiting for {blocker.kind} {blocker.id} on host {host_display}{suffix}"
+    if len(reason) > 255:
+        reason = reason[:252] + "..."
+    return reason
 
 
 # ---------------------------------------------------------------------------
