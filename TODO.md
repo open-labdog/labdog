@@ -175,3 +175,75 @@ time (see BUG-45).
   system trust store via `truststore` / `certifi`).
 - Optionally: expose a per-host "TLS verify" toggle for the escape
   hatch (`verify=False`) behind a visible warning in the UI.
+
+---
+
+## Action runtime — honour run-time toggles in `action_host.py`
+
+**Context:** `ActionRun` carries three operator-controllable toggles
+for destructive actions: `snapshot_enabled`, `verify_enabled`, and
+`auto_rollback`. They're exposed in the run-create dialog and the
+schedule wizard. The group-dispatch path
+(`app/tasks/action_group.py`) consults them before applying each
+phase of the snapshot/verify/rollback envelope. The per-host path
+(`app/tasks/action_host.py`) does not — it unconditionally applies
+the envelope whenever the action is `destructive: true` and the
+host has a Proxmox VM mapping. The UI presents the toggles as
+controls but they have no effect on host-targeted runs.
+
+**Sketch:**
+
+- In `_run_action_host_async` (or wherever the per-host snapshot /
+  verify / rollback logic lives), read `run.snapshot_enabled`,
+  `run.verify_enabled`, `run.auto_rollback` and gate the
+  corresponding phase on each. Match the pattern in
+  `app/tasks/action_group.py` — the phases are the same shape,
+  just N=1 instead of N=members.
+- Extend an existing test in `tests/test_action_host.py` (or
+  whichever file covers the per-host envelope) to verify each
+  toggle suppresses its phase: `snapshot_enabled=false` skips
+  Phase A; `verify_enabled=false` skips Phase D;
+  `auto_rollback=false` leaves the snapshot in place on failure.
+
+**Why it matters:** Without this, the per-host path silently
+ignores operator choices in the run dialog. An operator who unticks
+"Take snapshot" for a quick local change still gets a snapshot
+taken — surprising at best.
+
+---
+
+## Action runtime — per-host advisory locks for action runs
+
+**Context:** `host_sync_orchestrator.run_host_sync` acquires a
+PostgreSQL advisory lock per host so concurrent sync requests for
+the same host queue instead of trampling each other. The action
+runtime (`app/tasks/action_host.py` and the newer
+`app/tasks/action_group.py`) does NOT acquire any lock. That means
+a sync and an action — or two concurrent actions — can target the
+same host in parallel. Concrete failure mode: an `apt`-using
+action runs at the same time as a `packages` sync; both fight over
+`/var/lib/dpkg/lock`; one fails mid-flight.
+
+**Sketch:**
+
+- Wrap the per-host envelope in
+  `_run_action_host_async` with the same per-host advisory lock
+  pattern `host_sync_orchestrator` uses
+  (`SELECT pg_advisory_xact_lock(host_id)` inside the run-time
+  transaction). Hold for the lifetime of snapshot → playbook →
+  verify → rollback.
+- For `action_group.run_action_group`: acquire the lock for EVERY
+  member host up front, before Phase A. The single
+  ansible-playbook invocation touches all members in parallel, so
+  partial locking creates the same race the sync path already
+  protects against.
+- Add a test that verifies a sync against host X is blocked by an
+  in-flight action against host X (and vice versa). Use the
+  existing `pending`/`running` queue pattern from
+  `tests/test_host_sync_orchestrator.py` as a template.
+
+**Why it matters:** Today the docs and CLAUDE.md describe per-host
+advisory locks as a property of the action runtime. They aren't.
+Either fix the implementation to match, or fix the docs to admit
+the gap — preferably the former, since the original sync-side
+implementation exists exactly because the race is real.
