@@ -55,11 +55,34 @@ See [`manifest.yml`](./manifest.yml).
   (`serial:`, `add_host`, `delegate_to`, `run_once`) lives entirely
   inside this playbook — LabDog's involvement ends at "give the
   playbook a flat inventory of every host in the group."
-- `destructive: true` — multi-node coordination is the playbook's
-  responsibility; LabDog does **not** wrap group-dispatched runs in
-  per-host snapshot/verify/rollback (the per-node snapshot wouldn't
-  compose cleanly with a kubeadm rolling upgrade). The drain →
-  uncordon → wait-Ready cycle in the role is the safety story.
+- `destructive: true` — LabDog applies its standard per-host
+  snapshot/verify/rollback envelope to every member that has a
+  Proxmox VM mapping. On failure, only the affected node rolls back;
+  successfully-upgraded nodes keep their state. The operator inspects
+  the partial outcome, fixes whatever broke node N, and re-runs the
+  action against the same group; the role's idempotency check skips
+  nodes already on the target version, so the re-run only touches
+  the still-pending ones.
+
+## Re-run after partial failure
+
+The role probes each node's `kubelet --version` at the start; if it
+already reports `v{target_version}`, the role short-circuits and
+marks the node as done. This makes the typical recovery flow
+straightforward:
+
+1. Run `k8s-upgrade` against the group. Node 3 fails mid-upgrade.
+2. LabDog rolls back node 3 from its pre-action snapshot (auto, if
+   `auto_rollback` was on). Nodes 1 and 2 keep the new version.
+3. Operator investigates node 3, fixes the underlying issue.
+4. Operator re-runs `k8s-upgrade` with the same `target_version`
+   against the same group. The role skips nodes 1 and 2 (already on
+   target), then attempts node 3, then proceeds to nodes 4 and 5.
+
+If the operator instead wants to revert the cluster to the
+pre-upgrade state, they roll back nodes 1 and 2 manually from
+Proxmox — LabDog deletes succeeded-host snapshots after the run
+unless an explicit "preserve" toggle is added later.
 
 ## Requirements
 

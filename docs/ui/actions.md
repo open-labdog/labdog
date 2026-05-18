@@ -88,10 +88,16 @@ the rest of the cluster keeps serving traffic. Such actions declare
 - The run-detail page shows one `ActionHostRun` per member, all
   driven by the same ansible-runner invocation. Per-host events get
   routed back to the matching row by inventory hostname.
-- Destructive group-dispatched runs are NOT wrapped in LabDog's
-  per-host snapshot/verify/rollback envelope — multi-node playbooks
-  own their own safety. The pack's playbook is responsible for any
-  pre-flight snapshots, verify gates, or rollback recipes.
+- Destructive group-dispatched runs get the same per-host
+  snapshot/verify/rollback envelope as host-targeted runs: LabDog
+  snapshots every member with a Proxmox VM mapping before the
+  playbook, runs verify on each host after, and rolls back any host
+  whose action or verify failed (auto_rollback toggle). Per-host
+  rollback policy — succeeded hosts keep their state, only the
+  failed ones revert. Operator inspects the partial outcome, fixes
+  the underlying issue, re-runs the action; pack idempotency lets
+  the re-run skip already-succeeded hosts (k8s-upgrade detects
+  already-on-target nodes via a `kubelet --version` probe).
 
 The bundled `k8s-upgrade` discovers control-plane vs worker by
 probing each node for `/etc/kubernetes/manifests/kube-apiserver.yaml`

@@ -41,13 +41,16 @@ unchanged for everything else.
   uncordon / Ready-wait) delegate to the first control-plane node
   so no kubeconfig has to ship elsewhere. Apt-only for now;
   RHEL/Rocky/Alma support tracked in `TODO.md`.
-- **Destructive group-dispatched actions get no labdog-managed
-  snapshot/verify/rollback envelope.** Per-host destructive actions
-  are still wrapped (Proxmox snapshot before, verify, rollback on
-  failure) when a VM mapping exists. Multi-node playbooks that own
-  cluster-wide coordination (e.g. kubeadm rolling upgrades) own
-  their own safety story; a per-node snapshot does not compose
-  cleanly across the cycle.
+- **Destructive group-dispatched actions get the same per-host
+  snapshot/verify/rollback envelope as per-host actions.** Before
+  the single ansible-playbook invocation, labdog snapshots every
+  member with a Proxmox VM mapping. After: per-host verify
+  (`verify_playbook` if declared, else built-in SSH/services/packages
+  checks). Per-host rollback policy on failure — only hosts whose
+  action OR verify failed get their snapshot reverted; successfully-
+  upgraded hosts keep their state and their snapshots get cleaned up.
+  The operator inspects the partial outcome and re-runs the action;
+  pack idempotency carries the resumption.
 
 ### Changed
 

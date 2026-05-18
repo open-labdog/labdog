@@ -172,9 +172,12 @@ The orchestrator picks the dispatch shape from the action's
 `app.tasks.action_group.run_action_group`. One `ActionHostRun`
 record is still created per host either way; group-dispatch routes
 per-host events back to those rows by inventory hostname. Destructive
-group-dispatched actions are NOT wrapped in labdog's per-host
-snapshot/verify/rollback envelope — multi-node playbooks own their
-own safety.
+group-dispatched actions get the same per-host snapshot/verify/
+rollback envelope as the per-host path: snapshot every member with a
+VM mapping pre-action, run verify (pack's `verify_playbook` if
+declared, else built-ins) per-host post-action, per-host rollback
+policy on failure (only the failed hosts revert; successes keep
+their state and their snapshots get cleaned up).
 
 ### About / version surface
 
