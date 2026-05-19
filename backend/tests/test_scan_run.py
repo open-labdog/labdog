@@ -235,6 +235,33 @@ class TestAutoAddTrue:
         ).scalar_one_or_none()
         assert host_row is None
 
+    async def test_verified_no_hostname_uses_placeholder(self, db, ssh_key):
+        """SSH succeeds but remote returns no hostname: host gets the
+        ``host-<ip>`` placeholder so collect_state can replace it later."""
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=True)
+
+        with (
+            patch(
+                "app.discovery.scanner.scan_network",
+                new=AsyncMock(return_value=[("10.0.1.55", "open")]),
+            ),
+            patch(
+                "app.discovery.verify.verify_ssh",
+                new=AsyncMock(return_value=(True, None, None, None)),
+            ),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+        ):
+            result = await _run_task(config.id, db)
+
+        assert result["hosts_added"] == 1
+
+        from app.models.host import Host
+
+        host_row = (
+            await db.execute(select(Host).where(Host.ip_address == "10.0.1.55"))
+        ).scalar_one()
+        assert host_row.hostname == "host-10.0.1.55"
+
 
 # ---------------------------------------------------------------------------
 # Tests: auto_add=False

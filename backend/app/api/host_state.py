@@ -189,6 +189,18 @@ async def collect_state(
     await refresh_host_sync_status(host, db)
 
     await db.commit()
+
+    # Kick off host-level fact collection (OS info, kernel, firewall
+    # backend, NIC, and the placeholder-hostname auto-heal). Fire-and-
+    # forget on the long_running queue -- the UI re-fetches the host
+    # row via React Query so the new fields surface on next refresh.
+    # Skipped on collect-one-module calls since the operator is focused
+    # on a single module surface, not the Overview tab.
+    if module is None:
+        from app.tasks.facts import collect_host_facts
+
+        collect_host_facts.delay(host_id)
+
     return results
 
 

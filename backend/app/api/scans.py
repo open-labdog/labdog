@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
+from app.discovery.verify import placeholder_hostname
 from app.models.host import Host, HostGroupMembership
 from app.models.scan_config import PendingHost, ScanConfig
 from app.models.ssh_key import SSHKey
@@ -276,7 +277,7 @@ async def approve_pending_hosts(
             skipped_ips.append(ip)
             continue
 
-        hostname = pending.hostname or f"host-{ip}"
+        hostname = pending.hostname or placeholder_hostname(ip)
 
         host = Host(
             hostname=hostname,
