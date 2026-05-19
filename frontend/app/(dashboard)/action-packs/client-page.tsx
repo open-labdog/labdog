@@ -161,6 +161,20 @@ export default function ActionPacksPage() {
     return m
   }, [contested])
 
+  // How many action keys does each pack contribute (as either the
+  // winner or an overridden contestant)? Used to disable the bulk-pin
+  // button on packs that aren't a candidate for anything yet.
+  const packKeyCounts = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const a of catalogActions ?? []) {
+      if (a.pack_name) m[a.pack_name] = (m[a.pack_name] ?? 0) + 1
+      for (const overridden of a.overridden_from) {
+        m[overridden] = (m[overridden] ?? 0) + 1
+      }
+    }
+    return m
+  }, [catalogActions])
+
   const upsertResolution = useApiMutation<
     unknown,
     { action_key: string; pack_id: number | null }
@@ -702,6 +716,7 @@ export default function ActionPacksPage() {
                       </span>
                     )
                   }
+                  const packKeyCount = packKeyCounts[pack.name] ?? 0
                   return (
                     <div className="flex gap-1 flex-wrap">
                       <Button
@@ -715,8 +730,13 @@ export default function ActionPacksPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        disabled={packKeyCount === 0}
                         onClick={() => openClaimDialog(pack)}
-                        title="Pin every key this pack contributes to this pack"
+                        title={
+                          packKeyCount === 0
+                            ? "This pack hasn't contributed any actions yet. Sync it first, or check that its manifest is valid."
+                            : "Pin every key this pack contributes to this pack"
+                        }
                       >
                         Make winner for all keys
                       </Button>
@@ -914,28 +934,41 @@ export default function ActionPacksPage() {
               </DialogTitle>
             </DialogHeader>
             <div className="text-sm text-slate-300 space-y-2">
-              <p>This pack contributes to <strong>{claimDialog.contested + claimDialog.uncontested}</strong> action key{claimDialog.contested + claimDialog.uncontested === 1 ? "" : "s"}.</p>
-              <ul className="ml-4 list-disc text-slate-400 text-xs space-y-0.5">
-                <li>{claimDialog.uncontested} uncontested (no-op for the resolver, but pinned explicitly so future contestants don&apos;t auto-claim them)</li>
-                <li>{claimDialog.contested} contested:
-                  {" "}
-                  <span className="text-emerald-300">{claimDialog.pinnedHere} already pinned here</span>,
-                  {" "}
-                  <span className="text-amber-300">{claimDialog.pinnedElsewhere} pinned elsewhere (will be overwritten)</span>,
-                  {" "}
-                  <span className="text-slate-300">
-                    {claimDialog.contested - claimDialog.pinnedHere - claimDialog.pinnedElsewhere} unpinned (will become pinned here)
-                  </span>
-                </li>
-              </ul>
+              {claimDialog.contested + claimDialog.uncontested === 0 ? (
+                <p className="text-slate-400">
+                  <strong className="text-slate-200">{claimDialog.pack.name}</strong>{" "}
+                  hasn&apos;t contributed any action keys yet. There&apos;s
+                  nothing to pin. Sync the pack first, or check that its
+                  manifest is valid and discoverable.
+                </p>
+              ) : (
+                <>
+                  <p>This pack contributes to <strong>{claimDialog.contested + claimDialog.uncontested}</strong> action key{claimDialog.contested + claimDialog.uncontested === 1 ? "" : "s"}.</p>
+                  <ul className="ml-4 list-disc text-slate-400 text-xs space-y-0.5">
+                    <li>{claimDialog.uncontested} uncontested (no-op for the resolver, but pinned explicitly so future contestants don&apos;t auto-claim them)</li>
+                    <li>{claimDialog.contested} contested:
+                      {" "}
+                      <span className="text-emerald-300">{claimDialog.pinnedHere} already pinned here</span>,
+                      {" "}
+                      <span className="text-amber-300">{claimDialog.pinnedElsewhere} pinned elsewhere (will be overwritten)</span>,
+                      {" "}
+                      <span className="text-slate-300">
+                        {claimDialog.contested - claimDialog.pinnedHere - claimDialog.pinnedElsewhere} unpinned (will become pinned here)
+                      </span>
+                    </li>
+                  </ul>
+                </>
+              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setClaimDialog(null)} disabled={claiming}>
-                Cancel
+                {claimDialog.contested + claimDialog.uncontested === 0 ? "Close" : "Cancel"}
               </Button>
-              <Button onClick={handleClaim} disabled={claiming}>
-                {claiming ? "Pinning…" : "Pin all keys"}
-              </Button>
+              {claimDialog.contested + claimDialog.uncontested > 0 && (
+                <Button onClick={handleClaim} disabled={claiming}>
+                  {claiming ? "Pinning…" : "Pin all keys"}
+                </Button>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
