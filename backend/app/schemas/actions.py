@@ -50,6 +50,11 @@ class ActionDefinitionOut(BaseModel):
     #: (including the placeholder one whose metadata was used for
     #: display).
     overridden_from: list[str] = []
+    #: Canonical module names that will re-sync against the target host
+    #: after a successful run (per-host fan-out for group dispatch).
+    #: Empty list means no post-run sync. Surfaced as a chip on the
+    #: action card / run detail so operators see the side effect.
+    post_run_sync: list[str] = []
 
 
 class RunCreateBody(BaseModel):

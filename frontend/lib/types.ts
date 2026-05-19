@@ -684,6 +684,11 @@ export interface ActionDefinition {
   /** Packs whose entries for this key were shadowed. Empty when
    * uncontested. For unresolved keys, lists every contributor. */
   overridden_from: string[]
+  /** Canonical module names that will re-sync against the target host
+   * after a successful run (per-host fan-out for group dispatch).
+   * Empty means no post-run sync. Surface as an info chip so the
+   * operator knows the side effect of running this action. */
+  post_run_sync: string[]
 }
 
 export interface ActionHostRun {

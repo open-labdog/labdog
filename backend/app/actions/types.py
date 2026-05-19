@@ -72,6 +72,11 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: Canonical module names to re-sync after a successful run. See
+    #: ``ActionManifest.post_run_sync`` for semantics. Empty tuple means
+    #: no post-run sync. Validated against ``CANONICAL_ORDER`` at
+    #: manifest-load time.
+    post_run_sync: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def is_builtin(self) -> bool:
