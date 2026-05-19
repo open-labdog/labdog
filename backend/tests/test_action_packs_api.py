@@ -438,8 +438,13 @@ async def test_manual_sync_after_upstream_change(
     pack_id = r.json()["id"]
     original_sha = r.json()["current_sha"]
 
-    # New commit upstream.
-    (origin_repo / "actions" / "demo.yml").write_text("updated\n")
+    # New commit upstream. Modify a tracked file so ``git commit -am``
+    # actually has something to record -- the previous test code wrote
+    # a new untracked ``actions/demo.yml`` (flat-layout leftover) which
+    # ``-am`` ignores, leaving an empty commit attempt.
+    (origin_repo / "actions" / "demo" / "playbook.yml").write_text(
+        "---\n# updated\n- name: demo\n  hosts: all\n  tasks: []\n"
+    )
     _git(origin_repo, ["commit", "-am", "upd"])
 
     r2 = await superuser_client.post(f"/api/action-packs/{pack_id}/sync")

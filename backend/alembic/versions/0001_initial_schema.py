@@ -993,6 +993,14 @@ SEED_STATEMENTS = (
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (7, 'logging.audit_retention_days', '90', 'int', 'Days to retain audit log entries', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (8, 'logging.level', 'info', 'string', 'Application log level', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (9, 'celery.concurrency', '4', 'int', 'Number of Celery worker processes (requires restart)', CURRENT_TIMESTAMP, NULL)""",
+    # Advance the SERIAL/IDENTITY sequence on each seeded table to one
+    # past the highest seeded id. Without this, the next auto-allocated
+    # insert would reuse id=1 and collide with the seed -- caught in
+    # pytest where the testcontainer DB is migrated fresh and the very
+    # next test insert hits the collision.
+    """SELECT setval(pg_get_serial_sequence('public.git_repositories', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.git_repositories), 1))""",
+    """SELECT setval(pg_get_serial_sequence('public.action_packs', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.action_packs), 1))""",
+    """SELECT setval(pg_get_serial_sequence('public.app_settings', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.app_settings), 1))""",
 )
 
 
