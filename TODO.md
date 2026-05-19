@@ -50,38 +50,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
-## Bundled pack scope — keep 1:1 or slim down?
-
-**Context:** The scaffold at `../labdog-playbooks/` is a 1:1 copy of
-`backend/app/ansible/` (the bundled pack baked into the image). Both
-ship the same three actions today. An operator adding
-`labdog-playbooks` as a git Action Pack under Integrations → Git
-Repos + Action Packs will then have the same three keys from two
-sources. With the per-key-pinning precedence model the migration
-seeds `action_resolution` rows pinning the external pack as winner
-for the overlapping keys, so the bundled copy becomes a pure
-safety net for when the pack's GitRepository is unreachable at boot.
-
-**Decision needed:** what goes in the safety net?
-
-- **Option A — keep identical.** Every action present in both. Fresh
-  installs work offline; the external pack adds nothing on a
-  successful clone. Biggest image, most duplication (playbooks
-  drift risk).
-- **Option B — slim to a minimal "known-safe" subset.** e.g. only
-  `linux-upgrade` (the most common case) and leave `k8s-upgrade` /
-  `linux-os-upgrade` to the remote. Smaller image, but an offline
-  install is partially functional.
-- **Option C — remove bundled entirely.** External pack is
-  mandatory. Cleanest conceptually but breaks air-gapped deploys
-  and makes first-boot failure modes worse.
-
-I'd default to **A** until we have a reason to trim — duplication
-cost is negligible and drift is catchable by keeping the two dirs
-byte-identical in CI (a one-line `diff -r` gate).
-
----
-
 ## k8s-upgrade — broaden OS support
 
 **Context:** The bundled `k8s-upgrade` action is currently apt-only;
