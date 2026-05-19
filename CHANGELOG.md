@@ -7,6 +7,47 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+#### Collect All now also collects host facts and auto-heals placeholder hostnames
+
+The "Collect All" button on the host overview now also triggers
+`collect_host_facts` after the per-module collectors finish, so the
+Overview tab populates with OS info, kernel, default NIC, and the
+firewall backend in addition to per-module state. Previously
+"Collect All" only ran the per-module collectors; OS facts were only
+gathered via the separately-dispatched `_builtin.collect_state`
+action, leaving "OS: Not collected" on freshly approved hosts even
+after repeated button presses.
+
+The same SSH session also fetches the remote `hostname` and, **only
+when the stored hostname matches the canonical `host-<ip>`
+discovery placeholder**, replaces it with the value the remote
+reports. Operator-chosen names are never overwritten. On a name
+collision with another host the rename is skipped silently (leaving
+the placeholder in place) rather than mangling the fetched name
+with a numeric suffix.
+
+To make the placeholder reliably detectable, every "no real
+hostname could be resolved" code path now emits the same
+`host-<ip>` shape:
+
+- `app.discovery.verify.verify_ssh` no longer synthesises the bare
+  IP as a hostname fallback — it returns `None` and lets callers
+  pick the placeholder. New helpers
+  `placeholder_hostname(ip)` / `is_placeholder_hostname(name, ip)`
+  centralise the format.
+- `POST /api/discovery/add-hosts` (bulk-add) previously used the
+  bare IP as the fallback hostname; now uses `host-<ip>` for
+  consistency with the scan-approve path.
+- The scan runner's `auto_add` branch now also creates the host
+  (with placeholder) when SSH succeeded but no hostname could be
+  resolved — previously these went to the pending queue with a
+  misleading `"unknown error"` message.
+
+Existing hosts that carry the old bare-IP fallback are left as-is
+(rename in the UI to opt into auto-heal on the next collect).
+
 ### Changed
 
 #### Action pack precedence: drop positional ordering, pure per-key pinning

@@ -94,7 +94,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.discovery.scanner import scan_network
-    from app.discovery.verify import verify_ssh
+    from app.discovery.verify import placeholder_hostname, verify_ssh
     from app.models.host import Host, HostGroupMembership
     from app.models.scan_config import ScanConfig
     from app.models.ssh_key import SSHKey
@@ -159,19 +159,25 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                     username=key_row.ssh_user,
                     imported_key=imported_key,
                 )
-                if ok and hostname is not None:
-                    # Ensure hostname uniqueness across the DB.
-                    base_hn = hostname
-                    suffix = 1
-                    while True:
-                        hn_check = await db.execute(select(Host).where(Host.hostname == hostname))
-                        if not hn_check.scalar_one_or_none():
-                            break
-                        hostname = f"{base_hn}-{suffix}"
-                        suffix += 1
-                    verified.append((ip, hostname))
-                else:
+                if not ok:
                     unverified.append((ip, ssh_err or "unknown error"))
+                    continue
+                # SSH succeeded. If the remote didn't return a real
+                # hostname, use the canonical placeholder so the host
+                # can still be added; collect_state will replace it
+                # once the remote starts answering.
+                if hostname is None:
+                    hostname = placeholder_hostname(ip)
+                # Ensure hostname uniqueness across the DB.
+                base_hn = hostname
+                suffix = 1
+                while True:
+                    hn_check = await db.execute(select(Host).where(Host.hostname == hostname))
+                    if not hn_check.scalar_one_or_none():
+                        break
+                    hostname = f"{base_hn}-{suffix}"
+                    suffix += 1
+                verified.append((ip, hostname))
 
             hosts_added = 0
             hosts_pending = 0

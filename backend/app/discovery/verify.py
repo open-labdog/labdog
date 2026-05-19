@@ -14,6 +14,21 @@ import asyncssh
 from app.ssh_utils import get_source_ip, ssh_connect
 
 
+def placeholder_hostname(ip: str) -> str:
+    """Canonical placeholder used when no real hostname can be resolved.
+
+    Single source of truth for the ``host-<ip>`` shape so every code
+    path produces the same string and ``is_placeholder_hostname`` can
+    detect it reliably for opportunistic auto-update later.
+    """
+    return f"host-{ip}"
+
+
+def is_placeholder_hostname(hostname: str | None, ip: str) -> bool:
+    """True if *hostname* matches the canonical placeholder for *ip*."""
+    return hostname is not None and hostname == placeholder_hostname(ip)
+
+
 async def verify_ssh(
     ip: str,
     port: int,
@@ -32,8 +47,12 @@ async def verify_ssh(
         A four-tuple ``(success, hostname, source_ip, ssh_error)`` where:
 
         * ``success``    -- True when the SSH session was established.
-        * ``hostname``   -- Resolved hostname string on success (falls back to
-                           reverse-DNS then the IP itself), or None on failure.
+        * ``hostname``   -- Resolved hostname string on success (remote
+                           ``hostname`` command, falling back to reverse DNS),
+                           or ``None`` when neither yields a value. Callers
+                           decide what placeholder to use; ``verify_ssh`` no
+                           longer synthesises one so the placeholder can be
+                           detected later by ``is_placeholder_hostname``.
         * ``source_ip``  -- The IP address the remote host sees as the origin
                            of the connection, or None when unavailable.
         * ``ssh_error``  -- Human-readable error message on failure, or None
@@ -54,13 +73,10 @@ async def verify_ssh(
             if not hostname:
                 try:
                     fqdn = _socket.getfqdn(ip)
-                    if fqdn != ip:
+                    if fqdn and fqdn != ip:
                         hostname = fqdn
                 except Exception:
                     pass
-
-            if not hostname:
-                hostname = ip
 
             return True, hostname, source_ip, None
 
