@@ -254,15 +254,35 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     doesn't need it (the caller's own row is still ``pending``, not
     ``running``, so it's naturally excluded).
     """
-    from app.tasks.host_lock import acquire_host_lock, check_host_busy
+    from app.models.sync_job import SyncJob
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        format_pending_reason,
+    )
 
     await acquire_host_lock(db, host_id)
-    # ``check_host_busy`` now returns ``BlockerInfo | None`` (TODO B —
-    # surface pending_reason). The sync side doesn't yet capture the
-    # blocker on SyncJob; a follow-up will add ``SyncJob.pending_reason``
-    # and pipe the BlockerInfo into it the same way the action paths do.
-    # For now we just truthy-check that any blocker exists.
-    return (await check_host_busy(db, host_id)) is None
+    blocker = await check_host_busy(db, host_id)
+    if blocker is None:
+        return True
+
+    # Defer. The SyncJob row was created in ``status='pending'`` by the
+    # API entry; we leave the status alone but stamp ``pending_reason``
+    # with the formatted blocker so the sync queue UI can render the
+    # same "Host busy" tooltip as the action queue. Action-side parity
+    # lives in ``app.tasks.action_host`` / ``action_group``.
+    #
+    # We commit here so the write persists -- ``task_session`` does not
+    # auto-commit on exit. Committing also releases the advisory lock,
+    # which is correct: we're done with the host for this attempt.
+    reason = await format_pending_reason(db, blocker)
+    job = (
+        await db.execute(select(SyncJob).where(SyncJob.id == job_id))
+    ).scalar_one_or_none()
+    if job is not None:
+        job.pending_reason = reason
+        await db.commit()
+    return False
 
 
 async def _dispatch_next_pending_for_host(

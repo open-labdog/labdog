@@ -555,6 +555,7 @@ async def test_defer_when_another_sync_running_on_host(db: AsyncSession, tmp_pat
     ``_dispatch_next_pending_for_host`` when it finishes.
     """
     from app.models.audit_log import AuditLog
+    from app.models.host import Host
     from app.models.sync_job import SyncJob
 
     host_id = await _setup_host_with_backend(db, "nftables")
@@ -616,6 +617,12 @@ async def test_defer_when_another_sync_running_on_host(db: AsyncSession, tmp_pat
     assert pending.status == "pending"
     assert pending.started_at is None
     assert pending.completed_at is None
+    # The defer path now stamps a pending_reason naming the blocker so
+    # the sync queue UI can show "Waiting for sync 47 on host node-1"
+    # instead of a context-free amber "Pending" badge. Mirrors the
+    # action-side ActionRun.pending_reason behaviour.
+    host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one()
+    assert pending.pending_reason == f"Waiting for sync {running_job_id} on host {host.hostname}"
 
     running = (await db.execute(select(SyncJob).where(SyncJob.id == running_job_id))).scalar_one()
     assert running.status == "running"

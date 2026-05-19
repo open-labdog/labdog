@@ -171,6 +171,10 @@ class SyncJobResponse(BaseModel):
     completed_at: datetime | None
     ansible_output: str | None
     error_message: str | None
+    # Set when this job was deferred because another op on the host
+    # was running. Same shape and consumer (RunStatusBadge tooltip)
+    # as ``ActionRun.pending_reason``.
+    pending_reason: str | None = None
     triggered_by_user_id: int | None
     module_type: str = "firewall"
     created_at: datetime
