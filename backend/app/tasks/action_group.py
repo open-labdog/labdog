@@ -1252,6 +1252,57 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             total,
         )
 
+        # Post-run module sync fan-out: for group-dispatched actions
+        # (supports_host=false) one invocation produces N per-host
+        # outcomes; we fan out post_run_sync to each host whose row is
+        # ``succeeded``. Skipped on dry-run, on cancel, and on whole-
+        # run failure. Failures here are logged but never affect the
+        # action's terminal status -- the action itself already
+        # completed.
+        run_parameters = run.parameters or {}
+        dry_run = bool(run_parameters.get("__dry_run", False))
+        if (
+            run.status not in ("cancelled", "failed")
+            and not dry_run
+            and succeeded > 0
+        ):
+            from app.actions.registry import ACTION_REGISTRY
+
+            action = ACTION_REGISTRY.get(run.action_key)
+            post_run_sync_modules: tuple[str, ...] = (
+                action.post_run_sync if action is not None else ()
+            )
+            if post_run_sync_modules:
+                from app.sync.post_run import dispatch_post_run_sync
+
+                for hr in host_runs:
+                    if hr.status != "succeeded":
+                        continue
+                    try:
+                        dispatched_ids = await dispatch_post_run_sync(
+                            db,
+                            host_id=hr.host_id,
+                            modules=post_run_sync_modules,
+                            triggered_by_user_id=run.triggered_by_user_id,
+                        )
+                        if dispatched_ids:
+                            await db.commit()
+                            logger.info(
+                                "action_group: dispatched post_run_sync for "
+                                "action_run %d host %d -- modules=%s job_ids=%s",
+                                action_run_id,
+                                hr.host_id,
+                                list(post_run_sync_modules),
+                                dispatched_ids,
+                            )
+                    except Exception:
+                        logger.exception(
+                            "action_group: post_run_sync dispatch failed for "
+                            "action_run %d host %d",
+                            action_run_id,
+                            hr.host_id,
+                        )
+
     try:
         r.publish(
             channel,

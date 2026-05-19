@@ -58,6 +58,7 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         winning_pack_id=defn.winning_pack_id,
         unresolved=defn.is_unresolved,
         overridden_from=list(defn.overridden_from),
+        post_run_sync=list(defn.post_run_sync),
     )
 
 

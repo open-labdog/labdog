@@ -89,3 +89,40 @@ class ActionManifest(BaseModel):
             "unset."
         ),
     )
+    post_run_sync: list[
+        Literal[
+            "packages",
+            "resolver",
+            "services",
+            "hosts-file",
+            "cron",
+            "linux-users",
+            "firewall",
+        ]
+    ] = Field(
+        default_factory=list,
+        description=(
+            "Modules whose desired state should be re-enforced (synced) "
+            "after the action succeeds. Each named module is dispatched "
+            "through the normal sync pipeline against the same target "
+            "host (per-host fan-out for group-dispatched actions). "
+            "Semantics are 'push labdog's desired state', NOT 'collect "
+            "current state' -- only declare modules where re-enforcing "
+            "the existing config is what the action wants. Skipped on "
+            "dry-run and on action failure. Module names must match "
+            "``CANONICAL_ORDER`` in ``app/ansible_runtime/composer.py``."
+        ),
+    )
+
+    @field_validator("post_run_sync")
+    @classmethod
+    def _dedup_post_run_sync(cls, v: list[str]) -> list[str]:
+        # Preserve declaration order; drop duplicates so dispatch fires
+        # at most one SyncJob per module per run.
+        seen: set[str] = set()
+        out: list[str] = []
+        for m in v:
+            if m not in seen:
+                seen.add(m)
+                out.append(m)
+        return out

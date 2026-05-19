@@ -243,6 +243,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             run_snapshot_enabled: bool = bool(run.snapshot_enabled)
             run_verify_enabled: bool = bool(run.verify_enabled)
             run_auto_rollback: bool = bool(run.auto_rollback)
+            # Manifest-declared post-run module syncs. Fired against the
+            # same host after a successful, non-dry-run completion so
+            # labdog's desired state is re-enforced. See
+            # ``app.sync.post_run.dispatch_post_run_sync``.
+            action_post_run_sync: tuple[str, ...] = action.post_run_sync
+            triggered_by_user_id: int | None = run.triggered_by_user_id
 
         # ------------------------------------------------------------------ #
         # Load Proxmox VM mapping if the action is destructive AND snapshots #
@@ -654,6 +660,38 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 hr.error_message = error_msg
             final_status = hr.status
             await db.commit()
+
+            # Post-run module sync: only on success, never on dry-run,
+            # and only when the manifest opted in. Dispatch failures
+            # are logged but do not affect the action's status -- the
+            # action itself already completed.
+            if success and not dry_run and action_post_run_sync:
+                try:
+                    from app.sync.post_run import dispatch_post_run_sync
+
+                    dispatched_ids = await dispatch_post_run_sync(
+                        db,
+                        host_id=host_id,
+                        modules=action_post_run_sync,
+                        triggered_by_user_id=triggered_by_user_id,
+                    )
+                    if dispatched_ids:
+                        await db.commit()
+                        logger.info(
+                            "action_host: dispatched post_run_sync for "
+                            "action_run %d host %d -- modules=%s job_ids=%s",
+                            action_run_id,
+                            host_id,
+                            list(action_post_run_sync),
+                            dispatched_ids,
+                        )
+                except Exception:
+                    logger.exception(
+                        "action_host: post_run_sync dispatch failed for "
+                        "action_run %d host %d",
+                        action_run_id,
+                        host_id,
+                    )
 
         r.publish(
             channel,

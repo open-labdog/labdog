@@ -64,6 +64,14 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
           ) : (
             <p className="mt-1 text-xs text-slate-500">~{action.estimated_duration}</p>
           )}
+          {action.post_run_sync.length > 0 && (
+            <p
+              className="mt-1 text-xs text-sky-300/80"
+              title="After a successful run, labdog will re-sync the listed modules against the target host(s) to re-enforce desired state."
+            >
+              Post-run sync: {action.post_run_sync.join(", ")}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">

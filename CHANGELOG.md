@@ -9,6 +9,37 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+#### Action manifests can declare opt-in post-run module sync
+
+Action manifests gain a `post_run_sync` field (a list of canonical
+module names: `packages`, `resolver`, `services`, `hosts-file`,
+`cron`, `linux-users`, `firewall`). After the action succeeds
+labdog dispatches a normal per-host sync against the same target
+host for each named module, re-enforcing labdog's desired state.
+Per-host fan-out across the group for `supports_host: false`
+group-dispatched actions. Skipped on dry-run, on whole-run
+failure, and on cancellation. Sync dispatch failures are logged
+but never affect the action's terminal status — the action
+already completed.
+
+The semantic is **push, not collect**: this routes through the
+normal sync pipeline which reconciles the host against labdog's
+desired state for those modules. Action authors must only declare
+modules where pushing the existing desired state is what the
+action wants — declaring `packages` from an action that installs
+something labdog's desired-state list doesn't cover would
+(re)remove it.
+
+- New `app.sync.post_run.dispatch_post_run_sync` helper creates a
+  `SyncJob` per module + dispatches `run_host_sync.delay(...)` with
+  an explicit `module_filter`. Per-insert savepoints isolate
+  collisions on the existing `(host_id, module_type)` active-row
+  unique index — a collision is treated as "already queued, skip".
+- `ActionDefinitionOut` and the frontend `ActionDefinition` type
+  gain `post_run_sync: list[str]`. The action card surfaces it as
+  a "Post-run sync: …" hint so the operator sees the side effect
+  before clicking Run.
+
 #### Sync queue parity: `SyncJob.pending_reason`
 
 Deferred `SyncJob` rows now carry the same `pending_reason` field
