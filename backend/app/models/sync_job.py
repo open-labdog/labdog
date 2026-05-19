@@ -35,6 +35,11 @@ class SyncJob(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ansible_output: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Set when ``status='pending'`` because another op on the same host
+    # was running. Mirrors ``ActionRun.pending_reason``; the UI renders
+    # both as the same "Host busy" tooltip via RunStatusBadge. NULL on
+    # non-pending rows and on legacy rows that predate this column.
+    pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     triggered_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,

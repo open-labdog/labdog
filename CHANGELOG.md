@@ -9,6 +9,31 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+#### Sync queue parity: `SyncJob.pending_reason`
+
+Deferred `SyncJob` rows now carry the same `pending_reason` field
+that `ActionRun` / `ActionHostRun` got in 0.2.0. When
+`host_sync_orchestrator._claim_or_defer` finds another op already
+running on the target host, it stamps the SyncJob with the
+formatted blocker (`"Waiting for action sample.say-hello on host
+node-1"`, `"Waiting for sync 47 on host node-1"`, etc.) alongside
+leaving `status='pending'`. The sync queue UI surfaces the reason
+inline next to the pending icon so operators see *what* is ahead
+of them in the per-host queue instead of a context-free amber
+"Pending" badge — closing the loop on the operator-clarity work
+that already shipped on the action side.
+
+- **Schema migration `0005_syncjob_pending_reason`** adds the
+  `sync_jobs.pending_reason VARCHAR(255)` column. Additive,
+  nullable; existing pending rows and any future row dispatched
+  while the host is free keep NULL and render the same way as
+  before.
+- `SyncJobResponse` (the API shape returned from every sync
+  endpoint, reused by the per-module sync routers) gains
+  `pending_reason: str | None`.
+- The Group Firewall Sync page polls the deferred job and now
+  renders the reason inline when status is `pending`.
+
 #### Collect All now also collects host facts and auto-heals placeholder hostnames
 
 The "Collect All" button on the host overview now also triggers
