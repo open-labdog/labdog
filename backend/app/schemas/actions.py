@@ -55,6 +55,12 @@ class ActionDefinitionOut(BaseModel):
     #: Empty list means no post-run sync. Surfaced as a chip on the
     #: action card / run detail so operators see the side effect.
     post_run_sync: list[str] = []
+    #: Resources the action's manifest declares it installs. After a
+    #: successful run labdog inserts these as host-scope overrides so
+    #: the resources are managed going forward. Keys are canonical
+    #: module names; values are per-item dicts validated against the
+    #: module's Create schema. See ``ActionManifest.post_run_register``.
+    post_run_register: dict[str, list[dict[str, Any]]] = {}
 
 
 class RunCreateBody(BaseModel):

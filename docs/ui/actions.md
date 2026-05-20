@@ -519,6 +519,107 @@ inside the action directory) and pass overrides through manifest
 parameters. The bundled `linux-upgrade` action in that repo uses
 `verify/post-upgrade.yml` and is the reference implementation.
 
+### Post-run reconciliation: sync and register
+
+An action's manifest can opt in to two post-success hooks that bridge
+the action world and labdog's desired-state modules. Both are
+declarative, both fire only on successful non-dry-run completion,
+both fan out per-host for group-dispatched actions, and both log
+without affecting the action's terminal status if they fail.
+
+#### `post_run_sync` — re-enforce existing desired state
+
+```yaml
+post_run_sync:
+  - firewall
+  - services
+```
+
+After success, labdog dispatches a normal per-host sync for each
+named module against the same target host. The sync routes through
+the standard `host_sync_orchestrator` pipeline: per-host advisory
+lock, coalesced playbook, audit row, the works.
+
+Semantics are **push, not collect**. Use this when the action
+needs labdog's existing config to be (re-)enforced after the
+action runs — e.g. a kernel-upgrade action that wants the firewall
+ruleset reapplied because the upgrade swapped backends, or a cert-
+rotation action that wants services reloaded.
+
+**Don't use `post_run_sync` for "install this new thing" actions.**
+Those modules manage labdog's *declared* desired state. If the
+action installs a service labdog doesn't declare (e.g. a fresh
+`alloy.service` install), `post_run_sync: [services]` won't add
+alloy to labdog's desired set; the existing cleanup pass would
+also skip it (no labdog marker). For install actions, use
+`post_run_register` instead.
+
+#### `post_run_register` — register installed resources
+
+```yaml
+post_run_register:
+  packages:
+    - package_name: alloy
+      state: present
+  services:
+    - service_name: alloy.service
+      state: running
+      enabled: true
+```
+
+After success, labdog inserts each declared resource as a **host-
+scope override row** (`host_id=<target>`, `group_id=NULL`) so the
+resource becomes labdog-managed from that point on. After the
+inserts, a `post_run_sync` is automatically dispatched for the
+affected modules so the Host detail tabs reflect the new state
+immediately (no waiting for the next drift check).
+
+Top-level keys are canonical module names: `packages`, `resolver`,
+`services`, `hosts-file`, `cron`, `linux-users`, `firewall`. Each
+value is a list of dicts validated against the module's REST API
+Create schema — same fields, same defaults, same validators
+operators get from the UI / API. `host_id` and `group_id` are
+implicit and must not be declared.
+
+**Conflict semantic: skip silently on uniqueness collision.** If
+the operator has already declared the resource for that host
+(e.g. `alloy.service` with `state: stopped`, deliberately), the
+manifest declaration is ignored and labdog logs `post_run_register:
+skipping services[0] on host=42 -- already declared`. Operator
+intent wins.
+
+**When to use `post_run_register`:** action installs something
+labdog should manage going forward. Examples: an `alloy-install`
+action registers `alloy.service` + the `alloy` package; an
+`add-monitoring-user` action registers the new user under
+`linux-users`. After the action runs, drift checks and syncs treat
+the new rows like any other operator-declared row.
+
+#### Purge-mode modules: a warning
+
+Four module categories overwrite the host with labdog's complete
+desired state on every sync (i.e. unknown entries get removed):
+
+- **firewall** — rebuilds the nftables ruleset from scratch
+- **hosts-file** — overwrites `/etc/hosts` with desired entries
+- **resolver** — overwrites resolver config (resolv.conf / NM /
+  systemd-resolved) with desired settings
+- **SSH keys** (within `linux-users`) — exclusive mode; deletes all
+  keys not in labdog's desired set
+
+**Do not use actions to mutate these without also declaring them in
+labdog's desired state — either via `post_run_register:` or via the
+UI/API first.** Otherwise the next sync removes whatever the action
+installed.
+
+The other module behaviours are tolerant: `packages`, `cron`,
+`linux-users` (non-SSH), and `services` (non-labdog-marked units)
+leave unknown entries alone. Install-this-new-thing actions
+targeting only those modules are safe even without
+`post_run_register` — though without it, the resources won't
+appear in the corresponding UI tabs until the next drift check
+collects state.
+
 ---
 
 ## Troubleshooting

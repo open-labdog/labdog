@@ -29,7 +29,8 @@ Semantics:
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -100,3 +101,97 @@ async def dispatch_post_run_sync(
         run_host_sync.delay(job_id, host_id, module_filter=[module])
 
     return dispatched
+
+
+async def dispatch_post_run_register(
+    db: AsyncSession,
+    *,
+    host_id: int,
+    declarations: Mapping[str, list[dict[str, Any]]],
+    triggered_by_user_id: int | None,
+) -> dict[str, int]:
+    """Insert manifest-declared resources as host-scope override rows.
+
+    For each module-name key in ``declarations``, iterate the list of
+    pre-validated dicts (validated at manifest-load time against the
+    module's REST API Create schema) and insert each as a host-scope
+    row (``host_id=host_id``, ``group_id=NULL``) in the relevant table.
+
+    Each insert is wrapped in a savepoint so a uniqueness collision on
+    one item does not unwind earlier inserts. Collisions log + skip:
+    operator-declared rows win over action-declared ones.
+
+    After the inserts, dispatch a normal sync for the affected modules
+    so the cache picks up the new desired state. The sync also serves
+    as the "show alloy on the host" cache-refresh path -- a single
+    pipeline handles both the push (no-op, host already matches) and
+    the post-sync state collection that drives the UI tabs.
+
+    Returns ``{module_name: inserted_count}`` for the modules where at
+    least one row was inserted. Modules whose rows all collided do not
+    appear in the result (and don't trigger a follow-up sync).
+
+    The caller's outer ``db`` session owns commit timing.
+    """
+    from app.actions.register_schemas import CREATE_SCHEMAS, MODELS
+
+    if not declarations:
+        return {}
+
+    inserted: dict[str, int] = {}
+    for module, items in declarations.items():
+        model_cls = MODELS.get(module)
+        create_schema = CREATE_SCHEMAS.get(module)
+        if model_cls is None or create_schema is None:
+            # Shouldn't happen -- manifest validator rejected unknown
+            # names. Defensive log.
+            logger.warning(
+                "post_run_register: skipping unknown module %s for host %d",
+                module,
+                host_id,
+            )
+            continue
+        module_inserted = 0
+        for i, item in enumerate(items):
+            # Re-validate through the Create schema (defense in depth):
+            # the manifest validator already ran at load time, but a
+            # programmatic caller might invoke this helper with raw
+            # dicts that haven't been through Pydantic. The schemas
+            # also normalise fields (e.g. strip the ".service" suffix
+            # on service_name) which must apply to whatever lands in
+            # the DB.
+            validated = create_schema(**item).model_dump()
+            try:
+                async with db.begin_nested():
+                    row = model_cls(host_id=host_id, group_id=None, **validated)
+                    db.add(row)
+                    await db.flush()
+            except IntegrityError:
+                logger.info(
+                    "post_run_register: skipping %s[%d] on host=%d -- "
+                    "already declared (likely operator-managed)",
+                    module,
+                    i,
+                    host_id,
+                )
+                continue
+            module_inserted += 1
+        if module_inserted > 0:
+            inserted[module] = module_inserted
+
+    if inserted:
+        # Dispatch a sync for the affected modules so labdog re-asserts
+        # the now-registered desired state and refreshes the cached
+        # current state (the latter is what surfaces the registration
+        # in the Host detail tabs). The host is presumably already in
+        # sync because the action just installed those resources, so
+        # the sync is typically a no-op push with a state-collection
+        # side effect.
+        await dispatch_post_run_sync(
+            db,
+            host_id=host_id,
+            modules=list(inserted),
+            triggered_by_user_id=triggered_by_user_id,
+        )
+
+    return inserted

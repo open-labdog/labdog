@@ -1272,36 +1272,67 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
             post_run_sync_modules: tuple[str, ...] = (
                 action.post_run_sync if action is not None else ()
             )
-            if post_run_sync_modules:
-                from app.sync.post_run import dispatch_post_run_sync
+            post_run_register_decls: dict[str, tuple[dict, ...]] = (
+                dict(action.post_run_register) if action is not None else {}
+            )
+            if post_run_sync_modules or post_run_register_decls:
+                from app.sync.post_run import (
+                    dispatch_post_run_register,
+                    dispatch_post_run_sync,
+                )
 
                 for hr in host_runs:
                     if hr.status != "succeeded":
                         continue
-                    try:
-                        dispatched_ids = await dispatch_post_run_sync(
-                            db,
-                            host_id=hr.host_id,
-                            modules=post_run_sync_modules,
-                            triggered_by_user_id=run.triggered_by_user_id,
-                        )
-                        if dispatched_ids:
-                            await db.commit()
-                            logger.info(
-                                "action_group: dispatched post_run_sync for "
-                                "action_run %d host %d -- modules=%s job_ids=%s",
+                    if post_run_sync_modules:
+                        try:
+                            dispatched_ids = await dispatch_post_run_sync(
+                                db,
+                                host_id=hr.host_id,
+                                modules=post_run_sync_modules,
+                                triggered_by_user_id=run.triggered_by_user_id,
+                            )
+                            if dispatched_ids:
+                                await db.commit()
+                                logger.info(
+                                    "action_group: dispatched post_run_sync for "
+                                    "action_run %d host %d -- modules=%s job_ids=%s",
+                                    action_run_id,
+                                    hr.host_id,
+                                    list(post_run_sync_modules),
+                                    dispatched_ids,
+                                )
+                        except Exception:
+                            logger.exception(
+                                "action_group: post_run_sync dispatch failed for "
+                                "action_run %d host %d",
                                 action_run_id,
                                 hr.host_id,
-                                list(post_run_sync_modules),
-                                dispatched_ids,
                             )
-                    except Exception:
-                        logger.exception(
-                            "action_group: post_run_sync dispatch failed for "
-                            "action_run %d host %d",
-                            action_run_id,
-                            hr.host_id,
-                        )
+                    if post_run_register_decls:
+                        try:
+                            inserted = await dispatch_post_run_register(
+                                db,
+                                host_id=hr.host_id,
+                                declarations=post_run_register_decls,
+                                triggered_by_user_id=run.triggered_by_user_id,
+                            )
+                            if inserted:
+                                await db.commit()
+                                logger.info(
+                                    "action_group: dispatched post_run_register for "
+                                    "action_run %d host %d -- inserted=%s",
+                                    action_run_id,
+                                    hr.host_id,
+                                    inserted,
+                                )
+                        except Exception:
+                            logger.exception(
+                                "action_group: post_run_register dispatch failed for "
+                                "action_run %d host %d",
+                                action_run_id,
+                                hr.host_id,
+                            )
 
     try:
         r.publish(

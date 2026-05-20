@@ -248,6 +248,15 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             # labdog's desired state is re-enforced. See
             # ``app.sync.post_run.dispatch_post_run_sync``.
             action_post_run_sync: tuple[str, ...] = action.post_run_sync
+            # Manifest-declared post-run resource registrations. After
+            # success the helper inserts host-scope override rows for
+            # each declared resource (skipping operator-managed
+            # collisions) and then dispatches a follow-up sync to
+            # refresh the UI tabs. See
+            # ``app.sync.post_run.dispatch_post_run_register``.
+            action_post_run_register: dict[str, tuple[dict, ...]] = dict(
+                action.post_run_register
+            )
             triggered_by_user_id: int | None = run.triggered_by_user_id
 
         # ------------------------------------------------------------------ #
@@ -688,6 +697,38 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 except Exception:
                     logger.exception(
                         "action_host: post_run_sync dispatch failed for "
+                        "action_run %d host %d",
+                        action_run_id,
+                        host_id,
+                    )
+
+            # Post-run resource registration: insert host-scope overrides
+            # for resources declared in the manifest, then dispatch a
+            # follow-up sync so the cache catches up. Same success-only
+            # / non-dry-run gates as post_run_sync. Failures logged
+            # only; never affect the action's terminal status.
+            if success and not dry_run and action_post_run_register:
+                try:
+                    from app.sync.post_run import dispatch_post_run_register
+
+                    inserted = await dispatch_post_run_register(
+                        db,
+                        host_id=host_id,
+                        declarations=action_post_run_register,
+                        triggered_by_user_id=triggered_by_user_id,
+                    )
+                    if inserted:
+                        await db.commit()
+                        logger.info(
+                            "action_host: dispatched post_run_register for "
+                            "action_run %d host %d -- inserted=%s",
+                            action_run_id,
+                            host_id,
+                            inserted,
+                        )
+                except Exception:
+                    logger.exception(
+                        "action_host: post_run_register dispatch failed for "
                         "action_run %d host %d",
                         action_run_id,
                         host_id,

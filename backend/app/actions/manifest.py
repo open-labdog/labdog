@@ -126,3 +126,68 @@ class ActionManifest(BaseModel):
                 seen.add(m)
                 out.append(m)
         return out
+
+    post_run_register: dict[str, list[dict[str, Any]]] = Field(
+        default_factory=dict,
+        description=(
+            "Resources to register as host-scope overrides in labdog's "
+            "desired-state model after the action succeeds. Top-level "
+            "keys are canonical module names (packages, resolver, "
+            "services, hosts-file, cron, linux-users, firewall); each "
+            "value is a list of dicts validated against the module's "
+            "REST API Create schema. ``host_id`` is implicit -- the "
+            "rows are inserted with host_id=<action target> and "
+            "group_id=NULL. Per-host fan-out for group-dispatched "
+            "actions; rows added for every member host where the "
+            "action succeeded. Conflicts (uniqueness collisions with "
+            "existing rows) are skipped silently and logged so "
+            "operator-declared rows win over action-declared ones. "
+            "Use this for actions that install resources labdog "
+            "should manage going forward (e.g. install Alloy + "
+            "register alloy.service + alloy package). Do NOT use "
+            "actions to mutate firewall, hosts-file, resolver, or "
+            "SSH-keys without first declaring them here or via "
+            "labdog's UI/API -- those modules purge unknown entries "
+            "on next sync."
+        ),
+    )
+
+    @field_validator("post_run_register")
+    @classmethod
+    def _validate_post_run_register(
+        cls, v: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        # Lazy import to avoid pulling app.packages/services/... at
+        # action-module import time (manifest is loaded very early in
+        # the FastAPI lifespan + Celery worker_ready boot).
+        from app.actions.register_schemas import (
+            CREATE_SCHEMAS,
+            VALID_MODULE_NAMES,
+        )
+
+        cleaned: dict[str, list[dict[str, Any]]] = {}
+        for module, items in v.items():
+            if module not in VALID_MODULE_NAMES:
+                raise ValueError(
+                    f"post_run_register: unknown module {module!r}. Valid: "
+                    f"{sorted(VALID_MODULE_NAMES)}"
+                )
+            if not isinstance(items, list):
+                raise ValueError(
+                    f"post_run_register.{module}: must be a list of dicts"
+                )
+            schema = CREATE_SCHEMAS[module]
+            cleaned_items: list[dict[str, Any]] = []
+            for i, item in enumerate(items):
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        f"post_run_register.{module}[{i}]: must be a dict"
+                    )
+                # Validate against the existing module Create schema.
+                # Re-export as model_dump() so we store the validated /
+                # default-filled shape, not the raw author input.
+                validated = schema(**item)
+                cleaned_items.append(validated.model_dump())
+            if cleaned_items:
+                cleaned[module] = cleaned_items
+        return cleaned

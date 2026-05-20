@@ -59,6 +59,10 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         unresolved=defn.is_unresolved,
         overridden_from=list(defn.overridden_from),
         post_run_sync=list(defn.post_run_sync),
+        post_run_register={
+            module: [dict(item) for item in items]
+            for module, items in defn.post_run_register.items()
+        },
     )
 
 

@@ -77,6 +77,15 @@ class ActionDefinition:
     #: no post-run sync. Validated against ``CANONICAL_ORDER`` at
     #: manifest-load time.
     post_run_sync: tuple[str, ...] = field(default_factory=tuple)
+    #: Resources to register as host-scope overrides in labdog's
+    #: desired-state model after a successful run. See
+    #: ``ActionManifest.post_run_register`` for the full contract.
+    #: Mapped as a frozen-ish structure: module-name keyed, with each
+    #: value a tuple of dicts already validated through the per-module
+    #: Create schema. Empty dict means no registration.
+    post_run_register: dict[str, tuple[dict[str, Any], ...]] = field(
+        default_factory=dict
+    )
 
     @property
     def is_builtin(self) -> bool:
