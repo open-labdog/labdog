@@ -50,6 +50,59 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
+## Mirror gitlab labdog-playbooks to github (resolves BUG-46)
+
+**Context:** Commit `8fb167d` switched the bundled action pack from
+an in-repo mirror to a build-time clone from
+`open-labdog/labdog-playbooks` at the SHA pinned in
+`LABDOG_PLAYBOOKS_REF`. The current pinned SHA is
+`e6e73728ea3692a5189553d51c225e7961517000` — that commit only
+exists on the maintainer's internal gitlab
+(`gitlab.lan.tyresson.se/dennis/labdog-playbooks.git`); github
+`open-labdog/labdog-playbooks` still has the old flat-layout
+content (no alloy-install, no idempotent k8s-upgrade, no
+directory-per-action layout).
+
+**Consequence today:** every build path is broken without an env
+override. github CI, public `docker build`, `packaging/build.sh`,
+and `./dev/dev.sh start` (without `LABDOG_PLAYBOOKS_LOCAL`) all
+attempt the github clone + checkout and fail because the SHA
+doesn't exist there. Workarounds: set
+`LABDOG_PLAYBOOKS_REPO=https://gitlab.lan.tyresson.se/dennis/labdog-playbooks.git`
+as build-arg / env, or use `LABDOG_PLAYBOOKS_LOCAL` for dev. See
+`BUGS.md` BUG-46.
+
+**Procedure to resolve:**
+
+1. Push gitlab `labdog-playbooks/main` → github
+   `open-labdog/labdog-playbooks/main`:
+   ```
+   cd /home/dennis/priv/gitlab/labdog-playbooks
+   git remote add github https://github.com/open-labdog/labdog-playbooks.git  # if not already
+   git push github main
+   ```
+2. Capture the resulting github commit SHA:
+   ```
+   git ls-remote https://github.com/open-labdog/labdog-playbooks main
+   ```
+3. Bump `LABDOG_PLAYBOOKS_REF` in the labdog repo to that SHA.
+   Commit as `build: bump LABDOG_PLAYBOOKS_REF to <sha> (gitlab -> github sync)`.
+4. Verify a clean build works without overrides:
+   ```
+   docker build --build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF) -t labdog:test .
+   ```
+   and confirm `/app/app/ansible/actions/` lists the four current
+   actions (alloy-install, k8s-upgrade, linux-os-upgrade,
+   linux-upgrade).
+5. Delete this TODO entry + BUG-46 in the same commit.
+
+**Going forward:** treat gitlab → github mirroring as a one-shot
+during this transition. After this lands, develop directly on
+github (or push gitlab → github regularly via a sync hook). The
+two repos drifting again would re-create this exact problem.
+
+---
+
 ## k8s-upgrade — broaden OS support
 
 **Context:** The bundled `k8s-upgrade` action is currently apt-only;
