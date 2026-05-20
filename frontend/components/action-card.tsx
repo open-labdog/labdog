@@ -72,6 +72,45 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
               Post-run sync: {action.post_run_sync.join(", ")}
             </p>
           )}
+          {Object.keys(action.post_run_register).length > 0 && (
+            <p
+              className="mt-1 text-xs text-sky-300/80"
+              title={
+                "After a successful run, labdog will register the declared resources " +
+                "as host-scope overrides so they're managed going forward. " +
+                "Existing operator-declared rows are preserved (collisions skip silently).\n\n" +
+                Object.entries(action.post_run_register)
+                  .map(
+                    ([mod, items]) =>
+                      `${mod} (${items.length}): ` +
+                      items
+                        .map((it) => {
+                          // Best-effort identifier per item; fall back to
+                          // first string-valued field.
+                          const id =
+                            (it.package_name as string | undefined) ??
+                            (it.service_name as string | undefined) ??
+                            (it.username as string | undefined) ??
+                            (it.name as string | undefined) ??
+                            (it.hostname as string | undefined) ??
+                            ""
+                          return id
+                        })
+                        .filter(Boolean)
+                        .join(", "),
+                  )
+                  .join("\n")
+              }
+            >
+              Will register{" "}
+              {Object.values(action.post_run_register).reduce(
+                (sum, items) => sum + items.length,
+                0,
+              )}{" "}
+              resource(s) in{" "}
+              {Object.keys(action.post_run_register).join(", ")}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-between gap-2">

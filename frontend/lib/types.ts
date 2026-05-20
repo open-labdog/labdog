@@ -689,6 +689,12 @@ export interface ActionDefinition {
    * Empty means no post-run sync. Surface as an info chip so the
    * operator knows the side effect of running this action. */
   post_run_sync: string[]
+  /** Resources the action's manifest declares it installs. After a
+   * successful run labdog inserts these as host-scope override rows
+   * so the resources are managed going forward. Keys are canonical
+   * module names; values are pre-validated dicts. Surface as a chip
+   * counting items per module so the operator sees the side effect. */
+  post_run_register: Record<string, Record<string, unknown>[]>
 }
 
 export interface ActionHostRun {

@@ -9,6 +9,54 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+#### Action manifests can register installed resources into labdog's desired-state model
+
+Action manifests gain a `post_run_register` field that declares which
+resources the action installs. On successful, non-dry-run
+completion, labdog inserts those resources as host-scope override
+rows (`host_id=<target>`, `group_id=NULL`) so the resources become
+labdog-managed going forward. Per-host fan-out for group-dispatched
+actions. After the inserts, a follow-up `post_run_sync` for the
+affected modules fires automatically so the Host detail tabs
+reflect the new state without waiting for the next drift check.
+
+Top-level keys are canonical module names (`packages`, `resolver`,
+`services`, `hosts-file`, `cron`, `linux-users`, `firewall`). Each
+value is a list of dicts validated against the module's REST API
+Create schema -- same fields, same defaults, same validators
+operators get from the UI / API. `host_id` and `group_id` are
+implicit. Example:
+
+```yaml
+post_run_register:
+  packages:
+    - package_name: alloy
+      state: present
+  services:
+    - service_name: alloy.service
+      state: running
+      enabled: true
+```
+
+Conflict semantic is **skip silently**: if the operator already
+declared the resource for that host (e.g. `alloy.service` with
+`state: stopped` deliberately), the manifest declaration is
+ignored and labdog logs a line. Operator intent wins. Per-insert
+savepoints isolate collisions so one skipped item doesn't unwind
+the rest of the batch.
+
+This closes the gap left by `post_run_sync`: that one re-enforces
+existing desired state, this one extends desired state with new
+rows. Action authors pick the right primitive per action:
+re-rotate-cert actions want `post_run_sync`; install-alloy-style
+actions want `post_run_register`.
+
+A new docs section in `docs/ui/actions.md` walks through both
+primitives and adds a warning about the four purge-mode modules
+(firewall, hosts-file, resolver, SSH-keys) where mutating via
+actions without declaring in labdog's desired state will be
+undone on next sync.
+
 #### Action manifests can declare opt-in post-run module sync
 
 Action manifests gain a `post_run_sync` field (a list of canonical
