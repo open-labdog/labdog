@@ -57,6 +57,15 @@ packaging/.cache/
 # Generated at Docker/packaging build time — never committed
 backend/app/_build_info.py
 
+# Bundled action pack — fetched at build time from labdog-playbooks at
+# the SHA pinned in LABDOG_PLAYBOOKS_REF. Dev runs ./dev/dev.sh bundle
+# (or auto-fetches on first ./dev/dev.sh start) to populate this dir
+# locally. See CLAUDE.md "Bundled pack" for the full flow.
+backend/app/ansible/
+
+# Packaging scratch dir for the build-time bundled-pack clone.
+packaging/staging-bundled/
+
 # Maintainer's local working notes — design drafts, exploratory
 # scaffolding, multi-agent plan docs. Public-facing roadmap and bug
 # registry live at TODO.md and BUGS.md at the repo root. See

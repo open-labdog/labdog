@@ -148,6 +148,20 @@ jobs:
           cache: pip
       - name: Install ansible-lint
         run: pip install -U pip "ansible-lint>=24" "ansible-core>=2.16" -q
+      - name: Fetch bundled action pack
+        # backend/app/ansible/ is gitignored; ansible-lint targets a
+        # bundled action. Fetch the pinned ref from labdog-playbooks
+        # so the linter has something to read.
+        run: |
+          REF=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)
+          REPO="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
+          tmp=$(mktemp -d)
+          (git clone --depth 1 --branch "$REF" "$REPO" "$tmp/up" 2>/dev/null \
+            || (git clone "$REPO" "$tmp/up" && git -C "$tmp/up" checkout "$REF"))
+          rm -rf "$tmp/up/.git" "$tmp/up/.gitignore"
+          mkdir -p backend/app/ansible
+          cp -r "$tmp/up/." backend/app/ansible/
+          rm -rf "$tmp"
       - name: ansible-lint
         run: ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
 
@@ -222,6 +236,20 @@ jobs:
         run: |
           pip install -U pip uv -q
           uv pip install --system '.[dev]'
+      - name: Fetch bundled action pack
+        # backend/app/ansible/ is gitignored; pytest expects the bundled
+        # pack to be present (tests reference linux-upgrade etc.). Mirror
+        # the Dockerfile / packaging Makefile fetch logic.
+        run: |
+          REF=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)
+          REPO="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
+          tmp=$(mktemp -d)
+          (git clone --depth 1 --branch "$REF" "$REPO" "$tmp/up" 2>/dev/null \
+            || (git clone "$REPO" "$tmp/up" && git -C "$tmp/up" checkout "$REF"))
+          rm -rf "$tmp/up/.git" "$tmp/up/.gitignore"
+          mkdir -p backend/app/ansible
+          cp -r "$tmp/up/." backend/app/ansible/
+          rm -rf "$tmp"
       - name: pytest
         working-directory: backend
         run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
@@ -297,7 +325,9 @@ jobs:
           username: ${{ steps.hub.outputs.user }}
           password: ${{ secrets.DOCKER_HUB_PAT }}
       - id: meta
-        run: echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -309,6 +339,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -343,6 +374,7 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "image_ref=${{ vars.DOCKER_HUB_REPO }}:test-$SHORT_SHA" >> "$GITHUB_OUTPUT"
           echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
       - uses: docker/build-push-action@v6
         with:
           context: .
@@ -354,6 +386,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -576,25 +609,6 @@ jobs:
       - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  bundled-pack-mirror:
-    if: >-
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'workflow_dispatch'
-       && github.ref != 'refs/heads/main'
-       && !startsWith(github.ref, 'refs/tags/'))
-    # Verify the in-image bundled pack at backend/app/ansible/ stays
-    # byte-identical to a tagged release of open-labdog/labdog-playbooks.
-    # The script no-ops cleanly until labdog-playbooks publishes its
-    # first tag — until then it just reports "not yet published" and
-    # passes. Bump PLAYBOOKS_REF to a release tag once published.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify bundled pack mirrors labdog-playbooks
-        env:
-          PLAYBOOKS_REF: main
-        run: ./scripts/check-bundled-mirrors-playbooks.sh
 
   backend-audit:
     if: >-

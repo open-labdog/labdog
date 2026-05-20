@@ -63,6 +63,10 @@ Commands:
   migrate     Run alembic upgrade head
   migrate-down  Roll back one migration (alembic downgrade -1)
   migrate-new <msg>  Generate a new migration (alembic revision --autogenerate)
+  bundle      Re-fetch the bundled action pack from labdog-playbooks
+              (clones at the pinned ref in ./LABDOG_PLAYBOOKS_REF;
+              override repo URL via env: LABDOG_PLAYBOOKS_REPO=...
+              point at a local working copy via LABDOG_PLAYBOOKS_LOCAL)
 
 Infrastructure (postgres, redis) runs via docker compose.
 Backend (labdog, celery worker, celery beat) and frontend (next dev) run as local processes.
@@ -76,6 +80,74 @@ ensure_piddir() {
 
 log() {
   echo "[dev] $*"
+}
+
+#--- Bundled action pack ---
+#
+# The bundled pack at backend/app/ansible/ is fetched at container
+# build time in production (see Dockerfile Stage 2b) and is gitignored
+# in this repo. Dev needs the same content to mimic production -- we
+# clone it on demand into backend/app/ansible/ at the pinned ref in
+# the repo-root LABDOG_PLAYBOOKS_REF file.
+#
+# Escape hatch: set LABDOG_PLAYBOOKS_LOCAL=/path/to/working/copy to
+# rsync from a sibling labdog-playbooks checkout instead. Useful when
+# you're iterating on the playbooks repo and don't want to commit
+# every change just to test it here.
+
+BUNDLED_DIR="${ROOT_DIR}/backend/app/ansible"
+REF_FILE="${ROOT_DIR}/LABDOG_PLAYBOOKS_REF"
+
+ensure_bundled_pack() {
+  # No-op when the directory is already populated (has an `actions`
+  # subdir). Operators can force re-fetch via `./dev/dev.sh bundle`.
+  if [[ -d "${BUNDLED_DIR}/actions" ]]; then
+    return
+  fi
+  fetch_bundled_pack
+}
+
+fetch_bundled_pack() {
+  local repo="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
+  local ref="${LABDOG_PLAYBOOKS_REF:-}"
+  if [[ -z "$ref" && -f "$REF_FILE" ]]; then
+    ref="$(tr -d '[:space:]' < "$REF_FILE")"
+  fi
+
+  rm -rf "${BUNDLED_DIR}"
+  mkdir -p "${BUNDLED_DIR}"
+
+  if [[ -n "${LABDOG_PLAYBOOKS_LOCAL:-}" ]]; then
+    if [[ ! -d "${LABDOG_PLAYBOOKS_LOCAL}" ]]; then
+      log "ERROR: LABDOG_PLAYBOOKS_LOCAL=${LABDOG_PLAYBOOKS_LOCAL} does not exist"
+      exit 1
+    fi
+    log "Bundling from local checkout: ${LABDOG_PLAYBOOKS_LOCAL}"
+    rsync -a --delete \
+      --exclude='.git' --exclude='.gitignore' \
+      "${LABDOG_PLAYBOOKS_LOCAL}/" "${BUNDLED_DIR}/"
+    return
+  fi
+
+  if [[ -z "$ref" ]]; then
+    log "ERROR: LABDOG_PLAYBOOKS_REF is empty and ${REF_FILE} not found"
+    exit 1
+  fi
+
+  log "Cloning ${repo}@${ref} into ${BUNDLED_DIR}..."
+  local tmp
+  tmp="$(mktemp -d)"
+  trap "rm -rf '$tmp'" RETURN
+  # `--branch` accepts tags and branch names but not raw commit SHAs;
+  # fall back to a full clone + checkout for SHA refs (same handling
+  # as the Dockerfile and packaging Makefile).
+  if ! git clone --depth 1 --branch "$ref" "$repo" "$tmp/upstream" 2>/dev/null; then
+    git clone "$repo" "$tmp/upstream"
+    git -C "$tmp/upstream" checkout "$ref"
+  fi
+  rm -rf "$tmp/upstream/.git" "$tmp/upstream/.gitignore"
+  rsync -a "$tmp/upstream/" "${BUNDLED_DIR}/"
+  log "Bundled pack populated at ${BUNDLED_DIR}"
 }
 
 #--- Infrastructure ---
@@ -111,6 +183,7 @@ start_backend() {
 
   ensure_dev_env
   load_dev_env
+  ensure_bundled_pack
 
   # Run migrations
   log "Running migrations..."
@@ -340,6 +413,9 @@ case "${1:-}" in
     ;;
   migrate-new)
     run_migrate_new "${2:-}"
+    ;;
+  bundle)
+    fetch_bundled_pack
     ;;
   *)
     usage

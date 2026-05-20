@@ -142,20 +142,41 @@ status is discoverable.
 See `app/packs/` for the subsystem, the user guide at
 `docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
 
-**Bundled pack mirrors `labdog-playbooks`.** The directory at
-`backend/app/ansible/` is a byte-identical mirror of
+**Bundled pack is fetched from `labdog-playbooks` at build time.**
+`backend/app/ansible/` is **gitignored**; the content is cloned from
 [`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-at the moment the container image is built. Do **not** edit it
-directly — change the upstream repo, then re-sync with
-`rsync -a --exclude='.git' --exclude='.gitignore' /path/to/labdog-playbooks/ backend/app/ansible/`.
-The `bundled-pack-mirror` CI job runs
-`scripts/check-bundled-mirrors-playbooks.sh` and fails the build on
-drift. The Python runtime that consumes packs (playbook generation,
-ansible-runner) lives separately at `backend/app/ansible_runtime/` and
-is *not* part of the mirror. A fresh install also auto-registers
-`labdog-playbooks` as a DB-backed override pack so deployed instances
-pick up newer playbooks than the in-image snapshot — operators that
-prefer a private fork delete the seeded row and add their own.
+at the SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](LABDOG_PLAYBOOKS_REF)
+file when the container image, `.deb` / `.rpm` / `.tar.gz` artefacts,
+or local dev environment are built. To bump the bundled pack: change
+one line in `LABDOG_PLAYBOOKS_REF` to the new SHA and commit. CI
+re-builds with the new content; no rsync, no drift gate.
+
+- **Docker**: `Dockerfile` has a `bundled-pack-fetcher` stage that
+  clones at the ref the CI passes via the `LABDOG_PLAYBOOKS_REF`
+  build-arg (read from the file). A local `docker build` without
+  overrides uses the in-stage default (`main`) — pass
+  `--build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF)`
+  for reproducible local builds.
+- **Packaging**: `packaging/Makefile` has a `fetch-bundled-pack`
+  target that the `build` target depends on. Reads the same file.
+- **Dev**: `./dev/dev.sh start` auto-fetches into
+  `backend/app/ansible/` on first start (when the dir is empty).
+  `./dev/dev.sh bundle` re-fetches on demand. Point at a sibling
+  working copy via `LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks`
+  to rsync from it instead of cloning — useful when iterating on
+  upstream playbooks.
+- **CI**: backend-test and ansible-lint jobs run the same fetch
+  before pytest / ansible-lint so the bundled pack is in place.
+
+The Python runtime that consumes packs (playbook generation,
+ansible-runner) lives separately at `backend/app/ansible_runtime/`
+and is **not** fetched — it's part of the labdog source tree.
+
+A fresh install also auto-registers `labdog-playbooks` as a
+DB-backed override pack (seeded in `alembic 0001`, points at
+`main`) so deployed instances pick up newer playbooks than the
+in-image snapshot. Operators that prefer a private fork delete the
+seeded row and add their own.
 
 ### Group-dispatch actions
 

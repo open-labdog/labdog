@@ -118,8 +118,17 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
     can't take down the whole pack.
     """
     if not pack.actions_dir.is_dir():
+        # For the bundled pack this typically means the build-time
+        # clone from labdog-playbooks hasn't run yet (production: see
+        # Dockerfile Stage 2b / packaging/Makefile; dev: run
+        # ``./dev/dev.sh bundle``). Built-in pseudo-actions are
+        # registered separately so an empty bundled pack doesn't take
+        # the registry down -- the operator just sees a smaller
+        # action catalog.
         logger.warning(
-            "pack %r has no actions directory at %s; skipping",
+            "pack %r has no actions directory at %s; skipping. "
+            "For the bundled pack, run ./dev/dev.sh bundle (dev) or "
+            "rebuild the container image (production).",
             pack.name,
             pack.actions_dir,
         )
