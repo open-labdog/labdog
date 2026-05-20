@@ -7,6 +7,46 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Changed
+
+#### Bundled action pack is now fetched at build time from `labdog-playbooks`
+
+The bundled pack at `backend/app/ansible/` is no longer a
+byte-identical mirror committed to the labdog repo. It's cloned
+from `open-labdog/labdog-playbooks` at the SHA pinned in the new
+repo-root `LABDOG_PLAYBOOKS_REF` file when the container image,
+release artefacts, or local dev environment are built. Bumping the
+bundled pack is now a one-line change to that file -- no rsync,
+no drift gate.
+
+- **Dockerfile**: new `bundled-pack-fetcher` stage clones at the
+  ref passed via the `LABDOG_PLAYBOOKS_REF` build-arg (CI reads
+  the value from the file).
+- **packaging/Makefile**: new `fetch-bundled-pack` target that
+  the `build` target depends on; reads from the same file. The
+  `.deb` / `.rpm` / `.tar.gz` artefacts pick up the same content
+  the container does.
+- **dev/dev.sh**: auto-fetches into `backend/app/ansible/` on
+  first `start` when the dir is empty. New `./dev/dev.sh bundle`
+  subcommand re-fetches on demand. Set
+  `LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks` to rsync from
+  a sibling working copy instead of cloning -- useful when
+  iterating on upstream playbooks.
+- **CI**: `backend-test` and `ansible-lint` jobs now run the same
+  fetch logic before pytest / ansible-lint so the bundled pack is
+  present.
+- **Removed**: `scripts/check-bundled-mirrors-playbooks.sh` and
+  the `bundled-pack-mirror` CI job. With the bundled pack
+  build-time-fetched at a pinned ref, drift can't exist.
+- **Removed from git**: `backend/app/ansible/` is gitignored and
+  removed from the tree (~15 MB of YAML).
+
+The DB-backed `labdog-playbooks` override pack auto-registered
+on fresh install is unchanged (still points at `main` and is
+synced via the normal pack-sync flow). The two paths -- bundled
+(immutable, baked in at build time) and DB-backed (mutable,
+synced at runtime) -- continue to serve their respective roles.
+
 ### Added
 
 #### Action manifests can register installed resources into labdog's desired-state model

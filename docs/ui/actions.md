@@ -177,11 +177,17 @@ actions:
 | `linux-os-upgrade` | Major-release upgrade (e.g. Debian 12 → 13, Ubuntu 22.04 → 24.04). |
 | `k8s-upgrade` | Drains, upgrades, and re-admits each node in a Kubernetes cluster. |
 
-The bundled pack is immutable — you can't edit or delete it from the UI.
-It exists as a safety net so LabDog keeps working even if all other
-packs are unreachable. It appears as a read-only row in the **Pack
-Sources** table on `/action-packs` (no Sync / Edit / Delete buttons —
-just a "built-in" badge) so its always-present-candidate status is
+The bundled pack is built **at container build time** by cloning
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+at the SHA pinned in the labdog repo's `LABDOG_PLAYBOOKS_REF` file.
+The bundled pack content shipped with a particular labdog release
+therefore corresponds exactly to a labdog-playbooks commit — bumping
+labdog typically bumps the bundled pack as well. The bundled pack is
+immutable — you can't edit or delete it from the UI. It exists as a
+safety net so LabDog keeps working even if all other packs are
+unreachable. It appears as a read-only row in the **Pack Sources**
+table on `/action-packs` (no Sync / Edit / Delete buttons — just a
+"built-in" badge) so its always-present-candidate status is
 discoverable.
 
 To override a bundled action, add a pack that declares the same key
