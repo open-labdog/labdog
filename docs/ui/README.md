@@ -52,7 +52,7 @@ All screenshots in this directory were taken from a live development instance an
 - [`screenshots/login.png`](screenshots/login.png)
 - [`screenshots/dashboard.png`](screenshots/dashboard.png)
 - [`screenshots/hosts.png`](screenshots/hosts.png)
-- [`screenshots/hosts-discover.png`](screenshots/hosts-discover.png)
+- [`screenshots/discovery.png`](screenshots/discovery.png)
 - [`screenshots/groups.png`](screenshots/groups.png)
 - [`screenshots/group-detail.png`](screenshots/group-detail.png)
 - [`screenshots/group-rules.png`](screenshots/group-rules.png)

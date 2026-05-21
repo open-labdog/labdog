@@ -61,6 +61,23 @@ Declare state per host or per group. Everything goes through Ansible. Same rule 
 - **Proxmox VE** — automatic snapshot + rollback, VM discovery
 - **Webhooks** — inbound triggers from your Git host for GitOps sync
 
+## 🖼️ Screenshots
+
+<p>
+  <img src="assets/hosts.png" alt="Hosts list — managed hosts with sync status, firewall backend, and group membership" width="100%" />
+  <em>Hosts — every managed host with its sync status, firewall backend, and group membership at a glance.</em>
+</p>
+
+<p>
+  <img src="assets/groups.png" alt="Groups list — host groups with priority, module counts, and per-group sync controls" width="100%" />
+  <em>Groups — host groups carry the desired-state config that merges by priority; sync per group or fleet-wide.</em>
+</p>
+
+<p>
+  <img src="assets/discovery.png" alt="Discovery — one-shot network scans, recurring schedules, and the pending-host approval inbox" width="100%" />
+  <em>Discovery — scan a CIDR or schedule recurring sweeps; pending hosts queue for review before joining the fleet.</em>
+</p>
+
 ## 📚 Documentation
 
 All technical content lives under **[the documentation site](https://open-labdog.github.io/labdog/)**:
