@@ -35,6 +35,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.models.sync_job import SyncJob
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,14 @@ async def dispatch_post_run_register(
                     row = model_cls(host_id=host_id, group_id=None, **validated)
                     db.add(row)
                     await db.flush()
+                    await log_action(
+                        db,
+                        action="post_run_register",
+                        entity_type=module,
+                        entity_id=row.id,
+                        user_id=triggered_by_user_id,
+                        after_state=validated,
+                    )
             except IntegrityError:
                 logger.info(
                     "post_run_register: skipping %s[%d] on host=%d -- "
