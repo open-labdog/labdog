@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.schemas.git_repos import derive_auth_type
+from app.schemas.git_repos import GitRepoCreate, derive_auth_type
 
 # ---------------------------------------------------------------------------
 # Pure-function unit tests
@@ -39,6 +39,50 @@ def test_derive_auth_type_rejects_ssh_url_without_key():
 def test_derive_auth_type_rejects_unknown_scheme():
     with pytest.raises(ValueError, match="https://, ssh://, or git@"):
         derive_auth_type("ftp://example.com/repo.git", None, None)
+
+
+# ---------------------------------------------------------------------------
+# URL host validation (SEC-11) — pure-function unit tests on the schema
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://github.com/foo/bar.git",
+        "git@github.com:foo/bar.git",
+        "ssh://git@server.example.com/path/to/repo.git",
+        # RFC1918 must be ALLOWED — operators may run git servers on LAN.
+        "https://192.168.1.10/repo.git",
+        "https://10.0.0.5/configs.git",
+        "https://172.16.20.1/repo.git",
+    ],
+)
+def test_validate_url_accepts_legitimate_urls(url):
+    needs_key = url.startswith(("git@", "ssh://"))
+    repo = GitRepoCreate(name="r", url=url, ssh_key_id=1 if needs_key else None)
+    assert repo.url == url
+
+
+@pytest.mark.parametrize(
+    ("url", "match"),
+    [
+        ("https://127.0.0.1/x", "blocked"),
+        ("https://127.255.255.255/x", "blocked"),
+        ("https://localhost/x", "blocked"),
+        ("https://LOCALHOST/x", "blocked"),
+        ("https://169.254.169.254/x", "blocked"),
+        ("https://169.254.0.1/x", "blocked"),
+        # IPv6 forms
+        ("ssh://[::1]/repo.git", "blocked"),
+        ("https://[fe80::1]/x", "blocked"),
+        # scp-style SSH with loopback host
+        ("git@127.0.0.1:org/repo.git", "blocked"),
+    ],
+)
+def test_validate_url_rejects_blocked_hosts(url, match):
+    with pytest.raises(ValueError, match=match):
+        GitRepoCreate(name="r", url=url)
 
 
 # ---------------------------------------------------------------------------
