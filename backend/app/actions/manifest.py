@@ -183,6 +183,16 @@ class ActionManifest(BaseModel):
                     raise ValueError(
                         f"post_run_register.{module}[{i}]: must be a dict"
                     )
+                # Reject authorized_keys on linux-users: granting SSH
+                # access from a manifest is too privileged to auto-install
+                # without explicit operator confirmation.
+                if module == "linux-users" and item.get("authorized_keys"):
+                    raise ValueError(
+                        f"post_run_register.linux-users[{i}]: 'authorized_keys' is not "
+                        "allowed via post_run_register. SSH key grants are too privileged "
+                        "to auto-install from a manifest -- declare the user via "
+                        "post_run_register, then the operator can add keys via the UI/API."
+                    )
                 # Validate against the existing module Create schema.
                 # Re-export as model_dump() so we store the validated /
                 # default-filled shape, not the raw author input.
