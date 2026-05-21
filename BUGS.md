@@ -58,14 +58,6 @@ spot-checked against current HEAD before filing.
 
   Symptom: `_validate_cidr` only calls `ipaddress.ip_network(...)`; it does not check `BLOCKED_NETWORKS` (`127.0.0.0/8`, `169.254.0.0/16`, multicast, reserved) which the ad-hoc `POST /api/discovery/scan` enforces via `app/discovery/scanner.py:61-88`. The Celery executor `scan_run._async_run` calls `scan_network(cidr, ...)` directly with no re-validation. Combined with `create_scan_config` being `current_active_user` (not superuser), any active non-superuser user can scan loopback, cloud instance-metadata IPs, internal services. The `verify_ssh` error string (`PendingHostResponse.ssh_error`) leaks the remote service banner. Severity: **High**. Fix: move the `BLOCKED_NETWORKS` check into a shared helper, call from both schema validator and Celery task. Gate `POST /api/scans*` on `current_superuser`. Coarsen `ssh_error` to `unreachable|auth_failed|refused`.
 
-- [ ] **SEC-12** `backend/app/packs/service.py:65` + `backend/app/packs/schemas.py:34` — action-pack `path` field allows directory traversal
-
-  Symptom: `effective_path_for(pack)` builds the on-disk location as `checkout / pack.path.strip("/")`. The strip only removes leading/trailing slashes; `..` segments are not rejected. `ActionPackCreate.path` is a raw `str` with no field validator. A superuser POSTing `{"path": "../../../etc/labdog"}` causes the loader to walk arbitrary filesystem locations for `actions/*/manifest.yml` and execute any `playbook.yml` it finds under the labdog UID. Severity: **High** (superuser-only, but it escapes the documented `packs_root_dir` boundary which is part of the security model in `docs/security-hardening.md`). Fix: reject `..`, leading `/`, NUL bytes, backslashes in `path` at the schema layer. At runtime, resolve the combined path and assert `.is_relative_to(checkout.resolve())`.
-
-- [ ] **SEC-13** `backend/app/packs/schemas.py:35` + `backend/app/packs/service.py:62` — local-source action-pack `local_path` has no containment
-
-  Symptom: same vector as SEC-12 but the operator sets the absolute path directly. `{"source_type":"local", "local_path":"/root/.ssh"}` makes labdog walk that location for action manifests. Severity: **High** (superuser-only). Fix: constrain `local_path` to an admin-configured allow-list (e.g. `settings.ansible.local_packs_roots: list[str]`). Reject paths under `/proc`, `/sys`, `/dev`, `/etc`.
-
 ### Security findings — Medium
 
 - [ ] **SEC-17** `backend/app/auth/users.py:55-71` — first-user-becomes-superuser promotion has a race window

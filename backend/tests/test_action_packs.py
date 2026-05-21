@@ -337,6 +337,283 @@ def test_stale_resolution_falls_through_to_unresolved(tmp_path: Path):
     assert result.registry["demo"].is_unresolved is True
 
 
+# ---------------------------------------------------------------------------
+# SEC-12 — pack.path schema validator
+# ---------------------------------------------------------------------------
+
+
+def test_pack_path_accepts_empty_string():
+    """Empty path means 'pack lives at the repo root' — must be allowed."""
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p", source_type="git", git_repository_id=1, path=""
+    )
+    assert obj.path == ""
+
+
+def test_pack_path_accepts_simple_relative():
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p", source_type="git", git_repository_id=1, path="subdir"
+    )
+    assert obj.path == "subdir"
+
+
+def test_pack_path_accepts_nested_relative():
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p", source_type="git", git_repository_id=1, path="a/b/c"
+    )
+    assert obj.path == "a/b/c"
+
+
+def test_pack_path_rejects_dotdot_traversal():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match=r"\.\.|traversal"):
+        ActionPackCreate(
+            name="p", source_type="git", git_repository_id=1, path="../etc"
+        )
+
+
+def test_pack_path_rejects_embedded_dotdot():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match=r"\.\.|traversal"):
+        ActionPackCreate(
+            name="p", source_type="git", git_repository_id=1, path="a/../b"
+        )
+
+
+def test_pack_path_rejects_leading_slash():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="relative"):
+        ActionPackCreate(
+            name="p", source_type="git", git_repository_id=1, path="/abs"
+        )
+
+
+def test_pack_path_rejects_backslash():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="backslash"):
+        ActionPackCreate(
+            name="p", source_type="git", git_repository_id=1, path="a\\b"
+        )
+
+
+def test_pack_path_rejects_nul_byte():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="NUL"):
+        ActionPackCreate(
+            name="p", source_type="git", git_repository_id=1, path="a\x00b"
+        )
+
+
+def test_pack_path_rejects_overlong():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError):
+        ActionPackCreate(
+            name="p",
+            source_type="git",
+            git_repository_id=1,
+            path="a" * 513,
+        )
+
+
+def test_pack_path_update_also_validated():
+    """ActionPackUpdate applies the same path validator."""
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackUpdate
+
+    with pytest.raises(ValidationError, match=r"\.\.|traversal"):
+        ActionPackUpdate(path="../escape")
+
+
+# ---------------------------------------------------------------------------
+# SEC-12 — effective_path_for runtime containment check
+# ---------------------------------------------------------------------------
+
+
+def test_effective_path_for_raises_when_path_escapes_checkout(tmp_path):
+    """If a symlink (or anything else) causes the resolved path to escape
+    the checkout directory, ``effective_path_for`` raises ValueError."""
+    from unittest.mock import MagicMock
+
+    import pytest
+
+    from app.packs.models import PackSourceType  # noqa: I001
+    from app.packs.service import effective_path_for
+
+    # Create a symlink inside the checkout that points outside it.
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (checkout / "evil-link").symlink_to(outside)
+
+    # Use a simple mock so we avoid SQLAlchemy instrumentation.
+    pack = MagicMock()
+    pack.source_type = PackSourceType.GIT
+    pack.id = 999
+    pack.path = "evil-link"
+
+    # Monkeypatch checkout_path_for so it returns our temp checkout.
+    import app.packs.service as svc
+
+    original = svc.checkout_path_for
+    svc.checkout_path_for = lambda _id: checkout
+    try:
+        with pytest.raises(ValueError, match="escapes"):
+            effective_path_for(pack)
+    finally:
+        svc.checkout_path_for = original
+
+
+# ---------------------------------------------------------------------------
+# SEC-13 — local_path schema validator
+# ---------------------------------------------------------------------------
+
+
+def test_local_path_accepts_srv():
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p",
+        source_type="local",
+        local_path="/srv/labdog-packs",
+    )
+    assert obj.local_path == "/srv/labdog-packs"
+
+
+def test_local_path_accepts_opt():
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p",
+        source_type="local",
+        local_path="/opt/labdog/packs",
+    )
+    assert obj.local_path == "/opt/labdog/packs"
+
+
+def test_local_path_accepts_home_subpath():
+    from app.packs.schemas import ActionPackCreate
+
+    obj = ActionPackCreate(
+        name="p",
+        source_type="local",
+        local_path="/home/operator/packs",
+    )
+    assert obj.local_path == "/home/operator/packs"
+
+
+def test_local_path_rejects_etc():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="/etc"):
+        ActionPackCreate(name="p", source_type="local", local_path="/etc")
+
+
+def test_local_path_rejects_etc_subpath():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="/etc"):
+        ActionPackCreate(name="p", source_type="local", local_path="/etc/labdog")
+
+
+def test_local_path_rejects_proc():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="/proc"):
+        ActionPackCreate(name="p", source_type="local", local_path="/proc/self")
+
+
+def test_local_path_rejects_root_ssh():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="/root"):
+        ActionPackCreate(name="p", source_type="local", local_path="/root/.ssh")
+
+
+def test_local_path_rejects_dev_null():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="/dev"):
+        ActionPackCreate(name="p", source_type="local", local_path="/dev/null")
+
+
+def test_local_path_rejects_filesystem_root():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="dangerous"):
+        ActionPackCreate(name="p", source_type="local", local_path="/")
+
+
+def test_local_path_rejects_relative_path():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="absolute"):
+        ActionPackCreate(name="p", source_type="local", local_path="relative/path")
+
+
+def test_local_path_rejects_empty_string():
+    import pytest
+    from pydantic import ValidationError
+
+    from app.packs.schemas import ActionPackCreate
+
+    with pytest.raises(ValidationError, match="absolute"):
+        ActionPackCreate(name="p", source_type="local", local_path="")
+
+
 def test_bundled_pack_exposes_expected_actions():
     """Sanity check — the shipped bundled pack still produces the
     actions LabDog has always had. Protects against manifest regressions."""

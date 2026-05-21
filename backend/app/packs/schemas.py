@@ -1,10 +1,37 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
+from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.packs.models import PackSourceType
+
+logger = logging.getLogger(__name__)
+
+# Dangerous top-level absolute path prefixes that local_path must not sit under.
+# Subpaths like /home/operator/packs are deliberately allowed — only the
+# obviously-hazardous system locations are blocked.
+_DANGEROUS_LOCAL_PATH_PREFIXES = (
+    "/proc",
+    "/sys",
+    "/dev",
+    "/etc",
+    "/root",
+    "/var/log",
+    "/boot",
+    "/run",
+)
+
+# Bare top-level directories that are themselves dangerous as pack roots
+# (subpaths such as /home/operator/packs are fine).
+_DANGEROUS_LOCAL_PATH_EXACT = {
+    "/",
+    "/usr",
+    "/var",
+    "/home",
+}
 
 
 def _validate_name(v: str) -> str:
@@ -13,6 +40,88 @@ def _validate_name(v: str) -> str:
         raise ValueError("name must not be empty")
     if v == "bundled":
         raise ValueError("'bundled' is reserved for the built-in pack")
+    return v
+
+
+def _validate_pack_path(v: str) -> str:
+    """Validate a git-pack ``path`` field (subpath within a checkout).
+
+    - Empty string is allowed (means "pack lives at the repo root").
+    - Rejects NUL bytes, control characters, backslashes, leading ``/``,
+      and any ``..`` path component.
+    - Enforces a 512-character length cap.
+    """
+    if "\x00" in v:
+        raise ValueError("path must not contain NUL bytes")
+    for ch in v:
+        if ord(ch) < 0x20:
+            raise ValueError(
+                f"path must not contain control characters (found U+{ord(ch):04X})"
+            )
+    if "\\" in v:
+        raise ValueError("path must not contain backslashes")
+    if len(v) > 512:
+        raise ValueError("path must be at most 512 characters")
+    if v.startswith("/"):
+        raise ValueError("path must be a relative path (must not start with '/')")
+    # Reject any '..' component regardless of surrounding slashes or OS separator.
+    for component in v.replace("\\", "/").split("/"):
+        if component == "..":
+            raise ValueError(
+                "path must not contain '..' components (directory traversal rejected)"
+            )
+    return v
+
+
+def _validate_local_path(v: str | None) -> str | None:
+    """Validate a local-pack ``local_path`` field (absolute filesystem path).
+
+    - ``None`` is allowed (field is optional on the model; the cross-field
+      validator enforces presence when ``source_type=local``).
+    - Rejects NUL bytes, control characters, backslashes, non-absolute paths,
+      and paths that resolve under obviously-dangerous system directories.
+    - Logs an advisory warning when the path does not currently exist on disk
+      (the operator may be configuring it before the directory is created).
+    """
+    if v is None:
+        return v
+    if "\x00" in v:
+        raise ValueError("local_path must not contain NUL bytes")
+    for ch in v:
+        if ord(ch) < 0x20:
+            raise ValueError(
+                f"local_path must not contain control characters (found U+{ord(ch):04X})"
+            )
+    if "\\" in v:
+        raise ValueError("local_path must not contain backslashes")
+    if len(v) > 512:
+        raise ValueError("local_path must be at most 512 characters")
+    if not v.startswith("/"):
+        raise ValueError("local_path must be an absolute path (must start with '/')")
+
+    resolved = str(Path(v).resolve())
+
+    # Exact-match deny-list: the path itself is one of the bare top-level dirs.
+    if resolved in _DANGEROUS_LOCAL_PATH_EXACT:
+        raise ValueError(
+            f"local_path {v!r} resolves to a dangerous system directory: {resolved}"
+        )
+
+    # Prefix deny-list: the path sits under a protected system subtree.
+    for prefix in _DANGEROUS_LOCAL_PATH_PREFIXES:
+        if resolved == prefix or resolved.startswith(prefix + "/"):
+            raise ValueError(
+                f"local_path {v!r} resolves under the protected prefix {prefix!r}"
+            )
+
+    # Advisory-only: warn if the path does not exist yet.
+    if not Path(v).exists():
+        logger.warning(
+            "local_path %r does not exist on disk; it will be accepted but "
+            "the pack will report a sync failure until the directory is created",
+            v,
+        )
+
     return v
 
 
@@ -31,11 +140,21 @@ class ActionPackCreate(BaseModel):
     name: str
     source_type: PackSourceType = PackSourceType.GIT
     git_repository_id: int | None = None
-    path: str = ""
-    local_path: str | None = None
+    path: str = Field(default="", max_length=512)
+    local_path: str | None = Field(default=None, max_length=512)
     enabled: bool = True
 
     _validate_name = field_validator("name")(classmethod(lambda cls, v: _validate_name(v)))
+
+    @field_validator("path")
+    @classmethod
+    def _check_path(cls, v: str) -> str:
+        return _validate_pack_path(v)
+
+    @field_validator("local_path")
+    @classmethod
+    def _check_local_path(cls, v: str | None) -> str | None:
+        return _validate_local_path(v)
 
     @model_validator(mode="after")
     def _check_source_fields(self) -> ActionPackCreate:
@@ -56,14 +175,24 @@ class ActionPackUpdate(BaseModel):
     name: str | None = None
     source_type: PackSourceType | None = None
     git_repository_id: int | None = None
-    path: str | None = None
-    local_path: str | None = None
+    path: str | None = Field(default=None, max_length=512)
+    local_path: str | None = Field(default=None, max_length=512)
     enabled: bool | None = None
 
     @field_validator("name")
     @classmethod
     def _check_name(cls, v: str | None) -> str | None:
         return _validate_name(v) if v is not None else v
+
+    @field_validator("path")
+    @classmethod
+    def _check_path(cls, v: str | None) -> str | None:
+        return _validate_pack_path(v) if v is not None else v
+
+    @field_validator("local_path")
+    @classmethod
+    def _check_local_path(cls, v: str | None) -> str | None:
+        return _validate_local_path(v)
 
     @model_validator(mode="after")
     def _check_source_fields(self) -> ActionPackUpdate:
