@@ -19,6 +19,7 @@ import tomllib
 import types
 from pathlib import Path
 from typing import Any, Literal, Union, get_args, get_origin
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, model_validator
 
@@ -276,6 +277,25 @@ def _load_toml(path: Path | None) -> dict:
         return tomllib.load(f)
 
 
+_LOCALHOST_HOSTNAMES = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "::"}
+
+
+def _is_localhost_origin(origin: str) -> bool:
+    """Return True if the parsed hostname of *origin* is a loopback/unspecified address."""
+    try:
+        hostname = urlparse(origin).hostname or ""
+    except Exception:
+        return False
+    if hostname in _LOCALHOST_HOSTNAMES:
+        return True
+    # Catch the entire 127.0.0.0/8 range (127.x.x.x).
+    if hostname.startswith("127."):
+        parts = hostname.split(".")
+        if len(parts) == 4 and all(p.isdigit() for p in parts):
+            return True
+    return False
+
+
 def _validate_required(s: Settings) -> None:
     """Raise on insecure or missing required settings at startup."""
     errors: list[str] = []
@@ -291,6 +311,15 @@ def _validate_required(s: Settings) -> None:
             "and set LABDOG_SECURITY__ENCRYPTION_KEY"
             " or [security] encryption_key in labdog.toml."
         )
+    if s.security.cookie_secure:
+        for origin in s.security.allowed_origins:
+            if _is_localhost_origin(origin):
+                errors.append(
+                    f"security.allowed_origins contains {origin!r} but "
+                    "security.cookie_secure=True. "
+                    "Localhost origins should only be used in dev (when cookie_secure=False). "
+                    "Set allowed_origins to your production frontend URL(s)."
+                )
     if errors:
         raise SystemExit("FATAL: LabDog cannot start:\n  - " + "\n  - ".join(errors))
 
