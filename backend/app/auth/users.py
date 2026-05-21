@@ -1,6 +1,7 @@
 import logging
+import secrets
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
 from fastapi_users import schemas as fu_schemas
 from fastapi_users.authentication import (
@@ -15,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db import get_db
 from app.models.user import User
+
+_CSRF_COOKIE_NAME = "labdog_csrf"
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,28 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
             user_create.is_verified = True  # type: ignore[attr-defined]
             logger.info("First registration detected — will promote to superuser.")
         return await super().create(user_create, safe=safe, request=request)
+
+    async def on_after_login(
+        self,
+        user: User,
+        request: Request | None = None,
+        response: Response | None = None,
+    ) -> None:
+        """Set the double-submit CSRF cookie alongside the auth cookie."""
+        if response is None:
+            return
+        token = secrets.token_urlsafe(settings.security.csrf_token_bytes)
+        response.set_cookie(
+            _CSRF_COOKIE_NAME,
+            token,
+            max_age=settings.security.session_lifetime_seconds,
+            path="/",
+            domain=settings.security.cookie_domain or None,
+            secure=settings.security.cookie_secure,
+            httponly=False,
+            samesite="lax",
+        )
+        logger.debug("CSRF cookie set for user %d.", user.id)
 
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %d (%s) registered.", user.id, user.email)

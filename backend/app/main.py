@@ -56,6 +56,7 @@ from app.api.webhooks import router as webhooks_router
 from app.auth.schemas import UserRead, UserUpdate
 from app.auth.users import auth_backend, fastapi_users
 from app.config import settings
+from app.middleware.csrf import CSRFMiddleware
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -281,8 +282,11 @@ def create_app() -> FastAPI:
         allow_origins=settings.security.allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization"],
+        allow_headers=["Content-Type", "Authorization", "X-CSRF-Token"],
     )
+
+    # -- CSRF double-submit cookie (runs after CORS, before route handlers) --
+    app.add_middleware(CSRFMiddleware)
 
     # -- Rate limiting --
     if settings.rate_limit.enabled:

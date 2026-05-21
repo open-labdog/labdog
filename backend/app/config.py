@@ -58,6 +58,7 @@ class SecurityConfig(BaseModel):
     cookie_secure: bool = False
     cookie_domain: str = ""
     session_lifetime_seconds: int = 86400
+    csrf_token_bytes: int = 32
 
 
 class TLSConfig(BaseModel):
