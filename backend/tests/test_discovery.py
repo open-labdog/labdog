@@ -123,7 +123,7 @@ class TestDiscoveryAPI:
         key = await create_ssh_key(db)
         with patch(
             "app.api.discovery.verify_ssh",
-            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None)),
+            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None, None)),
         ):
             resp = await superuser_client.post(
                 "/api/discovery/add-hosts",
@@ -139,7 +139,7 @@ class TestDiscoveryAPI:
         key = await create_ssh_key(db)
         with patch(
             "app.api.discovery.verify_ssh",
-            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None)),
+            new=AsyncMock(return_value=(True, "discovered-host", "10.0.0.100", None, None)),
         ):
             # First add
             resp1 = await superuser_client.post(

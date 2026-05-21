@@ -1,10 +1,9 @@
 """Verification step: hard SSH checks + optional AI review after a system update."""
 
-import asyncio
 import logging
 from typing import Any
 
-import asyncssh
+from app.ssh_utils import ssh_connect_host
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ async def run_verification(
 
     Args:
         host: Host ORM object exposing ``hostname``, ``ip_address``,
-            ``ssh_port``, and ``ssh_user``.
+            ``ssh_port``, ``ssh_user``, and ``ssh_host_key_entry``.
         ssh_key_path: Absolute path to the decrypted SSH private key on tmpfs.
         effective_services: List of effective service rule objects, each with
             ``service_name`` and ``desired_state`` attributes.
@@ -43,7 +42,7 @@ async def run_verification(
             ``package_name`` and ``desired_state`` attributes.
         verification_prompt: Optional free-text instructions for AI
             verification.  ``None`` or empty string disables AI verification.
-        db: Active async SQLAlchemy session (reserved for future use).
+        db: Active async SQLAlchemy session used for TOFU key persistence.
 
     Returns:
         A dict of the form::
@@ -98,16 +97,13 @@ async def run_verification(
     # Open a single SSH connection for all checks
     # ------------------------------------------------------------------
     try:
-        conn: asyncssh.SSHClientConnection = await asyncio.wait_for(
-            asyncssh.connect(
-                host.ip_address,
-                port=host.ssh_port or 22,
-                username=host.ssh_user or "root",
-                client_keys=[ssh_key_path],
-                known_hosts=None,
-            ),
-            timeout=30,
+        conn_ctx = ssh_connect_host(
+            host,
+            db,
+            client_keys=[ssh_key_path],
+            connect_timeout=30,
         )
+        conn = await conn_ctx.__aenter__()
     except Exception as exc:
         logger.error("verify: SSH connection failed to %s: %s", host.ip_address, exc)
         # Cannot run any checks — return a failed result immediately
@@ -237,8 +233,7 @@ async def run_verification(
 
     finally:
         try:
-            conn.close()
-            await conn.wait_closed()
+            await conn_ctx.__aexit__(None, None, None)
         except Exception:
             pass
 

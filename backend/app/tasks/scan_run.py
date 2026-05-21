@@ -149,11 +149,11 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             new_ips = [ip for ip in hit_ips if ip not in existing_ips]
 
             # ---- g. SSH-verify remaining hits ---------------------------
-            verified: list[tuple[str, str]] = []  # (ip, hostname)
+            verified: list[tuple[str, str, str | None]] = []  # (ip, hostname, key_entry)
             unverified: list[tuple[str, str]] = []  # (ip, ssh_error)
 
             for ip in new_ips:
-                ok, hostname, _source_ip, ssh_err = await verify_ssh(
+                ok, hostname, _source_ip, ssh_err, ssh_host_key_entry = await verify_ssh(
                     ip,
                     port=config.ssh_port,
                     username=key_row.ssh_user,
@@ -177,7 +177,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                         break
                     hostname = f"{base_hn}-{suffix}"
                     suffix += 1
-                verified.append((ip, hostname))
+                verified.append((ip, hostname, ssh_host_key_entry))
 
             hosts_added = 0
             hosts_pending = 0
@@ -185,13 +185,14 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             # ---- h. Branch on auto_add ----------------------------------
             auto_added_host_ids: list[int] = []
             if config.auto_add:
-                for ip, hostname in verified:
+                for ip, hostname, ssh_host_key_entry in verified:
                     host = Host(
                         hostname=hostname,
                         ip_address=ip,
                         ssh_port=config.ssh_port,
                         ssh_user=key_row.ssh_user,
                         ssh_key_id=config.ssh_key_id,
+                        ssh_host_key_entry=ssh_host_key_entry,
                     )
                     db.add(host)
                     await db.flush()  # populate host.id before inserting memberships
@@ -237,7 +238,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
 
             else:
                 # auto_add=False -- queue everything for manual review.
-                for ip, hostname in verified:
+                for ip, hostname, _key_entry in verified:
                     await _upsert_pending(
                         db,
                         config_id=config_id,

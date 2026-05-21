@@ -160,7 +160,7 @@ async def add_discovered_hosts(
             continue
 
         # SSH verification is mandatory — we must be able to connect.
-        ok, hostname, source_ip, ssh_err = await verify_ssh(
+        ok, hostname, source_ip, ssh_err, ssh_host_key_entry = await verify_ssh(
             ip,
             port=body.ssh_port,
             username=ssh_user,
@@ -191,6 +191,7 @@ async def add_discovered_hosts(
             ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
             labdog_source_ip=source_ip,
+            ssh_host_key_entry=ssh_host_key_entry,
         )
         db.add(host)
         await db.flush()  # get host.id

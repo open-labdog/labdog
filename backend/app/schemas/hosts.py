@@ -45,6 +45,7 @@ class HostResponse(BaseModel):
     kernel_version: str | None
     kernel_release: str | None
     os_facts_collected_at: datetime | None
+    ssh_host_key_entry: str | None
     group_ids: list[int] = []
     created_at: datetime
     updated_at: datetime

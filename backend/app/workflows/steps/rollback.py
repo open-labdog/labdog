@@ -5,7 +5,7 @@ import logging
 import time
 from typing import Any
 
-import asyncssh
+from app.ssh_utils import ssh_connect_host
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,12 @@ async def rollback_to_snapshot(
         pve_node: Proxmox node name that owns the VM.
         vmid: VM identifier.
         snapshot_name: Name of the snapshot to restore.
-        host: Host ORM object with ``ip_address``, ``ssh_port``, and
-            ``ssh_user`` attributes.
+        host: Host ORM object with ``ip_address``, ``ssh_port``,
+            ``ssh_user``, and ``ssh_host_key_entry`` attributes.
         ssh_key_path: Absolute path to the decrypted SSH private key on
             tmpfs.
         db: Active async SQLAlchemy session used to update the host
-            sync status.
+            sync status and persist TOFU key.
 
     Returns:
         ``{"success": True}`` on success, or
@@ -94,18 +94,13 @@ async def rollback_to_snapshot(
         while time.monotonic() < deadline:
             await asyncio.sleep(_SSH_POLL_INTERVAL)
             try:
-                conn = await asyncio.wait_for(
-                    asyncssh.connect(
-                        host.ip_address,
-                        port=host.ssh_port or 22,
-                        username=host.ssh_user or "root",
-                        client_keys=[ssh_key_path],
-                        known_hosts=None,
-                    ),
-                    timeout=8,
-                )
-                conn.close()
-                await conn.wait_closed()
+                async with ssh_connect_host(
+                    host,
+                    db,
+                    client_keys=[ssh_key_path],
+                    connect_timeout=8,
+                ):
+                    pass
                 ssh_recovered = True
                 logger.info(
                     "rollback: SSH recovered for host %s after rollback",
@@ -114,7 +109,7 @@ async def rollback_to_snapshot(
                 break
             except Exception:
                 logger.debug(
-                    "rollback: SSH not yet reachable for host %s, retrying…",
+                    "rollback: SSH not yet reachable for host %s, retrying...",
                     host.ip_address,
                 )
 

@@ -69,12 +69,13 @@ def _make_conn(stdout_by_cmd: dict[str, str]) -> MagicMock:
 
 def _ssh_connect_patch(conn):
     @asynccontextmanager
-    async def fake_ssh_connect(*args, **kwargs):
+    async def fake_ssh_connect_host(*args, **kwargs):
         yield conn
 
-    # facts.py imports ssh_connect inside the function body, so patch
-    # the source module rather than the consumer.
-    return patch("app.ssh_utils.ssh_connect", new=fake_ssh_connect)
+    # facts.py now imports ssh_connect_host inside the function body.
+    # Patch the source module so both the import and the live object
+    # are replaced for the duration of the test.
+    return patch("app.ssh_utils.ssh_connect_host", new=fake_ssh_connect_host)
 
 
 def _task_session_patch(db):
