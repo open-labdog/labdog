@@ -59,9 +59,9 @@ Each module (firewall, services, packages, etc.) has its own row showing the las
 
 ## Discovery
 
-![Host Discovery](screenshots/hosts-discover.png)
+![Host Discovery](screenshots/discovery.png)
 
-**Path:** `/hosts/discover`
+**Path:** `/discovery`
 
 Scans a network CIDR range for hosts with port 22 open, then SSH-verifies each hit to confirm it's reachable with the selected key.
 
