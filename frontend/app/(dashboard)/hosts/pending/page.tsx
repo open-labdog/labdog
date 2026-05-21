@@ -11,6 +11,7 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { SSH_ERROR_LABELS } from "@/lib/types"
 import type { PendingSummary, PendingHostFleet } from "@/lib/types"
 
 export default function PendingApprovalPage() {
@@ -258,8 +259,8 @@ export default function PendingApprovalPage() {
                           {host.ssh_verified ? (
                             <Badge className={cn("text-white text-xs", "bg-green-600")}>verified</Badge>
                           ) : host.ssh_error ? (
-                            <Tooltip content={host.ssh_error}>
-                              <Badge className={cn("text-white text-xs cursor-help", "bg-amber-600")}>unverified</Badge>
+                            <Tooltip content={SSH_ERROR_LABELS[host.ssh_error]}>
+                              <Badge className={cn("text-white text-xs cursor-help", "bg-amber-600")}>{SSH_ERROR_LABELS[host.ssh_error]}</Badge>
                             </Tooltip>
                           ) : (
                             <Badge className={cn("text-white text-xs", "bg-amber-600")}>unverified</Badge>

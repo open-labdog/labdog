@@ -9,6 +9,32 @@ BLOCKED_NETWORKS = [
 ]
 
 
+def validate_cidr_against_blocklist(cidr: str) -> None:
+    """Raise ValueError if *cidr* overlaps any entry in BLOCKED_NETWORKS.
+
+    This is the single source of truth for blocklist enforcement; call it
+    from every code path that accepts a CIDR string (schema validators,
+    Celery tasks, API handlers).
+
+    Args:
+        cidr: CIDR string to check (e.g. ``"192.168.1.0/24"``).
+
+    Raises:
+        ValueError: When the network overlaps a blocked range, with a
+            message that names the matched blocked network.
+    """
+    try:
+        network = ipaddress.ip_network(cidr, strict=False)
+    except ValueError:
+        # Let the caller's own format check handle parse errors.
+        return
+    for blocked in BLOCKED_NETWORKS:
+        if network.overlaps(blocked):
+            raise ValueError(
+                f"Scanning {network} is not permitted: overlaps blocked range {blocked}"
+            )
+
+
 async def check_port(
     host: str,
     port: int,
@@ -79,10 +105,6 @@ def validate_cidr(cidr: str, min_prefix: int = 20) -> ipaddress.IPv4Network:
             f"({network.num_addresses} addresses)."
         )
 
-    for blocked in BLOCKED_NETWORKS:
-        if network.overlaps(blocked):
-            raise ValueError(
-                f"Scanning {network} is not permitted (overlaps blocked range {blocked})"
-            )
+    validate_cidr_against_blocklist(cidr)
 
     return network
