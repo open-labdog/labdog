@@ -46,14 +46,6 @@ Filed 2026-05-21 from a `security-auditor` whitebox source-level
 review (commit `1108d67` as the audit baseline). Each entry was
 spot-checked against current HEAD before filing.
 
-- [ ] **SEC-07** `scripts/fetch-bundled-pack.sh:56,60,64` — git invocations missing `--` separator allow flag-as-arg injection at build time
-
-  Symptom: three `git` invocations pass user/CI-controlled strings as positional arguments without `--`:
-  `git clone --depth 1 --branch "$REF" "$REPO" "$TMP"`,
-  `git clone "$REPO" "$TMP"`,
-  `git -C "$TMP" checkout "$REF"`.
-  A `$REPO` starting with `--upload-pack=` is parsed as the option (CVE-2017-1000117 family); a `$REF` starting with `-` is parsed as a flag by `git checkout`. Reproducer: `LABDOG_PLAYBOOKS_REPO='--upload-pack=touch /tmp/pwn' LABDOG_PLAYBOOKS_REF='zzz' ./scripts/fetch-bundled-pack.sh /tmp/x`. Anyone who can influence the build environment (CI variable poisoning, repo write access to bump `LABDOG_PLAYBOOKS_REF`, or `--build-arg` on a local `docker build`) reaches RCE at build time. Severity: **High**. Fix: insert `--` before positionals and validate `$REF` against `^[A-Za-z0-9._/-]+$`, `$REPO` against `^(https://|git@|ssh://)`.
-
 - [ ] **SEC-08** `backend/app/api/ssh_terminal.py:26` + `backend/app/api/host_state.py:77` + `backend/app/api/actions.py:108` — any active (non-superuser) user gets root SSH on every managed host
 
   Symptom: WebSocket SSH terminal, `POST /api/actions/runs`, `POST /api/hosts/{id}/collect-state`, and several other host-mutating endpoints gate on `current_active_user` rather than `current_superuser`. The auth helper `get_ws_user` at `backend/app/auth/ws_auth.py:14` only checks `is_active`; no per-host RBAC exists. A superuser creating any second user account hands that user effective root on every host in the fleet via the SSH terminal alone. Severity: **High** — privilege boundary is doc-only (see `docs/security-hardening.md:239-242` which claims "assigned scope"; no code implements it). Fix: either gate all host-mutating endpoints on `current_superuser` until a `user_host_group` join table + enforcement exists, or implement the documented scope model.

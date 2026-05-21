@@ -41,6 +41,32 @@ if [ -z "$REF" ]; then
   exit 1
 fi
 
+# Validate REF: allow SHAs, tag names, branch names; reject leading dashes,
+# shell metacharacters, and whitespace to prevent flag-injection into git.
+case "$REF" in
+  *[!A-Za-z0-9._/-]*)
+    echo "fetch-bundled-pack: ERROR: LABDOG_PLAYBOOKS_REF contains invalid characters: '${REF}'" >&2
+    echo "  Allowed: A-Za-z0-9 . _ / -  (no leading dash, no whitespace, no shell metacharacters)" >&2
+    exit 1
+    ;;
+  -*)
+    echo "fetch-bundled-pack: ERROR: LABDOG_PLAYBOOKS_REF must not start with '-': '${REF}'" >&2
+    exit 1
+    ;;
+esac
+
+# Validate REPO: require an explicit URL scheme from the allow-list
+# (matches backend/app/schemas/git_repos.py:43-44).  Rejects any value
+# starting with '-' (--upload-pack= injection, CVE-2017-1000117 family).
+case "$REPO" in
+  https://*|git@*|ssh://*)
+    ;;
+  *)
+    echo "fetch-bundled-pack: ERROR: LABDOG_PLAYBOOKS_REPO does not match allowed schemes (https://, git@, ssh://): '${REPO}'" >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p "$DEST"
 # Clone into a sibling of $DEST so we can move .git out before any
 # consumer notices; cleaner than racing with `rm -rf $DEST/.git`.
@@ -54,15 +80,15 @@ echo "fetch-bundled-pack: cloning ${REPO}@${REF} into ${DEST}..." >&2
 # `--branch`, so on failure we fall back to a full clone + explicit
 # checkout. We deliberately don't silence stderr from the full clone
 # -- if the upstream is unreachable the operator should see why.
-if git clone --depth 1 --branch "$REF" "$REPO" "$TMP" 2>/dev/null; then
+if git clone --depth 1 --branch "$REF" -- "$REPO" "$TMP" 2>/dev/null; then
   :
 else
   echo "fetch-bundled-pack: --branch '${REF}' didn't resolve (likely a SHA), falling back to full clone..." >&2
-  if ! git clone "$REPO" "$TMP"; then
+  if ! git clone -- "$REPO" "$TMP"; then
     echo "fetch-bundled-pack: ERROR: failed to clone ${REPO}" >&2
     exit 2
   fi
-  if ! git -C "$TMP" checkout "$REF"; then
+  if ! git -C "$TMP" checkout -- "$REF"; then
     echo "fetch-bundled-pack: ERROR: ref '${REF}' not found in ${REPO}." >&2
     echo "  If you just bumped LABDOG_PLAYBOOKS_REF, make sure the SHA has been pushed to the upstream." >&2
     echo "  See BUGS.md BUG-46 for the gitlab->github mirror transition." >&2
