@@ -26,10 +26,9 @@ RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
 # repo stays clean and the bundle's provenance is a single git ref
 # tracked in the top-level LABDOG_PLAYBOOKS_REF file.
 #
-# ``--branch`` accepts tags and branch names but not raw commit SHAs;
-# the OR-branch handles SHAs by cloning the default branch and then
-# checking out the requested commit. ``.git`` and ``.gitignore`` are
-# stripped so the pack on disk matches the layout the loader expects.
+# All actual clone logic lives in scripts/fetch-bundled-pack.sh -- one
+# source of truth shared with packaging/Makefile, dev/dev.sh, and the
+# CI workflow.
 #
 # CI passes LABDOG_PLAYBOOKS_REF / LABDOG_PLAYBOOKS_REPO via build-args
 # (sourced from the repo-root LABDOG_PLAYBOOKS_REF file + the workflow's
@@ -38,12 +37,11 @@ RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
 FROM alpine/git:v2.45.2 AS bundled-pack-fetcher
 ARG LABDOG_PLAYBOOKS_REPO=https://github.com/open-labdog/labdog-playbooks.git
 ARG LABDOG_PLAYBOOKS_REF=main
-WORKDIR /bundle-src
-RUN git clone --depth 1 --branch "${LABDOG_PLAYBOOKS_REF}" \
-      "${LABDOG_PLAYBOOKS_REPO}" /bundle 2>/dev/null \
-    || (git clone "${LABDOG_PLAYBOOKS_REPO}" /bundle \
-        && git -C /bundle checkout "${LABDOG_PLAYBOOKS_REF}") \
-    && rm -rf /bundle/.git /bundle/.gitignore
+ENV LABDOG_PLAYBOOKS_REPO=${LABDOG_PLAYBOOKS_REPO}
+ENV LABDOG_PLAYBOOKS_REF=${LABDOG_PLAYBOOKS_REF}
+COPY scripts/fetch-bundled-pack.sh /usr/local/bin/fetch-bundled-pack
+RUN chmod +x /usr/local/bin/fetch-bundled-pack \
+    && /usr/local/bin/fetch-bundled-pack /bundle
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
 FROM python:3.12-slim

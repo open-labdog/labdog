@@ -150,18 +150,10 @@ jobs:
         run: pip install -U pip "ansible-lint>=24" "ansible-core>=2.16" -q
       - name: Fetch bundled action pack
         # backend/app/ansible/ is gitignored; ansible-lint targets a
-        # bundled action. Fetch the pinned ref from labdog-playbooks
-        # so the linter has something to read.
+        # bundled action. Fetch the pinned ref via the shared script.
         run: |
-          REF=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)
-          REPO="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
-          tmp=$(mktemp -d)
-          (git clone --depth 1 --branch "$REF" "$REPO" "$tmp/up" 2>/dev/null \
-            || (git clone "$REPO" "$tmp/up" && git -C "$tmp/up" checkout "$REF"))
-          rm -rf "$tmp/up/.git" "$tmp/up/.gitignore"
-          mkdir -p backend/app/ansible
-          cp -r "$tmp/up/." backend/app/ansible/
-          rm -rf "$tmp"
+          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
+          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: ansible-lint
         run: ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
 
@@ -238,18 +230,11 @@ jobs:
           uv pip install --system '.[dev]'
       - name: Fetch bundled action pack
         # backend/app/ansible/ is gitignored; pytest expects the bundled
-        # pack to be present (tests reference linux-upgrade etc.). Mirror
-        # the Dockerfile / packaging Makefile fetch logic.
+        # pack to be present (tests reference linux-upgrade etc.).
+        # Delegates to the shared script used by Dockerfile + packaging.
         run: |
-          REF=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)
-          REPO="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
-          tmp=$(mktemp -d)
-          (git clone --depth 1 --branch "$REF" "$REPO" "$tmp/up" 2>/dev/null \
-            || (git clone "$REPO" "$tmp/up" && git -C "$tmp/up" checkout "$REF"))
-          rm -rf "$tmp/up/.git" "$tmp/up/.gitignore"
-          mkdir -p backend/app/ansible
-          cp -r "$tmp/up/." backend/app/ansible/
-          rm -rf "$tmp"
+          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
+          ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         working-directory: backend
         run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration

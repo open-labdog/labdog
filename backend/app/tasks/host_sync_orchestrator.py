@@ -282,6 +282,19 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     if job is not None:
         job.pending_reason = reason
         await db.commit()
+    else:
+        # SyncJob row vanished between API entry and our defer check
+        # (deleted by an operator, cascaded by host deletion, etc.).
+        # The advisory lock is released by task_session()'s engine
+        # disposal in the caller's outer ``async with`` so there's no
+        # leak, but the deferred row is gone -- log so the orphan is
+        # visible in worker logs.
+        logger.warning(
+            "_claim_or_defer: SyncJob %d missing at defer time; "
+            "intended pending_reason %r dropped",
+            job_id,
+            reason,
+        )
     return False
 
 

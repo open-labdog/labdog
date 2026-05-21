@@ -546,7 +546,7 @@ labdog/
 ├── backend/
 │   ├── app/
 │   │   ├── actions/         # Pack loader, registry, manifest schema, git sync
-│   │   ├── ansible/         # Bundled action pack (mirror of labdog-playbooks)
+│   │   ├── ansible/         # Bundled action pack (gitignored; fetched at build time from labdog-playbooks)
 │   │   ├── ansible_runtime/ # Playbook composer + ansible-runner wrapper
 │   │   ├── api/             # FastAPI route handlers (incl. /api/version)
 │   │   ├── audit/           # Audit logging

@@ -168,6 +168,11 @@ re-builds with the new content; no rsync, no drift gate.
 - **CI**: backend-test and ansible-lint jobs run the same fetch
   before pytest / ansible-lint so the bundled pack is in place.
 
+All four sites (Dockerfile, packaging, dev, CI) delegate to
+`scripts/fetch-bundled-pack.sh` — single source of truth for the
+clone + SHA-fallback + `.git` strip logic. Edit that script for
+changes, not the call sites.
+
 The Python runtime that consumes packs (playbook generation,
 ansible-runner) lives separately at `backend/app/ansible_runtime/`
 and is **not** fetched — it's part of the labdog source tree.

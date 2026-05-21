@@ -393,6 +393,9 @@ estimated_duration: "30 sec" # human-readable; shown on the card
 destructive: false           # see "Destructive actions" below
 supports_group: true         # can target a group of hosts?
 supports_host: true          # can target a single host?
+supports_fleet: false        # can target every host in the inventory?
+                             # Conservative default; flip to true only for
+                             # truly fleet-wide work (drift checks, etc.).
 parameters:                  # passed as --extra-vars at run time
   - key: my_param
     label: My parameter

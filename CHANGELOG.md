@@ -35,11 +35,12 @@ no drift gate.
 - **CI**: `backend-test` and `ansible-lint` jobs now run the same
   fetch logic before pytest / ansible-lint so the bundled pack is
   present.
-- **Removed**: `scripts/check-bundled-mirrors-playbooks.sh` and
-  the `bundled-pack-mirror` CI job. With the bundled pack
-  build-time-fetched at a pinned ref, drift can't exist.
-- **Removed from git**: `backend/app/ansible/` is gitignored and
-  removed from the tree (~15 MB of YAML).
+- **Removed from git**: `backend/app/ansible/` (the in-repo bundled
+  pack directory, ~2200 lines of YAML), `scripts/check-bundled-mirrors-playbooks.sh`
+  (the drift gate), and the `bundled-pack-mirror` CI job. With the
+  bundled pack build-time-fetched at a pinned ref, drift can't
+  exist; the directory is now gitignored and populated at build
+  time (or via `./dev/dev.sh bundle` in dev).
 
 The DB-backed `labdog-playbooks` override pack auto-registered
 on fresh install is unchanged (still points at `main` and is
