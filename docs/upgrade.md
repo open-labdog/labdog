@@ -42,6 +42,14 @@ There is no separate `git tag` step — the release artifacts on the
 GitHub Releases page are what you install from. See
 [CONTRIBUTING.md → Release process](pathname:///../CONTRIBUTING.md#release-process).
 
+The bundled action pack is fetched from `labdog-playbooks` at the
+SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](../LABDOG_PLAYBOOKS_REF)
+file at build time, so the bundled pack content shipped with a
+LabDog release corresponds exactly to one `labdog-playbooks`
+commit. To ship newer playbook content, bump that file's SHA in
+the release PR; CI re-fetches as part of the image / artefact
+build.
+
 ---
 
 ## Pre-upgrade

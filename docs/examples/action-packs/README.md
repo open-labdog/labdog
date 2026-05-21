@@ -62,3 +62,23 @@ An action is a directory: each contains its `manifest.yml` and
 `playbook.yml` side by side. LabDog discovers actions by globbing
 `actions/*/manifest.yml` — a directory without a `manifest.yml` is
 ignored.
+
+## Optional post-run hooks
+
+Manifests may declare two optional post-success hooks. Both are
+opt-in and skipped on dry-run / failure. See
+[the Actions user guide](../../ui/actions.md#post-run-reconciliation-sync-and-register)
+for the full contract.
+
+- **`post_run_sync: [<module-name>, ...]`** — re-enforce labdog's
+  existing desired state for the named modules after the action
+  finishes (push semantic). Good for "rotate cert → reload
+  services" style actions. Don't use for installing things labdog
+  doesn't already manage.
+- **`post_run_register: {<module>: [<item>, ...]}`** — register
+  resources the action installed as host-scope override rows so
+  labdog manages them going forward. Items are validated against
+  each module's REST API Create schema; uniqueness collisions
+  with operator-declared rows skip silently. Good for
+  install-this-new-thing actions (e.g. install Alloy + register
+  `alloy.service` + the `alloy` package).
