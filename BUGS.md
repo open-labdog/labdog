@@ -56,10 +56,6 @@ spot-checked against current HEAD before filing.
 
   Symptom: `ssh_user: str = "root"` with no regex. Safe at the asyncssh + Ansible boundaries (parameter-passed, not shell-interpolated), but arbitrary characters (including newlines / control chars) flow into audit log payloads and SSE channel messages, landing in the UI. `user_mgmt/schemas.py:14` already uses `^[a-z_][a-z0-9_-]{0,31}$` for the same shape; reuse it. Severity: **Low**. Fix: add the same field_validator.
 
-- [ ] **BUG-50** `.dockerignore` (missing entry) — `dev/` not excluded
-
-  Symptom: `.gitignore` excludes `dev/.env` from commits but `.dockerignore` doesn't exclude `dev/`. The current `Dockerfile` happens not to `COPY dev/`, but a future careless `COPY . .` would ship the dev secrets into the build context (and into layers if copied). Severity: **Low** (defence-in-depth). Fix: add `dev/` to `.dockerignore`.
-
 - [ ] **BUG-51** `Dockerfile` (missing) — no HEALTHCHECK
 
   Symptom: container orchestrators can't autodetect a stuck process. Severity: **Low**. Fix: add `HEALTHCHECK CMD curl -fsS http://localhost:8000/api/version || exit 1`.
