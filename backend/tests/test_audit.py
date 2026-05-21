@@ -144,3 +144,44 @@ class TestAudit:
         # Should return 2 create entries
         assert len(data) == 2
         assert all(entry["action"] == "create" for entry in data)
+
+
+class TestSSHSessionTranscriptEndpoint:
+    """Tests for GET /api/audit-log/ssh-sessions/{session_id}/transcript (SEC-09)."""
+
+    @pytest.mark.asyncio
+    async def test_returns_rows_in_recorded_at_order(self, superuser_client, db: AsyncSession):
+        """Transcript rows are returned in recorded_at ascending order."""
+        from datetime import UTC, datetime, timedelta
+
+        from app.models.ssh_session_transcript import SSHSessionTranscript
+
+        session_id = "audit-api-test-session-001"
+        now = datetime.now(UTC)
+        commands = ["ls -la", "whoami", "uname -a"]
+        for i, cmd in enumerate(commands):
+            row = SSHSessionTranscript(
+                session_id=session_id,
+                host_id=None,
+                user_id=None,
+                command_text=cmd,
+                recorded_at=now + timedelta(seconds=i),
+            )
+            db.add(row)
+        await db.flush()
+
+        resp = await superuser_client.get(
+            f"/api/audit-log/ssh-sessions/{session_id}/transcript"
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data) == 3
+        assert [r["command_text"] for r in data] == commands
+
+    @pytest.mark.asyncio
+    async def test_returns_404_when_no_transcript_exists(self, superuser_client, db: AsyncSession):
+        """Returns 404 when no transcript rows exist for the session_id."""
+        resp = await superuser_client.get(
+            "/api/audit-log/ssh-sessions/no-such-session-99999/transcript"
+        )
+        assert resp.status_code == 404, resp.text
