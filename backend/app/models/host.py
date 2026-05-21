@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -84,6 +85,7 @@ class Host(Base):
     os_facts_collected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

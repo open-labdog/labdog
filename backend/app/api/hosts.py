@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
@@ -16,7 +17,7 @@ from app.models.host import Host, HostGroupMembership
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.hosts import HostCreate, HostResponse, HostUpdate
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import _format_known_hosts_line, ssh_connect
 
 logger = logging.getLogger(__name__)
 
@@ -119,11 +120,14 @@ async def create_host(
 
     # If hostname is empty, try to fetch it from the host via SSH
     source_ip = None
+    captured_host_key_entry: str | None = None
     if not hostname and ssh_key:
         try:
             master_key = get_master_key()
             private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
             imported_key = asyncssh.import_private_key(private_pem)
+            # First contact: no Host row yet, so accept any key (TOFU) and
+            # capture the server key to persist on the new row at create time.
             async with ssh_connect(
                 body.ip_address,
                 port=body.ssh_port,
@@ -135,6 +139,11 @@ async def create_host(
                 from app.ssh_utils import get_source_ip
 
                 source_ip = await get_source_ip(conn)
+                server_key = conn.get_server_host_key()
+                if server_key is not None:
+                    captured_host_key_entry = _format_known_hosts_line(
+                        body.ip_address, server_key
+                    )
         except Exception:
             raise HTTPException(
                 status_code=422,
@@ -154,6 +163,7 @@ async def create_host(
         ssh_user=ssh_user,
         ssh_key_id=body.ssh_key_id,
         labdog_source_ip=source_ip,
+        ssh_host_key_entry=captured_host_key_entry,
     )
     db.add(host)
     await db.flush()  # get host.id
@@ -505,3 +515,30 @@ async def import_rules(
 
     await db.commit()
     return {"imported": len(created), "group_id": body.group_id}
+
+
+@router.post("/{host_id}/trust-host-key", status_code=204)
+async def trust_host_key(
+    host_id: int,
+    user: User = Depends(current_superuser),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear the stored SSH host key so the next connection re-TOFUs.
+
+    Use this when a host was legitimately re-keyed (OS reinstall, key
+    rotation).  Superuser-only.  Emits an audit log row.
+    """
+    result = await db.execute(select(Host).where(Host.id == host_id))
+    host = result.scalar_one_or_none()
+    if not host:
+        raise HTTPException(status_code=404, detail="Host not found")
+
+    host.ssh_host_key_entry = None
+    await log_action(
+        db,
+        action="trust_host_key",
+        entity_type="host",
+        entity_id=host_id,
+        user_id=user.id,
+    )
+    await db.commit()

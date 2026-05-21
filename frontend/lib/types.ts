@@ -57,6 +57,7 @@ export interface Host {
   kernel_version: string | null
   kernel_release: string | null
   os_facts_collected_at: string | null
+  ssh_host_key_entry: string | null
 }
 
 export interface HostSummary extends Host {

@@ -85,7 +85,7 @@ async def _collect_host_facts_async(host_id: int) -> None:
     from app.discovery.verify import is_placeholder_hostname
     from app.models.host import FirewallBackend, Host
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import ssh_connect
+    from app.ssh_utils import ssh_connect_host
 
     async with task_session() as db:
         result = await db.execute(select(Host).where(Host.id == host_id))
@@ -112,10 +112,9 @@ async def _collect_host_facts_async(host_id: int) -> None:
         imported_key = asyncssh.import_private_key(private_key_pem)
 
         try:
-            async with ssh_connect(
-                host.ip_address,
-                port=host.ssh_port,
-                username=ssh_key.ssh_user,
+            async with ssh_connect_host(
+                host,
+                db,
                 client_keys=[imported_key],
             ) as conn:
                 hostname_cmd = await conn.run("hostname", check=False)

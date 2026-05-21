@@ -51,12 +51,13 @@ FAKE_HITS = [("10.0.1.1", "open"), ("10.0.1.2", "open")]
 async def _mock_verify_mixed(ip, *, port, username, imported_key):
     """10.0.1.1 succeeds SSH; 10.0.1.2 fails.
 
-    Returns the 4-tuple (success, hostname, source_ip, ssh_error) matching
-    the signature of app.discovery.verify.verify_ssh.
+    Returns the 5-tuple (success, hostname, source_ip, ssh_error,
+    ssh_host_key_entry) matching the signature of
+    app.discovery.verify.verify_ssh.
     """
     if ip == "10.0.1.1":
-        return (True, "host-a", None, None)
-    return (False, None, None, "conn refused")
+        return (True, "host-a", None, None, "10.0.1.1 ssh-ed25519 AAAA")
+    return (False, None, None, "conn refused", None)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +198,7 @@ class TestAutoAddTrue:
             ),
             patch(
                 "app.discovery.verify.verify_ssh",
-                new=AsyncMock(return_value=(True, "h", None, None)),
+                new=AsyncMock(return_value=(True, "h", None, None, None)),
             ),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
@@ -220,7 +221,7 @@ class TestAutoAddTrue:
             ),
             patch(
                 "app.discovery.verify.verify_ssh",
-                new=AsyncMock(return_value=(False, None, None, "conn refused")),
+                new=AsyncMock(return_value=(False, None, None, "conn refused", None)),
             ),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
@@ -247,7 +248,7 @@ class TestAutoAddTrue:
             ),
             patch(
                 "app.discovery.verify.verify_ssh",
-                new=AsyncMock(return_value=(True, None, None, None)),
+                new=AsyncMock(return_value=(True, None, None, None, None)),
             ),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
