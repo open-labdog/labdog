@@ -6,7 +6,7 @@ from sqlalchemy import insert as sa_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.discovery.verify import placeholder_hostname
 from app.models.host import Host, HostGroupMembership
@@ -106,7 +106,7 @@ async def list_scan_configs(
 @router.post("", response_model=ScanConfigResponse, status_code=201)
 async def create_scan_config(
     body: ScanConfigCreate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new scan config."""
@@ -154,7 +154,7 @@ async def get_scan_config(
 async def update_scan_config(
     config_id: int,
     body: ScanConfigUpdate,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an existing scan config."""
@@ -182,7 +182,7 @@ async def update_scan_config(
 @router.delete("/{config_id}", status_code=204)
 async def delete_scan_config(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a scan config. Pending hosts are removed via CASCADE."""
@@ -199,7 +199,7 @@ async def delete_scan_config(
 @router.post("/{config_id}/run", status_code=202)
 async def run_scan_config_now(
     config_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Enqueue an immediate run of the scan config, bypassing the schedule."""
@@ -238,7 +238,7 @@ async def list_pending_hosts(
 async def approve_pending_hosts(
     config_id: int,
     body: ApproveBody,
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Promote pending hosts into the host inventory under the scan config's default groups.
@@ -349,7 +349,7 @@ async def approve_pending_hosts(
 async def dismiss_pending_hosts(
     config_id: int,
     body: DismissBody,
-    current_user: User = Depends(current_active_user),
+    current_user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Remove pending hosts from the review queue without adding them to inventory."""

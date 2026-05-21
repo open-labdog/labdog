@@ -7,11 +7,14 @@ without duplication.
 
 from __future__ import annotations
 
+import logging
 import socket as _socket
 
 import asyncssh
 
 from app.ssh_utils import _format_known_hosts_line, get_source_ip, ssh_connect
+
+logger = logging.getLogger(__name__)
 
 
 def placeholder_hostname(ip: str) -> str:
@@ -95,13 +98,28 @@ async def verify_ssh(
             return True, hostname, source_ip, None, ssh_host_key_entry
 
     except Exception as exc:
-        err = str(exc)
-        if "Permission denied" in err or "Auth" in err:
-            err = f"SSH auth failed for {username}@{ip}"
-        elif "refused" in err.lower():
-            err = f"SSH connection refused on {ip}:{port}"
-        elif "timed out" in err.lower() or "Timeout" in err:
-            err = f"SSH connection timed out for {ip}"
+        full_err = str(exc)
+        if "Permission denied" in full_err or "Auth" in full_err:
+            category = "auth_failed"
+        elif "refused" in full_err.lower():
+            category = "refused"
+        elif "timed out" in full_err.lower() or "Timeout" in full_err:
+            category = "timeout"
+        elif any(
+            kw in full_err.lower()
+            for kw in (
+                "network unreachable",
+                "no route",
+                "name or service not known",
+                "nodename nor servname",
+            )
+        ):
+            category = "unreachable"
         else:
-            err = f"SSH failed: {err[:120]}"
-        return False, None, None, err, None
+            category = "unknown"
+        # Full error detail stays in server logs only — not surfaced via API.
+        logger.warning(
+            "verify_ssh failed for %s:%d (user=%s): [%s] %s",
+            ip, port, username, category, full_err,
+        )
+        return False, None, None, category, None

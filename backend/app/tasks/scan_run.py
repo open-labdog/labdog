@@ -93,7 +93,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
     from app.audit.logger import log_action
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.discovery.scanner import scan_network
+    from app.discovery.scanner import scan_network, validate_cidr_against_blocklist
     from app.discovery.verify import placeholder_hostname, verify_ssh
     from app.models.host import Host, HostGroupMembership
     from app.models.scan_config import ScanConfig
@@ -129,8 +129,21 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             imported_key = asyncssh.import_private_key(private_pem)
 
             # ---- e. TCP sweep all CIDRs ---------------------------------
+            # Defence-in-depth: re-validate each CIDR against the blocklist
+            # in case a row was inserted before this guard landed or was
+            # written directly into the DB bypassing the API schema.
             all_hits: list[tuple[str, str]] = []
             for cidr in config.cidrs:
+                try:
+                    validate_cidr_against_blocklist(cidr)
+                except ValueError as blocked_err:
+                    logger.warning(
+                        "scan_run: skipping blocked CIDR %r in config %d: %s",
+                        cidr,
+                        config_id,
+                        blocked_err,
+                    )
+                    continue
                 hits = await scan_network(cidr, port=config.ssh_port)
                 all_hits.extend(hits)
 

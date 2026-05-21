@@ -182,3 +182,50 @@ class TestDiscoveryAPI:
             json={"ips": ["10.0.0.1"], "ssh_key_id": 1},
         )
         assert resp.status_code == 403
+
+
+class TestVerifySshErrorCategories:
+    """verify_ssh must return a coarse enum category for each error class."""
+
+    async def _call_verify(self, exc: Exception):
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.discovery.verify import verify_ssh
+
+        fake_key = MagicMock()
+        with patch("app.discovery.verify.ssh_connect") as mock_cm:
+            mock_cm.return_value.__aenter__ = AsyncMock(side_effect=exc)
+            mock_cm.return_value.__aexit__ = AsyncMock(return_value=False)
+            success, _, _, category, _ = await verify_ssh(
+                "10.0.0.1", port=22, username="root", imported_key=fake_key
+            )
+        assert success is False
+        return category
+
+    async def test_permission_denied_maps_to_auth_failed(self):
+        category = await self._call_verify(Exception("Permission denied (publickey)"))
+        assert category == "auth_failed"
+
+    async def test_auth_keyword_maps_to_auth_failed(self):
+        category = await self._call_verify(Exception("Auth timeout"))
+        assert category == "auth_failed"
+
+    async def test_refused_maps_to_refused(self):
+        category = await self._call_verify(Exception("Connection refused"))
+        assert category == "refused"
+
+    async def test_timed_out_maps_to_timeout(self):
+        category = await self._call_verify(Exception("Connection timed out"))
+        assert category == "timeout"
+
+    async def test_Timeout_keyword_maps_to_timeout(self):
+        category = await self._call_verify(Exception("Timeout exceeded"))
+        assert category == "timeout"
+
+    async def test_network_unreachable_maps_to_unreachable(self):
+        category = await self._call_verify(Exception("Network unreachable"))
+        assert category == "unreachable"
+
+    async def test_unknown_error_maps_to_unknown(self):
+        category = await self._call_verify(Exception("some completely unexpected failure xyz"))
+        assert category == "unknown"

@@ -54,10 +54,6 @@ spot-checked against current HEAD before filing.
 
   Symptom: only `session_start` / `session_end` audit rows are written. Bytes flowing from the user (`ws_to_ssh` at line 110-131) are forwarded directly to `process.stdin` with no transcript capture. The only audit trace of `rm -rf /` is the session-open and session-close pair. Pairs with SEC-08: even after SEC-08 lands and only superusers can open terminals, there's still no record of what they ran. Severity: **High**. Fix: buffer outgoing bytes per session, flush periodically into a new `ssh_session_transcript` table on newline boundaries; cap per-session transcript size and apply retention.
 
-- [ ] **SEC-10** `backend/app/schemas/scans.py:17-23` + `backend/app/tasks/scan_run.py:134` — scheduled ScanConfigs bypass the loopback / metadata blocklist enforced on ad-hoc scans
-
-  Symptom: `_validate_cidr` only calls `ipaddress.ip_network(...)`; it does not check `BLOCKED_NETWORKS` (`127.0.0.0/8`, `169.254.0.0/16`, multicast, reserved) which the ad-hoc `POST /api/discovery/scan` enforces via `app/discovery/scanner.py:61-88`. The Celery executor `scan_run._async_run` calls `scan_network(cidr, ...)` directly with no re-validation. Combined with `create_scan_config` being `current_active_user` (not superuser), any active non-superuser user can scan loopback, cloud instance-metadata IPs, internal services. The `verify_ssh` error string (`PendingHostResponse.ssh_error`) leaks the remote service banner. Severity: **High**. Fix: move the `BLOCKED_NETWORKS` check into a shared helper, call from both schema validator and Celery task. Gate `POST /api/scans*` on `current_superuser`. Coarsen `ssh_error` to `unreachable|auth_failed|refused`.
-
 ### Security findings — Medium
 
 - [ ] **SEC-17** `backend/app/auth/users.py:55-71` — first-user-becomes-superuser promotion has a race window

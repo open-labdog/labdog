@@ -2,9 +2,12 @@
 
 import ipaddress
 from datetime import datetime
+from typing import Literal
 
 from croniter import croniter
 from pydantic import BaseModel, field_validator, model_validator
+
+from app.discovery.scanner import validate_cidr_against_blocklist
 
 # Maximum scan throughput allowed at config creation/update time.
 _MAX_IPS_PER_MINUTE = 100_000
@@ -13,6 +16,10 @@ _MAX_IPS_PER_MINUTE = 100_000
 # because cron can fire at most once per minute.
 _CRON_PROXY_INTERVAL = 60
 
+# Coarse SSH error categories surfaced via the API.
+# Keep the free-text detail in server logs only.
+SshErrorCategory = Literal["unreachable", "auth_failed", "refused", "timeout", "unknown"]
+
 
 def _validate_cidr(cidr: str) -> str:
     """Validate a single CIDR string. Raises ValueError on bad input."""
@@ -20,6 +27,8 @@ def _validate_cidr(cidr: str) -> str:
         ipaddress.ip_network(cidr, strict=False)
     except ValueError:
         raise ValueError(f"Invalid CIDR: {cidr!r}")
+    # Blocklist check — raises ValueError naming the matched blocked network.
+    validate_cidr_against_blocklist(cidr)
     return cidr
 
 
@@ -194,7 +203,7 @@ class PendingHostResponse(BaseModel):
     ip_address: str
     hostname: str | None
     ssh_verified: bool
-    ssh_error: str | None
+    ssh_error: SshErrorCategory | None
     discovered_at: datetime
 
     model_config = {"from_attributes": True}
@@ -209,7 +218,7 @@ class PendingHostFleetResponse(BaseModel):
     ip_address: str
     hostname: str | None
     ssh_verified: bool
-    ssh_error: str | None
+    ssh_error: SshErrorCategory | None
     discovered_at: datetime
 
 

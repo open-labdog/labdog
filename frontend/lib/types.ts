@@ -626,13 +626,23 @@ export interface PendingSummary {
   total: number
 }
 
+export type SshErrorCategory = "unreachable" | "auth_failed" | "refused" | "timeout" | "unknown"
+
+export const SSH_ERROR_LABELS: Record<SshErrorCategory, string> = {
+  unreachable: "Unreachable",
+  auth_failed: "Auth failed",
+  refused: "Connection refused",
+  timeout: "Timed out",
+  unknown: "Unknown error",
+}
+
 export interface PendingHost {
   id: number
   scan_config_id: number
   ip_address: string
   hostname: string | null
   ssh_verified: boolean
-  ssh_error: string | null
+  ssh_error: SshErrorCategory | null
   discovered_at: string
 }
 
@@ -643,7 +653,7 @@ export interface PendingHostFleet {
   ip_address: string
   hostname: string | null
   ssh_verified: boolean
-  ssh_error: string | null
+  ssh_error: SshErrorCategory | null
   discovered_at: string
 }
 
