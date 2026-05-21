@@ -512,3 +512,98 @@ async def test_fresh_conflict_freezes_previous_winner(
     demo = next(a for a in actions if a["key"] == "demo")
     assert demo["pack_name"] == "git-demo"
     assert "local-demo" in demo["overridden_from"]
+
+
+# ---------------------------------------------------------------------------
+# SEC-12 — path field traversal rejection (API layer)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_git_pack_dotdot_path_rejected(superuser_client, git_repo_row):
+    """A ``path`` containing ``..`` must be rejected at the schema layer
+    with a 422 before any disk I/O is attempted."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "traversal-attempt",
+            "source_type": "git",
+            "git_repository_id": git_repo_row.id,
+            "path": "../../../etc/labdog",
+        },
+    )
+    assert resp.status_code == 422
+    assert ".." in resp.text or "traversal" in resp.text.lower()
+
+
+async def test_update_git_pack_dotdot_path_rejected(
+    superuser_client, git_repo_row, monkeypatch, tmp_path
+):
+    """Updating an existing pack with a traversal path is also rejected."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
+
+    r = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "safe-pack",
+            "source_type": "git",
+            "git_repository_id": git_repo_row.id,
+        },
+    )
+    assert r.status_code == 201, r.text
+    pack_id = r.json()["id"]
+
+    r2 = await superuser_client.put(
+        f"/api/action-packs/{pack_id}",
+        json={"path": "../../escape"},
+    )
+    assert r2.status_code == 422
+    assert ".." in r2.text or "traversal" in r2.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# SEC-13 — local_path dangerous prefix rejection (API layer)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_local_pack_etc_path_rejected(superuser_client):
+    """/etc as local_path must be rejected at the schema layer."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "etc-pack",
+            "source_type": "local",
+            "local_path": "/etc/labdog",
+        },
+    )
+    assert resp.status_code == 422
+    assert "/etc" in resp.text
+
+
+async def test_create_local_pack_proc_path_rejected(superuser_client):
+    """/proc as local_path must be rejected at the schema layer."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "proc-pack",
+            "source_type": "local",
+            "local_path": "/proc/self",
+        },
+    )
+    assert resp.status_code == 422
+    assert "/proc" in resp.text
+
+
+async def test_create_local_pack_relative_path_rejected(superuser_client):
+    """A relative local_path (no leading /) must be rejected."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "rel-pack",
+            "source_type": "local",
+            "local_path": "relative/path",
+        },
+    )
+    assert resp.status_code == 422
+    assert "absolute" in resp.text.lower()
