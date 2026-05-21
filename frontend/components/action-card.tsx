@@ -76,9 +76,14 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
             <p
               className="mt-1 text-xs text-sky-300/80"
               title={
-                "After a successful run, labdog will register the declared resources " +
-                "as host-scope overrides so they're managed going forward. " +
-                "Existing operator-declared rows are preserved (collisions skip silently).\n\n" +
+                // Browser title attributes collapse internal newlines on
+                // hover, so we use " · " between modules and ", " within
+                // a module. For firewall rules (no single id field) we
+                // synth a "<action> <protocol> <direction>" descriptor.
+                "After a successful run, labdog will register the " +
+                "declared resources as host-scope overrides so they're " +
+                "managed going forward. Existing operator-declared rows " +
+                "are preserved (collisions skip silently). · " +
                 Object.entries(action.post_run_register)
                   .map(
                     ([mod, items]) =>
@@ -86,7 +91,19 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
                       items
                         .map((it) => {
                           // Best-effort identifier per item; fall back to
-                          // first string-valued field.
+                          // first string-valued field; firewall rules get
+                          // a composite descriptor because RuleCreate has
+                          // no single identifier field.
+                          if (
+                            mod === "firewall" &&
+                            typeof it.action === "string"
+                          ) {
+                            const proto =
+                              typeof it.protocol === "string" ? it.protocol : "?"
+                            const dir =
+                              typeof it.direction === "string" ? it.direction : "?"
+                            return `${it.action} ${proto} ${dir}`
+                          }
                           const id =
                             (it.package_name as string | undefined) ??
                             (it.service_name as string | undefined) ??
@@ -99,7 +116,7 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
                         .filter(Boolean)
                         .join(", "),
                   )
-                  .join("\n")
+                  .join(" · ")
               }
             >
               Will register{" "}

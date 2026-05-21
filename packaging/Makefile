@@ -55,22 +55,16 @@ build: build-venv build-frontend bake-build-info
 # `_build-venv` step then cp's it into the staging layout. Idempotent
 # -- skipped if BUNDLED_FETCH_DIR is already populated, so successive
 # invocations don't refetch.
+#
+# Delegates to scripts/fetch-bundled-pack.sh -- single source of truth
+# for the clone shared with Dockerfile, dev/dev.sh, and CI.
 fetch-bundled-pack:
-	@if [ -z "$(LABDOG_PLAYBOOKS_REF)" ]; then \
-		echo "ERROR: LABDOG_PLAYBOOKS_REF is empty -- commit a SHA to ../LABDOG_PLAYBOOKS_REF or set the env var"; \
-		exit 1; \
-	fi
 	@if [ -d "$(BUNDLED_FETCH_DIR)" ] && [ -d "$(BUNDLED_FETCH_DIR)/actions" ]; then \
 		echo "[fetch-bundled-pack] $(BUNDLED_FETCH_DIR) already populated -- skipping"; \
 	else \
-		rm -rf "$(BUNDLED_FETCH_DIR)"; \
-		echo "[fetch-bundled-pack] Cloning $(LABDOG_PLAYBOOKS_REPO)@$(LABDOG_PLAYBOOKS_REF)..."; \
-		git clone --depth 1 --branch "$(LABDOG_PLAYBOOKS_REF)" \
-			"$(LABDOG_PLAYBOOKS_REPO)" "$(BUNDLED_FETCH_DIR)" 2>/dev/null \
-			|| (git clone "$(LABDOG_PLAYBOOKS_REPO)" "$(BUNDLED_FETCH_DIR)" \
-				&& git -C "$(BUNDLED_FETCH_DIR)" checkout "$(LABDOG_PLAYBOOKS_REF)"); \
-		rm -rf "$(BUNDLED_FETCH_DIR)/.git" "$(BUNDLED_FETCH_DIR)/.gitignore"; \
-		echo "[fetch-bundled-pack] fetched into $(BUNDLED_FETCH_DIR)"; \
+		LABDOG_PLAYBOOKS_REPO="$(LABDOG_PLAYBOOKS_REPO)" \
+		LABDOG_PLAYBOOKS_REF="$(LABDOG_PLAYBOOKS_REF)" \
+			../scripts/fetch-bundled-pack.sh "$(BUNDLED_FETCH_DIR)"; \
 	fi
 
 # --- bake-build-info ---

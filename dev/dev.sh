@@ -108,46 +108,34 @@ ensure_bundled_pack() {
 }
 
 fetch_bundled_pack() {
-  local repo="${LABDOG_PLAYBOOKS_REPO:-https://github.com/open-labdog/labdog-playbooks.git}"
-  local ref="${LABDOG_PLAYBOOKS_REF:-}"
-  if [[ -z "$ref" && -f "$REF_FILE" ]]; then
-    ref="$(tr -d '[:space:]' < "$REF_FILE")"
-  fi
-
-  rm -rf "${BUNDLED_DIR}"
-  mkdir -p "${BUNDLED_DIR}"
-
+  # LABDOG_PLAYBOOKS_LOCAL bypasses the clone entirely -- rsync from
+  # a sibling working copy. Useful when iterating on upstream
+  # playbooks without round-tripping through git. Dev-only escape
+  # hatch; production builds always go through the shared script.
   if [[ -n "${LABDOG_PLAYBOOKS_LOCAL:-}" ]]; then
     if [[ ! -d "${LABDOG_PLAYBOOKS_LOCAL}" ]]; then
       log "ERROR: LABDOG_PLAYBOOKS_LOCAL=${LABDOG_PLAYBOOKS_LOCAL} does not exist"
       exit 1
     fi
     log "Bundling from local checkout: ${LABDOG_PLAYBOOKS_LOCAL}"
+    rm -rf "${BUNDLED_DIR}"
+    mkdir -p "${BUNDLED_DIR}"
     rsync -a --delete \
       --exclude='.git' --exclude='.gitignore' \
       "${LABDOG_PLAYBOOKS_LOCAL}/" "${BUNDLED_DIR}/"
+    log "Bundled pack populated at ${BUNDLED_DIR}"
     return
   fi
 
-  if [[ -z "$ref" ]]; then
-    log "ERROR: LABDOG_PLAYBOOKS_REF is empty and ${REF_FILE} not found"
-    exit 1
+  # Delegate to the shared script -- single source of truth for the
+  # clone logic shared with the Dockerfile, packaging/Makefile, and
+  # the CI workflow.
+  local ref="${LABDOG_PLAYBOOKS_REF:-}"
+  if [[ -z "$ref" && -f "$REF_FILE" ]]; then
+    ref="$(tr -d '[:space:]' < "$REF_FILE")"
   fi
-
-  log "Cloning ${repo}@${ref} into ${BUNDLED_DIR}..."
-  local tmp
-  tmp="$(mktemp -d)"
-  trap "rm -rf '$tmp'" RETURN
-  # `--branch` accepts tags and branch names but not raw commit SHAs;
-  # fall back to a full clone + checkout for SHA refs (same handling
-  # as the Dockerfile and packaging Makefile).
-  if ! git clone --depth 1 --branch "$ref" "$repo" "$tmp/upstream" 2>/dev/null; then
-    git clone "$repo" "$tmp/upstream"
-    git -C "$tmp/upstream" checkout "$ref"
-  fi
-  rm -rf "$tmp/upstream/.git" "$tmp/upstream/.gitignore"
-  rsync -a "$tmp/upstream/" "${BUNDLED_DIR}/"
-  log "Bundled pack populated at ${BUNDLED_DIR}"
+  LABDOG_PLAYBOOKS_REF="$ref" \
+    "${ROOT_DIR}/scripts/fetch-bundled-pack.sh" "${BUNDLED_DIR}"
 }
 
 #--- Infrastructure ---
