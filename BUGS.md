@@ -46,10 +46,6 @@ Filed 2026-05-21 from a `security-auditor` whitebox source-level
 review (commit `1108d67` as the audit baseline). Each entry was
 spot-checked against current HEAD before filing.
 
-- [ ] **SEC-09** `backend/app/api/ssh_terminal.py:74-87,176-191` — SSH terminal does not audit executed commands
-
-  Symptom: only `session_start` / `session_end` audit rows are written. Bytes flowing from the user (`ws_to_ssh` at line 110-131) are forwarded directly to `process.stdin` with no transcript capture. The only audit trace of `rm -rf /` is the session-open and session-close pair. Pairs with SEC-08: even after SEC-08 lands and only superusers can open terminals, there's still no record of what they ran. Severity: **High**. Fix: buffer outgoing bytes per session, flush periodically into a new `ssh_session_transcript` table on newline boundaries; cap per-session transcript size and apply retention.
-
 ### Security findings — Medium
 
 - [ ] **SEC-19** (cross-cutting) — CSRF posture relies solely on `SameSite=lax` on the auth cookie

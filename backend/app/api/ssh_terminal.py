@@ -17,6 +17,7 @@ from app.ssh_terminal.ssh_connect import (
     SSHConnectionError,
     open_ssh_shell,
 )
+from app.ssh_terminal.transcript import TranscriptWriter
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
     start_time = time.time()
     disconnect_reason = "client_disconnect"
 
+    transcript = TranscriptWriter(
+        session_id=session_id,
+        host_id=host_id,
+        user_id=user_id_for_audit,
+    )
+    await transcript.start()
+
     async def ssh_to_ws():
         try:
             while not process.stdout.at_eof():
@@ -115,8 +123,10 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
                 if message.get("type") == "websocket.disconnect":
                     break
                 if "bytes" in message and message["bytes"]:
-                    process.stdin.write(message["bytes"])
+                    chunk = message["bytes"]
+                    process.stdin.write(chunk)
                     await process.stdin.drain()
+                    transcript.feed(chunk)
                     await registry.touch(session_id)
                 elif "text" in message and message["text"]:
                     try:
@@ -163,6 +173,7 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         for task in pending:
             task.cancel()
     finally:
+        await transcript.stop()
         try:
             process.close()
         except Exception:
