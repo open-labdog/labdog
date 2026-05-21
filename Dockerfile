@@ -89,4 +89,12 @@ ENV LABDOG_COMMIT_SHA=$GIT_SHA \
 
 USER labdog
 EXPOSE 8000
+
+# Lets container orchestrators (Docker, k8s, compose) detect a stuck
+# process. /api/version is a no-auth endpoint that exercises the
+# FastAPI app at a minimum. Python is used instead of curl to avoid
+# adding an extra runtime dep -- python is already in the image.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/api/version', timeout=3); sys.exit(0 if r.status == 200 else 1)" || exit 1
+
 CMD ["python", "-m", "app"]
