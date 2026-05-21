@@ -56,10 +56,6 @@ spot-checked against current HEAD before filing.
 
 ### Security findings — Medium
 
-- [ ] **SEC-17** `backend/app/auth/users.py:55-71` — first-user-becomes-superuser promotion has a race window
-
-  Symptom: `on_after_register` opens a fresh `AsyncSessionLocal()` and runs after `user_manager.create()` returns. The advisory lock at `8675309` correctly serialises concurrent registrations, but if the post-create callback throws between user-create and superuser-flip (DB hiccup), the first user persists without `is_superuser=True` and the registration endpoint then refuses further sign-ups — leaving the install with no superuser, recoverable only via manual SQL. Severity: **Medium** (rare, but recovery cost is high). Fix: subclass `UserManager.create()` so user-creation and superuser-promotion happen in the same transaction.
-
 - [ ] **SEC-19** (cross-cutting) — CSRF posture relies solely on `SameSite=lax` on the auth cookie
 
   Symptom: cookie-based JWT with no double-submit token, no Origin/Referer header validation on state-changing endpoints. `SameSite=lax` blocks most cross-origin POSTs but accepts forged top-level navigations (GET-based state changes are not the labdog model, so the practical blast radius is small) and accepts cross-origin requests from same-site iframes. Severity: **Medium** (defence-in-depth; SameSite-lax is a reasonable baseline but not sufficient as the sole defence for a tool that holds SSH keys). Fix: add a double-submit-cookie pattern (separate `csrf_token` cookie + matching `X-CSRF-Token` header required on POST/PUT/DELETE), or migrate from cookie-based JWT to `Authorization: Bearer` (better fit for the SPA).

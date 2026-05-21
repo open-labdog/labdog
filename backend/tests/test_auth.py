@@ -40,17 +40,12 @@ class TestAuth:
         email = f"test_{uuid.uuid4().hex[:8]}@test.com"
         password = "TestPass1!Secure"
 
-        # Mock the separate session used for user count check (returns 0 users)
-        mock_session_factory = MagicMock(side_effect=lambda: _mock_session_with_count(0))
-        with (
-            patch(
-                "app.api.auth_setup.AsyncSessionLocal",
-                return_value=_mock_session_with_count(0),
-            ),
-            patch(
-                "app.auth.users.AsyncSessionLocal",
-                mock_session_factory,
-            ),
+        # Mock the separate session used for the auth_setup count/lock gate.
+        # UserManager.create now uses self.user_db.session (the test savepoint
+        # session) directly, so no second mock is needed.
+        with patch(
+            "app.api.auth_setup.AsyncSessionLocal",
+            return_value=_mock_session_with_count(0),
         ):
             resp = await client.post(
                 "/api/auth/register",
