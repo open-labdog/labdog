@@ -226,25 +226,30 @@ flood traffic that doesn't make it past the proxy at all.
 
 ## Superuser scope
 
-LabDog's `is_superuser` flag governs access to the destructive and
-fleet-wide endpoints. **Apply principle of least privilege.** Mark a
-user superuser only if they need to:
+LabDog has two user roles. The **only** difference between them is
+the ability to manage other users:
 
-- Create / delete / promote other users
-- Upload / rotate SSH keys for managed hosts
-- Connect or remove git repositories used for GitOps imports
-- Add, enable, or remove action packs
-- Change application settings (drift interval, log level, retention)
+- **Superuser** (`is_superuser=True`): can create, edit, delete,
+  and reset passwords for other users via the admin UI at
+  `/admin/users` (`backend/app/api/admin_users.py`).
+- **Regular user** (`is_active=True`, `is_superuser=False`): can do
+  everything else — browse hosts, edit groups, manage SSH keys,
+  configure git repos and action packs, trigger syncs, run
+  actions, open SSH terminals, change application settings, view
+  audit logs.
 
-Regular (non-superuser) users can still browse hosts, view rules,
-trigger plans/syncs, run actions, and view the audit log against
-their assigned scope. That's the right default for everyone except
-the small handful of operators who actually administer the install.
+This is the right model for a single-operator homelab install and
+small-team setups. There is **no per-host scope mechanism** — a
+regular user has the same operational access to every managed host
+as a superuser. If you need finer-grained authz (e.g. user X can
+only touch host group Y), it doesn't exist yet; track the request
+via a GitHub issue.
 
-The first registered user becomes available for superuser
-promotion; promote them via the admin UI at `/admin/users` once
-logged in. There is no setup-time superuser; the registration
-endpoint closes after the first user is created.
+The first registered user is **atomically promoted** to superuser
+during the same transaction as the user-row insert (see
+`backend/app/auth/users.py:UserManager.create`). There is no
+setup-time superuser; the registration endpoint closes after the
+first user is created.
 
 ---
 

@@ -588,14 +588,17 @@ class TestScanConfigsAPI:
         assert resp.status_code == 422
 
 
-class TestNonSuperuserScanAccess:
-    """Non-superuser must get 403 on all write endpoints; 200 on read endpoints."""
+class TestRegularUserScanAccess:
+    """Regular (non-superuser) users have the same access to scan endpoints
+    as superusers under labdog's two-role model (the only difference between
+    the roles is the ability to manage other users). See
+    docs/security-hardening.md ``Superuser scope``."""
 
-    async def _create_config(self, superuser_client, key_id: int) -> int:
-        resp = await superuser_client.post(
+    async def _create_config(self, client, key_id: int, name: str = "regular-scan") -> int:
+        resp = await client.post(
             "/api/scans",
             json={
-                "name": f"sec10-test-{id(self)}",
+                "name": name,
                 "cidrs": ["10.0.20.0/24"],
                 "ssh_key_id": key_id,
                 "interval_minutes": 60,
@@ -604,7 +607,7 @@ class TestNonSuperuserScanAccess:
         assert resp.status_code == 201
         return resp.json()["id"]
 
-    async def test_post_scans_is_403_for_regular_user(self, regular_user_client, superuser_client, db):
+    async def test_post_scans_is_201_for_regular_user(self, regular_user_client, db):
         key = await create_ssh_key(db)
         resp = await regular_user_client.post(
             "/api/scans",
@@ -615,31 +618,24 @@ class TestNonSuperuserScanAccess:
                 "interval_minutes": 60,
             },
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 201
 
-    async def test_put_scans_is_403_for_regular_user(self, regular_user_client, superuser_client, db):
+    async def test_put_scans_is_200_for_regular_user(self, regular_user_client, db):
         key = await create_ssh_key(db)
-        config_id = await self._create_config(superuser_client, key.id)
+        config_id = await self._create_config(regular_user_client, key.id, name="put-target")
         resp = await regular_user_client.put(
             f"/api/scans/{config_id}",
-            json={"name": "hacked-name"},
+            json={"name": "renamed"},
         )
-        assert resp.status_code == 403
+        assert resp.status_code == 200
 
-    async def test_delete_scans_is_403_for_regular_user(self, regular_user_client, superuser_client, db):
+    async def test_delete_scans_is_204_for_regular_user(self, regular_user_client, db):
         key = await create_ssh_key(db)
-        config_id = await self._create_config(superuser_client, key.id)
+        config_id = await self._create_config(regular_user_client, key.id, name="delete-target")
         resp = await regular_user_client.delete(f"/api/scans/{config_id}")
-        assert resp.status_code == 403
-
-    async def test_run_scans_is_403_for_regular_user(self, regular_user_client, superuser_client, db):
-        key = await create_ssh_key(db)
-        config_id = await self._create_config(superuser_client, key.id)
-        resp = await regular_user_client.post(f"/api/scans/{config_id}/run")
-        assert resp.status_code == 403
+        assert resp.status_code == 204
 
     async def test_get_scans_is_200_for_regular_user(self, regular_user_client):
-        """Read endpoints remain accessible to non-superusers."""
         resp = await regular_user_client.get("/api/scans")
         assert resp.status_code == 200
 

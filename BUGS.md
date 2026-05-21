@@ -46,10 +46,6 @@ Filed 2026-05-21 from a `security-auditor` whitebox source-level
 review (commit `1108d67` as the audit baseline). Each entry was
 spot-checked against current HEAD before filing.
 
-- [ ] **SEC-08** `backend/app/api/ssh_terminal.py:26` + `backend/app/api/host_state.py:77` + `backend/app/api/actions.py:108` — any active (non-superuser) user gets root SSH on every managed host
-
-  Symptom: WebSocket SSH terminal, `POST /api/actions/runs`, `POST /api/hosts/{id}/collect-state`, and several other host-mutating endpoints gate on `current_active_user` rather than `current_superuser`. The auth helper `get_ws_user` at `backend/app/auth/ws_auth.py:14` only checks `is_active`; no per-host RBAC exists. A superuser creating any second user account hands that user effective root on every host in the fleet via the SSH terminal alone. Severity: **High** — privilege boundary is doc-only (see `docs/security-hardening.md:239-242` which claims "assigned scope"; no code implements it). Fix: either gate all host-mutating endpoints on `current_superuser` until a `user_host_group` join table + enforcement exists, or implement the documented scope model.
-
 - [ ] **SEC-09** `backend/app/api/ssh_terminal.py:74-87,176-191` — SSH terminal does not audit executed commands
 
   Symptom: only `session_start` / `session_end` audit rows are written. Bytes flowing from the user (`ws_to_ssh` at line 110-131) are forwarded directly to `process.stdin` with no transcript capture. The only audit trace of `rm -rf /` is the session-open and session-close pair. Pairs with SEC-08: even after SEC-08 lands and only superusers can open terminals, there's still no record of what they ran. Severity: **High**. Fix: buffer outgoing bytes per session, flush periodically into a new `ssh_session_transcript` table on newline boundaries; cap per-session transcript size and apply retention.
