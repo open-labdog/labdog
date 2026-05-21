@@ -46,16 +46,6 @@ Filed 2026-05-21 from a `security-auditor` whitebox source-level
 review (commit `1108d67` as the audit baseline). Each entry was
 spot-checked against current HEAD before filing.
 
-### Hardening — Low
-
-- [ ] **BUG-48** `backend/app/schemas/hosts.py:8-14` — `Host.ip_address` accepts arbitrary string with no IP validation
-
-  Symptom: `HostCreate.ip_address: str` accepts `"localhost"`, `"0.0.0.0"`, `"127.0.0.1"`, `"::1"`, or arbitrary garbage. Flows into `asyncssh.connect(host=...)` and into Ansible inventory's `ansible_host`. Superuser-only but a typo can enrol labdog into managing itself. Severity: **Low**. Fix: `field_validator` running `ipaddress.ip_address(v)` and rejecting loopback/unspecified ranges unless an explicit `allow_loopback=true` override is set.
-
-- [ ] **BUG-49** `backend/app/schemas/ssh_keys.py:9` + `backend/app/schemas/hosts.py:12` — `ssh_user` lacks character allow-list
-
-  Symptom: `ssh_user: str = "root"` with no regex. Safe at the asyncssh + Ansible boundaries (parameter-passed, not shell-interpolated), but arbitrary characters (including newlines / control chars) flow into audit log payloads and SSE channel messages, landing in the UI. `user_mgmt/schemas.py:14` already uses `^[a-z_][a-z0-9_-]{0,31}$` for the same shape; reuse it. Severity: **Low**. Fix: add the same field_validator.
-
 ---
 
 ### Pre-existing (filed prior to the security review)
