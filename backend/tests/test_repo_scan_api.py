@@ -83,11 +83,11 @@ async def _make_repo(db, url: str, name: str = "test-scan-repo") -> GitRepositor
 
 
 async def test_scan_endpoint_requires_superuser(client, db, well_formed_origin):
-    """Unauthenticated → 401."""
+    """Unauthenticated → 401 or 403 (CSRF fires before auth on mutating requests)."""
     repo = await _make_repo(db, f"file://{well_formed_origin}")
     await db.commit()
     resp = await client.post(f"/api/git-repos/{repo.id}/scan")
-    assert resp.status_code == 401
+    assert resp.status_code in (401, 403)
 
 
 async def test_scan_endpoint_requires_superuser_for_non_admin(

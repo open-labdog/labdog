@@ -229,7 +229,7 @@ async def test_bulk_sync_404_for_missing_host(
 
 
 async def test_bulk_sync_requires_auth(client, db: AsyncSession, mock_run_host_sync):
-    """Unauthenticated POST → 401 (no auth cookie/token)."""
+    """Unauthenticated POST → 401 or 403 (CSRF fires before auth on mutating requests)."""
     ssh_key = await create_ssh_key(db)
     host = await create_host(db, ssh_key_id=ssh_key.id)
     host_id = host.id
@@ -240,7 +240,7 @@ async def test_bulk_sync_requires_auth(client, db: AsyncSession, mock_run_host_s
         json={"module_filter": None},
     )
 
-    assert resp.status_code == 401, resp.text
+    assert resp.status_code in (401, 403), resp.text
     assert mock_run_host_sync.call_count == 0
 
 
@@ -452,5 +452,5 @@ async def test_group_bulk_sync_requires_auth(client, db: AsyncSession, mock_run_
         f"/api/sync/groups/{group.id}/bulk",
         json={"module_filter": None},
     )
-    assert resp.status_code == 401
+    assert resp.status_code in (401, 403)
     assert mock_run_host_sync.call_count == 0
