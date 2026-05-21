@@ -68,10 +68,6 @@ spot-checked against current HEAD before filing.
 
 ### Security findings — Medium
 
-- [ ] **SEC-14** `backend/app/api/ssh_keys.py` (entire file) + `backend/app/api/git_repos.py` (entire file) — SSH-key and Git-repo CRUD emit zero audit-log rows
-
-  Symptom: `app.audit.logger.log_action` is never imported or invoked in either router. Creating, updating, or deleting an SSH private key — the most sensitive resource type in the system — produces no audit row. Same for git repos which carry encrypted HTTPS PATs. Action-packs (`action_packs.py:175,238,278`) and proxmox nodes (`proxmox_nodes.py:55,123,148`) DO log; this is an inconsistency. Severity: **Medium**. Fix: add `await log_action(db, action="create"|"update"|"delete", entity_type="ssh_key"|"git_repo", entity_id=..., user_id=user.id, after_state={name, ssh_user, is_default, ...})` in each handler. Never include the private key or PAT in the payload.
-
 - [ ] **SEC-15** `backend/app/sync/post_run.py:106-197` — `dispatch_post_run_register` bypasses the audit trail
 
   Symptom: when an action manifest declares `post_run_register`, the helper inserts rows into seven desired-state tables via `db.add(row)` but never emits audit rows. The equivalent REST endpoints (`api/linux_users.py:181-210`, etc.) DO emit audit. A malicious git-pack contributor can declare `post_run_register: {linux-users: [{username: "x", authorized_keys: [...]}]}`; after a superuser pins and runs the action, every targeted host gets a backdoor SSH key with no audit trace beyond the action run. Severity: **Medium** (requires malicious pack + superuser action-run). Fix: emit `log_action(action="post_run_register", entity_type=<module>, entity_id=row.id, user_id=triggered_by_user_id, after_state=validated)` per insert. Consider denying `authorized_keys` from `post_run_register` and forcing operator confirmation for SSH-grant operations.
