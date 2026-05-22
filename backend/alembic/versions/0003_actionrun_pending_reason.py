@@ -19,6 +19,7 @@ Create Date: 2026-05-18
 Note on the revision id length: alembic's default ``alembic_version``
 table caps ``version_num`` at varchar(32) — keep the slug short.
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -31,12 +32,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "ALTER TABLE action_runs ADD COLUMN pending_reason VARCHAR(255)"
-    )
-    op.execute(
-        "ALTER TABLE action_host_runs ADD COLUMN pending_reason VARCHAR(255)"
-    )
+    op.execute("ALTER TABLE action_runs ADD COLUMN pending_reason VARCHAR(255)")
+    op.execute("ALTER TABLE action_host_runs ADD COLUMN pending_reason VARCHAR(255)")
 
 
 def downgrade() -> None:

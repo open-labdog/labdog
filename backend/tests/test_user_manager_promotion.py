@@ -53,16 +53,12 @@ class TestFirstUserPromotion:
         assert data["email"] == email
 
         # Verify the user row in the DB actually has is_superuser=True.
-        result = await db.execute(
-            select(UserModel).where(UserModel.email == email)
-        )
+        result = await db.execute(select(UserModel).where(UserModel.email == email))
         user = result.scalar_one()
         assert user.is_superuser is True, (
             "First registered user must be promoted to superuser atomically"
         )
-        assert user.is_verified is True, (
-            "First registered user must also be marked verified"
-        )
+        assert user.is_verified is True, "First registered user must also be marked verified"
 
     async def test_second_user_is_not_promoted(self, client, db):
         """A second registration must NOT get superuser status."""
@@ -94,9 +90,7 @@ class TestFirstUserPromotion:
 
         assert resp.status_code == 201
 
-        result = await db.execute(
-            select(UserModel).where(UserModel.email == second_email)
-        )
+        result = await db.execute(select(UserModel).where(UserModel.email == second_email))
         second_user = result.scalar_one()
         assert second_user.is_superuser is False, (
             "Second registered user must not be promoted to superuser"
@@ -141,9 +135,7 @@ class TestFirstUserPromotion:
         # After the exception the savepoint-session still reflects the INSERT
         # (the savepoint was released by user_db.create's session.commit()).
         # The key invariant: if the user was inserted, is_superuser is True.
-        result = await db.execute(
-            select(UserModel).where(UserModel.email == email)
-        )
+        result = await db.execute(select(UserModel).where(UserModel.email == email))
         user = result.scalar_one_or_none()
         assert user is not None, "User should have been inserted"
         assert user.is_superuser is True, (

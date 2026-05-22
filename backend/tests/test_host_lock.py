@@ -363,9 +363,7 @@ async def test_format_pending_reason_action_includes_key(db: AsyncSession):
 
     ssh = await create_ssh_key(db)
     host = await create_host(db, hostname="node-fmt-2", ssh_key_id=ssh.id)
-    blocker = BlockerInfo(
-        kind="action_group", id=12, host_id=host.id, action_key="k8s-upgrade"
-    )
+    blocker = BlockerInfo(kind="action_group", id=12, host_id=host.id, action_key="k8s-upgrade")
     reason = await format_pending_reason(db, blocker)
     assert reason == "Waiting for action_group 12 on host node-fmt-2 (k8s-upgrade)"
 
@@ -396,9 +394,7 @@ async def test_dispatch_picks_oldest_across_queues(db: AsyncSession):
 
     # SyncJob 30s old, ActionRun 10s old — sync should win.
     older_sync = await _create_pending_sync_job(db, host.id, age_seconds=30)
-    younger_action = await _create_action_run(
-        db, host_id=host.id, status="pending", age_seconds=10
-    )
+    younger_action = await _create_action_run(db, host_id=host.id, status="pending", age_seconds=10)
 
     sync_delay = MagicMock()
     action_delay = MagicMock()
@@ -531,9 +527,11 @@ async def test_dispatch_defensive_when_sync_host_deleted(db: AsyncSession):
     async def _intercepting_execute(stmt, *args, **kwargs):
         sql = str(stmt)
         if "FROM hosts" in sql and "hosts.id" in sql:
+
             class _R:
                 def scalar_one_or_none(self):
                     return None
+
             return _R()
         return await orig_execute(stmt, *args, **kwargs)
 

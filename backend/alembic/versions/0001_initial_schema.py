@@ -11,6 +11,7 @@ Revision ID: 0001_initial_schema
 Revises:
 Create Date: 2026-05-07
 """
+
 from __future__ import annotations
 
 from alembic import op

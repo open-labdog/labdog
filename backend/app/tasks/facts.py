@@ -145,9 +145,7 @@ async def _collect_host_facts_async(host_id: int) -> None:
             # uniqueness collision so we don't mangle the fetched name
             # with a numeric suffix.
             fetched_hostname = (hostname_cmd.stdout or "").strip()
-            if fetched_hostname and is_placeholder_hostname(
-                host.hostname, host.ip_address
-            ):
+            if fetched_hostname and is_placeholder_hostname(host.hostname, host.ip_address):
                 clash = await db.execute(
                     select(Host.id).where(
                         Host.hostname == fetched_hostname,

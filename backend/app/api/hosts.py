@@ -141,9 +141,7 @@ async def create_host(
                 source_ip = await get_source_ip(conn)
                 server_key = conn.get_server_host_key()
                 if server_key is not None:
-                    captured_host_key_entry = _format_known_hosts_line(
-                        body.ip_address, server_key
-                    )
+                    captured_host_key_entry = _format_known_hosts_line(body.ip_address, server_key)
         except Exception:
             raise HTTPException(
                 status_code=422,

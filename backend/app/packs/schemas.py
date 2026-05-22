@@ -55,9 +55,7 @@ def _validate_pack_path(v: str) -> str:
         raise ValueError("path must not contain NUL bytes")
     for ch in v:
         if ord(ch) < 0x20:
-            raise ValueError(
-                f"path must not contain control characters (found U+{ord(ch):04X})"
-            )
+            raise ValueError(f"path must not contain control characters (found U+{ord(ch):04X})")
     if "\\" in v:
         raise ValueError("path must not contain backslashes")
     if len(v) > 512:
@@ -67,9 +65,7 @@ def _validate_pack_path(v: str) -> str:
     # Reject any '..' component regardless of surrounding slashes or OS separator.
     for component in v.replace("\\", "/").split("/"):
         if component == "..":
-            raise ValueError(
-                "path must not contain '..' components (directory traversal rejected)"
-            )
+            raise ValueError("path must not contain '..' components (directory traversal rejected)")
     return v
 
 
@@ -103,16 +99,12 @@ def _validate_local_path(v: str | None) -> str | None:
 
     # Exact-match deny-list: the path itself is one of the bare top-level dirs.
     if resolved in _DANGEROUS_LOCAL_PATH_EXACT:
-        raise ValueError(
-            f"local_path {v!r} resolves to a dangerous system directory: {resolved}"
-        )
+        raise ValueError(f"local_path {v!r} resolves to a dangerous system directory: {resolved}")
 
     # Prefix deny-list: the path sits under a protected system subtree.
     for prefix in _DANGEROUS_LOCAL_PATH_PREFIXES:
         if resolved == prefix or resolved.startswith(prefix + "/"):
-            raise ValueError(
-                f"local_path {v!r} resolves under the protected prefix {prefix!r}"
-            )
+            raise ValueError(f"local_path {v!r} resolves under the protected prefix {prefix!r}")
 
     # Advisory-only: warn if the path does not exist yet.
     if not Path(v).exists():

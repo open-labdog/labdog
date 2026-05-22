@@ -10,6 +10,7 @@ Revision ID: 0007_ssh_session_transcript
 Revises: 0006_host_ssh_host_key_entry
 Create Date: 2026-05-21
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -32,8 +33,7 @@ def upgrade() -> None:
         )
     """)
     op.execute(
-        "CREATE INDEX ix_ssh_session_transcripts_session_id"
-        " ON ssh_session_transcripts (session_id)"
+        "CREATE INDEX ix_ssh_session_transcripts_session_id ON ssh_session_transcripts (session_id)"
     )
     op.execute(
         "CREATE INDEX ix_ssh_session_transcripts_recorded_at"

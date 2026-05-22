@@ -141,16 +141,20 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 run_row = (
                     await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
                 ).scalar_one_or_none()
-                if run_row is not None and run_row.host_id is not None and run_row.status in (
-                    "queued",
-                    "running",
+                if (
+                    run_row is not None
+                    and run_row.host_id is not None
+                    and run_row.status
+                    in (
+                        "queued",
+                        "running",
+                    )
                 ):
                     run_row.status = "pending"
                     run_row.pending_reason = reason
                 await db.commit()
                 logger.info(
-                    "action_host: deferred action_run=%d host_run=%d "
-                    "(host %d busy: %s)",
+                    "action_host: deferred action_run=%d host_run=%d (host %d busy: %s)",
                     action_run_id,
                     host_run_id,
                     host_id_for_lock,
@@ -254,9 +258,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             # collisions) and then dispatches a follow-up sync to
             # refresh the UI tabs. See
             # ``app.sync.post_run.dispatch_post_run_register``.
-            action_post_run_register: dict[str, tuple[dict, ...]] = dict(
-                action.post_run_register
-            )
+            action_post_run_register: dict[str, tuple[dict, ...]] = dict(action.post_run_register)
             triggered_by_user_id: int | None = run.triggered_by_user_id
 
         # ------------------------------------------------------------------ #
@@ -427,8 +429,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             # Destructive action with snapshot_enabled=False — operator
             # opted out. Log it so the run history reflects the choice.
             _log_step(
-                "[snapshot] skipped — snapshot_enabled=false "
-                "(no rollback available on failure)"
+                "[snapshot] skipped — snapshot_enabled=false (no rollback available on failure)"
             )
         elif action_destructive:
             # Destructive action but no Proxmox VM mapping — snapshot-wrap is
@@ -696,8 +697,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                         )
                 except Exception:
                     logger.exception(
-                        "action_host: post_run_sync dispatch failed for "
-                        "action_run %d host %d",
+                        "action_host: post_run_sync dispatch failed for action_run %d host %d",
                         action_run_id,
                         host_id,
                     )
@@ -728,8 +728,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                         )
                 except Exception:
                     logger.exception(
-                        "action_host: post_run_register dispatch failed for "
-                        "action_run %d host %d",
+                        "action_host: post_run_register dispatch failed for action_run %d host %d",
                         action_run_id,
                         host_id,
                     )

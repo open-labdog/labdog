@@ -120,6 +120,10 @@ async def verify_ssh(
         # Full error detail stays in server logs only — not surfaced via API.
         logger.warning(
             "verify_ssh failed for %s:%d (user=%s): [%s] %s",
-            ip, port, username, category, full_err,
+            ip,
+            port,
+            username,
+            category,
+            full_err,
         )
         return False, None, None, category, None

@@ -123,9 +123,7 @@ class TestTranscriptWriterBuffering:
         await writer.stop()
 
         assert writer._truncated, "Writer should have set _truncated=True"
-        assert _TRUNCATION_SENTINEL in written, (
-            f"Sentinel not found in rows. Got: {written[-3:]}"
-        )
+        assert _TRUNCATION_SENTINEL in written, f"Sentinel not found in rows. Got: {written[-3:]}"
         # Nothing should have been written after the sentinel.
         sentinel_idx = written.index(_TRUNCATION_SENTINEL)
         assert sentinel_idx == len(written) - 1, "Rows were written after the sentinel"
@@ -163,8 +161,7 @@ class TestTranscriptWriterBuffering:
 
         # _write_row raises; _insert_row_safe catches and logs.
         assert any(
-            "transcript" in r.message.lower() or "err-session" in r.message
-            for r in caplog.records
+            "transcript" in r.message.lower() or "err-session" in r.message for r in caplog.records
         ), f"Expected transcript log, got: {[r.message for r in caplog.records]}"
 
     async def test_no_keystrokes_produces_no_rows(self):
@@ -220,6 +217,7 @@ class TestTranscriptDBWrite:
         session_id = "integ-test-session-001"
 
         writer = TranscriptWriter(session_id=session_id, host_id=None, user_id=None)
+
         # Monkeypatch _write_row to use the test session instead of AsyncSessionLocal.
         async def write_via_test_db(text, byte_count):
             row = SSHSessionTranscript(
@@ -271,9 +269,7 @@ class TestTranscriptEndpoint:
             db.add(row)
         await db.flush()
 
-        resp = await superuser_client.get(
-            f"/api/audit-log/ssh-sessions/{session_id}/transcript"
-        )
+        resp = await superuser_client.get(f"/api/audit-log/ssh-sessions/{session_id}/transcript")
         assert resp.status_code == 200, resp.text
         rows = resp.json()
         assert len(rows) == 3
@@ -300,9 +296,7 @@ class TestTranscriptEndpoint:
         db.add(row)
         await db.flush()
 
-        resp = await regular_user_client.get(
-            f"/api/audit-log/ssh-sessions/{session_id}/transcript"
-        )
+        resp = await regular_user_client.get(f"/api/audit-log/ssh-sessions/{session_id}/transcript")
         assert resp.status_code == 200, resp.text
         rows = resp.json()
         assert len(rows) == 1

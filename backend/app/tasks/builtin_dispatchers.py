@@ -87,9 +87,14 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
                         select(ActionRun).where(ActionRun.id == host_run.action_run_id)
                     )
                 ).scalar_one_or_none()
-                if run_row is not None and run_row.host_id is not None and run_row.status in (
-                    "queued",
-                    "running",
+                if (
+                    run_row is not None
+                    and run_row.host_id is not None
+                    and run_row.status
+                    in (
+                        "queued",
+                        "running",
+                    )
                 ):
                     run_row.status = "pending"
                     run_row.pending_reason = reason
@@ -161,8 +166,7 @@ async def _finish_host_run(
             )
     except Exception:
         logger.exception(
-            "builtin_dispatchers: dispatch-next-pending failed for host_id=%s "
-            "after host_run_id=%s",
+            "builtin_dispatchers: dispatch-next-pending failed for host_id=%s after host_run_id=%s",
             host_id_for_dispatch,
             host_run_id,
         )

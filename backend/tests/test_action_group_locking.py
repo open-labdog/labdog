@@ -63,9 +63,7 @@ def _runner_ok(host_names: list[str]):
     runner.stdout = "PLAY RECAP\n"
     runner.status = "successful"
     runner.rc = 0
-    runner.events = [
-        {"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names
-    ]
+    runner.events = [{"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names]
     return runner
 
 
@@ -175,7 +173,7 @@ async def test_two_group_actions_overlap_serialize_no_deadlock(db, fake_redis):
     group_a, hosts_a = await _make_group_with_hosts(db, count=3)
     # group_b overlaps with group_a on hosts[1] and hosts[2].
     key = await create_ssh_key(db)
-    group_b = (await create_group(db, name="grpb-overlap"))
+    group_b = await create_group(db, name="grpb-overlap")
     # Reuse hosts[1] and hosts[2] in group_b, plus a new host.
     from sqlalchemy import insert as sa_insert
 
@@ -208,9 +206,7 @@ async def test_two_group_actions_overlap_serialize_no_deadlock(db, fake_redis):
     )
     db.add(first_run)
     await db.flush()
-    first_hr = ActionHostRun(
-        action_run_id=first_run.id, host_id=hosts_a[1].id, status="running"
-    )
+    first_hr = ActionHostRun(action_run_id=first_run.id, host_id=hosts_a[1].id, status="running")
     db.add(first_hr)
     await db.flush()
     await db.commit()
@@ -223,9 +219,7 @@ async def test_two_group_actions_overlap_serialize_no_deadlock(db, fake_redis):
         await _run_action_group_async(second_run_id)
 
     run_ansible_mock.assert_not_called()
-    second = (
-        await db.execute(select(ActionRun).where(ActionRun.id == second_run_id))
-    ).scalar_one()
+    second = (await db.execute(select(ActionRun).where(ActionRun.id == second_run_id))).scalar_one()
     assert second.status == "pending"
 
 
@@ -254,9 +248,7 @@ async def test_group_action_blocks_per_host_on_member_but_not_outsider(db, fake_
     )
     db.add(grp_run)
     await db.flush()
-    grp_hr = ActionHostRun(
-        action_run_id=grp_run.id, host_id=hosts[1].id, status="running"
-    )
+    grp_hr = ActionHostRun(action_run_id=grp_run.id, host_id=hosts[1].id, status="running")
     db.add(grp_hr)
     await db.flush()
     await db.commit()

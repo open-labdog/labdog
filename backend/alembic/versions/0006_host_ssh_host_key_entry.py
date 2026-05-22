@@ -14,6 +14,7 @@ Revision ID: 0006_host_ssh_host_key_entry
 Revises: 0005_syncjob_pending_reason
 Create Date: 2026-05-21
 """
+
 from __future__ import annotations
 
 from alembic import op

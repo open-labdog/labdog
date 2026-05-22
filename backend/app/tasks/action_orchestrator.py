@@ -75,22 +75,14 @@ async def _run_action_async(action_run_id: int) -> None:
     # path's "mark running" write before the group task even starts.
     try:
         async with task_session() as db:
-            run_result = await db.execute(
-                select(ActionRun).where(ActionRun.id == action_run_id)
-            )
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run_peek: ActionRun | None = run_result.scalar_one_or_none()
             if run_peek is None:
-                logger.warning(
-                    "action_orchestrator: action_run %d not found", action_run_id
-                )
+                logger.warning("action_orchestrator: action_run %d not found", action_run_id)
                 return
             action_peek = ACTION_REGISTRY.get(run_peek.action_key)
             target_is_group = run_peek.group_id is not None and run_peek.host_id is None
-            if (
-                target_is_group
-                and action_peek is not None
-                and not action_peek.supports_host
-            ):
+            if target_is_group and action_peek is not None and not action_peek.supports_host:
                 logger.info(
                     "action_orchestrator: action_run %d → group-dispatch "
                     "(action=%s supports_host=False)",

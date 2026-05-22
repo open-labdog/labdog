@@ -44,5 +44,3 @@ def generate_inventory(
         }
     }
     return json.dumps(inventory, indent=2)
-
-

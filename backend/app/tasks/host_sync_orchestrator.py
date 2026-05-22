@@ -276,9 +276,7 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     # auto-commit on exit. Committing also releases the advisory lock,
     # which is correct: we're done with the host for this attempt.
     reason = await format_pending_reason(db, blocker)
-    job = (
-        await db.execute(select(SyncJob).where(SyncJob.id == job_id))
-    ).scalar_one_or_none()
+    job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one_or_none()
     if job is not None:
         job.pending_reason = reason
         await db.commit()
@@ -290,8 +288,7 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
         # leak, but the deferred row is gone -- log so the orphan is
         # visible in worker logs.
         logger.warning(
-            "_claim_or_defer: SyncJob %d missing at defer time; "
-            "intended pending_reason %r dropped",
+            "_claim_or_defer: SyncJob %d missing at defer time; intended pending_reason %r dropped",
             job_id,
             reason,
         )

@@ -80,9 +80,7 @@ class CSRFMiddleware:
                 header_val = request.headers.get(_CSRF_HEADER, "")
 
                 if not cookie_val or not header_val:
-                    logger.debug(
-                        "CSRF check failed for %s %s: missing token", method, path
-                    )
+                    logger.debug("CSRF check failed for %s %s: missing token", method, path)
                     response = Response(
                         content='{"detail":"CSRF token missing or invalid"}',
                         status_code=403,
@@ -92,9 +90,7 @@ class CSRFMiddleware:
                     return
 
                 if not hmac.compare_digest(cookie_val, header_val):
-                    logger.debug(
-                        "CSRF check failed for %s %s: token mismatch", method, path
-                    )
+                    logger.debug("CSRF check failed for %s %s: token mismatch", method, path)
                     response = Response(
                         content='{"detail":"CSRF token missing or invalid"}',
                         status_code=403,
@@ -108,9 +104,7 @@ class CSRFMiddleware:
 
             async def send_with_csrf_clear(message):
                 if message["type"] == "http.response.start":
-                    clear_cookie = (
-                        f"{_CSRF_COOKIE}=; Max-Age=0; Path=/; SameSite=lax"
-                    )
+                    clear_cookie = f"{_CSRF_COOKIE}=; Max-Age=0; Path=/; SameSite=lax"
                     if settings.security.cookie_secure:
                         clear_cookie += "; Secure"
                     if settings.security.cookie_domain:

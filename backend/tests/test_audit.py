@@ -170,9 +170,7 @@ class TestSSHSessionTranscriptEndpoint:
             db.add(row)
         await db.flush()
 
-        resp = await superuser_client.get(
-            f"/api/audit-log/ssh-sessions/{session_id}/transcript"
-        )
+        resp = await superuser_client.get(f"/api/audit-log/ssh-sessions/{session_id}/transcript")
         assert resp.status_code == 200, resp.text
         data = resp.json()
         assert len(data) == 3

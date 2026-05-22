@@ -108,7 +108,13 @@ def fake_proxmox():
     client = _FakeProxmoxClient()
 
     async def _fake_rollback(
-        proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db,  # noqa: ARG001
+        proxmox_client,
+        pve_node,
+        vmid,
+        snapshot_name,
+        host,
+        ssh_key_path,
+        db,  # noqa: ARG001
     ):
         await proxmox_client.rollback_snapshot(pve_node, vmid, snapshot_name)
         await proxmox_client.start_vm(pve_node, vmid)
@@ -252,9 +258,7 @@ async def test_snapshot_enabled_false_skips_snapshot_phase(
 # ---------------------------------------------------------------------------
 
 
-async def test_verify_enabled_false_skips_verify_phase(
-    db, fake_redis, fake_proxmox
-):
+async def test_verify_enabled_false_skips_verify_phase(db, fake_redis, fake_proxmox):
     """``verify_enabled=False`` → the built-in verify helper is never
     invoked, even when the action took a snapshot."""
     from app.tasks.action_host import _run_action_host_async

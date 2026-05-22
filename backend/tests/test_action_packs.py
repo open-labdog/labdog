@@ -151,10 +151,7 @@ def test_load_pack_resolves_verify_playbook(tmp_path: Path):
     assert len(defns) == 1
     d = defns[0]
     assert d.verify_playbook_path is not None
-    assert (
-        d.verify_playbook_path
-        == (tmp_path / "vp" / "actions" / "demo" / "verify.yml").resolve()
-    )
+    assert d.verify_playbook_path == (tmp_path / "vp" / "actions" / "demo" / "verify.yml").resolve()
     assert d.verify_timeout_seconds == 300
 
 
@@ -311,9 +308,7 @@ def test_freeze_on_fresh_conflict_pins_previous_winner(tmp_path: Path):
         Pack(name="new", path=tmp_path / "new", pack_id=2),
     ]
     # Previous rebuild saw only `old` as a contributor.
-    result = load_packs_with_resolutions(
-        packs, resolutions={}, prior_winners={"demo": 1}
-    )
+    result = load_packs_with_resolutions(packs, resolutions={}, prior_winners={"demo": 1})
     defn = result.registry["demo"]
     assert defn.is_unresolved is False
     assert defn.winning_pack_id == 1
@@ -330,9 +325,7 @@ def test_stale_resolution_falls_through_to_unresolved(tmp_path: Path):
         Pack(name="b", path=tmp_path / "b", pack_id=2),
     ]
     # Resolution pins pack id 99 — not a current contributor.
-    result = load_packs_with_resolutions(
-        packs, resolutions={"demo": 99}, prior_winners={}
-    )
+    result = load_packs_with_resolutions(packs, resolutions={"demo": 99}, prior_winners={})
     assert "demo" in result.stale_resolution_keys
     assert result.registry["demo"].is_unresolved is True
 
@@ -346,27 +339,21 @@ def test_pack_path_accepts_empty_string():
     """Empty path means 'pack lives at the repo root' — must be allowed."""
     from app.packs.schemas import ActionPackCreate
 
-    obj = ActionPackCreate(
-        name="p", source_type="git", git_repository_id=1, path=""
-    )
+    obj = ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="")
     assert obj.path == ""
 
 
 def test_pack_path_accepts_simple_relative():
     from app.packs.schemas import ActionPackCreate
 
-    obj = ActionPackCreate(
-        name="p", source_type="git", git_repository_id=1, path="subdir"
-    )
+    obj = ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="subdir")
     assert obj.path == "subdir"
 
 
 def test_pack_path_accepts_nested_relative():
     from app.packs.schemas import ActionPackCreate
 
-    obj = ActionPackCreate(
-        name="p", source_type="git", git_repository_id=1, path="a/b/c"
-    )
+    obj = ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="a/b/c")
     assert obj.path == "a/b/c"
 
 
@@ -377,9 +364,7 @@ def test_pack_path_rejects_dotdot_traversal():
     from app.packs.schemas import ActionPackCreate
 
     with pytest.raises(ValidationError, match=r"\.\.|traversal"):
-        ActionPackCreate(
-            name="p", source_type="git", git_repository_id=1, path="../etc"
-        )
+        ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="../etc")
 
 
 def test_pack_path_rejects_embedded_dotdot():
@@ -389,9 +374,7 @@ def test_pack_path_rejects_embedded_dotdot():
     from app.packs.schemas import ActionPackCreate
 
     with pytest.raises(ValidationError, match=r"\.\.|traversal"):
-        ActionPackCreate(
-            name="p", source_type="git", git_repository_id=1, path="a/../b"
-        )
+        ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="a/../b")
 
 
 def test_pack_path_rejects_leading_slash():
@@ -401,9 +384,7 @@ def test_pack_path_rejects_leading_slash():
     from app.packs.schemas import ActionPackCreate
 
     with pytest.raises(ValidationError, match="relative"):
-        ActionPackCreate(
-            name="p", source_type="git", git_repository_id=1, path="/abs"
-        )
+        ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="/abs")
 
 
 def test_pack_path_rejects_backslash():
@@ -413,9 +394,7 @@ def test_pack_path_rejects_backslash():
     from app.packs.schemas import ActionPackCreate
 
     with pytest.raises(ValidationError, match="backslash"):
-        ActionPackCreate(
-            name="p", source_type="git", git_repository_id=1, path="a\\b"
-        )
+        ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="a\\b")
 
 
 def test_pack_path_rejects_nul_byte():
@@ -425,9 +404,7 @@ def test_pack_path_rejects_nul_byte():
     from app.packs.schemas import ActionPackCreate
 
     with pytest.raises(ValidationError, match="NUL"):
-        ActionPackCreate(
-            name="p", source_type="git", git_repository_id=1, path="a\x00b"
-        )
+        ActionPackCreate(name="p", source_type="git", git_repository_id=1, path="a\x00b")
 
 
 def test_pack_path_rejects_overlong():

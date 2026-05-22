@@ -84,9 +84,7 @@ def _fake_runner(*, host_names: list[str], status: str = "successful", rc: int =
     runner.status = status
     runner.rc = rc
     # No failure events → all hosts succeeded.
-    runner.events = [
-        {"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names
-    ]
+    runner.events = [{"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names]
     return runner
 
 
@@ -378,9 +376,7 @@ def _runner_all_ok(host_names: list[str]):
     runner.stdout = "PLAY RECAP\n" + "\n".join(f"{h} : ok=1" for h in host_names)
     runner.status = "successful"
     runner.rc = 0
-    runner.events = [
-        {"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names
-    ]
+    runner.events = [{"event": "runner_on_ok", "event_data": {"host": h}} for h in host_names]
     return runner
 
 
@@ -441,7 +437,13 @@ def fake_proxmox():
     client = _FakeProxmoxClient()
 
     async def _fake_rollback(
-        proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db,  # noqa: ARG001
+        proxmox_client,
+        pve_node,
+        vmid,
+        snapshot_name,
+        host,
+        ssh_key_path,
+        db,  # noqa: ARG001
     ):
         # Mirror the real helper's side-effects we care about: call
         # rollback_snapshot + start_vm + wait_for_task, but skip the
@@ -598,9 +600,7 @@ async def test_partial_failure_rolls_back_failed_hosts_only(
     key = await create_ssh_key(db)
     group = await create_group(db)
     h_ok = await create_host(db, hostname="ok-host", ssh_key_id=key.id, group_ids=[group.id])
-    h_fail = await create_host(
-        db, hostname="fail-host", ssh_key_id=key.id, group_ids=[group.id]
-    )
+    h_fail = await create_host(db, hostname="fail-host", ssh_key_id=key.id, group_ids=[group.id])
     pve_id = await _seed_proxmox_node(db)
     await _seed_vm_mapping(db, h_ok.id, pve_id, vmid=301)
     await _seed_vm_mapping(db, h_fail.id, pve_id, vmid=302)
@@ -693,9 +693,7 @@ async def test_verify_failure_triggers_rollback_even_when_playbook_succeeded(
 
     with (
         patch("app.ansible_runtime.runner.run_ansible", return_value=runner),
-        patch(
-            "app.workflows.steps.verify.run_verification", side_effect=_fake_verify
-        ),
+        patch("app.workflows.steps.verify.run_verification", side_effect=_fake_verify),
     ):
         await _run_action_group_async(run_id)
 
@@ -729,9 +727,7 @@ async def test_all_succeed_aggregates_to_succeeded_and_deletes_snapshots(
     key = await create_ssh_key(db)
     group = await create_group(db)
     hs = [
-        await create_host(
-            db, hostname=f"all-ok-{i}", ssh_key_id=key.id, group_ids=[group.id]
-        )
+        await create_host(db, hostname=f"all-ok-{i}", ssh_key_id=key.id, group_ids=[group.id])
         for i in range(3)
     ]
     pve_id = await _seed_proxmox_node(db)
@@ -783,9 +779,7 @@ async def test_all_succeed_aggregates_to_succeeded_and_deletes_snapshots(
     assert run_after.status == "succeeded"
 
 
-async def test_aggregate_partial_when_mix_of_success_and_failure(
-    db, fake_redis, fake_proxmox
-):
+async def test_aggregate_partial_when_mix_of_success_and_failure(db, fake_redis, fake_proxmox):
     """Mixed per-host outcomes must aggregate to ``partial`` at the
     ActionRun level (matches per-host fan-out behaviour)."""
     key = await create_ssh_key(db)

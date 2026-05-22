@@ -304,9 +304,7 @@ async def test_claim_all_keys_pins_every_contributed_key(superuser_client, two_l
     pack-a to pack-b. Returns counts the UI can surface in a toast."""
     pack_a, pack_b = two_local_packs
 
-    r = await superuser_client.post(
-        f"/api/action-packs/{pack_b['id']}/claim-all-keys"
-    )
+    r = await superuser_client.post(f"/api/action-packs/{pack_b['id']}/claim-all-keys")
     assert r.status_code == 200, r.text
     body = r.json()
     # The freeze created one row pointing at pack-a; we update it.
@@ -343,9 +341,7 @@ async def test_claim_all_keys_404_for_unknown_pack(superuser_client):
 
 async def test_claim_all_keys_requires_superuser(regular_user_client, two_local_packs):
     pack_a, pack_b = two_local_packs
-    r = await regular_user_client.post(
-        f"/api/action-packs/{pack_b['id']}/claim-all-keys"
-    )
+    r = await regular_user_client.post(f"/api/action-packs/{pack_b['id']}/claim-all-keys")
     assert r.status_code in (401, 403)
 
 
