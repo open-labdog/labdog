@@ -104,8 +104,7 @@ def _manifest_to_definition(
         verify_timeout_seconds=manifest.verify_timeout_seconds,
         post_run_sync=tuple(manifest.post_run_sync),
         post_run_register={
-            module: tuple(items)
-            for module, items in manifest.post_run_register.items()
+            module: tuple(items) for module, items in manifest.post_run_register.items()
         },
     )
 
@@ -352,10 +351,7 @@ def load_packs_with_resolutions(
             )
 
     contributors_view: dict[str, list[PackContributor]] = {
-        key: [
-            PackContributor(pack_id=p.pack_id, pack_name=p.name)
-            for p, _ in candidates
-        ]
+        key: [PackContributor(pack_id=p.pack_id, pack_name=p.name) for p, _ in candidates]
         for key, candidates in contributors.items()
     }
 

@@ -16,12 +16,12 @@ HTTPS_URL_PREFIX = "https://"
 # absent — labdog's primary use-case is managing hosts on the operator's
 # internal LAN and operators may run a git server there.
 _BLOCKED_URL_NETWORKS = [
-    ipaddress.ip_network("127.0.0.0/8"),    # loopback
-    ipaddress.ip_network("::1/128"),         # IPv6 loopback
-    ipaddress.ip_network("0.0.0.0/8"),       # this-host
-    ipaddress.ip_network("::/128"),          # IPv6 unspecified
+    ipaddress.ip_network("127.0.0.0/8"),  # loopback
+    ipaddress.ip_network("::1/128"),  # IPv6 loopback
+    ipaddress.ip_network("0.0.0.0/8"),  # this-host
+    ipaddress.ip_network("::/128"),  # IPv6 unspecified
     ipaddress.ip_network("169.254.0.0/16"),  # link-local / cloud metadata
-    ipaddress.ip_network("fe80::/10"),       # IPv6 link-local
+    ipaddress.ip_network("fe80::/10"),  # IPv6 link-local
 ]
 
 # scp-style SSH URL  →  git@<host>:<path>

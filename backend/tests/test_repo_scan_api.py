@@ -41,9 +41,7 @@ def well_formed_origin(tmp_path: Path) -> Path:
     (pack / "pack.yml").write_text("name: upgrade-pack\n")
     action_dir = pack / "actions" / "linux-upgrade"
     action_dir.mkdir(parents=True)
-    (action_dir / "playbook.yml").write_text(
-        "---\n- name: x\n  hosts: all\n  tasks: []\n"
-    )
+    (action_dir / "playbook.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
     (action_dir / "manifest.yml").write_text(
         "key: linux-upgrade\n"
         "name: Upgrade Linux\n"

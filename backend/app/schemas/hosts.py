@@ -17,25 +17,15 @@ def _validate_ip_address(v: str) -> str:
     try:
         addr = ipaddress.ip_address(v)
     except ValueError:
-        raise ValueError(
-            f"ip_address '{v}' is not a valid IPv4 or IPv6 literal"
-        )
+        raise ValueError(f"ip_address '{v}' is not a valid IPv4 or IPv6 literal")
     if addr.is_loopback:
-        raise ValueError(
-            f"ip_address {v} is loopback; not a valid managed host"
-        )
+        raise ValueError(f"ip_address {v} is loopback; not a valid managed host")
     if addr.is_link_local:
-        raise ValueError(
-            f"ip_address {v} is link-local; not a valid managed host"
-        )
+        raise ValueError(f"ip_address {v} is link-local; not a valid managed host")
     if addr.is_unspecified:
-        raise ValueError(
-            f"ip_address {v} is unspecified (all-zeros); not a valid managed host"
-        )
+        raise ValueError(f"ip_address {v} is unspecified (all-zeros); not a valid managed host")
     if addr.is_multicast:
-        raise ValueError(
-            f"ip_address {v} is multicast; not a valid managed host"
-        )
+        raise ValueError(f"ip_address {v} is multicast; not a valid managed host")
     return v
 
 

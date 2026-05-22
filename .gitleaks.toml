@@ -34,6 +34,19 @@ paths = [
 # default ruleset flags. Each verified non-production before listing.
 stopwords = []
 
+# Exact fingerprints for historical commits whose findings were verified
+# non-production before listing. Format: <commit>:<file>:<rule>:<line>
+fingerprints = [
+    # docker-compose.yml in commit 37d3ca56 contained BARRICADE_SECURITY__
+    # keys using the same placeholder value — superseded by LABDOG_* env vars
+    # in dev/labdog.toml and never used in production.
+    "37d3ca56a03e61f60e5ec6587acfc54697cfdbda:docker-compose.yml:generic-api-key:36",
+    "37d3ca56a03e61f60e5ec6587acfc54697cfdbda:docker-compose.yml:generic-api-key:37",
+    # Planning doc in .sisyphus/plans/ used "ghp_secret123" as an obvious
+    # placeholder GitHub token to illustrate an API call in a design sketch.
+    "d5d26a315b5a0f7036394d28da4865ef2383fb99:.sisyphus/plans/barricade-gitops-v2.md:generic-api-key:850",
+]
+
 regexes = [
     # CI test encryption key — string and its base64 form. Decodes to
     # literal "ci-test-encryption-key-32bytes".

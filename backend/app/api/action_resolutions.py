@@ -73,9 +73,7 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
         resolution_out: ActionResolutionPackOut | None = None
         winner_out: ActionResolutionPackOut | None = None
         if resolution_row is not None:
-            match = next(
-                (c for c in sorted_contribs if c.pack_id == resolution_row.pack_id), None
-            )
+            match = next((c for c in sorted_contribs if c.pack_id == resolution_row.pack_id), None)
             if match is not None:
                 resolution_out = _to_pack_out(match)
                 winner_out = resolution_out
@@ -91,8 +89,7 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
                 # ``decided_by_user_id IS NULL`` is how the freeze logic
                 # marks its rows.
                 is_frozen=(
-                    resolution_row is not None
-                    and resolution_row.decided_by_user_id is None
+                    resolution_row is not None and resolution_row.decided_by_user_id is None
                 ),
                 is_unresolved=(winner_out is None),
                 decided_at=resolution_row.decided_at if resolution_row else None,

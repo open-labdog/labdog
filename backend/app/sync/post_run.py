@@ -86,8 +86,7 @@ async def dispatch_post_run_sync(
             # insert. The post-run reconciliation we wanted is
             # effectively already queued, so skip silently.
             logger.info(
-                "post_run_sync: skipping module=%s on host=%d -- "
-                "another sync already active",
+                "post_run_sync: skipping module=%s on host=%d -- another sync already active",
                 module,
                 host_id,
             )

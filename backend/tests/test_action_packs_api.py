@@ -67,9 +67,7 @@ def local_pack_dir(tmp_path: Path) -> Path:
     p = tmp_path / "my-local-pack"
     hello_dir = p / "actions" / "hello"
     hello_dir.mkdir(parents=True)
-    (hello_dir / "playbook.yml").write_text(
-        "---\n- name: hello\n  hosts: all\n  tasks: []\n"
-    )
+    (hello_dir / "playbook.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
     (hello_dir / "manifest.yml").write_text(
         "key: hello-local\n"
         "name: Hello from local\n"
@@ -302,9 +300,7 @@ async def test_git_pack_with_subpath(superuser_client, tmp_path, db, monkeypatch
     _git(origin, ["config", "user.name", "Test"])
     nested_dir = origin / "vendor" / "my-pack" / "actions" / "nested"
     nested_dir.mkdir(parents=True)
-    (nested_dir / "playbook.yml").write_text(
-        "---\n- name: nested\n  hosts: all\n  tasks: []\n"
-    )
+    (nested_dir / "playbook.yml").write_text("---\n- name: nested\n  hosts: all\n  tasks: []\n")
     (nested_dir / "manifest.yml").write_text(
         "key: nested\n"
         "name: Nested\n"
@@ -475,9 +471,7 @@ async def test_fresh_conflict_freezes_previous_winner(
     local_override = tmp_path / "local-override"
     demo_dir = local_override / "actions" / "demo"
     demo_dir.mkdir(parents=True)
-    (demo_dir / "playbook.yml").write_text(
-        "---\n- name: demo\n  hosts: all\n  tasks: []\n"
-    )
+    (demo_dir / "playbook.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
     (demo_dir / "manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"

@@ -173,16 +173,12 @@ class ActionManifest(BaseModel):
                     f"{sorted(VALID_MODULE_NAMES)}"
                 )
             if not isinstance(items, list):
-                raise ValueError(
-                    f"post_run_register.{module}: must be a list of dicts"
-                )
+                raise ValueError(f"post_run_register.{module}: must be a list of dicts")
             schema = CREATE_SCHEMAS[module]
             cleaned_items: list[dict[str, Any]] = []
             for i, item in enumerate(items):
                 if not isinstance(item, dict):
-                    raise ValueError(
-                        f"post_run_register.{module}[{i}]: must be a dict"
-                    )
+                    raise ValueError(f"post_run_register.{module}[{i}]: must be a dict")
                 # Reject authorized_keys on linux-users: granting SSH
                 # access from a manifest is too privileged to auto-install
                 # without explicit operator confirmation.

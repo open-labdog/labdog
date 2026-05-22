@@ -26,8 +26,7 @@ def get_master_key() -> bytes:
         key = base64.b64decode(padded, validate=True)
     except binascii.Error as e:
         raise ValueError(
-            "ENCRYPTION_KEY is not valid base64 "
-            f"(standard or url-safe, 32 bytes): {e}"
+            f"ENCRYPTION_KEY is not valid base64 (standard or url-safe, 32 bytes): {e}"
         ) from e
     if len(key) != 32:
         raise ValueError(f"ENCRYPTION_KEY must decode to exactly 32 bytes, got {len(key)}")

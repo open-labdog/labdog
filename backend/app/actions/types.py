@@ -83,9 +83,7 @@ class ActionDefinition:
     #: Mapped as a frozen-ish structure: module-name keyed, with each
     #: value a tuple of dicts already validated through the per-module
     #: Create schema. Empty dict means no registration.
-    post_run_register: dict[str, tuple[dict[str, Any], ...]] = field(
-        default_factory=dict
-    )
+    post_run_register: dict[str, tuple[dict[str, Any], ...]] = field(default_factory=dict)
 
     @property
     def is_builtin(self) -> bool:

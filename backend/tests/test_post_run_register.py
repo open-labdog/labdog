@@ -129,9 +129,7 @@ class TestDispatchPostRunRegister:
                 db,
                 host_id=host.id,
                 declarations={
-                    "packages": [
-                        {"package_name": "alloy", "state": "present"}
-                    ],
+                    "packages": [{"package_name": "alloy", "state": "present"}],
                     "services": [
                         {
                             "service_name": "alloy.service",
@@ -205,11 +203,7 @@ class TestDispatchPostRunRegister:
 
         # Operator's row is untouched (still state=absent).
         rows = (
-            (
-                await db.execute(
-                    select(PackageRule).where(PackageRule.host_id == host.id)
-                )
-            )
+            (await db.execute(select(PackageRule).where(PackageRule.host_id == host.id)))
             .scalars()
             .all()
         )
@@ -224,9 +218,7 @@ class TestDispatchPostRunRegister:
 
         with patch(
             "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(
-                side_effect=lambda *a, **kw: delay_calls.append((a, kw))
-            ),
+            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
         ):
             await dispatch_post_run_register(
                 db,
@@ -270,9 +262,7 @@ class TestDispatchPostRunRegister:
         delay_calls: list[tuple] = []
         with patch(
             "app.tasks.host_sync_orchestrator.run_host_sync.delay",
-            new=MagicMock(
-                side_effect=lambda *a, **kw: delay_calls.append((a, kw))
-            ),
+            new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
         ):
             inserted = await dispatch_post_run_register(
                 db,
@@ -330,11 +320,7 @@ class TestDispatchPostRunRegister:
             )
 
         audit_rows = (
-            (
-                await db.execute(
-                    select(AuditLog).where(AuditLog.action == "post_run_register")
-                )
-            )
+            (await db.execute(select(AuditLog).where(AuditLog.action == "post_run_register")))
             .scalars()
             .all()
         )

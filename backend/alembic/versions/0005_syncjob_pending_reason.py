@@ -18,6 +18,7 @@ Revision ID: 0005_syncjob_pending_reason
 Revises: 0004_drop_pack_position
 Create Date: 2026-05-19
 """
+
 from __future__ import annotations
 
 from alembic import op

@@ -374,10 +374,14 @@ async def claim_all_keys(
         return ClaimAllKeysResponse(created=0, updated=0, skipped=0)
 
     existing_rows = (
-        await db.execute(
-            select(ActionResolution).where(ActionResolution.action_key.in_(claimed_keys))
+        (
+            await db.execute(
+                select(ActionResolution).where(ActionResolution.action_key.in_(claimed_keys))
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     existing_by_key = {r.action_key: r for r in existing_rows}
 
     created = 0

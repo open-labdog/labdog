@@ -100,12 +100,8 @@ async def _run_collect_host_facts(host_id: int, db, conn):
         _task_session_patch(db),
         _ssh_connect_patch(conn),
         patch("asyncssh.import_private_key", return_value=MagicMock()),
-        patch(
-            "app.crypto.encryption.decrypt_ssh_key", return_value=b"fake-pem"
-        ),
-        patch(
-            "app.crypto.key_management.get_master_key", return_value=b"fake-master"
-        ),
+        patch("app.crypto.encryption.decrypt_ssh_key", return_value=b"fake-pem"),
+        patch("app.crypto.key_management.get_master_key", return_value=b"fake-master"),
     ):
         await _collect_host_facts_async(host_id)
 
@@ -125,9 +121,7 @@ class TestCollectHostFactsHostnameAutoHeal:
 
         await _run_collect_host_facts(host.id, db, conn)
 
-        refreshed = (
-            await db.execute(select(Host).where(Host.id == host.id))
-        ).scalar_one()
+        refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
         assert refreshed.hostname == "tester3"
 
     async def test_never_overwrites_operator_chosen_name(self, db):
@@ -143,17 +137,13 @@ class TestCollectHostFactsHostnameAutoHeal:
 
         await _run_collect_host_facts(host.id, db, conn)
 
-        refreshed = (
-            await db.execute(select(Host).where(Host.id == host.id))
-        ).scalar_one()
+        refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
         assert refreshed.hostname == "my-chosen-name"
 
     async def test_skips_rename_on_name_collision(self, db):
         ssh_key = await create_ssh_key(db)
         # Another host already owns the name the remote would report.
-        await create_host(
-            db, hostname="tester3", ip="10.10.3.99", ssh_key_id=ssh_key.id
-        )
+        await create_host(db, hostname="tester3", ip="10.10.3.99", ssh_key_id=ssh_key.id)
         placeholder_host = await create_host(
             db,
             hostname=placeholder_hostname("10.10.3.190"),
@@ -183,7 +173,5 @@ class TestCollectHostFactsHostnameAutoHeal:
 
         await _run_collect_host_facts(host.id, db, conn)
 
-        refreshed = (
-            await db.execute(select(Host).where(Host.id == host.id))
-        ).scalar_one()
+        refreshed = (await db.execute(select(Host).where(Host.id == host.id))).scalar_one()
         assert refreshed.hostname == placeholder_hostname("10.10.3.190")

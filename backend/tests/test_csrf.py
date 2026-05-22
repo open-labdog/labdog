@@ -195,9 +195,7 @@ class TestCsrfMiddleware:
         set_cookie_headers = [
             v for k, v in logout_resp.headers.multi_items() if k.lower() == "set-cookie"
         ]
-        csrf_clear = any(
-            "labdog_csrf=" in h and "Max-Age=0" in h for h in set_cookie_headers
-        )
+        csrf_clear = any("labdog_csrf=" in h and "Max-Age=0" in h for h in set_cookie_headers)
         assert csrf_clear, (
             f"Logout should clear labdog_csrf cookie; got Set-Cookie headers: {set_cookie_headers}"
         )

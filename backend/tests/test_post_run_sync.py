@@ -81,9 +81,7 @@ class TestDispatchPostRunSync:
             "app.tasks.host_sync_orchestrator.run_host_sync.delay",
             new=MagicMock(side_effect=lambda *a, **kw: delay_calls.append((a, kw))),
         ):
-            ids = await dispatch_post_run_sync(
-                db, host_id=1, modules=[], triggered_by_user_id=None
-            )
+            ids = await dispatch_post_run_sync(db, host_id=1, modules=[], triggered_by_user_id=None)
         assert ids == []
         assert delay_calls == []
 
@@ -105,11 +103,7 @@ class TestDispatchPostRunSync:
 
         assert len(ids) == 2
         jobs = (
-            (
-                await db.execute(
-                    select(SyncJob).where(SyncJob.id.in_(ids)).order_by(SyncJob.id)
-                )
-            )
+            (await db.execute(select(SyncJob).where(SyncJob.id.in_(ids)).order_by(SyncJob.id)))
             .scalars()
             .all()
         )
@@ -136,9 +130,7 @@ class TestDispatchPostRunSync:
 
         # Pre-seed an active SyncJob for ``packages``. The helper's
         # ``packages`` insert should collide and be skipped.
-        pre_existing = SyncJob(
-            host_id=host.id, module_type="packages", status="pending"
-        )
+        pre_existing = SyncJob(host_id=host.id, module_type="packages", status="pending")
         db.add(pre_existing)
         await db.commit()
 
@@ -156,9 +148,7 @@ class TestDispatchPostRunSync:
 
         # ``packages`` collided -> skipped; ``services`` succeeded.
         assert len(ids) == 1
-        new_job = (
-            await db.execute(select(SyncJob).where(SyncJob.id == ids[0]))
-        ).scalar_one()
+        new_job = (await db.execute(select(SyncJob).where(SyncJob.id == ids[0]))).scalar_one()
         assert new_job.module_type == "services"
         # Only one .delay() call -- the skipped insert never dispatched.
         assert len(delay_calls) == 1

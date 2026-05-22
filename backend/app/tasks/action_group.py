@@ -241,20 +241,23 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                         run_peek.status = "pending"
                         run_peek.pending_reason = reason
                         existing_hrs = (
-                            await db.execute(
-                                select(ActionHostRun).where(
-                                    ActionHostRun.action_run_id == action_run_id
+                            (
+                                await db.execute(
+                                    select(ActionHostRun).where(
+                                        ActionHostRun.action_run_id == action_run_id
+                                    )
                                 )
                             )
-                        ).scalars().all()
+                            .scalars()
+                            .all()
+                        )
                         for hr in existing_hrs:
                             if hr.status in ("queued", "running"):
                                 hr.status = "pending"
                                 hr.pending_reason = reason
                         await db.commit()
                         logger.info(
-                            "action_group: deferred action_run=%d "
-                            "(host %d busy: %s)",
+                            "action_group: deferred action_run=%d (host %d busy: %s)",
                             action_run_id,
                             blocker.host_id,
                             reason,
@@ -272,9 +275,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         master_key = get_master_key()
 
         async with task_session() as db:
-            run_result = await db.execute(
-                select(ActionRun).where(ActionRun.id == action_run_id)
-            )
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run: ActionRun = run_result.scalar_one()
 
             action = ACTION_REGISTRY.get(run.action_key)
@@ -287,9 +288,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
 
             if run.group_id is None:
                 run.status = "failed"
-                run.error_message = (
-                    "action_group: ActionRun has no group_id (caller bug)"
-                )
+                run.error_message = "action_group: ActionRun has no group_id (caller bug)"
                 run.finished_at = datetime.now(UTC)
                 await db.commit()
                 return
@@ -347,16 +346,12 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                     hr.finished_at = datetime.now(UTC)
                     continue
 
-                key_result = await db.execute(
-                    select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                )
+                key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
                 ssh_key = key_result.scalar_one()
-                private_key_text = decrypt_ssh_key(
-                    ssh_key.encrypted_private_key, master_key
-                )
+                private_key_text = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
                 fd, key_path = tempfile.mkstemp(
-                    dir="/dev/shm",
+                    dir="/dev/shm",  # nosec B108 — intentional tmpfs for in-memory key storage
                     prefix="labdog-action-group-",
                     suffix=".key",
                 )
@@ -493,8 +488,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         )
         if len(playbook_output.encode()) > MAX_OUTPUT_BYTES:
             playbook_output = (
-                playbook_output[:MAX_OUTPUT_BYTES]
-                + "\n\n(truncated — output exceeded 1 MB)"
+                playbook_output[:MAX_OUTPUT_BYTES] + "\n\n(truncated — output exceeded 1 MB)"
             )
 
         playbook_status = getattr(runner, "status", "unknown")
@@ -515,10 +509,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 continue
             per_host_seen.add(host_name)
             if event_type == "runner_on_failed":
-                msg = (
-                    (event_data.get("res") or {}).get("msg")
-                    or "task failed"
-                )
+                msg = (event_data.get("res") or {}).get("msg") or "task failed"
                 per_host_failure.setdefault(host_name, str(msg))
             elif event_type == "runner_on_unreachable":
                 per_host_unreachable.add(host_name)
@@ -544,8 +535,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 # and rollback runs if a snapshot exists.
                 per_host_playbook_success[ctx.host_run_id] = False
                 per_host_error_msg[ctx.host_run_id] = (
-                    f"playbook did not reach host "
-                    f"(status={playbook_status}, rc={playbook_rc})"
+                    f"playbook did not reach host (status={playbook_status}, rc={playbook_rc})"
                 )
 
         # ------------------------------------------------------------------ #
@@ -659,9 +649,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         await _aggregate_and_finalise(action_run_id, channel, r)
 
     except Exception as exc:
-        logger.exception(
-            "action_group: unhandled error for action_run %d", action_run_id
-        )
+        logger.exception("action_group: unhandled error for action_run %d", action_run_id)
         await _mark_run_failed(action_run_id, str(exc), channel, r)
         return
 
@@ -691,9 +679,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 if os.path.exists(key_path):
                     os.unlink(key_path)
             except Exception:
-                logger.debug(
-                    "action_group: failed to remove key %s", key_path, exc_info=True
-                )
+                logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
 
@@ -756,18 +742,14 @@ async def _snapshot_all(
     # Load every VM mapping in one query, then attach to the ctxs.
     async with task_session() as db:
         host_ids = [c.host_id for c in host_ctxs]
-        vm_map_result = await db.execute(
-            select(VMMapping).where(VMMapping.host_id.in_(host_ids))
-        )
+        vm_map_result = await db.execute(select(VMMapping).where(VMMapping.host_id.in_(host_ids)))
         mappings = {m.host_id: m for m in vm_map_result.scalars().all()}
 
         # Cache proxmox node rows referenced by any mapping.
         node_ids = {m.proxmox_node_id for m in mappings.values()}
         proxmox_nodes: dict[int, Any] = {}
         if node_ids:
-            node_result = await db.execute(
-                select(ProxmoxNode).where(ProxmoxNode.id.in_(node_ids))
-            )
+            node_result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id.in_(node_ids)))
             for n in node_result.scalars().all():
                 proxmox_nodes[n.id] = n
 
@@ -784,9 +766,7 @@ async def _snapshot_all(
     async def _snap(ctx: _HostCtx, mapping: Any, proxmox_node: Any) -> None:
         from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
 
-        token_secret = decrypt_ssh_key(
-            proxmox_node.encrypted_token_secret, master_key
-        )
+        token_secret = decrypt_ssh_key(proxmox_node.encrypted_token_secret, master_key)
         client = ProxmoxClient(
             api_url=proxmox_node.api_url,
             token_id=proxmox_node.token_id,
@@ -798,9 +778,7 @@ async def _snapshot_all(
         ctx.vmid = mapping.vmid
 
         try:
-            snap_name = await create_snapshot(
-                client, ctx.pve_node, ctx.vmid, action_run_id
-            )
+            snap_name = await create_snapshot(client, ctx.pve_node, ctx.vmid, action_run_id)
         except Exception as exc:
             logger.exception(
                 "action_group: snapshot failed for action_run %d host %d: %s",
@@ -814,9 +792,7 @@ async def _snapshot_all(
             return
 
         ctx.snapshot_name = snap_name
-        ctx.step_log.append(
-            f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}"
-        )
+        ctx.step_log.append(f"[snapshot] created {snap_name} on {ctx.pve_node}/{ctx.vmid}")
 
     tasks: list[Any] = []
     for ctx in host_ctxs:
@@ -829,9 +805,7 @@ async def _snapshot_all(
             continue
         proxmox_node = proxmox_nodes.get(mapping.proxmox_node_id)
         if proxmox_node is None:
-            ctx.step_log.append(
-                "[snapshot] skipped — VM mapping references missing Proxmox node"
-            )
+            ctx.step_log.append("[snapshot] skipped — VM mapping references missing Proxmox node")
             continue
         tasks.append(_snap(ctx, mapping, proxmox_node))
 
@@ -915,8 +889,7 @@ async def _verify_all(
     eligible = [
         ctx
         for ctx in host_ctxs
-        if per_host_playbook_success.get(ctx.host_run_id, False)
-        and ctx.snapshot_name is not None
+        if per_host_playbook_success.get(ctx.host_run_id, False) and ctx.snapshot_name is not None
     ]
     if not eligible:
         return
@@ -936,9 +909,7 @@ async def _verify_all(
 
         async with task_session() as db:
             for ctx in eligible:
-                host_result = await db.execute(
-                    select(Host).where(Host.id == ctx.host_id)
-                )
+                host_result = await db.execute(select(Host).where(Host.id == ctx.host_id))
                 host = host_result.scalar_one()
                 effective_services = await get_effective_services(ctx.host_id, db)
                 effective_packages = await get_effective_packages(ctx.host_id, db)
@@ -988,8 +959,7 @@ async def _verify_all(
                             {
                                 "event": "output",
                                 "host_run_id": ctx.host_run_id,
-                                "text": "=== Verify playbook output ===\n"
-                                + verify_output[-4000:],
+                                "text": "=== Verify playbook output ===\n" + verify_output[-4000:],
                             }
                         ),
                     )
@@ -1031,9 +1001,7 @@ async def _verify_all(
                     f"packages_ok={verify_result.get('packages_ok')}"
                 )
                 if not ctx.verify_passed:
-                    ctx.verify_error = (
-                        f"Post-run verification failed: {verify_result}"
-                    )
+                    ctx.verify_error = f"Post-run verification failed: {verify_result}"
             except Exception as exc:
                 logger.exception(
                     "action_group: verification failed for host %d: %s",
@@ -1044,9 +1012,7 @@ async def _verify_all(
                 ctx.verify_error = f"Verification error: {exc}"
                 ctx.step_log.append(f"[verify] ERROR: {exc}")
 
-    await asyncio.gather(
-        *(_verify_one(ctx) for ctx in eligible), return_exceptions=False
-    )
+    await asyncio.gather(*(_verify_one(ctx) for ctx in eligible), return_exceptions=False)
 
 
 async def _rollback_all(
@@ -1080,10 +1046,7 @@ async def _rollback_all(
         for ctx in host_ctxs
         if ctx.snapshot_name is not None
         and ctx.proxmox_client is not None
-        and (
-            not per_host_playbook_success.get(ctx.host_run_id, False)
-            or not ctx.verify_passed
-        )
+        and (not per_host_playbook_success.get(ctx.host_run_id, False) or not ctx.verify_passed)
     ]
     if not needs_rollback:
         return
@@ -1174,12 +1137,8 @@ async def _cleanup_all(
             return
 
         try:
-            await delete_snapshot(
-                ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name
-            )
-            ctx.step_log.append(
-                f"[cleanup] snapshot {ctx.snapshot_name} deleted"
-            )
+            await delete_snapshot(ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name)
+            ctx.step_log.append(f"[cleanup] snapshot {ctx.snapshot_name} deleted")
         except Exception as exc:
             logger.warning(
                 "action_group: snapshot cleanup failed for host %d: %s",
@@ -1188,9 +1147,7 @@ async def _cleanup_all(
             )
             ctx.step_log.append(f"[cleanup] WARN: {exc}")
 
-    await asyncio.gather(
-        *(_clean(ctx) for ctx in host_ctxs), return_exceptions=False
-    )
+    await asyncio.gather(*(_clean(ctx) for ctx in host_ctxs), return_exceptions=False)
 
 
 def _publish_global(r: Any, channel: str, text: str) -> None:
@@ -1223,9 +1180,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         host_runs = list(hr_result.scalars().all())
 
         succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
-        failed = sum(
-            1 for hr in host_runs if hr.status in ("failed", "skipped")
-        )
+        failed = sum(1 for hr in host_runs if hr.status in ("failed", "skipped"))
         total = len(host_runs)
 
         if failed == 0:
@@ -1235,9 +1190,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         else:
             final_status = "partial"
 
-        run_result = await db.execute(
-            select(ActionRun).where(ActionRun.id == action_run_id)
-        )
+        run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
         run = run_result.scalar_one()
         if run.status != "cancelled":
             run.status = final_status
@@ -1261,11 +1214,7 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         # completed.
         run_parameters = run.parameters or {}
         dry_run = bool(run_parameters.get("__dry_run", False))
-        if (
-            run.status not in ("cancelled", "failed")
-            and not dry_run
-            and succeeded > 0
-        ):
+        if run.status not in ("cancelled", "failed") and not dry_run and succeeded > 0:
             from app.actions.registry import ACTION_REGISTRY
 
             action = ACTION_REGISTRY.get(run.action_key)
@@ -1351,9 +1300,7 @@ async def _mark_run_failed(action_run_id: int, error_message: str, channel: str,
 
     try:
         async with task_session() as db:
-            run_result = await db.execute(
-                select(ActionRun).where(ActionRun.id == action_run_id)
-            )
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run = run_result.scalar_one_or_none()
             if run is not None:
                 run.status = "failed"
@@ -1372,9 +1319,7 @@ async def _mark_run_failed(action_run_id: int, error_message: str, channel: str,
                 hr.finished_at = datetime.now(UTC)
             await db.commit()
     except Exception:
-        logger.exception(
-            "action_group: could not mark action_run %d as failed", action_run_id
-        )
+        logger.exception("action_group: could not mark action_run %d as failed", action_run_id)
 
     try:
         r.publish(channel, json.dumps({"event": "status", "status": "failed"}))
@@ -1390,9 +1335,7 @@ async def _mark_run_cancelled(action_run_id: int, channel: str, r) -> None:
 
     try:
         async with task_session() as db:
-            run_result = await db.execute(
-                select(ActionRun).where(ActionRun.id == action_run_id)
-            )
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run = run_result.scalar_one_or_none()
             if run is not None:
                 run.status = "cancelled"
@@ -1407,9 +1350,7 @@ async def _mark_run_cancelled(action_run_id: int, channel: str, r) -> None:
                 hr.status = "cancelled"
             await db.commit()
     except Exception:
-        logger.exception(
-            "action_group: could not mark action_run %d as cancelled", action_run_id
-        )
+        logger.exception("action_group: could not mark action_run %d as cancelled", action_run_id)
     try:
         r.publish(channel, json.dumps({"event": "status", "status": "cancelled"}))
     except Exception:

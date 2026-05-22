@@ -104,9 +104,5 @@ def downgrade() -> None:
     # roundtrip is impossible because the upgrade pruned the
     # positional information into resolution rows that may have been
     # edited or deleted in the interim.
-    op.execute(
-        'ALTER TABLE action_packs ADD COLUMN "position" integer DEFAULT 0 NOT NULL'
-    )
-    op.execute(
-        'CREATE INDEX ix_action_packs_position ON action_packs USING btree ("position")'
-    )
+    op.execute('ALTER TABLE action_packs ADD COLUMN "position" integer DEFAULT 0 NOT NULL')
+    op.execute('CREATE INDEX ix_action_packs_position ON action_packs USING btree ("position")')

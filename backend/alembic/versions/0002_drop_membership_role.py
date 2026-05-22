@@ -15,6 +15,7 @@ Note on the revision id length: alembic's default ``alembic_version``
 table caps ``version_num`` at varchar(32). Keep this slug short — the
 file name can be longer, but the ``revision = "..."`` value cannot.
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -39,16 +40,12 @@ CHECK_CONSTRAINT_NAME = "ck_host_group_memberships_ck_host_group_memberships_rol
 
 
 def upgrade() -> None:
-    op.execute(
-        f'ALTER TABLE host_group_memberships DROP CONSTRAINT "{CHECK_CONSTRAINT_NAME}"'
-    )
+    op.execute(f'ALTER TABLE host_group_memberships DROP CONSTRAINT "{CHECK_CONSTRAINT_NAME}"')
     op.execute("ALTER TABLE host_group_memberships DROP COLUMN role")
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER TABLE host_group_memberships ADD COLUMN role VARCHAR(32)"
-    )
+    op.execute("ALTER TABLE host_group_memberships ADD COLUMN role VARCHAR(32)")
     op.execute(
         f'ALTER TABLE host_group_memberships ADD CONSTRAINT "{CHECK_CONSTRAINT_NAME}" '
         "CHECK (role IS NULL OR role IN ('control_plane', 'worker'))"

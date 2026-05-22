@@ -247,9 +247,7 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> BlockerInfo | None:
     return None
 
 
-async def check_hosts_busy(
-    db: AsyncSession, host_ids: list[int]
-) -> BlockerInfo | None:
+async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo | None:
     """First-blocker (by sorted host id) across a set of hosts, or None.
 
     Group-action variant of `check_host_busy`. Used after
@@ -352,9 +350,7 @@ async def check_hosts_busy(
 # ---------------------------------------------------------------------------
 
 
-async def format_pending_reason(
-    db: AsyncSession, blocker: BlockerInfo
-) -> str:
+async def format_pending_reason(db: AsyncSession, blocker: BlockerInfo) -> str:
     """Return a short human-readable diagnostic for a deferred row.
 
     Format mirrors the shape the frontend renders in the amber "Host
@@ -574,13 +570,17 @@ async def dispatch_next_pending_for_host(
                 action_row.error_message = "host no longer exists"
                 # Cascade per-host rows too.
                 hrs = (
-                    await db.execute(
-                        select(ActionHostRun).where(
-                            ActionHostRun.action_run_id == action_row.id,
-                            ActionHostRun.status.in_(["queued", "pending", "running"]),
+                    (
+                        await db.execute(
+                            select(ActionHostRun).where(
+                                ActionHostRun.action_run_id == action_row.id,
+                                ActionHostRun.status.in_(["queued", "pending", "running"]),
+                            )
                         )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 for hr in hrs:
                     hr.status = "failed"
                     hr.error_message = "host no longer exists"
