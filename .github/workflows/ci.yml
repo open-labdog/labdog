@@ -566,14 +566,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Trivy — informational scan (low/medium)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ needs.build-test-image.outputs.image_ref }}
           severity: LOW,MEDIUM
           exit-code: "0"
           ignore-unfixed: "true"
       - name: Trivy — gate on HIGH/CRITICAL
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ needs.build-test-image.outputs.image_ref }}
           severity: HIGH,CRITICAL
