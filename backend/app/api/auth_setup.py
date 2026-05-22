@@ -1,8 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import secrets
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, text
 
 from app.auth.schemas import UserCreate, UserRead
-from app.auth.users import UserManager, get_user_manager
+from app.auth.users import UserManager, current_active_user, get_user_manager
+from app.config import settings
 from app.db import AsyncSessionLocal
 from app.models.user import User
 
@@ -43,3 +46,29 @@ async def register(
 
     user = await user_manager.create(user_create)
     return user
+
+
+@router.get("/csrf-token", status_code=200)
+async def refresh_csrf_token(
+    response: Response,
+    _: User = Depends(current_active_user),
+):
+    """Re-issue the CSRF double-submit cookie for an existing session.
+
+    Called by the frontend on mount when the labdog_csrf cookie is absent
+    (e.g. sessions that predate the CSRF feature). GET is intentional —
+    the CSRF middleware only guards mutating methods, so this works without
+    a pre-existing token.
+    """
+    token = secrets.token_urlsafe(settings.security.csrf_token_bytes)
+    response.set_cookie(
+        "labdog_csrf",
+        token,
+        max_age=settings.security.session_lifetime_seconds,
+        path="/",
+        domain=settings.security.cookie_domain or None,
+        secure=settings.security.cookie_secure,
+        httponly=False,
+        samesite="lax",
+    )
+    return {"ok": True}
