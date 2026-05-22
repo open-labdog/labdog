@@ -88,7 +88,7 @@ else
     echo "fetch-bundled-pack: ERROR: failed to clone ${REPO}" >&2
     exit 2
   fi
-  if ! git -C "$TMP" checkout -- "$REF"; then
+  if ! git -C "$TMP" checkout "$REF" --; then
     echo "fetch-bundled-pack: ERROR: ref '${REF}' not found in ${REPO}." >&2
     echo "  If you just bumped LABDOG_PLAYBOOKS_REF, make sure the SHA has been pushed to the upstream." >&2
     echo "  See BUGS.md BUG-46 for the gitlab->github mirror transition." >&2
