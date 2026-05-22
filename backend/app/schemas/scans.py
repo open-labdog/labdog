@@ -2,10 +2,10 @@
 
 import ipaddress
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from croniter import croniter
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, field_validator, model_validator
 
 from app.discovery.scanner import validate_cidr_against_blocklist
 
@@ -19,6 +19,27 @@ _CRON_PROXY_INTERVAL = 60
 # Coarse SSH error categories surfaced via the API.
 # Keep the free-text detail in server logs only.
 SshErrorCategory = Literal["unreachable", "auth_failed", "refused", "timeout", "unknown"]
+
+_SSH_ERROR_VALUES = frozenset({"unreachable", "auth_failed", "refused", "timeout", "unknown"})
+
+
+def _coerce_ssh_error(v: object) -> object:
+    """Map legacy free-text ssh_error DB values to the closest coded category.
+
+    Older scan runs stored raw error messages (e.g. "SSH auth failed for
+    user@host") before the field was normalised to coarse categories.  Rows
+    written before that migration would crash the response serialiser with a
+    Literal validation error.  Coerce any unrecognised string to 'unknown' so
+    the API stays healthy while legacy rows are present.
+    """
+    if v is None or v in _SSH_ERROR_VALUES:
+        return v
+    return "unknown"
+
+
+# Use SshErrorField instead of `SshErrorCategory | None` in response models
+# so legacy DB rows with free-text values are silently coerced to 'unknown'.
+SshErrorField = Annotated[SshErrorCategory | None, BeforeValidator(_coerce_ssh_error)]
 
 
 def _validate_cidr(cidr: str) -> str:
@@ -203,7 +224,7 @@ class PendingHostResponse(BaseModel):
     ip_address: str
     hostname: str | None
     ssh_verified: bool
-    ssh_error: SshErrorCategory | None
+    ssh_error: SshErrorField
     discovered_at: datetime
 
     model_config = {"from_attributes": True}
@@ -218,7 +239,7 @@ class PendingHostFleetResponse(BaseModel):
     ip_address: str
     hostname: str | None
     ssh_verified: bool
-    ssh_error: SshErrorCategory | None
+    ssh_error: SshErrorField
     discovered_at: datetime
 
 
