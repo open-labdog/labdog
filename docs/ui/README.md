@@ -41,6 +41,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |
+| [About](settings.md#about) | Build metadata — version, commit SHA, build date, license, repo URL (`/settings/about`) |
 
 ---
 
@@ -51,7 +52,7 @@ All screenshots in this directory were taken from a live development instance an
 - [`screenshots/login.png`](screenshots/login.png)
 - [`screenshots/dashboard.png`](screenshots/dashboard.png)
 - [`screenshots/hosts.png`](screenshots/hosts.png)
-- [`screenshots/hosts-discover.png`](screenshots/hosts-discover.png)
+- [`screenshots/discovery.png`](screenshots/discovery.png)
 - [`screenshots/groups.png`](screenshots/groups.png)
 - [`screenshots/group-detail.png`](screenshots/group-detail.png)
 - [`screenshots/group-rules.png`](screenshots/group-rules.png)

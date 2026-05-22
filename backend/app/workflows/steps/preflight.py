@@ -1,10 +1,9 @@
 """Preflight step: SSH reachability, disk space, VM, and agent checks."""
 
-import asyncio
 import logging
 from typing import Any
 
-import asyncssh
+from app.ssh_utils import ssh_connect_host
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +25,14 @@ async def run_preflight(
     what did not.
 
     Args:
-        host: Host ORM object with ``ip_address``, ``ssh_port``, and
-            ``ssh_user`` attributes.
+        host: Host ORM object with ``ip_address``, ``ssh_port``,
+            ``ssh_user``, and ``ssh_host_key_entry`` attributes.
         vm_mapping: VMMapping ORM object (``pve_node_name``, ``vmid``), or
             ``None`` when snapshot support is not configured.
         ssh_key_path: Absolute path to the decrypted SSH private key on tmpfs.
         proxmox_client: Authenticated :class:`~app.proxmox.client.ProxmoxClient`
             instance, or ``None`` when Proxmox integration is unavailable.
-        db: Active async SQLAlchemy session (reserved for future use).
+        db: Active async SQLAlchemy session used for TOFU key persistence.
 
     Returns:
         A dict of the form::
@@ -57,64 +56,50 @@ async def run_preflight(
         "vm_found": False,
         "agent_ok": False,
     }
-    ssh_conn: asyncssh.SSHClientConnection | None = None
 
     # ------------------------------------------------------------------
-    # SSH reachability
+    # SSH reachability + disk check in a single connection
     # ------------------------------------------------------------------
     try:
-        ssh_conn = await asyncio.wait_for(
-            asyncssh.connect(
-                host.ip_address,
-                port=host.ssh_port or 22,
-                username=host.ssh_user or "root",
-                client_keys=[ssh_key_path],
-                known_hosts=None,
-            ),
-            timeout=15,
-        )
-        checks["ssh"] = True
-        logger.debug("preflight: SSH reachable for host %s", host.ip_address)
+        async with ssh_connect_host(
+            host,
+            db,
+            client_keys=[ssh_key_path],
+            connect_timeout=15,
+        ) as ssh_conn:
+            checks["ssh"] = True
+            logger.debug("preflight: SSH reachable for host %s", host.ip_address)
+
+            # Disk space check
+            try:
+                result = await ssh_conn.run("df --output=avail / | tail -1", check=True)
+                avail_kb = int(result.stdout.strip())
+                disk_gb = avail_kb / 1_048_576  # KB -> GB
+                checks["disk_gb"] = round(disk_gb, 2)
+                if avail_kb < _MIN_DISK_KB:
+                    logger.warning(
+                        "preflight: insufficient disk space on host %s: %.2f GB available",
+                        host.ip_address,
+                        disk_gb,
+                    )
+                else:
+                    logger.debug(
+                        "preflight: disk check passed for host %s (%.2f GB free)",
+                        host.ip_address,
+                        disk_gb,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "preflight: disk check failed for host %s: %s",
+                    host.ip_address,
+                    exc,
+                )
     except Exception as exc:
         logger.warning(
             "preflight: SSH check failed for host %s: %s",
             host.ip_address,
             exc,
         )
-
-    # ------------------------------------------------------------------
-    # Disk space (only when SSH is available)
-    # ------------------------------------------------------------------
-    if ssh_conn is not None:
-        try:
-            result = await ssh_conn.run("df --output=avail / | tail -1", check=True)
-            avail_kb = int(result.stdout.strip())
-            disk_gb = avail_kb / 1_048_576  # KB -> GB
-            checks["disk_gb"] = round(disk_gb, 2)
-            if avail_kb < _MIN_DISK_KB:
-                logger.warning(
-                    "preflight: insufficient disk space on host %s: %.2f GB available",
-                    host.ip_address,
-                    disk_gb,
-                )
-            else:
-                logger.debug(
-                    "preflight: disk check passed for host %s (%.2f GB free)",
-                    host.ip_address,
-                    disk_gb,
-                )
-        except Exception as exc:
-            logger.warning(
-                "preflight: disk check failed for host %s: %s",
-                host.ip_address,
-                exc,
-            )
-        finally:
-            try:
-                ssh_conn.close()
-                await ssh_conn.wait_closed()
-            except Exception:
-                pass
 
     # ------------------------------------------------------------------
     # VM mapping presence

@@ -51,12 +51,14 @@ FAKE_HITS = [("10.0.1.1", "open"), ("10.0.1.2", "open")]
 async def _mock_verify_mixed(ip, *, port, username, imported_key):
     """10.0.1.1 succeeds SSH; 10.0.1.2 fails.
 
-    Returns the 4-tuple (success, hostname, source_ip, ssh_error) matching
-    the signature of app.discovery.verify.verify_ssh.
+    Returns the 5-tuple (success, hostname, source_ip, ssh_error,
+    ssh_host_key_entry) matching the signature of
+    app.discovery.verify.verify_ssh.  ssh_error is now a coarse enum
+    category string, not a free-text message.
     """
     if ip == "10.0.1.1":
-        return (True, "host-a", None, None)
-    return (False, None, None, "conn refused")
+        return (True, "host-a", None, None, "10.0.1.1 ssh-ed25519 AAAA")
+    return (False, None, None, "refused", None)
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +199,7 @@ class TestAutoAddTrue:
             ),
             patch(
                 "app.discovery.verify.verify_ssh",
-                new=AsyncMock(return_value=(True, "h", None, None)),
+                new=AsyncMock(return_value=(True, "h", None, None, None)),
             ),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
@@ -220,7 +222,7 @@ class TestAutoAddTrue:
             ),
             patch(
                 "app.discovery.verify.verify_ssh",
-                new=AsyncMock(return_value=(False, None, None, "conn refused")),
+                new=AsyncMock(return_value=(False, None, None, "conn refused", None)),
             ),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
@@ -234,6 +236,33 @@ class TestAutoAddTrue:
             await db.execute(select(Host).where(Host.ip_address == "10.0.1.99"))
         ).scalar_one_or_none()
         assert host_row is None
+
+    async def test_verified_no_hostname_uses_placeholder(self, db, ssh_key):
+        """SSH succeeds but remote returns no hostname: host gets the
+        ``host-<ip>`` placeholder so collect_state can replace it later."""
+        config = await _create_scan_config(db, ssh_key_id=ssh_key.id, auto_add=True)
+
+        with (
+            patch(
+                "app.discovery.scanner.scan_network",
+                new=AsyncMock(return_value=[("10.0.1.55", "open")]),
+            ),
+            patch(
+                "app.discovery.verify.verify_ssh",
+                new=AsyncMock(return_value=(True, None, None, None, None)),
+            ),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+        ):
+            result = await _run_task(config.id, db)
+
+        assert result["hosts_added"] == 1
+
+        from app.models.host import Host
+
+        host_row = (
+            await db.execute(select(Host).where(Host.ip_address == "10.0.1.55"))
+        ).scalar_one()
+        assert host_row.hostname == "host-10.0.1.55"
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +304,8 @@ class TestAutoAddFalse:
         assert set(by_ip) == {"10.0.1.1", "10.0.1.2"}
         assert by_ip["10.0.1.1"].ssh_verified is True
         assert by_ip["10.0.1.2"].ssh_verified is False
-        assert "conn refused" in (by_ip["10.0.1.2"].ssh_error or "")
+        # verify_ssh now returns a coarse enum category, not a free-text string.
+        assert by_ip["10.0.1.2"].ssh_error == "refused"
 
     async def test_second_run_does_not_create_duplicates(self, db, ssh_key):
         """Running the task twice must not create duplicate PendingHost rows."""
@@ -432,3 +462,56 @@ class TestAdvisoryLock:
             assert _advisory_lock_key(base) != _advisory_lock_key(base + 1), (
                 f"Expected different keys for ids {base} and {base + 1}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Tests: blocked CIDR defence-in-depth (SEC-10 sub-fix A)
+# ---------------------------------------------------------------------------
+
+
+class TestBlockedCIDRSkip:
+    """Blocked CIDRs persisted in the DB must be silently skipped by the task."""
+
+    async def test_blocked_cidr_skipped_no_crash(self, db, ssh_key):
+        """A loopback CIDR in the ScanConfig row must be skipped, not raise."""
+        config = await _create_scan_config(
+            db,
+            ssh_key_id=ssh_key.id,
+            auto_add=False,
+            cidrs=["127.0.0.0/24"],  # injected directly — bypasses schema guard
+        )
+        scan_mock = AsyncMock(return_value=[])
+
+        with (
+            patch("app.discovery.scanner.scan_network", new=scan_mock),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+        ):
+            result = await _run_task(config.id, db)
+
+        # Task completes without exception; CIDR was skipped.
+        assert result["hosts_added"] == 0
+        assert result["hosts_pending"] == 0
+        # scan_network must NOT have been called for the blocked CIDR.
+        scan_mock.assert_not_called()
+
+    async def test_valid_cidr_alongside_blocked_runs_valid(self, db, ssh_key):
+        """A valid CIDR mixed with a blocked one must still be scanned."""
+        config = await _create_scan_config(
+            db,
+            ssh_key_id=ssh_key.id,
+            auto_add=False,
+            cidrs=["127.0.0.0/24", "10.0.1.0/30"],  # loopback + valid
+        )
+
+        scan_mock = AsyncMock(return_value=[])
+
+        with (
+            patch("app.discovery.scanner.scan_network", new=scan_mock),
+            patch("asyncssh.import_private_key", return_value=MagicMock()),
+        ):
+            await _run_task(config.id, db)
+
+        # Only the valid CIDR was scanned — scan_network called exactly once.
+        scan_mock.assert_called_once()
+        called_cidr = scan_mock.call_args[0][0]
+        assert called_cidr == "10.0.1.0/30"

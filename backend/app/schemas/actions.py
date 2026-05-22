@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -32,13 +32,35 @@ class ActionDefinitionOut(BaseModel):
     parameters: list[ActionParameterOut]
     #: Pack whose manifest is currently active for this action key.
     pack_name: str
-    #: Pack names whose entries for the same key were shadowed by this
-    #: one, in processing order. Non-empty only on collisions.
+    #: ``ActionPack.id`` of the winning pack — ``None`` when the key
+    #: is **unresolved** (multiple packs declare it and no operator pin
+    #: exists yet). Also ``None`` for built-in pseudo-actions and for
+    #: bundled-pack actions (the bundled pack has no DB row); the
+    #: frontend distinguishes these via ``pack_name`` /
+    #: ``unresolved``.
+    winning_pack_id: int | None = None
+    #: True when the action key is contested by multiple packs and the
+    #: operator has not pinned a winner. The Run button must be
+    #: disabled with a "Pick winner first" prompt; ``POST
+    #: /api/actions/runs`` rejects unresolved actions with HTTP 409.
+    unresolved: bool = False
+    #: Pack names that also declare this key (in stable sorted order).
+    #: For uncontested keys, empty. For contested+pinned keys, every
+    #: other contributor. For unresolved keys, every contributor
+    #: (including the placeholder one whose metadata was used for
+    #: display).
     overridden_from: list[str] = []
-    #: Per-host (the default) or cluster (a single ansible run against
-    #: the whole group with a multi-host inventory). Cluster-mode
-    #: actions require ``group_id`` at submit and refuse host_id.
-    execution_mode: Literal["per_host", "cluster"] = "per_host"
+    #: Canonical module names that will re-sync against the target host
+    #: after a successful run (per-host fan-out for group dispatch).
+    #: Empty list means no post-run sync. Surfaced as a chip on the
+    #: action card / run detail so operators see the side effect.
+    post_run_sync: list[str] = []
+    #: Resources the action's manifest declares it installs. After a
+    #: successful run labdog inserts these as host-scope overrides so
+    #: the resources are managed going forward. Keys are canonical
+    #: module names; values are per-item dicts validated against the
+    #: module's Create schema. See ``ActionManifest.post_run_register``.
+    post_run_register: dict[str, list[dict[str, Any]]] = {}
 
 
 class RunCreateBody(BaseModel):
@@ -60,6 +82,9 @@ class ActionHostRunOut(BaseModel):
     exit_code: int | None
     error_message: str | None
     snapshot_name: str | None = None
+    #: Populated when ``status='pending'`` — human-readable string naming
+    #: the in-flight op holding the host. NULL otherwise.
+    pending_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -85,6 +110,9 @@ class ActionRunOut(BaseModel):
     started_at: datetime | None
     finished_at: datetime | None
     error_message: str | None
+    #: Populated when ``status='pending'`` — human-readable string naming
+    #: the in-flight op holding the target host. NULL otherwise.
+    pending_reason: str | None = None
     created_at: datetime
     host_runs: list[ActionHostRunOut] = []
 

@@ -1,24 +1,24 @@
-# Managed by LabDog — Services module reference
+# Managed by LabDog -- Services module reference
 #
 # Per-field reference for the `services:` section.
 #
 # Fields:
-#   service_name  string   — required. `.service` suffix is stripped
+#   service_name  string   -- required. `.service` suffix is stripped
 #                            automatically. Must match
 #                            `[a-zA-Z0-9_@:.-]+`. Protected services
 #                            (sshd, NetworkManager, systemd-*, dbus)
 #                            are rejected at parse time.
-#   state         enum     — running | stopped.  Required.
-#   enabled       bool     — default true.  Controls start-on-boot.
-#   priority      int      — 0..10000, default 0. Higher priority
+#   state         enum     -- running | stopped.  Required.
+#   enabled       bool     -- default true.  Controls start-on-boot.
+#   priority      int      -- 0..10000, default 0. Higher priority
 #                            overrides lower in merge conflicts.
-#   comment       string   — optional free-text, shown in the UI.
-#   unit_content  string   — optional. Multi-line systemd unit file.
+#   comment       string   -- optional free-text, shown in the UI.
+#   unit_content  string   -- optional. Multi-line systemd unit file.
 #                            If set and deploy_mode=full, Ansible
 #                            writes the ENTIRE unit. If deploy_mode=
 #                            override, Ansible writes
 #                            `/etc/systemd/system/<name>.service.d/override.conf`.
-#   deploy_mode   enum     — full | override.  Default: override.
+#   deploy_mode   enum     -- full | override.  Default: override.
 #                            `full` REQUIRES unit_content (parse error
 #                            otherwise).
 #
@@ -31,28 +31,28 @@ group: services-reference
 priority: 100
 
 services:
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   # Simplest form: package already provides the unit, just enable
   # and start it.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - service_name: nginx
     state: running
     enabled: true
 
-  # ─────────────────────────────────────────────────────────────
-  # Stopped and disabled — useful for explicitly turning a service
+  # -------------------------------------------------------------
+  # Stopped and disabled -- useful for explicitly turning a service
   # off (e.g. apache2 on a server that runs nginx now).
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - service_name: apache2
     state: stopped
     enabled: false
     comment: "Superseded by nginx"
 
-  # ─────────────────────────────────────────────────────────────
-  # Override mode (default) — drops a tiny file at
+  # -------------------------------------------------------------
+  # Override mode (default) -- drops a tiny file at
   #   /etc/systemd/system/<name>.service.d/override.conf
   # that augments the package-provided unit.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - service_name: nginx
     state: running
     enabled: true
@@ -64,10 +64,10 @@ services:
       RestartSec=5s
     comment: "Raise file-descriptor limit and force restart on crash"
 
-  # ─────────────────────────────────────────────────────────────
-  # Full mode — Ansible writes the WHOLE unit file.  Good for bespoke
+  # -------------------------------------------------------------
+  # Full mode -- Ansible writes the WHOLE unit file.  Good for bespoke
   # daemons.  deploy_mode: full REQUIRES unit_content to be set.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
   - service_name: backup-agent
     state: running
     enabled: true
@@ -88,9 +88,9 @@ services:
       WantedBy=multi-user.target
     comment: "Custom unit file, delivered by LabDog"
 
-  # ─────────────────────────────────────────────────────────────
-  # Template instance — `@` is a legal character in service_name.
-  # ─────────────────────────────────────────────────────────────
+  # -------------------------------------------------------------
+  # Template instance -- `@` is a legal character in service_name.
+  # -------------------------------------------------------------
   - service_name: "getty@tty1"
     state: running
     enabled: true

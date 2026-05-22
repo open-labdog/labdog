@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-44`, `SEC-06`,
+ID counter as of last housekeeping pass: `BUG-51`, `SEC-19`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -40,4 +40,20 @@ when filing a new entry.
 
 ## Open
 
-_No open bugs at the moment._
+### Security findings — High
+
+Filed 2026-05-21 from a `security-auditor` whitebox source-level
+review (commit `1108d67` as the audit baseline). Each entry was
+spot-checked against current HEAD before filing.
+
+---
+
+### Pre-existing (filed prior to the security review)
+
+- [ ] **BUG-46** `LABDOG_PLAYBOOKS_REF` + `Dockerfile:39` / `packaging/Makefile:26` / `.github/workflows/ci.yml:157,245` / `dev/dev.sh:111` — bundled-pack build fails because pinned SHA doesn't exist on the default upstream
+
+  Symptom: `docker build .` (and packaging/build.sh, and the github CI jobs that fetch the bundled pack) fails when the Stage 2b clone tries to `git checkout e6e73728…` against the default URL `https://github.com/open-labdog/labdog-playbooks.git`. The pinned SHA only exists on the maintainer's local gitlab mirror (`gitlab.lan.tyresson.se/dennis/labdog-playbooks.git`); the github public mirror is stale (old flat-layout playbooks, no alloy-install). Root cause: when the build-time-fetch migration landed (commit `8fb167d`), the github mirror had not yet been synced from gitlab. The labdog repo committed the gitlab SHA in `LABDOG_PLAYBOOKS_REF` because that's what the in-repo bundled mirror reflected; defaulting the URL to gitlab would couple public labdog to a private hostname. Severity: **High** — every build path is broken without an env override (`LABDOG_PLAYBOOKS_REPO` or `LABDOG_PLAYBOOKS_LOCAL`). Resolution: push gitlab `labdog-playbooks/main` to github `open-labdog/labdog-playbooks`, then bump `LABDOG_PLAYBOOKS_REF` to whatever SHA github lands on. See `TODO.md` "Mirror gitlab labdog-playbooks to github" for the full procedure.
+
+- [ ] **BUG-45** `backend/app/proxmox/client.py:88` — Proxmox API requests fail with SSL certificate verification error
+
+  Symptom: `httpx.ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1010)` raised from `ProxmoxClient._request` when the `discover_host_vm_mapping` endpoint calls `client.list_nodes()` → `GET /api2/json/nodes`. Seen live in the `labdog` container on `lin-manager` (2026-05-15). Root cause: httpx performs strict SSL verification by default; Proxmox nodes typically use self-signed or privately-issued TLS certificates whose CA is not in the system trust store. Severity: **High** — Proxmox VM discovery is completely broken for any host using a private CA or self-signed cert.

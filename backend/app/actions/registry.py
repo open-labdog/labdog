@@ -3,24 +3,33 @@
 The registry is a dict of action_key → ActionDefinition built from two
 sources:
 
-- **Bundled pack** (priority 0): hardcoded path at ``backend/app/ansible``.
-  Loaded at import time so the app has actions available even before the
-  DB is reachable.
+- **Bundled pack**: hardcoded path at ``backend/app/ansible``. Loaded
+  at import time so the app has actions available even before the DB
+  is reachable.
 - **DB-backed packs**: configured via the admin UI at ``/action-packs``.
   Materialised on disk under ``settings.ansible.packs_root_dir/<id>`` by
   ``app.packs.service``. Loaded into the registry on FastAPI lifespan
   startup, Celery worker startup, and any mutation to the ``action_packs``
   table (via the router's call to ``reload_registry``).
 
-Each rebuild reads ``action_resolution`` (operator picks) and
-``action_registry_snapshot`` (last-known winners), runs the merge from
+Packs have **no inherent precedence**. Each rebuild reads
+``action_resolution`` (operator picks) and ``action_registry_snapshot``
+(last-known winners), runs the merge from
 :func:`app.actions.packs.load_packs_with_resolutions`, then persists
-the new snapshot. Fresh conflicts surfaced by the merge are recorded
-as ``action_resolution`` rows pinning the previous winner — the
-operator resolves them via the conflict UI.
+the new snapshot. Contested action keys without an operator pin become
+*unresolved* — they appear in the registry as placeholders with no
+playbook, and ``POST /api/actions/runs`` rejects them with HTTP 409
+until a pin is created.
 
-Callers (API handlers, Celery tasks) keep using ``ACTION_REGISTRY`` exactly
-as before — they don't need to know where the actions came from.
+The freeze-on-fresh-conflict behaviour persists: when a sync
+introduces a new contestant for a previously-uncontested key, the
+rebuild auto-pins the previous winner via an ``action_resolution``
+row, so behaviour doesn't change silently before the operator looks.
+
+Callers (API handlers, Celery tasks) keep using ``ACTION_REGISTRY``
+exactly as before — they don't need to know where the actions came
+from. They MUST check ``ActionDefinition.is_unresolved`` (or
+``winning_pack_id is None`` for non-built-ins) before dispatching.
 """
 
 from __future__ import annotations
@@ -37,7 +46,6 @@ __all__ = [
     "ActionParameter",
     "ANSIBLE_DIR",
     "BUNDLED_PACK_NAME",
-    "BUNDLED_PACK_PRIORITY",
     "reload_registry",
     "reload_registry_async",
 ]
@@ -46,7 +54,6 @@ logger = logging.getLogger(__name__)
 
 ANSIBLE_DIR = Path(__file__).parent.parent / "ansible"
 BUNDLED_PACK_NAME = "bundled"
-BUNDLED_PACK_PRIORITY = 0
 
 
 ACTION_REGISTRY: dict[str, ActionDefinition] = {}
@@ -64,7 +71,6 @@ def _bundled_pack():
     return Pack(
         name=BUNDLED_PACK_NAME,
         path=ANSIBLE_DIR,
-        priority=BUNDLED_PACK_PRIORITY,
         pack_id=None,
     )
 
@@ -124,7 +130,6 @@ def reload_registry() -> dict[str, ActionDefinition]:
                         Pack(
                             name=row["name"],
                             path=path,
-                            priority=row["priority"],
                             pack_id=row["id"],
                         )
                     )
@@ -189,10 +194,9 @@ def _scan_db_pack_rows_sync(conn) -> list[dict]:
         select(
             ActionPack.id,
             ActionPack.name,
-            ActionPack.position,
         ).where(ActionPack.enabled.is_(True))
     )
-    return [{"id": r.id, "name": r.name, "priority": r.position + 1} for r in result]
+    return [{"id": r.id, "name": r.name} for r in result]
 
 
 def _load_resolutions_and_snapshot_sync(

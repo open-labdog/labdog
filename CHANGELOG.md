@@ -7,54 +7,291 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Changed
+
+#### Bundled action pack is now fetched at build time from `labdog-playbooks`
+
+The bundled pack at `backend/app/ansible/` is no longer a
+byte-identical mirror committed to the labdog repo. It's cloned
+from `open-labdog/labdog-playbooks` at the SHA pinned in the new
+repo-root `LABDOG_PLAYBOOKS_REF` file when the container image,
+release artefacts, or local dev environment are built. Bumping the
+bundled pack is now a one-line change to that file -- no rsync,
+no drift gate.
+
+- **Dockerfile**: new `bundled-pack-fetcher` stage clones at the
+  ref passed via the `LABDOG_PLAYBOOKS_REF` build-arg (CI reads
+  the value from the file).
+- **packaging/Makefile**: new `fetch-bundled-pack` target that
+  the `build` target depends on; reads from the same file. The
+  `.deb` / `.rpm` / `.tar.gz` artefacts pick up the same content
+  the container does.
+- **dev/dev.sh**: auto-fetches into `backend/app/ansible/` on
+  first `start` when the dir is empty. New `./dev/dev.sh bundle`
+  subcommand re-fetches on demand. Set
+  `LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks` to rsync from
+  a sibling working copy instead of cloning -- useful when
+  iterating on upstream playbooks.
+- **CI**: `backend-test` and `ansible-lint` jobs now run the same
+  fetch logic before pytest / ansible-lint so the bundled pack is
+  present.
+- **Removed from git**: `backend/app/ansible/` (the in-repo bundled
+  pack directory, ~2200 lines of YAML), `scripts/check-bundled-mirrors-playbooks.sh`
+  (the drift gate), and the `bundled-pack-mirror` CI job. With the
+  bundled pack build-time-fetched at a pinned ref, drift can't
+  exist; the directory is now gitignored and populated at build
+  time (or via `./dev/dev.sh bundle` in dev).
+
+The DB-backed `labdog-playbooks` override pack auto-registered
+on fresh install is unchanged (still points at `main` and is
+synced via the normal pack-sync flow). The two paths -- bundled
+(immutable, baked in at build time) and DB-backed (mutable,
+synced at runtime) -- continue to serve their respective roles.
+
 ### Added
 
-#### Cluster-mode actions and one-click Kubernetes upgrade
+#### Action manifests can register installed resources into labdog's desired-state model
 
-Actions now declare `execution_mode: per_host` (default) or `cluster`
-in their manifest. Cluster-mode actions are dispatched as a single
-ansible-playbook invocation against a multi-host inventory, with the
-playbook driving serialisation via Ansible's `serial:` keyword. The
-existing per-host fan-out is unchanged for everything else.
+Action manifests gain a `post_run_register` field that declares which
+resources the action installs. On successful, non-dry-run
+completion, labdog inserts those resources as host-scope override
+rows (`host_id=<target>`, `group_id=NULL`) so the resources become
+labdog-managed going forward. Per-host fan-out for group-dispatched
+actions. After the inserts, a follow-up `post_run_sync` for the
+affected modules fires automatically so the Host detail tabs
+reflect the new state without waiting for the next drift check.
 
-- **`host_group_memberships.role`** — new nullable `String(32)`
-  column with a CHECK constraint allowing `control_plane`,
-  `worker`, or NULL (migration `f4a8e2b1c7d3`). Per-member role
-  drives the multi-host inventory shape (`all.children.{control_plane,
-  workers}`) for cluster-mode actions.
-- **Membership endpoints** —
-  `GET /api/groups/{id}/memberships` returns the lightweight
-  `(host_id, role)` view; `PUT /api/groups/{id}/hosts/{host_id}/role`
-  sets or clears the role (superuser-only — bad role assignments
-  can take down a Kubernetes cluster).
-- **Cluster-mode dispatch path** — when `action.execution_mode ==
-  "cluster"`, the orchestrator skips the per-host batching loop,
-  validates every member has a non-null role and there's at least
-  one control plane, and dispatches a new
-  `app.tasks.action_cluster.run_action_cluster` Celery task with a
-  single `ActionHostRun` anchored to the first control-plane host
-  (the "driver"). API `POST /actions/runs` rejects cluster-mode
-  submissions that target a single host or a group with unassigned
-  roles, surfacing the failure in the dialog before any task is
-  queued.
-- **Production `k8s-upgrade` playbook** — replaces the placeholder
-  stub at `backend/app/ansible/actions/k8s-upgrade.yml` with a
-  vendored role at `backend/app/ansible/actions/k8s-upgrade/`.
-  Drives the canonical kubeadm upgrade flow: control-plane nodes
-  serially (first runs `kubeadm upgrade plan + apply`; subsequent
-  run `kubeadm upgrade node`), then workers serially. `kubectl`-
-  driven tasks (drain / uncordon / Ready-wait) delegate to the
-  first control-plane host so no kubeconfig has to ship to other
-  nodes. Apt-only for now; RHEL/Rocky/Alma support tracked in
-  `TODO.md`.
-- **Frontend** — group's Members table grows a per-row role picker
-  (None / control_plane / worker); the run-create dialog gains a
-  cluster-mode branch that pre-flights role counts, hides the
-  parallelism picker, and refuses to submit unless the group is
-  fully assigned. The run-detail page hides the per-host status
-  grid for runs with a single `ActionHostRun` (host runs already
-  show their host in the header; cluster runs put per-node
-  progress in the streamed ansible stdout).
+Top-level keys are canonical module names (`packages`, `resolver`,
+`services`, `hosts-file`, `cron`, `linux-users`, `firewall`). Each
+value is a list of dicts validated against the module's REST API
+Create schema -- same fields, same defaults, same validators
+operators get from the UI / API. `host_id` and `group_id` are
+implicit. Example:
+
+```yaml
+post_run_register:
+  packages:
+    - package_name: alloy
+      state: present
+  services:
+    - service_name: alloy.service
+      state: running
+      enabled: true
+```
+
+Conflict semantic is **skip silently**: if the operator already
+declared the resource for that host (e.g. `alloy.service` with
+`state: stopped` deliberately), the manifest declaration is
+ignored and labdog logs a line. Operator intent wins. Per-insert
+savepoints isolate collisions so one skipped item doesn't unwind
+the rest of the batch.
+
+This closes the gap left by `post_run_sync`: that one re-enforces
+existing desired state, this one extends desired state with new
+rows. Action authors pick the right primitive per action:
+re-rotate-cert actions want `post_run_sync`; install-alloy-style
+actions want `post_run_register`.
+
+A new docs section in `docs/ui/actions.md` walks through both
+primitives and adds a warning about the four purge-mode modules
+(firewall, hosts-file, resolver, SSH-keys) where mutating via
+actions without declaring in labdog's desired state will be
+undone on next sync.
+
+#### Action manifests can declare opt-in post-run module sync
+
+Action manifests gain a `post_run_sync` field (a list of canonical
+module names: `packages`, `resolver`, `services`, `hosts-file`,
+`cron`, `linux-users`, `firewall`). After the action succeeds
+labdog dispatches a normal per-host sync against the same target
+host for each named module, re-enforcing labdog's desired state.
+Per-host fan-out across the group for `supports_host: false`
+group-dispatched actions. Skipped on dry-run, on whole-run
+failure, and on cancellation. Sync dispatch failures are logged
+but never affect the action's terminal status — the action
+already completed.
+
+The semantic is **push, not collect**: this routes through the
+normal sync pipeline which reconciles the host against labdog's
+desired state for those modules. Action authors must only declare
+modules where pushing the existing desired state is what the
+action wants — declaring `packages` from an action that installs
+something labdog's desired-state list doesn't cover would
+(re)remove it.
+
+- New `app.sync.post_run.dispatch_post_run_sync` helper creates a
+  `SyncJob` per module + dispatches `run_host_sync.delay(...)` with
+  an explicit `module_filter`. Per-insert savepoints isolate
+  collisions on the existing `(host_id, module_type)` active-row
+  unique index — a collision is treated as "already queued, skip".
+- `ActionDefinitionOut` and the frontend `ActionDefinition` type
+  gain `post_run_sync: list[str]`. The action card surfaces it as
+  a "Post-run sync: …" hint so the operator sees the side effect
+  before clicking Run.
+
+#### Sync queue parity: `SyncJob.pending_reason`
+
+Deferred `SyncJob` rows now carry the same `pending_reason` field
+that `ActionRun` / `ActionHostRun` got in 0.2.0. When
+`host_sync_orchestrator._claim_or_defer` finds another op already
+running on the target host, it stamps the SyncJob with the
+formatted blocker (`"Waiting for action sample.say-hello on host
+node-1"`, `"Waiting for sync 47 on host node-1"`, etc.) alongside
+leaving `status='pending'`. The sync queue UI surfaces the reason
+inline next to the pending icon so operators see *what* is ahead
+of them in the per-host queue instead of a context-free amber
+"Pending" badge — closing the loop on the operator-clarity work
+that already shipped on the action side.
+
+- **Schema migration `0005_syncjob_pending_reason`** adds the
+  `sync_jobs.pending_reason VARCHAR(255)` column. Additive,
+  nullable; existing pending rows and any future row dispatched
+  while the host is free keep NULL and render the same way as
+  before.
+- `SyncJobResponse` (the API shape returned from every sync
+  endpoint, reused by the per-module sync routers) gains
+  `pending_reason: str | None`.
+- The Group Firewall Sync page polls the deferred job and now
+  renders the reason inline when status is `pending`.
+
+#### Collect All now also collects host facts and auto-heals placeholder hostnames
+
+The "Collect All" button on the host overview now also triggers
+`collect_host_facts` after the per-module collectors finish, so the
+Overview tab populates with OS info, kernel, default NIC, and the
+firewall backend in addition to per-module state. Previously
+"Collect All" only ran the per-module collectors; OS facts were only
+gathered via the separately-dispatched `_builtin.collect_state`
+action, leaving "OS: Not collected" on freshly approved hosts even
+after repeated button presses.
+
+The same SSH session also fetches the remote `hostname` and, **only
+when the stored hostname matches the canonical `host-<ip>`
+discovery placeholder**, replaces it with the value the remote
+reports. Operator-chosen names are never overwritten. On a name
+collision with another host the rename is skipped silently (leaving
+the placeholder in place) rather than mangling the fetched name
+with a numeric suffix.
+
+To make the placeholder reliably detectable, every "no real
+hostname could be resolved" code path now emits the same
+`host-<ip>` shape:
+
+- `app.discovery.verify.verify_ssh` no longer synthesises the bare
+  IP as a hostname fallback — it returns `None` and lets callers
+  pick the placeholder. New helpers
+  `placeholder_hostname(ip)` / `is_placeholder_hostname(name, ip)`
+  centralise the format.
+- `POST /api/discovery/add-hosts` (bulk-add) previously used the
+  bare IP as the fallback hostname; now uses `host-<ip>` for
+  consistency with the scan-approve path.
+- The scan runner's `auto_add` branch now also creates the host
+  (with placeholder) when SSH succeeded but no hostname could be
+  resolved — previously these went to the pending queue with a
+  misleading `"unknown error"` message.
+
+Existing hosts that carry the old bare-IP fallback are left as-is
+(rename in the UI to opt into auto-heal on the next collect).
+
+### Changed
+
+#### Action pack precedence: drop positional ordering, pure per-key pinning
+
+**Breaking change to the action-pack precedence model.** The
+`ActionPack.position` column and the drag-to-reorder UI on
+`/action-packs` are gone. Each action key now has at most one
+source pack chosen by an explicit operator pin (the
+`action_resolution` table). Contested keys without a pin are
+*unresolved* — the action is unrunnable until the operator picks a
+winner. Uncontested keys still win automatically.
+
+- **Schema migration `0004_drop_pack_position`** drops the
+  `action_packs.position` column. Before dropping, the migration
+  backfills `action_resolution` rows from the current
+  `action_registry_snapshot` so existing positional defaults
+  become explicit pins — operators see no behavioural change at
+  upgrade time. Pins they don't want can be edited or deleted in
+  the UI later. Downgrade re-adds the column with default 0
+  (best-effort; perfect roundtrip impossible because pins may
+  have been edited between up/down).
+- **`POST /api/action-packs/reorder` deleted.** The endpoint and
+  its `ActionPackReorderRequest` schema are gone.
+- **`POST /api/action-packs/{id}/claim-all-keys` added.** Bulk-pin
+  every key a pack contributes via this pack; returns
+  `{created, updated, skipped}` counts. Idempotent.
+  Confirmation dialog on `/action-packs` shows the diff before
+  commit. Overwrites pins on other packs for the same keys.
+- **`POST /api/actions/runs` rejects unresolved actions** with
+  HTTP 409 and a clear message directing the operator to
+  `/action-packs` to pick a winner.
+- **`GET /api/actions/`** gains `winning_pack_id: int | None` and
+  `unresolved: bool` on every `ActionDefinitionOut`. The frontend
+  reads these to disable the Run button + show an Unresolved
+  badge on action cards.
+- **`GET /api/action-resolutions`** gains `is_unresolved: bool`
+  on each row; `current_winner` is `null` when unresolved.
+- **`/action-packs` page rewritten.** Top: Action Registry table
+  (every action key, winner, inline radio picker when contested).
+  Bottom: Pack Sources table (add/sync/edit/delete + "Make
+  winner for all keys" button per row). The bundled pack appears
+  as a read-only built-in row. No drag handles, no position
+  column. Conflict resolution flows inline — the standalone
+  `ConflictResolutionDialog` component is gone.
+- **Run dialog and action cards.** When an action's
+  `winning_pack_id` is null (and it's not a built-in), the action
+  card shows an "Unresolved" badge with a link to `/action-packs`
+  and the Run button is disabled. The Run dialog refuses to
+  submit with the same message inline.
+
+Migration is one-way safe — existing installs become explicit pins
+that mirror the prior positional winner. The freeze-on-fresh-
+conflict behaviour is unchanged (auto-pin previous winner; UI
+surfaces "Frozen" until the operator confirms).
+
+## [0.2.0] — 2026-05-13
+
+### Added
+
+#### Group-dispatch actions and one-click Kubernetes upgrade
+
+Actions that declare `supports_host: false` are now dispatched as a
+single `ansible-playbook` invocation against the whole group's flat
+inventory, instead of fanning out per-host. Multi-node coordination
+(`serial:`, `add_host`, `delegate_to`, `run_once`) lives entirely
+inside the pack's own playbook — labdog has no notion of per-member
+"roles" or cluster topology. The existing per-host fan-out is
+unchanged for everything else.
+
+- **`app.tasks.action_group.run_action_group`** — new Celery task
+  for the group-dispatch path. Builds a flat `all` Ansible inventory
+  of every member host, runs `ansible-playbook` once, routes per-host
+  events back to per-host `ActionHostRun` rows by inventory hostname.
+  The per-host advisory locks, audit log shape, and SSE streaming
+  channel work the same as the per-host path; only the dispatch
+  shape changes.
+- **`POST /api/actions/runs`** — actions with `supports_host: false`
+  reject host-target submissions with HTTP 400 and a clear message.
+- **Production `k8s-upgrade` playbook** — the bundled pack ships
+  the canonical kubeadm upgrade flow at
+  `backend/app/ansible/actions/k8s-upgrade/`. Self-discovers
+  control-plane vs worker nodes by probing every member for
+  `/etc/kubernetes/manifests/kube-apiserver.yaml` in a setup play,
+  then `serial: 1` upgrades control-plane nodes (first runs
+  `kubeadm upgrade plan + apply`; subsequent run `kubeadm upgrade
+  node`), then workers serially. `kubectl`-driven tasks (drain /
+  uncordon / Ready-wait) delegate to the first control-plane node
+  so no kubeconfig has to ship elsewhere. Apt-only for now;
+  RHEL/Rocky/Alma support tracked in `TODO.md`.
+- **Destructive group-dispatched actions get the same per-host
+  snapshot/verify/rollback envelope as per-host actions.** Before
+  the single ansible-playbook invocation, labdog snapshots every
+  member with a Proxmox VM mapping. After: per-host verify
+  (`verify_playbook` if declared, else built-in SSH/services/packages
+  checks). Per-host rollback policy on failure — only hosts whose
+  action OR verify failed get their snapshot reverted; successfully-
+  upgraded hosts keep their state and their snapshots get cleaned up.
+  The operator inspects the partial outcome and re-runs the action;
+  pack idempotency carries the resumption.
 
 ### Changed
 
@@ -403,5 +640,6 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/open-labdog/labdog/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/open-labdog/labdog/releases/tag/v0.1.0

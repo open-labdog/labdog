@@ -18,7 +18,7 @@ from app.models.host import Host, SyncStatus
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
-from app.ssh_utils import get_source_ip, ssh_connect
+from app.ssh_utils import HostKeyMismatchError, get_source_ip, ssh_connect, ssh_connect_host
 
 logger = logging.getLogger(__name__)
 
@@ -111,13 +111,14 @@ async def collect_state(
     # If the host is unreachable, mark ALL modules and return immediately.
     try:
         imported_key = asyncssh.import_private_key(private_pem)
-        async with ssh_connect(
-            host.ip_address,
-            port=host.ssh_port,
-            username=ssh_key.ssh_user,
+        async with ssh_connect_host(
+            host,
+            db,
             client_keys=[imported_key],
         ) as probe:
             host.labdog_source_ip = await get_source_ip(probe)
+    except HostKeyMismatchError:
+        raise
     except (TimeoutError, OSError, asyncssh.Error) as e:
         msg = str(e) or "connection timed out"
         logger.warning("Host %d unreachable, skipping all collectors: %s", host_id, msg)
@@ -189,6 +190,18 @@ async def collect_state(
     await refresh_host_sync_status(host, db)
 
     await db.commit()
+
+    # Kick off host-level fact collection (OS info, kernel, firewall
+    # backend, NIC, and the placeholder-hostname auto-heal). Fire-and-
+    # forget on the long_running queue -- the UI re-fetches the host
+    # row via React Query so the new fields surface on next refresh.
+    # Skipped on collect-one-module calls since the operator is focused
+    # on a single module surface, not the Overview tab.
+    if module is None:
+        from app.tasks.facts import collect_host_facts
+
+        collect_host_facts.delay(host_id)
+
     return results
 
 
@@ -446,10 +459,9 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         import asyncssh as _asyncssh
 
         private_key = _asyncssh.import_private_key(private_pem)
-        async with ssh_connect(
-            host.ip_address,
-            port=host.ssh_port,
-            username=ssh_user,
+        async with ssh_connect_host(
+            host,
+            db,
             client_keys=[private_key],
         ) as conn:
             # Collect all real users (uid >= 1000 or uid 0) and groups
@@ -486,10 +498,9 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         import asyncssh as _asyncssh
 
         private_key = _asyncssh.import_private_key(private_pem)
-        async with ssh_connect(
-            host.ip_address,
-            port=host.ssh_port,
-            username=ssh_user,
+        async with ssh_connect_host(
+            host,
+            db,
             client_keys=[private_key],
         ) as conn:
             # List all user crontabs
@@ -585,6 +596,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
                 ssh_user,
                 host_id=host.id,
                 db=db,
+                host=host,
             )
             if detected:
                 backend = detected
@@ -619,6 +631,7 @@ async def _detect_firewall_backend(
     ssh_user: str,
     host_id: int,
     db: AsyncSession,
+    host: Host | None = None,
 ) -> tuple[str | None, list[str]]:
     """Auto-detect firewall backend by probing for known tools.
 
@@ -634,12 +647,16 @@ async def _detect_firewall_backend(
 
     try:
         key = asyncssh.import_private_key(private_pem)
-        async with ssh_connect(
-            host_ip,
-            port=ssh_port,
-            username=ssh_user,
-            client_keys=[key],
-        ) as conn:
+        if host is not None:
+            _connect_ctx = ssh_connect_host(host, db, client_keys=[key])
+        else:
+            _connect_ctx = ssh_connect(
+                host_ip,
+                port=ssh_port,
+                username=ssh_user,
+                client_keys=[key],
+            )
+        async with _connect_ctx as conn:
             # Check for nftables (nft may be in /usr/sbin which isn't always in PATH)
             r = await conn.run("command -v nft || test -x /usr/sbin/nft", check=False)
             if r.exit_status == 0:

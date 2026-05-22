@@ -1,19 +1,19 @@
 # Managed by LabDog
 #
 # Full example for a PostgreSQL database-tier group.  Counterpoint to
-# web-servers.yaml — different firewall posture, different packages,
+# web-servers.yaml -- different firewall posture, different packages,
 # dedicated dba user, pg_dump cron, TCP-only resolver for stability.
 #
 # Host assumptions:
-#   • Debian/Ubuntu (switch package_manager to dnf/yum for RHEL-family).
-#   • PostgreSQL 16 from the official PGDG repository.
-#   • Bind mount for backups lives at /var/backups/postgres.
+#   * Debian/Ubuntu (switch package_manager to dnf/yum for RHEL-family).
+#   * PostgreSQL 16 from the official PGDG repository.
+#   * Bind mount for backups lives at /var/backups/postgres.
 
 group: database
 priority: 200           # higher than web-servers; DB overrides generic settings
 
 # -----------------------------------------------------------------------------
-# Firewall — closed by default, Postgres only from the web tier
+# Firewall -- closed by default, Postgres only from the web tier
 # -----------------------------------------------------------------------------
 firewall:
   rules:
@@ -22,7 +22,7 @@ firewall:
       direction: input
       source: "10.0.0.0/8"
       port: 22
-      comment: "SSH — internal only"
+      comment: "SSH -- internal only"
 
     - action: allow
       protocol: tcp
@@ -81,10 +81,10 @@ services:
   - service_name: pgbackrest
     state: stopped
     enabled: false
-    comment: "Continuous archiving — started by timer, not persistently"
+    comment: "Continuous archiving -- started by timer, not persistently"
 
 # -----------------------------------------------------------------------------
-# Packages — note PGDG repository declaration
+# Packages -- note PGDG repository declaration
 # -----------------------------------------------------------------------------
 package_repositories:
   - name: pgdg
@@ -110,7 +110,7 @@ packages:
     state: present
 
 # -----------------------------------------------------------------------------
-# /etc/hosts — point at a VIP for LabDog-registered cache hosts
+# /etc/hosts -- point at a VIP for LabDog-registered cache hosts
 # -----------------------------------------------------------------------------
 hosts_entries:
   - ip_address: "10.0.2.10"
@@ -124,7 +124,7 @@ hosts_entries:
   # the real host id from /api/hosts.
   # - host_ref_id: 42
   #   aliases: [replica]
-  #   comment: "Read replica — kept in sync by LabDog"
+  #   comment: "Read replica -- kept in sync by LabDog"
   #   priority: 50
 
 # -----------------------------------------------------------------------------

@@ -7,11 +7,29 @@ without duplication.
 
 from __future__ import annotations
 
+import logging
 import socket as _socket
 
 import asyncssh
 
-from app.ssh_utils import get_source_ip, ssh_connect
+from app.ssh_utils import _format_known_hosts_line, get_source_ip, ssh_connect
+
+logger = logging.getLogger(__name__)
+
+
+def placeholder_hostname(ip: str) -> str:
+    """Canonical placeholder used when no real hostname can be resolved.
+
+    Single source of truth for the ``host-<ip>`` shape so every code
+    path produces the same string and ``is_placeholder_hostname`` can
+    detect it reliably for opportunistic auto-update later.
+    """
+    return f"host-{ip}"
+
+
+def is_placeholder_hostname(hostname: str | None, ip: str) -> bool:
+    """True if *hostname* matches the canonical placeholder for *ip*."""
+    return hostname is not None and hostname == placeholder_hostname(ip)
 
 
 async def verify_ssh(
@@ -19,8 +37,12 @@ async def verify_ssh(
     port: int,
     username: str,
     imported_key: asyncssh.SSHKey,
-) -> tuple[bool, str | None, str | None, str | None]:
+) -> tuple[bool, str | None, str | None, str | None, str | None]:
     """Attempt an SSH connection to *ip* and return hostname + source IP.
+
+    This function is used during host discovery — the Host row does not
+    exist yet.  Any server key is accepted (TOFU semantics) and returned
+    so the caller can persist it on the new Host row at create time.
 
     Args:
         ip: Target IP address string.
@@ -29,15 +51,23 @@ async def verify_ssh(
         imported_key: Already-imported asyncssh private key object.
 
     Returns:
-        A four-tuple ``(success, hostname, source_ip, ssh_error)`` where:
+        A five-tuple ``(success, hostname, source_ip, ssh_error,
+        ssh_host_key_entry)`` where:
 
-        * ``success``    -- True when the SSH session was established.
-        * ``hostname``   -- Resolved hostname string on success (falls back to
-                           reverse-DNS then the IP itself), or None on failure.
-        * ``source_ip``  -- The IP address the remote host sees as the origin
-                           of the connection, or None when unavailable.
-        * ``ssh_error``  -- Human-readable error message on failure, or None
-                           on success.
+        * ``success``            -- True when the SSH session was established.
+        * ``hostname``           -- Resolved hostname string on success (remote
+                                   ``hostname`` command, falling back to reverse
+                                   DNS), or ``None`` when neither yields a
+                                   value.
+        * ``source_ip``         -- The IP address the remote host sees as the
+                                   origin of the connection, or None.
+        * ``ssh_error``         -- Human-readable error message on failure, or
+                                   None on success.
+        * ``ssh_host_key_entry`` -- A ``known_hosts``-format line for the
+                                   server's public key (e.g.
+                                   ``"192.168.1.10 ssh-ed25519 AAAA..."``),
+                                   or None when the key could not be captured
+                                   or the connection failed.
     """
     try:
         async with ssh_connect(
@@ -50,28 +80,50 @@ async def verify_ssh(
             hostname: str | None = result.stdout.strip() or None
             source_ip: str | None = await get_source_ip(conn)
 
+            # Capture server host key for TOFU persistence.
+            server_key = conn.get_server_host_key()
+            ssh_host_key_entry: str | None = None
+            if server_key is not None:
+                ssh_host_key_entry = _format_known_hosts_line(ip, server_key)
+
             # Fall back to reverse DNS if remote returned nothing.
             if not hostname:
                 try:
                     fqdn = _socket.getfqdn(ip)
-                    if fqdn != ip:
+                    if fqdn and fqdn != ip:
                         hostname = fqdn
                 except Exception:
                     pass
 
-            if not hostname:
-                hostname = ip
-
-            return True, hostname, source_ip, None
+            return True, hostname, source_ip, None, ssh_host_key_entry
 
     except Exception as exc:
-        err = str(exc)
-        if "Permission denied" in err or "Auth" in err:
-            err = f"SSH auth failed for {username}@{ip}"
-        elif "refused" in err.lower():
-            err = f"SSH connection refused on {ip}:{port}"
-        elif "timed out" in err.lower() or "Timeout" in err:
-            err = f"SSH connection timed out for {ip}"
+        full_err = str(exc)
+        if "Permission denied" in full_err or "Auth" in full_err:
+            category = "auth_failed"
+        elif "refused" in full_err.lower():
+            category = "refused"
+        elif "timed out" in full_err.lower() or "Timeout" in full_err:
+            category = "timeout"
+        elif any(
+            kw in full_err.lower()
+            for kw in (
+                "network unreachable",
+                "no route",
+                "name or service not known",
+                "nodename nor servname",
+            )
+        ):
+            category = "unreachable"
         else:
-            err = f"SSH failed: {err[:120]}"
-        return False, None, None, err
+            category = "unknown"
+        # Full error detail stays in server logs only — not surfaced via API.
+        logger.warning(
+            "verify_ssh failed for %s:%d (user=%s): [%s] %s",
+            ip,
+            port,
+            username,
+            category,
+            full_err,
+        )
+        return False, None, None, category, None

@@ -93,8 +93,8 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
     from app.audit.logger import log_action
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.discovery.scanner import scan_network
-    from app.discovery.verify import verify_ssh
+    from app.discovery.scanner import scan_network, validate_cidr_against_blocklist
+    from app.discovery.verify import placeholder_hostname, verify_ssh
     from app.models.host import Host, HostGroupMembership
     from app.models.scan_config import ScanConfig
     from app.models.ssh_key import SSHKey
@@ -129,8 +129,21 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             imported_key = asyncssh.import_private_key(private_pem)
 
             # ---- e. TCP sweep all CIDRs ---------------------------------
+            # Defence-in-depth: re-validate each CIDR against the blocklist
+            # in case a row was inserted before this guard landed or was
+            # written directly into the DB bypassing the API schema.
             all_hits: list[tuple[str, str]] = []
             for cidr in config.cidrs:
+                try:
+                    validate_cidr_against_blocklist(cidr)
+                except ValueError as blocked_err:
+                    logger.warning(
+                        "scan_run: skipping blocked CIDR %r in config %d: %s",
+                        cidr,
+                        config_id,
+                        blocked_err,
+                    )
+                    continue
                 hits = await scan_network(cidr, port=config.ssh_port)
                 all_hits.extend(hits)
 
@@ -149,29 +162,35 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             new_ips = [ip for ip in hit_ips if ip not in existing_ips]
 
             # ---- g. SSH-verify remaining hits ---------------------------
-            verified: list[tuple[str, str]] = []  # (ip, hostname)
+            verified: list[tuple[str, str, str | None]] = []  # (ip, hostname, key_entry)
             unverified: list[tuple[str, str]] = []  # (ip, ssh_error)
 
             for ip in new_ips:
-                ok, hostname, _source_ip, ssh_err = await verify_ssh(
+                ok, hostname, _source_ip, ssh_err, ssh_host_key_entry = await verify_ssh(
                     ip,
                     port=config.ssh_port,
                     username=key_row.ssh_user,
                     imported_key=imported_key,
                 )
-                if ok and hostname is not None:
-                    # Ensure hostname uniqueness across the DB.
-                    base_hn = hostname
-                    suffix = 1
-                    while True:
-                        hn_check = await db.execute(select(Host).where(Host.hostname == hostname))
-                        if not hn_check.scalar_one_or_none():
-                            break
-                        hostname = f"{base_hn}-{suffix}"
-                        suffix += 1
-                    verified.append((ip, hostname))
-                else:
+                if not ok:
                     unverified.append((ip, ssh_err or "unknown error"))
+                    continue
+                # SSH succeeded. If the remote didn't return a real
+                # hostname, use the canonical placeholder so the host
+                # can still be added; collect_state will replace it
+                # once the remote starts answering.
+                if hostname is None:
+                    hostname = placeholder_hostname(ip)
+                # Ensure hostname uniqueness across the DB.
+                base_hn = hostname
+                suffix = 1
+                while True:
+                    hn_check = await db.execute(select(Host).where(Host.hostname == hostname))
+                    if not hn_check.scalar_one_or_none():
+                        break
+                    hostname = f"{base_hn}-{suffix}"
+                    suffix += 1
+                verified.append((ip, hostname, ssh_host_key_entry))
 
             hosts_added = 0
             hosts_pending = 0
@@ -179,13 +198,14 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
             # ---- h. Branch on auto_add ----------------------------------
             auto_added_host_ids: list[int] = []
             if config.auto_add:
-                for ip, hostname in verified:
+                for ip, hostname, ssh_host_key_entry in verified:
                     host = Host(
                         hostname=hostname,
                         ip_address=ip,
                         ssh_port=config.ssh_port,
                         ssh_user=key_row.ssh_user,
                         ssh_key_id=config.ssh_key_id,
+                        ssh_host_key_entry=ssh_host_key_entry,
                     )
                     db.add(host)
                     await db.flush()  # populate host.id before inserting memberships
@@ -231,7 +251,7 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
 
             else:
                 # auto_add=False -- queue everything for manual review.
-                for ip, hostname in verified:
+                for ip, hostname, _key_entry in verified:
                     await _upsert_pending(
                         db,
                         config_id=config_id,

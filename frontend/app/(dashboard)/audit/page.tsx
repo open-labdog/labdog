@@ -9,6 +9,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { DataTable } from "@/components/ui/data-table"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 
 interface AuditEntry {
   id: number
@@ -21,6 +28,15 @@ interface AuditEntry {
   before_state: Record<string, unknown> | null
   after_state: Record<string, unknown> | null
   ip_address: string | null
+}
+
+interface TranscriptRow {
+  id: number
+  session_id: string
+  host_id: number | null
+  user_id: number | null
+  command_text: string
+  recorded_at: string
 }
 
 const STUB_DATA: AuditEntry[] = [
@@ -40,10 +56,65 @@ function ActionBadge({ action }: { action: string }) {
   )
 }
 
+function TranscriptModal({
+  sessionId,
+  open,
+  onClose,
+}: {
+  sessionId: string
+  open: boolean
+  onClose: () => void
+}) {
+  const { data, isLoading, error } = useQuery<TranscriptRow[]>({
+    queryKey: ["ssh-transcript", sessionId],
+    queryFn: () => apiFetch<TranscriptRow[]>(`/api/audit-log/ssh-sessions/${sessionId}/transcript`),
+    enabled: open && !!sessionId,
+    retry: false,
+  })
+
+  const joined = data?.map((r) => r.command_text).join("\n") ?? ""
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>SSH Session Transcript</DialogTitle>
+        </DialogHeader>
+
+        <div className="rounded border border-blue-800 bg-blue-950/30 px-3 py-2 text-blue-300 text-xs mb-3">
+          This transcript shows what the operator typed (stdin only) — not the
+          host output. Control characters may appear as-is.
+        </div>
+
+        {isLoading && (
+          <p className="text-slate-400 text-sm text-center py-6">Loading transcript...</p>
+        )}
+
+        {error && (
+          <p className="text-slate-400 text-sm text-center py-6">No transcript captured for this session.</p>
+        )}
+
+        {!isLoading && !error && data?.length === 0 && (
+          <p className="text-slate-400 text-sm text-center py-6">No transcript rows found for this session.</p>
+        )}
+
+        {!isLoading && !error && data && data.length > 0 && (
+          <pre className="bg-slate-950 border border-slate-700 rounded p-3 text-xs font-mono text-slate-200 overflow-auto max-h-[60vh] whitespace-pre-wrap break-all">
+            {joined}
+          </pre>
+        )}
+
+        <DialogFooter showCloseButton />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const PAGE_SIZE = 20
 
 export default function AuditPage() {
   const [page, setPage] = useState(1)
+  const [transcriptSessionId, setTranscriptSessionId] = useState<string | null>(null)
 
   const { data, isLoading, error } = useQuery<AuditEntry[]>({
     queryKey: ["audit-log"],
@@ -51,7 +122,7 @@ export default function AuditPage() {
       try {
         return await apiFetch<AuditEntry[]>("/api/audit-log")
       } catch {
-        // Endpoint may not exist yet — fall back to stub data
+        // Endpoint may not exist yet -- fall back to stub data
         return STUB_DATA
       }
     },
@@ -145,6 +216,31 @@ export default function AuditPage() {
                 defaultWidth: 160,
                 filter: { type: "text", placeholder: "e.g. 10.0.1" },
               },
+              {
+                key: "transcript",
+                label: "",
+                accessor: () => "",
+                cell: (e) => {
+                  const sid =
+                    e.action === "session_start" &&
+                    e.entity_type === "ssh_session" &&
+                    e.after_state?.session_id
+                      ? String(e.after_state.session_id)
+                      : null
+                  if (!sid) return null
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={() => setTranscriptSessionId(sid)}
+                    >
+                      View transcript
+                    </Button>
+                  )
+                },
+                defaultWidth: 140,
+              },
             ]}
           />
 
@@ -165,6 +261,14 @@ export default function AuditPage() {
             </p>
           )}
         </>
+      )}
+
+      {transcriptSessionId && (
+        <TranscriptModal
+          sessionId={transcriptSessionId}
+          open={!!transcriptSessionId}
+          onClose={() => setTranscriptSessionId(null)}
+        />
       )}
     </div>
   )

@@ -192,7 +192,7 @@ restore data from the backup set.
 # 1. Install LabDog from the same version you backed up from
 #    (newer minor versions work, but pick the same version first
 #    then upgrade afterwards to keep the trail clear).
-sudo apt install ./labdog_0.1.0-1_amd64.deb
+sudo apt install ./labdog_0.2.0-1_amd64.deb
 
 # 2. Restore the config BEFORE starting the service so the
 #    encryption_key is in place when migrations run.

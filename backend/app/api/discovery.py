@@ -11,7 +11,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
 from app.discovery.scanner import validate_cidr
-from app.discovery.verify import verify_ssh
+from app.discovery.verify import placeholder_hostname, verify_ssh
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.ssh_key import SSHKey
@@ -160,7 +160,7 @@ async def add_discovered_hosts(
             continue
 
         # SSH verification is mandatory — we must be able to connect.
-        ok, hostname, source_ip, ssh_err = await verify_ssh(
+        ok, hostname, source_ip, ssh_err, ssh_host_key_entry = await verify_ssh(
             ip,
             port=body.ssh_port,
             username=ssh_user,
@@ -170,8 +170,11 @@ async def add_discovered_hosts(
             failed.append(FailedHost(ip=ip, error=ssh_err or "SSH failed"))
             continue
 
-        # Ensure hostname uniqueness
-        base_hostname = hostname or ip
+        # Ensure hostname uniqueness. When SSH succeeded but no real
+        # hostname could be resolved, fall back to the canonical
+        # placeholder so collect_state can opportunistically replace
+        # it later once the remote starts answering.
+        base_hostname = hostname or placeholder_hostname(ip)
         hostname = base_hostname
         suffix = 1
         while True:
@@ -188,6 +191,7 @@ async def add_discovered_hosts(
             ssh_user=ssh_user,
             ssh_key_id=body.ssh_key_id,
             labdog_source_ip=source_ip,
+            ssh_host_key_entry=ssh_host_key_entry,
         )
         db.add(host)
         await db.flush()  # get host.id

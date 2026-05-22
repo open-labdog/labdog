@@ -39,15 +39,15 @@ def well_formed_origin(tmp_path: Path) -> Path:
     pack = path / "actions" / "upgrade"
     pack.mkdir(parents=True)
     (pack / "pack.yml").write_text("name: upgrade-pack\n")
-    actions = pack / "actions"
-    actions.mkdir()
-    (actions / "linux-upgrade.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
-    (actions / "linux-upgrade.manifest.yml").write_text(
+    action_dir = pack / "actions" / "linux-upgrade"
+    action_dir.mkdir(parents=True)
+    (action_dir / "playbook.yml").write_text("---\n- name: x\n  hosts: all\n  tasks: []\n")
+    (action_dir / "manifest.yml").write_text(
         "key: linux-upgrade\n"
         "name: Upgrade Linux\n"
         "description: ''\n"
         "icon: Box\n"
-        "playbook: linux-upgrade.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "5 min"\n'
         "destructive: false\n"
@@ -81,11 +81,11 @@ async def _make_repo(db, url: str, name: str = "test-scan-repo") -> GitRepositor
 
 
 async def test_scan_endpoint_requires_superuser(client, db, well_formed_origin):
-    """Unauthenticated → 401."""
+    """Unauthenticated → 401 or 403 (CSRF fires before auth on mutating requests)."""
     repo = await _make_repo(db, f"file://{well_formed_origin}")
     await db.commit()
     resp = await client.post(f"/api/git-repos/{repo.id}/scan")
-    assert resp.status_code == 401
+    assert resp.status_code in (401, 403)
 
 
 async def test_scan_endpoint_requires_superuser_for_non_admin(

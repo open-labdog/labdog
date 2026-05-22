@@ -26,7 +26,7 @@ The catalog comes from two sources:
 
 - [Running actions](#running-actions)
 - [Scheduled actions](#scheduled-actions)
-- [Cluster-mode actions](#cluster-mode-actions)
+- [Group-dispatch actions](#group-dispatch-actions)
 - [Action packs](#action-packs)
   - [Bundled pack](#bundled-pack)
   - [Adding a pack](#adding-a-pack)
@@ -64,33 +64,45 @@ the DB — history is visible in the same tab.
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
 
-### Cluster-mode actions
+### Group-dispatch actions
 
 Most actions fan out per-host: LabDog dispatches one Celery task per
-target host with a single-host inventory and a parallelism setting
+target host with a single-host inventory, and a parallelism setting
 controls how many run concurrently. A few actions need the whole
 group's hosts visible to a single ansible run — for example,
 `k8s-upgrade` drains, upgrades, and re-admits each node in turn while
 the rest of the cluster keeps serving traffic. Such actions declare
-`execution_mode: cluster` in their manifest.
+`supports_host: false` in their manifest.
 
 **What's different in the UI:**
 
-- The action card only appears on group views (cluster-mode actions
-  set `supports_host: false`).
-- Every group member must carry a **cluster role** — `control_plane`
-  or `worker`. Set them on the group's Members tab via the per-row
-  role picker. The Run dialog refuses to submit until every member
-  is assigned and at least one `control_plane` exists.
-- The parallelism picker is hidden — cluster runs are always one
-  ansible-runner invocation against a multi-host inventory; the
-  playbook decides ordering with Ansible's `serial:` keyword.
-- The run-detail page hides the per-host status grid (there's exactly
-  one `ActionHostRun` anchored to the first control-plane host as the
-  driver). Watch the streamed ansible stdout for per-node progress.
+- The action card only appears on group views (the action's manifest
+  sets `supports_host: false`, so a host target makes no sense).
+- The Run dialog has no special pre-flight — there are no per-member
+  roles to assign in LabDog. Just pick the group and run.
+- The parallelism picker is hidden — group-dispatched runs are always
+  one ansible-runner invocation against a flat multi-host inventory;
+  the pack's playbook decides ordering with Ansible's `serial:`,
+  `add_host`, `delegate_to`, and `run_once` primitives.
+- The run-detail page shows one `ActionHostRun` per member, all
+  driven by the same ansible-runner invocation. Per-host events get
+  routed back to the matching row by inventory hostname.
+- Destructive group-dispatched runs get the same per-host
+  snapshot/verify/rollback envelope as host-targeted runs: LabDog
+  snapshots every member with a Proxmox VM mapping before the
+  playbook, runs verify on each host after, and rolls back any host
+  whose action or verify failed (auto_rollback toggle). Per-host
+  rollback policy — succeeded hosts keep their state, only the
+  failed ones revert. Operator inspects the partial outcome, fixes
+  the underlying issue, re-runs the action; pack idempotency lets
+  the re-run skip already-succeeded hosts (k8s-upgrade detects
+  already-on-target nodes via a `kubelet --version` probe).
 
-The bundled `k8s-upgrade` is currently **apt-only** — Debian and
-Ubuntu nodes. RHEL / Rocky / Alma support is on the roadmap.
+The bundled `k8s-upgrade` discovers control-plane vs worker by
+probing each node for `/etc/kubernetes/manifests/kube-apiserver.yaml`
+in a setup play, then `serial: 1` upgrades control-plane nodes
+followed by workers. The action is currently **apt-only** — Debian
+and Ubuntu nodes. RHEL / Rocky / Alma support is on the roadmap.
 
 ---
 
@@ -148,10 +160,11 @@ scheduled_actions:
 
 A pack is a collection of playbooks + their LabDog manifests. Each
 action key in the registry comes from exactly one pack. When two packs
-declare the same key, the pack at the top of the list on
-**Action Packs** wins (see
-[below](#pack-precedence-and-resolving-conflicts)); the shadowed pack's
-copy is still contributed to the registry history for debugging.
+declare the same key, the operator pins which pack wins via a per-key
+*resolution*; until pinned, the key is **unresolved** and the action
+is unrunnable (see
+[below](#pack-precedence-and-resolving-conflicts)). There is no
+global pack ordering.
 
 ### Bundled pack
 
@@ -164,10 +177,21 @@ actions:
 | `linux-os-upgrade` | Major-release upgrade (e.g. Debian 12 → 13, Ubuntu 22.04 → 24.04). |
 | `k8s-upgrade` | Drains, upgrades, and re-admits each node in a Kubernetes cluster. |
 
-The bundled pack is immutable — you can't edit or delete it from the UI.
-It exists as a safety net so LabDog keeps working even if all other
-packs are unreachable. You override its actions by adding a pack —
-any pack listed on **Action Packs** sits above bundled by default.
+The bundled pack is built **at container build time** by cloning
+[`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
+at the SHA pinned in the labdog repo's `LABDOG_PLAYBOOKS_REF` file.
+The bundled pack content shipped with a particular labdog release
+therefore corresponds exactly to a labdog-playbooks commit — bumping
+labdog typically bumps the bundled pack as well. The bundled pack is
+immutable — you can't edit or delete it from the UI. It exists as a
+safety net so LabDog keeps working even if all other packs are
+unreachable. It appears as a read-only row in the **Pack Sources**
+table on `/action-packs` (no Sync / Edit / Delete buttons — just a
+"built-in" badge) so its always-present-candidate status is
+discoverable.
+
+To override a bundled action, add a pack that declares the same key
+and pin the per-key resolution to your pack on `/action-packs`.
 
 ### Adding a pack
 
@@ -175,7 +199,7 @@ Git repository configuration (URL, branch, credentials) is **not**
 duplicated on the pack. Configure the repo once under
 [Git Repos](gitops-ui.md), then point one or more packs at it. The
 pack only carries its own metadata — name, source type, a subpath,
-position, enabled flag.
+enabled flag.
 
 **Recommended path — the repo onboarding wizard.** When the repo
 contains action packs (and optionally GitOps group YAML), use
@@ -193,7 +217,7 @@ so newly-pushed packs can be picked up without re-onboarding.
 The wizard treats any directory containing a `pack.yml` as a pack
 root and walks the whole repo to find them — `packs/<name>/`,
 `actions/<name>/`, the repo root itself, all work. If no `pack.yml`
-exists anywhere but the repo root has an `actions/*.manifest.yml`
+exists anywhere but the repo root has an `actions/*/manifest.yml`
 tree, the repo is treated as a single root-level pack (matches the
 [`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
 convention).
@@ -211,8 +235,10 @@ Packs** (Integrations → Action Packs) → **Add Pack**. Fields:
 | Filesystem path | Absolute path on the LabDog host. Only shown for source = Local. LabDog reads the directory in place — nothing is cloned. |
 | Enabled | Uncheck to keep the pack configured but out of the registry. |
 
-A new pack lands at the top of the list (highest position). Drag rows
-to reorder afterwards — see
+A new pack joins the **Pack Sources** table — packs are unordered.
+Any action key the pack contributes that doesn't collide with an
+existing pack wins automatically. Keys that *do* collide become
+*unresolved* (you must pin a winner). See
 [below](#pack-precedence-and-resolving-conflicts).
 
 On save, LabDog resolves the linked repository's URL, branch, and
@@ -232,66 +258,84 @@ require pasted `known_hosts`.
 
 ### Pack precedence and resolving conflicts
 
-Packs layer additively. The **Action Packs** page shows a single
-ordered list — top of the list wins on action-key collisions. The
-bundled pack sits implicitly below every listed pack and never
-appears as a row. On keys that only appear in one pack, nothing
-conflicts — both contribute freely and the registry is the union.
+Packs are **unordered**. Each action key has at most one source
+pack — the **winner** that the registry serves. There are three
+cases:
 
-Drag rows to reorder. Top-first ordering matches the firewall-rules
-page convention: the row at the top has the highest priority.
+| Case | What happens |
+|---|---|
+| **Uncontested** — one pack declares the key | That pack wins automatically. Status `OK`. No picker. |
+| **Contested + pinned** — multiple packs declare the key, operator has chosen a winner | The pinned pack wins. Status `Pinned` (or `Frozen` for auto-pins LabDog wrote on a fresh sync conflict, awaiting your confirmation). |
+| **Contested + unresolved** — multiple packs declare the key, no pin yet | Action is *unrunnable*: `POST /api/actions/runs` returns 409, the Run button is disabled on host/group action cards, and the row is amber-tinted in the registry table with a "Pick winner" prompt. |
 
-**Common pattern:**
+The **Action Packs** page is two surfaces stacked vertically:
 
-```
-my-local-pack   ← a playbook I'm still iterating on (top)
-  ↓ overrides
-my-team-pack    ← redeclares linux-upgrade (drains K8s first),
-                  adds: deploy-frontend, rotate-secrets
-  ↓ overrides
-labdog-default  ← adds: reboot-host, rotate-certs
-  ↓ overrides
-bundled         ← linux-upgrade, linux-os-upgrade, k8s-upgrade
-                  (implicit; not shown on the page)
-```
+1. **Action Registry** (primary surface). One row per action key:
+   action key, winner, status. Contested rows expand on click into
+   an inline radio group with every candidate pack — pick one and
+   it auto-saves via `POST /api/action-resolutions/{key}`.
+   Uncontested rows are plain text — there's no picker because the
+   key has only one contributor; if and when another pack appears
+   later, freeze-on-fresh-conflict kicks in and you pin then.
+2. **Pack Sources** (management-only). Add, sync, edit, delete
+   packs. Each row also has a **Make winner for all keys** button
+   that bulk-pins every key the pack contributes via `POST
+   /api/action-packs/{id}/claim-all-keys` — a confirmation dialog
+   shows the diff (how many keys are already pinned here, how many
+   would be moved from other packs) before commit. The bundled pack
+   is a read-only row here so its presence is discoverable.
 
-#### Operator-pinned winners
+#### Bulk-pin: "Make winner for all keys"
 
-Drag-to-reorder is the default mechanism, but every contested key
-can also be pinned individually. The **conflict banner** at the top
-of **Action Packs** lists keys contributed by more than one pack —
-click it to open the resolution modal. Each row offers a radio per
-candidate pack (including bundled when it contributes). The pin
-sticks across reorders and survives sync until you reset it.
+When you add a new pack that should own every key it contributes,
+clicking **Make winner for all keys** in the Pack Sources row is
+the one-click flow. The endpoint writes one `action_resolution` row
+per key the pack contributes (creating new rows where the key was
+unresolved, overwriting rows that pointed at other packs, leaving
+rows that already pointed here untouched). The confirmation dialog
+shows the per-category counts before commit and the toast surfaces
+the final `{created, updated, skipped}` numbers.
 
 #### Freeze-on-fresh-conflict
 
 LabDog never silently flips a winner. When a sync introduces a new
 manifest that turns a previously-uncontested key into a contested
-one, LabDog **freezes** the winner to whichever pack was previously
-serving that key — even if position-based default would now favour
-the newcomer. The conflict banner highlights frozen rows with a
-"frozen" badge so you can confirm the choice (or pick a different
-pack). Once you set or clear a resolution explicitly, the freeze
-clears.
+one, the rebuild **freezes** the winner to whichever pack was
+previously serving that key by writing an `action_resolution` row
+pinning it. The row's `decided_by_user_id` is `NULL`, which the UI
+surfaces as a **Frozen** status — you can confirm by re-pinning the
+same pack (which sets `decided_by_user_id` to you and clears the
+Frozen badge) or switch to a different candidate. Without the
+freeze, an upstream sync could turn a working action into an
+unresolved one — frozen behaviour preserves status quo until you
+look.
+
+#### Pack disappears
+
+If the pack a resolution points at is deleted, disabled, or
+removed by a sync, the resolution row CASCADEs away (or is swept
+by the registry rebuild's stale-resolution check). The key reverts
+to either uncontested (one remaining contributor wins
+automatically) or unresolved (multiple remaining contributors,
+needs a new pick). The action becomes unrunnable in the unresolved
+case until you re-pin.
 
 ### Provenance: which pack won?
 
-Every action card shows a small badge with the pack that supplied it:
+Every action card shows a small badge with the pack that supplied
+it, plus an extra "Unresolved" badge when the key has multiple
+contributors and no winner pinned:
 
 | Badge | Meaning |
 |---|---|
 | Grey: `from <pack>` | The action is uncontested — only one pack declares this key. |
-| Amber: `from <pack> (overrides N)` | The action collided; this pack's version won. Hover the badge for the list of shadowed packs. |
+| Amber: `from <pack> (overrides N)` | The action is contested and pinned; this pack's version won. Hover for the list of other contributors. |
+| Amber: `Unresolved` (on host/group action cards) | Multiple packs declare this key and no winner is pinned. Run is disabled. Click through to `/action-packs` to pick. |
 
-The API exposes this at `GET /api/actions/` as `pack_name` and
-`overridden_from` fields on each action. Logs also record the override
-chain when the registry loads:
-
-```
-INFO app.actions.packs action 'linux-upgrade' from pack 'labdog-default' overrides pack 'bundled'
-INFO app.actions.packs action 'linux-upgrade' from pack 'my-team-pack' overrides pack 'labdog-default'
-```
+The API exposes this at `GET /api/actions/` as `pack_name`,
+`winning_pack_id` (the `ActionPack.id` of the winner, `null` for
+unresolved keys and bundled-pack actions), `unresolved` (boolean),
+and `overridden_from` (every other contributor's name).
 
 ---
 
@@ -313,32 +357,45 @@ bread and butter:
 
 ```
 <pack>/
-├── pack.yml              (optional; metadata only, not load-critical)
+├── pack.yml                  (optional; metadata only, not load-critical)
 ├── actions/
-│   ├── <key>.yml         (the Ansible playbook)
-│   └── <key>.manifest.yml  (the LabDog action definition)
-└── roles/                (optional)
-    └── <role-name>/      (standard Ansible role layout)
+│   └── <key>/                (one directory per action)
+│       ├── manifest.yml      (the LabDog action definition)
+│       ├── playbook.yml      (the Ansible playbook)
+│       └── roles/            (optional; action-private roles)
+│           └── <role-name>/  (auto-resolved by Ansible)
+└── roles/                    (optional; pack-shared roles)
+    └── <role-name>/          (added to ANSIBLE_ROLES_PATH)
 ```
 
-LabDog discovers actions by globbing `actions/*.manifest.yml`. Each
-manifest names a `playbook` file relative to the manifest's directory.
-A playbook without a matching manifest is silently ignored.
+LabDog discovers actions by globbing `actions/*/manifest.yml`. Each
+manifest names a `playbook` file relative to its own directory
+(conventionally `playbook.yml`). An action is a directory: copy
+`actions/<key>/` into another pack to override that action wholesale.
+
+**Action-private vs shared roles.** Put a role under
+`actions/<key>/roles/<role-name>/` when it is private to one action —
+Ansible's playbook-adjacent role search picks it up automatically with
+zero config. Use the top-level `<pack>/roles/` only for roles genuinely
+reused across multiple actions.
 
 ### Manifest schema
 
 ```yaml
-key: my-action               # stable identifier; collisions resolve by pack position (or operator pin)
+key: my-action               # stable identifier; collisions require an operator-pinned winner per key
 name: My Action              # shown on the action card
 description: >-              # one-paragraph description; shown under name
   Does a thing to the host.
 icon: Zap                    # lucide-react icon name (Zap, Layers, Network, etc.)
-playbook: my-action.yml      # filename relative to this manifest
+playbook: playbook.yml       # filename relative to this manifest
 version: "1.0"               # bump on breaking parameter changes
 estimated_duration: "30 sec" # human-readable; shown on the card
 destructive: false           # see "Destructive actions" below
 supports_group: true         # can target a group of hosts?
 supports_host: true          # can target a single host?
+supports_fleet: false        # can target every host in the inventory?
+                             # Conservative default; flip to true only for
+                             # truly fleet-wide work (drift checks, etc.).
 parameters:                  # passed as --extra-vars at run time
   - key: my_param
     label: My parameter
@@ -418,12 +475,12 @@ failed task fails the verify, which fails the action, which triggers
 rollback.
 
 ```yaml
-# actions/deploy-app.manifest.yml
+# actions/deploy-app/manifest.yml
 key: deploy-app
 name: Deploy app
 destructive: true
-playbook: deploy-app.yml
-verify_playbook: deploy-app-verify.yml  # runs after deploy-app.yml
+playbook: playbook.yml
+verify_playbook: verify.yml             # sibling of playbook.yml in the same action dir
 verify_timeout_seconds: 120             # budget; default 300
 # ...rest of the manifest
 ```
@@ -433,7 +490,7 @@ same pack roles** as the main playbook — no special plumbing needed.
 Typical patterns:
 
 ```yaml
-# actions/deploy-app-verify.yml
+# actions/deploy-app/verify.yml
 - name: Verify the deploy worked
   hosts: all
   gather_facts: false
@@ -466,9 +523,111 @@ installed). The full working example is
 **Reusable verify templates** ship in the `labdog-playbooks` repo
 under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/verify)
 — point `verify_playbook:` at one of them (e.g.
-`../verify/post-upgrade.yml`) and pass overrides through manifest
+`../../verify/post-upgrade.yml` — `../../` reaches the pack root from
+inside the action directory) and pass overrides through manifest
 parameters. The bundled `linux-upgrade` action in that repo uses
 `verify/post-upgrade.yml` and is the reference implementation.
+
+### Post-run reconciliation: sync and register
+
+An action's manifest can opt in to two post-success hooks that bridge
+the action world and labdog's desired-state modules. Both are
+declarative, both fire only on successful non-dry-run completion,
+both fan out per-host for group-dispatched actions, and both log
+without affecting the action's terminal status if they fail.
+
+#### `post_run_sync` — re-enforce existing desired state
+
+```yaml
+post_run_sync:
+  - firewall
+  - services
+```
+
+After success, labdog dispatches a normal per-host sync for each
+named module against the same target host. The sync routes through
+the standard `host_sync_orchestrator` pipeline: per-host advisory
+lock, coalesced playbook, audit row, the works.
+
+Semantics are **push, not collect**. Use this when the action
+needs labdog's existing config to be (re-)enforced after the
+action runs — e.g. a kernel-upgrade action that wants the firewall
+ruleset reapplied because the upgrade swapped backends, or a cert-
+rotation action that wants services reloaded.
+
+**Don't use `post_run_sync` for "install this new thing" actions.**
+Those modules manage labdog's *declared* desired state. If the
+action installs a service labdog doesn't declare (e.g. a fresh
+`alloy.service` install), `post_run_sync: [services]` won't add
+alloy to labdog's desired set; the existing cleanup pass would
+also skip it (no labdog marker). For install actions, use
+`post_run_register` instead.
+
+#### `post_run_register` — register installed resources
+
+```yaml
+post_run_register:
+  packages:
+    - package_name: alloy
+      state: present
+  services:
+    - service_name: alloy.service
+      state: running
+      enabled: true
+```
+
+After success, labdog inserts each declared resource as a **host-
+scope override row** (`host_id=<target>`, `group_id=NULL`) so the
+resource becomes labdog-managed from that point on. After the
+inserts, a `post_run_sync` is automatically dispatched for the
+affected modules so the Host detail tabs reflect the new state
+immediately (no waiting for the next drift check).
+
+Top-level keys are canonical module names: `packages`, `resolver`,
+`services`, `hosts-file`, `cron`, `linux-users`, `firewall`. Each
+value is a list of dicts validated against the module's REST API
+Create schema — same fields, same defaults, same validators
+operators get from the UI / API. `host_id` and `group_id` are
+implicit and must not be declared.
+
+**Conflict semantic: skip silently on uniqueness collision.** If
+the operator has already declared the resource for that host
+(e.g. `alloy.service` with `state: stopped`, deliberately), the
+manifest declaration is ignored and labdog logs `post_run_register:
+skipping services[0] on host=42 -- already declared`. Operator
+intent wins.
+
+**When to use `post_run_register`:** action installs something
+labdog should manage going forward. Examples: an `alloy-install`
+action registers `alloy.service` + the `alloy` package; an
+`add-monitoring-user` action registers the new user under
+`linux-users`. After the action runs, drift checks and syncs treat
+the new rows like any other operator-declared row.
+
+#### Purge-mode modules: a warning
+
+Four module categories overwrite the host with labdog's complete
+desired state on every sync (i.e. unknown entries get removed):
+
+- **firewall** — rebuilds the nftables ruleset from scratch
+- **hosts-file** — overwrites `/etc/hosts` with desired entries
+- **resolver** — overwrites resolver config (resolv.conf / NM /
+  systemd-resolved) with desired settings
+- **SSH keys** (within `linux-users`) — exclusive mode; deletes all
+  keys not in labdog's desired set
+
+**Do not use actions to mutate these without also declaring them in
+labdog's desired state — either via `post_run_register:` or via the
+UI/API first.** Otherwise the next sync removes whatever the action
+installed.
+
+The other module behaviours are tolerant: `packages`, `cron`,
+`linux-users` (non-SSH), and `services` (non-labdog-marked units)
+leave unknown entries alone. Install-this-new-thing actions
+targeting only those modules are safe even without
+`post_run_register` — though without it, the resources won't
+appear in the corresponding UI tabs until the next drift check
+collects state.
 
 ---
 
@@ -481,16 +640,19 @@ the repo. The credentials live on the linked repo — fix them under
 **Git Repos**, then hit **Sync** on the pack.
 
 **"No actions appear after adding a pack."** Check: (1) the pack's
-`actions/` directory exists and contains `*.manifest.yml` sidecars, (2)
+`actions/` directory exists and contains `<key>/manifest.yml` files, (2)
 each manifest's `playbook:` field names a file that actually exists,
 (3) the pack is `Enabled` in the list view. If a single manifest fails
 to parse the rest still load — check the API server logs for
 `pack 'X': failed to load manifest …`.
 
 **"The wrong version of an action ran."** The amber badge tells you
-which pack won. If that's not what you want, either raise the winning
-pack's role (Override → Default is a demotion, confusingly — Override
-beats Default on collision) or disable the winning pack.
+which pack won. If that's not what you want, drag the pack you want
+above it on the **Action Packs** page (top wins), or pin a specific
+winner via the per-key resolution dialog (open from the Contested
+chip in the Active Action Catalog or the conflict banner above the
+pack list). Disabling the winning pack works too if you don't need
+it at all.
 
 **"The action doesn't show up on a host but shows on groups."** Check
 the manifest's `supports_host` / `supports_group` flags.

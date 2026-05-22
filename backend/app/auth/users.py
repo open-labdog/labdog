@@ -1,7 +1,9 @@
 import logging
+import secrets
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Response
 from fastapi_users import BaseUserManager, FastAPIUsers, IntegerIDMixin
+from fastapi_users import schemas as fu_schemas
 from fastapi_users.authentication import (
     AuthenticationBackend,
     CookieTransport,
@@ -12,8 +14,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db import AsyncSessionLocal, get_db
+from app.db import get_db
 from app.models.user import User
+
+_CSRF_COOKIE_NAME = "labdog_csrf"
 
 logger = logging.getLogger(__name__)
 
@@ -52,23 +56,57 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
     reset_password_token_secret = settings.security.secret_key
     verification_token_secret = settings.security.secret_key
 
+    async def create(
+        self,
+        user_create: fu_schemas.UC,
+        safe: bool = False,
+        request: Request | None = None,
+    ) -> User:
+        """Create a user, atomically promoting the first one to superuser.
+
+        The advisory lock at key 8675309 serialises concurrent first-register
+        attempts across processes.  The lock is acquired on the same session
+        that fastapi-users uses to INSERT the user row, so the lock, the count
+        check, and the INSERT all live in a single transaction.  If anything
+        raises after the lock is acquired but before the commit, the whole
+        transaction rolls back and no half-created user persists.
+        """
+        session = self.user_db.session
+        # Advisory lock serialises concurrent registrations (same key as the
+        # former on_after_register path and the auth_setup outer gate).
+        await session.execute(text("SELECT pg_advisory_xact_lock(8675309)"))
+        result = await session.execute(select(func.count()).select_from(User))
+        count = result.scalar_one()
+        if count == 0:
+            user_create.is_superuser = True  # type: ignore[attr-defined]
+            user_create.is_verified = True  # type: ignore[attr-defined]
+            logger.info("First registration detected — will promote to superuser.")
+        return await super().create(user_create, safe=safe, request=request)
+
+    async def on_after_login(
+        self,
+        user: User,
+        request: Request | None = None,
+        response: Response | None = None,
+    ) -> None:
+        """Set the double-submit CSRF cookie alongside the auth cookie."""
+        if response is None:
+            return
+        token = secrets.token_urlsafe(settings.security.csrf_token_bytes)
+        response.set_cookie(
+            _CSRF_COOKIE_NAME,
+            token,
+            max_age=settings.security.session_lifetime_seconds,
+            path="/",
+            domain=settings.security.cookie_domain or None,
+            secure=settings.security.cookie_secure,
+            httponly=False,
+            samesite="lax",
+        )
+        logger.debug("CSRF cookie set for user %d.", user.id)
+
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %d (%s) registered.", user.id, user.email)
-        async with AsyncSessionLocal() as session:
-            # Advisory lock serializes with the register endpoint to prevent
-            # multiple first-user superuser promotions
-            await session.execute(text("SELECT pg_advisory_xact_lock(8675309)"))
-            result = await session.execute(select(func.count()).select_from(User))
-            count = result.scalar_one()
-            if count == 1:
-                # Re-fetch the user within this session to avoid cross-session
-                # object sharing (the `user` arg belongs to fastapi_users' session).
-                fresh = await session.get(User, user.id)
-                if fresh:
-                    fresh.is_superuser = True
-                    fresh.is_verified = True
-                    await session.commit()
-                    logger.info("First user %d promoted to superuser.", user.id)
 
     async def on_after_forgot_password(
         self, user: User, token: str, request: Request | None = None

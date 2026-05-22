@@ -1,17 +1,15 @@
-import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.schemas._shared import LINUX_USERNAME_RE as _USERNAME_RE
 from app.user_mgmt.constants import (
     PROTECTED_GROUPS,
     PROTECTED_USERS,
     SUDO_FORBIDDEN_PATTERN,
     VALID_KEY_TYPES,
 )
-
-_USERNAME_RE = re.compile(r"^[a-z_][a-z0-9_-]*$")
 
 
 class LinuxUserCreate(BaseModel):

@@ -3,12 +3,12 @@
 # The smallest valid GitOps YAML. Useful as a starting template.
 #
 # What this does on import:
-#   • Declares the group name (must match the group in LabDog).
-#   • Adds exactly one firewall rule: allow SSH from the internal network.
-#   • Because no other sections are present, every other module
+#   * Declares the group name (must match the group in LabDog).
+#   * Adds exactly one firewall rule: allow SSH from the internal network.
+#   * Because no other sections are present, every other module
 #     (services, packages, users, cron_jobs, hosts_entries) is WIPED
 #     on each import.  `resolver:` is the only module left alone on
-#     omission — that's the singleton-section exception.
+#     omission -- that's the singleton-section exception.
 #
 # Extend this file with whichever `services:`, `packages:`, etc.
 # sections you need; see the module examples under ./modules/ for
@@ -24,4 +24,4 @@ firewall:
       direction: input
       source: "10.0.0.0/8"
       port: 22
-      comment: "SSH — internal network only"
+      comment: "SSH -- internal network only"

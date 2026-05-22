@@ -6,8 +6,71 @@ import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+# ---------------------------------------------------------------------------
+# CSRF-aware ASGI transport helper
+# ---------------------------------------------------------------------------
+
+_CSRF_COOKIE = "labdog_csrf"
+_CSRF_HEADER = "X-CSRF-Token"
+_MUTATING_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+class _CsrfAutoTransport(httpx.AsyncBaseTransport):
+    """Thin wrapper around ASGITransport that auto-attaches X-CSRF-Token on
+    mutating requests, reading the token from the client's cookie jar.
+
+    This mirrors what ``frontend/lib/api.ts`` does in the browser so that
+    test clients behave like a properly instrumented browser session.
+    """
+
+    def __init__(self, app):
+        from httpx import ASGITransport
+
+        self._inner = ASGITransport(app=app)
+        self._cookies: httpx.Cookies = httpx.Cookies()
+
+    def _inject_csrf(self, request: httpx.Request) -> httpx.Request:
+        if request.method.upper() not in _MUTATING_METHODS:
+            return request
+        # Prefer the in-jar cookie over whatever the caller already set.
+        token = self._cookies.get(_CSRF_COOKIE)
+        if not token:
+            return request
+        # Merge into a new Headers object (httpx headers are immutable).
+        headers = dict(request.headers)
+        headers.setdefault(_CSRF_HEADER, token)
+        return request.stream  # httpx.Request is mutable via merge_raw_headers? No.
+        # Build a patched request the httpx way:
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if request.method.upper() in _MUTATING_METHODS:
+            token = self._cookies.get(_CSRF_COOKIE)
+            if token and _CSRF_HEADER not in request.headers:
+                # httpx.Headers is immutable; rebuild the request with extra header.
+                new_headers = httpx.Headers(
+                    [*request.headers.raw, (_CSRF_HEADER.lower().encode(), token.encode())]
+                )
+                request = httpx.Request(
+                    method=request.method,
+                    url=request.url,
+                    headers=new_headers,
+                    stream=request.stream,
+                    extensions=request.extensions,
+                )
+        response = await self._inner.handle_async_request(request)
+        # Capture any Set-Cookie headers for subsequent requests.
+        for k, v in response.headers.multi_items():
+            if k.lower() == "set-cookie":
+                # Parse just the name=value part (first segment).
+                pair = v.split(";", 1)[0].strip()
+                if "=" in pair:
+                    cname, cval = pair.split("=", 1)
+                    self._cookies.set(cname.strip(), cval.strip())
+        return response
 
 
 def pytest_configure(config):
@@ -111,10 +174,7 @@ async def db(pg_url, app):
 
 @pytest.fixture
 async def client(app, db):
-    import httpx
-    from httpx import ASGITransport
-
-    transport = ASGITransport(app=app)
+    transport = _CsrfAutoTransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
         base_url="http://testserver",
@@ -124,9 +184,7 @@ async def client(app, db):
 
 
 async def _make_superuser(app, db):
-    import httpx
     from fastapi_users.password import PasswordHelper
-    from httpx import ASGITransport
 
     from app.models.user import User as UserModel
 
@@ -142,7 +200,7 @@ async def _make_superuser(app, db):
     )
     db.add(user)
     await db.flush()
-    transport = ASGITransport(app=app)
+    transport = _CsrfAutoTransport(app=app)
     c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
     resp = await c.post("/api/auth/jwt/login", data={"username": email, "password": password})
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"
@@ -158,9 +216,7 @@ async def superuser_client(app, db):
 
 @pytest.fixture
 async def regular_user_client(app, db):
-    import httpx
     from fastapi_users.password import PasswordHelper
-    from httpx import ASGITransport
 
     from app.models.user import User as UserModel
 
@@ -176,7 +232,7 @@ async def regular_user_client(app, db):
     )
     db.add(user)
     await db.flush()
-    transport = ASGITransport(app=app)
+    transport = _CsrfAutoTransport(app=app)
     c = httpx.AsyncClient(transport=transport, base_url="http://testserver", follow_redirects=True)
     resp = await c.post("/api/auth/jwt/login", data={"username": email, "password": password})
     assert resp.status_code in (200, 204), f"Login failed: {resp.text}"

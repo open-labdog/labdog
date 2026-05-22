@@ -11,6 +11,7 @@ Revision ID: 0001_initial_schema
 Revises:
 Create Date: 2026-05-07
 """
+
 from __future__ import annotations
 
 from alembic import op
@@ -983,7 +984,7 @@ SCHEMA_STATEMENTS = (
 
 SEED_STATEMENTS = (
     """INSERT INTO public.git_repositories (id, name, url, branch, auth_type, ssh_key_id, encrypted_https_token, webhook_secret, last_commit_sha, last_sync_at, created_at, updated_at) VALUES (1, 'labdog-playbooks', 'https://github.com/open-labdog/labdog-playbooks', 'main', 'none', NULL, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-    """INSERT INTO public.action_packs (id, name, enabled, last_synced_at, last_sync_status, last_sync_error, current_sha, created_at, updated_at, source_type, git_repository_id, path, local_path, "position") VALUES (1, 'labdog-playbooks', true, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'git', 1, '', NULL, 1)""",
+    """INSERT INTO public.action_packs (id, name, enabled, last_synced_at, last_sync_status, last_sync_error, current_sha, created_at, updated_at, source_type, git_repository_id, path, local_path, "position") VALUES (1, 'labdog-playbooks', true, NULL, NULL, NULL, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'git', 1, '', NULL, 0)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (1, 'drift.check_interval_minutes', '30', 'int', 'Minutes between automatic drift checks', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (2, 'ssh.connect_timeout', '10', 'int', 'SSH connection timeout in seconds', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (3, 'ansible.playbook_timeout', '300', 'int', 'Ansible playbook execution timeout in seconds', CURRENT_TIMESTAMP, NULL)""",
@@ -993,6 +994,14 @@ SEED_STATEMENTS = (
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (7, 'logging.audit_retention_days', '90', 'int', 'Days to retain audit log entries', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (8, 'logging.level', 'info', 'string', 'Application log level', CURRENT_TIMESTAMP, NULL)""",
     """INSERT INTO public.app_settings (id, key, value, value_type, description, updated_at, updated_by) VALUES (9, 'celery.concurrency', '4', 'int', 'Number of Celery worker processes (requires restart)', CURRENT_TIMESTAMP, NULL)""",
+    # Advance the SERIAL/IDENTITY sequence on each seeded table to one
+    # past the highest seeded id. Without this, the next auto-allocated
+    # insert would reuse id=1 and collide with the seed -- caught in
+    # pytest where the testcontainer DB is migrated fresh and the very
+    # next test insert hits the collision.
+    """SELECT setval(pg_get_serial_sequence('public.git_repositories', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.git_repositories), 1))""",
+    """SELECT setval(pg_get_serial_sequence('public.action_packs', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.action_packs), 1))""",
+    """SELECT setval(pg_get_serial_sequence('public.app_settings', 'id'), GREATEST((SELECT COALESCE(MAX(id), 0) FROM public.app_settings), 1))""",
 )
 
 

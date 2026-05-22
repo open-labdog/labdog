@@ -60,10 +60,15 @@ def git_auth_context(
         # Token is passed inline as a git -c override so git treats it
         # as an HTTP header on the request. remote.origin.url stays
         # clean.
+        # followRedirects is disabled so that git never re-sends the
+        # Authorization header to a redirect target — prevents PAT
+        # exfiltration if the remote redirects to an attacker host.
         yield GitAuthContext(
             extra_args=[
                 "-c",
                 f"http.extraHeader=Authorization: Bearer {token}",
+                "-c",
+                "http.followRedirects=false",
             ],
             redact_values=[token],
         )

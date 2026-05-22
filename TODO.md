@@ -25,69 +25,81 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Replace website favicon and social card.** `website/static/img/favicon.ico`
-      is the Docusaurus default. Replace with a LabDog favicon and add a
-      proper `image:` social card in `website/docusaurus.config.ts` once
-      branding assets exist.
-- [ ] **Add an "About" section to the UI.** Show version, license
-      (AGPL-3.0-or-later), commit SHA / build date, and a link to the
-      project repo. Useful for support ("which version are you on?")
-      and required for AGPL attribution surfacing. Likely lives under
-      Settings or as a footer link.
-- [ ] **Smoke-test the packaging artifacts.** A static audit pass over
-      `packaging/` is done (license/homepage/maintainer fixed, maintainer
-      scripts made deb+rpm portable, systemd unit hardened, TOML config
-      brought in line with dev). Still TODO: actually build the .deb /
-      .rpm / .tar.gz and verify they install cleanly on Debian 12 and
-      Rocky 9, the service starts, and `--purge` / `rpm -e` clean up
-      properly. Add `packaging/tests/` with a container-based smoke test
-      so the CI release-artifacts job can gate on it.
-- [ ] **Manifest-validation CI check on labdog-playbooks.** Add a
-      GitHub Actions job that validates every `*.manifest.yml`
-      against `app.actions.manifest.ActionManifest.model_validate`.
-      Catches typos in pack contributions before they reach a
-      labdog instance.
-- [ ] **Surface the active action catalog on `/action-packs`.** Today
-      the only way to see which actions a pack contributes — and which
-      pack ultimately wins each key — is to open a host or group and
-      look at its Actions tab. Add a panel on the **Action Packs**
-      page that lists every key in the live registry with its winning
-      pack, the candidates it shadows, and a link to the resolution
-      modal when contested. Lets operators audit pack precedence
-      without picking an arbitrary host first. Data is already there
-      via `GET /api/actions/` (winners + `overridden_from`) and
-      `GET /api/action-resolutions` (contests).
+- [ ] **Container-based packaging smoke test in CI.** A hand-run
+      smoke pass during v0.2.0 prep surfaced and fixed three
+      install-path bugs (see `git log --grep packaging` for the
+      individual fix commits). Still open: add `packaging/tests/`
+      with a containerised harness (Ubuntu 24.04 .deb, Rocky 9 .rpm,
+      Ubuntu 24.04 tarball-via-install.sh) and a new CI job that
+      runs it after `release-artifacts`, so the smoke procedure that
+      was run by hand for v0.2.0 becomes a permanent gate on
+      subsequent releases.
+- [ ] **Mark `version-check` as a required status check on `main`.**
+      The new release pipeline gates release PRs on a `version-check`
+      job that asserts `VERSION` is bumped, semver-shaped, and the
+      `vX.Y.Z` tag isn't already taken. The gate only enforces if
+      branch protection on `main` lists `version-check` as a required
+      status check — otherwise a maintainer can merge a PR even when
+      the job fails or is skipped. Configure in
+      **Settings → Branches → main → Branch protection rules →
+      Require status checks to pass before merging → search for
+      "version-check"**. Same screen, also confirm "Require branches
+      to be up to date" so the check runs against the actual merge
+      commit. This is GitHub repo config, not a code change — won't
+      land in any commit; needs a maintainer with admin rights.
 
 ---
 
-## Bundled pack scope — keep 1:1 or slim down?
+## Mirror gitlab labdog-playbooks to github (resolves BUG-46)
 
-**Context:** The scaffold at `../labdog-playbooks/` is a 1:1 copy of
-`backend/app/ansible/` (the bundled pack baked into the image). Both
-ship the same three actions today. An operator adding
-`labdog-playbooks` as a git Action Pack under Integrations → Git
-Repos + Action Packs will then have the same three keys from two
-sources; the external pack wins by position (it sits above bundled) and the bundled
-copy becomes a pure safety net for when the pack's GitRepository is
-unreachable at boot.
+**Context:** Commit `8fb167d` switched the bundled action pack from
+an in-repo mirror to a build-time clone from
+`open-labdog/labdog-playbooks` at the SHA pinned in
+`LABDOG_PLAYBOOKS_REF`. The current pinned SHA is
+`e6e73728ea3692a5189553d51c225e7961517000` — that commit only
+exists on the maintainer's internal gitlab
+(`gitlab.lan.tyresson.se/dennis/labdog-playbooks.git`); github
+`open-labdog/labdog-playbooks` still has the old flat-layout
+content (no alloy-install, no idempotent k8s-upgrade, no
+directory-per-action layout).
 
-**Decision needed:** what goes in the safety net?
+**Consequence today:** every build path is broken without an env
+override. github CI, public `docker build`, `packaging/build.sh`,
+and `./dev/dev.sh start` (without `LABDOG_PLAYBOOKS_LOCAL`) all
+attempt the github clone + checkout and fail because the SHA
+doesn't exist there. Workarounds: set
+`LABDOG_PLAYBOOKS_REPO=https://gitlab.lan.tyresson.se/dennis/labdog-playbooks.git`
+as build-arg / env, or use `LABDOG_PLAYBOOKS_LOCAL` for dev. See
+`BUGS.md` BUG-46.
 
-- **Option A — keep identical.** Every action present in both. Fresh
-  installs work offline; the external pack adds nothing on a
-  successful clone. Biggest image, most duplication (playbooks
-  drift risk).
-- **Option B — slim to a minimal "known-safe" subset.** e.g. only
-  `linux-upgrade` (the most common case) and leave `k8s-upgrade` /
-  `linux-os-upgrade` to the remote. Smaller image, but an offline
-  install is partially functional.
-- **Option C — remove bundled entirely.** External pack is
-  mandatory. Cleanest conceptually but breaks air-gapped deploys
-  and makes first-boot failure modes worse.
+**Procedure to resolve:**
 
-I'd default to **A** until we have a reason to trim — duplication
-cost is negligible and drift is catchable by keeping the two dirs
-byte-identical in CI (a one-line `diff -r` gate).
+1. Push gitlab `labdog-playbooks/main` → github
+   `open-labdog/labdog-playbooks/main`:
+   ```
+   cd /home/dennis/priv/gitlab/labdog-playbooks
+   git remote add github https://github.com/open-labdog/labdog-playbooks.git  # if not already
+   git push github main
+   ```
+2. Capture the resulting github commit SHA:
+   ```
+   git ls-remote https://github.com/open-labdog/labdog-playbooks main
+   ```
+3. Bump `LABDOG_PLAYBOOKS_REF` in the labdog repo to that SHA.
+   Commit as `build: bump LABDOG_PLAYBOOKS_REF to <sha> (gitlab -> github sync)`.
+4. Verify a clean build works without overrides:
+   ```
+   docker build --build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF) -t labdog:test .
+   ```
+   and confirm `/app/app/ansible/actions/` lists the four current
+   actions (alloy-install, k8s-upgrade, linux-os-upgrade,
+   linux-upgrade).
+5. Delete this TODO entry + BUG-46 in the same commit.
+
+**Going forward:** treat gitlab → github mirroring as a one-shot
+during this transition. After this lands, develop directly on
+github (or push gitlab → github regularly via a sync hook). The
+two repos drifting again would re-create this exact problem.
 
 ---
 
@@ -115,50 +127,27 @@ hold`, otherwise the kubeadm flow is identical.
 
 ---
 
-## Action manifests — opt-in post-run module sync
+## CA certificate management in the UI
 
-**Context:** Actions mutate host state. LabDog's modules (firewall,
-services, packages, cron, hosts-file, users, resolver) track desired
-state and reconcile via the existing sync / drift pipeline. The two
-systems don't currently talk to each other — an action that installs
-a package, opens a port, or adds a cron entry leaves the relevant
-module's view stale until the next periodic drift check (or a manual
-sync) catches up.
+**Context:** Proxmox nodes (and other HTTPS targets) often use
+self-signed or privately-issued TLS certificates. The Proxmox client
+(`backend/app/proxmox/client.py`) uses httpx with default strict SSL
+verification, so any host whose CA is not in the container's system
+trust store causes `[SSL: CERTIFICATE_VERIFY_FAILED]` at discovery
+time (see BUG-45).
 
 **Sketch:**
 
-- Extend `ActionManifest` (`backend/app/actions/manifest.py`) and
-  `ActionDefinition` (`backend/app/actions/types.py`) with an optional
-  `post_run_sync: list[Literal["firewall", "services", "packages",
-  "cron", "hosts_file", "users", "resolver"]] = []`.
-- Plumb through `_manifest_to_definition` in `app/actions/packs.py`
-  and the API `ActionDefinitionOut`.
-- After a successful action run (both per-host and cluster-mode
-  paths), if `post_run_sync` is non-empty, dispatch the corresponding
-  module sync against the same target via the existing
-  `host_sync_orchestrator` / option-c pipeline. Reuses everything:
-  the per-host advisory lock, the coalesced playbook, the audit log,
-  the SSE channel.
-- Failures of a post-run sync are surfaced on the `ActionRun` as a
-  warning, not a status flip — the action itself succeeded; only the
-  reconciliation didn't.
-- UI: action cards / run-detail show a small chip listing the modules
-  that re-synced after the run (`packages ✓`, `services ✓`).
+- Add a CA Certificates section to the Integrations settings page.
+  Users paste or upload one or more PEM-encoded CA certificates.
+- Store them in the DB (or a dedicated config dir mounted into the
+  container) and expose them via a settings key.
+- Pass the stored CA bundle as the `verify=` argument to httpx
+  `AsyncClient` in `ProxmoxClient.__init__` (or merge with the
+  system trust store via `truststore` / `certifi`).
+- Optionally: expose a per-host "TLS verify" toggle for the escape
+  hatch (`verify=False`) behind a visible warning in the UI.
 
-**Why it's worth doing:** the alternatives are (a) ad-hoc API
-callbacks from inside playbooks (security + reachability + coupling
-issues), or (b) operators remembering to click Sync after every
-action. (b) is what we have today and it drifts in practice; (a) is
-much more invasive than this is. Manifest-driven post-run sync keeps
-the contract local to the action manifest and reuses the entire
-existing pipeline.
 
-**Open questions:**
 
-1. Does `post_run_sync` run on dry-run / `__dry_run`? Probably no —
-   no state changed, no reconciliation needed.
-2. Cluster-mode runs target a group; the post-run sync should fan out
-   per-host across the group (not on the driver node only).
-3. Should the manifest also support `pre_run_sync` (sync to converge
-   *before* the action runs, so the action sees a known baseline)?
-   Probably yes for symmetry, but punt until a concrete need surfaces.
+

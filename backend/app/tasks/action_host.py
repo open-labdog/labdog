@@ -49,7 +49,7 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
+async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:  # noqa: C901, PLR0912, PLR0915
     """Drive a single ActionHostRun through ansible-runner, optionally
     wrapping the run in a Proxmox snapshot → verify → rollback envelope
     when the action is destructive and the host has a VM mapping.
@@ -69,6 +69,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
     from app.settings_service import get_setting_sync_typed
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        dispatch_next_pending_for_host,
+        format_pending_reason,
+    )
 
     r = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
@@ -76,6 +82,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
     private_data_dir = tempfile.mkdtemp(prefix="labdog-action-")
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-action-", suffix=".key")
     os.close(fd)
+
+    # Track whether we claimed the host so the finally block knows whether
+    # to release it via dispatch-next-pending. On the defer path we leave
+    # the queue ownership to the in-flight op's finally hook.
+    claimed = False
+    claimed_host_id: int | None = None
 
     try:
         # ------------------------------------------------------------------ #
@@ -97,6 +109,64 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                 ),
             )
             return
+
+        # ------------------------------------------------------------------ #
+        # Per-host claim-or-defer: serialize against any in-flight op on     #
+        # this host (sync, host-targeted action, or group-targeted action    #
+        # that includes this host as a member). On busy → mark ActionRun +  #
+        # ActionHostRun as ``pending`` and return; dispatch-next-pending on  #
+        # the in-flight op's finally hook will re-fire us when the host     #
+        # frees up.                                                          #
+        # ------------------------------------------------------------------ #
+        async with task_session() as db:
+            hr_row = (
+                await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
+            ).scalar_one_or_none()
+            if hr_row is None:
+                logger.warning("action_host: host_run %d missing — exiting", host_run_id)
+                return
+            host_id_for_lock = hr_row.host_id
+            await acquire_host_lock(db, host_id_for_lock)
+            blocker = await check_host_busy(db, host_id_for_lock)
+            if blocker is not None:
+                reason = await format_pending_reason(db, blocker)
+                hr_row.status = "pending"
+                hr_row.pending_reason = reason
+                # Only flip the parent ActionRun to ``pending`` when this
+                # is the sole per-host row (single-host target). For the
+                # group-with-supports_host=True dispatch shape the parent
+                # ActionRun has many ActionHostRuns and our defer is
+                # per-row; the parent's status should reflect the union,
+                # not just one member.
+                run_row = (
+                    await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+                ).scalar_one_or_none()
+                if (
+                    run_row is not None
+                    and run_row.host_id is not None
+                    and run_row.status
+                    in (
+                        "queued",
+                        "running",
+                    )
+                ):
+                    run_row.status = "pending"
+                    run_row.pending_reason = reason
+                await db.commit()
+                logger.info(
+                    "action_host: deferred action_run=%d host_run=%d (host %d busy: %s)",
+                    action_run_id,
+                    host_run_id,
+                    host_id_for_lock,
+                    reason,
+                )
+                return
+            # Free → claim by leaving the row in queued/running; the
+            # main loader below will flip it to running atomically with
+            # the rest of the run-state writes.
+            claimed = True
+            claimed_host_id = host_id_for_lock
+            await db.commit()
 
         # ------------------------------------------------------------------ #
         # Load all required data from DB in a single session                  #
@@ -171,13 +241,38 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             action_roles_paths: tuple = action.roles_paths
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            # Run-time toggles mirrored from ScheduledAction at dispatch time.
+            # Honoured the same way as action_group.py — see Phases A/D/E.
+            # Ignored when the action is non-destructive (no envelope runs).
+            run_snapshot_enabled: bool = bool(run.snapshot_enabled)
+            run_verify_enabled: bool = bool(run.verify_enabled)
+            run_auto_rollback: bool = bool(run.auto_rollback)
+            # Manifest-declared post-run module syncs. Fired against the
+            # same host after a successful, non-dry-run completion so
+            # labdog's desired state is re-enforced. See
+            # ``app.sync.post_run.dispatch_post_run_sync``.
+            action_post_run_sync: tuple[str, ...] = action.post_run_sync
+            # Manifest-declared post-run resource registrations. After
+            # success the helper inserts host-scope override rows for
+            # each declared resource (skipping operator-managed
+            # collisions) and then dispatches a follow-up sync to
+            # refresh the UI tabs. See
+            # ``app.sync.post_run.dispatch_post_run_register``.
+            action_post_run_register: dict[str, tuple[dict, ...]] = dict(action.post_run_register)
+            triggered_by_user_id: int | None = run.triggered_by_user_id
 
         # ------------------------------------------------------------------ #
-        # Load Proxmox VM mapping if the action is destructive. A snapshot is
-        # taken before the playbook runs and rolled back on failure — same
-        # safety net scheduled workflows use, without the extra workflow-level
-        # config knobs (auto_rollback / pre_update_snapshot are always ON for
-        # destructive actions when a mapping exists).
+        # Load Proxmox VM mapping if the action is destructive AND snapshots #
+        # are enabled for this run. The snapshot is taken before the playbook #
+        # runs and (when ``auto_rollback`` is on) reverted on failure. Toggle #
+        # semantics mirror ``action_group.py`` Phases A/D/E:                  #
+        #                                                                     #
+        # * ``snapshot_enabled=False``  → skip Phase A (no Proxmox client     #
+        #   loaded, no snapshot taken). Rollback can't run without a          #
+        #   snapshot so it is implicitly disabled too.                        #
+        # * ``verify_enabled=False``    → skip Phase D (no post-run verify).  #
+        # * ``auto_rollback=False``     → skip Phase E (snapshot left in      #
+        #   place on failure instead of reverted).                            #
         # ------------------------------------------------------------------ #
         proxmox_client = None
         pve_node: str | None = None
@@ -209,7 +304,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     exc_info=True,
                 )
 
-        if action_destructive:
+        if action_destructive and run_snapshot_enabled:
             try:
                 from app.proxmox.client import ProxmoxClient  # noqa: PLC0415
                 from app.proxmox.models import ProxmoxNode  # noqa: PLC0415
@@ -330,6 +425,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     ),
                 )
                 return
+        elif action_destructive and not run_snapshot_enabled:
+            # Destructive action with snapshot_enabled=False — operator
+            # opted out. Log it so the run history reflects the choice.
+            _log_step(
+                "[snapshot] skipped — snapshot_enabled=false (no rollback available on failure)"
+            )
         elif action_destructive:
             # Destructive action but no Proxmox VM mapping — snapshot-wrap is
             # skipped. Surface this in the log so users know no rollback is
@@ -385,12 +486,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
 
         # ------------------------------------------------------------------ #
         # Post-run verification (only when we also took a snapshot — i.e.     #
-        # destructive + VM mapped). Mirrors workflow_host.py's verify step    #
-        # but without a verification_prompt, so only SSH hard checks run.     #
+        # destructive + VM mapped — AND verify_enabled is on). Mirrors        #
+        # workflow_host.py's verify step but without a verification_prompt,   #
+        # so only SSH hard checks run.                                        #
         # ------------------------------------------------------------------ #
         verification_passed = True
         verification_error: str | None = None
-        if playbook_success and snapshot_name is not None:
+        if playbook_success and snapshot_name is not None and run_verify_enabled:
             if action_verify_playbook_path is not None:
                 # Pack-supplied verify: run it the same way as the main
                 # playbook. Any non-zero rc or ansible-runner status other
@@ -499,7 +601,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         elif not verification_passed:
             error_msg = verification_error
 
-        if not success and snapshot_name is not None and proxmox_client is not None:
+        if (
+            not success
+            and snapshot_name is not None
+            and proxmox_client is not None
+            and run_auto_rollback
+        ):
             from app.workflows.steps.rollback import rollback_to_snapshot  # noqa: PLC0415
 
             _log_step(f"[rollback] restoring {snapshot_name}")
@@ -520,6 +627,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                     exc,
                 )
                 _log_step(f"[rollback] ERROR: {exc}")
+        elif not success and snapshot_name is not None and not run_auto_rollback:
+            # Snapshot present but auto_rollback=False — leave it in place so
+            # the operator can inspect/revert manually. Logged so the run
+            # output reflects the choice rather than silently keeping it.
+            _log_step(
+                f"[rollback] skipped — auto_rollback=false "
+                f"(snapshot {snapshot_name} retained for manual recovery)"
+            )
 
         if success and snapshot_name is not None and proxmox_client is not None:
             from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
@@ -555,6 +670,68 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
                 hr.error_message = error_msg
             final_status = hr.status
             await db.commit()
+
+            # Post-run module sync: only on success, never on dry-run,
+            # and only when the manifest opted in. Dispatch failures
+            # are logged but do not affect the action's status -- the
+            # action itself already completed.
+            if success and not dry_run and action_post_run_sync:
+                try:
+                    from app.sync.post_run import dispatch_post_run_sync
+
+                    dispatched_ids = await dispatch_post_run_sync(
+                        db,
+                        host_id=host_id,
+                        modules=action_post_run_sync,
+                        triggered_by_user_id=triggered_by_user_id,
+                    )
+                    if dispatched_ids:
+                        await db.commit()
+                        logger.info(
+                            "action_host: dispatched post_run_sync for "
+                            "action_run %d host %d -- modules=%s job_ids=%s",
+                            action_run_id,
+                            host_id,
+                            list(action_post_run_sync),
+                            dispatched_ids,
+                        )
+                except Exception:
+                    logger.exception(
+                        "action_host: post_run_sync dispatch failed for action_run %d host %d",
+                        action_run_id,
+                        host_id,
+                    )
+
+            # Post-run resource registration: insert host-scope overrides
+            # for resources declared in the manifest, then dispatch a
+            # follow-up sync so the cache catches up. Same success-only
+            # / non-dry-run gates as post_run_sync. Failures logged
+            # only; never affect the action's terminal status.
+            if success and not dry_run and action_post_run_register:
+                try:
+                    from app.sync.post_run import dispatch_post_run_register
+
+                    inserted = await dispatch_post_run_register(
+                        db,
+                        host_id=host_id,
+                        declarations=action_post_run_register,
+                        triggered_by_user_id=triggered_by_user_id,
+                    )
+                    if inserted:
+                        await db.commit()
+                        logger.info(
+                            "action_host: dispatched post_run_register for "
+                            "action_run %d host %d -- inserted=%s",
+                            action_run_id,
+                            host_id,
+                            inserted,
+                        )
+                except Exception:
+                    logger.exception(
+                        "action_host: post_run_register dispatch failed for action_run %d host %d",
+                        action_run_id,
+                        host_id,
+                    )
 
         r.publish(
             channel,
@@ -614,6 +791,24 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         raise
 
     finally:
+        # Dispatch the next pending op on this host (if we claimed it).
+        # Runs even on the orchestrator-raised path so the per-host queue
+        # never stalls. Failures here are swallowed — they must not mask
+        # the real outcome of the task.
+        if claimed and claimed_host_id is not None:
+            try:
+                async with task_session() as db:
+                    await dispatch_next_pending_for_host(
+                        db, claimed_host_id, exclude_action_run_id=action_run_id
+                    )
+            except Exception:
+                logger.exception(
+                    "action_host: dispatch-next-pending failed for host_id=%s "
+                    "after action_run_id=%s; queue may be stuck until next op triggers it",
+                    claimed_host_id,
+                    action_run_id,
+                )
+
         # CRITICAL: always remove the SSH key from tmpfs
         if os.path.exists(ssh_key_path):
             os.unlink(ssh_key_path)

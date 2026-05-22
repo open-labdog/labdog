@@ -30,9 +30,17 @@ paths = [
     '''^plans/option-c-coalesced-per-host-sync\.md$''',
 ]
 
-# Stable fingerprints for known-historical false positives the
-# default ruleset flags. Each verified non-production before listing.
 stopwords = []
+
+# Commits verified to contain only non-production placeholder values.
+# Gitleaks skips these SHAs entirely.
+commits = [
+    # docker-compose.yml used BARRICADE_SECURITY__* placeholder keys —
+    # superseded by LABDOG_* env vars in dev/labdog.toml; never production.
+    "37d3ca56a03e61f60e5ec6587acfc54697cfdbda",
+    # .sisyphus planning doc used "ghp_secret123" as an obvious placeholder.
+    "d5d26a315b5a0f7036394d28da4865ef2383fb99",
+]
 
 regexes = [
     # CI test encryption key — string and its base64 form. Decodes to

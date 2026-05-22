@@ -46,6 +46,10 @@ interface JobStatus {
   id: string
   status: "pending" | "running" | "success" | "failed"
   message?: string
+  // Set when ``status='pending'`` because another op on the host was
+  // running -- mirrors ActionRun.pending_reason. Backend writes a
+  // human-readable string like "Waiting for sync 47 on host node-1".
+  pending_reason?: string | null
 }
 
 function StatusIcon({ status }: { status: JobStatus["status"] }) {
@@ -290,6 +294,11 @@ export default function GroupSyncPage({ embedded = false }: { embedded?: boolean
         <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 flex items-center gap-3">
           <span className="text-slate-400 text-sm">Job status:</span>
           <StatusIcon status={jobStatus.status} />
+          {jobStatus.status === "pending" && jobStatus.pending_reason && (
+            <span className="text-amber-300 text-xs ml-2" title={jobStatus.pending_reason}>
+              {jobStatus.pending_reason}
+            </span>
+          )}
           {jobStatus.message && (
             <span className="text-slate-400 text-xs ml-2">{jobStatus.message}</span>
           )}

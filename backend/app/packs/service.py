@@ -42,16 +42,6 @@ from app.packs.redact import redact
 logger = logging.getLogger(__name__)
 
 
-def derive_priority(pack: ActionPack) -> int:
-    """Map a pack's row to its numeric load priority.
-
-    Bundled is implicit at 0 via ``BUNDLED_PACK_PRIORITY`` in
-    ``app.actions.registry``; every DB pack starts at ``position + 1``
-    so the lowest-positioned DB pack still beats bundled.
-    """
-    return pack.position + 1
-
-
 def checkout_path_for(pack_id: int) -> Path:
     """Deterministic on-disk location for a git pack's checkout.
 
@@ -68,12 +58,25 @@ def effective_path_for(pack: ActionPack) -> Path:
     checkout under ``packs_root_dir``.
     ``local`` → ``<pack.local_path>`` — the admin-supplied filesystem
     path, used in place (nothing is cloned).
+
+    For git packs a runtime containment check asserts the resolved path
+    stays inside the checkout directory.  Schema validation already rejects
+    ``..`` at create/update time; this is defence-in-depth against symlinks
+    or other filesystem tricks that could escape the boundary.
     """
     if pack.source_type == PackSourceType.LOCAL:
         return Path(pack.local_path or "")
     checkout = checkout_path_for(pack.id)
     subpath = pack.path.strip("/")
-    return checkout / subpath if subpath else checkout
+    candidate = checkout / subpath if subpath else checkout
+    resolved = candidate.resolve()
+    checkout_resolved = checkout.resolve()
+    if not resolved.is_relative_to(checkout_resolved):
+        raise ValueError(
+            f"Pack path {pack.path!r} resolves to {resolved} which escapes the "
+            f"checkout directory {checkout_resolved}"
+        )
+    return resolved
 
 
 async def _decrypt_repo_credentials(
@@ -245,7 +248,6 @@ async def load_db_packs(db: AsyncSession) -> list[Pack]:
             Pack(
                 name=row.name,
                 path=path,
-                priority=derive_priority(row),
                 pack_id=row.id,
             )
         )

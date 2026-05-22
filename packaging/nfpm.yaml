@@ -14,9 +14,15 @@ description: |
 homepage: https://github.com/open-labdog/labdog
 license: AGPL-3.0-or-later
 
-# Runtime deps (Python deps bundled in venv)
+# Runtime deps (Python deps bundled in venv).
+# `python3.12` is the package name on Ubuntu 24.04+, Debian 13+, and
+# RHEL/Rocky/Fedora 9+ AppStream — the supported distros. We need the
+# binary at /usr/bin/python3.12 specifically because the bundled venv
+# symlinks to it. The earlier `python3 (>= 3.12)` checked apt's
+# `python3` virtual package, which is 3.11 on Debian 12 and so failed
+# the dep check even when /usr/bin/python3.12 was present.
 depends:
-  - python3 (>= 3.12)
+  - python3.12
 
 recommends:
   - postgresql-client

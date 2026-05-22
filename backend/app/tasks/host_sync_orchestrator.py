@@ -48,7 +48,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from app.db import task_session
 from app.sync.orchestrator import orchestrate_host_sync
@@ -225,13 +225,14 @@ def _filter_from_module_type(module_type: str) -> list[str] | None:
 async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     """Single-flight gate at task entry.
 
-    Returns ``True`` when no other ``SyncJob`` for ``host_id`` is in
-    ``running`` state — caller proceeds with the normal pre-run write
-    that flips this job to ``running``.
+    Returns ``True`` when no other operation (sync, host-targeted
+    action, or group-targeted action) is currently ``running`` for
+    ``host_id`` — caller proceeds with the normal pre-run write that
+    flips this job to ``running``.
 
-    Returns ``False`` when another sync is already in flight for this
+    Returns ``False`` when another op is already in flight for this
     host. The caller must return early without touching DB state; the
-    in-flight task will dispatch us via ``_dispatch_next_pending_for_host``
+    in-flight task will dispatch us via ``dispatch_next_pending_for_host``
     when it finishes (success or failure).
 
     Concurrency: a Postgres transaction-level advisory lock keyed on
@@ -245,63 +246,87 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
 
     BUG-38: prior to the advisory-lock fix the SELECT was unguarded,
     so two workers could both see "no other running job" and both
-    proceed past the gate concurrently for the same host.
-    """
-    from app.models.sync_job import JobStatus, SyncJob
+    proceed past the gate concurrently for the same host. Implementation
+    delegates to the shared ``host_lock`` helpers so action runs see
+    in-flight syncs as busy and vice versa.
 
-    await db.execute(text("SELECT pg_advisory_xact_lock(:host_id)"), {"host_id": host_id})
-    other = await db.execute(
-        select(SyncJob.id)
-        .where(
-            SyncJob.host_id == host_id,
-            SyncJob.id != job_id,
-            SyncJob.status == JobStatus.running,
-        )
-        .limit(1)
+    ``job_id`` is retained for log/trace surfaces; the busy check
+    doesn't need it (the caller's own row is still ``pending``, not
+    ``running``, so it's naturally excluded).
+    """
+    from app.models.sync_job import SyncJob
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        format_pending_reason,
     )
-    return other.scalar_one_or_none() is None
+
+    await acquire_host_lock(db, host_id)
+    blocker = await check_host_busy(db, host_id)
+    if blocker is None:
+        return True
+
+    # Defer. The SyncJob row was created in ``status='pending'`` by the
+    # API entry; we leave the status alone but stamp ``pending_reason``
+    # with the formatted blocker so the sync queue UI can render the
+    # same "Host busy" tooltip as the action queue. Action-side parity
+    # lives in ``app.tasks.action_host`` / ``action_group``.
+    #
+    # We commit here so the write persists -- ``task_session`` does not
+    # auto-commit on exit. Committing also releases the advisory lock,
+    # which is correct: we're done with the host for this attempt.
+    reason = await format_pending_reason(db, blocker)
+    job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one_or_none()
+    if job is not None:
+        job.pending_reason = reason
+        await db.commit()
+    else:
+        # SyncJob row vanished between API entry and our defer check
+        # (deleted by an operator, cascaded by host deletion, etc.).
+        # The advisory lock is released by task_session()'s engine
+        # disposal in the caller's outer ``async with`` so there's no
+        # leak, but the deferred row is gone -- log so the orphan is
+        # visible in worker logs.
+        logger.warning(
+            "_claim_or_defer: SyncJob %d missing at defer time; intended pending_reason %r dropped",
+            job_id,
+            reason,
+        )
+    return False
 
 
 async def _dispatch_next_pending_for_host(
     db: AsyncSession, host_id: int, exclude_job_id: int
 ) -> int | None:
-    """Pick the oldest queued ``SyncJob`` for ``host_id`` and dispatch it.
+    """Pick the oldest pending op for ``host_id`` and dispatch it.
 
     Called from the just-finished task's finally block, after the
     finalise commit (so the row at ``exclude_job_id`` is already
     ``success``/``failed`` and the picked successor is guaranteed to
     not see *us* as ``running`` when it runs ``_claim_or_defer``).
 
-    Returns the dispatched job id, or ``None`` when no pending job
-    exists for this host.
+    Returns the dispatched SyncJob id when a SyncJob is picked, or
+    ``None`` when nothing was dispatched. Action rows picked up here
+    are dispatched through ``run_action.delay(...)`` but this helper's
+    return value tracks the historical sync-id signature for backwards
+    compatibility with the orchestrator's logging — a richer return
+    is available via ``host_lock.dispatch_next_pending_for_host``.
 
-    Uses ``run_host_sync.delay(...)`` from the *same* module so a
-    test-side ``patch("...host_sync_orchestrator.run_host_sync.delay")``
-    intercepts it.
+    BUG-38 (cross-table awareness): this delegates to the shared
+    ``host_lock.dispatch_next_pending_for_host`` helper so the freed
+    host can unblock queued actions as well as queued syncs.
     """
-    from app.models.sync_job import JobStatus, SyncJob
+    from app.tasks.host_lock import dispatch_next_pending_for_host
 
-    next_pending = await db.execute(
-        select(SyncJob)
-        .where(
-            SyncJob.host_id == host_id,
-            SyncJob.id != exclude_job_id,
-            SyncJob.status == JobStatus.pending,
-        )
-        .order_by(SyncJob.created_at.asc())
-        .limit(1)
+    dispatched = await dispatch_next_pending_for_host(
+        db, host_id, exclude_sync_job_id=exclude_job_id
     )
-    next_job = next_pending.scalar_one_or_none()
-    if next_job is None:
+    if dispatched is None:
         return None
-
-    module_filter = _filter_from_module_type(next_job.module_type)
-    run_host_sync.delay(
-        job_id=next_job.id,
-        host_id=host_id,
-        module_filter=module_filter,
-    )
-    return next_job.id
+    kind, row_id = dispatched
+    if kind == "sync":
+        return row_id
+    return None
 
 
 # ---------------------------------------------------------------------------

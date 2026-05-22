@@ -21,7 +21,7 @@ import yaml
 # Pack convention markers.
 PACK_YML_NAME = "pack.yml"
 ACTIONS_DIR_NAME = "actions"
-MANIFEST_SUFFIX = ".manifest.yml"
+MANIFEST_FILENAME = "manifest.yml"
 
 
 @dataclass(frozen=True)
@@ -38,9 +38,9 @@ class DetectedPack:
 
     ``contributed_keys`` is the tuple of action ``key`` values found in
     the pack's ``actions/`` subdirectory, in stable filesystem order.
-    Empty tuple is fine: a pack with no ``*.manifest.yml`` in
-    ``actions/`` is still a valid finding, the wizard just renders it
-    with an info message.
+    Empty tuple is fine: a pack with no ``actions/<key>/manifest.yml``
+    is still a valid finding, the wizard just renders it with an info
+    message.
 
     ``pack_yml_present`` distinguishes a real pack root (an explicit
     ``pack.yml``) from the synthetic root-level fallback the scanner
@@ -85,9 +85,9 @@ def scan_repository(
     """Walk ``clone_path`` and return everything LabDog might activate.
 
     See module docstring for what 'pack' and 'gitops file' mean. The
-    scan is non-recursive at the top, but per-pack manifest globbing is
-    flat (only ``<pack>/actions/*.manifest.yml``) — nested ``actions/``
-    subdirectories aren't supported.
+    scan is non-recursive at the top, and each action is a directory
+    under ``<pack>/actions/`` containing ``manifest.yml`` — nested
+    ``actions/`` subdirectories aren't supported.
     """
     root = Path(clone_path).resolve()
     if not root.is_dir():
@@ -103,10 +103,10 @@ def scan_repository(
             packs.append(_build_detected_pack(root, pack_dir, synthetic=False))
     else:
         # Fallback: no pack.yml anywhere, but if the repo root has an
-        # ``actions/`` directory containing manifests, treat the root
-        # as a single synthetic pack.
+        # ``actions/`` directory containing action manifests, treat the
+        # root as a single synthetic pack.
         root_actions = root / ACTIONS_DIR_NAME
-        if root_actions.is_dir() and any(root_actions.glob(f"*{MANIFEST_SUFFIX}")):
+        if root_actions.is_dir() and any(root_actions.glob(f"*/{MANIFEST_FILENAME}")):
             packs.append(
                 _build_detected_pack(
                     root,
@@ -159,11 +159,11 @@ def _build_detected_pack(
             errors.append(ScanError(file=rel_pack_yml, message=str(exc)))
             name = pack_dir.name
 
-    # Per-pack actions: <pack>/actions/*.manifest.yml.
+    # Per-pack actions: <pack>/actions/<key>/manifest.yml.
     contributed_keys: list[str] = []
     actions_dir = pack_dir / ACTIONS_DIR_NAME
     if actions_dir.is_dir():
-        for manifest_path in sorted(actions_dir.glob(f"*{MANIFEST_SUFFIX}")):
+        for manifest_path in sorted(actions_dir.glob(f"*/{MANIFEST_FILENAME}")):
             rel_manifest = manifest_path.relative_to(root).as_posix()
             key, err = _validate_manifest(manifest_path, rel_manifest)
             if err is not None:
@@ -181,7 +181,7 @@ def _build_detected_pack(
 
 
 def _validate_manifest(manifest_path: Path, rel_path: str) -> tuple[str | None, ScanError | None]:
-    """Validate one ``*.manifest.yml`` file. Returns ``(key, error)``.
+    """Validate one ``manifest.yml`` file. Returns ``(key, error)``.
 
     Either or both can be ``None``: a malformed manifest yields
     ``(None, ScanError)``; a valid one yields ``(key, None)``; a
@@ -224,8 +224,10 @@ def _find_gitops_files(root: Path, pack_dirs: set[Path]) -> list[DetectedGitopsF
     """Every ``*.yml`` / ``*.yaml`` whose top-level dict has a ``group:`` key.
 
     Files inside any pack directory are excluded — pack manifests are
-    not gitops files. ``pack.yml`` itself and ``*.manifest.yml`` are
-    excluded by name.
+    not gitops files. ``pack.yml`` and ``manifest.yml`` are excluded by
+    name to cover the synthetic-pack case (a pack root without a
+    ``pack.yml`` is not in ``pack_dirs``, so its manifests still need
+    filename-level filtering).
     """
     candidates: list[Path] = []
     for pattern in ("**/*.yml", "**/*.yaml"):
@@ -237,7 +239,7 @@ def _find_gitops_files(root: Path, pack_dirs: set[Path]) -> list[DetectedGitopsF
             continue
         if _is_under_any(path, pack_dirs):
             continue
-        if path.name == PACK_YML_NAME or path.name.endswith(MANIFEST_SUFFIX):
+        if path.name in (PACK_YML_NAME, MANIFEST_FILENAME):
             continue
 
         gitops_file = _build_gitops_finding(root, path)

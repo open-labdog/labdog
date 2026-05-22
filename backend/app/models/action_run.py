@@ -45,7 +45,15 @@ class ActionRun(Base):
     snapshot_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     verify_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     auto_rollback: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    # status values: queued | running | succeeded | partial | failed | cancelled
+    # status values: queued | pending | running | succeeded | partial | failed | cancelled
+    #
+    # ``queued``: Celery hasn't picked the run up yet (newly inserted).
+    # ``pending``: Celery picked it up, claim-or-defer decided the
+    #              target host (or some member of a group target) is in
+    #              use by another op, waiting for dispatch-next-pending
+    #              to re-fire when the in-flight op finishes.
+    # ``running``: the action is in flight.
+    # terminal: ``succeeded`` | ``partial`` | ``failed`` | ``cancelled``.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     triggered_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -53,6 +61,12 @@ class ActionRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Populated by claim-or-defer when the run transitions to ``pending``:
+    # a human-readable string naming the in-flight op that is holding the
+    # target host (e.g. "Waiting for sync 47 on host node-1"). Cleared back
+    # to ``None`` when the run is re-dispatched and successfully claims.
+    # Nullable so existing rows and non-deferred runs don't need a value.
+    pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -78,7 +92,12 @@ class ActionHostRun(Base):
         ForeignKey("action_runs.id", ondelete="CASCADE"), nullable=False
     )
     host_id: Mapped[int] = mapped_column(ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False)
-    # status values: queued | running | succeeded | failed | skipped | cancelled
+    # status values: queued | pending | running | succeeded | failed | skipped | cancelled
+    #
+    # ``pending`` mirrors the parent ActionRun.status: Celery picked the
+    # parent task up but found the target host busy and deferred. The
+    # per-host row sits in ``pending`` until dispatch-next-pending
+    # re-fires the parent.
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="queued")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -88,5 +107,10 @@ class ActionHostRun(Base):
     # Proxmox snapshot captured before a destructive action ran. Non-null
     # means a snapshot exists (deleted on success, kept on failure/rollback).
     snapshot_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Mirrors :attr:`ActionRun.pending_reason` so per-host rows in a group
+    # dispatch surface the same diagnostic in the UI's host grid (each row
+    # gets the same string — the defer is run-level, not host-level).
+    # Nullable so non-deferred rows don't need a value.
+    pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
     __table_args__ = (UniqueConstraint("action_run_id", "host_id", name="uq_action_host_run"),)

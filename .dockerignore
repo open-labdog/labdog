@@ -1,0 +1,28 @@
+# Files / dirs excluded from `docker build` context.
+# Keeps the build context small and prevents in-repo copies from
+# shadowing build-time-produced content.
+
+# Bundled action pack is fetched at build time from labdog-playbooks
+# (see Stage 2b in Dockerfile). Any leftover in-repo copy (from a dev
+# clone via ./dev/dev.sh bundle) must NOT shadow the build-time copy.
+backend/app/ansible/
+
+# Dev / scratch
+.git
+.github
+.venv
+backend/.venv
+# dev/ holds the seeded labdog.toml + the generated .env with the
+# dev master encryption key + JWT secret. Belt-and-braces: the
+# Dockerfile doesn't COPY dev/ today, but excluding it from the build
+# context prevents a future careless `COPY . .` from leaking the
+# dev secrets into image layers.
+dev/
+frontend/node_modules
+frontend/.next
+frontend/out
+**/__pycache__
+**/*.pyc
+
+# Plans, local-only state
+plans/

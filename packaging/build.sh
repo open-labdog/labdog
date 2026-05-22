@@ -80,6 +80,7 @@ check_prereq() {
 check_prereq python3.12  "apt: sudo apt install python3.12  |  dnf: sudo dnf install python3.12"
 check_prereq npm         "apt: sudo apt install nodejs     |  dnf: sudo dnf install nodejs"
 check_prereq tar         "apt: sudo apt install tar        |  dnf: sudo dnf install tar"
+check_prereq git         "apt: sudo apt install git        |  dnf: sudo dnf install git"
 
 # nfpm only required for deb/rpm
 if [[ "$TARGET" == "all" || "$TARGET" == "deb" || "$TARGET" == "rpm" ]]; then
