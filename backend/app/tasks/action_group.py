@@ -1379,7 +1379,7 @@ async def _mark_run_failed(action_run_id: int, error_message: str, channel: str,
     try:
         r.publish(channel, json.dumps({"event": "status", "status": "failed"}))
     except Exception:
-        pass
+        pass  # nosec B110
 
 
 async def _mark_run_cancelled(action_run_id: int, channel: str, r) -> None:
@@ -1413,4 +1413,4 @@ async def _mark_run_cancelled(action_run_id: int, channel: str, r) -> None:
     try:
         r.publish(channel, json.dumps({"event": "status", "status": "cancelled"}))
     except Exception:
-        pass
+        pass  # nosec B110

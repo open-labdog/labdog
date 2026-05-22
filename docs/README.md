@@ -643,4 +643,4 @@ lint → test → build → scan.
   GitHub Release with the artifacts attached. Idempotent on tag
   presence — re-running a previous merge's workflow skips with a
   notice instead of double-releasing. See
-  [CONTRIBUTING.md → Release process](../CONTRIBUTING.md#release-process).
+  [CONTRIBUTING.md → Release process](https://github.com/open-labdog/labdog/blob/main/CONTRIBUTING.md#release-process).
