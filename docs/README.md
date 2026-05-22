@@ -639,7 +639,7 @@ lint → test → build → scan.
   (i.e. when a `dev` → `main` PR merges). Builds the `.tar.gz`,
   `.deb`, `.rpm`, and `SHA256SUMS` set via `packaging/build.sh`,
   auto-tags the merge commit `vX.Y.Z` from the repo-root
-  [`VERSION`](../VERSION) file, pushes the tag, and publishes a
+  [`VERSION`](https://github.com/open-labdog/labdog/blob/main/VERSION) file, pushes the tag, and publishes a
   GitHub Release with the artifacts attached. Idempotent on tag
   presence — re-running a previous merge's workflow skips with a
   notice instead of double-releasing. See

@@ -36,14 +36,14 @@ migrations. Read that section before upgrading.
 
 **Releases are cut from `main`.** Merging a release PR (`dev` →
 `main`) triggers `release-artifacts`, which auto-tags `vX.Y.Z` from
-the repo-root [`VERSION`](../VERSION) file and publishes the
+the repo-root [`VERSION`](https://github.com/open-labdog/labdog/blob/main/VERSION) file and publishes the
 `.tar.gz` / `.deb` / `.rpm` / `SHA256SUMS` set as a GitHub Release.
 There is no separate `git tag` step — the release artifacts on the
 GitHub Releases page are what you install from. See
 [CONTRIBUTING.md → Release process](pathname:///../CONTRIBUTING.md#release-process).
 
 The bundled action pack is fetched from `labdog-playbooks` at the
-SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](../LABDOG_PLAYBOOKS_REF)
+SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](https://github.com/open-labdog/labdog/blob/main/LABDOG_PLAYBOOKS_REF)
 file at build time, so the bundled pack content shipped with a
 LabDog release corresponds exactly to one `labdog-playbooks`
 commit. To ship newer playbook content, bump that file's SHA in

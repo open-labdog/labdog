@@ -63,6 +63,6 @@ MODELS: dict[str, type[Base]] = {
 # Convenience -- the set of names accepted in post_run_register keys.
 # Kept in sync with the two dicts above by construction.
 VALID_MODULE_NAMES: frozenset[str] = frozenset(CREATE_SCHEMAS)
-assert set(CREATE_SCHEMAS) == set(MODELS), (
+assert set(CREATE_SCHEMAS) == set(MODELS), (  # nosec B101
     "CREATE_SCHEMAS and MODELS must declare the same module names"
 )
