@@ -37,10 +37,12 @@ class ActionPack(Base):
     For local packs: ``local_path`` is the absolute filesystem path on
     the LabDog host where the pack directory lives. No clone, no auth.
 
-    ``position`` defines a single linear ordering across all packs.
-    Higher position wins on action-key collisions. The bundled pack is
-    implicit at position 0 (no DB row); every DB pack starts above it.
-    Operators reorder packs via drag-to-reorder on ``/action-packs``.
+    Packs have **no inherent precedence**. When multiple packs declare
+    the same action key, the operator pins the winner via an
+    :class:`ActionResolution` row; until pinned the key is *unresolved*
+    and the action is unrunnable. See :class:`ActionResolution` for the
+    resolver semantics. The bundled pack is implicit (no DB row) and is
+    a candidate just like any DB pack.
     """
 
     __tablename__ = "action_packs"
@@ -72,10 +74,6 @@ class ActionPack(Base):
     #: host. For 'git': NULL.
     local_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    #: Linear precedence ordering. Higher wins on collisions. New packs
-    #: default to ``MAX(position) + 1`` (server-assigned at insert).
-    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", index=True)
-
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -97,25 +95,32 @@ class ActionPack(Base):
 class ActionResolution(Base):
     """Explicit per-key "this pack wins" decision.
 
-    Two write paths feed this table:
+    The resolver is now **pure per-key pinning, no global ordering.**
+    For any action key contributed by more than one pack the operator
+    MUST pin a winner via a row here; until a row exists the key is
+    *unresolved* and the action is unrunnable. ``pack_id NULL`` pins
+    bundled.
+
+    Three write paths feed this table:
 
     1. **Wizard onboarding** — the operator picks per-key winners when
        adding a pack that conflicts with existing packs. The wizard's
        per-key radio writes a row here.
-    2. **Sync-time freeze** — when ``reload_registry`` detects that a
+    2. **Per-key resolution UI** — operators set/change/clear pins
+       directly on the ``/action-packs`` page.
+    3. **Sync-time freeze** — when ``reload_registry`` detects that a
        previously-uncontested key just became contested (a pack's
        upstream pushed a new manifest that conflicts with another
        pack), it auto-writes a row pinning the **previous winner**.
-       Behaviour does not silently flip; the operator resolves via the
-       conflict UI on ``/action-packs``.
+       Behaviour does not silently flip; the operator resolves via
+       ``/action-packs``.
 
-    A row's presence overrides position-based default. ``pack_id NULL``
-    means "use bundled" — supported because position-based default
-    always favours DB packs over bundled, so the only way to make
-    bundled win for a contested key is an explicit resolution.
+    Bulk-pin: ``POST /api/action-packs/{id}/claim-all-keys`` writes
+    rows for every key the pack contributes, overwriting prior pins.
 
     Deletion of the chosen pack drops the resolution row (CASCADE);
-    position-based default takes over for the next rebuild.
+    the key becomes unresolved again on the next rebuild (or
+    uncontested if only one pack remains).
     """
 
     __tablename__ = "action_resolution"
@@ -147,6 +152,9 @@ class ActionRegistrySnapshot(Base):
     winner without surprise flips.
 
     ``pack_id NULL`` means bundled was the winner (it has no DB row).
+    A snapshot row is only written when the key has a single, resolved
+    winner — unresolved contested keys are deliberately absent so that
+    a later rebuild treats them fresh.
     """
 
     __tablename__ = "action_registry_snapshot"

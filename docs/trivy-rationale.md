@@ -1,10 +1,11 @@
 # Trivy Ignore Rationale
 
 Per-CVE notes for entries in [`.trivyignore`](pathname:///../.trivyignore) at
-the repo root. The CI `trivy-scan` job (`.github/workflows/ci.yml`,
-around line 362) runs the Aqua `trivy-action` against the test
-image and gates on HIGH/CRITICAL findings; `.trivyignore` is picked
-up automatically from the repo root.
+the repo root. The CI `trivy-scan` job in
+[`.github/workflows/ci.yml`](pathname:///../.github/workflows/ci.yml)
+runs the Aqua `trivy-action` against the test image and gates on
+HIGH/CRITICAL findings; `.trivyignore` is picked up automatically
+from the repo root.
 
 The job already passes `ignore-unfixed: "true"`, so Trivy only
 reports CVEs that *do* have a fix available. Anything in this file

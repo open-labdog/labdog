@@ -31,6 +31,28 @@ def test_token_sets_extraheader_and_redacts():
         assert "ghp_secret_pat_value" in ctx.redact_values
 
 
+def test_token_disables_follow_redirects():
+    """SEC-11: PAT path must also set http.followRedirects=false."""
+    with git_auth_context(token="ghp_secret") as ctx:
+        args_str = " ".join(ctx.extra_args)
+        assert "http.followRedirects=false" in args_str
+
+
+def test_ssh_key_does_not_set_follow_redirects():
+    """SSH-key path must NOT add http.followRedirects (defence-in-depth: don't break anything)."""
+    key_bytes = "-----BEGIN OPENSSH PRIVATE KEY-----\nABCDEF\n-----END OPENSSH PRIVATE KEY-----"
+    with git_auth_context(ssh_private_key=key_bytes) as ctx:
+        args_str = " ".join(ctx.extra_args)
+        assert "followRedirects" not in args_str
+
+
+def test_no_credentials_does_not_set_follow_redirects():
+    """Unauthenticated path must also not add http.followRedirects."""
+    with git_auth_context() as ctx:
+        args_str = " ".join(ctx.extra_args)
+        assert "followRedirects" not in args_str
+
+
 def test_token_and_key_together_rejected():
     with pytest.raises(ValueError, match="at most one"):
         with git_auth_context(ssh_private_key="k", token="t"):

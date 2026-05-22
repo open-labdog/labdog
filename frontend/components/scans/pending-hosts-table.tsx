@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { formatRelativeTime } from "@/lib/utils"
+import { SSH_ERROR_LABELS } from "@/lib/types"
 import type { PendingHost } from "@/lib/types"
 
 interface PendingHostsTableProps {
@@ -154,9 +155,9 @@ export function PendingHostsTable({
                   {row.ssh_verified ? (
                     <Badge className="bg-green-600 text-white text-[11px]">Verified</Badge>
                   ) : row.ssh_error ? (
-                    <Tooltip content={row.ssh_error} side="top">
+                    <Tooltip content={SSH_ERROR_LABELS[row.ssh_error]} side="top">
                       <Badge className="bg-red-600 text-white text-[11px] cursor-help">
-                        Unverified
+                        {SSH_ERROR_LABELS[row.ssh_error]}
                       </Badge>
                     </Tooltip>
                   ) : (

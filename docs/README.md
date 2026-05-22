@@ -175,10 +175,24 @@ but internally delegate to the same orchestrator.
 
 Pre-built packages are available on the [Releases](https://github.com/open-labdog/labdog/releases) page for each tagged version.
 
+**Supported distros** — the bundled venv requires `python3.12` to be
+installed at `/usr/bin/python3.12`. That's available out of the box on:
+
+| Distro | Notes |
+|---|---|
+| Ubuntu 24.04+ | `python3.12` package in main repo |
+| Debian 13+ (trixie) | `python3.12` package in main repo |
+| RHEL / Rocky / Alma 9+ | `python3.12` package in AppStream — `dnf install python3.12` |
+| Fedora 39+ | `python3.12` package in main repo |
+
+Older Debian (12 / bookworm) does not ship python3.12 in any official
+repo and is **not supported by the .deb / .rpm install path** — use
+the [Docker image](#quick-start-docker) on those hosts.
+
 **Debian / Ubuntu (.deb)**
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 ```
@@ -186,7 +200,7 @@ sudo apt install ./labdog_${VERSION}-1_amd64.deb
 **RHEL / Fedora / Rocky (.rpm)**
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 ```
@@ -196,7 +210,7 @@ After package install, skip to [Post-install configuration](#post-install-config
 ### From Tarball
 
 ```bash
-VERSION=0.1.0
+VERSION=0.2.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-linux-amd64.tar.gz
 tar -xzf labdog-${VERSION}-linux-amd64.tar.gz
 cd labdog-${VERSION}-linux-amd64
@@ -223,7 +237,7 @@ sudo nano /etc/labdog/labdog.toml
 | Setting | Description | How to generate |
 |---------|-------------|-----------------|
 | `[security] secret_key` | JWT signing key | `openssl rand -base64 32` |
-| `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes, base64) | `openssl rand -base64 32` |
+| `[security] encryption_key` | AES-256-GCM key for SSH key encryption (32 bytes; standard or url-safe base64) | `openssl rand -base64 32` |
 | `[security] labdog_server_ip` | This server's IP (used in SSH lockout prevention rule) | `ip route get 1 \| awk '{print $7; exit}'` |
 | `[database] url` | PostgreSQL async connection string | — |
 
@@ -323,7 +337,7 @@ sudo ./uninstall.sh --purge  # removes everything
 |----------|----------|---------|-------------|
 | `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password |
 | `SECRET_KEY` | Yes (production) | `change-me-in-production` | JWT signing key |
-| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes, base64) |
+| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes; standard or url-safe base64) |
 | `LABDOG_SERVER_IP` | Yes | `127.0.0.1` | IP of the LabDog server (used in SSH lockout rule) |
 | `NEXT_PUBLIC_API_URL` | Frontend | `http://localhost:8000` | Backend API URL |
 | `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://labdog:labdog@localhost:5432/labdog` | Async PostgreSQL connection string |
@@ -383,7 +397,7 @@ Tests use testcontainers to spin up a throwaway PostgreSQL instance automaticall
 
 ```bash
 cd backend && source .venv/bin/activate
-pytest tests/ --ignore=tests/integration -v          # 755 unit/module tests
+pytest tests/ --ignore=tests/integration -v           # unit/module tests
 pytest tests/integration/ -v -m integration           # integration tests (requires Docker)
 ```
 
@@ -398,7 +412,7 @@ npx playwright test          # requires running Docker stack
 npx playwright test --ui     # interactive test runner
 ```
 
-15 E2E spec files covering auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
+E2E spec files cover auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
@@ -531,10 +545,13 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 labdog/
 ├── backend/
 │   ├── app/
-│   │   ├── api/             # FastAPI route handlers
-│   │   ├── ansible/         # Playbook + inventory generators
+│   │   ├── actions/         # Pack loader, registry, manifest schema, git sync
+│   │   ├── ansible/         # Bundled action pack (gitignored; fetched at build time from labdog-playbooks)
+│   │   ├── ansible_runtime/ # Playbook composer + ansible-runner wrapper
+│   │   ├── api/             # FastAPI route handlers (incl. /api/version)
 │   │   ├── audit/           # Audit logging
 │   │   ├── auth/            # JWT auth (cookie-based)
+│   │   ├── ca_certs/        # Trusted CA certificate deployment module
 │   │   ├── cron/            # Cron job management module
 │   │   ├── crypto/          # AES-256-GCM encryption
 │   │   ├── discovery/       # Host network discovery
@@ -543,18 +560,19 @@ labdog/
 │   │   ├── hosts_mgmt/      # /etc/hosts management module
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── packages/        # Package management module
+│   │   ├── packs/           # DB-backed action-pack subsystem
 │   │   ├── proxmox/         # Proxmox VE hypervisor integration
 │   │   ├── resolver/        # DNS resolver module
 │   │   ├── rules/           # Firewall rule validation, renderers, merge
 │   │   ├── schemas/         # Pydantic request/response schemas
 │   │   ├── services/        # Service management module
 │   │   ├── ssh_terminal/    # Web shell (WebSocket SSH terminal)
-│   │   ├── sync/            # Firewall plan/diff engine
-│   │   ├── tasks/           # Celery tasks (sync + drift)
+│   │   ├── sync/            # Per-host orchestrator + bulk sync entry point
+│   │   ├── tasks/           # Celery tasks (sync orchestrator, drift, scheduled actions)
 │   │   ├── user_mgmt/       # Linux user/group management
 │   │   └── workflows/       # Proxmox snapshot / verify / rollback steps
 │   ├── alembic/             # Database migrations
-│   ├── tests/               # pytest suite (~1000 tests)
+│   ├── tests/               # pytest suite
 │   │   ├── integration/     # Integration tests (require full stack)
 │   │   └── test_*.py        # Unit/module tests
 │   ├── Dockerfile
@@ -562,7 +580,7 @@ labdog/
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
 │   ├── components/          # React components (shadcn/ui)
-│   ├── e2e/                 # Playwright E2E tests (15 spec files)
+│   ├── e2e/                 # Playwright E2E tests
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities
 │   ├── Dockerfile
@@ -575,7 +593,7 @@ labdog/
 │   ├── build.sh             # Local Docker build script
 │   ├── deploy.sh            # Local Docker deploy script
 │   ├── docker-compose.yml   # Local dev stack (postgres + redis)
-│   ├── labdog.toml       # Dev configuration
+│   ├── labdog.toml          # Dev configuration
 │   └── .env                 # Local secrets (gitignored — copy from .env.example)
 ├── dev.sh                   # Thin wrapper → dev/dev.sh
 ├── .env.example             # Environment variable template
@@ -617,7 +635,12 @@ lint → test → build → scan.
 - **Build**: Docker images for backend and frontend; published to
   Docker Hub on `main` (`latest` + `<sha>`) and `dev` (`test` +
   `test-<sha>`)
-- **Package**: tarball, .deb, .rpm artifacts on `v*` tags (workflow:
-  release)
-- **Release**: GitHub release with package download links and
-  SHA256SUMS
+- **Release** (`release-artifacts`): triggered by push to `main`
+  (i.e. when a `dev` → `main` PR merges). Builds the `.tar.gz`,
+  `.deb`, `.rpm`, and `SHA256SUMS` set via `packaging/build.sh`,
+  auto-tags the merge commit `vX.Y.Z` from the repo-root
+  [`VERSION`](https://github.com/open-labdog/labdog/blob/main/VERSION) file, pushes the tag, and publishes a
+  GitHub Release with the artifacts attached. Idempotent on tag
+  presence — re-running a previous merge's workflow skips with a
+  notice instead of double-releasing. See
+  [CONTRIBUTING.md → Release process](https://github.com/open-labdog/labdog/blob/main/CONTRIBUTING.md#release-process).

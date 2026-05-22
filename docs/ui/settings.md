@@ -72,3 +72,29 @@ Every setting shows its current value alongside the default. Click **Reset to de
 **Path:** `/settings/proxmox`
 
 Manages the connection to one or more Proxmox hypervisor nodes. See [Proxmox integration](../README.md) for setup details.
+
+---
+
+## About
+
+**Path:** `/settings/about`
+
+Build metadata for the running LabDog instance. The page reads
+from `GET /api/version` (a public endpoint — no authentication
+required) and renders:
+
+| Field | Source |
+|---|---|
+| Version | `VERSION` file at the repo root, baked into `backend/pyproject.toml` and `frontend/package.json` by the release pipeline. Read at runtime via `importlib.metadata.version("labdog-backend")`. |
+| Commit SHA | The git commit the image / package was built from. Set via the `GIT_SHA` Docker build arg or the `bake-build-info` Makefile target (writes `app/_build_info.py`). Falls back to the `LABDOG_COMMIT_SHA` env var. `null` on a dev install with neither source populated. |
+| Build date | ISO 8601 timestamp of the build. Set via `BUILD_DATE` build arg / Makefile target / env var. `null` when not provided. |
+| License | `AGPL-3.0-or-later` (constant). |
+| Repository URL | Upstream project URL (constant). |
+
+The page also exposes a one-click copy of a "support line" suitable
+for pasting into bug reports — `version` + short SHA + build date
+in one string. Use this when filing issues so maintainers know
+exactly what build you're on.
+
+For operators automating health checks, hit `/api/version` directly
+rather than scraping this page — it returns the same data as JSON.

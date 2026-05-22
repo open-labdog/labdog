@@ -67,16 +67,13 @@ def _detect_firewall_backend(nft_probe: str, iptables_probe: str) -> str:
     return "unknown"
 
 
-@celery_app.task(name="app.tasks.facts.collect_host_facts", queue="long_running")
-def collect_host_facts(host_id: int):
-    """Collect host facts via SSH and persist them to the Host row.
+async def _collect_host_facts_async(host_id: int) -> None:
+    """Coroutine body of ``collect_host_facts``.
 
-    One SSH session gathers /etc/os-release, uname, default NIC, and firewall
-    backend probes — the result is persisted on the Host row so the UI can
-    pre-populate version pickers and pick the right firewall backend module
-    without re-probing on every page load.
+    Extracted so tests can await it directly without going through the
+    Celery ``.apply()`` -> ``asyncio.run()`` wrapper (which collides with
+    a running event loop in pytest-asyncio tests).
     """
-    import asyncio
     from datetime import UTC, datetime
 
     import asyncssh
@@ -85,65 +82,109 @@ def collect_host_facts(host_id: int):
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.discovery.verify import is_placeholder_hostname
     from app.models.host import FirewallBackend, Host
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import ssh_connect
+    from app.ssh_utils import ssh_connect_host
 
-    async def _run():
-        async with task_session() as db:
-            result = await db.execute(select(Host).where(Host.id == host_id))
-            host = result.scalar_one_or_none()
-            if host is None:
-                logger.warning("collect_host_facts: host %d not found", host_id)
-                return
+    async with task_session() as db:
+        result = await db.execute(select(Host).where(Host.id == host_id))
+        host = result.scalar_one_or_none()
+        if host is None:
+            logger.warning("collect_host_facts: host %d not found", host_id)
+            return
 
-            if host.ssh_key_id is None:
-                logger.info("collect_host_facts: host %d has no SSH key, skipping", host_id)
-                return
+        if host.ssh_key_id is None:
+            logger.info("collect_host_facts: host %d has no SSH key, skipping", host_id)
+            return
 
-            key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-            ssh_key = key_result.scalar_one_or_none()
-            if ssh_key is None:
-                logger.warning(
-                    "collect_host_facts: SSH key %d not found for host %d",
-                    host.ssh_key_id,
-                    host_id,
+        key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+        ssh_key = key_result.scalar_one_or_none()
+        if ssh_key is None:
+            logger.warning(
+                "collect_host_facts: SSH key %d not found for host %d",
+                host.ssh_key_id,
+                host_id,
+            )
+            return
+
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+        imported_key = asyncssh.import_private_key(private_key_pem)
+
+        try:
+            async with ssh_connect_host(
+                host,
+                db,
+                client_keys=[imported_key],
+            ) as conn:
+                hostname_cmd = await conn.run("hostname", check=False)
+                os_release = await conn.run("cat /etc/os-release", check=False)
+                uname_r = await conn.run("uname -r", check=False)
+                uname_s = await conn.run("uname -s", check=False)
+                ip_link = await conn.run("ip -o link show", check=False)
+                # `command -v` returns empty output + rc=1 when the binary
+                # is absent, and the path + rc=0 when present. We only
+                # care about the presence signal, not the exit code.
+                nft = await conn.run("command -v nft || true", check=False)
+                iptables = await conn.run("command -v iptables || true", check=False)
+
+            parsed = _parse_os_release(os_release.stdout or "")
+            host.os_codename = parsed.get("VERSION_CODENAME") or None
+            host.os_pretty_name = parsed.get("PRETTY_NAME") or None
+            host.os_family = _derive_os_family(parsed)
+            host.kernel_version = (uname_r.stdout or "").strip() or None
+            host.kernel_release = (uname_s.stdout or "").strip() or None
+            host.default_nic = _pick_default_nic(ip_link.stdout or "")
+            backend_str = _detect_firewall_backend(nft.stdout or "", iptables.stdout or "")
+            host.firewall_backend = FirewallBackend(backend_str)
+            host.os_facts_collected_at = datetime.now(UTC)
+
+            # Auto-heal the discovery placeholder. Only rewrite
+            # ``Host.hostname`` when it still matches ``host-<ip>`` --
+            # never overwrite an operator-chosen name. Skip silently on
+            # uniqueness collision so we don't mangle the fetched name
+            # with a numeric suffix.
+            fetched_hostname = (hostname_cmd.stdout or "").strip()
+            if fetched_hostname and is_placeholder_hostname(host.hostname, host.ip_address):
+                clash = await db.execute(
+                    select(Host.id).where(
+                        Host.hostname == fetched_hostname,
+                        Host.id != host.id,
+                    )
                 )
-                return
+                if clash.scalar_one_or_none() is None:
+                    logger.info(
+                        "collect_host_facts: replacing placeholder %r with %r on host %d",
+                        host.hostname,
+                        fetched_hostname,
+                        host_id,
+                    )
+                    host.hostname = fetched_hostname
+                else:
+                    logger.info(
+                        "collect_host_facts: remote reports %r but another host "
+                        "already uses that name; leaving placeholder on host %d",
+                        fetched_hostname,
+                        host_id,
+                    )
 
-            private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
-            imported_key = asyncssh.import_private_key(private_key_pem)
+            await db.commit()
+        except (asyncssh.Error, OSError, TimeoutError) as exc:
+            logger.warning("collect_host_facts: SSH error for host %d: %s", host_id, exc)
+            # Do NOT update os_facts_collected_at so next tab load retriggers
 
-            try:
-                async with ssh_connect(
-                    host.ip_address,
-                    port=host.ssh_port,
-                    username=ssh_key.ssh_user,
-                    client_keys=[imported_key],
-                ) as conn:
-                    os_release = await conn.run("cat /etc/os-release", check=False)
-                    uname_r = await conn.run("uname -r", check=False)
-                    uname_s = await conn.run("uname -s", check=False)
-                    ip_link = await conn.run("ip -o link show", check=False)
-                    # `command -v` returns empty output + rc=1 when the binary
-                    # is absent, and the path + rc=0 when present. We only
-                    # care about the presence signal, not the exit code.
-                    nft = await conn.run("command -v nft || true", check=False)
-                    iptables = await conn.run("command -v iptables || true", check=False)
 
-                parsed = _parse_os_release(os_release.stdout or "")
-                host.os_codename = parsed.get("VERSION_CODENAME") or None
-                host.os_pretty_name = parsed.get("PRETTY_NAME") or None
-                host.os_family = _derive_os_family(parsed)
-                host.kernel_version = (uname_r.stdout or "").strip() or None
-                host.kernel_release = (uname_s.stdout or "").strip() or None
-                host.default_nic = _pick_default_nic(ip_link.stdout or "")
-                backend_str = _detect_firewall_backend(nft.stdout or "", iptables.stdout or "")
-                host.firewall_backend = FirewallBackend(backend_str)
-                host.os_facts_collected_at = datetime.now(UTC)
-                await db.commit()
-            except (asyncssh.Error, OSError, TimeoutError) as exc:
-                logger.warning("collect_host_facts: SSH error for host %d: %s", host_id, exc)
-                # Do NOT update os_facts_collected_at so next tab load retriggers
+@celery_app.task(name="app.tasks.facts.collect_host_facts", queue="long_running")
+def collect_host_facts(host_id: int):
+    """Collect host facts via SSH and persist them to the Host row.
 
-    asyncio.run(_run())
+    One SSH session gathers /etc/os-release, uname, default NIC, firewall
+    backend probes, and the remote hostname — the result is persisted on
+    the Host row so the UI can pre-populate version pickers and pick the
+    right firewall backend module without re-probing on every page load.
+    The hostname auto-heals the discovery placeholder; see
+    ``_collect_host_facts_async`` for the precise rule.
+    """
+    import asyncio
+
+    asyncio.run(_collect_host_facts_async(host_id))

@@ -153,7 +153,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           <Link href={backHref} className="text-sm text-slate-400 hover:text-white">
             ← {backLabel}
           </Link>
-          {run && <RunStatusBadge status={run.status} />}
+          {run && <RunStatusBadge status={run.status} reason={run.pending_reason} />}
         </div>
         {run && !isTerminal && (
           <Button
@@ -183,11 +183,32 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
         </div>
       )}
 
-      {/* Per-host status grid. Hidden for runs with a single host_run —
-          host-scoped runs already show the host in the header, and
-          cluster-mode runs (k8s-upgrade) anchor the run to a single
-          driver host_run that doesn't represent per-node progress. */}
-      {isGroupRun && run && run.host_runs.length >= 2 && (
+      {/* Pending-reason callout: when the run is deferred by another op
+          on the target host, surface the blocker as an amber banner so
+          the operator doesn't have to hover the badge to see what's
+          ahead of them in the queue. */}
+      {run && run.status === "pending" && run.pending_reason && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-600/40 bg-amber-600/10 px-4 py-3 text-sm text-amber-200">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="mt-0.5 h-4 w-4 shrink-0"
+            aria-hidden="true"
+          >
+            <path
+              fillRule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-12a1 1 0 011 1v4a1 1 0 11-2 0V7a1 1 0 011-1zm0 9a1 1 0 100-2 1 1 0 000 2z"
+              clipRule="evenodd"
+            />
+          </svg>
+          <span>Waiting: {run.pending_reason}</span>
+        </div>
+      )}
+
+      {/* Per-host status grid for group runs. Host-scoped runs already
+          show the host in the header, so the grid is hidden there. */}
+      {isGroupRun && run && run.host_runs.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold text-slate-200 mb-3">Host Status</h3>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
@@ -197,7 +218,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
                 className="flex items-center justify-between rounded border border-slate-700 bg-slate-800/50 px-3 py-2"
               >
                 <span className="text-xs text-slate-400 truncate">Host {hr.host_id}</span>
-                <RunStatusBadge status={hr.status} />
+                <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
               </div>
             ))}
           </div>

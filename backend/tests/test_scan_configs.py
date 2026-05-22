@@ -98,6 +98,37 @@ class TestScanConfigSchemaValidation:
         m = ScanConfigCreate(**self._base(cidrs=["192.168.1.5/24"]))
         assert m.cidrs == ["192.168.1.5/24"]
 
+    def test_loopback_cidr_rejected(self):
+        with pytest.raises(ValidationError, match="blocked"):
+            ScanConfigCreate(**self._base(cidrs=["127.0.0.1/32"]))
+
+    def test_link_local_metadata_cidr_rejected(self):
+        with pytest.raises(ValidationError, match="blocked"):
+            ScanConfigCreate(**self._base(cidrs=["169.254.169.254/32"]))
+
+    def test_multicast_cidr_rejected(self):
+        with pytest.raises(ValidationError, match="blocked"):
+            ScanConfigCreate(**self._base(cidrs=["224.0.0.1/32"]))
+
+    def test_reserved_cidr_rejected(self):
+        with pytest.raises(ValidationError, match="blocked"):
+            ScanConfigCreate(**self._base(cidrs=["240.0.0.1/32"]))
+
+    def test_error_message_names_blocked_network(self):
+        with pytest.raises(ValidationError) as exc_info:
+            ScanConfigCreate(**self._base(cidrs=["127.0.0.0/24"]))
+        assert "127.0.0.0/8" in str(exc_info.value)
+
+    def test_private_ranges_not_blocked(self):
+        # RFC 1918 must remain unblocked.
+        for cidr in ["10.0.0.0/24", "172.16.0.0/24", "192.168.1.0/24"]:
+            m = ScanConfigCreate(**self._base(cidrs=[cidr]))
+            assert m.cidrs == [cidr]
+
+    def test_update_blocked_cidr_rejected(self):
+        with pytest.raises(ValidationError, match="blocked"):
+            ScanConfigUpdate(cidrs=["127.0.0.0/24"])
+
     # -- Cron validation --
 
     def test_invalid_cron_rejected(self):
@@ -527,6 +558,90 @@ class TestScanConfigsAPI:
 
         assert resp.status_code == 202
         mock_send.assert_called_once_with("scans.run_config", args=[config_id])
+
+    async def test_create_rejects_loopback_cidr(self, superuser_client, db):
+        key = await create_ssh_key(db)
+        resp = await superuser_client.post(
+            "/api/scans",
+            json={
+                "name": "loopback-scan",
+                "cidrs": ["127.0.0.0/24"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+            },
+        )
+        assert resp.status_code == 422
+        detail_str = str(resp.json())
+        assert "127.0.0.0/8" in detail_str
+
+    async def test_create_rejects_link_local_cidr(self, superuser_client, db):
+        key = await create_ssh_key(db)
+        resp = await superuser_client.post(
+            "/api/scans",
+            json={
+                "name": "metadata-scan",
+                "cidrs": ["169.254.169.254/32"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+            },
+        )
+        assert resp.status_code == 422
+
+
+class TestRegularUserScanAccess:
+    """Regular (non-superuser) users have the same access to scan endpoints
+    as superusers under labdog's two-role model (the only difference between
+    the roles is the ability to manage other users). See
+    docs/security-hardening.md ``Superuser scope``."""
+
+    async def _create_config(self, client, key_id: int, name: str = "regular-scan") -> int:
+        resp = await client.post(
+            "/api/scans",
+            json={
+                "name": name,
+                "cidrs": ["10.0.20.0/24"],
+                "ssh_key_id": key_id,
+                "interval_minutes": 60,
+            },
+        )
+        assert resp.status_code == 201
+        return resp.json()["id"]
+
+    async def test_post_scans_is_201_for_regular_user(self, regular_user_client, db):
+        key = await create_ssh_key(db)
+        resp = await regular_user_client.post(
+            "/api/scans",
+            json={
+                "name": "regular-user-scan",
+                "cidrs": ["10.0.21.0/24"],
+                "ssh_key_id": key.id,
+                "interval_minutes": 60,
+            },
+        )
+        assert resp.status_code == 201
+
+    async def test_put_scans_is_200_for_regular_user(self, regular_user_client, db):
+        key = await create_ssh_key(db)
+        config_id = await self._create_config(regular_user_client, key.id, name="put-target")
+        resp = await regular_user_client.put(
+            f"/api/scans/{config_id}",
+            json={"name": "renamed"},
+        )
+        assert resp.status_code == 200
+
+    async def test_delete_scans_is_204_for_regular_user(self, regular_user_client, db):
+        key = await create_ssh_key(db)
+        config_id = await self._create_config(regular_user_client, key.id, name="delete-target")
+        resp = await regular_user_client.delete(f"/api/scans/{config_id}")
+        assert resp.status_code == 204
+
+    async def test_get_scans_is_200_for_regular_user(self, regular_user_client):
+        resp = await regular_user_client.get("/api/scans")
+        assert resp.status_code == 200
+
+    async def test_get_pending_summary_is_200_for_regular_user(self, regular_user_client):
+        resp = await regular_user_client.get("/api/scans/pending-summary")
+        assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------

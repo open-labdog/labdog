@@ -1,12 +1,12 @@
-# Managed by LabDog — Packages module reference
+# Managed by LabDog -- Packages module reference
 #
 # Packages module covers TWO related sections: `packages:` (individual
 # package rules) and `package_repositories:` (declarative repo entries).
 # Both are managed by the same `gitops.import.packages` audit event and
-# lock step in the same transaction — flipping either section wipes the
+# lock step in the same transaction -- flipping either section wipes the
 # corresponding table.
 #
-# Protected packages — attempting to manage any of these via YAML
+# Protected packages -- attempting to manage any of these via YAML
 # raises a parse error:
 #   openssh-server, openssh-client, sshd, systemd, systemd-sysv,
 #   linux-image*, linux-headers*, kernel, kernel-*, glibc, libc6,
@@ -19,17 +19,17 @@ priority: 100
 # Package rules
 # -----------------------------------------------------------------------------
 # Fields:
-#   package_name      string  — required; matches [a-zA-Z0-9][a-zA-Z0-9._+:-]*
-#   version           string  — optional; pin a specific version (apt syntax)
-#   state             enum    — present | absent | latest.  Default: present.
-#   package_manager   enum    — auto | apt | dnf | yum.  Default: auto
+#   package_name      string  -- required; matches [a-zA-Z0-9][a-zA-Z0-9._+:-]*
+#   version           string  -- optional; pin a specific version (apt syntax)
+#   state             enum    -- present | absent | latest.  Default: present.
+#   package_manager   enum    -- auto | apt | dnf | yum.  Default: auto
 #                               (detects from the host's OS family).
-#   priority          int     — 0..10000, default 0.
-#   hold              bool    — default false.  When true, Ansible pins the
+#   priority          int     -- 0..10000, default 0.
+#   hold              bool    -- default false.  When true, Ansible pins the
 #                               package so apt/dnf won't upgrade it even
 #                               during an `apt upgrade`.  Only meaningful
 #                               when state=present.
-#   comment           string  — optional free-text.
+#   comment           string  -- optional free-text.
 #
 # Merge identity key: `package_name`.
 
@@ -44,9 +44,9 @@ packages:
     version: "7.88.1-10+deb12u5"
     state: present
     hold: true
-    comment: "Pinned — CI depends on exact version"
+    comment: "Pinned -- CI depends on exact version"
 
-  # Keep at upstream latest — `apt-get upgrade` equivalent on every sync
+  # Keep at upstream latest -- `apt-get upgrade` equivalent on every sync
   - package_name: ca-certificates
     state: latest
     comment: "Always refresh CA bundle"
@@ -56,7 +56,7 @@ packages:
     state: absent
     comment: "Replaced by nginx on this tier"
 
-  # RHEL/Fedora — force dnf even if the module can't autodetect
+  # RHEL/Fedora -- force dnf even if the module can't autodetect
   - package_name: httpd-tools
     state: absent
     package_manager: dnf
@@ -71,15 +71,15 @@ packages:
 # Package repositories
 # -----------------------------------------------------------------------------
 # Fields:
-#   name           string  — required; unique within the group.
-#   url            string  — required; MUST start with http:// or https://.
-#   key_url        string  — optional; URL of the GPG key used to verify
+#   name           string  -- required; unique within the group.
+#   url            string  -- required; MUST start with http:// or https://.
+#   key_url        string  -- optional; URL of the GPG key used to verify
 #                            the repository.
-#   repo_type      enum    — apt | yum.  Required.
-#   distribution   string  — apt-only; the "dist" in `deb <url> <dist> main`.
-#   components     string  — apt-only; whitespace-separated component list
+#   repo_type      enum    -- apt | yum.  Required.
+#   distribution   string  -- apt-only; the "dist" in `deb <url> <dist> main`.
+#   components     string  -- apt-only; whitespace-separated component list
 #                            (e.g. "main contrib non-free").
-#   state          enum    — present | absent.  Default: present.
+#   state          enum    -- present | absent.  Default: present.
 #
 # Merge identity key: (group_id, name).
 

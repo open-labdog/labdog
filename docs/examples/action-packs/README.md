@@ -36,22 +36,49 @@ Then in the LabDog UI:
 2. Click **Add Pack**.
 3. Either point at a git URL, or pick **Local directory** and paste the
    filesystem path.
-4. Leave Role as **Override** (you're not replacing a default pack).
-5. Save. The action will appear on any host's detail page under the
+4. Save. The pack joins the **Pack Sources** table — packs are
+   unordered. Uncontested keys win automatically. Contested keys
+   (multiple packs declare the same action key) require a per-key
+   pin via the Action Registry table on the same page; until pinned
+   the action is *unresolved* and unrunnable.
+5. The action will appear on any host's detail page under the
    **Actions** tab.
 
 ## Pack layout recap
 
 ```
 <pack>/
-├── pack.yml              (optional — pack metadata)
+├── pack.yml                  (optional — pack metadata)
 ├── actions/
-│   ├── <key>.yml         (the Ansible playbook)
-│   └── <key>.manifest.yml  (the LabDog action definition)
-└── roles/                (optional)
-    └── <role-name>/      (standard Ansible role layout)
+│   └── <key>/                (one directory per action)
+│       ├── manifest.yml      (the LabDog action definition)
+│       ├── playbook.yml      (the Ansible playbook)
+│       └── roles/            (optional — action-private roles)
+└── roles/                    (optional — pack-shared roles)
+    └── <role-name>/
 ```
 
-Every manifest is a sidecar next to its playbook, named
-`<same-stem>.manifest.yml`. LabDog discovers actions by globbing
-`actions/*.manifest.yml` — a playbook without a manifest is ignored.
+An action is a directory: each contains its `manifest.yml` and
+`playbook.yml` side by side. LabDog discovers actions by globbing
+`actions/*/manifest.yml` — a directory without a `manifest.yml` is
+ignored.
+
+## Optional post-run hooks
+
+Manifests may declare two optional post-success hooks. Both are
+opt-in and skipped on dry-run / failure. See
+[the Actions user guide](../../ui/actions.md#post-run-reconciliation-sync-and-register)
+for the full contract.
+
+- **`post_run_sync: [<module-name>, ...]`** — re-enforce labdog's
+  existing desired state for the named modules after the action
+  finishes (push semantic). Good for "rotate cert → reload
+  services" style actions. Don't use for installing things labdog
+  doesn't already manage.
+- **`post_run_register: {<module>: [<item>, ...]}`** — register
+  resources the action installed as host-scope override rows so
+  labdog manages them going forward. Items are validated against
+  each module's REST API Create schema; uniqueness collisions
+  with operator-declared rows skip silently. Good for
+  install-this-new-thing actions (e.g. install Alloy + register
+  `alloy.service` + the `alloy` package).

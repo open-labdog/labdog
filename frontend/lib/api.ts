@@ -9,16 +9,43 @@ export class ApiError extends Error {
   }
 }
 
+const _MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
+
+/**
+ * Read the labdog_csrf double-submit cookie value from document.cookie.
+ * Returns an empty string when the cookie is absent (e.g. not logged in).
+ * The value is base64url-safe so no URL-decoding is needed.
+ */
+function _readCsrfCookie(): string {
+  if (typeof document === "undefined") return ""
+  const match = document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("labdog_csrf="))
+  return match ? match.slice("labdog_csrf=".length) : ""
+}
+
 export async function apiFetch<T>(
   path: string,
   options?: RequestInit & { json?: unknown }
 ): Promise<T> {
   const { json, ...fetchOptions } = options ?? {}
+  const method = (fetchOptions.method ?? "GET").toUpperCase()
+
+  const csrfHeaders: Record<string, string> = {}
+  if (_MUTATING_METHODS.has(method)) {
+    const csrfToken = _readCsrfCookie()
+    if (csrfToken) {
+      csrfHeaders["X-CSRF-Token"] = csrfToken
+    }
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...csrfHeaders,
       ...fetchOptions?.headers,
     },
     ...(json !== undefined ? { body: JSON.stringify(json) } : {}),

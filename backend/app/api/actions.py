@@ -14,7 +14,6 @@ from app.actions.validation import build_param_model
 from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
-from app.models.host import HostGroupMembership
 from app.models.user import User
 from app.schemas.actions import (
     ActionDefinitionOut,
@@ -56,8 +55,14 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
         supports_fleet=defn.supports_fleet,
         parameters=params,
         pack_name=defn.pack_name,
+        winning_pack_id=defn.winning_pack_id,
+        unresolved=defn.is_unresolved,
         overridden_from=list(defn.overridden_from),
-        execution_mode=defn.execution_mode,
+        post_run_sync=list(defn.post_run_sync),
+        post_run_register={
+            module: [dict(item) for item in items]
+            for module, items in defn.post_run_register.items()
+        },
     )
 
 
@@ -116,6 +121,23 @@ async def create_run(
     if action is None:
         raise HTTPException(status_code=400, detail="Unknown action")
 
+    # Reject unresolved contested keys before doing anything else.
+    # ``is_unresolved`` means "multiple packs declare this key and the
+    # operator hasn't pinned a winner" — there is no playbook to
+    # dispatch and no global ordering to fall back on.
+    if action.is_unresolved:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "kind": "action_unresolved",
+                "action_key": action.key,
+                "message": (
+                    f"Action {action.key!r} has multiple candidate packs and "
+                    "no winner pinned. Visit /action-packs to choose one."
+                ),
+            },
+        )
+
     # Pack-supplied actions need a playbook on disk. Built-in
     # pseudo-actions have ``playbook_path=None`` — they're dispatched
     # via dedicated per-host wrappers in builtin_dispatchers.py and
@@ -123,11 +145,16 @@ async def create_run(
     if action.playbook_path is not None and not action.playbook_path.is_file():
         raise HTTPException(status_code=400, detail="Playbook file not found")
 
-    # Check scope support
+    # Check scope support. ``supports_host=False`` actions are
+    # group-only — they're dispatched as a single ansible-runner
+    # invocation against a flat all-hosts inventory by
+    # ``app.tasks.action_group``. Reject host-target submissions up
+    # front with a 400 + clear message rather than letting them fall
+    # through to a less helpful error later.
     if body.host_id is not None and not action.supports_host:
         raise HTTPException(
-            status_code=422,
-            detail="This action does not support host-scoped runs.",
+            status_code=400,
+            detail="This action can only target a group.",
         )
     if body.group_id is not None and not action.supports_group:
         raise HTTPException(
@@ -141,62 +168,6 @@ async def create_run(
         build_param_model(action).model_validate(body.parameters)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
-
-    # Cluster-mode actions (e.g. k8s-upgrade) need a group with role
-    # assignments. Validate at submit so the operator gets a clear
-    # error in the dialog rather than a queued-then-failed run.
-    if action.execution_mode == "cluster":
-        if body.host_id is not None:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Cluster-mode actions cannot target a single host. "
-                    "Pick a group whose members carry control_plane / "
-                    "worker role assignments."
-                ),
-            )
-        if body.group_id is None:
-            raise HTTPException(
-                status_code=422,
-                detail="Cluster-mode actions require group_id.",
-            )
-        member_rows = (
-            await db.execute(
-                select(
-                    HostGroupMembership.c.host_id,
-                    HostGroupMembership.c.role,
-                ).where(HostGroupMembership.c.group_id == body.group_id)
-            )
-        ).all()
-        if not member_rows:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Group has no members. Cluster-mode actions need at "
-                    "least one control_plane member."
-                ),
-            )
-        unassigned = [r.host_id for r in member_rows if r.role is None]
-        if unassigned:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "kind": "members_missing_role",
-                    "host_ids": unassigned,
-                    "message": (
-                        f"{len(unassigned)} group member(s) have no role "
-                        "assignment. Set every member to control_plane "
-                        "or worker before triggering a cluster upgrade."
-                    ),
-                },
-            )
-        if not any(r.role == "control_plane" for r in member_rows):
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "Group has no control_plane members. Cluster-mode actions need at least one."
-                ),
-            )
 
     # Advisory lock — prevents duplicate concurrent runs for same action+scope
     lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"

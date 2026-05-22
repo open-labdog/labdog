@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_superuser
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
@@ -31,7 +32,7 @@ async def list_git_repos(
 @router.post("", response_model=GitRepoResponse, status_code=201)
 async def create_git_repo(
     body: GitRepoCreate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(GitRepository).where(GitRepository.name == body.name))
@@ -57,6 +58,21 @@ async def create_git_repo(
         repo.encrypted_https_token = encrypt_ssh_key(body.https_token, master_key)
 
     db.add(repo)
+    await db.flush()
+
+    await log_action(
+        db=db,
+        action="create",
+        entity_type="git_repository",
+        entity_id=repo.id,
+        user_id=user.id,
+        after_state={
+            "name": repo.name,
+            "url": repo.url,
+            "branch": repo.branch,
+            "auth_type": repo.auth_type.value,
+        },
+    )
     await db.commit()
     await db.refresh(repo)
     return repo
@@ -79,13 +95,20 @@ async def get_git_repo(
 async def update_git_repo(
     repo_id: int,
     body: GitRepoUpdate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
     repo = result.scalar_one_or_none()
     if not repo:
         raise HTTPException(status_code=404, detail="Git repository not found")
+
+    before = {
+        "name": repo.name,
+        "url": repo.url,
+        "branch": repo.branch,
+        "auth_type": repo.auth_type.value,
+    }
 
     update_data = body.model_dump(exclude_none=True)
     token = update_data.pop("https_token", None)
@@ -117,6 +140,20 @@ async def update_git_repo(
     if token and auth_type == "https_token":
         repo.encrypted_https_token = encrypt_ssh_key(token, get_master_key())
 
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="git_repository",
+        entity_id=repo.id,
+        user_id=user.id,
+        before_state=before,
+        after_state={
+            "name": repo.name,
+            "url": repo.url,
+            "branch": repo.branch,
+            "auth_type": repo.auth_type.value,
+        },
+    )
     await db.commit()
     await db.refresh(repo)
     return repo
@@ -125,7 +162,7 @@ async def update_git_repo(
 @router.delete("/{repo_id}", status_code=204)
 async def delete_git_repo(
     repo_id: int,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
@@ -152,6 +189,19 @@ async def delete_git_repo(
             ),
         )
 
+    await log_action(
+        db=db,
+        action="delete",
+        entity_type="git_repository",
+        entity_id=repo.id,
+        user_id=user.id,
+        before_state={
+            "name": repo.name,
+            "url": repo.url,
+            "branch": repo.branch,
+            "auth_type": repo.auth_type.value,
+        },
+    )
     await db.delete(repo)
     await db.commit()
 

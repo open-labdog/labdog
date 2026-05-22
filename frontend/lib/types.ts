@@ -57,6 +57,7 @@ export interface Host {
   kernel_version: string | null
   kernel_release: string | null
   os_facts_collected_at: string | null
+  ssh_host_key_entry: string | null
 }
 
 export interface HostSummary extends Host {
@@ -144,9 +145,6 @@ export interface ActionPack {
   path: string
   /** Absolute filesystem path for source_type=local. Null for git. */
   local_path: string | null
-  /** Linear precedence ordering. Higher wins on action-key collisions.
-   * Bundled is implicit at 0. */
-  position: number
   enabled: boolean
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
@@ -163,30 +161,39 @@ export interface ActionPackSyncResponse {
   last_synced_at: string | null
 }
 
-export interface ActionPackReorderRequest {
-  /** Top-to-bottom display order. The first id wins on action-key
-   * collisions (highest position). Must list every existing pack
-   * exactly once; bundled is implicit and never appears here. */
-  pack_ids: number[]
+/** Result of POST /api/action-packs/{id}/claim-all-keys — the
+ * bulk-pin endpoint that writes/overwrites an action_resolution row
+ * for every key the pack contributes. */
+export interface ClaimAllKeysResponse {
+  /** Brand-new resolution rows inserted. */
+  created: number
+  /** Pre-existing rows flipped to this pack from another pack. */
+  updated: number
+  /** Keys that already pointed at this pack — no write needed. */
+  skipped: number
 }
 
 export interface ResolutionPack {
   pack_id: number | null
   pack_name: string
-  position: number
 }
 
 export interface ContestedActionKey {
   action_key: string
   candidates: ResolutionPack[]
-  current_winner: ResolutionPack
-  /** Operator's explicit pin, or null when the winner came from
-   * position-based default (no resolution row present). */
+  /** The pinned winner, or null when the key is unresolved. */
+  current_winner: ResolutionPack | null
+  /** Operator's explicit pin, or null when no pin exists yet (in
+   * which case the key is unresolved — there is no global ordering
+   * to fall back on). */
   resolution: ResolutionPack | null
-  /** True when the live winner came from a freeze decision rather
-   * than the position default — the UI surfaces a "needs your
-   * decision" badge for these. */
+  /** True when the pin was auto-written by the freeze-on-fresh-
+   * conflict logic (decided_by_user_id IS NULL). The UI surfaces a
+   * "needs your confirmation" badge for these. */
   is_frozen: boolean
+  /** True when the key has multiple contributors and no pin. The
+   * action is unrunnable until the operator picks a winner. */
+  is_unresolved: boolean
   decided_at: string | null
   decided_by_user_id: number | null
 }
@@ -272,7 +279,6 @@ export interface ActivatedPackOut {
   pack_id: number
   name: string
   path: string
-  position: number
   requested_name: string
   name_was_disambiguated: boolean
 }
@@ -620,13 +626,23 @@ export interface PendingSummary {
   total: number
 }
 
+export type SshErrorCategory = "unreachable" | "auth_failed" | "refused" | "timeout" | "unknown"
+
+export const SSH_ERROR_LABELS: Record<SshErrorCategory, string> = {
+  unreachable: "Unreachable",
+  auth_failed: "Auth failed",
+  refused: "Connection refused",
+  timeout: "Timed out",
+  unknown: "Unknown error",
+}
+
 export interface PendingHost {
   id: number
   scan_config_id: number
   ip_address: string
   hostname: string | null
   ssh_verified: boolean
-  ssh_error: string | null
+  ssh_error: SshErrorCategory | null
   discovered_at: string
 }
 
@@ -637,7 +653,7 @@ export interface PendingHostFleet {
   ip_address: string
   hostname: string | null
   ssh_verified: boolean
-  ssh_error: string | null
+  ssh_error: SshErrorCategory | null
   discovered_at: string
 }
 
@@ -667,18 +683,29 @@ export interface ActionDefinition {
   parameters: ActionParameter[]
   /** Pack whose manifest provided this action. */
   pack_name: string
-  /** Packs whose entries for this key were shadowed. Empty when uncontested. */
+  /** ActionPack.id of the winning pack. Null for built-in actions,
+   * bundled-pack actions (no DB row), and **unresolved** contested
+   * keys (the operator hasn't pinned a winner). */
+  winning_pack_id: number | null
+  /** True when the action key is contested by multiple packs and the
+   * operator has not pinned a winner. The Run button must be disabled
+   * with a "Pick winner first" prompt; the server rejects submission
+   * with HTTP 409. */
+  unresolved: boolean
+  /** Packs whose entries for this key were shadowed. Empty when
+   * uncontested. For unresolved keys, lists every contributor. */
   overridden_from: string[]
-  /** ``per_host`` (default) or ``cluster`` (single ansible run against
-   *  the whole group with a multi-host inventory; e.g. k8s-upgrade). */
-  execution_mode: "per_host" | "cluster"
-}
-
-export type MembershipRole = "control_plane" | "worker"
-
-export interface GroupMembership {
-  host_id: number
-  role: MembershipRole | null
+  /** Canonical module names that will re-sync against the target host
+   * after a successful run (per-host fan-out for group dispatch).
+   * Empty means no post-run sync. Surface as an info chip so the
+   * operator knows the side effect of running this action. */
+  post_run_sync: string[]
+  /** Resources the action's manifest declares it installs. After a
+   * successful run labdog inserts these as host-scope override rows
+   * so the resources are managed going forward. Keys are canonical
+   * module names; values are pre-validated dicts. Surface as a chip
+   * counting items per module so the operator sees the side effect. */
+  post_run_register: Record<string, Record<string, unknown>[]>
 }
 
 export interface ActionHostRun {
@@ -691,6 +718,9 @@ export interface ActionHostRun {
   exit_code: number | null
   error_message: string | null
   snapshot_name: string | null
+  /** Populated when status='pending' — human-readable string naming
+   *  the in-flight op holding the host. NULL otherwise. */
+  pending_reason: string | null
 }
 
 export interface ActionRun {
@@ -714,6 +744,9 @@ export interface ActionRun {
   started_at: string | null
   finished_at: string | null
   error_message: string | null
+  /** Populated when status='pending' — human-readable string naming
+   *  the in-flight op holding the target host. NULL otherwise. */
+  pending_reason: string | null
   created_at: string
   host_runs: ActionHostRun[]
 }
@@ -776,4 +809,17 @@ export interface ValidateCronResponse {
   valid: boolean
   message: string | null
   next_run_at: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Version / build metadata  (GET /api/version — public, no auth)
+// ---------------------------------------------------------------------------
+
+export interface VersionInfo {
+  version: string
+  commit_sha: string | null
+  commit_sha_short: string | null
+  build_date: string | null
+  license: string
+  repo_url: string
 }

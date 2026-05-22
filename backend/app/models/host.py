@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 
 from sqlalchemy import (
     Boolean,
-    CheckConstraint,
     Column,
     DateTime,
     Enum,
@@ -11,6 +10,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    Text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,12 +31,7 @@ class SyncStatus(enum.StrEnum):
     error = "error"
 
 
-# Join table for Host <-> HostGroup many-to-many
-#
-# ``role`` is optional and currently used only by cluster-mode actions
-# (e.g. ``k8s-upgrade``). The CHECK constraint backs the application
-# enum: ``control_plane``, ``worker``, or NULL. Per-host actions
-# ignore the field entirely.
+# Join table for Host <-> HostGroup many-to-many.
 HostGroupMembership = Table(
     "host_group_memberships",
     Base.metadata,
@@ -51,11 +46,6 @@ HostGroupMembership = Table(
         Integer,
         ForeignKey("host_groups.id", ondelete="CASCADE"),
         primary_key=True,
-    ),
-    Column("role", String(length=32), nullable=True),
-    CheckConstraint(
-        "role IS NULL OR role IN ('control_plane', 'worker')",
-        name="ck_host_group_memberships_role_valid",
     ),
 )
 
@@ -95,6 +85,7 @@ class Host(Base):
     os_facts_collected_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

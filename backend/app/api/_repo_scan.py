@@ -183,8 +183,6 @@ async def activate_repo(
     ``reload_registry_async`` once at the end. Failures in the
     post-commit hooks are logged but the rows persist.
     """
-    from sqlalchemy import func
-
     from app.actions.registry import reload_registry_async
     from app.audit.logger import log_action
     from app.models.host_group import GitOpsStatus, HostGroup
@@ -347,16 +345,13 @@ async def activate_repo(
                     },
                 )
 
-        # Compute the starting position so the activation block forms a
-        # contiguous run above every existing pack — operator can shuffle
-        # afterwards. ``func.coalesce`` handles the empty-table case.
-        max_pos = (await db.scalar(select(func.coalesce(func.max(ActionPack.position), 0)))) or 0
-
-        # Insert packs (with name-collision suffix logic).
+        # Insert packs (with name-collision suffix logic). Packs have
+        # no inherent precedence under the per-key-pinning model; we
+        # only persist the row + log the activation.
         activated_packs: list[ActivatedPackOut] = []
         path_to_pack_id: dict[str, int] = {}
         existing_names = {row[0] for row in (await db.execute(select(ActionPack.name))).all()}
-        for offset, sel in enumerate(body.packs, start=1):
+        for sel in body.packs:
             final_name = await _disambiguate_pack_name(
                 requested=sel.name,
                 repo_name=repo.name,
@@ -368,7 +363,6 @@ async def activate_repo(
                 source_type=PackSourceType.GIT,
                 git_repository_id=repo_id,
                 path=sel.path,
-                position=max_pos + offset,
                 enabled=True,
             )
             db.add(pack_row)
@@ -385,7 +379,6 @@ async def activate_repo(
                 after_state={
                     "name": final_name,
                     "path": sel.path,
-                    "position": pack_row.position,
                     "contributed_keys": list(scanned_packs_by_path[sel.path].contributed_keys),
                     "repo_id": repo_id,
                 },
@@ -395,7 +388,6 @@ async def activate_repo(
                     pack_id=pack_row.id,
                     name=final_name,
                     path=sel.path,
-                    position=pack_row.position,
                     requested_name=sel.name,
                     name_was_disambiguated=(final_name != sel.name),
                 )

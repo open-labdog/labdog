@@ -7,27 +7,21 @@ if getent passwd labdog > /dev/null 2>&1; then
     exit 0
 fi
 
-if command -v adduser > /dev/null 2>&1 && adduser --help 2>&1 | grep -q -- '--system'; then
-    # Debian-family
-    adduser \
-        --system \
-        --group \
-        --no-create-home \
-        --home /var/lib/labdog \
-        --shell /usr/sbin/nologin \
-        --gecos "LabDog service account" \
-        labdog
-elif command -v useradd > /dev/null 2>&1; then
-    # RPM-family — group auto-created by --user-group
-    useradd \
-        --system \
-        --user-group \
-        --no-create-home \
-        --home-dir /var/lib/labdog \
-        --shell /usr/sbin/nologin \
-        --comment "LabDog service account" \
-        labdog
-else
-    echo "preinst: neither adduser nor useradd available — cannot create labdog user" >&2
+# Use useradd directly. It's universally available on both
+# Debian/Ubuntu (passwd package) and RHEL/Rocky/Fedora (shadow-utils),
+# and accepts the same long flags on both. The earlier adduser-based
+# detection broke on Rocky 9 where `adduser` is a useradd wrapper that
+# doesn't accept Debian-style --gecos / --no-create-home flags.
+if ! command -v useradd > /dev/null 2>&1; then
+    echo "preinst: useradd not available — cannot create labdog user" >&2
     exit 1
 fi
+
+useradd \
+    --system \
+    --user-group \
+    --no-create-home \
+    --home-dir /var/lib/labdog \
+    --shell /usr/sbin/nologin \
+    --comment "LabDog service account" \
+    labdog

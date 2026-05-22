@@ -118,44 +118,136 @@ registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
 module import. DB-backed packs are configured from the UI at
 `/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
 can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
-Pack precedence is a single linear `ActionPack.position` (higher wins,
-bundled implicit at 0); operators reorder via drag-to-reorder on the
-**Action Packs** page. Per-key conflicts can also be pinned via
-`action_resolution` rows — the wizard captures them at activation and
-the registry rebuild auto-pins the previous winner if a sync introduces
-a fresh conflict (freeze-on-fresh-conflict, never silently flips).
+
+**Precedence is pure per-key pinning, no global ordering.** Each
+action key has at most one source pack. When multiple packs declare
+the same key, the operator pins which pack wins via an
+`action_resolution` row; until pinned, the key is *unresolved* and
+the action is unrunnable (`POST /api/actions/runs` returns 409 and
+the Run button is disabled with a "Pick winner first" prompt). There
+is no `ActionPack.position` and no drag-to-reorder UX.
+
+The registry rebuild still applies **freeze-on-fresh-conflict**:
+when a sync introduces a new contestant for a previously-uncontested
+key, the previous winner is auto-pinned via a fresh
+`action_resolution` row (decided_by_user_id=NULL, surfaced as
+"Frozen" in the UI) so behaviour doesn't silently flip. The
+**Action Packs** page is the primary surface — top-level action
+registry table with per-row pickers + a demoted "Pack Sources"
+table that exposes `POST /api/action-packs/{id}/claim-all-keys` for
+bulk-pinning every key a pack contributes. The bundled pack appears
+as a read-only row in Pack Sources so its always-present-candidate
+status is discoverable.
+
 See `app/packs/` for the subsystem, the user guide at
 `docs/ui/actions.md`, and starter packs at `docs/examples/action-packs/`.
 
-**Bundled pack mirrors `labdog-playbooks`.** The directory at
-`backend/app/ansible/` is a byte-identical mirror of
+**Bundled pack is fetched from `labdog-playbooks` at build time.**
+`backend/app/ansible/` is **gitignored**; the content is cloned from
 [`open-labdog/labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-at the moment the container image is built. Do **not** edit it
-directly — change the upstream repo, then re-sync with
-`rsync -a --exclude='.git' --exclude='.gitignore' /path/to/labdog-playbooks/ backend/app/ansible/`.
-The `bundled-pack-mirror` CI job runs
-`scripts/check-bundled-mirrors-playbooks.sh` and fails the build on
-drift. The Python runtime that consumes packs (playbook generation,
-ansible-runner) lives separately at `backend/app/ansible_runtime/` and
-is *not* part of the mirror. A fresh install also auto-registers
-`labdog-playbooks` as a DB-backed override pack so deployed instances
-pick up newer playbooks than the in-image snapshot — operators that
-prefer a private fork delete the seeded row and add their own.
+at the SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](LABDOG_PLAYBOOKS_REF)
+file when the container image, `.deb` / `.rpm` / `.tar.gz` artefacts,
+or local dev environment are built. To bump the bundled pack: change
+one line in `LABDOG_PLAYBOOKS_REF` to the new SHA and commit. CI
+re-builds with the new content; no rsync, no drift gate.
 
-### Cluster-mode actions
+- **Docker**: `Dockerfile` has a `bundled-pack-fetcher` stage that
+  clones at the ref the CI passes via the `LABDOG_PLAYBOOKS_REF`
+  build-arg (read from the file). A local `docker build` without
+  overrides uses the in-stage default (`main`) — pass
+  `--build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF)`
+  for reproducible local builds.
+- **Packaging**: `packaging/Makefile` has a `fetch-bundled-pack`
+  target that the `build` target depends on. Reads the same file.
+- **Dev**: `./dev/dev.sh start` auto-fetches into
+  `backend/app/ansible/` on first start (when the dir is empty).
+  `./dev/dev.sh bundle` re-fetches on demand. Point at a sibling
+  working copy via `LABDOG_PLAYBOOKS_LOCAL=/path/to/labdog-playbooks`
+  to rsync from it instead of cloning — useful when iterating on
+  upstream playbooks.
+- **CI**: backend-test and ansible-lint jobs run the same fetch
+  before pytest / ansible-lint so the bundled pack is in place.
+
+All four sites (Dockerfile, packaging, dev, CI) delegate to
+`scripts/fetch-bundled-pack.sh` — single source of truth for the
+clone + SHA-fallback + `.git` strip logic. Edit that script for
+changes, not the call sites.
+
+The Python runtime that consumes packs (playbook generation,
+ansible-runner) lives separately at `backend/app/ansible_runtime/`
+and is **not** fetched — it's part of the labdog source tree.
+
+A fresh install also auto-registers `labdog-playbooks` as a
+DB-backed override pack (seeded in `alembic 0001`, points at
+`main`) so deployed instances pick up newer playbooks than the
+in-image snapshot. Operators that prefer a private fork delete the
+seeded row and add their own.
+
+### Group-dispatch actions
 
 Most actions fan out per-host (one Celery task per target host with a
 single-host inventory + parallelism). Actions whose manifest declares
-`execution_mode: cluster` are dispatched as a single ansible-playbook
-invocation against a multi-host inventory grouped under
-`all.children.{control_plane, workers}`; the playbook serialises with
-Ansible's `serial:` keyword. The first concrete user is `k8s-upgrade`.
-Per-member roles live on `host_group_memberships.role` (NULL /
-`control_plane` / `worker`); the orchestrator creates one
-`ActionHostRun` anchored to the first control-plane host as the
-"driver" and dispatches `app.tasks.action_cluster.run_action_cluster`.
-`POST /actions/runs` rejects cluster-mode submissions targeting a
-host or a group missing role assignments.
+`supports_host: false` are dispatched as a single ansible-playbook
+invocation against a flat `all` Ansible inventory of every member of
+the targeted group (no `children`/`control_plane`/`workers` shaping —
+labdog has no per-member roles). The pack's playbook owns all
+cluster-wide coordination via Ansible primitives (`serial:`,
+`add_host`, `delegate_to`, `run_once`). The first concrete user is
+`k8s-upgrade`, which probes for
+`/etc/kubernetes/manifests/kube-apiserver.yaml` in a discovery play
+to build dynamic `k8s_control_plane` / `k8s_worker` subgroups, then
+runs the kubeadm upgrade `serial: 1` across each.
+
+The orchestrator picks the dispatch shape from the action's
+`supports_host` flag: `true` (or any group target with
+`supports_host: true`) → per-host fan-out via
+`app.tasks.action_orchestrator`; group target with
+`supports_host: false` → single invocation via
+`app.tasks.action_group.run_action_group`. One `ActionHostRun`
+record is still created per host either way; group-dispatch routes
+per-host events back to those rows by inventory hostname. Destructive
+group-dispatched actions get the same per-host snapshot/verify/
+rollback envelope as the per-host path: snapshot every member with a
+VM mapping pre-action, run verify (pack's `verify_playbook` if
+declared, else built-ins) per-host post-action, per-host rollback
+policy on failure (only the failed hosts revert; successes keep
+their state and their snapshots get cleaned up).
+
+### Per-host serialization
+
+Every host-writing operation participates in one shared per-host
+queue: syncs, host-targeted action runs, group-targeted action runs
+(locks every member), and the built-in `drift_check` /
+`collect_state` pseudo-actions. Shared helpers live at
+`app/tasks/host_lock.py`. The pattern (lifted from the older
+sync-only orchestrator and extended): each Celery task opens a short
+transaction, takes a transaction-level Postgres advisory lock keyed
+on `host_id`, checks whether any other op on that host is currently
+`running` (across `SyncJob` and `ActionRun` / `ActionHostRun`), and
+either claims the host (status → `running`) or defers (status →
+`pending`). On finish, the just-finished task picks the oldest
+pending op for that host (FIFO across both queues by `created_at`)
+and re-dispatches it. The advisory lock is held only for the
+check-and-flip — the actual "host is busy" state lives in the row
+statuses. Group-targeted actions acquire locks for all members in
+sorted-host-id order to avoid deadlock against overlapping group
+ops. The built-in `_builtin.sync` opts out of the outer lock (its
+inner `run_host_sync.apply()` already participates via the sync
+orchestrator) — see the comment on `with_lock=` in
+`builtin_dispatchers.py`.
+
+### About / version surface
+
+`GET /api/version` is a public (no-auth) endpoint exposing
+`{version, commit_sha, commit_sha_short, build_date, license,
+repo_url}`. The frontend renders it at `/settings/about`. The
+backend reads `version` via
+`importlib.metadata.version("labdog-backend")`; `commit_sha` and
+`build_date` come from env vars `LABDOG_COMMIT_SHA` /
+`LABDOG_BUILD_DATE` (set in Docker via build args) or, for
+`.deb` / `.rpm` / `.tar.gz` installs, from a build-time-generated
+`backend/app/_build_info.py` written by the `bake-build-info`
+target in `packaging/Makefile`.
 
 ### Scheduled actions
 
@@ -222,9 +314,12 @@ GitHub Actions pipeline (`.github/workflows/ci.yml`):
 - **pages-build / pages-deploy**: builds the docusaurus site under
   `website/` and deploys to GitHub Pages — runs on push to `main`
 - **release-artifacts**: builds `.tar.gz`, `.deb`, `.rpm`, `SHA256SUMS`
-  via `packaging/build.sh` and attaches them to a GitHub Release —
-  runs on tag pushes matching `v*` (or `workflow_dispatch` for a
-  dry-run build with no release created)
+  via `packaging/build.sh`, auto-creates the `vX.Y.Z` tag from the
+  repo-root `VERSION` file, and publishes a GitHub Release with the
+  artifacts attached — runs on push to `main` (i.e. when a `dev` →
+  `main` PR merges). Idempotent: if the `vX.Y.Z` tag already exists
+  the job skips with a notice. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+  for the full release flow.
 
 ---
 

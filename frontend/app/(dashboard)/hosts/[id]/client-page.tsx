@@ -790,6 +790,8 @@ export default function HostDetailPage() {
   const [syncing, setSyncing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [moduleSyncing, setModuleSyncing] = useState(false)
+  const [trustKeyOpen, setTrustKeyOpen] = useState(false)
+  const [trustingKey, setTrustingKey] = useState(false)
 
   const tabQueryKeys: Record<string, string[][]> = {
     overview: [["host", String(id)], ["host-current-state", String(id)]],
@@ -2021,6 +2023,19 @@ export default function HostDetailPage() {
                   <ArrowUpFromLineIcon className={`w-4 h-4 mr-1`} />
                   {syncing ? "Syncing..." : "Sync All"}
                 </Button>
+                {!host.ssh_host_key_entry && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-amber-500 text-amber-400 hover:bg-amber-950"
+                    disabled={trustingKey}
+                    title="Accept whatever SSH host key this host presents on next connect (TOFU)"
+                    onClick={() => setTrustKeyOpen(true)}
+                  >
+                    <AlertTriangleIcon className="w-4 h-4 mr-1" />
+                    Trust new host key
+                  </Button>
+                )}
               </>
             )}
           <Dialog open={editOpen} onOpenChange={setEditOpen}>
@@ -5335,6 +5350,30 @@ export default function HostDetailPage() {
             <SshTerminal hostId={id} hostname={host.hostname} />
           </div>
         </div>
+      )}
+      {host && (
+        <ConfirmDialog
+          open={trustKeyOpen}
+          onOpenChange={(open) => { if (!trustingKey) setTrustKeyOpen(open) }}
+          title={`Trust new host key for ${host.hostname}?`}
+          description={`This clears the stored SSH host key. The next connection will accept whatever key ${host.hostname} (${host.ip_address}) presents and store it. If the host was not intentionally re-keyed, an attacker may be intercepting the connection.`}
+          confirmLabel={trustingKey ? "Trusting..." : "Trust new key"}
+          variant="destructive"
+          loading={trustingKey}
+          onConfirm={async () => {
+            setTrustingKey(true)
+            try {
+              await apiFetch(`/api/hosts/${id}/trust-host-key`, { method: "POST" })
+              await queryClient.invalidateQueries({ queryKey: ["host", String(id)] })
+              toast.success("Host key cleared. Next connection will re-TOFU.")
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Failed to clear host key")
+            } finally {
+              setTrustingKey(false)
+              setTrustKeyOpen(false)
+            }
+          }}
+        />
       )}
     </div>
   )

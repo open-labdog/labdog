@@ -1,0 +1,13 @@
+---
+- name: Reboot host and wait for it to come back
+  hosts: all
+  become: true
+  gather_facts: false
+  # Parameters from the UI arrive as top-level vars.
+  # wait_seconds -- max time to wait for SSH after boot.
+  tasks:
+    - name: Reboot
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ wait_seconds | int }}"
+        post_reboot_delay: 10
+        test_command: uptime

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import Link from "next/link"
 import {
   CameraIcon,
@@ -300,13 +300,55 @@ function RowActions({
   onViewRuns: () => void
   onDelete: () => void
 }) {
+  const btnRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+
+  const computePos = useCallback(() => {
+    const btn = btnRef.current
+    const menu = menuRef.current
+    if (!btn) return
+    const rect = btn.getBoundingClientRect()
+    const menuW = menu?.offsetWidth ?? 176
+    const menuH = menu?.offsetHeight ?? 120
+    const left = rect.right - menuW < 8 ? 8 : rect.right - menuW
+    const top = rect.bottom + menuH > window.innerHeight
+      ? Math.max(8, rect.top - menuH - 4)
+      : rect.bottom + 4
+    setMenuPos({ top, left })
+  }, [])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const raf = requestAnimationFrame(computePos)
+    window.addEventListener("resize", computePos)
+    window.addEventListener("scroll", computePos, true)
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener("resize", computePos)
+      window.removeEventListener("scroll", computePos, true)
+    }
+  }, [isOpen, computePos])
+
+  useEffect(() => {
+    if (!isOpen) return
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (menuRef.current?.contains(target) || btnRef.current?.contains(target)) return
+      onOpenChange(false)
+    }
+    document.addEventListener("mousedown", onMouseDown)
+    return () => document.removeEventListener("mousedown", onMouseDown)
+  }, [isOpen, onOpenChange])
+
   return (
     <div
-      className="relative inline-block"
+      className="inline-block"
       data-testid="scheduled-action-row"
       data-action-key={row.action_key}
     >
       <Button
+        ref={btnRef}
         variant="ghost"
         size="sm"
         onClick={() => onOpenChange(!isOpen)}
@@ -315,7 +357,11 @@ function RowActions({
         <MoreHorizontalIcon className="h-4 w-4" />
       </Button>
       {isOpen && (
-        <div className="absolute right-0 z-10 mt-1 w-44 rounded-md border border-slate-700 bg-slate-800 shadow-lg">
+        <div
+          ref={menuRef}
+          style={{ position: "fixed", top: menuPos.top, left: menuPos.left }}
+          className="z-50 w-44 rounded-md border border-slate-700 bg-slate-800 shadow-lg"
+        >
           <MenuItem onClick={onEdit}>Edit</MenuItem>
           <MenuItem onClick={onViewRuns}>View runs</MenuItem>
           <MenuItem

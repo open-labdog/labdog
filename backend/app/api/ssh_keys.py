@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.logger import log_action
 from app.auth.users import current_active_user, current_superuser
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
@@ -26,7 +27,7 @@ async def list_ssh_keys(
 @router.post("", response_model=SSHKeyResponse, status_code=201)
 async def create_ssh_key(
     body: SSHKeyCreate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     # Check unique name
@@ -51,6 +52,16 @@ async def create_ssh_key(
         is_default=body.is_default,
     )
     db.add(key)
+    await db.flush()
+
+    await log_action(
+        db=db,
+        action="create",
+        entity_type="ssh_key",
+        entity_id=key.id,
+        user_id=user.id,
+        after_state={"name": key.name, "ssh_user": key.ssh_user, "is_default": key.is_default},
+    )
     await db.commit()
     await db.refresh(key)
     return key
@@ -60,13 +71,15 @@ async def create_ssh_key(
 async def update_ssh_key(
     key_id: int,
     body: SSHKeyUpdate,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
     key = result.scalar_one_or_none()
     if not key:
         raise HTTPException(status_code=404, detail="SSH key not found")
+
+    before = {"name": key.name, "ssh_user": key.ssh_user, "is_default": key.is_default}
 
     if body.name is not None and body.name != key.name:
         existing = await db.execute(select(SSHKey).where(SSHKey.name == body.name))
@@ -84,6 +97,15 @@ async def update_ssh_key(
     elif body.is_default is not None and not body.is_default:
         key.is_default = False
 
+    await log_action(
+        db=db,
+        action="update",
+        entity_type="ssh_key",
+        entity_id=key.id,
+        user_id=user.id,
+        before_state=before,
+        after_state={"name": key.name, "ssh_user": key.ssh_user, "is_default": key.is_default},
+    )
     await db.commit()
     await db.refresh(key)
     return key
@@ -92,7 +114,7 @@ async def update_ssh_key(
 @router.delete("/{key_id}", status_code=204)
 async def delete_ssh_key(
     key_id: int,
-    _: User = Depends(current_superuser),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
@@ -115,5 +137,13 @@ async def delete_ssh_key(
             detail="Cannot delete key referenced by scan configs",
         )
 
+    await log_action(
+        db=db,
+        action="delete",
+        entity_type="ssh_key",
+        entity_id=key.id,
+        user_id=user.id,
+        before_state={"name": key.name, "ssh_user": key.ssh_user, "is_default": key.is_default},
+    )
     await db.delete(key)
     await db.commit()

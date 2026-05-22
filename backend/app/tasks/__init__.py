@@ -107,4 +107,5 @@ celery_app.conf.include = [
     "app.tasks.scan_run",
     "app.tasks.facts",
     "app.tasks.sync_sweeper",
+    "app.tasks.audit_retention",
 ]

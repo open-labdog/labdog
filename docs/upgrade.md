@@ -26,15 +26,29 @@ and how to back out cleanly when something goes wrong.
 
 ## Compatibility
 
-v0.1.0 is the first public release — there is no prior version to
-upgrade from. This guide becomes operationally meaningful at v0.2.0
-and onwards. The procedure is documented now so that operators
-running v0.1.0 know what the upgrade story looks like before they
-need it.
+v0.2.0 is the current released line. Upgrades from v0.1.0 → v0.2.0
+follow the procedure below; the alembic chain is forward-only and
+covers the schema changes between the two releases.
 
-Each future release will note in `CHANGELOG.md` whether it carries
-breaking schema changes, deprecated config fields, or non-reversible
+Each release notes in `CHANGELOG.md` whether it carries breaking
+schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
+
+**Releases are cut from `main`.** Merging a release PR (`dev` →
+`main`) triggers `release-artifacts`, which auto-tags `vX.Y.Z` from
+the repo-root [`VERSION`](https://github.com/open-labdog/labdog/blob/main/VERSION) file and publishes the
+`.tar.gz` / `.deb` / `.rpm` / `SHA256SUMS` set as a GitHub Release.
+There is no separate `git tag` step — the release artifacts on the
+GitHub Releases page are what you install from. See
+[CONTRIBUTING.md → Release process](pathname:///../CONTRIBUTING.md#release-process).
+
+The bundled action pack is fetched from `labdog-playbooks` at the
+SHA pinned in the repo-root [`LABDOG_PLAYBOOKS_REF`](https://github.com/open-labdog/labdog/blob/main/LABDOG_PLAYBOOKS_REF)
+file at build time, so the bundled pack content shipped with a
+LabDog release corresponds exactly to one `labdog-playbooks`
+commit. To ship newer playbook content, bump that file's SHA in
+the release PR; CI re-fetches as part of the image / artefact
+build.
 
 ---
 
@@ -125,8 +139,12 @@ Three checks, in order:
 
 ```bash
 # 1. Version reported by the running process matches the tag.
-labdog --version
-# → labdog 0.2.0
+curl -fsS http://127.0.0.1:8000/api/version
+# → {"version":"0.2.0","commit_sha":"…","commit_sha_short":"…",
+#    "build_date":"2026-05-12T09:14:37Z",
+#    "license":"AGPL-3.0-or-later",
+#    "repo_url":"https://github.com/open-labdog/labdog"}
+# (Also visible in the UI at Settings → About.)
 
 # 2. Health endpoint returns 200.
 curl -fsS http://127.0.0.1:8000/health
@@ -138,8 +156,8 @@ curl -fsS http://127.0.0.1:8000/health
 #    the celery worker is healthy after the restart.
 ```
 
-If `labdog --version` mismatches the tag, the package install
-succeeded but the service didn't restart. `sudo systemctl restart
+If `/api/version` reports an older `version` than the tag, the
+package install succeeded but the service didn't restart. `sudo systemctl restart
 labdog.service`. If `/health` returns 5xx, check
 `journalctl -u labdog -f` — the most common cause is an alembic
 failure on a column type change, which leaves the schema half-

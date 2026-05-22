@@ -1,0 +1,18 @@
+key: ensure-motd
+name: Set login banner
+description: >-
+  Writes /etc/motd with the configured banner text. The work is done
+  by the pack-motd role shipped in this pack's roles/ directory.
+icon: Layers
+playbook: playbook.yml
+version: "1.0"
+estimated_duration: "10 seconds"
+destructive: false
+supports_group: true
+supports_host: true
+parameters:
+  - key: banner
+    label: Banner text
+    type: string
+    default: "Managed by LabDog"
+    help_text: Shown to every user who logs into the host.

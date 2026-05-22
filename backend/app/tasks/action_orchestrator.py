@@ -65,6 +65,46 @@ async def _run_action_async(action_run_id: int) -> None:
     from app.models.host import Host, HostGroupMembership
 
     # ------------------------------------------------------------------ #
+    # Phase 0: dispatch shape decision                                    #
+    # ------------------------------------------------------------------ #
+    # Group target + action.supports_host=False ⇒ single-invocation
+    # group dispatch (one ansible-runner against a flat all-hosts
+    # inventory). The group-dispatch task owns its own ActionHostRun
+    # row creation and run-state transitions; we hand off and return.
+    # Done in a separate session so we don't take the per-host code
+    # path's "mark running" write before the group task even starts.
+    try:
+        async with task_session() as db:
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+            run_peek: ActionRun | None = run_result.scalar_one_or_none()
+            if run_peek is None:
+                logger.warning("action_orchestrator: action_run %d not found", action_run_id)
+                return
+            action_peek = ACTION_REGISTRY.get(run_peek.action_key)
+            target_is_group = run_peek.group_id is not None and run_peek.host_id is None
+            if target_is_group and action_peek is not None and not action_peek.supports_host:
+                logger.info(
+                    "action_orchestrator: action_run %d → group-dispatch "
+                    "(action=%s supports_host=False)",
+                    action_run_id,
+                    run_peek.action_key,
+                )
+                celery_app.send_task(
+                    "app.tasks.action_group.run_action_group",
+                    args=[action_run_id],
+                    queue="long_running",
+                )
+                return
+    except Exception:
+        # Fall through to the per-host path on read errors — it has the
+        # same defensive _mark_run_failed wrapper around its own work.
+        logger.exception(
+            "action_orchestrator: dispatch-shape probe failed for action_run %d; "
+            "falling back to per-host path",
+            action_run_id,
+        )
+
+    # ------------------------------------------------------------------ #
     # Phase 1: initialise run and create per-host records                 #
     # ------------------------------------------------------------------ #
     host_run_ids: list[int] = []
@@ -86,15 +126,6 @@ async def _run_action_async(action_run_id: int) -> None:
                 run.error_message = f"Unknown action key: {run.action_key}"
                 run.finished_at = datetime.now(UTC)
                 await db.commit()
-                return
-
-            # Cluster-mode actions (currently just k8s-upgrade) have a
-            # short-circuited dispatch path: one ActionHostRun anchored
-            # to the first control_plane member, one Celery task that
-            # invokes ansible-playbook against a multi-host inventory.
-            # The per-host batching loop is skipped entirely.
-            if action.execution_mode == "cluster":
-                await _dispatch_cluster_run(db, run)
                 return
 
             # Pick the per-host task: built-ins each have their own
@@ -284,105 +315,6 @@ async def _run_action_async(action_run_id: int) -> None:
 # ---------------------------------------------------------------------------
 # Helper utilities
 # ---------------------------------------------------------------------------
-
-
-async def _dispatch_cluster_run(db, run) -> None:
-    """Validate a cluster-mode run and dispatch the single cluster task.
-
-    Cluster-mode actions (manifest's ``execution_mode: cluster``) must
-    target a group whose members all have a ``role`` assignment and at
-    least one ``control_plane`` member. The orchestrator anchors the
-    run to the first control-plane host (the "driver") via a single
-    ``ActionHostRun`` row; per-node detail lives in the streamed
-    ansible stdout.
-
-    The submit-time API validator catches the same conditions earlier
-    and surfaces them to the user; this layer is defence-in-depth for
-    scheduled runs and any direct DB inserts that bypass the API.
-    """
-    from sqlalchemy import select
-
-    from app.models.action_run import ActionHostRun
-    from app.models.host import Host, HostGroupMembership
-
-    if run.host_id is not None:
-        run.status = "failed"
-        run.error_message = (
-            "cluster-mode actions cannot target a single host (got "
-            f"host_id={run.host_id}); they require a group with role "
-            "assignments"
-        )
-        run.finished_at = datetime.now(UTC)
-        await db.commit()
-        return
-    if run.group_id is None:
-        run.status = "failed"
-        run.error_message = "cluster-mode actions require group_id"
-        run.finished_at = datetime.now(UTC)
-        await db.commit()
-        return
-
-    rows = (
-        await db.execute(
-            select(
-                HostGroupMembership.c.host_id,
-                HostGroupMembership.c.role,
-            ).where(HostGroupMembership.c.group_id == run.group_id)
-        )
-    ).all()
-    if not rows:
-        run.status = "failed"
-        run.error_message = (
-            f"group {run.group_id} has no members; cluster-mode actions "
-            "need at least one control_plane and one worker"
-        )
-        run.finished_at = datetime.now(UTC)
-        await db.commit()
-        return
-
-    unassigned = [r.host_id for r in rows if r.role is None]
-    if unassigned:
-        run.status = "failed"
-        run.error_message = (
-            f"{len(unassigned)} member(s) of group {run.group_id} have no "
-            "role assignment; set every member to control_plane or worker "
-            "before triggering a cluster upgrade"
-        )
-        run.finished_at = datetime.now(UTC)
-        await db.commit()
-        return
-
-    cps = [r.host_id for r in rows if r.role == "control_plane"]
-    if not cps:
-        run.status = "failed"
-        run.error_message = (
-            f"group {run.group_id} has no control_plane members; cluster-"
-            "mode actions need at least one"
-        )
-        run.finished_at = datetime.now(UTC)
-        await db.commit()
-        return
-
-    # Driver = the lowest-id control-plane host so the choice is
-    # deterministic across reruns.
-    driver_id = min(cps)
-    driver = (await db.execute(select(Host).where(Host.id == driver_id))).scalar_one()
-
-    host_run = ActionHostRun(
-        action_run_id=run.id,
-        host_id=driver.id,
-        status="queued",
-    )
-    db.add(host_run)
-    await db.flush()
-    host_run_id = host_run.id
-    await db.commit()
-
-    celery_app.send_task(
-        "app.tasks.action_cluster.run_action_cluster",
-        args=[run.id, host_run_id],
-        queue="long_running",
-    )
 
 
 async def _mark_run_failed(action_run_id: int, error_message: str) -> None:

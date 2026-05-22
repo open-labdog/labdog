@@ -1,8 +1,6 @@
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import delete, func, insert, select, update
+from pydantic import BaseModel
+from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
@@ -20,30 +18,6 @@ from app.schemas.hosts import HostResponse
 
 class BulkAddHostsRequest(BaseModel):
     host_ids: list[int]
-
-
-MembershipRole = Literal["control_plane", "worker"]
-
-
-class MembershipResponse(BaseModel):
-    """One ``host_group_memberships`` row, used to surface per-member
-    metadata (currently just ``role``) without forcing every existing
-    HostResponse caller to grow new fields."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    host_id: int
-    role: MembershipRole | None = None
-
-
-class MembershipRoleUpdate(BaseModel):
-    """Body for ``PUT /groups/{id}/hosts/{host_id}/role``. ``role=None``
-    clears the assignment (the membership stays, the role goes back to
-    NULL — the same shape as a fresh add)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    role: MembershipRole | None = None
 
 
 router = APIRouter(prefix="/groups", tags=["groups"])
@@ -338,87 +312,6 @@ async def list_group_hosts(
             setattr(h, "group_ids", groups_by_host.get(h.id, []))
 
     return hosts
-
-
-@router.get(
-    "/{group_id}/memberships",
-    response_model=list[MembershipResponse],
-)
-async def list_group_memberships(
-    group_id: int,
-    _: User = Depends(current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Return ``(host_id, role)`` pairs for every host in the group.
-
-    Drives the role-picker UI and the action-run dialog's role-count
-    preflight panel for cluster-mode actions. Per-host details still
-    come from ``GET /groups/{id}/hosts``; this is the lightweight
-    membership-only view.
-    """
-    result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Group not found")
-
-    rows = await db.execute(
-        select(HostGroupMembership.c.host_id, HostGroupMembership.c.role)
-        .where(HostGroupMembership.c.group_id == group_id)
-        .order_by(HostGroupMembership.c.host_id)
-    )
-    return [MembershipResponse(host_id=r.host_id, role=r.role) for r in rows.all()]
-
-
-@router.put(
-    "/{group_id}/hosts/{host_id}/role",
-    response_model=MembershipResponse,
-)
-async def set_group_membership_role(
-    group_id: int,
-    host_id: int,
-    body: MembershipRoleUpdate,
-    user: User = Depends(current_superuser),
-    db: AsyncSession = Depends(get_db),
-):
-    """Set or clear the role on a single membership row.
-
-    Superuser-only because role assignment is a precondition for
-    cluster-mode actions (k8s-upgrade) and operators making bad role
-    decisions can take down a Kubernetes cluster.
-    """
-    existing = (
-        await db.execute(
-            select(HostGroupMembership.c.host_id, HostGroupMembership.c.role).where(
-                HostGroupMembership.c.host_id == host_id,
-                HostGroupMembership.c.group_id == group_id,
-            )
-        )
-    ).first()
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"host {host_id} is not a member of group {group_id}",
-        )
-
-    before_role = existing.role
-    await db.execute(
-        update(HostGroupMembership)
-        .where(
-            HostGroupMembership.c.host_id == host_id,
-            HostGroupMembership.c.group_id == group_id,
-        )
-        .values(role=body.role)
-    )
-    await log_action(
-        db=db,
-        action="set_membership_role",
-        entity_type="host_group",
-        entity_id=group_id,
-        user_id=user.id,
-        before_state={"host_id": host_id, "role": before_role},
-        after_state={"host_id": host_id, "role": body.role},
-    )
-    await db.commit()
-    return MembershipResponse(host_id=host_id, role=body.role)
 
 
 @router.post("/{group_id}/hosts", status_code=200)

@@ -2,14 +2,14 @@
 #
 # Full example for a web-tier group covering all seven modules.
 # Point a git repo at this file via the UI:
-#   Groups → web-servers → Enable GitOps → file path: docs/examples/gitops/web-servers.yaml
+#   Groups -> web-servers -> Enable GitOps -> file path: docs/examples/gitops/web-servers.yaml
 #
 # This file assumes:
-#   • The group is named "web-servers" in LabDog.
-#   • The group's priority in the UI matches (or is higher than) any
+#   * The group is named "web-servers" in LabDog.
+#   * The group's priority in the UI matches (or is higher than) any
 #     competing group you want to be overridden by this file.
-#   • The hosts in this group run Debian/Ubuntu (see the package_manager
-#     field in the `packages:` section — change to `dnf` on Fedora/RHEL).
+#   * The hosts in this group run Debian/Ubuntu (see the package_manager
+#     field in the `packages:` section -- change to `dnf` on Fedora/RHEL).
 
 group: web-servers
 priority: 100           # informational; real priority lives in the UI
@@ -25,7 +25,7 @@ firewall:
       direction: input
       source: "10.0.0.0/8"
       port: 22
-      comment: "SSH — internal network only"
+      comment: "SSH -- internal network only"
 
     - action: allow
       protocol: tcp
@@ -153,7 +153,7 @@ cron_jobs:
     comment: "Weekly ACME cert renewal"
 
 # -----------------------------------------------------------------------------
-# DNS resolver  (singleton — omit to leave alone, include to fully replace)
+# DNS resolver  (singleton -- omit to leave alone, include to fully replace)
 # -----------------------------------------------------------------------------
 resolver:
   resolver_type: systemd_resolved
@@ -169,7 +169,7 @@ resolver:
   dns_over_tls: true
 
 # -----------------------------------------------------------------------------
-# Linux groups (import BEFORE users — supplementary_groups resolves forward)
+# Linux groups (import BEFORE users -- supplementary_groups resolves forward)
 # -----------------------------------------------------------------------------
 linux_groups:
   - groupname: deploy

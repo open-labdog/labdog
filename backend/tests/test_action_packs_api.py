@@ -23,20 +23,21 @@ def _git(cwd: Path, args: list[str]) -> None:
 @pytest.fixture
 def origin_repo(tmp_path: Path) -> Path:
     """Initialise a local git repo with one commit, shaped as an action pack
-    (actions/demo.yml + actions/demo.manifest.yml at the root)."""
+    (actions/demo/manifest.yml + actions/demo/playbook.yml at the root)."""
     path = tmp_path / "origin"
     path.mkdir()
     _git(path, ["init", "-b", "main"])
     _git(path, ["config", "user.email", "test@example.com"])
     _git(path, ["config", "user.name", "Test"])
-    (path / "actions").mkdir()
-    (path / "actions" / "demo.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
-    (path / "actions" / "demo.manifest.yml").write_text(
+    demo_dir = path / "actions" / "demo"
+    demo_dir.mkdir(parents=True)
+    (demo_dir / "playbook.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
+    (demo_dir / "manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
         "description: Demo action\n"
         "icon: Box\n"
-        "playbook: demo.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -64,14 +65,15 @@ async def git_repo_row(db, origin_repo: Path) -> GitRepository:
 def local_pack_dir(tmp_path: Path) -> Path:
     """Materialise a ready-to-load local pack directory (no git)."""
     p = tmp_path / "my-local-pack"
-    (p / "actions").mkdir(parents=True)
-    (p / "actions" / "hello.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
-    (p / "actions" / "hello.manifest.yml").write_text(
+    hello_dir = p / "actions" / "hello"
+    hello_dir.mkdir(parents=True)
+    (hello_dir / "playbook.yml").write_text("---\n- name: hello\n  hosts: all\n  tasks: []\n")
+    (hello_dir / "manifest.yml").write_text(
         "key: hello-local\n"
         "name: Hello from local\n"
         "description: Demo\n"
         "icon: Box\n"
-        "playbook: hello.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -93,7 +95,9 @@ async def test_list_returns_seeded_labdog_playbooks_pack(superuser_client):
     assert len(packs) == 1
     assert packs[0]["name"] == "labdog-playbooks"
     assert packs[0]["source_type"] == "git"
-    assert packs[0]["position"] >= 1
+    # Pack rows no longer carry a ``position`` field — precedence is
+    # per-key via ``action_resolution``.
+    assert "position" not in packs[0]
 
 
 async def test_regular_user_cannot_manage_packs(regular_user_client):
@@ -130,7 +134,7 @@ async def test_create_git_pack_syncs_and_adds_action(
     assert body["git_repository_id"] == git_repo_row.id
     assert body["git_repository_name"] == "test-repo"
     assert body["path"] == ""
-    assert body["position"] >= 1
+    assert "position" not in body  # column dropped in migration 0004
     assert body["last_sync_status"] == "ok"
     assert body["current_sha"]
 
@@ -162,17 +166,15 @@ async def test_create_git_pack_with_nonexistent_repo_rejected(superuser_client):
     assert "9999" in resp.text
 
 
-async def test_create_assigns_position_above_all_existing(
+async def test_create_no_longer_assigns_position(
     superuser_client, git_repo_row, monkeypatch, tmp_path
 ):
-    """New packs land above every existing one; operators reorder via
-    drag-to-reorder afterwards."""
+    """The position column is gone; the response shape no longer
+    carries it. Packs are unordered — per-key resolution rows decide
+    every contested winner."""
     from app.config import settings
 
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
-
-    seeded = (await superuser_client.get("/api/action-packs")).json()
-    max_existing = max((p["position"] for p in seeded), default=0)
 
     resp = await superuser_client.post(
         "/api/action-packs",
@@ -184,7 +186,7 @@ async def test_create_assigns_position_above_all_existing(
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
-    assert body["position"] == max_existing + 1
+    assert "position" not in body
 
 
 async def test_create_rejects_bundled_name(superuser_client):
@@ -232,7 +234,7 @@ async def test_create_local_pack_registers_action(superuser_client, local_pack_d
     assert body["source_type"] == "local"
     assert body["git_repository_id"] is None
     assert body["local_path"] == str(local_pack_dir)
-    assert body["position"] >= 1
+    assert "position" not in body
     assert body["last_sync_status"] == "ok"
 
     actions = (await superuser_client.get("/api/actions/")).json()
@@ -296,16 +298,15 @@ async def test_git_pack_with_subpath(superuser_client, tmp_path, db, monkeypatch
     _git(origin, ["init", "-b", "main"])
     _git(origin, ["config", "user.email", "t@example.com"])
     _git(origin, ["config", "user.name", "Test"])
-    (origin / "vendor" / "my-pack" / "actions").mkdir(parents=True)
-    (origin / "vendor" / "my-pack" / "actions" / "nested.yml").write_text(
-        "---\n- name: nested\n  hosts: all\n  tasks: []\n"
-    )
-    (origin / "vendor" / "my-pack" / "actions" / "nested.manifest.yml").write_text(
+    nested_dir = origin / "vendor" / "my-pack" / "actions" / "nested"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "playbook.yml").write_text("---\n- name: nested\n  hosts: all\n  tasks: []\n")
+    (nested_dir / "manifest.yml").write_text(
         "key: nested\n"
         "name: Nested\n"
         "description: From a subpath\n"
         "icon: Box\n"
-        "playbook: nested.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -433,8 +434,13 @@ async def test_manual_sync_after_upstream_change(
     pack_id = r.json()["id"]
     original_sha = r.json()["current_sha"]
 
-    # New commit upstream.
-    (origin_repo / "actions" / "demo.yml").write_text("updated\n")
+    # New commit upstream. Modify a tracked file so ``git commit -am``
+    # actually has something to record -- the previous test code wrote
+    # a new untracked ``actions/demo.yml`` (flat-layout leftover) which
+    # ``-am`` ignores, leaving an empty commit attempt.
+    (origin_repo / "actions" / "demo" / "playbook.yml").write_text(
+        "---\n# updated\n- name: demo\n  hosts: all\n  tasks: []\n"
+    )
     _git(origin_repo, ["commit", "-am", "upd"])
 
     r2 = await superuser_client.post(f"/api/action-packs/{pack_id}/sync")
@@ -463,16 +469,15 @@ async def test_fresh_conflict_freezes_previous_winner(
     monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
 
     local_override = tmp_path / "local-override"
-    (local_override / "actions").mkdir(parents=True)
-    (local_override / "actions" / "demo.yml").write_text(
-        "---\n- name: demo\n  hosts: all\n  tasks: []\n"
-    )
-    (local_override / "actions" / "demo.manifest.yml").write_text(
+    demo_dir = local_override / "actions" / "demo"
+    demo_dir.mkdir(parents=True)
+    (demo_dir / "playbook.yml").write_text("---\n- name: demo\n  hosts: all\n  tasks: []\n")
+    (demo_dir / "manifest.yml").write_text(
         "key: demo\n"
         "name: Demo\n"
         "description: Local override\n"
         "icon: Box\n"
-        "playbook: demo.yml\n"
+        "playbook: playbook.yml\n"
         'version: "1.0"\n'
         'estimated_duration: "1 min"\n'
     )
@@ -501,3 +506,98 @@ async def test_fresh_conflict_freezes_previous_winner(
     demo = next(a for a in actions if a["key"] == "demo")
     assert demo["pack_name"] == "git-demo"
     assert "local-demo" in demo["overridden_from"]
+
+
+# ---------------------------------------------------------------------------
+# SEC-12 — path field traversal rejection (API layer)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_git_pack_dotdot_path_rejected(superuser_client, git_repo_row):
+    """A ``path`` containing ``..`` must be rejected at the schema layer
+    with a 422 before any disk I/O is attempted."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "traversal-attempt",
+            "source_type": "git",
+            "git_repository_id": git_repo_row.id,
+            "path": "../../../etc/labdog",
+        },
+    )
+    assert resp.status_code == 422
+    assert ".." in resp.text or "traversal" in resp.text.lower()
+
+
+async def test_update_git_pack_dotdot_path_rejected(
+    superuser_client, git_repo_row, monkeypatch, tmp_path
+):
+    """Updating an existing pack with a traversal path is also rejected."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings.ansible, "packs_root_dir", str(tmp_path / "packs"))
+
+    r = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "safe-pack",
+            "source_type": "git",
+            "git_repository_id": git_repo_row.id,
+        },
+    )
+    assert r.status_code == 201, r.text
+    pack_id = r.json()["id"]
+
+    r2 = await superuser_client.put(
+        f"/api/action-packs/{pack_id}",
+        json={"path": "../../escape"},
+    )
+    assert r2.status_code == 422
+    assert ".." in r2.text or "traversal" in r2.text.lower()
+
+
+# ---------------------------------------------------------------------------
+# SEC-13 — local_path dangerous prefix rejection (API layer)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_local_pack_etc_path_rejected(superuser_client):
+    """/etc as local_path must be rejected at the schema layer."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "etc-pack",
+            "source_type": "local",
+            "local_path": "/etc/labdog",
+        },
+    )
+    assert resp.status_code == 422
+    assert "/etc" in resp.text
+
+
+async def test_create_local_pack_proc_path_rejected(superuser_client):
+    """/proc as local_path must be rejected at the schema layer."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "proc-pack",
+            "source_type": "local",
+            "local_path": "/proc/self",
+        },
+    )
+    assert resp.status_code == 422
+    assert "/proc" in resp.text
+
+
+async def test_create_local_pack_relative_path_rejected(superuser_client):
+    """A relative local_path (no leading /) must be rejected."""
+    resp = await superuser_client.post(
+        "/api/action-packs",
+        json={
+            "name": "rel-pack",
+            "source_type": "local",
+            "local_path": "relative/path",
+        },
+    )
+    assert resp.status_code == 422
+    assert "absolute" in resp.text.lower()
