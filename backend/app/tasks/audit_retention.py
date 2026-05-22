@@ -140,5 +140,4 @@ def _register_beat_schedules() -> None:
 try:
     _register_beat_schedules()
 except Exception:
-    # Redis may not be available at import time (e.g. during tests).
-    pass
+    pass  # nosec B110 — Redis may not be available at import time (e.g. during tests)

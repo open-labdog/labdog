@@ -509,7 +509,7 @@ class TestBlockedCIDRSkip:
             patch("app.discovery.scanner.scan_network", new=scan_mock),
             patch("asyncssh.import_private_key", return_value=MagicMock()),
         ):
-            result = await _run_task(config.id, db)
+            await _run_task(config.id, db)
 
         # Only the valid CIDR was scanned — scan_network called exactly once.
         scan_mock.assert_called_once()
