@@ -208,6 +208,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
 
             action = ACTION_REGISTRY.get(run.action_key)
             if action is None:
+                # Registry may be stale (pack synced after worker started).
+                # Reload from disk once and retry before failing the run.
+                from app.actions.registry import reload_registry_async  # noqa: PLC0415
+
+                await reload_registry_async(db)
+                action = ACTION_REGISTRY.get(run.action_key)
+            if action is None:
                 hr.status = "failed"
                 hr.error_message = f"Action '{run.action_key}' not found in registry"
                 hr.finished_at = datetime.now(UTC)
