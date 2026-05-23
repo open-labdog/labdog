@@ -119,8 +119,14 @@ async def _run_action_async(action_run_id: int) -> None:
             run.started_at = datetime.now(UTC)
             await db.flush()
 
-            # Validate action key
+            # Validate action key — reload once on miss (worker may have
+            # been pre-forked before worker_ready fired).
             action = ACTION_REGISTRY.get(run.action_key)
+            if action is None:
+                from app.actions.registry import reload_registry_async  # noqa: PLC0415
+
+                await reload_registry_async(db)
+                action = ACTION_REGISTRY.get(run.action_key)
             if action is None:
                 run.status = "failed"
                 run.error_message = f"Unknown action key: {run.action_key}"
