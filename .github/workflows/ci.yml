@@ -28,7 +28,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [dev, main]
   workflow_dispatch:
@@ -284,9 +284,10 @@ jobs:
 
   # ---- BUILD & PUBLISH --------------------------------------------------
   #
-  # build-image runs on push to main (tests already passed on the dev PR).
-  # build-test-image runs on PRs to dev and workflow_dispatch for trivy.
-  # Both log into Docker Hub using DOCKER_HUB_PAT.
+  # build-image     — push/dispatch to main  → :latest + :<sha>
+  # build-dev-image — push to dev           → :dev-latest + :dev-<short_sha>
+  # build-test-image — PRs + workflow_dispatch (non-main) → :test + :test-<short_sha>
+  # All three log into Docker Hub using DOCKER_HUB_PAT.
   # The username is extracted from the first segment of DOCKER_HUB_REPO.
 
   build-image:
@@ -368,6 +369,48 @@ jobs:
           tags: |
             ${{ vars.DOCKER_HUB_REPO }}:test
             ${{ vars.DOCKER_HUB_REPO }}:test-${{ steps.meta.outputs.short_sha }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_DATE=${{ steps.meta.outputs.build_date }}
+            LABDOG_PLAYBOOKS_REF=${{ steps.meta.outputs.playbooks_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-dev-image:
+    if: >-
+      github.event_name == 'push'
+      && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    needs: [backend-lint, backend-test, frontend-build-check]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Derive Docker Hub username from DOCKER_HUB_REPO
+        id: hub
+        run: |
+          if [ -z "${{ vars.DOCKER_HUB_REPO }}" ]; then
+            echo "::error::DOCKER_HUB_REPO variable is not set"
+            exit 1
+          fi
+          echo "user=$(echo '${{ vars.DOCKER_HUB_REPO }}' | cut -d/ -f1)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ steps.hub.outputs.user }}
+          password: ${{ secrets.DOCKER_HUB_PAT }}
+      - id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
+          echo "playbooks_ref=$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ vars.DOCKER_HUB_REPO }}:dev-latest
+            ${{ vars.DOCKER_HUB_REPO }}:dev-${{ steps.meta.outputs.short_sha }}
           build-args: |
             GIT_SHA=${{ github.sha }}
             BUILD_DATE=${{ steps.meta.outputs.build_date }}
