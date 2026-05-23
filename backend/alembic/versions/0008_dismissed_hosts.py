@@ -21,17 +21,19 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("""
+    op.execute(
+        """
         CREATE TABLE dismissed_hosts (
             id                   SERIAL       PRIMARY KEY,
             scan_config_id       INTEGER      NOT NULL
                                               REFERENCES scan_configs(id) ON DELETE CASCADE,
             ip_address           VARCHAR(45)  NOT NULL,
             dismissed_at         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-            dismissed_by_user_id INTEGER      REFERENCES "user"(id) ON DELETE SET NULL,
+            dismissed_by_user_id INTEGER      REFERENCES users(id) ON DELETE SET NULL,
             CONSTRAINT uq_dismissed_scan_ip UNIQUE (scan_config_id, ip_address)
         )
-    """)
+    """
+    )
     op.execute(
         "CREATE INDEX ix_dismissed_hosts_scan_config_id"
         " ON dismissed_hosts (scan_config_id)"
