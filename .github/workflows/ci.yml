@@ -487,26 +487,17 @@ jobs:
             | sudo tar -xzC /usr/local/bin nfpm
           nfpm --version
       - name: Sync version files to VERSION
-        # Rewrite backend/pyproject.toml and frontend/package.json so
-        # the in-tree version strings match the VERSION file before
-        # the build step bakes them into the artifacts. Mirrors what
-        # /api/version reads at runtime via importlib.metadata.
+        # backend/pyproject.toml reads VERSION dynamically at install time
+        # (setuptools dynamic version), so only frontend/package.json needs
+        # to be patched here.
         if: steps.ver.outputs.skip != 'true'
         env:
           V: ${{ steps.ver.outputs.version }}
         run: |
-          MATCHES=$(grep -c '^version = ' backend/pyproject.toml)
-          if [ "$MATCHES" != "1" ]; then
-            echo "::error::expected exactly 1 top-level version line in backend/pyproject.toml, found $MATCHES"
-            exit 1
-          fi
-          sed -i "s/^version = \".*\"/version = \"${V}\"/" backend/pyproject.toml
-          python -c "import tomllib; d=tomllib.load(open('backend/pyproject.toml','rb')); assert d['project']['version']=='${V}', d['project']['version']"
-
           node -e "const f='frontend/package.json'; const j=JSON.parse(require('fs').readFileSync(f,'utf8')); j.version=process.env.V; require('fs').writeFileSync(f, JSON.stringify(j, null, 2)+'\n')"
           node -e "const j=JSON.parse(require('fs').readFileSync('frontend/package.json','utf8')); if(j.version!==process.env.V){console.error('version mismatch:',j.version);process.exit(1)}"
 
-          echo "Synced backend/pyproject.toml and frontend/package.json to ${V}"
+          echo "Synced frontend/package.json to ${V}"
       - name: Build release artifacts
         if: steps.ver.outputs.skip != 'true'
         run: ./packaging/build.sh --version="${{ steps.ver.outputs.version }}"
