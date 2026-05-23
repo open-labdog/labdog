@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy import insert as sa_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
@@ -10,7 +11,7 @@ from app.auth.users import current_active_user
 from app.db import get_db
 from app.discovery.verify import placeholder_hostname
 from app.models.host import Host, HostGroupMembership
-from app.models.scan_config import PendingHost, ScanConfig
+from app.models.scan_config import DismissedHost, PendingHost, ScanConfig
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.scans import (
@@ -352,9 +353,42 @@ async def dismiss_pending_hosts(
     current_user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Remove pending hosts from the review queue without adding them to inventory."""
+    """Remove pending hosts from the review queue and remember them so scheduled
+    scans never re-surface them.  A manual run (POST /{config_id}/run) bypasses
+    this list so an operator can re-review if their intent changes.
+    """
     await _get_config_or_404(config_id, db)
 
+    # Resolve the IPs for the rows being dismissed (scope-guarded to this config).
+    ip_result = await db.execute(
+        select(PendingHost.ip_address).where(
+            PendingHost.id.in_(body.ids),
+            PendingHost.scan_config_id == config_id,
+        )
+    )
+    ips_to_dismiss = [row[0] for row in ip_result.all()]
+
+    # Persist each IP to the dismissed list (upsert in case it was dismissed
+    # before, then re-appeared via a manual scan, and is now dismissed again).
+    for ip in ips_to_dismiss:
+        stmt = (
+            pg_insert(DismissedHost)
+            .values(
+                scan_config_id=config_id,
+                ip_address=ip,
+                dismissed_by_user_id=current_user.id,
+            )
+            .on_conflict_do_update(
+                index_elements=["scan_config_id", "ip_address"],
+                set_={
+                    "dismissed_at": func.now(),
+                    "dismissed_by_user_id": current_user.id,
+                },
+            )
+        )
+        await db.execute(stmt)
+
+    # Remove from the pending queue.
     result = await db.execute(
         delete(PendingHost).where(
             PendingHost.id.in_(body.ids),
@@ -369,8 +403,30 @@ async def dismiss_pending_hosts(
         entity_type="scan_config",
         entity_id=config_id,
         user_id=current_user.id,
-        after_state={"count": dismissed},
+        after_state={"count": dismissed, "ips": ips_to_dismiss},
     )
 
     await db.commit()
     return DismissResponse(dismissed=dismissed)
+
+
+@router.post("/{config_id}/run", status_code=202)
+async def run_scan_now(
+    config_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger an immediate manual scan for the given config.
+
+    Unlike scheduled runs this bypasses the dismissed-host filter, so
+    previously dismissed IPs will appear in the pending queue again if
+    they are still reachable.  Useful when an operator changes their mind
+    about a dismissed host.
+    """
+    config = await _get_config_or_404(config_id, db)
+    if not config.enabled:
+        raise HTTPException(status_code=409, detail="Scan config is disabled")
+    from app.tasks import celery_app  # noqa: PLC0415
+
+    celery_app.send_task("scans.run_config", args=[config_id], kwargs={"is_manual": True})
+    return {"queued": True}

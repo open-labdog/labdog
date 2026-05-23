@@ -46,7 +46,7 @@ def _advisory_lock_key(config_id: int) -> int:
 
 
 @celery_app.task(name="scans.run_config", bind=True, max_retries=0, queue="long_running")
-def run_scan_config(self, config_id: int) -> dict:
+def run_scan_config(self, config_id: int, is_manual: bool = False) -> dict:
     """Run a scan config end-to-end.
 
     Flow
@@ -58,6 +58,7 @@ def run_scan_config(self, config_id: int) -> dict:
     d. Load + decrypt the SSH key.
     e. TCP-sweep every CIDR; collect (ip, status) hits.
     f. Dedup against existing hosts table.
+    f2. For scheduled runs (is_manual=False), also exclude dismissed hosts.
     g. SSH-verify remaining hits.
     h. Branch on auto_add:
        - True  -> insert Host + HostGroupMembership rows; emit audit event.
@@ -67,14 +68,17 @@ def run_scan_config(self, config_id: int) -> dict:
 
     Args:
         config_id: Primary key of the ``ScanConfig`` row to run.
+        is_manual: When True (manual run triggered via API), dismissed hosts
+            are included so the operator can re-review them.  Scheduled runs
+            (default False) silently skip dismissed IPs.
 
     Returns:
         A summary dict with ``hosts_added`` and ``hosts_pending`` counts.
     """
-    return asyncio.run(_async_run(config_id))
+    return asyncio.run(_async_run(config_id, is_manual=is_manual))
 
 
-async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is intentional
+async def _async_run(config_id: int, is_manual: bool = False) -> dict:  # noqa: C901 -- complexity is intentional
     """Async implementation of :func:`run_scan_config`.
 
     Args:
@@ -160,6 +164,25 @@ async def _async_run(config_id: int) -> dict:  # noqa: C901 -- complexity is int
                 existing_ips = set()
 
             new_ips = [ip for ip in hit_ips if ip not in existing_ips]
+
+            # ---- f2. Exclude dismissed hosts (scheduled scans only) -----
+            if not is_manual and new_ips:
+                from app.models.scan_config import DismissedHost  # noqa: PLC0415
+
+                dismissed_result = await db.execute(
+                    select(DismissedHost.ip_address).where(
+                        DismissedHost.scan_config_id == config_id,
+                        DismissedHost.ip_address.in_(new_ips),
+                    )
+                )
+                dismissed_ips = {row[0] for row in dismissed_result.all()}
+                if dismissed_ips:
+                    logger.debug(
+                        "scan_run: config %d suppressing %d dismissed IP(s)",
+                        config_id,
+                        len(dismissed_ips),
+                    )
+                    new_ips = [ip for ip in new_ips if ip not in dismissed_ips]
 
             # ---- g. SSH-verify remaining hits ---------------------------
             verified: list[tuple[str, str, str | None]] = []  # (ip, hostname, key_entry)
