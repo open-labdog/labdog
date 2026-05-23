@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.crypto import decrypt_ssh_key, encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.user import User
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/proxmox/nodes", tags=["proxmox"])
 
 @router.get("", response_model=list[ProxmoxNodeResponse])
 async def list_proxmox_nodes(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).order_by(ProxmoxNode.name))
@@ -32,7 +32,7 @@ async def list_proxmox_nodes(
 @router.post("", response_model=ProxmoxNodeResponse, status_code=201)
 async def create_proxmox_node(
     body: ProxmoxNodeCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(ProxmoxNode).where(ProxmoxNode.name == body.name))
@@ -67,7 +67,7 @@ async def create_proxmox_node(
 
 @router.post("/cleanup-snapshots")
 async def trigger_snapshot_cleanup(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Scan all Proxmox nodes for orphaned labdog snapshots and delete them."""
@@ -77,7 +77,7 @@ async def trigger_snapshot_cleanup(
 @router.get("/{node_id}", response_model=ProxmoxNodeResponse)
 async def get_proxmox_node(
     node_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
@@ -91,7 +91,7 @@ async def get_proxmox_node(
 async def update_proxmox_node(
     node_id: int,
     body: ProxmoxNodeUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
@@ -137,7 +137,7 @@ async def update_proxmox_node(
 @router.delete("/{node_id}", status_code=204)
 async def delete_proxmox_node(
     node_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))
@@ -160,7 +160,7 @@ async def delete_proxmox_node(
 @router.post("/{node_id}/test", response_model=ProxmoxTestResponse)
 async def test_proxmox_node(
     node_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).where(ProxmoxNode.id == node_id))

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.user import User
 from app.settings_service import (
@@ -26,7 +26,7 @@ class SettingUpdate(BaseModel):
 
 @router.get("")
 async def list_settings(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all application settings with current values and metadata."""
@@ -37,7 +37,7 @@ async def list_settings(
 async def patch_setting(
     key: str,
     body: SettingUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a single setting. Validates type and constraints."""

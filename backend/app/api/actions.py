@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
 from app.actions.validation import build_param_model
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.user import User
@@ -81,7 +81,7 @@ async def list_actions(
 
 @router.post("/refresh")
 async def refresh_actions(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ):
     """Re-sync the remote default pack and rescan user packs.
 

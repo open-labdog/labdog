@@ -7,7 +7,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
@@ -104,7 +104,7 @@ async def list_hosts(
 @router.post("", response_model=HostResponse, status_code=201)
 async def create_host(
     body: HostCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     hostname = body.hostname
@@ -309,7 +309,7 @@ async def get_host(
 async def update_host(
     host_id: int,
     body: HostUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Host).where(Host.id == host_id))
@@ -382,7 +382,7 @@ async def get_host_dependents_endpoint(
 @router.delete("/{host_id}", status_code=204)
 async def delete_host(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.hosts.dependents import get_host_dependents
@@ -410,7 +410,7 @@ async def delete_host(
 @router.post("/{host_id}/detect-firewall", status_code=202)
 async def detect_firewall(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Re-run host facts collection, which re-probes the firewall backend.
@@ -484,7 +484,7 @@ async def get_current_rules(
 async def import_rules(
     host_id: int,
     body: ImportRulesRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Import selected rules from host into a group."""
@@ -518,7 +518,7 @@ async def import_rules(
 @router.post("/{host_id}/trust-host-key", status_code=204)
 async def trust_host_key(
     host_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Clear the stored SSH host key so the next connection re-TOFUs.
