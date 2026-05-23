@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "labdog-backend"
-version = "0.0.16"
+dynamic = ["version"]
 description = "FastAPI backend for LabDog - Ansible-based Linux firewall manager"
 requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
@@ -56,3 +56,6 @@ markers = ["integration: marks tests as integration tests (deselect with '-m not
 
 [tool.setuptools]
 packages = ["app"]
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}

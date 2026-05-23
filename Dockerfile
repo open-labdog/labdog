@@ -17,6 +17,7 @@ FROM python:3.12-slim AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY backend/pyproject.toml .
+COPY VERSION .
 COPY backend/app/ app/
 RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
 
