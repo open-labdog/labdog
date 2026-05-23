@@ -552,12 +552,12 @@ function ProxmoxVMSection({
   } = useQuery<VMMapping | null>({
     queryKey: ["host-vm-mapping", hostId],
     queryFn: async () => {
-      const res = await fetch(`/api/proxmox/hosts/${hostId}/vm-mapping`, {
-        credentials: "include",
-      })
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`Failed to fetch VM mapping: ${res.status}`)
-      return res.json() as Promise<VMMapping>
+      try {
+        return await apiFetch<VMMapping>(`/api/proxmox/hosts/${hostId}/vm-mapping`)
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null
+        throw e
+      }
     },
     retry: false,
   })
@@ -566,13 +566,14 @@ function ProxmoxVMSection({
 
   const discoverMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/proxmox/hosts/${hostId}/discover`, {
-        method: "POST",
-        credentials: "include",
-      })
-      if (res.status === 404) return null
-      if (!res.ok) throw new Error(`Discovery failed: ${res.status}`)
-      return res.json() as Promise<VMMapping>
+      try {
+        return await apiFetch<VMMapping>(`/api/proxmox/hosts/${hostId}/discover`, {
+          method: "POST",
+        })
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 404) return null
+        throw e
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["host-vm-mapping", hostId] })
