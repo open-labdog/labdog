@@ -32,10 +32,7 @@ def upgrade() -> None:
             CONSTRAINT uq_dismissed_scan_ip UNIQUE (scan_config_id, ip_address)
         )
     """)
-    op.execute(
-        "CREATE INDEX ix_dismissed_hosts_scan_config_id"
-        " ON dismissed_hosts (scan_config_id)"
-    )
+    op.execute("CREATE INDEX ix_dismissed_hosts_scan_config_id ON dismissed_hosts (scan_config_id)")
 
 
 def downgrade() -> None:
