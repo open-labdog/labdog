@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.audit_log import AuditLog
 from app.models.ssh_session_transcript import SSHSessionTranscript
@@ -46,7 +46,7 @@ async def list_audit_logs(
     user_id: int | None = None,
     limit: int = Query(default=50, le=200),
     cursor: int | None = None,  # cursor-based: pass last seen id
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List audit log entries. Cursor-based pagination (pass id of last seen entry).

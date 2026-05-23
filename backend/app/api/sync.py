@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
@@ -184,7 +184,7 @@ class SyncJobResponse(BaseModel):
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_host_sync(
     host_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for a single host."""
@@ -272,7 +272,7 @@ async def trigger_host_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_sync(
     group_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for all hosts in a group."""
@@ -373,7 +373,7 @@ async def trigger_bulk_sync(
     host_id: int,
     body: BulkSyncRequest,
     response: Response,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a coalesced multi-module sync for one host.
@@ -514,7 +514,7 @@ class GroupBulkSyncResponse(BaseModel):
 async def trigger_group_bulk_sync(
     group_id: int,
     body: BulkSyncRequest,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger a coalesced multi-module sync for every host in a group.

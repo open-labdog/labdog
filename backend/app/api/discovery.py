@@ -5,7 +5,7 @@ from sqlalchemy import insert as sa_insert
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.config import settings
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/discovery", tags=["discovery"])
 @router.post("/scan", response_model=ScanStatus)
 async def start_scan(
     body: ScanRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Start a network discovery scan. Returns job_id for polling."""
@@ -69,7 +69,7 @@ async def start_scan(
 @router.get("/scan/{job_id}", response_model=ScanStatus)
 async def get_scan_status(
     job_id: str,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ):
     """Poll scan job status."""
     result = AsyncResult(job_id, app=celery_app)
@@ -114,7 +114,7 @@ async def get_scan_status(
 @router.post("/add-hosts", response_model=BulkAddResponse, status_code=201)
 async def add_discovered_hosts(
     body: BulkAddRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-add discovered hosts to LabDog."""

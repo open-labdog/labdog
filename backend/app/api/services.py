@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -52,7 +52,7 @@ async def list_group_services(
 async def create_group_service(
     group_id: int,
     body: ServiceRuleCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -85,7 +85,7 @@ async def update_group_service(
     group_id: int,
     rule_id: int,
     body: ServiceRuleUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -124,7 +124,7 @@ async def update_group_service(
 async def delete_group_service(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -186,7 +186,7 @@ async def list_host_services(
 async def create_host_service(
     host_id: int,
     body: ServiceRuleCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -218,7 +218,7 @@ async def update_host_service(
     host_id: int,
     rule_id: int,
     body: ServiceRuleUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -256,7 +256,7 @@ async def update_host_service(
 async def delete_host_service(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
