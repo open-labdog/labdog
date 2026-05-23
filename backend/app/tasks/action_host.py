@@ -127,7 +127,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 return
             host_id_for_lock = hr_row.host_id
             await acquire_host_lock(db, host_id_for_lock)
-            blocker = await check_host_busy(db, host_id_for_lock)
+            blocker = await check_host_busy(db, host_id_for_lock, exclude_action_run_id=action_run_id)
             if blocker is not None:
                 reason = await format_pending_reason(db, blocker)
                 hr_row.status = "pending"
