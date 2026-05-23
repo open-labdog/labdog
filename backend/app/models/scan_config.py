@@ -87,3 +87,31 @@ class PendingHost(Base):
     )
 
     __table_args__ = (UniqueConstraint("scan_config_id", "ip_address", name="uq_pending_scan_ip"),)
+
+
+class DismissedHost(Base):
+    """IP permanently suppressed from scheduled scan results for a given config.
+
+    Rows are created when a user dismisses a PendingHost.  Scheduled scans
+    skip any IP present here so the host never re-surfaces automatically.
+    A manual scan (``is_manual=True``) ignores this table so the operator
+    can still see and approve the host if their intent changes.
+    """
+
+    __tablename__ = "dismissed_hosts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scan_config_id: Mapped[int] = mapped_column(
+        ForeignKey("scan_configs.id", ondelete="CASCADE"), nullable=False
+    )
+    ip_address: Mapped[str] = mapped_column(String(45), nullable=False)
+    dismissed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    dismissed_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("scan_config_id", "ip_address", name="uq_dismissed_scan_ip"),
+    )

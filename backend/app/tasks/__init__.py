@@ -55,26 +55,29 @@ celery_app.conf.update(
 @worker_ready.connect
 def _sync_packs_on_worker_start(sender=None, **_kwargs):
     """On Celery worker boot, sync every enabled action pack and rebuild
-    the in-process action registry from disk.
+    the in-process action registry from DB-backed packs.
 
-    Runs synchronously — reload_registry() uses a blocking engine so it
-    doesn't conflict with the worker's async task runtime. Failures are
-    logged and swallowed so a failing git remote doesn't prevent the
-    worker from starting.
+    Both sync and registry reload run inside the same asyncio.run() block
+    so asyncpg is used throughout. The former reload_registry() call used
+    a sync SQLAlchemy engine which required psycopg2 (not installed),
+    silently fell back to bundled-only, and caused DB-backed actions to
+    be missing from the Celery registry while FastAPI found them fine.
+    Failures are logged and swallowed so a failing git remote doesn't
+    prevent the worker from starting.
     """
     try:
         import asyncio  # noqa: PLC0415
 
-        from app.actions.registry import reload_registry  # noqa: PLC0415
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
         from app.db import AsyncSessionLocal  # noqa: PLC0415
         from app.packs.service import sync_enabled_packs  # noqa: PLC0415
 
         async def _do_sync():
             async with AsyncSessionLocal() as session:
                 await sync_enabled_packs(session)
+                await reload_registry_async(session)
 
         asyncio.run(_do_sync())
-        reload_registry()
     except Exception:
         logger.exception("action-pack sync on worker_ready failed; bundled pack only")
 
