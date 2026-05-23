@@ -109,7 +109,7 @@ class DismissedHost(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     dismissed_by_user_id: Mapped[int | None] = mapped_column(
-        ForeignKey("user.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
     __table_args__ = (
