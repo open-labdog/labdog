@@ -280,6 +280,13 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
 
             action = ACTION_REGISTRY.get(run.action_key)
             if action is None:
+                # Registry may be stale (pack synced after worker started).
+                # Reload from disk once and retry before failing the run.
+                from app.actions.registry import reload_registry_async  # noqa: PLC0415
+
+                await reload_registry_async(db)
+                action = ACTION_REGISTRY.get(run.action_key)
+            if action is None:
                 run.status = "failed"
                 run.error_message = f"Unknown action key: {run.action_key}"
                 run.finished_at = datetime.now(UTC)
