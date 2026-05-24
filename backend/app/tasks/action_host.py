@@ -628,7 +628,13 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     host_result = await db.execute(select(Host).where(Host.id == host_id))
                     host = host_result.scalar_one()
                     rb = await rollback_to_snapshot(
-                        proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db,
+                        proxmox_client,
+                        pve_node,
+                        vmid,
+                        snapshot_name,
+                        host,
+                        ssh_key_path,
+                        db,
                         vm_type=vm_type,
                     )
                     await db.commit()
