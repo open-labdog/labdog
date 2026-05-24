@@ -12,6 +12,7 @@ async def create_snapshot(
     pve_node: str,
     vmid: int,
     run_id: int,
+    vm_type: str = "qemu",
 ) -> str:
     """Create a pre-update VM snapshot and wait for the task to complete.
 
@@ -46,6 +47,7 @@ async def create_snapshot(
         vmid,
         name,
         description="LabDog pre-update snapshot",
+        vm_type=vm_type,
     )
     await proxmox_client.wait_for_task(pve_node, upid)
 

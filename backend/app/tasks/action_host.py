@@ -286,6 +286,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         proxmox_client = None
         pve_node: str | None = None
         vmid: int | None = None
+        vm_type: str = "qemu"
         snapshot_name: str | None = None
         step_log: list[str] = []
 
@@ -327,6 +328,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     if vm_mapping is not None:
                         pve_node = vm_mapping.pve_node_name
                         vmid = vm_mapping.vmid
+                        vm_type = vm_mapping.vm_type
                         node_result = await db.execute(
                             select(ProxmoxNode).where(ProxmoxNode.id == vm_mapping.proxmox_node_id)
                         )
@@ -396,7 +398,9 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             from app.workflows.steps.snapshot import create_snapshot  # noqa: PLC0415
 
             try:
-                snapshot_name = await create_snapshot(proxmox_client, pve_node, vmid, action_run_id)
+                snapshot_name = await create_snapshot(
+                    proxmox_client, pve_node, vmid, action_run_id, vm_type
+                )
                 _log_step(f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}")
                 async with task_session() as db:
                     hr_result = await db.execute(
@@ -624,7 +628,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     host_result = await db.execute(select(Host).where(Host.id == host_id))
                     host = host_result.scalar_one()
                     rb = await rollback_to_snapshot(
-                        proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db
+                        proxmox_client, pve_node, vmid, snapshot_name, host, ssh_key_path, db,
+                        vm_type=vm_type,
                     )
                     await db.commit()
                 _log_step(f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip())
@@ -649,7 +654,9 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
 
             try:
-                await delete_snapshot(proxmox_client, pve_node, vmid, snapshot_name)
+                await delete_snapshot(
+                    proxmox_client, pve_node, vmid, snapshot_name, vm_type=vm_type
+                )
                 _log_step(f"[cleanup] snapshot {snapshot_name} deleted")
             except Exception as exc:
                 # Non-fatal — the action succeeded; orphan snapshot is
