@@ -29,12 +29,12 @@ async def test_list_ssh_keys_requires_login(client):
     assert resp.status_code in (401, 403)
 
 
-async def test_create_ssh_key_requires_superuser(regular_user_client):
+async def test_create_ssh_key_accessible_to_regular_user(regular_user_client):
     resp = await regular_user_client.post(
         "/api/ssh-keys",
         json={"name": "k", "private_key": _generate_pem()},
     )
-    assert resp.status_code in (401, 403)
+    assert resp.status_code == 201
 
 
 # ---------------------------------------------------------------------------

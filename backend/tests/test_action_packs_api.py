@@ -100,9 +100,9 @@ async def test_list_returns_seeded_labdog_playbooks_pack(superuser_client):
     assert "position" not in packs[0]
 
 
-async def test_regular_user_cannot_manage_packs(regular_user_client):
+async def test_regular_user_can_manage_packs(regular_user_client):
     resp = await regular_user_client.get("/api/action-packs")
-    assert resp.status_code in (401, 403)
+    assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
