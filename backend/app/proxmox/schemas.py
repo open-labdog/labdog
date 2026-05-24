@@ -70,6 +70,7 @@ class VMMappingResponse(BaseModel):
     pve_node_name: str
     vmid: int
     vm_name: str
+    vm_type: str
     discovered_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -193,51 +193,63 @@ class ProxmoxClient:
         vmid: int,
         name: str,
         description: str = "",
+        *,
+        vm_type: str = "qemu",
     ) -> str:
-        """Create a VM snapshot and return the task UPID.
+        """Create a VM/container snapshot and return the task UPID.
 
         Args:
             pve_node: Proxmox node name.
-            vmid: VM identifier.
+            vmid: VM/container identifier.
             name: Snapshot name.
             description: Optional human-readable description.
+            vm_type: ``"qemu"`` for VMs, ``"lxc"`` for containers.
 
-        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot
+        POST /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/snapshot
         """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
         return await self._request(
             "POST",
-            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot",
+            f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/snapshot",
             json={"snapname": name, "description": description},
         )
 
-    async def delete_snapshot(self, pve_node: str, vmid: int, name: str) -> str:
-        """Delete a VM snapshot and return the task UPID.
+    async def delete_snapshot(
+        self, pve_node: str, vmid: int, name: str, *, vm_type: str = "qemu"
+    ) -> str:
+        """Delete a VM/container snapshot and return the task UPID.
 
         Args:
             pve_node: Proxmox node name.
-            vmid: VM identifier.
+            vmid: VM/container identifier.
             name: Snapshot name to delete.
+            vm_type: ``"qemu"`` for VMs, ``"lxc"`` for containers.
 
-        DELETE /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}
+        DELETE /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/snapshot/{name}
         """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
         return await self._request(
             "DELETE",
-            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}",
+            f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/snapshot/{name}",
         )
 
-    async def rollback_snapshot(self, pve_node: str, vmid: int, name: str) -> str:
-        """Roll a VM back to a snapshot and return the task UPID.
+    async def rollback_snapshot(
+        self, pve_node: str, vmid: int, name: str, *, vm_type: str = "qemu"
+    ) -> str:
+        """Roll a VM/container back to a snapshot and return the task UPID.
 
         Args:
             pve_node: Proxmox node name.
-            vmid: VM identifier.
+            vmid: VM/container identifier.
             name: Snapshot name to roll back to.
+            vm_type: ``"qemu"`` for VMs, ``"lxc"`` for containers.
 
-        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}/rollback
+        POST /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/snapshot/{name}/rollback
         """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
         return await self._request(
             "POST",
-            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/snapshot/{name}/rollback",
+            f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/snapshot/{name}/rollback",
         )
 
     async def get_task_status(self, pve_node: str, upid: str) -> dict:
@@ -286,30 +298,34 @@ class ProxmoxClient:
 
         raise ProxmoxError(f"Task timed out after {timeout}s")
 
-    async def get_vm_status(self, pve_node: str, vmid: int) -> dict:
-        """Return the current runtime status of a VM.
+    async def get_vm_status(self, pve_node: str, vmid: int, *, vm_type: str = "qemu") -> dict:
+        """Return the current runtime status of a VM or container.
 
         Args:
             pve_node: Proxmox node name.
-            vmid: VM identifier.
+            vmid: VM/container identifier.
+            vm_type: ``"qemu"`` for VMs, ``"lxc"`` for containers.
 
-        GET /api2/json/nodes/{pve_node}/qemu/{vmid}/status/current
+        GET /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/status/current
         """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
         return await self._request(
             "GET",
-            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/status/current",
+            f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/status/current",
         )
 
-    async def start_vm(self, pve_node: str, vmid: int) -> str:
-        """Start a VM and return the task UPID.
+    async def start_vm(self, pve_node: str, vmid: int, *, vm_type: str = "qemu") -> str:
+        """Start a VM or container and return the task UPID.
 
         Args:
             pve_node: Proxmox node name.
-            vmid: VM identifier.
+            vmid: VM/container identifier.
+            vm_type: ``"qemu"`` for VMs, ``"lxc"`` for containers.
 
-        POST /api2/json/nodes/{pve_node}/qemu/{vmid}/status/start
+        POST /api2/json/nodes/{pve_node}/{vm_type}/{vmid}/status/start
         """
+        guest = "lxc" if vm_type == "lxc" else "qemu"
         return await self._request(
             "POST",
-            f"/api2/json/nodes/{pve_node}/qemu/{vmid}/status/start",
+            f"/api2/json/nodes/{pve_node}/{guest}/{vmid}/status/start",
         )

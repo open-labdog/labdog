@@ -125,6 +125,7 @@ class _HostCtx:
         "proxmox_client",
         "pve_node",
         "vmid",
+        "vm_type",
         "verify_passed",
         "verify_error",
         "step_log",
@@ -144,6 +145,7 @@ class _HostCtx:
         self.proxmox_client: Any = None
         self.pve_node: str | None = None
         self.vmid: int | None = None
+        self.vm_type: str = "qemu"
         # Verify defaults to "passed" so hosts we don't verify (failed
         # playbook, no snapshot, verify disabled) don't get downgraded.
         self.verify_passed: bool = True
@@ -783,9 +785,12 @@ async def _snapshot_all(
         ctx.proxmox_client = client
         ctx.pve_node = mapping.pve_node_name
         ctx.vmid = mapping.vmid
+        ctx.vm_type = mapping.vm_type
 
         try:
-            snap_name = await create_snapshot(client, ctx.pve_node, ctx.vmid, action_run_id)
+            snap_name = await create_snapshot(
+                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type
+            )
         except Exception as exc:
             logger.exception(
                 "action_group: snapshot failed for action_run %d host %d: %s",
@@ -1095,6 +1100,7 @@ async def _rollback_all(
                     host,
                     ctx.ssh_key_path,
                     db,
+                    vm_type=ctx.vm_type,
                 )
                 await db.commit()
             ctx.step_log.append(
@@ -1144,7 +1150,9 @@ async def _cleanup_all(
             return
 
         try:
-            await delete_snapshot(ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name)
+            await delete_snapshot(
+                ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name, ctx.vm_type
+            )
             ctx.step_log.append(f"[cleanup] snapshot {ctx.snapshot_name} deleted")
         except Exception as exc:
             logger.warning(
