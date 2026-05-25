@@ -13,6 +13,7 @@ async def create_snapshot(
     vmid: int,
     run_id: int,
     vm_type: str = "qemu",
+    action_key: str = "",
 ) -> str:
     """Create a pre-update VM snapshot and wait for the task to complete.
 
@@ -42,11 +43,16 @@ async def create_snapshot(
         pve_node,
     )
 
+    description = (
+        f"LabDog pre-run snapshot for action '{action_key}' (run {run_id})"
+        if action_key
+        else f"LabDog pre-run snapshot (run {run_id})"
+    )
     upid: str = await proxmox_client.create_snapshot(
         pve_node,
         vmid,
         name,
-        description="LabDog pre-update snapshot",
+        description=description,
         vm_type=vm_type,
     )
     await proxmox_client.wait_for_task(pve_node, upid)
