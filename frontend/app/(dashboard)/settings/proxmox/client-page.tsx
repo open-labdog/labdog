@@ -154,7 +154,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
     setCleaningUp(true)
     try {
       const result = await apiFetch<{ deleted: number; errors: string[] }>(
-        "/proxmox/nodes/cleanup-snapshots",
+        "/api/proxmox/nodes/cleanup-snapshots",
         { method: "POST" }
       )
       showSuccess(`Cleaned up ${result.deleted} orphaned snapshot(s)`)
