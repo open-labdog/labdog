@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.sync import SyncJobResponse
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.cron.collector import collect_cron_jobs
 from app.cron.diff import diff_cron_jobs
 from app.cron.merge import get_effective_cron_jobs
@@ -39,7 +39,7 @@ class CronSyncPlan(BaseModel):
 @router.post("/hosts/{host_id}/plan", response_model=CronSyncPlan)
 async def plan_cron_sync(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -83,7 +83,7 @@ async def plan_cron_sync(
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
 async def trigger_cron_sync(
     host_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -131,7 +131,7 @@ async def trigger_cron_sync(
 @router.post("/groups/{group_id}/sync", status_code=201)
 async def trigger_group_cron_sync(
     group_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     memberships = await db.execute(
@@ -176,7 +176,7 @@ async def trigger_group_cron_sync(
 @router.get("/jobs/{job_id}", response_model=SyncJobResponse)
 async def get_cron_sync_job(
     job_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(SyncJob).where(SyncJob.id == job_id))
@@ -204,7 +204,7 @@ class DriftSettingsRequest(BaseModel):
 @router.post("/hosts/{host_id}/drift-check", response_model=CronDriftCheckResponse)
 async def check_cron_drift(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))
@@ -302,7 +302,7 @@ async def check_cron_drift(
 async def update_cron_drift_settings(
     host_id: int,
     body: DriftSettingsRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))

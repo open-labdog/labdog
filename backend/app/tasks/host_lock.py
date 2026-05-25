@@ -37,9 +37,13 @@ by transitioning the per-member ActionHostRun rows to `running` before
 committing. On finish, call `dispatch_next_pending_for_host` for every
 member (each member can now unblock a different queued operation).
 
-Self-exclusion in the busy check is NOT needed. By the time the caller
-calls `check_*_busy`, its own row is still in `queued`/`pending` state
-(not `running`), so the running-rows query naturally excludes it.
+Self-exclusion in the busy check is NOT needed for sync and group-action
+callers — their own rows are still in `queued`/`pending` state at the
+time of the check. However, host-targeted action runs are a special case:
+the orchestrator flips the parent ActionRun to `running` before dispatching
+the per-host tasks, so `check_host_busy` would find the parent run and
+incorrectly treat it as a blocker. Pass `exclude_action_run_id` from
+`action_host` to avoid this false self-block.
 
 This module is callable from any Celery task module. It does not own
 any state of its own. Its only inputs are an AsyncSession (already
@@ -158,7 +162,12 @@ async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def check_host_busy(db: AsyncSession, host_id: int) -> BlockerInfo | None:
+async def check_host_busy(
+    db: AsyncSession,
+    host_id: int,
+    *,
+    exclude_action_run_id: int | None = None,
+) -> BlockerInfo | None:
     """First blocker on ``host_id``, or None if the host is free.
 
     Walks three sources, returns at the first hit:
@@ -176,15 +185,17 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> BlockerInfo | None:
     the lock, two callers can both see "not busy" and both proceed
     to claim — the race the lock exists to close.
 
-    Self-exclusion is NOT needed. The caller's own row is in
-    `queued` or `pending` state at the moment of this call, not
-    `running`, so it doesn't show up in the running-rows scan. Once
-    the caller flips its status to `running` (after this check
-    returns False), subsequent callers will see it.
+    ``exclude_action_run_id`` must be supplied by ``action_host`` tasks.
+    The orchestrator marks the parent ActionRun ``running`` before
+    dispatching per-host tasks, so without the exclusion the per-host
+    task would find its own parent run in the running-rows scan and
+    incorrectly defer itself as if the host were busy.
 
     Args:
         db: An open async session inside the acquiring transaction.
         host_id: Host id to check.
+        exclude_action_run_id: ActionRun id to skip in the host-targeted
+            scan (pass the parent action_run_id from action_host tasks).
 
     Returns:
         A :class:`BlockerInfo` describing the running op holding the
@@ -207,13 +218,12 @@ async def check_host_busy(db: AsyncSession, host_id: int) -> BlockerInfo | None:
         return BlockerInfo(kind="sync", id=sync_hit, host_id=host_id, action_key=None)
 
     # 2. Host-targeted ActionRun running on this host.
-    host_action_hit = (
-        await db.execute(
-            select(ActionRun.id, ActionRun.action_key)
-            .where(ActionRun.host_id == host_id, ActionRun.status == "running")
-            .limit(1)
-        )
-    ).first()
+    host_action_stmt = select(ActionRun.id, ActionRun.action_key).where(
+        ActionRun.host_id == host_id, ActionRun.status == "running"
+    )
+    if exclude_action_run_id is not None:
+        host_action_stmt = host_action_stmt.where(ActionRun.id != exclude_action_run_id)
+    host_action_hit = (await db.execute(host_action_stmt.limit(1))).first()
     if host_action_hit is not None:
         return BlockerInfo(
             kind="action_host",

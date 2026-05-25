@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.ca_certs.actions import (
     CA_CERT_MODULE_TYPE,
     enqueue_ca_cert_action_for_host,
@@ -77,7 +77,7 @@ def _serialize_run(job: SyncJob, hostname: str | None) -> CACertActionRunRespons
 )
 async def deploy_ca_certs_to_host(
     host_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
@@ -103,7 +103,7 @@ async def deploy_ca_certs_to_host(
 @router.post("/groups/{group_id}/deploy", status_code=201)
 async def deploy_ca_certs_to_group(
     group_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = (
@@ -149,7 +149,7 @@ async def deploy_ca_certs_to_group(
 async def list_host_ca_cert_runs(
     host_id: int,
     limit: int = 20,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -175,7 +175,7 @@ async def list_host_ca_cert_runs(
 async def list_group_ca_cert_runs(
     group_id: int,
     limit: int = 50,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -198,7 +198,7 @@ async def list_group_ca_cert_runs(
 @router.get("/runs/{run_id}", response_model=CACertActionRunResponse)
 async def get_ca_cert_run(
     run_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     row = (

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
 
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.ca_certs.merge import get_effective_ca_certs
 from app.ca_certs.models import CACertRule
 from app.ca_certs.pem_utils import parse_pem_certificate
@@ -78,7 +78,7 @@ def _audit_state(rule: CACertRule) -> dict:
 )
 async def list_group_ca_certs(
     group_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -101,7 +101,7 @@ async def list_group_ca_certs(
 async def create_group_ca_cert(
     group_id: int,
     body: CACertRuleCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -143,7 +143,7 @@ async def update_group_ca_cert(
     group_id: int,
     rule_id: int,
     body: CACertRuleUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     rule = (
@@ -180,7 +180,7 @@ async def update_group_ca_cert(
 async def delete_group_ca_cert(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     rule = (
@@ -222,7 +222,7 @@ async def delete_group_ca_cert(
 )
 async def list_host_ca_certs(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -245,7 +245,7 @@ async def list_host_ca_certs(
 async def create_host_ca_cert(
     host_id: int,
     body: CACertRuleCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -287,7 +287,7 @@ async def update_host_ca_cert(
     host_id: int,
     rule_id: int,
     body: CACertRuleUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     rule = (
@@ -324,7 +324,7 @@ async def update_host_ca_cert(
 async def delete_host_ca_cert(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     rule = (
@@ -366,7 +366,7 @@ async def delete_host_ca_cert(
 )
 async def effective_ca_certs(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))

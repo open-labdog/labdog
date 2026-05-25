@@ -29,7 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.user import User
 from app.packs.models import ActionPack, ActionRegistrySnapshot, ActionResolution
@@ -102,7 +102,7 @@ async def _build_contested_view(db: AsyncSession) -> list[ContestedActionKeyOut]
 
 @router.get("", response_model=list[ContestedActionKeyOut])
 async def list_contested_keys(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Every action key currently contributed by more than one pack.
@@ -119,7 +119,7 @@ async def list_contested_keys(
 async def upsert_action_resolution(
     action_key: str,
     body: ActionResolutionRequest,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Set ``action_resolution[action_key] = pack_id`` (or NULL=bundled).
@@ -198,7 +198,7 @@ async def upsert_action_resolution(
 @router.delete("/{action_key}", status_code=204)
 async def delete_action_resolution(
     action_key: str,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Drop the resolution row for a contested key.

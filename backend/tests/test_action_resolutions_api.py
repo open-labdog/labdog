@@ -203,12 +203,14 @@ async def test_pack_delete_cascades_resolution_row(superuser_client, two_local_p
 # ---------------------------------------------------------------------------
 
 
-async def test_resolutions_router_requires_superuser(regular_user_client):
+async def test_resolutions_router_accessible_to_regular_user(regular_user_client):
     r1 = await regular_user_client.get("/api/action-resolutions")
+    assert r1.status_code == 200
+    # PUT/DELETE reach business-logic errors (409/404), not auth errors
     r2 = await regular_user_client.put("/api/action-resolutions/hello", json={"pack_id": None})
     r3 = await regular_user_client.delete("/api/action-resolutions/hello")
-    for r in (r1, r2, r3):
-        assert r.status_code in (401, 403)
+    assert r2.status_code not in (401, 403)
+    assert r3.status_code not in (401, 403)
 
 
 # ---------------------------------------------------------------------------
@@ -339,10 +341,10 @@ async def test_claim_all_keys_404_for_unknown_pack(superuser_client):
     assert r.status_code == 404
 
 
-async def test_claim_all_keys_requires_superuser(regular_user_client, two_local_packs):
+async def test_claim_all_keys_accessible_to_regular_user(regular_user_client, two_local_packs):
     pack_a, pack_b = two_local_packs
     r = await regular_user_client.post(f"/api/action-packs/{pack_b['id']}/claim-all-keys")
-    assert r.status_code in (401, 403)
+    assert r.status_code == 200
 
 
 async def test_claim_all_keys_with_no_contributions(superuser_client, db, tmp_path):

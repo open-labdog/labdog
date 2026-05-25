@@ -4,7 +4,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.db import get_db
 from app.models.git_repository import GitOpsStatus, GitRepository
@@ -35,7 +35,7 @@ async def list_groups(
 @router.post("", response_model=GroupResponse, status_code=201)
 async def create_group(
     body: GroupCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     # Check unique name
@@ -227,7 +227,7 @@ async def update_group(
 @router.delete("/{group_id}", status_code=204)
 async def delete_group(
     group_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.host import HostGroupMembership
@@ -413,7 +413,7 @@ async def remove_hosts_from_group(
 async def enable_gitops(
     group_id: int,
     body: GitOpsEnableRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))
@@ -452,7 +452,7 @@ async def enable_gitops(
 @router.post("/{group_id}/gitops/disable", response_model=GitOpsStatusResponse)
 async def disable_gitops(
     group_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(HostGroup).where(HostGroup.id == group_id))

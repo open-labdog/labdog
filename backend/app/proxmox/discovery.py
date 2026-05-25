@@ -67,12 +67,12 @@ async def _scan_pve_node(
     client: ProxmoxClient,
     node: ProxmoxNode,
     pve_node_name: str,
-) -> list[tuple[str, int, str, set[str]]]:
+) -> list[tuple[str, int, str, set[str], str]]:
     """Scan a single PVE node for QEMU VMs and LXC containers.
 
-    Returns a list of (vm_name, vmid, pve_node_name, ips) tuples.
+    Returns a list of (vm_name, vmid, pve_node_name, ips, vm_type) tuples.
     """
-    guests: list[tuple[str, int, str, set[str]]] = []
+    guests: list[tuple[str, int, str, set[str], str]] = []
 
     # --- QEMU VMs ---
     try:
@@ -110,7 +110,7 @@ async def _scan_pve_node(
 
         vm_ips = _extract_ips(interfaces)
         if vm_ips:
-            guests.append((vm_name, vmid, pve_node_name, vm_ips))
+            guests.append((vm_name, vmid, pve_node_name, vm_ips, "qemu"))
 
     # --- LXC containers ---
     try:
@@ -148,7 +148,7 @@ async def _scan_pve_node(
 
         ct_ips = _extract_lxc_ips(interfaces)
         if ct_ips:
-            guests.append((ct_name, vmid, pve_node_name, ct_ips))
+            guests.append((ct_name, vmid, pve_node_name, ct_ips, "lxc"))
 
     return guests
 
@@ -192,7 +192,7 @@ async def discover_vm_by_ip(ip: str, db: AsyncSession) -> VMMapping | None:
 
             guests = await _scan_pve_node(client, node, pve_node_name)
 
-            for vm_name, vmid, pve_name, vm_ips in guests:
+            for vm_name, vmid, pve_name, vm_ips, vm_type in guests:
                 if ip not in vm_ips:
                     continue
 
@@ -204,6 +204,7 @@ async def discover_vm_by_ip(ip: str, db: AsyncSession) -> VMMapping | None:
                     pve_node_name=pve_name,
                     vmid=vmid,
                     vm_name=vm_name,
+                    vm_type=vm_type,
                 )
                 logger.info(
                     "Mapped host %s (id=%s, ip=%s) -> Proxmox %s/%s vmid=%s name=%s",
@@ -265,7 +266,7 @@ async def discover_all_vms(db: AsyncSession) -> list[VMMapping]:
 
             guests = await _scan_pve_node(client, node, pve_node_name)
 
-            for vm_name, vmid, pve_name, vm_ips in guests:
+            for vm_name, vmid, pve_name, vm_ips, vm_type in guests:
                 for ip in vm_ips:
                     host = ip_to_host.get(ip)
                     if host is None:
@@ -278,6 +279,7 @@ async def discover_all_vms(db: AsyncSession) -> list[VMMapping]:
                         pve_node_name=pve_name,
                         vmid=vmid,
                         vm_name=vm_name,
+                        vm_type=vm_type,
                     )
                     found_host_ids.add(host.id)
                     upserted.append(mapping)
@@ -310,6 +312,7 @@ async def _upsert_mapping(
     pve_node_name: str,
     vmid: int,
     vm_name: str,
+    vm_type: str = "qemu",
 ) -> VMMapping:
     """Insert or update a VMMapping row and return the refreshed object."""
     now = datetime.now(UTC)
@@ -322,6 +325,7 @@ async def _upsert_mapping(
             pve_node_name=pve_node_name,
             vmid=vmid,
             vm_name=vm_name,
+            vm_type=vm_type,
             discovered_at=now,
         )
         .on_conflict_do_update(
@@ -331,6 +335,7 @@ async def _upsert_mapping(
                 "pve_node_name": pve_node_name,
                 "vmid": vmid,
                 "vm_name": vm_name,
+                "vm_type": vm_type,
                 "discovered_at": now,
             },
         )
