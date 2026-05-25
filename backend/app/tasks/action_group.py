@@ -1111,8 +1111,11 @@ async def _rollback_all(
 
                 try:
                     await delete_snapshot(
-                        ctx.proxmox_client, ctx.pve_node, ctx.vmid,
-                        ctx.snapshot_name, ctx.vm_type,
+                        ctx.proxmox_client,
+                        ctx.pve_node,
+                        ctx.vmid,
+                        ctx.snapshot_name,
+                        ctx.vm_type,
                     )
                     ctx.step_log.append(
                         f"[cleanup] snapshot {ctx.snapshot_name} deleted after rollback"
