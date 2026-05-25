@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/ui/data-table"
-import type { ProxmoxNode } from "@/lib/types"
+import type { ProxmoxNode, VMMapping } from "@/lib/types"
 
 interface NodeFormState {
   name: string
@@ -46,6 +46,7 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
   const [formSaving, setFormSaving] = useState(false)
   const [testingId, setTestingId] = useState<number | null>(null)
   const [cleaningUp, setCleaningUp] = useState(false)
+  const [discovering, setDiscovering] = useState(false)
   const [confirmState, setConfirmState] = useState<{
     open: boolean
     title: string
@@ -165,6 +166,22 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
     }
   }
 
+  async function handleDiscoverAll() {
+    setDiscovering(true)
+    try {
+      const result = await apiFetch<VMMapping[]>("/api/proxmox/discover", {
+        method: "POST",
+      })
+      showSuccess(`Discovered ${result.length} VM mapping(s)`)
+      // Refresh any open host detail pages showing VM mappings.
+      await queryClient.invalidateQueries({ queryKey: ["host-vm-mapping"] })
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Discovery failed")
+    } finally {
+      setDiscovering(false)
+    }
+  }
+
   async function handleTestConnection(node: ProxmoxNode) {
     setTestingId(node.id)
     try {
@@ -198,6 +215,13 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
           </div>
         )}
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={handleDiscoverAll}
+            disabled={discovering}
+          >
+            {discovering ? "Discovering..." : "Discover VM Mappings"}
+          </Button>
           <Button
             variant="outline"
             onClick={handleCleanupSnapshots}
