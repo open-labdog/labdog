@@ -145,12 +145,20 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   const isTerminal = run && TERMINAL.has(run.status)
   const isGroupRun = run?.group_id != null
 
+  // Derive the back link from the fetched run so it is always correct
+  // regardless of which URL the user navigated from.
+  const effectiveBackHref = run?.host_id
+    ? `/hosts/${run.host_id}?tab=actions`
+    : run?.group_id
+      ? `/groups/${run.group_id}?tab=actions`
+      : backHref
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href={backHref} className="text-sm text-slate-400 hover:text-white">
+          <Link href={effectiveBackHref} className="text-sm text-slate-400 hover:text-white">
             ← {backLabel}
           </Link>
           {run && <RunStatusBadge status={run.status} reason={run.pending_reason} />}
