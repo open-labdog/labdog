@@ -639,6 +639,23 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     )
                     await db.commit()
                 _log_step(f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip())
+                if rb.get("success"):
+                    from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
+
+                    try:
+                        await delete_snapshot(
+                            proxmox_client, pve_node, vmid, snapshot_name, vm_type=vm_type
+                        )
+                        _log_step(f"[cleanup] snapshot {snapshot_name} deleted after rollback")
+                    except Exception as clean_exc:
+                        logger.warning(
+                            "action_host: snapshot cleanup after rollback failed for "
+                            "action_run %d host %d: %s",
+                            action_run_id,
+                            host_id,
+                            clean_exc,
+                        )
+                        _log_step(f"[cleanup] WARN: {clean_exc}")
             except Exception as exc:
                 logger.exception(
                     "action_host: rollback failed for action_run %d host %d: %s",

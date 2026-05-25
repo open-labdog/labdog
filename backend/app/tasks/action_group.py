@@ -1106,6 +1106,24 @@ async def _rollback_all(
             ctx.step_log.append(
                 f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip()
             )
+            if rb.get("success") and ctx.snapshot_name is not None:
+                from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
+
+                try:
+                    await delete_snapshot(
+                        ctx.proxmox_client, ctx.pve_node, ctx.vmid,
+                        ctx.snapshot_name, ctx.vm_type,
+                    )
+                    ctx.step_log.append(
+                        f"[cleanup] snapshot {ctx.snapshot_name} deleted after rollback"
+                    )
+                except Exception as clean_exc:
+                    logger.warning(
+                        "action_group: snapshot cleanup after rollback failed for host %d: %s",
+                        ctx.host_id,
+                        clean_exc,
+                    )
+                    ctx.step_log.append(f"[cleanup] WARN: {clean_exc}")
         except Exception as exc:
             logger.exception(
                 "action_group: rollback failed for host %d: %s",
