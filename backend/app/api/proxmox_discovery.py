@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.user import User
 from app.proxmox.discovery import discover_all_vms, discover_vm_by_ip
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/proxmox", tags=["proxmox"])
 
 @router.post("/discover", response_model=list[VMMappingResponse])
 async def trigger_full_discovery(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Scan all Proxmox nodes and update VM mappings for every known host.
@@ -28,7 +28,7 @@ async def trigger_full_discovery(
 @router.get("/hosts/{host_id}/vm-mapping", response_model=VMMappingResponse | None)
 async def get_host_vm_mapping(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Return the cached VM mapping for a host, or `null` when none has been discovered."""
@@ -39,7 +39,7 @@ async def get_host_vm_mapping(
 @router.post("/hosts/{host_id}/discover", response_model=VMMappingResponse)
 async def discover_host_vm_mapping(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger VM discovery for a single host by scanning its IP address.

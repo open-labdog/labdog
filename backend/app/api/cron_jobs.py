@@ -6,7 +6,7 @@ from starlette.responses import Response
 
 from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.cron.merge import get_effective_cron_jobs
 from app.cron.models import CronJob
 from app.cron.schemas import (
@@ -31,7 +31,7 @@ router = APIRouter(tags=["cron-jobs"])
 @router.get("/groups/{group_id}/cron-jobs", response_model=list[CronJobResponse])
 async def list_group_cron_jobs(
     group_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -54,7 +54,7 @@ async def list_group_cron_jobs(
 async def create_group_cron_job(
     group_id: int,
     body: CronJobCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -94,7 +94,7 @@ async def update_group_cron_job(
     group_id: int,
     rule_id: int,
     body: CronJobUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -140,7 +140,7 @@ async def update_group_cron_job(
 async def delete_group_cron_job(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -180,7 +180,7 @@ async def delete_group_cron_job(
 @router.get("/hosts/{host_id}/cron-jobs", response_model=list[CronJobResponse])
 async def list_host_cron_jobs(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -203,7 +203,7 @@ async def list_host_cron_jobs(
 async def create_host_cron_job(
     host_id: int,
     body: CronJobCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -242,7 +242,7 @@ async def update_host_cron_job(
     host_id: int,
     rule_id: int,
     body: CronJobUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -287,7 +287,7 @@ async def update_host_cron_job(
 async def delete_host_cron_job(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -329,7 +329,7 @@ async def delete_host_cron_job(
 )
 async def effective_cron_jobs(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))

@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
 from app.actions.validation import build_param_model
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
+from app.models.host import Host
+from app.models.host_group import HostGroup
 from app.models.user import User
 from app.schemas.actions import (
     ActionDefinitionOut,
@@ -81,7 +83,7 @@ async def list_actions(
 
 @router.post("/refresh")
 async def refresh_actions(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ):
     """Re-sync the remote default pack and rescan user packs.
 
@@ -168,6 +170,16 @@ async def create_run(
         build_param_model(action).model_validate(body.parameters)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    # Validate that the target host/group actually exists
+    if body.host_id is not None:
+        host_exists = await db.scalar(select(Host.id).where(Host.id == body.host_id))
+        if host_exists is None:
+            raise HTTPException(status_code=404, detail="Host not found")
+    if body.group_id is not None:
+        group_exists = await db.scalar(select(HostGroup.id).where(HostGroup.id == body.group_id))
+        if group_exists is None:
+            raise HTTPException(status_code=404, detail="Group not found")
 
     # Advisory lock — prevents duplicate concurrent runs for same action+scope
     lock_key = f"actions.{body.action_key}.{body.host_id or body.group_id}"

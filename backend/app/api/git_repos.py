@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
 from app.models.git_repository import GitAuthType, GitRepository
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/git-repos", tags=["git-repos"])
 
 @router.get("", response_model=list[GitRepoResponse])
 async def list_git_repos(
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).order_by(GitRepository.created_at.desc()))
@@ -32,7 +32,7 @@ async def list_git_repos(
 @router.post("", response_model=GitRepoResponse, status_code=201)
 async def create_git_repo(
     body: GitRepoCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(GitRepository).where(GitRepository.name == body.name))
@@ -81,7 +81,7 @@ async def create_git_repo(
 @router.get("/{repo_id}", response_model=GitRepoResponse)
 async def get_git_repo(
     repo_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
@@ -95,7 +95,7 @@ async def get_git_repo(
 async def update_git_repo(
     repo_id: int,
     body: GitRepoUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
@@ -162,7 +162,7 @@ async def update_git_repo(
 @router.delete("/{repo_id}", status_code=204)
 async def delete_git_repo(
     repo_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
@@ -209,7 +209,7 @@ async def delete_git_repo(
 @router.post("/{repo_id}/test-connection")
 async def test_connection(
     repo_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))

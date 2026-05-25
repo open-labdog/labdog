@@ -11,6 +11,7 @@ async def delete_snapshot(
     pve_node: str,
     vmid: int,
     snapshot_name: str,
+    vm_type: str = "qemu",
 ) -> dict[str, Any]:
     """Delete a VM snapshot and wait for the task to complete.
 
@@ -40,7 +41,7 @@ async def delete_snapshot(
         pve_node,
     )
 
-    upid: str = await proxmox_client.delete_snapshot(pve_node, vmid, snapshot_name)
+    upid: str = await proxmox_client.delete_snapshot(pve_node, vmid, snapshot_name, vm_type=vm_type)
     await proxmox_client.wait_for_task(pve_node, upid)
 
     logger.info(

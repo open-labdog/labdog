@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api._gitops_lock import check_gitops_lock
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.host import Host
 from app.models.host_group import HostGroup
@@ -29,7 +29,7 @@ router = APIRouter(tags=["linux-groups"])
 @router.get("/groups/{group_id}/linux-groups", response_model=list[LinuxGroupResponse])
 async def list_group_linux_groups(
     group_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     group = await db.scalar(select(HostGroup).where(HostGroup.id == group_id))
@@ -52,7 +52,7 @@ async def list_group_linux_groups(
 async def create_group_linux_group(
     group_id: int,
     body: LinuxGroupCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -85,7 +85,7 @@ async def update_group_linux_group(
     group_id: int,
     rule_id: int,
     body: LinuxGroupUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -124,7 +124,7 @@ async def update_group_linux_group(
 async def delete_group_linux_group(
     group_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     await check_gitops_lock(group_id, db)
@@ -163,7 +163,7 @@ async def delete_group_linux_group(
 @router.get("/hosts/{host_id}/linux-groups", response_model=list[LinuxGroupResponse])
 async def list_host_linux_groups(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -186,7 +186,7 @@ async def list_host_linux_groups(
 async def create_host_linux_group(
     host_id: int,
     body: LinuxGroupCreate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))
@@ -218,7 +218,7 @@ async def update_host_linux_group(
     host_id: int,
     rule_id: int,
     body: LinuxGroupUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -256,7 +256,7 @@ async def update_host_linux_group(
 async def delete_host_linux_group(
     host_id: int,
     rule_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -297,7 +297,7 @@ async def delete_host_linux_group(
 )
 async def effective_groups(
     host_id: int,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host = await db.scalar(select(Host).where(Host.id == host_id))

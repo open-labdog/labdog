@@ -28,6 +28,7 @@ class VMMapping(Base):
     pve_node_name: Mapped[str] = mapped_column(String(100))
     vmid: Mapped[int] = mapped_column(Integer)
     vm_name: Mapped[str] = mapped_column(String(200))
+    vm_type: Mapped[str] = mapped_column(String(10), nullable=False, server_default="qemu")
     discovered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),

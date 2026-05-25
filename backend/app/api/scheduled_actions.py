@@ -34,7 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.actions.registry import ACTION_REGISTRY, ActionDefinition
 from app.actions.validation import build_param_model
 from app.audit.logger import log_action
-from app.auth.users import current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.action_run import ActionRun
 from app.models.host import Host
@@ -205,7 +205,7 @@ async def list_scheduled_actions(
     category: str | None = Query(default=None, description="'_builtin' or 'pack'"),
     include_last_run: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ) -> list[ScheduledActionOut]:
     stmt = select(ScheduledAction).order_by(ScheduledAction.created_at.desc())
     if target_kind is not None:
@@ -229,7 +229,7 @@ async def list_scheduled_actions(
 async def create_scheduled_action(
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
 ) -> ScheduledActionOut:
     _validate_request(body)
     await _validate_target_exists(db, body.target_kind, body.target_id)
@@ -278,7 +278,7 @@ async def create_scheduled_action(
 async def get_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -291,7 +291,7 @@ async def update_scheduled_action(
     scheduled_action_id: int,
     body: ScheduledActionIn,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
 ) -> ScheduledActionOut:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -345,7 +345,7 @@ async def update_scheduled_action(
 async def delete_scheduled_action(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
 ) -> None:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -369,7 +369,7 @@ async def delete_scheduled_action(
 async def run_now(
     scheduled_action_id: int,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
 ) -> ActionRunOut:
     """Create an immediate ActionRun for this schedule and dispatch it.
 
@@ -485,7 +485,7 @@ async def list_runs(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ) -> list[ActionRunOut]:
     sa = await db.get(ScheduledAction, scheduled_action_id)
     if sa is None:
@@ -516,7 +516,7 @@ async def list_runs(
 @router.post("/validate-cron", response_model=ValidateCronResponse)
 async def validate_cron(
     body: ValidateCronRequest,
-    _: User = Depends(current_superuser),
+    _: User = Depends(current_active_user),
 ) -> ValidateCronResponse:
     """Cron syntax check + next-3-fire-times preview. Used by the
     frontend's <CronInput /> for live feedback as the operator types."""

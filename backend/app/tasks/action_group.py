@@ -125,6 +125,7 @@ class _HostCtx:
         "proxmox_client",
         "pve_node",
         "vmid",
+        "vm_type",
         "verify_passed",
         "verify_error",
         "step_log",
@@ -144,6 +145,7 @@ class _HostCtx:
         self.proxmox_client: Any = None
         self.pve_node: str | None = None
         self.vmid: int | None = None
+        self.vm_type: str = "qemu"
         # Verify defaults to "passed" so hosts we don't verify (failed
         # playbook, no snapshot, verify disabled) don't get downgraded.
         self.verify_passed: bool = True
@@ -326,6 +328,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             await db.flush()
 
             # Cache action + run attributes before the session closes.
+            action_key: str = run.action_key
             playbook_path = action.playbook_path
             action_roles_paths: tuple = action.roles_paths
             action_destructive: bool = action.destructive
@@ -428,6 +431,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             await _snapshot_all(
                 host_ctxs,
                 action_run_id,
+                action_key,
                 master_key,
                 channel,
                 r,
@@ -706,6 +710,7 @@ def _was_snapshot_failed(ctx: _HostCtx) -> bool:
 async def _snapshot_all(
     host_ctxs: list[_HostCtx],
     action_run_id: int,
+    action_key: str,
     master_key: bytes,
     channel: str,
     r: Any,
@@ -783,9 +788,12 @@ async def _snapshot_all(
         ctx.proxmox_client = client
         ctx.pve_node = mapping.pve_node_name
         ctx.vmid = mapping.vmid
+        ctx.vm_type = mapping.vm_type
 
         try:
-            snap_name = await create_snapshot(client, ctx.pve_node, ctx.vmid, action_run_id)
+            snap_name = await create_snapshot(
+                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type, action_key
+            )
         except Exception as exc:
             logger.exception(
                 "action_group: snapshot failed for action_run %d host %d: %s",
@@ -1095,11 +1103,33 @@ async def _rollback_all(
                     host,
                     ctx.ssh_key_path,
                     db,
+                    vm_type=ctx.vm_type,
                 )
                 await db.commit()
             ctx.step_log.append(
                 f"[rollback] success={rb.get('success')} {rb.get('error', '')}".strip()
             )
+            if rb.get("success") and ctx.snapshot_name is not None:
+                from app.workflows.steps.cleanup import delete_snapshot  # noqa: PLC0415
+
+                try:
+                    await delete_snapshot(
+                        ctx.proxmox_client,
+                        ctx.pve_node,
+                        ctx.vmid,
+                        ctx.snapshot_name,
+                        ctx.vm_type,
+                    )
+                    ctx.step_log.append(
+                        f"[cleanup] snapshot {ctx.snapshot_name} deleted after rollback"
+                    )
+                except Exception as clean_exc:
+                    logger.warning(
+                        "action_group: snapshot cleanup after rollback failed for host %d: %s",
+                        ctx.host_id,
+                        clean_exc,
+                    )
+                    ctx.step_log.append(f"[cleanup] WARN: {clean_exc}")
         except Exception as exc:
             logger.exception(
                 "action_group: rollback failed for host %d: %s",
@@ -1144,7 +1174,9 @@ async def _cleanup_all(
             return
 
         try:
-            await delete_snapshot(ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name)
+            await delete_snapshot(
+                ctx.proxmox_client, ctx.pve_node, ctx.vmid, ctx.snapshot_name, ctx.vm_type
+            )
             ctx.step_log.append(f"[cleanup] snapshot {ctx.snapshot_name} deleted")
         except Exception as exc:
             logger.warning(

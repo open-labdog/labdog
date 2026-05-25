@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.users import current_active_user, current_superuser
+from app.auth.users import current_active_user
 from app.db import get_db
 from app.drift.detector import check_drift
 from app.models.host import Host, HostGroupMembership
@@ -148,7 +148,7 @@ async def check_group_drift(
 async def update_drift_settings(
     host_id: int,
     body: DriftSettingsUpdate,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     host_result = await db.execute(select(Host).where(Host.id == host_id))

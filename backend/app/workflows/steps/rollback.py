@@ -21,6 +21,7 @@ async def rollback_to_snapshot(
     host: Any,
     ssh_key_path: str,
     db: Any,
+    vm_type: str = "qemu",
 ) -> dict[str, Any]:
     """Roll a VM back to its pre-update snapshot and wait for SSH to recover.
 
@@ -61,7 +62,9 @@ async def rollback_to_snapshot(
             pve_node,
             snapshot_name,
         )
-        upid: str = await proxmox_client.rollback_snapshot(pve_node, vmid, snapshot_name)
+        upid: str = await proxmox_client.rollback_snapshot(
+            pve_node, vmid, snapshot_name, vm_type=vm_type
+        )
         await proxmox_client.wait_for_task(pve_node, upid)
         logger.info(
             "rollback: rollback task completed for vmid %d on %s",
@@ -77,7 +80,7 @@ async def rollback_to_snapshot(
             vmid,
             pve_node,
         )
-        upid = await proxmox_client.start_vm(pve_node, vmid)
+        upid = await proxmox_client.start_vm(pve_node, vmid, vm_type=vm_type)
         await proxmox_client.wait_for_task(pve_node, upid)
         logger.info(
             "rollback: VM start task completed for vmid %d on %s",
