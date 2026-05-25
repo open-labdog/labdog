@@ -269,6 +269,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             # ``app.sync.post_run.dispatch_post_run_register``.
             action_post_run_register: dict[str, tuple[dict, ...]] = dict(action.post_run_register)
             triggered_by_user_id: int | None = run.triggered_by_user_id
+            action_key: str = run.action_key
 
         # ------------------------------------------------------------------ #
         # Load Proxmox VM mapping if the action is destructive AND snapshots #
@@ -399,7 +400,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
 
             try:
                 snapshot_name = await create_snapshot(
-                    proxmox_client, pve_node, vmid, action_run_id, vm_type
+                    proxmox_client, pve_node, vmid, action_run_id, vm_type, action_key
                 )
                 _log_step(f"[snapshot] created {snapshot_name} on {pve_node}/{vmid}")
                 async with task_session() as db:

@@ -328,6 +328,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             await db.flush()
 
             # Cache action + run attributes before the session closes.
+            action_key: str = run.action_key
             playbook_path = action.playbook_path
             action_roles_paths: tuple = action.roles_paths
             action_destructive: bool = action.destructive
@@ -430,6 +431,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             await _snapshot_all(
                 host_ctxs,
                 action_run_id,
+                action_key,
                 master_key,
                 channel,
                 r,
@@ -708,6 +710,7 @@ def _was_snapshot_failed(ctx: _HostCtx) -> bool:
 async def _snapshot_all(
     host_ctxs: list[_HostCtx],
     action_run_id: int,
+    action_key: str,
     master_key: bytes,
     channel: str,
     r: Any,
@@ -789,7 +792,7 @@ async def _snapshot_all(
 
         try:
             snap_name = await create_snapshot(
-                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type
+                client, ctx.pve_node, ctx.vmid, action_run_id, ctx.vm_type, action_key
             )
         except Exception as exc:
             logger.exception(
