@@ -173,7 +173,8 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
         method: "POST",
       })
       showSuccess(`Discovered ${result.length} VM mapping(s)`)
-      // Refresh any open host detail pages showing VM mappings.
+      // Refresh the hosts overview column and any open host detail pages.
+      await queryClient.invalidateQueries({ queryKey: ["vm-mappings"] })
       await queryClient.invalidateQueries({ queryKey: ["host-vm-mapping"] })
     } catch (err) {
       showError(err instanceof Error ? err.message : "Discovery failed")
