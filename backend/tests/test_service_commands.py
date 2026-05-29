@@ -128,9 +128,7 @@ class TestSSHFunctions:
     async def test_execute_command_rejects_invalid_action(self):
         """execute_service_command raises ValueError for invalid actions."""
         with pytest.raises(ValueError, match="Invalid action"):
-            await execute_service_command(
-                "1.2.3.4", 22, "fake-key", "nginx", "enable"
-            )
+            await execute_service_command("1.2.3.4", 22, "fake-key", "nginx", "enable")
 
 
 class TestCommandAPI:
