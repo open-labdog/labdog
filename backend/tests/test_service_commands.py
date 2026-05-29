@@ -124,13 +124,12 @@ class TestSSHFunctions:
         assert "wait_for" in source
         assert "30.0" in source
 
-    def test_execute_command_rejects_invalid_action(self):
+    @pytest.mark.asyncio
+    async def test_execute_command_rejects_invalid_action(self):
         """execute_service_command raises ValueError for invalid actions."""
-        import asyncio
-
         with pytest.raises(ValueError, match="Invalid action"):
-            asyncio.get_event_loop().run_until_complete(
-                execute_service_command("1.2.3.4", 22, "fake-key", "nginx", "enable")
+            await execute_service_command(
+                "1.2.3.4", 22, "fake-key", "nginx", "enable"
             )
 
 
