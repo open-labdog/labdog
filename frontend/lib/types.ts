@@ -128,6 +128,7 @@ export interface VMMapping {
   pve_node_name: string
   vmid: number
   vm_name: string
+  vm_type: string
   discovered_at: string
 }
 
