@@ -1,4 +1,4 @@
-# No fix available upstream for these CVEs as of 2026-05-06.
+# No fix available upstream for these CVEs as of 2026-05-27.
 # Each entry should have a corresponding rationale paragraph in
 # docs/trivy-rationale.md. The Trivy CI gate runs with
 # `ignore-unfixed: true`, so these unfixed-upstream CVEs are
@@ -9,30 +9,5 @@
 # ncurses: buffer overflow (affected, no fix released)
 CVE-2025-69720
 
-# systemd: arbitrary code execution via spurious IPC (affected, no fix released)
-CVE-2026-29111
-
-# openssh-client: required for Ansible; no fix released
-CVE-2026-35385
-CVE-2026-35386
-CVE-2026-35414
-
-# libexpat1: integer-overflow info disclosure (affected, no fix released as of 2026-04-24)
+# libexpat1: integer-overflow info disclosure (affected, no fix released)
 CVE-2026-25210
-
-# libnghttp2-14: post-session-termination DoS (affected, no fix released as of 2026-04-24)
-CVE-2026-27135
-
-# libcap2: capability handling flaw, no fix released as of 2026-05-04
-CVE-2026-4878
-
-# libgnutls30t64: TLS-side issue, no fix released as of 2026-05-04
-CVE-2026-33845
-
-# libgnutls30t64: DoS via heap buffer overflow in DTLS handshake,
-# no fix released as of 2026-05-06
-CVE-2026-33846
-
-# libgnutls30t64: policy bypass via case-sensitive nameConstraints comparison,
-# no fix released as of 2026-05-07
-CVE-2026-3833

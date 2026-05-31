@@ -48,9 +48,13 @@ RUN chmod +x /usr/local/bin/fetch-bundled-pack \
 FROM python:3.12-slim
 WORKDIR /app
 
+# Install the runtime tools we need, then fully upgrade every base
+# package so Debian security fixes are applied (e.g. krb5 libs pulled in
+# transitively by git/openssh-client). A blanket upgrade avoids the
+# whack-a-mole of naming each CVE'd package as Trivy/Grype flag them.
 RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends openssl libssl3t64 openssl-provider-legacy \
     && apt-get install -y --no-install-recommends openssh-client git \
+    && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 labdog \

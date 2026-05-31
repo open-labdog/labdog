@@ -32,20 +32,13 @@ Process for adding a new entry:
 | CVE | Package | Added | Why ignored | Re-evaluate when |
 |---|---|---|---|---|
 | `CVE-2025-69720` | `ncurses` | 2026-04-21 | Buffer overflow; affected, no fix released by upstream Debian. ncurses ships in the `python:3.12-slim` base image. | Debian publishes a patched `libncurses6` / `libtinfo6`. Upgrade base image, drop ignore, confirm scan clean. |
-| `CVE-2026-29111` | `systemd` | 2026-04-21 | Arbitrary code execution via spurious IPC; affected, no fix released. systemd libs (`libsystemd0`, `libudev1`) ship in `python:3.12-slim` even though we don't run a systemd init inside the container. | Debian publishes a patched `libsystemd0`. Drop ignore on next image rebuild that picks up the fix. |
-| `CVE-2026-35385` | `openssh-client` | 2026-04-21 | Required by Ansible for SSH transport to managed hosts. No fix released. Removing `openssh-client` is not an option — it's a hard dependency for every sync. | OpenSSH project publishes a fix and Debian backports it. |
-| `CVE-2026-35386` | `openssh-client` | 2026-05-04 | Same package as above; surfaced when the Trivy DB picked up a new advisory. Same constraint and same removal trigger. | OpenSSH project publishes a fix and Debian backports it. |
-| `CVE-2026-35414` | `openssh-client` | 2026-04-21 | Same package as above; tracked separately because Trivy reports them as distinct advisories. Same constraint and same removal trigger. | OpenSSH project publishes a fix and Debian backports it. |
-| `CVE-2026-25210` | `libexpat1` | 2026-04-24 | Integer-overflow info disclosure; affected, no fix released as of the add date. expat is pulled in transitively (Python stdlib XML, ansible-runner). | Debian ships a patched `libexpat1`. |
-| `CVE-2026-27135` | `libnghttp2-14` | 2026-04-24 | Post-session-termination DoS; affected, no fix released as of the add date. nghttp2 is pulled in by `curl` / HTTP/2 client libs in the runtime image. | Debian ships a patched `libnghttp2-14`. |
-| `CVE-2026-4878`  | `libcap2` | 2026-05-04 | Capability-handling flaw; affected, no fix released. `libcap2` is pulled in by the base image runtime (used by systemd / process tooling); not removable. | Debian ships a patched `libcap2`. |
-| `CVE-2026-33845` | `libgnutls30t64` | 2026-05-04 | TLS-side issue; affected, no fix released. `libgnutls30t64` is a transitive base-image dependency. | Debian ships a patched `libgnutls30t64`. |
-| `CVE-2026-33846` | `libgnutls30t64` | 2026-05-06 | DoS via heap buffer overflow in DTLS handshake; affected, no fix released. Same package + transitive base-image dependency as `CVE-2026-33845`. | Debian ships a patched `libgnutls30t64`. |
-| `CVE-2026-3833`  | `libgnutls30t64` | 2026-05-07 | Policy bypass via case-sensitive nameConstraints comparison; affected, no fix released. Same transitive base-image dependency as the two entries above. | Debian ships a patched `libgnutls30t64`. |
+| `CVE-2026-25210` | `libexpat1` | 2026-04-24 | Integer-overflow info disclosure; affected, no fix released. expat is pulled in transitively (Python stdlib XML, ansible-runner). | Debian ships a patched `libexpat1`. |
 
-Last full review: **2026-05-07** (add date of the most recent
-entries). Next review: **2026-08-07**, or whenever a new release is
-cut, whichever is sooner.
+Last full review: **2026-05-27** — dropped 9 entries (systemd, 3×
+openssh-client, libnghttp2-14, libcap2, 3× libgnutls30t64) after
+Debian shipped fixes in trixie; the blanket `apt-get upgrade -y` in
+the Dockerfile now pulls them. Next review: **2026-08-27**, or
+whenever a new release is cut, whichever is sooner.
 
 ---
 

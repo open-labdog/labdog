@@ -4,6 +4,8 @@
 
 # LabDog
 
+[![ci](https://img.shields.io/github/actions/workflow/status/open-labdog/labdog/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=ci)](https://github.com/open-labdog/labdog/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/open-labdog/labdog?style=for-the-badge&logo=github&color=16a34a)](https://github.com/open-labdog/labdog/releases/latest)
 [![docker pulls](https://img.shields.io/docker/pulls/openlabdog/labdog?style=for-the-badge&logo=docker&logoColor=white&color=2563eb)](https://hub.docker.com/r/openlabdog/labdog)
 [![docs](https://img.shields.io/badge/docs-labdog-1e293b?style=for-the-badge)](https://open-labdog.github.io/labdog/)
 [![license](https://img.shields.io/badge/license-AGPL--3.0--or--later-d97706?style=for-the-badge)](LICENSE)
