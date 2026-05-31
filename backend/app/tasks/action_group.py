@@ -784,6 +784,7 @@ async def _snapshot_all(
             token_id=proxmox_node.token_id,
             token_secret=token_secret,
             verify_ssl=proxmox_node.verify_ssl,
+            ca_cert_pem=proxmox_node.ca_cert_pem,
         )
         ctx.proxmox_client = client
         ctx.pve_node = mapping.pve_node_name

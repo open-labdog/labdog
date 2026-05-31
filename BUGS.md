@@ -46,10 +46,4 @@ Filed 2026-05-21 from a `security-auditor` whitebox source-level
 review (commit `1108d67` as the audit baseline). Each entry was
 spot-checked against current HEAD before filing.
 
----
-
-### Pre-existing (filed prior to the security review)
-
-- [ ] **BUG-52** Proxmox CA certificate trust — allow uploading a PEM CA certificate per Proxmox node so labdog can verify the node's TLS certificate without disabling SSL verification entirely.
-
-  The `verify_ssl=False` workaround (BUG-45) bypasses all certificate validation. The proper fix is to accept a PEM CA bundle per node, store it encrypted in the DB, write it to a temp file at request time, and pass it as `verify=ca_cert_path` to `httpx.AsyncClient`. This lets nodes with self-signed or private-CA certificates be verified correctly without weakening security. Scope: new `ca_cert_pem` column on `proxmox_nodes`, schema and API changes, frontend PEM upload field, and `ProxmoxClient` changes to write the cert to a temp path.
+_No bugs are currently open._
