@@ -171,3 +171,32 @@ notice instead of double-releasing.
 
 To smoke-test the packaging path without cutting a real release,
 run `./packaging/build.sh` locally — there is no CI dry-run mode.
+
+### Before you open the release PR
+
+The `dev → main` PR uses the
+[`release.md`](.github/PULL_REQUEST_TEMPLATE/release.md) template,
+which renders this checklist automatically (append
+`?template=release.md` to the compare URL, or pass `--body-file`).
+Confirm each item — CI runs the full suite on the PR, but these are
+the human-owned steps it cannot verify:
+
+- [ ] `VERSION` bumped (one line, no `v` prefix, valid semver).
+- [ ] `CHANGELOG.md`: `[Unreleased]` → `[X.Y.Z] — YYYY-MM-DD`, fresh
+  empty `[Unreleased]` added, comparison-link refs updated.
+- [ ] **`docs/` updated for every user-visible feature in the
+  release.** This should already be true from each feature PR (see
+  [Pull requests](#pull-requests)); the release PR is the backstop
+  that catches anything missed.
+- [ ] `TODO.md`: items completed this cycle removed.
+- [ ] `BUGS.md`: bugs fixed this cycle deleted, fixing commit
+  references the bug ID.
+- [ ] `plans/` is absent (never ships on `dev` or `main`).
+- [ ] CI green on the PR: `version-check`, lint, `backend-test`,
+  `frontend-build-check`, `docs-build-check`, `build-test-image`,
+  trivy.
+
+Note: CI surfaces these checks on the PR but does not by itself
+*block* the merge — that requires the `main` branch ruleset to mark
+those job contexts as required status checks. Keep that ruleset
+enabled so a red build can't be merged.
