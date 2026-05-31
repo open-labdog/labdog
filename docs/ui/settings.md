@@ -73,6 +73,8 @@ Every setting shows its current value alongside the default. Click **Reset to de
 
 Manages the connection to one or more Proxmox hypervisor nodes. See [Proxmox integration](../README.md) for setup details.
 
+Beyond the per-node connection settings, the page exposes a **Discover VM Mappings** action that scans every configured node and links each LabDog host to its backing Proxmox VM/CT in one pass. Individual host↔VM mappings can also be discovered from a [host's detail page](hosts.md#proxmox-vm-mapping).
+
 ### TLS verification
 
 Each node has two TLS-related fields that together decide how LabDog

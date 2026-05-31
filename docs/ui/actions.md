@@ -647,12 +647,13 @@ to parse the rest still load — check the API server logs for
 `pack 'X': failed to load manifest …`.
 
 **"The wrong version of an action ran."** The amber badge tells you
-which pack won. If that's not what you want, drag the pack you want
-above it on the **Action Packs** page (top wins), or pin a specific
-winner via the per-key resolution dialog (open from the Contested
-chip in the Active Action Catalog or the conflict banner above the
-pack list). Disabling the winning pack works too if you don't need
-it at all.
+which pack won. If that's not what you want, pin the pack you want as
+the winner for that key on the **Action Packs** page — expand the
+contested row in the Active Action Catalog and pick it, or use the
+pack's **Make winner for all keys** button in Pack Sources to claim
+every key it contributes. Disabling the unwanted pack works too if
+you don't need it at all. (There is no pack ordering — precedence is
+per-key pinning, not a global priority.)
 
 **"The action doesn't show up on a host but shows on groups."** Check
 the manifest's `supports_host` / `supports_group` flags.
