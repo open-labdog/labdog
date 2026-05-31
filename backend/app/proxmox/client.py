@@ -4,6 +4,7 @@ All I/O is performed with httpx.AsyncClient. Secrets are never logged.
 """
 
 import asyncio
+import ssl
 from typing import Any
 
 import httpx
@@ -39,6 +40,11 @@ class ProxmoxClient:
         token_id: API token identifier in ``user@realm!tokenname`` form.
         token_secret: Secret UUID for the API token.
         verify_ssl: Whether to verify TLS certificates (default ``True``).
+        ca_cert_pem: Optional PEM-encoded CA certificate(s) to trust when
+            verifying the node's TLS certificate. When ``verify_ssl`` is
+            ``True`` and this is set, an in-memory :class:`ssl.SSLContext`
+            built from the PEM is used for verification instead of the
+            system trust store. Ignored when ``verify_ssl`` is ``False``.
     """
 
     def __init__(
@@ -47,26 +53,59 @@ class ProxmoxClient:
         token_id: str,
         token_secret: str,
         verify_ssl: bool = True,
+        ca_cert_pem: str | None = None,
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.token_id = token_id
         self.token_secret = token_secret
         self.verify_ssl = verify_ssl
+        self.ca_cert_pem = ca_cert_pem
+        self._ssl_context: ssl.SSLContext | None = None
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _get_ssl_context(self) -> ssl.SSLContext:
+        """Lazily build and cache an :class:`ssl.SSLContext` from the CA PEM.
+
+        The context trusts only the uploaded CA certificate(s); hostname
+        checking remains enabled (the node cert's CN/SAN must match the
+        ``api_url`` host). Malformed PEM — e.g. a manually-edited DB row that
+        bypassed API validation — surfaces as :class:`ProxmoxError` rather
+        than a raw :class:`ssl.SSLError`.
+        """
+        if self._ssl_context is None:
+            try:
+                self._ssl_context = ssl.create_default_context(cadata=self.ca_cert_pem)
+            except Exception as exc:
+                raise ProxmoxError(f"Invalid CA certificate: {exc}") from exc
+        return self._ssl_context
 
     def _get_client(self) -> httpx.AsyncClient:
         """Return a configured :class:`httpx.AsyncClient`.
 
         The Authorization header uses the Proxmox API token scheme.
         ``token_secret`` is embedded in the header value and never logged.
+
+        ``verify`` is selected per the BUG-52 matrix:
+
+        * ``verify_ssl=False`` → ``verify=False`` (no verification; CA ignored).
+        * ``verify_ssl=True`` and ``ca_cert_pem`` set → an
+          :class:`ssl.SSLContext` built from the PEM.
+        * ``verify_ssl=True`` and ``ca_cert_pem`` unset → ``verify=True``
+          (system trust store).
         """
         headers = {
             "Authorization": f"PVEAPIToken={self.token_id}={self.token_secret}",
         }
-        return httpx.AsyncClient(headers=headers, verify=self.verify_ssl)
+        if not self.verify_ssl:
+            verify: bool | ssl.SSLContext = False
+        elif self.ca_cert_pem:
+            verify = self._get_ssl_context()
+        else:
+            verify = True
+        return httpx.AsyncClient(headers=headers, verify=verify)
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
         """Execute an HTTP request and return the ``data`` field of the response.
