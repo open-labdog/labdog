@@ -15,7 +15,7 @@ import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 import { Tooltip } from "@/components/ui/tooltip"
 import { ShieldIcon, FileTextIcon, ServerIcon, UsersIcon, ClockIcon, PackageIcon, GlobeIcon, ShieldCheckIcon } from "lucide-react"
-import type { HostGroup, HostSummary, ModuleCounts, SyncStatus, PendingSummary } from "@/lib/types"
+import type { HostGroup, HostSummary, ModuleCounts, SyncStatus, PendingSummary, ProxmoxNode, VMMapping } from "@/lib/types"
 
 const MODULE_ICONS: { key: keyof ModuleCounts; icon: typeof ShieldIcon; label: string }[] = [
   { key: "firewall", icon: ShieldIcon, label: "Firewall" },
@@ -101,11 +101,26 @@ export default function HostsPage() {
     queryFn: () => apiFetch<PendingSummary>("/api/scans/pending-summary"),
     refetchInterval: 30000,
   })
+  const { data: proxmoxNodes } = useQuery<ProxmoxNode[]>({
+    queryKey: ["proxmox-nodes"],
+    queryFn: () => apiFetch<ProxmoxNode[]>("/api/proxmox/nodes"),
+  })
+  const hasProxmox = (proxmoxNodes?.length ?? 0) > 0
+  const { data: vmMappings } = useQuery<VMMapping[]>({
+    queryKey: ["vm-mappings"],
+    queryFn: () => apiFetch<VMMapping[]>("/api/proxmox/vm-mappings"),
+    enabled: hasProxmox,
+  })
   const groupMap = useMemo(() => {
     const map = new Map<number, HostGroup>()
     groups?.forEach(g => map.set(g.id, g))
     return map
   }, [groups])
+  const mappingByHost = useMemo(() => {
+    const map = new Map<number, VMMapping>()
+    vmMappings?.forEach(vm => map.set(vm.host_id, vm))
+    return map
+  }, [vmMappings])
   const showLoading = useDelayedLoading(isLoading)
 
   const filteredHosts = hosts?.filter(h => {
@@ -417,6 +432,26 @@ export default function HostsPage() {
               defaultWidth: 180,
               filter: { type: "text", placeholder: "group name" },
             },
+            ...(hasProxmox ? [{
+              key: "proxmox",
+              label: "Proxmox",
+              accessor: (h: HostSummary) => mappingByHost.get(h.id)?.vm_name ?? "",
+              cell: (h: HostSummary) => {
+                const vm = mappingByHost.get(h.id)
+                if (!vm) return <span className="text-slate-600 text-xs italic">Not mapped</span>
+                const kind = vm.vm_type?.toLowerCase() === "lxc" ? "CT" : "VM"
+                return (
+                  <div className="leading-relaxed">
+                    <div className="text-sm text-slate-300 truncate">{vm.vm_name}</div>
+                    <div className="text-xs text-slate-500">
+                      {kind} {vm.vmid} · {vm.pve_node_name}
+                    </div>
+                  </div>
+                )
+              },
+              defaultWidth: 180,
+              filter: { type: "text" as const, placeholder: "vm name" },
+            }] : []),
             {
               key: "overrides",
               label: "Overrides",

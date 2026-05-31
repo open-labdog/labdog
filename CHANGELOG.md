@@ -7,6 +7,8 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-31
+
 ### Changed
 
 #### Bundled action pack is now fetched at build time from `labdog-playbooks`
@@ -640,6 +642,7 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/open-labdog/labdog/compare/v0.2.5...v0.3.0
 [0.2.0]: https://github.com/open-labdog/labdog/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/open-labdog/labdog/releases/tag/v0.1.0

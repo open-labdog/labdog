@@ -25,6 +25,20 @@ async def trigger_full_discovery(
     return await discover_all_vms(db)
 
 
+@router.get("/vm-mappings", response_model=list[VMMappingResponse])
+async def list_vm_mappings(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return every cached VM mapping across all hosts.
+
+    Read-only — does not trigger a Proxmox scan. Used by the hosts
+    overview to annotate each host with its Proxmox VM identity.
+    """
+    result = await db.execute(select(VMMapping))
+    return list(result.scalars().all())
+
+
 @router.get("/hosts/{host_id}/vm-mapping", response_model=VMMappingResponse | None)
 async def get_host_vm_mapping(
     host_id: int,
