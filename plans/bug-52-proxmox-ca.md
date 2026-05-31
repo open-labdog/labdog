@@ -53,23 +53,30 @@ request is correct but wasteful). Wrap the build defensively and surface
 malformed-PEM failures as `ProxmoxError` to guard against manually-edited
 DB rows (validation at the API boundary makes this rare).
 
-**2. PEM validation → reuse `app.ca_certs.pem_utils`.**
-A vetted validator already exists at
-[backend/app/ca_certs/pem_utils.py](../backend/app/ca_certs/pem_utils.py):
-- `validate_pem_content(pem) -> str` strips/validates, raising
-  `ValueError` (→ Pydantic 422) on bad input.
-- `parse_pem_certificate` / `compute_fingerprint` extract
-  fingerprint/subject/issuer/validity.
+**2. PEM validation → accept any parseable X.509 cert (maintainer decision).**
+**Do NOT reuse `pem_utils.validate_pem_content` as-is** — it enforces
+`basicConstraints` `CA:TRUE` and would reject a self-signed *leaf* node
+cert, which is the common BUG-45 scenario we explicitly want to support
+(a single self-signed Proxmox node cert used as its own trust anchor).
+Instead, validate only that the input parses as one or more X.509
+certificates, with no CA:TRUE requirement:
+- Write a small local validator (in `schemas.py` or a new
+  `pem_utils.validate_any_certificate`) that calls
+  `cryptography.x509.load_pem_x509_certificates(pem.encode())` (plural;
+  accepts a chain) and raises `ValueError` (→ Pydantic 422) if zero certs
+  parse or loading fails.
+- Reuse `compute_fingerprint` only if it does not internally enforce
+  CA:TRUE; otherwise compute the SHA-256 fingerprint directly
+  (`cert.fingerprint(hashes.SHA256()).hex()` on the first/leaf cert).
 
-Add a `field_validator("ca_cert_pem")` on Create/Update that validates
-only non-blank values, plus an explicit size cap (e.g. reject > 64 KB)
-before parsing.
+Add the validator via `field_validator("ca_cert_pem")` on Create/Update,
+validating only non-blank values, plus an explicit size cap (e.g. reject
+> 64 KB) before parsing.
 
-> **Caveat (see open question):** `pem_utils.parse_pem_certificate`
-> *rejects* certs whose `basicConstraints` is missing or `CA:FALSE`. That
-> is correct for "upload a CA", but an operator pasting a self-signed
-> *leaf* node cert (common BUG-45 scenario) would be rejected with "not a
-> CA certificate".
+> **Note:** because we accept any cert, an operator can paste either a
+> real CA or a self-signed node leaf cert; both become trust anchors via
+> `ssl.create_default_context(cadata=...)`. Hostname/SAN checking still
+> applies (see Edge cases).
 
 **3. Response exposure → metadata only, not the raw PEM.**
 Add to `ProxmoxNodeResponse`:
@@ -156,11 +163,14 @@ gets one added kwarg `ca_cert_pem=<record>.ca_cert_pem`:
 
 ### Schemas / validation
 10. [backend/app/proxmox/schemas.py](../backend/app/proxmox/schemas.py):
-    - Import `validate_pem_content`, `compute_fingerprint`,
-      `parse_pem_certificate` from `app.ca_certs.pem_utils`.
+    - Add an "accept any X.509" validator: either
+      `pem_utils.validate_any_certificate` (new) or inline
+      `cryptography.x509.load_pem_x509_certificates`. Do **not** call the
+      CA:TRUE-enforcing `validate_pem_content`. Provide a fingerprint
+      helper that works on a leaf cert.
     - `ProxmoxNodeCreate`: add `ca_cert_pem: str | None = None` +
-      `field_validator` (blank → unchanged; else size-check +
-      `validate_pem_content`).
+      `field_validator` (blank → unchanged; else size-check + parse-as-
+      X.509).
     - `ProxmoxNodeUpdate`: same field + validator, but allow `""`
       through (clear sentinel) — validate only non-blank values.
     - `ProxmoxNodeResponse`: add `has_ca_cert: bool` and
@@ -247,8 +257,10 @@ today.
   checking. If the Proxmox cert CN/SAN doesn't match the `api_url` host,
   verification fails even with the right CA — correct/secure but a likely
   support question. Document that the cert needs a SAN matching the host.
-- **CA:TRUE enforcement**: reusing `pem_utils` rejects non-CA certs (see
-  open question).
+- **Any-cert trust anchor**: we accept self-signed leaf certs (not just
+  CAs). `cadata` loads them as trust anchors; combined with hostname
+  checking this is equivalent to per-node cert trust — acceptable and the
+  intended BUG-45 fix.
 - **Cert expiry**: an expired uploaded CA fails at request time as
   `ProxmoxError`; could warn in the UI via `ca_cert_not_after`.
 
@@ -265,19 +277,18 @@ today.
 - Reworking `ProxmoxClient` to reuse a single `AsyncClient` across
   requests.
 
-## Open questions for the maintainer
+## Resolved decisions (maintainer)
 
-- **CA:TRUE requirement**: require a real CA cert (reuse
-  `pem_utils.validate_pem_content`, which rejects `CA:FALSE`/leaf certs),
-  or accept any parseable X.509 cert so self-signed *node* certs work
-  directly? *(Recommendation: require CA; document that self-signed node
-  certs should set `CA:TRUE` or upload the cluster CA.)*
-- **Response exposure**: metadata-only (`has_ca_cert` + fingerprint
-  [+ subject/expiry]) vs returning the full PEM. *(Recommendation:
-  metadata-only.)*
-- **Auth**: keep `current_active_user`, or move all proxmox write paths
-  to superuser as part of this work? *(Recommendation: keep; treat
-  superuser as separate.)*
-- **Audit**: record CA presence/fingerprint in the `proxmox_node` audit
-  `after_state`? *(Recommendation: yes — presence + fingerprint, never
-  the PEM body.)*
+All four open questions are decided — no blockers remain for
+implementation:
+
+- **CA validation**: **accept any parseable X.509 cert** (no CA:TRUE
+  requirement), so self-signed node leaf certs work directly as trust
+  anchors. Implemented via a parse-only validator (see step 10), NOT
+  `validate_pem_content`.
+- **Response exposure**: **metadata-only** — `has_ca_cert` +
+  `ca_cert_fingerprint` (optionally subject/expiry); never the raw PEM.
+- **Auth**: **keep `current_active_user`** on the proxmox endpoints.
+  Tightening to superuser is out of scope / a separate decision.
+- **Audit**: **record CA presence + fingerprint** in the `proxmox_node`
+  audit `after_state`; never log the PEM body.
