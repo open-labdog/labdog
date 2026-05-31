@@ -117,6 +117,8 @@ export interface ProxmoxNode {
   api_url: string
   token_id: string
   verify_ssl: boolean
+  has_ca_cert: boolean
+  ca_cert_fingerprint?: string | null
   created_at: string
   updated_at: string
 }

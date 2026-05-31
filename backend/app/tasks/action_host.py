@@ -342,6 +342,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                             token_id=proxmox_node.token_id,
                             token_secret=token_secret,
                             verify_ssl=proxmox_node.verify_ssl,
+                            ca_cert_pem=proxmox_node.ca_cert_pem,
                         )
             except ImportError:
                 logger.debug(

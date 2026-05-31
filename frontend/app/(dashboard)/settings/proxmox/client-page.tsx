@@ -28,6 +28,8 @@ interface NodeFormState {
   token_id: string
   token_secret: string
   verify_ssl: boolean
+  ca_cert_pem: string
+  ca_cert_clear: boolean
 }
 
 const emptyForm: NodeFormState = {
@@ -36,6 +38,8 @@ const emptyForm: NodeFormState = {
   token_id: "",
   token_secret: "",
   verify_ssl: true,
+  ca_cert_pem: "",
+  ca_cert_clear: false,
 }
 
 export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean } = {}) {
@@ -89,6 +93,8 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
       token_id: node.token_id,
       token_secret: "",
       verify_ssl: node.verify_ssl,
+      ca_cert_pem: "",
+      ca_cert_clear: false,
     })
     setFormError(null)
     setDialogOpen(true)
@@ -108,21 +114,33 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
         if (form.token_secret) {
           payload.token_secret = form.token_secret
         }
+        // CA cert is tri-state on PUT: a pasted value replaces, an explicit
+        // clear sends "" (NULL the column), and omitting leaves it unchanged.
+        if (form.ca_cert_pem.trim()) {
+          payload.ca_cert_pem = form.ca_cert_pem
+        } else if (form.ca_cert_clear) {
+          payload.ca_cert_pem = ""
+        }
         await apiFetch(`/api/proxmox/nodes/${editingNode.id}`, {
           method: "PUT",
           json: payload,
         })
         showSuccess("Proxmox node updated")
       } else {
+        const payload: Record<string, unknown> = {
+          name: form.name,
+          api_url: form.api_url,
+          token_id: form.token_id,
+          token_secret: form.token_secret,
+          verify_ssl: form.verify_ssl,
+        }
+        // Only send a CA cert on create when one was actually pasted.
+        if (form.ca_cert_pem.trim()) {
+          payload.ca_cert_pem = form.ca_cert_pem
+        }
         await apiFetch("/api/proxmox/nodes", {
           method: "POST",
-          json: {
-            name: form.name,
-            api_url: form.api_url,
-            token_id: form.token_id,
-            token_secret: form.token_secret,
-            verify_ssl: form.verify_ssl,
-          },
+          json: payload,
         })
         showSuccess("Proxmox node created")
       }
@@ -288,6 +306,25 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
               filter: { type: "boolean" },
             },
             {
+              key: "has_ca_cert",
+              label: "CA Cert",
+              accessor: (n) => n.has_ca_cert,
+              cell: (n) => n.has_ca_cert
+                ? (
+                  <span
+                    className="text-green-400 text-sm font-mono"
+                    title={n.ca_cert_fingerprint ?? undefined}
+                  >
+                    {n.ca_cert_fingerprint
+                      ? `${n.ca_cert_fingerprint.slice(0, 16)}…`
+                      : "Yes"}
+                  </span>
+                )
+                : <span className="text-slate-500 text-sm">—</span>,
+              defaultWidth: 160,
+              filter: { type: "boolean" },
+            },
+            {
               key: "actions",
               label: "Actions",
               cell: (node) => (
@@ -385,6 +422,69 @@ export default function ProxmoxSettingsPage({ embedded }: { embedded?: boolean }
               />
               <Label htmlFor="node-verify-ssl">Verify SSL certificate</Label>
             </div>
+
+            {form.verify_ssl && (
+              <div className="space-y-2">
+                <Label htmlFor="node-ca-cert">CA certificate (PEM, optional)</Label>
+                {editingNode?.has_ca_cert && !form.ca_cert_clear && (
+                  <p className="text-sm text-slate-400">
+                    CA configured
+                    {editingNode.ca_cert_fingerprint && (
+                      <>
+                        :{" "}
+                        <span className="font-mono text-slate-300 break-all">
+                          {editingNode.ca_cert_fingerprint}
+                        </span>
+                      </>
+                    )}{" "}
+                    — paste a new PEM to replace, or{" "}
+                    <button
+                      type="button"
+                      className="text-red-400 hover:text-red-300 underline"
+                      onClick={() =>
+                        setForm((prev) => ({ ...prev, ca_cert_pem: "", ca_cert_clear: true }))
+                      }
+                    >
+                      Clear CA
+                    </button>{" "}
+                    to remove.
+                  </p>
+                )}
+                {editingNode?.has_ca_cert && form.ca_cert_clear && (
+                  <p className="text-sm text-yellow-400">
+                    CA will be cleared on save.{" "}
+                    <button
+                      type="button"
+                      className="text-slate-300 hover:text-white underline"
+                      onClick={() =>
+                        setForm((prev) => ({ ...prev, ca_cert_clear: false }))
+                      }
+                    >
+                      Undo
+                    </button>
+                  </p>
+                )}
+                <textarea
+                  id="node-ca-cert"
+                  rows={6}
+                  placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"}
+                  value={form.ca_cert_pem}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      ca_cert_pem: e.target.value,
+                      // Typing a PEM supersedes an explicit clear.
+                      ca_cert_clear: e.target.value.trim() ? false : prev.ca_cert_clear,
+                    }))
+                  }
+                  className="w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30"
+                />
+                <p className="text-xs text-slate-500">
+                  Verify the node&apos;s TLS certificate against this CA (or self-signed cert)
+                  instead of the system trust store. Leave blank to use the system trust store.
+                </p>
+              </div>
+            )}
 
             {formError && <p className="text-sm text-red-400">{formError}</p>}
 
