@@ -26,9 +26,10 @@ and how to back out cleanly when something goes wrong.
 
 ## Compatibility
 
-v0.2.0 is the current released line. Upgrades from v0.1.0 → v0.2.0
-follow the procedure below; the alembic chain is forward-only and
-covers the schema changes between the two releases.
+v0.3.0 is the current released line. The alembic migration chain is
+forward-only and covers every schema change since v0.1.0, so
+upgrading from any earlier release to the latest follows the single
+procedure below.
 
 Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
@@ -111,7 +112,7 @@ services:
 ### Debian / Ubuntu (.deb)
 
 ```bash
-VERSION=0.2.0
+VERSION=0.3.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog_${VERSION}-1_amd64.deb
 sudo apt install ./labdog_${VERSION}-1_amd64.deb
 
@@ -123,7 +124,7 @@ sudo journalctl -u labdog -f
 ### RHEL / Fedora / Rocky (.rpm)
 
 ```bash
-VERSION=0.2.0
+VERSION=0.3.0
 curl -LO https://github.com/open-labdog/labdog/releases/download/v${VERSION}/labdog-${VERSION}-1.x86_64.rpm
 sudo dnf install ./labdog-${VERSION}-1.x86_64.rpm
 
@@ -140,7 +141,7 @@ Three checks, in order:
 ```bash
 # 1. Version reported by the running process matches the tag.
 curl -fsS http://127.0.0.1:8000/api/version
-# → {"version":"0.2.0","commit_sha":"…","commit_sha_short":"…",
+# → {"version":"0.3.0","commit_sha":"…","commit_sha_short":"…",
 #    "build_date":"2026-05-12T09:14:37Z",
 #    "license":"AGPL-3.0-or-later",
 #    "repo_url":"https://github.com/open-labdog/labdog"}

@@ -325,24 +325,36 @@ sudo ./uninstall.sh --purge  # removes everything
    ```
 
 4. Access:
-   - Frontend: http://localhost:3000
-   - API: http://localhost:8000
+   - Web UI and API: http://localhost:8000 — the container serves the built frontend and the API on a single port
    - Health check: http://localhost:8000/health
+
+   (`http://localhost:3000` is only the Next.js dev server used in [local development](#local-development), not the Docker Compose stack.)
 
 5. Register the first user (automatically becomes available for superuser promotion).
 
 ## Environment Variables
 
+LabDog reads settings as environment variables using the pattern
+`LABDOG_<SECTION>__<KEY>` (double underscore between section and key) —
+e.g. `LABDOG_SERVER__PORT=9000`. They can also be set in
+`dev/labdog.toml`; env vars override the file. See
+[`.env.example`](../.env.example) for the full reference. The most
+common ones:
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password |
-| `SECRET_KEY` | Yes (production) | `change-me-in-production` | JWT signing key |
-| `ENCRYPTION_KEY` | Yes (production) | -- | AES-256-GCM master key for SSH key encryption (32 bytes; standard or url-safe base64) |
-| `LABDOG_SERVER_IP` | Yes | `127.0.0.1` | IP of the LabDog server (used in SSH lockout rule) |
-| `NEXT_PUBLIC_API_URL` | Frontend | `http://localhost:8000` | Backend API URL |
-| `DATABASE_URL` | Auto (Docker) | `postgresql+asyncpg://labdog:labdog@localhost:5432/labdog` | Async PostgreSQL connection string |
-| `REDIS_URL` | Auto (Docker) | `redis://localhost:6379/0` | Redis URL for Celery broker and result backend |
-| `DRIFT_CHECK_INTERVAL_MINUTES` | No | `30` | Interval for automatic drift detection checks |
+| `LABDOG_SECURITY__SECRET_KEY` | Yes (production) | `change-me-in-production` (insecure default rejected at startup) | JWT signing key |
+| `LABDOG_SECURITY__ENCRYPTION_KEY` | Yes (production) | insecure default rejected at startup | AES-256-GCM master key for encrypting stored SSH keys, Proxmox API tokens, and git HTTPS PATs (must decode to 32 bytes; standard or url-safe base64) |
+| `LABDOG_DATABASE__URL` | Auto (Docker) | `postgresql+asyncpg://labdog:labdog@localhost:5432/labdog` | Async PostgreSQL connection string |
+| `LABDOG_REDIS__URL` | Auto (Docker) | `redis://localhost:6379/0` | Redis URL for the Celery broker and result backend |
+| `LABDOG_SECURITY__LABDOG_SERVER_IP` | No | `127.0.0.1` | IP of the LabDog server (used in the auto-injected SSH lockout rule) |
+| `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password — consumed by the `postgres` container and interpolated into `LABDOG_DATABASE__URL` in the compose file |
+| `NEXT_PUBLIC_API_URL` | Frontend build | `http://localhost:8000` | Backend API URL baked into the frontend at build time |
+
+> Operational settings (drift interval, log level, SSH/Ansible
+> timeouts, audit retention, discovery tuning) are managed on the
+> **Settings** page and stored in the database — they are not set via
+> environment variables.
 
 ## Local Development
 
