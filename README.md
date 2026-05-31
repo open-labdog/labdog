@@ -15,12 +15,12 @@ Manage firewall rules, systemd services, `/etc/hosts`, packages, users and more 
 ## Try it in 30 seconds
 
 ```bash
-docker run -d --name labdog -p 8080:8080 \
+docker run -d --name labdog -p 8000:8000 \
   -v labdog-data:/var/lib/labdog \
   openlabdog/labdog:latest
 ```
 
-Then open <http://localhost:8080> and register the first admin user.
+Then open <http://localhost:8000> and register the first admin user.
 
 → **[Docker Hub](https://hub.docker.com/r/openlabdog/labdog)** for image tags, signed digests, and `compose` examples
 

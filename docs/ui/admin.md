@@ -39,8 +39,9 @@ Manages Git repository connections used for GitOps-driven configuration. See [Gi
 
 An append-only log of every change made through LabDog. Events come
 from API writes (group/host/module mutations, GitOps repo CRUD,
-action-pack mutations, settings changes), sync and workflow runs,
-discovery runs, and terminal session lifecycle events.
+action-pack mutations, settings changes), sync and action runs
+(ad-hoc and scheduled), discovery runs, and terminal session
+lifecycle events.
 
 Sync events come in pairs: `sync_triggered` (at API entry — records
 the operator's intent and the requested `module_filter`) and
