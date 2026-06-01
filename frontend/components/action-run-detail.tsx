@@ -63,7 +63,8 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
             const text = await res.text()
             // Prefix per-host section only when there are multiple hosts (group run)
             if (run.host_runs.length > 1) {
-              return `===== Host ${hr.host_id} (${hr.status}) =====\n${text}\n`
+              const label = hr.hostname ?? `Host ${hr.host_id}`
+              return `===== ${label} (${hr.status}) =====\n${text}\n`
             }
             return text
           } catch {
@@ -225,7 +226,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
                 key={hr.id}
                 className="flex items-center justify-between rounded border border-slate-700 bg-slate-800/50 px-3 py-2"
               >
-                <span className="text-xs text-slate-400 truncate">Host {hr.host_id}</span>
+                <span className="text-xs text-slate-400 truncate">{hr.hostname ?? `Host ${hr.host_id}`}</span>
                 <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
               </div>
             ))}
