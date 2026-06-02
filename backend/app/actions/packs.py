@@ -102,6 +102,7 @@ def _manifest_to_definition(
         roles_paths=roles_paths,
         verify_playbook_path=verify_playbook_path,
         verify_timeout_seconds=manifest.verify_timeout_seconds,
+        playbook_timeout_seconds=manifest.playbook_timeout_seconds,
         post_run_sync=tuple(manifest.post_run_sync),
         post_run_register={
             module: tuple(items) for module, items in manifest.post_run_register.items()
