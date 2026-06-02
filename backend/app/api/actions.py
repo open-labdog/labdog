@@ -282,12 +282,20 @@ async def get_run(
         raise HTTPException(status_code=404, detail="Action run not found")
 
     host_runs_result = await db.execute(
-        select(ActionHostRun).where(ActionHostRun.action_run_id == id).order_by(ActionHostRun.id)
+        select(ActionHostRun, Host.hostname)
+        .outerjoin(Host, Host.id == ActionHostRun.host_id)
+        .where(ActionHostRun.action_run_id == id)
+        .order_by(ActionHostRun.id)
     )
-    host_runs = host_runs_result.scalars().all()
+    host_runs = host_runs_result.all()
 
     out = ActionRunOut.model_validate(run)
-    out.host_runs = [ActionHostRunOut.model_validate(hr) for hr in host_runs]
+    host_runs_out: list[ActionHostRunOut] = []
+    for hr, hostname in host_runs:
+        hr_out = ActionHostRunOut.model_validate(hr)
+        hr_out.hostname = hostname
+        host_runs_out.append(hr_out)
+    out.host_runs = host_runs_out
     return out
 
 
