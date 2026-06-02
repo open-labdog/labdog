@@ -396,6 +396,12 @@ supports_host: true          # can target a single host?
 supports_fleet: false        # can target every host in the inventory?
                              # Conservative default; flip to true only for
                              # truly fleet-wide work (drift checks, etc.).
+playbook_timeout_seconds: 1800  # optional; floor for the main playbook's
+                             # wall-clock budget. Effective timeout is
+                             # max(this, the global ansible.playbook_timeout
+                             # setting). Omit to use the global setting alone.
+                             # Set it for long actions (e.g. package upgrades)
+                             # the short global default can't accommodate.
 parameters:                  # passed as --extra-vars at run time
   - key: my_param
     label: My parameter

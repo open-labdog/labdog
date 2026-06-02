@@ -250,6 +250,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             action_roles_paths: tuple = action.roles_paths
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            action_playbook_timeout: int | None = action.playbook_timeout_seconds
             # Run-time toggles mirrored from ScheduledAction at dispatch time.
             # Honoured the same way as action_group.py — see Phases A/D/E.
             # Ignored when the action is non-destructive (no envelope runs).
@@ -380,6 +381,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         except Exception:
             timeout = 1800
+        # A per-action floor (manifest ``playbook_timeout_seconds``) lets a
+        # long-running action guarantee itself enough budget without forcing
+        # operators to raise the global limit for every playbook. The global
+        # setting can only widen it further, never shrink it below the floor.
+        if action_playbook_timeout:
+            timeout = max(timeout, action_playbook_timeout)
 
         # ------------------------------------------------------------------ #
         # Optional pre-update snapshot (destructive + VM mapping only)        #
