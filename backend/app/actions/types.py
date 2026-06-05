@@ -72,6 +72,11 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: Optional mapping of LabDog's default Grafana instance URLs onto this
+    #: action's playbook var names (see ``ActionManifest.metrics_backend``).
+    #: ``None`` = no injection. Stored as a plain dict to keep the dataclass
+    #: free of the pydantic model.
+    metrics_backend: dict[str, str] | None = None
     #: Per-action floor for the MAIN playbook's wall-clock timeout, in
     #: seconds. ``None`` means "use the global ``ansible.playbook_timeout``
     #: setting alone"; when set, the executor uses ``max(setting, this)`` so

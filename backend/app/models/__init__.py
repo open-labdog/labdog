@@ -34,6 +34,7 @@ _EXTERNAL_MODELS = {
     "AppSetting": "app.models.app_setting",
     "ProxmoxNode": "app.proxmox.models",
     "VMMapping": "app.proxmox.vm_mapping",
+    "GrafanaInstance": "app.grafana.models",
     "ActionPack": "app.packs.models",
     "ActionResolution": "app.packs.models",
     "ActionRegistrySnapshot": "app.packs.models",
