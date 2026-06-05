@@ -29,6 +29,11 @@ function stripAnsi(text: string): string {
 export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailProps) {
   const queryClient = useQueryClient()
   const [output, setOutput] = useState("")
+  // Per-host output, keyed by host_id, for the click-to-filter view.
+  // `undefined` entry = not fetched yet (shows a loading hint).
+  const [hostOutputs, setHostOutputs] = useState<Record<number, string>>({})
+  // Which host's log to show. null = combined "All hosts" view.
+  const [selectedHostId, setSelectedHostId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
   const outputRef = useRef<HTMLPreElement>(null)
   const [cancelling, setCancelling] = useState(false)
@@ -53,26 +58,34 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
 
     let cancelled = false
     ;(async () => {
-      const parts = await Promise.all(
+      const entries = await Promise.all(
         run.host_runs.map(async (hr) => {
           try {
             const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/hosts/${hr.host_id}/output`, {
               credentials: "include",
             })
-            if (!res.ok) return ""
-            const text = await res.text()
-            // Prefix per-host section only when there are multiple hosts (group run)
-            if (run.host_runs.length > 1) {
-              const label = hr.hostname ?? `Host ${hr.host_id}`
-              return `===== ${label} (${hr.status}) =====\n${text}\n`
-            }
-            return text
+            return { hr, text: res.ok ? stripAnsi(await res.text()) : "" }
           } catch {
-            return ""
+            return { hr, text: "" }
           }
         }),
       )
-      if (!cancelled) setOutput(stripAnsi(parts.join("\n")))
+      if (cancelled) return
+      // Cache each host's log so clicking a host card switches instantly.
+      const map: Record<number, string> = {}
+      for (const { hr, text } of entries) map[hr.host_id] = text
+      setHostOutputs(map)
+      // Combined "All hosts" view: prefix per-host sections only for group runs.
+      const combined =
+        run.host_runs.length > 1
+          ? entries
+              .map(
+                ({ hr, text }) =>
+                  `===== ${hr.hostname ?? `Host ${hr.host_id}`} (${hr.status}) =====\n${text}\n`,
+              )
+              .join("\n")
+          : entries.map((e) => e.text).join("\n")
+      setOutput(combined)
     })()
 
     return () => {
@@ -123,12 +136,34 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runId, run?.status, queryClient])
 
-  // Auto-scroll output
+  // Auto-scroll output (also when switching the selected host)
   useEffect(() => {
     if (pinToBottom && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [output, pinToBottom])
+  }, [output, hostOutputs, selectedHostId, pinToBottom])
+
+  // Toggle the per-host log filter. Clicking the active host clears back to
+  // the combined view. Fetches the host's log on demand if it isn't cached
+  // yet (e.g. a still-running run, where the terminal-fetch effect hasn't
+  // populated the map).
+  async function selectHost(hostId: number) {
+    if (selectedHostId === hostId) {
+      setSelectedHostId(null)
+      return
+    }
+    setSelectedHostId(hostId)
+    if (hostOutputs[hostId] !== undefined) return
+    try {
+      const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/hosts/${hostId}/output`, {
+        credentials: "include",
+      })
+      const text = res.ok ? stripAnsi(await res.text()) : ""
+      setHostOutputs((prev) => ({ ...prev, [hostId]: text }))
+    } catch {
+      setHostOutputs((prev) => ({ ...prev, [hostId]: "" }))
+    }
+  }
 
   async function handleCancel() {
     setCancelling(true)
@@ -145,6 +180,22 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
 
   const isTerminal = run && TERMINAL.has(run.status)
   const isGroupRun = run?.group_id != null
+
+  // Resolve the currently-selected host + what the output pane should show.
+  const selectedHost =
+    selectedHostId !== null ? run?.host_runs.find((hr) => hr.host_id === selectedHostId) ?? null : null
+  const selectedLabel = selectedHost ? selectedHost.hostname ?? `Host ${selectedHost.host_id}` : null
+  const paneText = selectedHostId !== null ? hostOutputs[selectedHostId] ?? "" : output
+  const paneFallback =
+    selectedHostId !== null
+      ? hostOutputs[selectedHostId] === undefined
+        ? "Loading…"
+        : "(no output captured for this host)"
+      : isLoading
+        ? "Loading…"
+        : isTerminal
+          ? "(no output captured)"
+          : "Waiting for output…"
 
   // Derive the back link from the fetched run so it is always correct
   // regardless of which URL the user navigated from.
@@ -216,20 +267,45 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       )}
 
       {/* Per-host status grid for group runs. Host-scoped runs already
-          show the host in the header, so the grid is hidden there. */}
+          show the host in the header, so the grid is hidden there. Each
+          card is clickable to filter the output pane to that host. */}
       {isGroupRun && run && run.host_runs.length > 0 && (
         <div>
-          <h3 className="text-sm font-semibold text-slate-200 mb-3">Host Status</h3>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-            {run.host_runs.map((hr: ActionHostRun) => (
-              <div
-                key={hr.id}
-                className="flex items-center justify-between rounded border border-slate-700 bg-slate-800/50 px-3 py-2"
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-slate-200">Host Status</h3>
+            {selectedHostId !== null && (
+              <button
+                type="button"
+                onClick={() => setSelectedHostId(null)}
+                className="text-xs text-slate-400 hover:text-white"
               >
-                <span className="text-xs text-slate-400 truncate">{hr.hostname ?? `Host ${hr.host_id}`}</span>
-                <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
-              </div>
-            ))}
+                Show all hosts
+              </button>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+            {run.host_runs.map((hr: ActionHostRun) => {
+              const selected = selectedHostId === hr.host_id
+              return (
+                <button
+                  key={hr.id}
+                  type="button"
+                  onClick={() => selectHost(hr.host_id)}
+                  aria-pressed={selected}
+                  title={`Show ${hr.hostname ?? `Host ${hr.host_id}`} log`}
+                  className={`flex items-center justify-between rounded border px-3 py-2 text-left transition-colors ${
+                    selected
+                      ? "border-sky-500 bg-sky-500/10"
+                      : "border-slate-700 bg-slate-800/50 hover:border-slate-500"
+                  }`}
+                >
+                  <span className="text-xs text-slate-400 truncate">
+                    {hr.hostname ?? `Host ${hr.host_id}`}
+                  </span>
+                  <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -237,7 +313,9 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       {/* Output pane */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold text-slate-200">Ansible Output</h3>
+          <h3 className="text-sm font-semibold text-slate-200">
+            Ansible Output{selectedLabel ? ` — ${selectedLabel}` : ""}
+          </h3>
           <label className="flex items-center gap-1.5 text-xs text-slate-400 cursor-pointer">
             <input
               type="checkbox"
@@ -252,7 +330,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           ref={outputRef}
           className="max-h-[60vh] overflow-y-auto rounded-lg bg-slate-950 p-4 text-xs font-mono text-slate-300 whitespace-pre-wrap"
         >
-          {output || (isLoading ? "Loading…" : isTerminal ? "(no output captured)" : "Waiting for output…")}
+          {paneText || paneFallback}
         </pre>
       </div>
     </div>
