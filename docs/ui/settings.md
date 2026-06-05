@@ -73,6 +73,45 @@ Every setting shows its current value alongside the default. Click **Reset to de
 
 Manages the connection to one or more Proxmox hypervisor nodes. See [Proxmox integration](../README.md) for setup details.
 
+Beyond the per-node connection settings, the page exposes a **Discover VM Mappings** action that scans every configured node and links each LabDog host to its backing Proxmox VM/CT in one pass. Individual host↔VM mappings can also be discovered from a [host's detail page](hosts.md#proxmox-vm-mapping).
+
+### TLS verification
+
+Each node has two TLS-related fields that together decide how LabDog
+validates the node's HTTPS certificate when it calls the Proxmox API:
+
+- **Verify SSL certificate** — when unchecked, LabDog performs **no**
+  certificate validation at all. This is the last-resort escape hatch
+  for a node with a certificate LabDog can't otherwise trust; prefer a
+  CA certificate (below) instead.
+- **CA certificate (PEM)** — paste a PEM-encoded certificate to verify
+  the node against it, instead of the operating system's trust store.
+  Use this for nodes with a **private-CA** or **self-signed**
+  certificate so verification stays on. The field is shown only while
+  *Verify SSL certificate* is checked.
+
+| Verify SSL | CA certificate | Result |
+|---|---|---|
+| Off | (ignored) | No verification — accepts any certificate. |
+| On | Set | Verify against the pasted certificate only. |
+| On | Empty | Verify against the system trust store (default). |
+
+Notes:
+
+- The field accepts either a real CA certificate **or** a self-signed
+  node (leaf) certificate — paste whichever the node presents, and it
+  becomes the trust anchor for that node.
+- Hostname checking stays on. The certificate's Subject Alternative
+  Name (SAN) must match the host in the node's **API URL**, or
+  verification fails even with the right certificate uploaded.
+- The certificate is **not** a secret and is stored as-is (unencrypted)
+  — CA certificates are public. The page never displays the pasted PEM
+  back; it shows only whether a certificate is configured and its
+  SHA-256 fingerprint.
+- To replace a configured certificate, paste a new PEM and save. To
+  remove it (returning the node to system-trust-store verification),
+  use **Clear CA**.
+
 ---
 
 ## About

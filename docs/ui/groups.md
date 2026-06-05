@@ -70,7 +70,7 @@ Shows whether this group is managed by a Git repository. Click **Enable** to lin
 | Users | [Linux Users & Groups](#linux-users) |
 | Cron Jobs | [Cron Jobs](#cron-jobs) |
 | Packages | [Packages](#packages) |
-| CA Certs | CA certificate deployment |
+| CA Certs | [CA Certificates](#ca-certificates) |
 | DNS Resolver | [DNS Resolver](#dns-resolver) |
 | Firewall Sync | [Firewall Sync](#firewall-sync) |
 | Schedules | [Schedules](scheduled-actions.md) |
@@ -283,6 +283,31 @@ Manages DNS resolver configuration. This is a **singleton** per group — there 
 | Options | Advanced resolv.conf options (`ndots`, `timeout`, `rotate`, etc.) |
 
 Click **Configure DNS** to set up the resolver for this group. If a resolver is already configured, the form pre-populates with existing values.
+
+---
+
+## CA Certificates
+
+**Tab:** CA Certs
+
+Deploys trusted certificate authorities into the system trust store of every host in the group, so the hosts trust services signed by an internal/private CA. Rules can also be set per host (host detail → CA Certs) and merge with the group's rules.
+
+### Columns
+
+| Column | Description |
+|--------|-------------|
+| Name | Operator-chosen label for the certificate (e.g. `Internal Root CA`) |
+| Subject | The certificate's subject, parsed from the PEM |
+| Expires | The certificate's `notAfter` date, parsed from the PEM |
+| Fingerprint (SHA-256) | Hash of the certificate, used as its stable identity |
+| State | `present` (install into the trust store) or `absent` (remove it) |
+| Actions | Edit (name / state / comment) or delete the rule |
+
+### Adding a Certificate
+
+Click **Add Certificate** and paste a PEM-encoded certificate. The subject, issuer, expiry, and fingerprint are parsed from the PEM automatically. The **PEM content is immutable** — to change the certificate, add a new entry and remove the old one (a different certificate has a different fingerprint, so it is a new identity). Set **State** to `absent` to actively remove a previously deployed certificate from the hosts' trust store rather than just stopping managing it.
+
+The **Recent Deployment Runs** panel below the table shows the per-host outcome of the most recent CA-certificate deployments.
 
 ---
 

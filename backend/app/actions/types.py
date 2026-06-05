@@ -72,6 +72,13 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: Per-action floor for the MAIN playbook's wall-clock timeout, in
+    #: seconds. ``None`` means "use the global ``ansible.playbook_timeout``
+    #: setting alone"; when set, the executor uses ``max(setting, this)`` so
+    #: a long-running action (e.g. a package upgrade) guarantees itself
+    #: enough budget without operators having to raise the global limit for
+    #: every playbook. Not bound by the setting's 30–3600s validation range.
+    playbook_timeout_seconds: int | None = None
     #: Canonical module names to re-sync after a successful run. See
     #: ``ActionManifest.post_run_sync`` for semantics. Empty tuple means
     #: no post-run sync. Validated against ``CANONICAL_ORDER`` at

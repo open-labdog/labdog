@@ -32,12 +32,14 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [Cron Jobs](groups.md#cron-jobs) | Scheduled tasks deployed via Ansible |
 | [Linux Users](groups.md#linux-users) | User accounts, SSH keys, sudo rules |
 | [DNS Resolver](groups.md#dns-resolver) | Nameservers and search domains (resolv.conf / systemd-resolved / NetworkManager) |
+| [CA Certificates](groups.md#ca-certificates) | Deploy trusted CA certificates into hosts' system trust store (per group or per host) |
 | [Firewall Sync](groups.md#firewall-sync) | Preview and apply firewall rule changes per group (other modules sync from their own per-tab buttons; v0.2.0+ all per-tab syncs route through one per-host orchestrator with PostgreSQL serialisation) |
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
+| [Proxmox](settings.md#proxmox-settings) | Connect Proxmox VE nodes (TLS verification, per-node CA certificate) and discover host↔VM mappings for snapshot/rollback |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |

@@ -14,6 +14,8 @@ Shows every host registered in LabDog. Columns:
 | IP Address | Used for SSH connections and SSH-lockout rule generation |
 | Groups | Which host groups this host belongs to |
 | OS / Firewall | Detected firewall backend (`nftables`, `iptables`, `unknown`) |
+| Proxmox | The mapped Proxmox VM/CT (name, VMID, node), or *Not mapped*. Shown only when at least one Proxmox node is configured. |
+| Overrides | Count of host-level overrides per module |
 | Sync Status | Current sync state badge |
 | Actions | View detail, open terminal |
 
@@ -50,10 +52,17 @@ Shows a single host's configuration, group memberships, and per-module sync stat
 - Enable or disable **drift detection** for this host
 - Open the **SSH terminal**
 - Trigger a **sync** for individual modules
+- View and discover the host's **Proxmox VM mapping**
 
 ### Module Status Table
 
 Each module (firewall, services, packages, etc.) has its own row showing the last known sync state and when it was last checked.
+
+### Proxmox VM Mapping
+
+When one or more Proxmox nodes are configured under [Proxmox Settings](settings.md), the host detail page shows a **VM Mapping** panel. The mapping links this host to its backing Proxmox VM or LXC container (VM name, VMID, and Proxmox node) — this is what enables automatic snapshot + rollback for destructive [actions](actions.md).
+
+Click **Discover** to scan the configured Proxmox nodes and match this host to a VM/CT automatically. If no mapping is found the panel shows *No VM mapping found*, and destructive actions on this host run without snapshot protection. To map every host in one pass, use **Discover VM Mappings** on the [Proxmox Settings](settings.md) page.
 
 ---
 

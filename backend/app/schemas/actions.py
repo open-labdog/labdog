@@ -76,6 +76,10 @@ class ActionHostRunOut(BaseModel):
     id: int
     action_run_id: int
     host_id: int
+    #: Hostname of the target host, resolved at serialization time for
+    #: display. NULL only if the host row was deleted out from under the
+    #: run (host_id FK is ON DELETE CASCADE, so in practice always set).
+    hostname: str | None = None
     status: str
     started_at: datetime | None
     finished_at: datetime | None

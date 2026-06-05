@@ -60,6 +60,7 @@ async def _build_client(node: ProxmoxNode) -> ProxmoxClient:
         token_id=node.token_id,
         token_secret=token_secret,
         verify_ssl=node.verify_ssl,
+        ca_cert_pem=node.ca_cert_pem,
     )
 
 
