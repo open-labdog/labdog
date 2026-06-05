@@ -124,6 +124,7 @@ export interface ProxmoxNode {
 }
 
 export type GrafanaKind = "mimir" | "loki"
+export type GrafanaAuthType = "none" | "bearer" | "basic"
 
 export interface GrafanaInstance {
   id: number
@@ -135,6 +136,9 @@ export interface GrafanaInstance {
   /** Derived, read-only: the base LabDog queries (host + kind prefix). */
   query_url: string
   org_id: string | null
+  auth_type: GrafanaAuthType
+  username: string | null
+  /** True when an auth secret (bearer token / basic password) is stored. */
   has_token: boolean
   verify_ssl: boolean
   has_ca_cert: boolean

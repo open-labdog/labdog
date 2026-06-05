@@ -36,7 +36,12 @@ class GrafanaInstance(Base):
     url: Mapped[str] = mapped_column(String(500), nullable=False)
     # Tenant sent as the ``X-Scope-OrgID`` header (Mimir/Loki multitenancy).
     org_id: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
-    # Optional bearer token, AES-256-GCM encrypted (never plaintext here).
+    # Authentication scheme: "none" | "bearer" | "basic".
+    auth_type: Mapped[str] = mapped_column(String(16), nullable=False, default="none")
+    # Username for HTTP basic auth (plaintext — not a secret). NULL otherwise.
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    # The auth secret, AES-256-GCM encrypted (never plaintext here): the bearer
+    # token when auth_type="bearer", or the password when auth_type="basic".
     encrypted_token: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True, default=None)
     verify_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
     # Plaintext PEM CA certificate (NOT encrypted — CA certs are public).
