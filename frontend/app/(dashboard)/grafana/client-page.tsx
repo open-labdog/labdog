@@ -44,7 +44,7 @@ const emptyForm: FormState = {
   auth_type: "none",
   username: "",
   token: "",
-  verify_ssl: true,
+  verify_ssl: false,
   ca_cert_pem: "",
   ca_cert_clear: false,
   is_default: false,
