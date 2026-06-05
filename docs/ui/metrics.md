@@ -13,7 +13,7 @@ automatically.
 ## The loop
 
 1. **Register a Grafana instance** under **Integrations → Grafana**
-   ([/grafana](/grafana)). Provide:
+   (`/grafana`). Provide:
    - **Mimir / Prometheus query URL** — what LabDog queries, e.g.
      `http://mimir:9009/prometheus`.
    - **Prometheus remote-write URL** — where Alloy ships metrics, e.g.
