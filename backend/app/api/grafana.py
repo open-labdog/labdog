@@ -219,7 +219,9 @@ async def delete_instance(
     await db.flush()
     # Promote another instance to default so the host page keeps working.
     if was_default:
-        remaining = (await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.id))).scalars().first()
+        remaining = (
+            await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.id))
+        ).scalars().first()
         if remaining is not None:
             remaining.is_default = True
     await db.commit()
