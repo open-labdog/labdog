@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.grafana import metrics as m
+from app.grafana.client import PrometheusClient
 from app.grafana.schemas import GrafanaInstanceCreate, derive_query_url
 
 
@@ -81,6 +82,18 @@ def test_schema_strips_trailing_slash_and_requires_scheme():
 
     with pytest.raises(ValidationError):
         GrafanaInstanceCreate(name="bad", kind="splunk", url="http://x:1")  # bad kind
+
+
+def test_auth_header_per_scheme():
+    import base64
+
+    bearer = PrometheusClient("http://x", auth_type="bearer", token="tok")._auth_header()
+    assert bearer == "Bearer tok"
+
+    basic = PrometheusClient("http://x", auth_type="basic", username="u", token="p")._auth_header()
+    assert basic is not None and base64.b64decode(basic.split()[1]).decode() == "u:p"
+
+    assert PrometheusClient("http://x", auth_type="none", token="ignored")._auth_header() is None
 
 
 def test_derive_query_url_strips_path_and_appends_kind_prefix():

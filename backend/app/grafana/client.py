@@ -41,13 +41,27 @@ class PrometheusClient:
         token: str | None = None,
         verify_ssl: bool = True,
         ca_cert_pem: str | None = None,
+        auth_type: str = "none",
+        username: str | None = None,
     ) -> None:
         self.query_url = query_url.rstrip("/")
         self.org_id = org_id
-        self.token = token
+        self.token = token  # bearer token, or basic-auth password
         self.verify_ssl = verify_ssl
         self.ca_cert_pem = ca_cert_pem
+        self.auth_type = auth_type
+        self.username = username
         self._ssl_context: ssl.SSLContext | None = None
+
+    def _auth_header(self) -> str | None:
+        if self.auth_type == "bearer" and self.token:
+            return f"Bearer {self.token}"
+        if self.auth_type == "basic" and self.username is not None:
+            import base64
+
+            raw = f"{self.username}:{self.token or ''}".encode()
+            return f"Basic {base64.b64encode(raw).decode()}"
+        return None
 
     def _get_ssl_context(self) -> ssl.SSLContext:
         if self._ssl_context is None:
@@ -61,8 +75,9 @@ class PrometheusClient:
         headers: dict[str, str] = {}
         if self.org_id:
             headers["X-Scope-OrgID"] = self.org_id
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
+        auth = self._auth_header()
+        if auth:
+            headers["Authorization"] = auth
         if not self.verify_ssl:
             verify: bool | ssl.SSLContext = False
         elif self.ca_cert_pem:

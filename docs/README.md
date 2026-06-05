@@ -554,7 +554,7 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 ### Grafana metrics
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET/POST` | `/api/grafana/instances` | List/register Grafana Mimir/Loki backends (bearer token encrypted at rest) |
+| `GET/POST` | `/api/grafana/instances` | List/register Grafana Mimir/Loki backends (bearer or basic auth; secret encrypted at rest) |
 | `GET/PUT/DELETE` | `/api/grafana/instances/{id}` | Manage a registered instance |
 | `POST` | `/api/grafana/instances/{id}/test` · `/api/grafana/instances/test` | Connection test (saved instance / pre-save draft) |
 | `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |

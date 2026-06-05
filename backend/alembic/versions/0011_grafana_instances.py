@@ -32,6 +32,8 @@ def upgrade() -> None:
         sa.Column("kind", sa.String(length=16), nullable=False),
         sa.Column("url", sa.String(length=500), nullable=False),
         sa.Column("org_id", sa.String(length=200), nullable=True),
+        sa.Column("auth_type", sa.String(length=16), nullable=False, server_default="none"),
+        sa.Column("username", sa.String(length=255), nullable=True),
         sa.Column("encrypted_token", sa.LargeBinary(), nullable=True),
         sa.Column("verify_ssl", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("ca_cert_pem", sa.Text(), nullable=True),
