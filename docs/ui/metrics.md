@@ -12,19 +12,23 @@ automatically.
 
 ## The loop
 
-1. **Register a Grafana instance** under **Integrations → Grafana**
-   (`/grafana`). Provide:
-   - **Mimir / Prometheus query URL** — what LabDog queries, e.g.
-     `http://mimir:9009/prometheus`.
-   - **Prometheus remote-write URL** — where Alloy ships metrics, e.g.
-     `http://mimir:9009/api/v1/push`.
-   - **Loki push URL** (optional) — where Alloy ships logs.
+1. **Register your endpoints** under **Integrations → Grafana**
+   (`/grafana`). Mimir (metrics) and Loki (logs) are registered
+   **separately** — add one instance per endpoint. For each, provide:
+   - **Kind** — Mimir (metrics) or Loki (logs).
+   - **Ingest URL** — a single URL: the remote-write / push URL the agent
+     ships to, e.g. `https://mimir.example.com/api/v1/push` (add whatever
+     path your setup needs). LabDog hands this to the Alloy install action
+     as-is, and for querying it strips the path down to the host and appends
+     the right API path automatically (Mimir →
+     `…/prometheus/api/v1/query`). You never enter the query URL.
    - Optional tenant (`X-Scope-OrgID`), bearer token, TLS verification and
      CA certificate.
 
-   Use **Test connection** to confirm the query API is reachable before
-   saving. The first instance you add becomes the **default** (the one the
-   host page queries); you can change which is default at any time.
+   Use **Test connection** to confirm the (derived) query API is reachable
+   before saving. The first instance of each kind becomes that kind's
+   **default** — the Mimir LabDog queries for the host page, and the
+   Mimir/Loki it feeds the Alloy action. You can change the default anytime.
 
 2. **Run the *Install Alloy agent* action** against a host or group
    (Actions tab). LabDog automatically:
@@ -57,7 +61,7 @@ Disk reports the root filesystem (`/`).
 ## Notes & limits
 
 - Metrics come from node_exporter via Alloy's `prometheus.exporter.unix`.
-- LabDog queries the **default** Grafana instance. Per-host routing to
+- LabDog queries the **default Mimir** instance. Per-host routing to
   different backends is not yet supported.
 - Log surfacing from Loki, network/per-mount metrics, and configurable
   thresholds are not part of this release.

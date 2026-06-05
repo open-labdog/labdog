@@ -77,8 +77,8 @@ async def _insert_grafana_instance(db: AsyncSession, key_a: bytes) -> tuple[int,
     token = "glsa_grafana_token"
     row = GrafanaInstance(
         name="rotate-test-grafana",
-        prometheus_query_url="http://mimir:9009/prometheus",
-        prometheus_push_url="http://mimir:9009/api/v1/push",
+        kind="mimir",
+        url="http://mimir:9009/api/v1/push",
         encrypted_token=encrypt_ssh_key(token, key_a),
     )
     db.add(row)
