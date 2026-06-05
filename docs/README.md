@@ -557,7 +557,7 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 | `GET/POST` | `/api/grafana/instances` | List/register Grafana Mimir/Loki backends (bearer token encrypted at rest) |
 | `GET/PUT/DELETE` | `/api/grafana/instances/{id}` | Manage a registered instance |
 | `POST` | `/api/grafana/instances/{id}/test` · `/api/grafana/instances/test` | Connection test (saved instance / pre-save draft) |
-| `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default instance by the `labdog_host_id` label) |
+| `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |
 
 See [ui/metrics.md](./ui/metrics.md) for the end-to-end loop with the bundled Alloy install action.
 

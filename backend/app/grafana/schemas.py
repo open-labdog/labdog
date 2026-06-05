@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
 # Reuse the Proxmox CA-cert helpers — identical PEM handling.
 from app.proxmox.schemas import _ca_cert_fingerprint, _validate_ca_cert_pem
+
+Kind = Literal["mimir", "loki"]
 
 
 def _validate_http_url(v: str) -> str:
@@ -22,27 +24,35 @@ def _validate_http_url(v: str) -> str:
     return v.rstrip("/")
 
 
+def derive_query_url(url: str, kind: str) -> str:
+    """Derive the query base from the operator-entered ingest URL.
+
+    The operator enters a single URL (the remote-write / push URL, possibly
+    with a path like ``/api/v1/push``). For querying we strip the path down
+    to the host and append the kind's API prefix:
+
+    * mimir → ``<scheme>://<host>/prometheus`` (query client appends
+      ``/api/v1/query`` → ``/prometheus/api/v1/query``)
+    * loki  → ``<scheme>://<host>/loki``
+    """
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    return f"{base}/loki" if kind == "loki" else f"{base}/prometheus"
+
+
 class GrafanaInstanceCreate(BaseModel):
     name: str
-    prometheus_query_url: str
-    prometheus_push_url: str
-    loki_push_url: str | None = None
+    kind: Kind
+    url: str
     org_id: str | None = None
     token: str | None = None
     verify_ssl: bool = True
     ca_cert_pem: str | None = None
     is_default: bool = False
 
-    @field_validator("prometheus_query_url", "prometheus_push_url")
+    @field_validator("url")
     @classmethod
-    def _req_url(cls, v: str) -> str:
-        return _validate_http_url(v)
-
-    @field_validator("loki_push_url")
-    @classmethod
-    def _opt_url(cls, v: str | None) -> str | None:
-        if v is None or not v.strip():
-            return None
+    def _url(cls, v: str) -> str:
         return _validate_http_url(v)
 
     @field_validator("ca_cert_pem")
@@ -55,27 +65,18 @@ class GrafanaInstanceCreate(BaseModel):
 
 class GrafanaInstanceUpdate(BaseModel):
     name: str | None = None
-    prometheus_query_url: str | None = None
-    prometheus_push_url: str | None = None
-    loki_push_url: str | None = None
+    kind: Kind | None = None
+    url: str | None = None
     org_id: str | None = None
     token: str | None = None
     verify_ssl: bool | None = None
     ca_cert_pem: str | None = None
     is_default: bool | None = None
 
-    @field_validator("prometheus_query_url", "prometheus_push_url")
+    @field_validator("url")
     @classmethod
-    def _req_url(cls, v: str | None) -> str | None:
+    def _url(cls, v: str | None) -> str | None:
         if v is None:
-            return v
-        return _validate_http_url(v)
-
-    @field_validator("loki_push_url")
-    @classmethod
-    def _opt_url(cls, v: str | None) -> str | None:
-        # Tri-state: None = leave unchanged; blank = clear; else validate.
-        if v is None or not v.strip():
             return v
         return _validate_http_url(v)
 
@@ -91,9 +92,10 @@ class GrafanaInstanceUpdate(BaseModel):
 class GrafanaInstanceResponse(BaseModel):
     id: int
     name: str
-    prometheus_query_url: str
-    prometheus_push_url: str
-    loki_push_url: str | None
+    kind: str
+    url: str
+    #: Derived, read-only — the base LabDog will query (host + kind prefix).
+    query_url: str
     org_id: str | None
     has_token: bool
     verify_ssl: bool
@@ -107,15 +109,15 @@ class GrafanaInstanceResponse(BaseModel):
 
 
 def to_response(inst: Any) -> GrafanaInstanceResponse:
-    """Build a response with derived secret/CA metadata. The raw token and
-    PEM are never exposed — only their presence (and the CA fingerprint)."""
+    """Build a response with derived query URL + secret/CA metadata. The raw
+    token and PEM are never exposed — only their presence (and CA fingerprint)."""
     pem = inst.ca_cert_pem
     return GrafanaInstanceResponse(
         id=inst.id,
         name=inst.name,
-        prometheus_query_url=inst.prometheus_query_url,
-        prometheus_push_url=inst.prometheus_push_url,
-        loki_push_url=inst.loki_push_url,
+        kind=inst.kind,
+        url=inst.url,
+        query_url=derive_query_url(inst.url, inst.kind),
         org_id=inst.org_id,
         has_token=inst.encrypted_token is not None,
         verify_ssl=inst.verify_ssl,
@@ -145,7 +147,7 @@ class MetricValue(BaseModel):
 
 
 class HostMetrics(BaseModel):
-    #: False when no Grafana instance is registered → the UI shows the
+    #: False when no Mimir instance is registered → the UI shows the
     #: "set up metrics" CTA rather than an empty/error state.
     configured: bool
     #: ISO timestamp of the freshest sample, or None when no data.
