@@ -37,9 +37,10 @@ automatically.
    - injects two identity labels — `labdog_host_id` (the stable host id) and
      `labdog_hostname` — which Alloy stamps on every series it ships.
 
-3. **Open the host's Overview tab.** The **Resource Usage** card shows three
-   tiles (CPU / Memory / Disk). They auto-refresh every 15 seconds while the
-   tab is visible.
+3. **Open the host's Overview tab.** Once a Mimir instance is registered, a
+   **Resource Usage** card appears with three tiles (CPU / Memory / Disk),
+   auto-refreshing every 15 seconds while the tab is visible. With no Mimir
+   instance configured the card is hidden entirely.
 
 Because metrics are matched on `labdog_host_id`, renaming a host or changing
 its IP never detaches its metrics.
@@ -48,8 +49,8 @@ its IP never detaches its metrics.
 
 | State | Meaning |
 |-------|---------|
-| **No metrics backend configured** | No Grafana instance registered — a link takes you to set one up. |
-| **No metrics found for this host yet** | Backend is configured but this host isn't shipping data — run *Install Alloy agent*, then allow a minute for the first scrape. |
+| **Card hidden** | No Mimir instance is registered — the panel doesn't appear at all. Add one under Integrations → Grafana. |
+| **No metrics found for this host yet** | A Mimir instance is configured but this host isn't shipping data — run *Install Alloy agent*, then allow a minute for the first scrape. |
 | **Failed to query metrics** | The query backend was unreachable or rejected the request (check the instance's URL/token via **Test**). |
 | **as of … (amber)** | The newest sample is older than two minutes — the agent may have stopped reporting. Last-known values are shown dimmed. |
 
