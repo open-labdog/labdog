@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto.encryption import decrypt_ssh_key, encrypt_ssh_key
 from app.crypto.key_management import generate_master_key
+from app.grafana.models import GrafanaInstance
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.ssh_key import SSHKey
 from app.proxmox.models import ProxmoxNode
@@ -72,6 +73,19 @@ async def _insert_git_repo_with_token(db: AsyncSession, key_a: bytes) -> tuple[i
     return row.id, token
 
 
+async def _insert_grafana_instance(db: AsyncSession, key_a: bytes) -> tuple[int, str]:
+    token = "glsa_grafana_token"
+    row = GrafanaInstance(
+        name="rotate-test-grafana",
+        prometheus_query_url="http://mimir:9009/prometheus",
+        prometheus_push_url="http://mimir:9009/api/v1/push",
+        encrypted_token=encrypt_ssh_key(token, key_a),
+    )
+    db.add(row)
+    await db.flush()
+    return row.id, token
+
+
 async def _insert_git_repo_no_token(db: AsyncSession) -> int:
     """A git repo with no HTTPS token — encrypted_https_token stays NULL."""
     row = GitRepository(
@@ -99,13 +113,15 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
     pve_id, pve_plain = await _insert_proxmox_node(db, key_a)
     git_id, git_plain = await _insert_git_repo_with_token(db, key_a)
     no_token_id = await _insert_git_repo_no_token(db)
+    grafana_id, grafana_plain = await _insert_grafana_instance(db, key_a)
 
     counts = await rotate(db, key_a, key_b)
 
-    # All three tables must appear in the report
+    # Every encrypted-column table must appear in the report
     assert counts["ssh_keys"] == 1
     assert counts["proxmox_nodes"] == 1
     assert counts["git_repositories"] == 1  # only the row that has a token
+    assert counts["grafana_instances"] == 1
 
     # rotate() issues Core UPDATE statements that bypass the ORM identity map.
     # Expire all cached objects so the next SELECT hits the DB.
@@ -122,6 +138,11 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
         await db.execute(select(GitRepository).where(GitRepository.id == git_id))
     ).scalar_one()
     assert decrypt_ssh_key(git_row.encrypted_https_token, key_b) == git_plain  # type: ignore[arg-type]
+
+    grafana_row = (
+        await db.execute(select(GrafanaInstance).where(GrafanaInstance.id == grafana_id))
+    ).scalar_one()
+    assert decrypt_ssh_key(grafana_row.encrypted_token, key_b) == grafana_plain  # type: ignore[arg-type]
 
     # The NULL-token row must still have NULL after rotation
     no_token_row = (
