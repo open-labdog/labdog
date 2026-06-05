@@ -9,7 +9,7 @@ The sidebar is always visible on desktop (collapses on mobile). It has three sec
 | Section | Items |
 |---------|-------|
 | **Manage** | Dashboard, Hosts, Groups, Schedules |
-| **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox |
+| **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox, Grafana |
 | **Admin** | Users, Audit Log, Settings |
 
 Your email, a **Change Password** link, and a **Log Out** button sit at the bottom of the sidebar.
@@ -40,6 +40,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Proxmox](settings.md#proxmox-settings) | Connect Proxmox VE nodes (TLS verification, per-node CA certificate) and discover host↔VM mappings for snapshot/rollback |
+| [Grafana](metrics.md) | Register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |
