@@ -51,6 +51,8 @@ async def _run_test(
     token: str | None,
     verify_ssl: bool,
     ca_cert_pem: str | None,
+    auth_type: str,
+    username: str | None,
 ) -> GrafanaTestResponse:
     client = PrometheusClient(
         query_url=derive_query_url(url, kind),
@@ -58,6 +60,8 @@ async def _run_test(
         token=token,
         verify_ssl=verify_ssl,
         ca_cert_pem=ca_cert_pem,
+        auth_type=auth_type,
+        username=username,
     )
     try:
         if kind == "loki":
@@ -106,12 +110,15 @@ async def create_instance(
     )
     make_default = body.is_default or len(same_kind) == 0
 
+    secret = body.token if body.auth_type != "none" else None
     inst = GrafanaInstance(
         name=body.name,
         kind=body.kind,
         url=body.url,
         org_id=body.org_id,
-        encrypted_token=(encrypt_ssh_key(body.token, get_master_key()) if body.token else None),
+        auth_type=body.auth_type,
+        username=body.username if body.auth_type == "basic" else None,
+        encrypted_token=(encrypt_ssh_key(secret, get_master_key()) if secret else None),
         verify_ssl=body.verify_ssl,
         ca_cert_pem=body.ca_cert_pem,
         is_default=make_default,
@@ -176,8 +183,17 @@ async def update_instance(
         inst.url = body.url
     if body.org_id is not None:
         inst.org_id = body.org_id or None
+    if body.auth_type is not None:
+        inst.auth_type = body.auth_type
+        if body.auth_type == "none":
+            inst.encrypted_token = None
+            inst.username = None
+        elif body.auth_type == "bearer":
+            inst.username = None
+    if body.username is not None:
+        inst.username = body.username or None
     if body.token is not None:
-        # Blank string = clear the token; non-blank = replace.
+        # Blank string = clear the secret; non-blank = replace.
         inst.encrypted_token = encrypt_ssh_key(body.token, get_master_key()) if body.token else None
     if body.verify_ssl is not None:
         inst.verify_ssl = body.verify_ssl
@@ -260,6 +276,8 @@ async def test_instance(
         token=await _decrypt_token(inst),
         verify_ssl=inst.verify_ssl,
         ca_cert_pem=inst.ca_cert_pem,
+        auth_type=inst.auth_type,
+        username=inst.username,
     )
 
 
@@ -276,6 +294,8 @@ async def test_draft_instance(
         token=body.token,
         verify_ssl=body.verify_ssl,
         ca_cert_pem=body.ca_cert_pem,
+        auth_type=body.auth_type,
+        username=body.username,
     )
 
 
@@ -304,6 +324,8 @@ async def get_host_metrics(
         token=await _decrypt_token(inst),
         verify_ssl=inst.verify_ssl,
         ca_cert_pem=inst.ca_cert_pem,
+        auth_type=inst.auth_type,
+        username=inst.username,
     )
     try:
         return await fetch_host_metrics(client, host_id)

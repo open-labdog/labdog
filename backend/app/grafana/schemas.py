@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from app.proxmox.schemas import _ca_cert_fingerprint, _validate_ca_cert_pem
 
 Kind = Literal["mimir", "loki"]
+AuthType = Literal["none", "bearer", "basic"]
 
 
 def _validate_http_url(v: str) -> str:
@@ -45,6 +46,10 @@ class GrafanaInstanceCreate(BaseModel):
     kind: Kind
     url: str
     org_id: str | None = None
+    auth_type: AuthType = "none"
+    username: str | None = None
+    #: The auth secret — bearer token (auth_type="bearer") or password
+    #: (auth_type="basic"). Ignored when auth_type="none".
     token: str | None = None
     verify_ssl: bool = True
     ca_cert_pem: str | None = None
@@ -68,6 +73,8 @@ class GrafanaInstanceUpdate(BaseModel):
     kind: Kind | None = None
     url: str | None = None
     org_id: str | None = None
+    auth_type: AuthType | None = None
+    username: str | None = None
     token: str | None = None
     verify_ssl: bool | None = None
     ca_cert_pem: str | None = None
@@ -97,6 +104,9 @@ class GrafanaInstanceResponse(BaseModel):
     #: Derived, read-only — the base LabDog will query (host + kind prefix).
     query_url: str
     org_id: str | None
+    auth_type: str
+    username: str | None
+    #: True when an auth secret (bearer token / basic password) is stored.
     has_token: bool
     verify_ssl: bool
     has_ca_cert: bool
@@ -119,6 +129,8 @@ def to_response(inst: Any) -> GrafanaInstanceResponse:
         url=inst.url,
         query_url=derive_query_url(inst.url, inst.kind),
         org_id=inst.org_id,
+        auth_type=inst.auth_type,
+        username=inst.username,
         has_token=inst.encrypted_token is not None,
         verify_ssl=inst.verify_ssl,
         has_ca_cert=pem is not None,
