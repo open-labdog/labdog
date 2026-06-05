@@ -25,6 +25,7 @@ from app.api.cron_sync import router as cron_sync_router
 from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api.git_repos import router as git_repos_router
+from app.api.grafana import router as grafana_router
 from app.api.groups import router as groups_router
 from app.api.host_state import router as host_state_router
 from app.api.hosts import router as hosts_router
@@ -36,7 +37,6 @@ from app.api.linux_users import router as linux_users_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
 from app.api.proxmox_discovery import router as proxmox_discovery_router
-from app.api.grafana import router as grafana_router
 from app.api.proxmox_nodes import router as proxmox_nodes_router
 from app.api.resolver import router as resolver_router
 from app.api.resolver_sync import router as resolver_sync_router
