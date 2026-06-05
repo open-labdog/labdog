@@ -179,7 +179,9 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   }
 
   const isTerminal = run && TERMINAL.has(run.status)
-  const isGroupRun = run?.group_id != null
+  // Show the per-host grid for any multi-host run — group-, fleet-, or
+  // scheduled-dispatched. A single-host run has nothing to filter.
+  const isMultiHost = (run?.host_runs.length ?? 0) > 1
 
   // Resolve the currently-selected host + what the output pane should show.
   const selectedHost =
@@ -266,10 +268,11 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
         </div>
       )}
 
-      {/* Per-host status grid for group runs. Host-scoped runs already
-          show the host in the header, so the grid is hidden there. Each
-          card is clickable to filter the output pane to that host. */}
-      {isGroupRun && run && run.host_runs.length > 0 && (
+      {/* Per-host status grid for any multi-host run (group, fleet, or
+          scheduled). Single-host runs have nothing to filter, so it's
+          hidden there. Each card is clickable to filter the output pane
+          to that host. */}
+      {isMultiHost && run && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-slate-200">Host Status</h3>
