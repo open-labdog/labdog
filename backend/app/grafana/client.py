@@ -86,9 +86,7 @@ class PrometheusClient:
         if resp.status_code == 401 or resp.status_code == 403:
             raise PrometheusError("Authentication failed", resp.status_code)
         if resp.status_code >= 400:
-            raise PrometheusError(
-                f"Query API returned HTTP {resp.status_code}", resp.status_code
-            )
+            raise PrometheusError(f"Query API returned HTTP {resp.status_code}", resp.status_code)
         try:
             body = resp.json()
         except Exception as exc:
