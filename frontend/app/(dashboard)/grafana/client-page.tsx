@@ -20,13 +20,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/ui/data-table"
-import type { GrafanaInstance } from "@/lib/types"
+import type { GrafanaInstance, GrafanaKind } from "@/lib/types"
 
 interface FormState {
   name: string
-  prometheus_query_url: string
-  prometheus_push_url: string
-  loki_push_url: string
+  kind: GrafanaKind
+  url: string
   org_id: string
   token: string
   verify_ssl: boolean
@@ -37,15 +36,19 @@ interface FormState {
 
 const emptyForm: FormState = {
   name: "",
-  prometheus_query_url: "",
-  prometheus_push_url: "",
-  loki_push_url: "",
+  kind: "mimir",
+  url: "",
   org_id: "",
   token: "",
   verify_ssl: true,
   ca_cert_pem: "",
   ca_cert_clear: false,
   is_default: false,
+}
+
+const URL_PLACEHOLDER: Record<GrafanaKind, string> = {
+  mimir: "https://mimir.example.com/api/v1/push",
+  loki: "https://loki.example.com/loki/api/v1/push",
 }
 
 type TestResult = { success: boolean; message: string }
@@ -97,9 +100,8 @@ export default function GrafanaPage() {
     setEditing(inst)
     setForm({
       name: inst.name,
-      prometheus_query_url: inst.prometheus_query_url,
-      prometheus_push_url: inst.prometheus_push_url,
-      loki_push_url: inst.loki_push_url ?? "",
+      kind: inst.kind,
+      url: inst.url,
       org_id: inst.org_id ?? "",
       token: "",
       verify_ssl: inst.verify_ssl,
@@ -112,30 +114,6 @@ export default function GrafanaPage() {
     setDialogOpen(true)
   }
 
-  // Shared payload builder for save + pre-save test.
-  function buildPayload(forUpdate: boolean): Record<string, unknown> {
-    const payload: Record<string, unknown> = {
-      name: forUpdate ? form.name || undefined : form.name,
-      prometheus_query_url: form.prometheus_query_url || undefined,
-      prometheus_push_url: form.prometheus_push_url || undefined,
-      loki_push_url: form.loki_push_url || (forUpdate ? "" : undefined),
-      org_id: form.org_id || (forUpdate ? "" : undefined),
-      verify_ssl: form.verify_ssl,
-      is_default: form.is_default,
-    }
-    if (!forUpdate) {
-      payload.prometheus_query_url = form.prometheus_query_url
-      payload.prometheus_push_url = form.prometheus_push_url
-    }
-    if (form.token) payload.token = form.token
-    else if (forUpdate && editing?.has_token === false) {
-      /* nothing */
-    }
-    if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
-    else if (forUpdate && form.ca_cert_clear) payload.ca_cert_pem = ""
-    return payload
-  }
-
   async function handleDraftTest() {
     setDraftTesting(true)
     setDraftTestResult(null)
@@ -144,9 +122,8 @@ export default function GrafanaPage() {
         method: "POST",
         json: {
           name: form.name || "draft",
-          prometheus_query_url: form.prometheus_query_url,
-          prometheus_push_url: form.prometheus_push_url,
-          loki_push_url: form.loki_push_url || undefined,
+          kind: form.kind,
+          url: form.url,
           org_id: form.org_id || undefined,
           token: form.token || undefined,
           verify_ssl: form.verify_ssl,
@@ -166,13 +143,31 @@ export default function GrafanaPage() {
     setFormError(null)
     try {
       if (editing) {
-        await apiFetch(`/api/grafana/instances/${editing.id}`, {
-          method: "PUT",
-          json: buildPayload(true),
-        })
+        const payload: Record<string, unknown> = {
+          name: form.name || undefined,
+          kind: form.kind,
+          url: form.url || undefined,
+          org_id: form.org_id,
+          verify_ssl: form.verify_ssl,
+          is_default: form.is_default,
+        }
+        if (form.token) payload.token = form.token
+        if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
+        else if (form.ca_cert_clear) payload.ca_cert_pem = ""
+        await apiFetch(`/api/grafana/instances/${editing.id}`, { method: "PUT", json: payload })
         showSuccess("Grafana instance updated")
       } else {
-        await apiFetch("/api/grafana/instances", { method: "POST", json: buildPayload(false) })
+        const payload: Record<string, unknown> = {
+          name: form.name,
+          kind: form.kind,
+          url: form.url,
+          org_id: form.org_id || undefined,
+          verify_ssl: form.verify_ssl,
+          is_default: form.is_default,
+        }
+        if (form.token) payload.token = form.token
+        if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
+        await apiFetch("/api/grafana/instances", { method: "POST", json: payload })
         showSuccess("Grafana instance created")
       }
       await queryClient.invalidateQueries({ queryKey: ["grafana-instances"] })
@@ -221,10 +216,11 @@ export default function GrafanaPage() {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Grafana Metrics</h1>
+          <h1 className="text-2xl font-bold text-white">Grafana Metrics &amp; Logs</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Register a Mimir/Prometheus + Loki endpoint to show live host metrics and to
-            feed the bundled Alloy install action.
+            Register your <strong>Mimir</strong> (metrics) and <strong>Loki</strong> (logs)
+            endpoints separately. Enter one ingest URL per endpoint — LabDog hands it to the Alloy
+            install action and derives the query URL from it.
           </p>
         </div>
         <Button onClick={openCreate}>Add Instance</Button>
@@ -261,19 +257,21 @@ export default function GrafanaPage() {
               filter: { type: "text" },
             },
             {
-              key: "prometheus_query_url",
-              label: "Query URL",
-              accessor: (n) => n.prometheus_query_url,
-              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.prometheus_query_url}</span>,
-              defaultWidth: 260,
+              key: "kind",
+              label: "Kind",
+              accessor: (n) => n.kind,
+              cell: (n) => (
+                <span className="text-slate-300 text-sm capitalize">{n.kind}</span>
+              ),
+              defaultWidth: 90,
               filter: { type: "text" },
             },
             {
-              key: "prometheus_push_url",
-              label: "Push URL",
-              accessor: (n) => n.prometheus_push_url,
-              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.prometheus_push_url}</span>,
-              defaultWidth: 240,
+              key: "url",
+              label: "URL",
+              accessor: (n) => n.url,
+              cell: (n) => <span className="font-mono text-slate-300 text-sm">{n.url}</span>,
+              defaultWidth: 300,
               filter: { type: "text" },
             },
             {
@@ -349,38 +347,32 @@ export default function GrafanaPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="g-query">Mimir / Prometheus query URL</Label>
-              <Input
-                id="g-query"
-                placeholder="http://mimir:9009/prometheus"
-                value={form.prometheus_query_url}
-                onChange={(e) => setForm((p) => ({ ...p, prometheus_query_url: e.target.value }))}
-                className="font-mono"
-              />
-              <p className="text-xs text-slate-500">What LabDog queries for host metrics.</p>
+              <Label htmlFor="g-kind">Kind</Label>
+              <select
+                id="g-kind"
+                className="bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white w-full"
+                value={form.kind}
+                onChange={(e) => setForm((p) => ({ ...p, kind: e.target.value as GrafanaKind }))}
+              >
+                <option value="mimir">Mimir / Prometheus (metrics)</option>
+                <option value="loki">Loki (logs)</option>
+              </select>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="g-push">Prometheus remote-write URL</Label>
+              <Label htmlFor="g-url">Ingest URL</Label>
               <Input
-                id="g-push"
-                placeholder="http://mimir:9009/api/v1/push"
-                value={form.prometheus_push_url}
-                onChange={(e) => setForm((p) => ({ ...p, prometheus_push_url: e.target.value }))}
+                id="g-url"
+                placeholder={URL_PLACEHOLDER[form.kind]}
+                value={form.url}
+                onChange={(e) => setForm((p) => ({ ...p, url: e.target.value }))}
                 className="font-mono"
               />
-              <p className="text-xs text-slate-500">Handed to the Alloy install action so the agent ships here.</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="g-loki">Loki push URL (optional)</Label>
-              <Input
-                id="g-loki"
-                placeholder="http://loki:3100/loki/api/v1/push"
-                value={form.loki_push_url}
-                onChange={(e) => setForm((p) => ({ ...p, loki_push_url: e.target.value }))}
-                className="font-mono"
-              />
+              <p className="text-xs text-slate-500">
+                The remote-write / push URL (add the path your setup needs). Handed to the Alloy
+                install action as-is; LabDog strips the path and queries the{" "}
+                {form.kind === "loki" ? "Loki" : "Mimir"} API automatically.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -416,7 +408,7 @@ export default function GrafanaPage() {
                 onChange={(e) => setForm((p) => ({ ...p, is_default: e.target.checked }))}
                 className="rounded border-input"
               />
-              <Label htmlFor="g-default">Default instance (queried for host metrics)</Label>
+              <Label htmlFor="g-default">Default {form.kind} instance</Label>
             </div>
 
             <div className="flex items-center gap-2">
@@ -476,7 +468,7 @@ export default function GrafanaPage() {
             )}
 
             <div className="flex items-center gap-3">
-              <Button variant="outline" onClick={handleDraftTest} disabled={draftTesting || !form.prometheus_query_url}>
+              <Button variant="outline" onClick={handleDraftTest} disabled={draftTesting || !form.url}>
                 {draftTesting ? "Testing..." : "Test connection"}
               </Button>
               {draftTestResult && (

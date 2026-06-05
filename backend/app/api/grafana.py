@@ -17,6 +17,7 @@ from app.grafana.schemas import (
     GrafanaInstanceUpdate,
     GrafanaTestResponse,
     HostMetrics,
+    derive_query_url,
     to_response,
 )
 from app.grafana.service import get_default_instance
@@ -26,8 +27,9 @@ from app.models.user import User
 router = APIRouter(prefix="/grafana", tags=["grafana"])
 
 
-async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
-    stmt = update(GrafanaInstance).values(is_default=False)
+async def _unset_other_defaults(db: AsyncSession, kind: str, keep_id: int | None) -> None:
+    """Clear the default flag on other instances of the same kind."""
+    stmt = update(GrafanaInstance).where(GrafanaInstance.kind == kind).values(is_default=False)
     if keep_id is not None:
         stmt = stmt.where(GrafanaInstance.id != keep_id)
     await db.execute(stmt)
@@ -43,23 +45,28 @@ async def _decrypt_token(inst: GrafanaInstance) -> str | None:
 
 
 async def _run_test(
-    query_url: str,
+    kind: str,
+    url: str,
     org_id: str | None,
     token: str | None,
     verify_ssl: bool,
     ca_cert_pem: str | None,
 ) -> GrafanaTestResponse:
     client = PrometheusClient(
-        query_url=query_url,
+        query_url=derive_query_url(url, kind),
         org_id=org_id,
         token=token,
         verify_ssl=verify_ssl,
         ca_cert_pem=ca_cert_pem,
     )
     try:
-        # `vector(1)` exercises the query path without depending on any
-        # particular series existing in the backend yet.
-        await client.query("vector(1)")
+        if kind == "loki":
+            # Cheap reachability check against the Loki query API.
+            await client.get_ok("/api/v1/labels")
+        else:
+            # `vector(1)` exercises the Mimir query path without depending on
+            # any particular series existing yet.
+            await client.query("vector(1)")
     except PrometheusError as exc:
         return GrafanaTestResponse(success=False, message=str(exc))
     return GrafanaTestResponse(success=True, message="Connected — query API reachable")
@@ -75,7 +82,9 @@ async def list_instances(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.name))
+    result = await db.execute(
+        select(GrafanaInstance).order_by(GrafanaInstance.kind, GrafanaInstance.name)
+    )
     return [to_response(i) for i in result.scalars().all()]
 
 
@@ -89,15 +98,18 @@ async def create_instance(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Grafana instance name already exists")
 
-    count = len((await db.execute(select(GrafanaInstance.id))).scalars().all())
-    # First instance is implicitly the default; otherwise honour the flag.
-    make_default = body.is_default or count == 0
+    # First instance of its kind is implicitly the default; else honour flag.
+    same_kind = (
+        (await db.execute(select(GrafanaInstance.id).where(GrafanaInstance.kind == body.kind)))
+        .scalars()
+        .all()
+    )
+    make_default = body.is_default or len(same_kind) == 0
 
     inst = GrafanaInstance(
         name=body.name,
-        prometheus_query_url=body.prometheus_query_url,
-        prometheus_push_url=body.prometheus_push_url,
-        loki_push_url=body.loki_push_url,
+        kind=body.kind,
+        url=body.url,
         org_id=body.org_id,
         encrypted_token=(encrypt_ssh_key(body.token, get_master_key()) if body.token else None),
         verify_ssl=body.verify_ssl,
@@ -107,7 +119,7 @@ async def create_instance(
     db.add(inst)
     await db.flush()
     if make_default:
-        await _unset_other_defaults(db, keep_id=inst.id)
+        await _unset_other_defaults(db, inst.kind, keep_id=inst.id)
 
     await log_action(
         db=db,
@@ -117,7 +129,8 @@ async def create_instance(
         user_id=user.id,
         after_state={
             "name": inst.name,
-            "prometheus_query_url": inst.prometheus_query_url,
+            "kind": inst.kind,
+            "url": inst.url,
             "has_token": inst.encrypted_token is not None,
             "is_default": inst.is_default,
         },
@@ -150,19 +163,17 @@ async def update_instance(
     if not inst:
         raise HTTPException(status_code=404, detail="Grafana instance not found")
 
-    before = {"name": inst.name, "is_default": inst.is_default}
+    before = {"name": inst.name, "kind": inst.kind, "is_default": inst.is_default}
 
     if body.name is not None and body.name != inst.name:
         clash = await db.execute(select(GrafanaInstance).where(GrafanaInstance.name == body.name))
         if clash.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Grafana instance name already exists")
         inst.name = body.name
-    if body.prometheus_query_url is not None:
-        inst.prometheus_query_url = body.prometheus_query_url
-    if body.prometheus_push_url is not None:
-        inst.prometheus_push_url = body.prometheus_push_url
-    if body.loki_push_url is not None:
-        inst.loki_push_url = body.loki_push_url or None
+    if body.kind is not None:
+        inst.kind = body.kind
+    if body.url is not None:
+        inst.url = body.url
     if body.org_id is not None:
         inst.org_id = body.org_id or None
     if body.token is not None:
@@ -177,7 +188,7 @@ async def update_instance(
 
     await db.flush()
     if inst.is_default:
-        await _unset_other_defaults(db, keep_id=inst.id)
+        await _unset_other_defaults(db, inst.kind, keep_id=inst.id)
 
     await log_action(
         db=db,
@@ -186,7 +197,7 @@ async def update_instance(
         entity_id=inst.id,
         user_id=user.id,
         before_state=before,
-        after_state={"name": inst.name, "is_default": inst.is_default},
+        after_state={"name": inst.name, "kind": inst.kind, "is_default": inst.is_default},
     )
     await db.commit()
     await db.refresh(inst)
@@ -203,20 +214,28 @@ async def delete_instance(
     if not inst:
         raise HTTPException(status_code=404, detail="Grafana instance not found")
     was_default = inst.is_default
+    kind = inst.kind
     await log_action(
         db=db,
         action="delete",
         entity_type="grafana_instance",
         entity_id=inst.id,
         user_id=user.id,
-        before_state={"name": inst.name},
+        before_state={"name": inst.name, "kind": inst.kind},
     )
     await db.delete(inst)
     await db.flush()
-    # Promote another instance to default so the host page keeps working.
+    # Promote another instance of the same kind to default so the host page
+    # keeps working.
     if was_default:
         remaining = (
-            (await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.id)))
+            (
+                await db.execute(
+                    select(GrafanaInstance)
+                    .where(GrafanaInstance.kind == kind)
+                    .order_by(GrafanaInstance.id)
+                )
+            )
             .scalars()
             .first()
         )
@@ -235,7 +254,8 @@ async def test_instance(
     if not inst:
         raise HTTPException(status_code=404, detail="Grafana instance not found")
     return await _run_test(
-        query_url=inst.prometheus_query_url,
+        kind=inst.kind,
+        url=inst.url,
         org_id=inst.org_id,
         token=await _decrypt_token(inst),
         verify_ssl=inst.verify_ssl,
@@ -250,7 +270,8 @@ async def test_draft_instance(
 ):
     """Pre-save connectivity test for an unsaved form — never persists."""
     return await _run_test(
-        query_url=body.prometheus_query_url,
+        kind=body.kind,
+        url=body.url,
         org_id=body.org_id,
         token=body.token,
         verify_ssl=body.verify_ssl,
@@ -273,12 +294,12 @@ async def get_host_metrics(
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
 
-    inst = await get_default_instance(db)
+    inst = await get_default_instance(db, "mimir")
     if inst is None:
         return HostMetrics(configured=False)
 
     client = PrometheusClient(
-        query_url=inst.prometheus_query_url,
+        query_url=derive_query_url(inst.url, inst.kind),
         org_id=inst.org_id,
         token=await _decrypt_token(inst),
         verify_ssl=inst.verify_ssl,

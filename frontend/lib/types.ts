@@ -123,14 +123,17 @@ export interface ProxmoxNode {
   updated_at: string
 }
 
+export type GrafanaKind = "mimir" | "loki"
+
 export interface GrafanaInstance {
   id: number
   name: string
-  /** Prometheus-compatible query base URL LabDog queries. */
-  prometheus_query_url: string
-  /** Remote-write URL handed to the Alloy install action. */
-  prometheus_push_url: string
-  loki_push_url: string | null
+  /** "mimir" (metrics) or "loki" (logs) — registered separately. */
+  kind: GrafanaKind
+  /** The ingest/remote-write URL the operator enters (handed to Alloy). */
+  url: string
+  /** Derived, read-only: the base LabDog queries (host + kind prefix). */
+  query_url: string
   org_id: string | null
   has_token: boolean
   verify_ssl: boolean

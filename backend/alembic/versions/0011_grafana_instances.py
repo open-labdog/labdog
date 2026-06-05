@@ -1,10 +1,11 @@
 """Add ``grafana_instances`` table.
 
-A registered Grafana Mimir/Loki (Prometheus-compatible) backend. LabDog
-queries ``prometheus_query_url`` to render instant host metrics and hands
-the push URLs to the Alloy install action. ``encrypted_token`` is an
-optional AES-256-GCM bearer token; ``ca_cert_pem`` is plaintext (CA certs
-are public). Exactly one row is the default (enforced in the API layer).
+A registered Grafana-stack endpoint — Mimir (metrics) or Loki (logs),
+distinguished by ``kind`` and registered separately. A single ``url``
+(the ingest/remote-write URL) is stored; LabDog derives the query URL
+from it. ``encrypted_token`` is an optional AES-256-GCM bearer token;
+``ca_cert_pem`` is plaintext (CA certs are public). At most one row per
+kind is the default (enforced in the API layer).
 
 Revision ID: 0011_grafana_instances
 Revises: 0010_proxmox_node_ca_cert_pem
@@ -28,9 +29,8 @@ def upgrade() -> None:
         "grafana_instances",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("name", sa.String(length=100), nullable=False),
-        sa.Column("prometheus_query_url", sa.String(length=500), nullable=False),
-        sa.Column("prometheus_push_url", sa.String(length=500), nullable=False),
-        sa.Column("loki_push_url", sa.String(length=500), nullable=True),
+        sa.Column("kind", sa.String(length=16), nullable=False),
+        sa.Column("url", sa.String(length=500), nullable=False),
         sa.Column("org_id", sa.String(length=200), nullable=True),
         sa.Column("encrypted_token", sa.LargeBinary(), nullable=True),
         sa.Column("verify_ssl", sa.Boolean(), nullable=False, server_default=sa.true()),

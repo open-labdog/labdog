@@ -15,19 +15,23 @@ LabDog can now render **instant** CPU / memory / disk usage on each
 host's Overview tab by querying a registered Grafana Mimir
 (Prometheus-compatible) backend. Instant values only — no graphs.
 
-- New **Integrations → Grafana** page to register a metrics backend
-  (Mimir/Prometheus query URL, remote-write URL, optional Loki URL,
-  tenant/`X-Scope-OrgID`, optional encrypted bearer token, TLS verify +
-  CA cert, default flag) with per-row and pre-save connection tests.
+- New **Integrations → Grafana** page to register **Mimir** (metrics) and
+  **Loki** (logs) endpoints separately. Each instance takes a single
+  ingest/remote-write URL (plus optional tenant/`X-Scope-OrgID`, encrypted
+  bearer token, TLS verify + CA cert, per-kind default flag), with per-row
+  and pre-save connection tests. LabDog derives the query URL from the
+  ingest URL — strip the path to the host, append the kind's API path
+  (Mimir → `/prometheus/api/v1/query`) — so the operator enters one URL.
   Modeled on the Proxmox integration (`grafana_instances` table,
   migration `0011`).
-- `GET /api/grafana/hosts/{id}/metrics` queries the default instance for
-  the host's CPU/memory/disk, matched on a stable `labdog_host_id` label.
+- `GET /api/grafana/hosts/{id}/metrics` queries the default Mimir instance
+  for the host's CPU/memory/disk, matched on a stable `labdog_host_id`
+  label.
 - **Closes the loop with the bundled `alloy-install` action:** a manifest
   `metrics_backend` mapping lets LabDog fill the Alloy remote-write/Loki
-  URLs from the registered default instance, and the per-host executor
+  URLs from the default Mimir/Loki instances, and the per-host executor
   always injects `labdog_host_id` / `labdog_hostname` so shipped metrics
-  are queryable back. Register a backend, run Install Alloy, and metrics
+  are queryable back. Register endpoints, run Install Alloy, and metrics
   appear automatically. See [docs/ui/metrics.md](docs/ui/metrics.md).
 
 ## [0.3.1] — 2026-06-05
