@@ -19,7 +19,7 @@ _FS_EXCLUDE = "tmpfs|overlay|squashfs|ramfs|devtmpfs"
 
 def cpu_percent_query(host_id: int) -> str:
     return (
-        f'100 - (avg(rate(node_cpu_seconds_total'
+        f"100 - (avg(rate(node_cpu_seconds_total"
         f'{{labdog_host_id="{host_id}",mode="idle"}}[2m])) * 100)'
     )
 

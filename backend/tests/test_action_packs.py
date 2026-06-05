@@ -173,8 +173,7 @@ def test_manifest_accepts_metrics_backend():
 
 def test_load_pack_threads_metrics_backend(tmp_path: Path):
     manifest_body = (
-        SIMPLE_MANIFEST
-        + "metrics_backend:\n  prometheus_push_var: alloy_prometheus_url\n"
+        SIMPLE_MANIFEST + "metrics_backend:\n  prometheus_push_var: alloy_prometheus_url\n"
     )
     _write_pack(
         tmp_path,

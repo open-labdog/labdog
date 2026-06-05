@@ -39,9 +39,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
-    op.create_index(
-        "ix_grafana_instances_name", "grafana_instances", ["name"], unique=True
-    )
+    op.create_index("ix_grafana_instances_name", "grafana_instances", ["name"], unique=True)
 
 
 def downgrade() -> None:

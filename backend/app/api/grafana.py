@@ -99,9 +99,7 @@ async def create_instance(
         prometheus_push_url=body.prometheus_push_url,
         loki_push_url=body.loki_push_url,
         org_id=body.org_id,
-        encrypted_token=(
-            encrypt_ssh_key(body.token, get_master_key()) if body.token else None
-        ),
+        encrypted_token=(encrypt_ssh_key(body.token, get_master_key()) if body.token else None),
         verify_ssl=body.verify_ssl,
         ca_cert_pem=body.ca_cert_pem,
         is_default=make_default,
@@ -169,9 +167,7 @@ async def update_instance(
         inst.org_id = body.org_id or None
     if body.token is not None:
         # Blank string = clear the token; non-blank = replace.
-        inst.encrypted_token = (
-            encrypt_ssh_key(body.token, get_master_key()) if body.token else None
-        )
+        inst.encrypted_token = encrypt_ssh_key(body.token, get_master_key()) if body.token else None
     if body.verify_ssl is not None:
         inst.verify_ssl = body.verify_ssl
     if body.ca_cert_pem is not None:
@@ -220,8 +216,10 @@ async def delete_instance(
     # Promote another instance to default so the host page keeps working.
     if was_default:
         remaining = (
-            await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.id))
-        ).scalars().first()
+            (await db.execute(select(GrafanaInstance).order_by(GrafanaInstance.id)))
+            .scalars()
+            .first()
+        )
         if remaining is not None:
             remaining.is_default = True
     await db.commit()
