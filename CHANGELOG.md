@@ -7,6 +7,32 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-06-05
+
+### Added
+
+- **Per-action playbook timeout floor.** Action manifests gain an
+  optional `playbook_timeout_seconds` field. The effective wall-clock
+  budget for the main playbook is `max(this, the global
+  ansible.playbook_timeout setting)`, so a long-running action (e.g. a
+  package upgrade) can guarantee itself enough time without operators
+  raising the global limit for every playbook. Unset preserves the prior
+  behaviour; the bundled `linux-upgrade` / `linux-os-upgrade` actions set
+  it.
+- **Per-node Proxmox CA certificate trust.** Each Proxmox node can carry
+  its own CA certificate for TLS verification, configured from Settings,
+  instead of relying on a single system trust store (BUG-52).
+
+### Changed
+
+- **Action run view identifies hosts by name.** The Host Status grid and
+  the per-host output headers now show the target hostname instead of the
+  numeric host ID.
+- **Per-host log filtering on multi-host runs.** The run-detail page shows
+  the Host Status grid for any multi-host run (group, fleet, or
+  scheduled), and each host card is clickable to filter the output to that
+  host's log, with a "Show all hosts" toggle back to the combined view.
+
 ## [0.3.0] — 2026-05-31
 
 ### Changed
@@ -642,7 +668,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/open-labdog/labdog/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/open-labdog/labdog/compare/v0.2.5...v0.3.0
 [0.2.0]: https://github.com/open-labdog/labdog/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/open-labdog/labdog/releases/tag/v0.1.0

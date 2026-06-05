@@ -61,6 +61,12 @@ Live stdout streams into the run-detail page; when it finishes you see a
 green/red status chip and the full captured output. Runs are stored in
 the DB — history is visible in the same tab.
 
+For a multi-host run (a group, fleet, or scheduled run), the run-detail
+page shows a **Host Status** grid — each host listed by hostname with its
+own status chip. Click a host to filter the output to just that host's
+log; **Show all hosts** returns to the combined view. The combined view
+prefixes each host's section with a `===== hostname =====` header.
+
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
 
