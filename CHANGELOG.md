@@ -17,9 +17,10 @@ host's Overview tab by querying a registered Grafana Mimir
 
 - New **Integrations → Grafana** page to register **Mimir** (metrics) and
   **Loki** (logs) endpoints separately. Each instance takes a single
-  ingest/remote-write URL (plus optional tenant/`X-Scope-OrgID`, encrypted
-  bearer token, TLS verify + CA cert, per-kind default flag), with per-row
-  and pre-save connection tests. LabDog derives the query URL from the
+  ingest/remote-write URL (plus optional tenant/`X-Scope-OrgID`,
+  authentication — none / bearer token / HTTP basic, secret encrypted at
+  rest — TLS verify + CA cert, per-kind default flag), with per-row and
+  pre-save connection tests. LabDog derives the query URL from the
   ingest URL — strip the path to the host, append the kind's API path
   (Mimir → `/prometheus/api/v1/query`) — so the operator enters one URL.
   Modeled on the Proxmox integration (`grafana_instances` table,

@@ -20,13 +20,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/ui/data-table"
-import type { GrafanaInstance, GrafanaKind } from "@/lib/types"
+import type { GrafanaInstance, GrafanaKind, GrafanaAuthType } from "@/lib/types"
 
 interface FormState {
   name: string
   kind: GrafanaKind
   url: string
   org_id: string
+  auth_type: GrafanaAuthType
+  username: string
   token: string
   verify_ssl: boolean
   ca_cert_pem: string
@@ -39,6 +41,8 @@ const emptyForm: FormState = {
   kind: "mimir",
   url: "",
   org_id: "",
+  auth_type: "none",
+  username: "",
   token: "",
   verify_ssl: true,
   ca_cert_pem: "",
@@ -103,6 +107,8 @@ export default function GrafanaPage() {
       kind: inst.kind,
       url: inst.url,
       org_id: inst.org_id ?? "",
+      auth_type: inst.auth_type,
+      username: inst.username ?? "",
       token: "",
       verify_ssl: inst.verify_ssl,
       ca_cert_pem: "",
@@ -125,7 +131,9 @@ export default function GrafanaPage() {
           kind: form.kind,
           url: form.url,
           org_id: form.org_id || undefined,
-          token: form.token || undefined,
+          auth_type: form.auth_type,
+          username: form.auth_type === "basic" ? form.username : undefined,
+          token: form.auth_type !== "none" ? form.token || undefined : undefined,
           verify_ssl: form.verify_ssl,
           ca_cert_pem: form.ca_cert_pem.trim() || undefined,
         },
@@ -148,6 +156,8 @@ export default function GrafanaPage() {
           kind: form.kind,
           url: form.url || undefined,
           org_id: form.org_id,
+          auth_type: form.auth_type,
+          username: form.auth_type === "basic" ? form.username : "",
           verify_ssl: form.verify_ssl,
           is_default: form.is_default,
         }
@@ -162,10 +172,12 @@ export default function GrafanaPage() {
           kind: form.kind,
           url: form.url,
           org_id: form.org_id || undefined,
+          auth_type: form.auth_type,
+          username: form.auth_type === "basic" ? form.username : undefined,
           verify_ssl: form.verify_ssl,
           is_default: form.is_default,
         }
-        if (form.token) payload.token = form.token
+        if (form.auth_type !== "none" && form.token) payload.token = form.token
         if (form.ca_cert_pem.trim()) payload.ca_cert_pem = form.ca_cert_pem
         await apiFetch("/api/grafana/instances", { method: "POST", json: payload })
         showSuccess("Grafana instance created")
@@ -335,7 +347,7 @@ export default function GrafanaPage() {
           <DialogHeader>
             <DialogTitle>{editing ? "Edit Grafana Instance" : "Add Grafana Instance"}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-2 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto overflow-x-hidden px-0.5">
             <div className="space-y-2">
               <Label htmlFor="g-name">Name</Label>
               <Input
@@ -387,18 +399,47 @@ export default function GrafanaPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="g-token">
-                Bearer token{editing && " (leave blank to keep current)"}
-              </Label>
-              <Input
-                id="g-token"
-                type="password"
-                placeholder={editing?.has_token ? "Leave blank to keep current" : "Optional"}
-                value={form.token}
-                onChange={(e) => setForm((p) => ({ ...p, token: e.target.value }))}
-                className="font-mono"
-              />
+              <Label htmlFor="g-auth">Authentication</Label>
+              <select
+                id="g-auth"
+                className="bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white w-full"
+                value={form.auth_type}
+                onChange={(e) => setForm((p) => ({ ...p, auth_type: e.target.value as GrafanaAuthType }))}
+              >
+                <option value="none">None</option>
+                <option value="bearer">Bearer token</option>
+                <option value="basic">Basic (username / password)</option>
+              </select>
             </div>
+
+            {form.auth_type === "basic" && (
+              <div className="space-y-2">
+                <Label htmlFor="g-username">Username</Label>
+                <Input
+                  id="g-username"
+                  value={form.username}
+                  onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
+                  className="font-mono"
+                />
+              </div>
+            )}
+
+            {form.auth_type !== "none" && (
+              <div className="space-y-2">
+                <Label htmlFor="g-token">
+                  {form.auth_type === "basic" ? "Password" : "Bearer token"}
+                  {editing && " (leave blank to keep current)"}
+                </Label>
+                <Input
+                  id="g-token"
+                  type="password"
+                  placeholder={editing?.has_token ? "Leave blank to keep current" : ""}
+                  value={form.token}
+                  onChange={(e) => setForm((p) => ({ ...p, token: e.target.value }))}
+                  className="font-mono"
+                />
+              </div>
+            )}
 
             <div className="flex items-center gap-2">
               <input
@@ -479,16 +520,16 @@ export default function GrafanaPage() {
             </div>
 
             {formError && <p className="text-sm text-red-400">{formError}</p>}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setDialogOpen(false); setFormError(null) }}>
-                Cancel
-              </Button>
-              <Button onClick={handleSave} disabled={formSaving}>
-                {formSaving ? "Saving..." : editing ? "Save Changes" : "Add Instance"}
-              </Button>
-            </DialogFooter>
           </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDialogOpen(false); setFormError(null) }}>
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={formSaving}>
+              {formSaving ? "Saving..." : editing ? "Save Changes" : "Add Instance"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

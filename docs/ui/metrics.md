@@ -22,8 +22,8 @@ automatically.
      as-is, and for querying it strips the path down to the host and appends
      the right API path automatically (Mimir →
      `…/prometheus/api/v1/query`). You never enter the query URL.
-   - Optional tenant (`X-Scope-OrgID`), bearer token, TLS verification and
-     CA certificate.
+   - Optional tenant (`X-Scope-OrgID`), authentication (none, bearer token,
+     or HTTP basic username/password), TLS verification and CA certificate.
 
    Use **Test connection** to confirm the (derived) query API is reachable
    before saving. The first instance of each kind becomes that kind's
