@@ -35,6 +35,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
+import { HostMetricsSection } from "@/components/host-metrics-section"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
@@ -2320,6 +2321,8 @@ export default function HostDetailPage() {
 
       {activeTab === "overview" && (
         <>
+          <HostMetricsSection hostId={Number(id)} />
+
           {hostError && (
             <div className="text-red-400">Failed to load host details</div>
           )}

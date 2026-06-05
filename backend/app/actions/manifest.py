@@ -31,6 +31,26 @@ class ManifestParameter(BaseModel):
     help_text: str | None = None
 
 
+class MetricsBackendMapping(BaseModel):
+    """Maps LabDog's default Grafana instance onto a pack's playbook vars.
+
+    When present, the action-dispatch layer fills these extra-vars from the
+    registered default Grafana instance (unless the operator supplied them),
+    so e.g. the bundled alloy-install action ships to the same backend
+    LabDog queries — without the operator re-typing URLs. Keeping the var
+    *names* in the manifest means LabDog core never hardcodes ``alloy_*``.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Playbook var to receive the Prometheus/Mimir remote-write URL.
+    prometheus_push_var: str | None = None
+    #: Playbook var to receive the Loki push URL.
+    loki_push_var: str | None = None
+    #: Playbook var to receive the Mimir tenant (X-Scope-OrgID).
+    org_id_var: str | None = None
+
+
 class ActionManifest(BaseModel):
     # ``extra='ignore'`` so older manifests carrying retired fields
     # (notably ``execution_mode``) don't fail validation. New manifests
@@ -87,6 +107,16 @@ class ActionManifest(BaseModel):
             "Budget for the verify playbook. Prevents a slow probe from "
             "stalling snapshot cleanup. Ignored when verify_playbook is "
             "unset."
+        ),
+    )
+    metrics_backend: MetricsBackendMapping | None = Field(
+        default=None,
+        description=(
+            "Opt-in mapping that lets LabDog inject its registered default "
+            "Grafana instance's URLs into this action's playbook vars at "
+            "dispatch (e.g. the bundled alloy-install action). LabDog also "
+            "always injects labdog_host_id / labdog_hostname for per-host "
+            "runs so shipped metrics are queryable back."
         ),
     )
     playbook_timeout_seconds: int | None = Field(

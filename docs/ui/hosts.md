@@ -53,6 +53,8 @@ Shows a single host's configuration, group memberships, and per-module sync stat
 - Open the **SSH terminal**
 - Trigger a **sync** for individual modules
 - View and discover the host's **Proxmox VM mapping**
+- See **live CPU / memory / disk usage** when a Grafana backend is
+  configured — see [Live host metrics](metrics.md)
 
 ### Module Status Table
 

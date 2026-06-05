@@ -251,6 +251,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
             action_playbook_timeout: int | None = action.playbook_timeout_seconds
+            action_metrics_backend: dict | None = action.metrics_backend
             # Run-time toggles mirrored from ScheduledAction at dispatch time.
             # Honoured the same way as action_group.py — see Phases A/D/E.
             # Ignored when the action is non-destructive (no envelope runs).
@@ -373,6 +374,18 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         if dry_run:
             extra_vars = extra_vars or {}
             extra_vars["ansible_check_mode"] = True
+
+        # Inject metrics integration vars: identity labels (always, so the
+        # agent stamps queryable labels) + the default Grafana instance's
+        # push URLs when the manifest opts in via ``metrics_backend``.
+        # Operator-supplied values win over injected URLs; identity is
+        # LabDog-owned and always wins.
+        from app.grafana.service import build_metrics_extra_vars
+
+        _url_vars, _identity_vars = await build_metrics_extra_vars(
+            host_id, host_hostname, action_metrics_backend
+        )
+        extra_vars = {**_url_vars, **(extra_vars or {}), **_identity_vars}
 
         # ------------------------------------------------------------------ #
         # Resolve playbook timeout from app settings                          #

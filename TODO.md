@@ -125,6 +125,22 @@ hold`, otherwise the kubeadm flow is identical.
 - Smoke-test on at least one Rocky 9 + Debian 12 mixed cluster
   before declaring done.
 
+---
 
+## Grafana metrics — follow-ups
 
+**Context:** 0.4.0 shipped instant CPU/memory/disk on the host page,
+querying the **default** Grafana instance by the `labdog_host_id` label
+that the alloy-install action stamps. A few deliberate deferrals:
+
+- **Per-host metrics backend routing.** Today every host is queried
+  against the single default Grafana instance. Add a nullable
+  `host.metrics_instance_id` FK, set post-run when alloy-install runs
+  against a host with a chosen instance, and query that instead of the
+  default — so different hosts can report to different backends. (Needs
+  a post-run linking hook analogous to `post_run_register`.)
+- **Loki log surfacing** on the host page (the integration already
+  stores the Loki push URL; querying/displaying logs is unbuilt).
+- **More metrics / tuning:** network throughput, per-mount disk, and
+  operator-configurable thresholds + refresh interval.
 
