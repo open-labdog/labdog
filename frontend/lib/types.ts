@@ -123,6 +123,42 @@ export interface ProxmoxNode {
   updated_at: string
 }
 
+export interface GrafanaInstance {
+  id: number
+  name: string
+  /** Prometheus-compatible query base URL LabDog queries. */
+  prometheus_query_url: string
+  /** Remote-write URL handed to the Alloy install action. */
+  prometheus_push_url: string
+  loki_push_url: string | null
+  org_id: string | null
+  has_token: boolean
+  verify_ssl: boolean
+  has_ca_cert: boolean
+  ca_cert_fingerprint: string | null
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface HostMetricValue {
+  percent: number
+  used: number | null
+  total: number | null
+  unit: string | null
+}
+
+export interface HostMetrics {
+  /** False when no Grafana instance is registered (→ "set up" CTA). */
+  configured: boolean
+  sampled_at: string | null
+  cpu: HostMetricValue | null
+  memory: HostMetricValue | null
+  disk: HostMetricValue | null
+  /** Set when a query failed (vs. simply no data yet). */
+  error: string | null
+}
+
 export interface VMMapping {
   id: number
   host_id: number

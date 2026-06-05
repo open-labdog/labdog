@@ -295,8 +295,8 @@ guidance still applies.
 ## Encryption-key handling
 
 `security.encryption_key` decrypts every credential LabDog stores
-(SSH private keys, Proxmox API tokens, git HTTPS PATs). It is the
-single most sensitive piece of state in the system.
+(SSH private keys, Proxmox API tokens, git HTTPS PATs, Grafana bearer
+tokens). It is the single most sensitive piece of state in the system.
 
 - **Never commit** `/etc/labdog/labdog.toml` or any backup of it to
   a git repo. If it lands in git history, treat every stored
