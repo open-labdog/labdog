@@ -1,9 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
-import { RefreshCwIcon, HelpCircleIcon, AlertTriangleIcon, XCircleIcon } from "lucide-react"
+import { RefreshCwIcon, AlertTriangleIcon, XCircleIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { UsageBar, usageTone } from "@/components/usage-bar"
@@ -92,7 +91,7 @@ function Callout({
 }
 
 export function HostMetricsSection({ hostId }: { hostId: number }) {
-  const { data, isLoading, refetch, isFetching } = useQuery<HostMetrics>({
+  const { data, refetch, isFetching } = useQuery<HostMetrics>({
     queryKey: ["host-metrics", hostId],
     queryFn: () => apiFetch<HostMetrics>(`/api/grafana/hosts/${hostId}/metrics`),
     refetchInterval: 15_000,
@@ -111,12 +110,17 @@ export function HostMetricsSection({ hostId }: { hostId: number }) {
     now - new Date(data.sampled_at).getTime() > STALE_AFTER_MS
   const hasData = !!data && (data.cpu != null || data.memory != null || data.disk != null)
 
+  // Only render the panel when a Mimir backend is configured. Hidden
+  // entirely otherwise — including while the first fetch is in flight, so
+  // an unconfigured host shows nothing rather than a flash of placeholder.
+  if (!data || !data.configured) return null
+
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-semibold text-slate-200">Resource Usage</h3>
-          {hasData && data?.sampled_at && (
+          {hasData && data.sampled_at && (
             <span
               className={`text-xs ${stale ? "text-amber-400" : "text-slate-500"}`}
               title={new Date(data.sampled_at).toLocaleString()}
@@ -126,29 +130,13 @@ export function HostMetricsSection({ hostId }: { hostId: number }) {
             </span>
           )}
         </div>
-        {data?.configured && (
-          <Button variant="outline" size="sm" disabled={isFetching} onClick={() => refetch()}>
-            <RefreshCwIcon className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-            Refresh
-          </Button>
-        )}
+        <Button variant="outline" size="sm" disabled={isFetching} onClick={() => refetch()}>
+          <RefreshCwIcon className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </div>
 
-      {isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-28 animate-pulse rounded-md border border-slate-800 bg-slate-950/40" />
-          ))}
-        </div>
-      ) : !data || data.configured === false ? (
-        <Callout tone="slate" icon={<HelpCircleIcon className="h-4 w-4 shrink-0 text-slate-400" />}>
-          No metrics backend configured.{" "}
-          <Link href="/grafana" className="text-sky-400 underline hover:text-sky-300">
-            Set up Grafana
-          </Link>{" "}
-          to show live CPU, memory, and disk usage.
-        </Callout>
-      ) : data.error ? (
+      {data.error ? (
         <Callout tone="red" icon={<XCircleIcon className="h-4 w-4 shrink-0 text-red-400" />}>
           Failed to query metrics: {data.error}
         </Callout>
