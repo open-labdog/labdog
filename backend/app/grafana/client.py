@@ -95,6 +95,20 @@ class PrometheusClient:
             raise PrometheusError(str(body.get("error", "query failed")))
         return body.get("data", {}).get("result", [])
 
+    async def get_ok(self, path: str) -> None:
+        """GET ``{query_url}{path}`` and raise :class:`PrometheusError` unless
+        the response is 2xx. Used by connectivity tests (e.g. Loki labels)."""
+        url = f"{self.query_url}{path}"
+        try:
+            async with self._get_client() as client:
+                resp = await client.get(url)
+        except httpx.HTTPError as exc:
+            raise PrometheusError(f"Request failed: {exc}") from exc
+        if resp.status_code in (401, 403):
+            raise PrometheusError("Authentication failed", resp.status_code)
+        if resp.status_code >= 400:
+            raise PrometheusError(f"HTTP {resp.status_code}", resp.status_code)
+
     async def query_scalar(self, promql: str) -> tuple[float, float] | None:
         """Run ``query`` and return ``(value, timestamp)`` of the first
         result, or ``None`` when the query returned no series."""

@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.grafana import metrics as m
-from app.grafana.schemas import GrafanaInstanceCreate
+from app.grafana.schemas import GrafanaInstanceCreate, derive_query_url
 
 
 def test_promql_builders_filter_by_host_id():
@@ -71,14 +71,25 @@ async def test_fetch_host_metrics_no_data():
 def test_schema_strips_trailing_slash_and_requires_scheme():
     inst = GrafanaInstanceCreate(
         name="hl",
-        prometheus_query_url="http://mimir:9009/prometheus/",
-        prometheus_push_url="http://mimir:9009/api/v1/push",
+        kind="mimir",
+        url="http://mimir:9009/api/v1/push/",
     )
-    assert inst.prometheus_query_url == "http://mimir:9009/prometheus"
+    assert inst.url == "http://mimir:9009/api/v1/push"
 
     with pytest.raises(ValidationError):
-        GrafanaInstanceCreate(
-            name="bad",
-            prometheus_query_url="mimir:9009",  # no scheme
-            prometheus_push_url="http://mimir:9009/api/v1/push",
-        )
+        GrafanaInstanceCreate(name="bad", kind="mimir", url="mimir:9009")  # no scheme
+
+    with pytest.raises(ValidationError):
+        GrafanaInstanceCreate(name="bad", kind="splunk", url="http://x:1")  # bad kind
+
+
+def test_derive_query_url_strips_path_and_appends_kind_prefix():
+    # The operator's push URL → host-only + the kind's query prefix.
+    assert (
+        derive_query_url("https://mimir.lan/api/v1/push", "mimir") == "https://mimir.lan/prometheus"
+    )
+    assert derive_query_url("https://loki.lan/loki/api/v1/push", "loki") == "https://loki.lan/loki"
+    # Port preserved; trailing path discarded.
+    assert (
+        derive_query_url("http://mimir:9009/api/v1/push", "mimir") == "http://mimir:9009/prometheus"
+    )
