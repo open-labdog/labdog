@@ -125,29 +125,6 @@ hold`, otherwise the kubeadm flow is identical.
 - Smoke-test on at least one Rocky 9 + Debian 12 mixed cluster
   before declaring done.
 
----
-
-## CA certificate management in the UI
-
-**Context:** Proxmox nodes (and other HTTPS targets) often use
-self-signed or privately-issued TLS certificates. The Proxmox client
-(`backend/app/proxmox/client.py`) uses httpx with default strict SSL
-verification, so any host whose CA is not in the container's system
-trust store causes `[SSL: CERTIFICATE_VERIFY_FAILED]` at discovery
-time (see BUG-45).
-
-**Sketch:**
-
-- Add a CA Certificates section to the Integrations settings page.
-  Users paste or upload one or more PEM-encoded CA certificates.
-- Store them in the DB (or a dedicated config dir mounted into the
-  container) and expose them via a settings key.
-- Pass the stored CA bundle as the `verify=` argument to httpx
-  `AsyncClient` in `ProxmoxClient.__init__` (or merge with the
-  system trust store via `truststore` / `certifi`).
-- Optionally: expose a per-host "TLS verify" toggle for the escape
-  hatch (`verify=False`) behind a visible warning in the UI.
-
 
 
 

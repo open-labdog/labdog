@@ -117,6 +117,8 @@ export interface ProxmoxNode {
   api_url: string
   token_id: string
   verify_ssl: boolean
+  has_ca_cert: boolean
+  ca_cert_fingerprint?: string | null
   created_at: string
   updated_at: string
 }
@@ -713,6 +715,8 @@ export interface ActionHostRun {
   id: number
   action_run_id: number
   host_id: number
+  /** Target hostname for display. NULL only if the host row was deleted. */
+  hostname: string | null
   status: string
   started_at: string | null
   finished_at: string | null

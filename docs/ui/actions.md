@@ -61,6 +61,12 @@ Live stdout streams into the run-detail page; when it finishes you see a
 green/red status chip and the full captured output. Runs are stored in
 the DB — history is visible in the same tab.
 
+For a multi-host run (a group, fleet, or scheduled run), the run-detail
+page shows a **Host Status** grid — each host listed by hostname with its
+own status chip. Click a host to filter the output to just that host's
+log; **Show all hosts** returns to the combined view. The combined view
+prefixes each host's section with a `===== hostname =====` header.
+
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
 
@@ -396,6 +402,12 @@ supports_host: true          # can target a single host?
 supports_fleet: false        # can target every host in the inventory?
                              # Conservative default; flip to true only for
                              # truly fleet-wide work (drift checks, etc.).
+playbook_timeout_seconds: 1800  # optional; floor for the main playbook's
+                             # wall-clock budget. Effective timeout is
+                             # max(this, the global ansible.playbook_timeout
+                             # setting). Omit to use the global setting alone.
+                             # Set it for long actions (e.g. package upgrades)
+                             # the short global default can't accommodate.
 parameters:                  # passed as --extra-vars at run time
   - key: my_param
     label: My parameter
@@ -647,12 +659,13 @@ to parse the rest still load — check the API server logs for
 `pack 'X': failed to load manifest …`.
 
 **"The wrong version of an action ran."** The amber badge tells you
-which pack won. If that's not what you want, drag the pack you want
-above it on the **Action Packs** page (top wins), or pin a specific
-winner via the per-key resolution dialog (open from the Contested
-chip in the Active Action Catalog or the conflict banner above the
-pack list). Disabling the winning pack works too if you don't need
-it at all.
+which pack won. If that's not what you want, pin the pack you want as
+the winner for that key on the **Action Packs** page — expand the
+contested row in the Active Action Catalog and pick it, or use the
+pack's **Make winner for all keys** button in Pack Sources to claim
+every key it contributes. Disabling the unwanted pack works too if
+you don't need it at all. (There is no pack ordering — precedence is
+per-key pinning, not a global priority.)
 
 **"The action doesn't show up on a host but shows on groups."** Check
 the manifest's `supports_host` / `supports_group` flags.

@@ -14,6 +14,8 @@ from app.proxmox.schemas import (
     ProxmoxNodeResponse,
     ProxmoxNodeUpdate,
     ProxmoxTestResponse,
+    _ca_cert_fingerprint,
+    to_response,
 )
 from app.workflows.snapshot_cleanup import cleanup_orphaned_snapshots
 
@@ -26,7 +28,7 @@ async def list_proxmox_nodes(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ProxmoxNode).order_by(ProxmoxNode.name))
-    return result.scalars().all()
+    return [to_response(node) for node in result.scalars().all()]
 
 
 @router.post("", response_model=ProxmoxNodeResponse, status_code=201)
@@ -48,6 +50,7 @@ async def create_proxmox_node(
         token_id=body.token_id,
         encrypted_token_secret=encrypted,
         verify_ssl=body.verify_ssl,
+        ca_cert_pem=body.ca_cert_pem,
     )
     db.add(node)
     await db.flush()
@@ -58,11 +61,16 @@ async def create_proxmox_node(
         entity_type="proxmox_node",
         entity_id=node.id,
         user_id=user.id,
-        after_state={"name": node.name, "api_url": node.api_url, "token_id": node.token_id},
+        after_state={
+            "name": node.name,
+            "api_url": node.api_url,
+            "token_id": node.token_id,
+            "has_ca_cert": node.ca_cert_pem is not None,
+        },
     )
     await db.commit()
     await db.refresh(node)
-    return node
+    return to_response(node)
 
 
 @router.post("/cleanup-snapshots")
@@ -84,7 +92,7 @@ async def get_proxmox_node(
     node = result.scalar_one_or_none()
     if not node:
         raise HTTPException(status_code=404, detail="Proxmox node not found")
-    return node
+    return to_response(node)
 
 
 @router.put("/{node_id}", response_model=ProxmoxNodeResponse)
@@ -120,6 +128,10 @@ async def update_proxmox_node(
     if body.verify_ssl is not None:
         node.verify_ssl = body.verify_ssl
 
+    # Tri-state: omitted/None = unchanged; "" (blank) = clear; else replace.
+    if body.ca_cert_pem is not None:
+        node.ca_cert_pem = body.ca_cert_pem or None
+
     await log_action(
         db=db,
         action="update",
@@ -127,11 +139,19 @@ async def update_proxmox_node(
         entity_id=node.id,
         user_id=user.id,
         before_state=before,
-        after_state={"name": node.name, "api_url": node.api_url, "token_id": node.token_id},
+        after_state={
+            "name": node.name,
+            "api_url": node.api_url,
+            "token_id": node.token_id,
+            "has_ca_cert": node.ca_cert_pem is not None,
+            "ca_cert_fingerprint": (
+                _ca_cert_fingerprint(node.ca_cert_pem) if node.ca_cert_pem else None
+            ),
+        },
     )
     await db.commit()
     await db.refresh(node)
-    return node
+    return to_response(node)
 
 
 @router.delete("/{node_id}", status_code=204)
@@ -182,6 +202,7 @@ async def test_proxmox_node(
         token_id=node.token_id,
         token_secret=token_secret,
         verify_ssl=node.verify_ssl,
+        ca_cert_pem=node.ca_cert_pem,
     )
     try:
         data = await client.test_connection()

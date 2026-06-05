@@ -131,6 +131,41 @@ def test_manifest_defaults_have_no_verify():
     )
     assert m.verify_playbook is None
     assert m.verify_timeout_seconds == 300
+    assert m.playbook_timeout_seconds is None
+
+
+def test_manifest_accepts_playbook_timeout_seconds():
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "playbook.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+            "playbook_timeout_seconds": 5400,
+        }
+    )
+    assert m.playbook_timeout_seconds == 5400
+
+
+def test_load_pack_threads_playbook_timeout(tmp_path: Path):
+    manifest_body = SIMPLE_MANIFEST + "playbook_timeout_seconds: 5400\n"
+    _write_pack(
+        tmp_path,
+        "pt",
+        actions={
+            "demo": {
+                "manifest.yml": manifest_body,
+                "playbook.yml": SIMPLE_PLAYBOOK,
+            },
+        },
+    )
+    pack = Pack(name="pt", path=tmp_path / "pt")
+    defns = load_pack(pack)
+    assert len(defns) == 1
+    assert defns[0].playbook_timeout_seconds == 5400
 
 
 def test_load_pack_resolves_verify_playbook(tmp_path: Path):

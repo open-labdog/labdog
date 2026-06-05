@@ -89,6 +89,18 @@ class ActionManifest(BaseModel):
             "unset."
         ),
     )
+    playbook_timeout_seconds: int | None = Field(
+        default=None,
+        description=(
+            "Per-action wall-clock budget for the MAIN playbook, in seconds. "
+            "The effective timeout is max(this, the global "
+            "'ansible.playbook_timeout' setting) — i.e. this is a floor the "
+            "action guarantees for itself, while operators can still widen "
+            "every playbook globally. Leave unset to use the global setting "
+            "alone. Use this for long-running actions (e.g. package upgrades) "
+            "whose duration the short global default can't accommodate."
+        ),
+    )
     post_run_sync: list[
         Literal[
             "packages",

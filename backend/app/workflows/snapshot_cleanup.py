@@ -115,6 +115,7 @@ async def find_orphaned_snapshots(
             token_id=pn.token_id,
             token_secret=token_secret,
             verify_ssl=pn.verify_ssl,
+            ca_cert_pem=pn.ca_cert_pem,
         )
 
         try:
@@ -233,6 +234,7 @@ async def cleanup_orphaned_snapshots(db: AsyncSession) -> dict:
                 token_id=pn.token_id,
                 token_secret=token_secret,
                 verify_ssl=pn.verify_ssl,
+                ca_cert_pem=pn.ca_cert_pem,
             )
         except Exception as exc:
             logger.warning(

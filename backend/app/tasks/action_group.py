@@ -334,6 +334,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             action_destructive: bool = action.destructive
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            action_playbook_timeout: int | None = action.playbook_timeout_seconds
             parameters: dict = dict(run.parameters or {})
             run_snapshot_enabled: bool = bool(run.snapshot_enabled)
             run_verify_enabled: bool = bool(run.verify_enabled)
@@ -484,6 +485,9 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
         except Exception:
             timeout = 1800
+        # Per-action floor — see the matching comment in action_host.py.
+        if action_playbook_timeout:
+            timeout = max(timeout, action_playbook_timeout)
 
         runner = run_ansible(
             playbook_path=playbook_path,
@@ -784,6 +788,7 @@ async def _snapshot_all(
             token_id=proxmox_node.token_id,
             token_secret=token_secret,
             verify_ssl=proxmox_node.verify_ssl,
+            ca_cert_pem=proxmox_node.ca_cert_pem,
         )
         ctx.proxmox_client = client
         ctx.pve_node = mapping.pve_node_name
