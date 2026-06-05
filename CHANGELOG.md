@@ -7,6 +7,29 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+#### Grafana Mimir/Loki integration — live host metrics
+
+LabDog can now render **instant** CPU / memory / disk usage on each
+host's Overview tab by querying a registered Grafana Mimir
+(Prometheus-compatible) backend. Instant values only — no graphs.
+
+- New **Integrations → Grafana** page to register a metrics backend
+  (Mimir/Prometheus query URL, remote-write URL, optional Loki URL,
+  tenant/`X-Scope-OrgID`, optional encrypted bearer token, TLS verify +
+  CA cert, default flag) with per-row and pre-save connection tests.
+  Modeled on the Proxmox integration (`grafana_instances` table,
+  migration `0011`).
+- `GET /api/grafana/hosts/{id}/metrics` queries the default instance for
+  the host's CPU/memory/disk, matched on a stable `labdog_host_id` label.
+- **Closes the loop with the bundled `alloy-install` action:** a manifest
+  `metrics_backend` mapping lets LabDog fill the Alloy remote-write/Loki
+  URLs from the registered default instance, and the per-host executor
+  always injects `labdog_host_id` / `labdog_hostname` so shipped metrics
+  are queryable back. Register a backend, run Install Alloy, and metrics
+  appear automatically. See [docs/ui/metrics.md](docs/ui/metrics.md).
+
 ## [0.3.1] — 2026-06-05
 
 ### Added
