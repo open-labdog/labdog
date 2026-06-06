@@ -752,6 +752,11 @@ export interface ActionDefinition {
    * module names; values are pre-validated dicts. Surface as a chip
    * counting items per module so the operator sees the side effect. */
   post_run_register: Record<string, Record<string, unknown>[]>
+  /** Maps this action's playbook vars onto a Grafana metrics backend
+   * (e.g. `{prometheus_push_var: "alloy_prometheus_url", loki_push_var:
+   * "alloy_loki_url"}`). When set, the run dialog renders those URL params
+   * as registered-instance pickers instead of free text. Null otherwise. */
+  metrics_backend: Record<string, string> | null
 }
 
 export interface ActionHostRun {
