@@ -72,9 +72,12 @@ class PrometheusClient:
         return self._ssl_context
 
     def _get_client(self) -> httpx.AsyncClient:
-        headers: dict[str, str] = {}
-        if self.org_id:
-            headers["X-Scope-OrgID"] = self.org_id
+        # Mimir/Loki with multitenancy enabled (their default) reject any
+        # request lacking X-Scope-OrgID with HTTP 401 ("no org id"). Default
+        # the tenant to "anonymous" — the conventional single-tenant value,
+        # and the same default the Alloy install action ships with — so an
+        # unauthenticated, no-tenant backend works out of the box.
+        headers: dict[str, str] = {"X-Scope-OrgID": self.org_id or "anonymous"}
         auth = self._auth_header()
         if auth:
             headers["Authorization"] = auth
