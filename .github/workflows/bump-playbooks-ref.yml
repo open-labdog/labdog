@@ -1,0 +1,86 @@
+name: Bump playbooks ref
+
+# Keeps the bundled-pack pin (LABDOG_PLAYBOOKS_REF) from rotting: when
+# labdog-playbooks `main` moves ahead of the pinned SHA, open a PR against
+# `dev` bumping the file. A maintainer reviews the playbooks diff and merges
+# — the pin stays deliberate, it just never silently goes stale.
+#
+# Triggers (schedule + repository_dispatch only fire from the DEFAULT
+# branch, so this must live on `main`):
+#   - schedule:            daily safety net.
+#   - repository_dispatch: fired by labdog-playbooks on merge to its main,
+#                          so the bump PR appears immediately (see
+#                          labdog-playbooks/.github/workflows/notify-labdog.yml).
+#   - workflow_dispatch:   manual run.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  repository_dispatch:
+    types: [playbooks-updated]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: bump-playbooks-ref
+  cancel-in-progress: true
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Resolve latest labdog-playbooks main SHA
+        id: latest
+        run: |
+          sha="$(git ls-remote https://github.com/open-labdog/labdog-playbooks.git refs/heads/main | cut -f1)"
+          if [ -z "$sha" ]; then
+            echo "Could not resolve labdog-playbooks main HEAD" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Compare with the pinned ref
+        id: cmp
+        run: |
+          current="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "${{ steps.latest.outputs.sha }}" ]; then
+            echo "Already at latest ($current) — nothing to do."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or update the bump PR
+        if: steps.cmp.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEW: ${{ steps.latest.outputs.sha }}
+          OLD: ${{ steps.cmp.outputs.current }}
+        run: |
+          set -euo pipefail
+          branch="chore/bump-playbooks-ref"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf '%s\n' "$NEW" > LABDOG_PLAYBOOKS_REF
+          git checkout -B "$branch"
+          git add LABDOG_PLAYBOOKS_REF
+          git commit -m "chore: bump LABDOG_PLAYBOOKS_REF to $NEW"
+          git push -f origin "$branch"
+          if [ -n "$(gh pr list --head "$branch" --base dev --state open --json number -q '.[0].number')" ]; then
+            echo "Bump PR already open — branch force-updated to $NEW."
+          else
+            gh pr create --base dev --head "$branch" \
+              --title "chore: bump bundled playbooks to latest main" \
+              --body "Automated bump of \`LABDOG_PLAYBOOKS_REF\`: \`$OLD\` → \`$NEW\` (labdog-playbooks \`main\` HEAD), triggered by \`${{ github.event_name }}\`.
+
+          This is the pack snapshot the next image build / release bundles — **review the playbooks diff before merging**:
+          https://github.com/open-labdog/labdog-playbooks/compare/$OLD...$NEW"
+          fi
