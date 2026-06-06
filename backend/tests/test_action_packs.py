@@ -185,6 +185,28 @@ def test_load_pack_threads_metrics_backend(tmp_path: Path):
     assert defns[0].metrics_backend == {"prometheus_push_var": "alloy_prometheus_url"}
 
 
+def test_load_pack_includes_action_private_roles(tmp_path: Path):
+    _write_pack(
+        tmp_path,
+        "rp",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": SIMPLE_PLAYBOOK,
+                "roles/demo-role/tasks/main.yml": "---\n[]\n",
+            },
+        },
+        roles=["shared-role"],
+    )
+    pack = Pack(name="rp", path=tmp_path / "rp")
+    defns = load_pack(pack)
+    assert len(defns) == 1
+    paths = defns[0].roles_paths
+    # Action-private roles dir first, then pack-shared.
+    assert paths[0] == (tmp_path / "rp" / "actions" / "demo" / "roles")
+    assert (tmp_path / "rp" / "roles") in paths
+
+
 def test_load_pack_threads_playbook_timeout(tmp_path: Path):
     manifest_body = SIMPLE_MANIFEST + "playbook_timeout_seconds: 5400\n"
     _write_pack(
