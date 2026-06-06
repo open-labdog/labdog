@@ -96,6 +96,15 @@ def test_auth_header_per_scheme():
     assert PrometheusClient("http://x", auth_type="none", token="ignored")._auth_header() is None
 
 
+async def test_org_id_header_defaults_to_anonymous():
+    # Missing tenant → "anonymous" (Mimir/Loki 401 without X-Scope-OrgID).
+    async with PrometheusClient("http://x")._get_client() as c:
+        assert c.headers["X-Scope-OrgID"] == "anonymous"
+    # Explicit tenant is honoured.
+    async with PrometheusClient("http://x", org_id="team-a")._get_client() as c:
+        assert c.headers["X-Scope-OrgID"] == "team-a"
+
+
 def test_derive_query_url_strips_path_and_appends_kind_prefix():
     # The operator's push URL → host-only + the kind's query prefix.
     assert (
