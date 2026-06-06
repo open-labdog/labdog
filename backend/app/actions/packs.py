@@ -63,7 +63,14 @@ def _manifest_to_definition(
             f"Manifest {manifest_path} references playbook "
             f"{manifest.playbook!r} which does not exist at {playbook_path}."
         )
-    roles_paths: tuple[Path, ...] = (pack.roles_dir,) if pack.roles_dir.is_dir() else ()
+    # Roles are searched action-private first (``actions/<key>/roles/``,
+    # next to this manifest), then pack-shared (``<pack>/roles/``). Each is
+    # included only if present. Without the action-private path, an action
+    # whose playbook references its own roles (e.g. alloy-install) fails
+    # with "role not found".
+    roles_paths: tuple[Path, ...] = tuple(
+        d for d in (manifest_path.parent / "roles", pack.roles_dir) if d.is_dir()
+    )
     verify_playbook_path: Path | None = None
     if manifest.verify_playbook is not None:
         candidate = (manifest_path.parent / manifest.verify_playbook).resolve()
