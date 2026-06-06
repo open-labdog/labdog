@@ -65,6 +65,7 @@ def _definition_to_out(defn) -> ActionDefinitionOut:
             module: [dict(item) for item in items]
             for module, items in defn.post_run_register.items()
         },
+        metrics_backend=defn.metrics_backend,
     )
 
 
