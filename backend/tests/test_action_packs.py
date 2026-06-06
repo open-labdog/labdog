@@ -697,5 +697,9 @@ def test_bundled_pack_exposes_expected_actions():
     assert linux.supports_group is True
     assert linux.playbook_path.name == "playbook.yml"
     assert linux.playbook_path.is_file()
+    # Subset, not exact: the pack ships from labdog-playbooks and may add
+    # params over time (e.g. ignore_failed_units) without it being a
+    # regression. This guards that the long-standing core params survive a
+    # bundled-pack bump; it must not break every time the pack grows a knob.
     param_keys = {p.key for p in linux.parameters}
-    assert param_keys == {"auto_reboot", "reboot_timeout", "cleanup"}
+    assert {"auto_reboot", "reboot_timeout", "cleanup"} <= param_keys
