@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { RefreshCwIcon, AlertTriangleIcon, XCircleIcon } from "lucide-react"
+import { AlertTriangleIcon, XCircleIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
-import { Button } from "@/components/ui/button"
 import { UsageBar, usageTone } from "@/components/usage-bar"
 import type { HostMetrics, HostMetricValue } from "@/lib/types"
 
@@ -38,61 +37,49 @@ function subLine(m: HostMetricValue): string | null {
   return null
 }
 
-function Tile({ label, mount, metric }: { label: string; mount?: string; metric: HostMetricValue | null }) {
+/** One compact metric cell: label + % on a baseline, slim bar below.
+ *  Absolute used/total lives in the title tooltip to keep height down. */
+function Cell({ label, mount, metric }: { label: string; mount?: string; metric: HostMetricValue | null }) {
+  const labelEl = (
+    <span className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
+      {label}
+      {mount && <span className="ml-1 font-mono normal-case text-slate-500">{mount}</span>}
+    </span>
+  )
   if (!metric) {
     return (
-      <div className="flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950/40 p-4">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</span>
-        <span className="text-3xl font-semibold tabular-nums text-slate-600">—</span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-baseline justify-between gap-2">
+          {labelEl}
+          <span className="text-xl font-semibold leading-none tabular-nums text-slate-600">—</span>
+        </div>
         <div className="h-1.5 w-full rounded-full bg-slate-800" />
-        <span className="text-xs text-slate-600">no data</span>
       </div>
     )
   }
   const tone = usageTone(metric.percent)
   const sub = subLine(metric)
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-slate-800 bg-slate-950/40 p-4">
-      <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
-        {label}
-        {mount && <span className="ml-1 font-mono normal-case text-slate-500">{mount}</span>}
-      </span>
-      <span className={`text-3xl font-semibold tabular-nums ${tone.text}`}>
-        {Math.round(metric.percent)}
-        <span className="text-lg text-slate-500">%</span>
-      </span>
+    <div className="flex flex-col gap-1" title={sub ?? undefined}>
+      <div className="flex items-baseline justify-between gap-2">
+        {labelEl}
+        <span className={`text-xl font-semibold leading-none tabular-nums ${tone.text}`}>
+          {Math.round(metric.percent)}
+          <span className="text-xs text-slate-500">%</span>
+        </span>
+      </div>
       <UsageBar value={metric.percent} />
-      <span className="text-xs tabular-nums text-slate-500">{sub ?? " "}</span>
     </div>
   )
 }
 
-function Callout({
-  tone,
-  icon,
-  children,
-}: {
-  tone: "slate" | "amber" | "red"
-  icon: React.ReactNode
-  children: React.ReactNode
-}) {
-  const cls =
-    tone === "red"
-      ? "border-red-700/50 bg-red-950/20 text-red-300"
-      : tone === "amber"
-        ? "border-amber-700/50 bg-amber-950/20 text-amber-200"
-        : "border-slate-700/50 bg-slate-900/50 text-slate-300"
-  return (
-    <div className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm ${cls}`}>
-      {icon}
-      <div className="flex-1">{children}</div>
-    </div>
-  )
-}
-
+/** Embedded resource-usage strip — rendered as the first block of the host
+ *  Overview info card (not its own card). Renders nothing until a Mimir
+ *  backend is configured. Instant values only; auto-refreshes every 15s
+ *  while visible (the page's Refresh also refetches it). */
 export function HostMetricsSection({ hostId }: { hostId: number }) {
-  const { data, refetch, isFetching } = useQuery<HostMetrics>({
-    queryKey: ["host-metrics", hostId],
+  const { data } = useQuery<HostMetrics>({
+    queryKey: ["host-metrics", String(hostId)],
     queryFn: () => apiFetch<HostMetrics>(`/api/grafana/hosts/${hostId}/metrics`),
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
@@ -105,60 +92,53 @@ export function HostMetricsSection({ hostId }: { hostId: number }) {
     return () => clearInterval(t)
   }, [])
 
-  const stale =
-    data?.sampled_at != null &&
-    now - new Date(data.sampled_at).getTime() > STALE_AFTER_MS
-  const hasData = !!data && (data.cpu != null || data.memory != null || data.disk != null)
-
-  // Only render the panel when a Mimir backend is configured. Hidden
-  // entirely otherwise — including while the first fetch is in flight, so
-  // an unconfigured host shows nothing rather than a flash of placeholder.
+  // Hidden entirely until a Mimir backend is configured (incl. first fetch).
   if (!data || !data.configured) return null
 
-  return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-slate-200">Resource Usage</h3>
-          {hasData && data.sampled_at && (
-            <span
-              className={`text-xs ${stale ? "text-amber-400" : "text-slate-500"}`}
-              title={new Date(data.sampled_at).toLocaleString()}
-            >
-              {stale && <AlertTriangleIcon className="mr-1 inline h-3 w-3" />}
-              as of {relativeTime(data.sampled_at, now)}
-            </span>
-          )}
-        </div>
-        <Button variant="outline" size="sm" disabled={isFetching} onClick={() => refetch()}>
-          <RefreshCwIcon className={`mr-1 h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
+  const stale =
+    data.sampled_at != null && now - new Date(data.sampled_at).getTime() > STALE_AFTER_MS
+  const hasData = data.cpu != null || data.memory != null || data.disk != null
 
-      {data.error ? (
-        <Callout tone="red" icon={<XCircleIcon className="h-4 w-4 shrink-0 text-red-400" />}>
-          Failed to query metrics: {data.error}
-        </Callout>
-      ) : !hasData ? (
-        <Callout tone="amber" icon={<AlertTriangleIcon className="h-4 w-4 shrink-0 text-amber-400" />}>
-          No metrics found for this host yet. Run the <strong>Install Alloy agent</strong> action and
-          allow a minute for the first scrape.
-        </Callout>
-      ) : (
-        <>
-          <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${stale ? "opacity-60" : ""}`}>
-            <Tile label="CPU" metric={data.cpu} />
-            <Tile label="Memory" metric={data.memory} />
-            <Tile label="Disk" mount="/" metric={data.disk} />
-          </div>
-          {stale && (
-            <p className="mt-2 text-xs text-amber-400">
-              Metrics may be stale — the agent has not reported recently.
-            </p>
-          )}
-        </>
-      )}
+  // Right-aligned one-line status note (icon + short text + tooltip) — keeps
+  // abnormal states from growing the strip into a callout block.
+  let note: React.ReactNode = null
+  if (data.error) {
+    note = (
+      <span className="flex items-center gap-1 text-xs text-red-400" title={data.error}>
+        <XCircleIcon className="h-3.5 w-3.5" /> query error
+      </span>
+    )
+  } else if (!hasData) {
+    note = (
+      <span
+        className="flex items-center gap-1 text-xs text-amber-400"
+        title="Run the Install Alloy agent action and allow ~1 min for the first scrape."
+      >
+        <AlertTriangleIcon className="h-3.5 w-3.5" /> no metrics yet
+      </span>
+    )
+  } else if (stale) {
+    note = (
+      <span
+        className="flex items-center gap-1 text-xs text-amber-400"
+        title={data.sampled_at ? `Last sample ${relativeTime(data.sampled_at, now)}` : undefined}
+      >
+        <AlertTriangleIcon className="h-3.5 w-3.5" /> stale
+      </span>
+    )
+  }
+
+  return (
+    <div className="mb-3 border-b border-slate-800 pb-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-sm font-medium text-slate-400">Resource Usage</span>
+        {note}
+      </div>
+      <div className={`grid grid-cols-3 gap-4 ${stale ? "opacity-60" : ""}`}>
+        <Cell label="CPU" metric={data.cpu} />
+        <Cell label="Memory" metric={data.memory} />
+        <Cell label="Disk" mount="/" metric={data.disk} />
+      </div>
     </div>
   )
 }
