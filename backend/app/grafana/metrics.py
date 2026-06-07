@@ -18,9 +18,14 @@ _FS_EXCLUDE = "tmpfs|overlay|squashfs|ramfs|devtmpfs"
 
 
 def cpu_percent_query(host_id: int) -> str:
+    # 5m rate window (not 2m): CPU is the only counter-derived metric, so it
+    # needs >=2 samples inside the window or rate() returns nothing and the
+    # tile blanks out. A 5m window matches Prometheus' default lookback, so
+    # CPU tolerates ingestion gaps/jitter the same as the instant gauges
+    # (memory/disk) and stops intermittently disappearing on refresh.
     return (
         f"100 - (avg(rate(node_cpu_seconds_total"
-        f'{{labdog_host_id="{host_id}",mode="idle"}}[2m])) * 100)'
+        f'{{labdog_host_id="{host_id}",mode="idle"}}[5m])) * 100)'
     )
 
 
