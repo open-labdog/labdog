@@ -3,8 +3,9 @@
 This document explains when and how to rotate `security.encryption_key` —
 the AES-256-GCM master key that protects every encrypted credential stored in
 LabDog's database (`ssh_keys.encrypted_private_key`,
-`proxmox_nodes.encrypted_token_secret`, and
-`git_repositories.encrypted_https_token`).
+`proxmox_nodes.encrypted_token_secret`,
+`git_repositories.encrypted_https_token`, and
+`grafana_instances.encrypted_token`).
 
 ---
 
@@ -90,6 +91,7 @@ Successful output looks like:
   ssh_keys: 4 row(s) rotated
   proxmox_nodes: 2 row(s) rotated
   git_repositories: 1 row(s) rotated
+  grafana_instances: 1 row(s) rotated
 Key rotation complete.
 ```
 

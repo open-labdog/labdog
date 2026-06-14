@@ -78,7 +78,8 @@ legally. "Good faith" means:
 If you're auditing, these are the areas most worth scrutinising:
 
 - **Credential handling at rest and in transit.** SSH private keys,
-  Proxmox tokens, HTTPS PATs, and SSH known-hosts all touch the
+  Proxmox tokens, HTTPS PATs, Grafana bearer tokens, and SSH
+  known-hosts all touch the
   `encrypted_*` columns in the DB (AES-256-GCM) and the
   `app.crypto.encryption` pipeline. Any path that could leak one
   of these to logs, API responses, or `git config` is interesting.

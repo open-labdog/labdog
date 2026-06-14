@@ -551,6 +551,16 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
 
+### Grafana metrics
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/grafana/instances` | List/register Grafana Mimir/Loki backends (bearer or basic auth; secret encrypted at rest) |
+| `GET/PUT/DELETE` | `/api/grafana/instances/{id}` | Manage a registered instance |
+| `POST` | `/api/grafana/instances/{id}/test` · `/api/grafana/instances/test` | Connection test (saved instance / pre-save draft) |
+| `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |
+
+See [ui/metrics.md](./ui/metrics.md) for the end-to-end loop with the bundled Alloy install action.
+
 ## Project Structure
 
 ```
@@ -569,6 +579,7 @@ labdog/
 │   │   ├── discovery/       # Host network discovery
 │   │   ├── drift/           # Firewall drift detection
 │   │   ├── gitops/          # GitOps integration
+│   │   ├── grafana/         # Grafana Mimir/Loki integration (instant host metrics)
 │   │   ├── hosts_mgmt/      # /etc/hosts management module
 │   │   ├── models/          # SQLAlchemy models
 │   │   ├── packages/        # Package management module
@@ -628,6 +639,7 @@ LabDog uses a modular extension architecture. Each module follows the same patte
 | Web Shell | Shipped | Browser-based SSH terminal (xterm.js + WebSocket + asyncssh) |
 | Host Discovery | Shipped | Network scanning + SSH-verified bulk host import |
 | Proxmox Integration | Shipped | VM/container discovery from Proxmox VE hypervisors |
+| Grafana metrics | Shipped | Instant CPU/memory/disk on the host page from a Mimir/Prometheus backend; ties into the Alloy install action |
 | GitOps | Shipped | Git-based configuration import with webhook sync |
 
 ## Known Limitations

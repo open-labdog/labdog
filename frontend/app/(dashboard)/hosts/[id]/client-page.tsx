@@ -35,6 +35,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
+import { HostMetricsSection } from "@/components/host-metrics-section"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
@@ -795,7 +796,7 @@ export default function HostDetailPage() {
   const [trustingKey, setTrustingKey] = useState(false)
 
   const tabQueryKeys: Record<string, string[][]> = {
-    overview: [["host", String(id)], ["host-current-state", String(id)]],
+    overview: [["host", String(id)], ["host-current-state", String(id)], ["host-metrics", String(id)]],
     groups: [["host", String(id)], ["groups"]],
     rules: [["host-effective-rules", String(id)], ["host-firewall-overrides", String(id)], ["host-current-state", String(id)]],
     services: [["host-effective-services", String(id)], ["host-service-overrides", String(id)]],
@@ -2326,6 +2327,7 @@ export default function HostDetailPage() {
 
           {host && (
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-0">
+              <HostMetricsSection hostId={Number(id)} />
               <InfoRow label="Hostname">{host.hostname}</InfoRow>
               <InfoRow label="IP Address">
                 <span className="font-mono">{host.ip_address}</span>
