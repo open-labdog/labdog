@@ -61,6 +61,12 @@ class ActionDefinitionOut(BaseModel):
     #: module names; values are per-item dicts validated against the
     #: module's Create schema. See ``ActionManifest.post_run_register``.
     post_run_register: dict[str, list[dict[str, Any]]] = {}
+    #: Optional mapping of this action's playbook vars onto a Grafana
+    #: metrics backend (see ``ActionManifest.metrics_backend``). When
+    #: present, the run dialog renders the mapped URL params as
+    #: registered-instance pickers instead of free-text. ``None`` when the
+    #: action doesn't integrate with Grafana.
+    metrics_backend: dict[str, str] | None = None
 
 
 class RunCreateBody(BaseModel):

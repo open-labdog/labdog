@@ -123,6 +123,49 @@ export interface ProxmoxNode {
   updated_at: string
 }
 
+export type GrafanaKind = "mimir" | "loki"
+export type GrafanaAuthType = "none" | "bearer" | "basic"
+
+export interface GrafanaInstance {
+  id: number
+  name: string
+  /** "mimir" (metrics) or "loki" (logs) — registered separately. */
+  kind: GrafanaKind
+  /** The ingest/remote-write URL the operator enters (handed to Alloy). */
+  url: string
+  /** Derived, read-only: the base LabDog queries (host + kind prefix). */
+  query_url: string
+  org_id: string | null
+  auth_type: GrafanaAuthType
+  username: string | null
+  /** True when an auth secret (bearer token / basic password) is stored. */
+  has_token: boolean
+  verify_ssl: boolean
+  has_ca_cert: boolean
+  ca_cert_fingerprint: string | null
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface HostMetricValue {
+  percent: number
+  used: number | null
+  total: number | null
+  unit: string | null
+}
+
+export interface HostMetrics {
+  /** False when no Grafana instance is registered (→ "set up" CTA). */
+  configured: boolean
+  sampled_at: string | null
+  cpu: HostMetricValue | null
+  memory: HostMetricValue | null
+  disk: HostMetricValue | null
+  /** Set when a query failed (vs. simply no data yet). */
+  error: string | null
+}
+
 export interface VMMapping {
   id: number
   host_id: number
@@ -709,6 +752,11 @@ export interface ActionDefinition {
    * module names; values are pre-validated dicts. Surface as a chip
    * counting items per module so the operator sees the side effect. */
   post_run_register: Record<string, Record<string, unknown>[]>
+  /** Maps this action's playbook vars onto a Grafana metrics backend
+   * (e.g. `{prometheus_push_var: "alloy_prometheus_url", loki_push_var:
+   * "alloy_loki_url"}`). When set, the run dialog renders those URL params
+   * as registered-instance pickers instead of free text. Null otherwise. */
+  metrics_backend: Record<string, string> | null
 }
 
 export interface ActionHostRun {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -17,6 +17,8 @@ import { toast } from "sonner"
 import type {
   ActionDefinition,
   ActionRun,
+  GrafanaInstance,
+  GrafanaKind,
   Host,
 } from "@/lib/types"
 
@@ -53,8 +55,53 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     count: (groupHosts ?? []).filter((h) => h.os_codename === c).length,
   }))
 
-  // Reset params when action changes
-  // (only reset, don't initialize defaults here to keep state simple)
+  // Metrics-backend actions (e.g. alloy-install) render their URL params as
+  // registered-Grafana-instance pickers instead of free text. Map each
+  // mapped playbook var to the instance kind it should list.
+  const instancePickers = useMemo<Record<string, GrafanaKind>>(() => {
+    const mb = action?.metrics_backend
+    if (!mb) return {}
+    const m: Record<string, GrafanaKind> = {}
+    if (mb.prometheus_push_var) m[mb.prometheus_push_var] = "mimir"
+    if (mb.loki_push_var) m[mb.loki_push_var] = "loki"
+    return m
+  }, [action])
+  const hasPickers = Object.keys(instancePickers).length > 0
+
+  const { data: grafanaInstances } = useQuery<GrafanaInstance[]>({
+    queryKey: ["grafana-instances"],
+    queryFn: () => apiFetch<GrafanaInstance[]>("/api/grafana/instances"),
+    enabled: open && hasPickers,
+    staleTime: 30_000,
+  })
+
+  // Seed each picker param with its kind's default (or first) instance URL
+  // once instances load, so the shown selection is what actually runs.
+  useEffect(() => {
+    if (!grafanaInstances) return
+    setParams((prev) => {
+      let changed = false
+      const next = { ...prev }
+      for (const [key, kind] of Object.entries(instancePickers)) {
+        if (next[key] !== undefined) continue
+        const list = grafanaInstances.filter((i) => i.kind === kind)
+        const def = list.find((i) => i.is_default) ?? list[0]
+        if (def) {
+          next[key] = def.url
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [grafanaInstances, instancePickers])
+
+  // Block running when a required picker has no registered instance.
+  const missingDestination =
+    hasPickers &&
+    grafanaInstances !== undefined &&
+    Object.values(instancePickers).some(
+      (kind) => !grafanaInstances.some((i) => i.kind === kind),
+    )
 
   if (!action) return null
 
@@ -182,6 +229,8 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
             }
             return undefined
           }}
+          instancePickers={instancePickers}
+          grafanaInstances={grafanaInstances}
         />
 
         {scope === "group" && (
@@ -204,13 +253,13 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           <Button
             variant="outline"
             onClick={() => handleSubmit(true)}
-            disabled={submitting || action.unresolved}
+            disabled={submitting || action.unresolved || missingDestination}
           >
             Preview (dry-run)
           </Button>
           <Button
             onClick={() => handleSubmit(false)}
-            disabled={submitting || action.unresolved}
+            disabled={submitting || action.unresolved || missingDestination}
           >
             {submitting ? "Starting…" : "Run"}
           </Button>

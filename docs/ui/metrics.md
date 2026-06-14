@@ -1,0 +1,72 @@
+# Live host metrics (Grafana Mimir/Loki)
+
+LabDog can show **instant** CPU, memory, and disk usage on each host's
+**Overview** tab by querying a Grafana Mimir (or any Prometheus-compatible)
+backend. These are single current values, not graphs — LabDog points you at
+Grafana for history; it just surfaces "what is this host doing right now"
+next to everything else it already shows about the host.
+
+It closes the loop with the bundled **Install Alloy agent** action: register
+your metrics backend once, run the action, and metrics flow back
+automatically.
+
+## The loop
+
+1. **Register your endpoints** under **Integrations → Grafana**
+   (`/grafana`). Mimir (metrics) and Loki (logs) are registered
+   **separately** — add one instance per endpoint. For each, provide:
+   - **Kind** — Mimir (metrics) or Loki (logs).
+   - **Ingest URL** — a single URL: the remote-write / push URL the agent
+     ships to, e.g. `https://mimir.example.com/api/v1/push` (add whatever
+     path your setup needs). LabDog hands this to the Alloy install action
+     as-is, and for querying it strips the path down to the host and appends
+     the right API path automatically (Mimir →
+     `…/prometheus/api/v1/query`). You never enter the query URL.
+   - Optional tenant (`X-Scope-OrgID`) — defaults to `"anonymous"` if left
+     blank, which is the conventional single-tenant value and matches the
+     Alloy agent's own default. Set it explicitly only if your Mimir/Loki
+     uses a different tenant.
+   - Optional authentication (none, bearer token, or HTTP basic
+     username/password), TLS verification and CA certificate.
+
+   Use **Test connection** to confirm the (derived) query API is reachable
+   before saving. The first instance of each kind becomes that kind's
+   **default** — the Mimir LabDog queries for the host page, and the
+   Mimir/Loki it feeds the Alloy action. You can change the default anytime.
+
+2. **Run the *Install Alloy agent* action** against a host or group
+   (Actions tab). LabDog automatically:
+   - fills the Alloy remote-write/Loki URLs from your default Grafana
+     instance (no need to re-type them), and
+   - injects two identity labels — `labdog_host_id` (the stable host id) and
+     `labdog_hostname` — which Alloy stamps on every series it ships.
+
+3. **Open the host's Overview tab.** Once a Mimir instance is registered, a
+   **Resource Usage** card appears with three tiles (CPU / Memory / Disk),
+   auto-refreshing every 15 seconds while the tab is visible. With no Mimir
+   instance configured the card is hidden entirely.
+
+Because metrics are matched on `labdog_host_id`, renaming a host or changing
+its IP never detaches its metrics.
+
+## States you may see
+
+| State | Meaning |
+|-------|---------|
+| **Card hidden** | No Mimir instance is registered — the panel doesn't appear at all. Add one under Integrations → Grafana. |
+| **No metrics found for this host yet** | A Mimir instance is configured but this host isn't shipping data — run *Install Alloy agent*, then allow a minute for the first scrape. |
+| **Failed to query metrics** | The query backend was unreachable or rejected the request (check the instance's URL/token via **Test**). |
+| **as of … (amber)** | The newest sample is older than two minutes — the agent may have stopped reporting. Last-known values are shown dimmed. |
+
+## Thresholds
+
+Tiles colour by usage: green below 75%, amber 75–89%, red at 90% or above.
+Disk reports the root filesystem (`/`).
+
+## Notes & limits
+
+- Metrics come from node_exporter via Alloy's `prometheus.exporter.unix`.
+- LabDog queries the **default Mimir** instance. Per-host routing to
+  different backends is not yet supported.
+- Log surfacing from Loki, network/per-mount metrics, and configurable
+  thresholds are not part of this release.

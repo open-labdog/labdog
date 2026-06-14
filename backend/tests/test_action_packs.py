@@ -150,6 +150,63 @@ def test_manifest_accepts_playbook_timeout_seconds():
     assert m.playbook_timeout_seconds == 5400
 
 
+def test_manifest_accepts_metrics_backend():
+    m = ActionManifest.model_validate(
+        {
+            "key": "alloy-install",
+            "name": "Alloy",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "playbook.yml",
+            "version": "1.0",
+            "estimated_duration": "2 min",
+            "metrics_backend": {
+                "prometheus_push_var": "alloy_prometheus_url",
+                "loki_push_var": "alloy_loki_url",
+                "org_id_var": "alloy_mimir_org_id",
+            },
+        }
+    )
+    assert m.metrics_backend is not None
+    assert m.metrics_backend.prometheus_push_var == "alloy_prometheus_url"
+
+
+def test_load_pack_threads_metrics_backend(tmp_path: Path):
+    manifest_body = (
+        SIMPLE_MANIFEST + "metrics_backend:\n  prometheus_push_var: alloy_prometheus_url\n"
+    )
+    _write_pack(
+        tmp_path,
+        "mb",
+        actions={"demo": {"manifest.yml": manifest_body, "playbook.yml": SIMPLE_PLAYBOOK}},
+    )
+    defns = load_pack(Pack(name="mb", path=tmp_path / "mb"))
+    assert len(defns) == 1
+    assert defns[0].metrics_backend == {"prometheus_push_var": "alloy_prometheus_url"}
+
+
+def test_load_pack_includes_action_private_roles(tmp_path: Path):
+    _write_pack(
+        tmp_path,
+        "rp",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": SIMPLE_PLAYBOOK,
+                "roles/demo-role/tasks/main.yml": "---\n[]\n",
+            },
+        },
+        roles=["shared-role"],
+    )
+    pack = Pack(name="rp", path=tmp_path / "rp")
+    defns = load_pack(pack)
+    assert len(defns) == 1
+    paths = defns[0].roles_paths
+    # Action-private roles dir first, then pack-shared.
+    assert paths[0] == (tmp_path / "rp" / "actions" / "demo" / "roles")
+    assert (tmp_path / "rp" / "roles") in paths
+
+
 def test_load_pack_threads_playbook_timeout(tmp_path: Path):
     manifest_body = SIMPLE_MANIFEST + "playbook_timeout_seconds: 5400\n"
     _write_pack(
@@ -640,5 +697,9 @@ def test_bundled_pack_exposes_expected_actions():
     assert linux.supports_group is True
     assert linux.playbook_path.name == "playbook.yml"
     assert linux.playbook_path.is_file()
+    # Subset, not exact: the pack ships from labdog-playbooks and may add
+    # params over time (e.g. ignore_failed_units) without it being a
+    # regression. This guards that the long-standing core params survive a
+    # bundled-pack bump; it must not break every time the pack grows a knob.
     param_keys = {p.key for p in linux.parameters}
-    assert param_keys == {"auto_reboot", "reboot_timeout", "cleanup"}
+    assert {"auto_reboot", "reboot_timeout", "cleanup"} <= param_keys

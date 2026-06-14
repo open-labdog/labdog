@@ -25,6 +25,7 @@ from app.api.cron_sync import router as cron_sync_router
 from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api.git_repos import router as git_repos_router
+from app.api.grafana import router as grafana_router
 from app.api.groups import router as groups_router
 from app.api.host_state import router as host_state_router
 from app.api.hosts import router as hosts_router
@@ -410,6 +411,7 @@ def create_app() -> FastAPI:
     app.include_router(resolver_sync_router, prefix="/api")
     app.include_router(proxmox_nodes_router, prefix="/api")
     app.include_router(proxmox_discovery_router, prefix="/api")
+    app.include_router(grafana_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 
     app.include_router(version_router)

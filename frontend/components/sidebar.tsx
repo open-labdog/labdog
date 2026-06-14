@@ -154,6 +154,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         { href: "/git-repos", label: "Git Repos" },
         { href: "/action-packs", label: "Action Packs" },
         { href: "/hypervisors", label: "Proxmox" },
+        { href: "/grafana", label: "Grafana" },
       ],
     },
     {

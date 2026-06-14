@@ -61,6 +61,7 @@ Declare state per host or per group. Everything goes through Ansible. Same rule 
 - **SSH** — push config to hosts and serve an in-browser terminal (asyncssh + xterm.js)
 - **Git** — pull GitOps configs and Action packs from any Git server; SSH key or HTTPS PAT auth, credentials encrypted at rest
 - **Proxmox VE** — automatic snapshot + rollback, VM discovery
+- **Grafana Mimir/Loki** — register a Prometheus-compatible endpoint to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action so metrics flow back automatically
 - **Webhooks** — inbound triggers from your Git host for GitOps sync
 
 ## 🖼️ Screenshots
@@ -86,7 +87,7 @@ All technical content lives under **[the documentation site](https://open-labdog
 
 - **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
 - **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/)
+- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/metrics/)
 
 ## 🐛 Found a bug?
 
