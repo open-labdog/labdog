@@ -7,6 +7,8 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-06-14
+
 ### Added
 
 #### Grafana Mimir/Loki integration — live host metrics
@@ -24,16 +26,51 @@ host's Overview tab by querying a registered Grafana Mimir
   ingest URL — strip the path to the host, append the kind's API path
   (Mimir → `/prometheus/api/v1/query`) — so the operator enters one URL.
   Modeled on the Proxmox integration (`grafana_instances` table,
-  migration `0011`).
+  migrations `0011`/`0012`).
 - `GET /api/grafana/hosts/{id}/metrics` queries the default Mimir instance
   for the host's CPU/memory/disk, matched on a stable `labdog_host_id`
-  label.
-- **Closes the loop with the bundled `alloy-install` action:** a manifest
-  `metrics_backend` mapping lets LabDog fill the Alloy remote-write/Loki
-  URLs from the default Mimir/Loki instances, and the per-host executor
-  always injects `labdog_host_id` / `labdog_hostname` so shipped metrics
-  are queryable back. Register endpoints, run Install Alloy, and metrics
-  appear automatically. See [docs/ui/metrics.md](docs/ui/metrics.md).
+  label. Panel hidden until a Mimir backend is configured; rendered as a
+  compact strip at the top of the host Overview card.
+- **Closes the loop with the bundled `alloy-install` action:** the run
+  dialog now shows registered Grafana instance pickers instead of free-text
+  URL fields. A `metrics_backend` manifest mapping lets LabDog fill the
+  Alloy remote-write/Loki URLs from the default Mimir/Loki instances at
+  dispatch, and the per-host executor always injects `labdog_host_id` /
+  `labdog_hostname` so shipped metrics are queryable back. Register
+  endpoints, run Install Alloy, and metrics appear automatically.
+  See [docs/ui/metrics.md](docs/ui/metrics.md).
+- **Bundled-pack pin auto-bump CI.** A new GitHub Actions workflow opens a
+  PR against `dev` whenever `labdog-playbooks` `main` moves ahead of the
+  pinned `LABDOG_PLAYBOOKS_REF` — triggered immediately via
+  `repository_dispatch` from the playbooks repo, and daily as a fallback.
+
+### Changed
+
+- **Action run view identifies hosts by name.** The Host Status grid and
+  per-host output headers now show the target hostname instead of the
+  numeric host ID.
+- **Per-host log filtering on multi-host runs.** The run-detail page shows
+  the Host Status grid for any multi-host run (group, fleet, or scheduled),
+  and each host card is clickable to filter the output to that host's log.
+- **Compact host metrics panel.** The Resource Usage strip is embedded as
+  the first block of the host info card instead of a full-width card above
+  it; used/total figures and sample age moved to hover tooltips; abnormal
+  states (no data, error, stale) surface as icon+tooltip rather than
+  callout blocks. The page-level Refresh button now also refreshes metrics.
+
+### Fixed
+
+- Action-private roles (e.g. `alloy-install`'s `role-alloy-linux-*`) were
+  not included in the Ansible role search path, causing "role not found"
+  errors at runtime. Fixed in the pack loader.
+- Grafana metrics query returning HTTP 401 against Mimir with multitenancy
+  enabled: `X-Scope-OrgID` header now defaults to `"anonymous"` when no
+  tenant is configured, consistent with the Alloy default.
+- CPU metric intermittently blanked on refresh: widened the `rate()` window
+  from 2m to 5m so CPU tolerates ingestion gaps like the instant gauges.
+- Modal fields overflowing past dialog edge when containing wide,
+  non-wrapping content (e.g. the service-override `systemctl cat` preview):
+  `DialogContent` grid column is now shrinkable (`minmax(0,1fr)`).
 
 ## [0.3.1] — 2026-06-05
 
@@ -696,7 +733,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/open-labdog/labdog/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/open-labdog/labdog/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/open-labdog/labdog/compare/v0.2.5...v0.3.0
 [0.2.0]: https://github.com/open-labdog/labdog/compare/v0.1.0...v0.2.0
