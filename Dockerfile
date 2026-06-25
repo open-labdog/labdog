@@ -52,7 +52,18 @@ WORKDIR /app
 # package so Debian security fixes are applied (e.g. krb5 libs pulled in
 # transitively by git/openssh-client). A blanket upgrade avoids the
 # whack-a-mole of naming each CVE'd package as Trivy/Grype flag them.
-RUN apt-get update \
+#
+# BUILD_DATE is declared here (and re-declared later for the version
+# stamp) solely to bust this layer's BuildKit cache. CI builds with
+# `cache-from/to: type=gha`, so without a per-build input the cached apt
+# layer keeps serving packages from whenever the cache was populated —
+# security fixes published afterwards (e.g. libssh2 +deb13u1) never land
+# and Trivy gates the stale image. Referencing the per-build BUILD_DATE
+# forces apt to refresh on every CI build. Local builds (no BUILD_DATE)
+# keep the cached layer, which is fine — they aren't security-gated.
+ARG BUILD_DATE=""
+RUN echo "apt security refresh @ ${BUILD_DATE}" \
+    && apt-get update \
     && apt-get install -y --no-install-recommends openssh-client git \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
