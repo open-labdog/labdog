@@ -2,14 +2,13 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
-from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.sync_job import SyncJob
@@ -17,6 +16,7 @@ from app.models.user import User
 from app.rules.desired_state import get_desired_state
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.sync.diff import SSHFetchError, compute_diff, fetch_current_firewall_state
+from app.sync.plan import ModuleDiff, plan_host_modules
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -158,6 +158,39 @@ async def plan_group(
 
 
 # ---------------------------------------------------------------------------
+# Generalized multi-module preview ("plan") for a single host
+# ---------------------------------------------------------------------------
+
+
+class PreviewRequest(BaseModel):
+    # ``None`` → preview every supported module. A non-empty list of
+    # canonical module names → preview just those.
+    module_filter: list[str] | None = None
+
+
+@router.post("/hosts/{host_id}/preview", response_model=list[ModuleDiff])
+async def preview_host(
+    host_id: int,
+    body: PreviewRequest,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview pending changes for a host across one or more modules.
+
+    Read-only normalized diff used by the host page to show what a
+    manual sync (per-module or "sync all") would apply, before applying.
+    Unlike the per-module ``drift-check`` endpoints this does not write
+    ``HostModuleStatus``.
+    """
+    try:
+        return await plan_host_modules(host_id, body.module_filter, db)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
 # Sync execution endpoints
 # ---------------------------------------------------------------------------
 
@@ -205,7 +238,7 @@ async def trigger_host_sync(
     if running.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Sync already in progress for this host")
 
-    # Check host has rules (via groups)
+    # Host must belong to a group to have any desired config to sync.
     memberships = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
@@ -213,14 +246,11 @@ async def trigger_host_sync(
     if not group_ids:
         raise HTTPException(status_code=400, detail="Host has no groups assigned")
 
-    rules_count = await db.execute(
-        select(func.count(FirewallRule.id)).where(FirewallRule.group_id.in_(group_ids))
-    )
-    if rules_count.scalar() == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot sync — no rules defined. This would remove all firewall rules.",
-        )
+    # NOTE: no "zero user rules" guard here. Firewall desired-state always
+    # carries the auto SSH anti-lockout rule (see app.rules.merge), and the
+    # preview-then-confirm flow now shows the operator exactly what will
+    # change before applying — so the old blunt 400 (which also diverged
+    # from the unguarded bulk/orchestrator path) has been removed.
 
     # Capture user.id eagerly — see BUG-41/SEC-05 for the rationale: a
     # rollback during the IntegrityError path expires the ORM-bound
@@ -276,13 +306,9 @@ async def trigger_group_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for all hosts in a group."""
-    # Check group has rules
-    rules_count = await db.execute(
-        select(func.count(FirewallRule.id)).where(FirewallRule.group_id == group_id)
-    )
-    if rules_count.scalar() == 0:
-        raise HTTPException(status_code=400, detail="Cannot sync — no rules defined.")
-
+    # NOTE: no "zero user rules" guard (removed) — see trigger_host_sync.
+    # The firewall desired-state always includes the SSH anti-lockout rule
+    # and the preview flow surfaces changes before apply.
     memberships = await db.execute(
         select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )

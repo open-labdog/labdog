@@ -876,3 +876,23 @@ export interface VersionInfo {
   license: string
   repo_url: string
 }
+
+// ---------------------------------------------------------------------------
+// Normalized multi-module sync preview
+// (POST /api/sync/hosts/{id}/preview → ModuleDiff[])
+// ---------------------------------------------------------------------------
+
+export type DiffOp = "add" | "remove" | "update" | "unchanged"
+
+export interface DiffChange {
+  op: DiffOp
+  summary: string
+  detail?: Record<string, unknown> | null
+}
+
+export interface ModuleDiff {
+  module: string
+  has_changes: boolean
+  error: string | null
+  changes: DiffChange[]
+}
