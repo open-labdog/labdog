@@ -453,8 +453,12 @@ COMMIT
         as missing."""
         rules = [
             FirewallRuleSpec(
-                action="allow", protocol="tcp", direction="input", port_start=22,
-                source_cidr="10.10.101.0/28", comment="Allow SSH",
+                action="allow",
+                protocol="tcp",
+                direction="input",
+                port_start=22,
+                source_cidr="10.10.101.0/28",
+                comment="Allow SSH",
             ),
             FirewallRuleSpec(action="deny", protocol="tcp", direction="input", port_start=22),
         ]
