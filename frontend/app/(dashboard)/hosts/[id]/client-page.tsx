@@ -35,12 +35,13 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
+import { ModuleDiffView, moduleLabel } from "@/components/module-diff-view"
 import { HostMetricsSection } from "@/components/host-metrics-section"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { CACertActionRun, EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectiveLinuxGroup, EffectiveLinuxUser, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, PackageRepository, ServiceCommandResult, VMMapping } from "@/lib/types"
+import type { CACertActionRun, EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectiveLinuxGroup, EffectiveLinuxUser, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, ModuleDiff, PackageRepository, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -789,11 +790,25 @@ export default function HostDetailPage() {
 
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [moduleSyncing, setModuleSyncing] = useState(false)
   const [trustKeyOpen, setTrustKeyOpen] = useState(false)
   const [trustingKey, setTrustingKey] = useState(false)
+
+  // Preview-then-confirm flow for manual syncs (per-module + "Sync All").
+  // `scope === "module"` previews one module (apply via its own endpoint);
+  // `scope === "all"` previews every module (apply via the coalesced bulk
+  // endpoint with a single pollable job).
+  const [syncPreview, setSyncPreview] = useState<{
+    scope: "module" | "all"
+    tabKey: string | null
+    module: string | null
+    loading: boolean
+    error: string | null
+    diffs: ModuleDiff[] | null
+  } | null>(null)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const [bulkJob, setBulkJob] = useState<{ id: number; status: string } | null>(null)
 
   const tabQueryKeys: Record<string, string[][]> = {
     overview: [["host", String(id)], ["host-current-state", String(id)], ["host-metrics", String(id)]],
@@ -818,6 +833,128 @@ export default function HostDetailPage() {
     packages: `/api/packages/hosts/${id}/sync`,
     dns: `/api/resolver/hosts/${id}/sync`,
   }
+
+  // Tab key (used by moduleSyncEndpoints / tabQueryKeys) → canonical
+  // module name understood by the preview/bulk endpoints.
+  const tabToModule: Record<string, string> = {
+    rules: "firewall",
+    services: "services",
+    "hosts-file": "hosts-file",
+    users: "linux-users",
+    "cron-jobs": "cron",
+    packages: "packages",
+    dns: "resolver",
+  }
+
+  const openModulePreview = async (tabKey: string) => {
+    const moduleName = tabToModule[tabKey]
+    setApplyError(null)
+    setBulkJob(null)
+    setSyncPreview({ scope: "module", tabKey, module: moduleName, loading: true, error: null, diffs: null })
+    try {
+      const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: [moduleName] }),
+      })
+      setSyncPreview((p) => (p ? { ...p, loading: false, diffs } : p))
+    } catch (e) {
+      setSyncPreview((p) =>
+        p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Preview failed" } : p
+      )
+    }
+  }
+
+  const openSyncAllPreview = async () => {
+    setApplyError(null)
+    setBulkJob(null)
+    setSyncPreview({ scope: "all", tabKey: null, module: null, loading: true, error: null, diffs: null })
+    try {
+      const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: null }),
+      })
+      setSyncPreview((p) => (p ? { ...p, loading: false, diffs } : p))
+    } catch (e) {
+      setSyncPreview((p) =>
+        p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Preview failed" } : p
+      )
+    }
+  }
+
+  const closeSyncPreview = () => {
+    if (applying) return
+    setSyncPreview(null)
+    setApplyError(null)
+    setBulkJob(null)
+  }
+
+  const applyModuleSync = async () => {
+    if (!syncPreview?.tabKey) return
+    const tabKey = syncPreview.tabKey
+    setApplying(true)
+    setApplyError(null)
+    try {
+      await apiFetch(moduleSyncEndpoints[tabKey], { method: "POST" })
+      for (const key of tabQueryKeys[tabKey] ?? []) await queryClient.invalidateQueries({ queryKey: key })
+      await queryClient.invalidateQueries({ queryKey: ["host", id] })
+      setSyncPreview(null)
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Sync failed")
+    }
+    setApplying(false)
+  }
+
+  const applyBulkSync = async () => {
+    // Apply exactly what the preview showed would change, and never a
+    // module whose current state could not be read (errored preview).
+    // Sending null would apply every module — including firewall when
+    // its diff errored, i.e. blind. So target the cleanly-previewed,
+    // changed modules only.
+    const modulesToApply = (syncPreview?.diffs ?? [])
+      .filter((d) => d.has_changes && !d.error)
+      .map((d) => d.module)
+    if (modulesToApply.length === 0) return
+    setApplying(true)
+    setApplyError(null)
+    try {
+      const resp = await apiFetch<{ job_id: number; status: string }>(`/api/sync/hosts/${id}/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: modulesToApply }),
+      })
+      setBulkJob({ id: resp.job_id, status: resp.status })
+      // Terminal state + cache invalidation handled by the polling effect.
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Sync failed")
+      setApplying(false)
+    }
+  }
+
+  // Poll the coalesced bulk SyncJob until it reaches a terminal state.
+  useEffect(() => {
+    if (!bulkJob) return
+    if (bulkJob.status === "success" || bulkJob.status === "failed") return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const data = await apiFetch<{ id: number; status: string }>(`/api/sync/jobs/${bulkJob.id}`)
+        if (cancelled) return
+        setBulkJob({ id: data.id, status: data.status })
+        if (data.status === "success" || data.status === "failed") {
+          setApplying(false)
+          await queryClient.invalidateQueries({ queryKey: ["host", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    const interval = setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [bulkJob, id, queryClient])
+
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -2001,29 +2138,12 @@ export default function HostDetailPage() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={syncing || !host.ssh_key_id}
-                  title={host.ssh_key_id ? "Sync all modules to this host" : "No SSH key assigned"}
-                  onClick={async () => {
-                    setSyncing(true)
-                    const endpoints = [
-                      `/api/sync/hosts/${id}/sync`,
-                      `/api/services/hosts/${id}/sync`,
-                      `/api/hosts-mgmt/hosts/${id}/sync`,
-                      `/api/linux-users/hosts/${id}/sync`,
-                      `/api/cron/hosts/${id}/sync`,
-                      `/api/packages/hosts/${id}/sync`,
-                      `/api/resolver/hosts/${id}/sync`,
-                    ]
-                    for (const ep of endpoints) {
-                      try { await apiFetch(ep, { method: "POST" }) } catch { /* skip modules with no config */ }
-                    }
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                    await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
-                    setSyncing(false)
-                  }}
+                  disabled={!host.ssh_key_id || !!syncPreview}
+                  title={host.ssh_key_id ? "Preview and sync all modules to this host" : "No SSH key assigned"}
+                  onClick={openSyncAllPreview}
                 >
                   <ArrowUpFromLineIcon className={`w-4 h-4 mr-1`} />
-                  {syncing ? "Syncing..." : "Sync All"}
+                  Sync All
                 </Button>
                 {!host.ssh_host_key_entry && (
                   <Button
@@ -2666,19 +2786,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["rules"], { method: "POST" })
-                    for (const key of tabQueryKeys["rules"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("rules")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync Rules"}
+                Sync Rules
               </Button>
             </div>
           </div>
@@ -2925,19 +3037,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["services"], { method: "POST" })
-                    for (const key of tabQueryKeys["services"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("services")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync Services"}
+                Sync Services
               </Button>
               <Button onClick={openSvcDialog}>Add Service</Button>
             </div>
@@ -3319,19 +3423,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["hosts-file"], { method: "POST" })
-                    for (const key of tabQueryKeys["hosts-file"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("hosts-file")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button
                 variant="outline"
@@ -3587,19 +3683,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["users"], { method: "POST" })
-                    for (const key of tabQueryKeys["users"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("users")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button variant="outline" onClick={openLuDialog}>Add User Override</Button>
               <Button variant="outline" onClick={openLgDialog}>Add Group Override</Button>
@@ -4076,19 +4164,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["cron-jobs"], { method: "POST" })
-                    for (const key of tabQueryKeys["cron-jobs"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("cron-jobs")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button onClick={openCjDialog}>Add Override</Button>
             </div>
@@ -4400,19 +4480,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["packages"], { method: "POST" })
-                    for (const key of tabQueryKeys["packages"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("packages")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button onClick={openPpDialog}>Add Override</Button>
             </div>
@@ -5032,19 +5104,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["dns"], { method: "POST" })
-                    for (const key of tabQueryKeys["dns"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("dns")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync DNS"}
+                Sync DNS
               </Button>
               {hostResolverOverride && (
                 <Button
@@ -5377,6 +5441,73 @@ export default function HostDetailPage() {
             }
           }}
         />
+      )}
+
+      {syncPreview && (
+        <Dialog open onOpenChange={(o) => { if (!o) closeSyncPreview() }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {syncPreview.scope === "all"
+                  ? "Sync All — Preview"
+                  : `Sync ${moduleLabel(syncPreview.module ?? "")} — Preview`}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {syncPreview.loading && <CardSkeleton />}
+
+              {syncPreview.error && (
+                <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
+                  {syncPreview.error}
+                </div>
+              )}
+
+              {syncPreview.diffs && !syncPreview.loading && (
+                <>
+                  {!syncPreview.diffs.some((d) => d.has_changes) && (
+                    <div className="text-green-400 text-sm">Everything is already in sync.</div>
+                  )}
+                  {syncPreview.diffs.map((d) => (
+                    <ModuleDiffView key={d.module} diff={d} showHeader={syncPreview.scope === "all"} />
+                  ))}
+                </>
+              )}
+
+              {bulkJob && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+                  Job status: <span className="font-medium">{bulkJob.status}</span>
+                </div>
+              )}
+
+              {applyError && (
+                <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
+                  {applyError}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeSyncPreview} disabled={applying}>
+                {bulkJob?.status === "success" || bulkJob?.status === "failed" ? "Close" : "Cancel"}
+              </Button>
+              {!(bulkJob?.status === "success" || bulkJob?.status === "failed") && (
+                <Button
+                  onClick={syncPreview.scope === "all" ? applyBulkSync : applyModuleSync}
+                  disabled={
+                    applying ||
+                    syncPreview.loading ||
+                    !!syncPreview.error ||
+                    !syncPreview.diffs ||
+                    !syncPreview.diffs.some((d) => d.has_changes)
+                  }
+                >
+                  {applying ? "Applying…" : "Apply Changes"}
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )
