@@ -399,7 +399,7 @@ COMMIT
 -A OUTPUT -j LABDOG-OUTPUT
 -A LABDOG-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 -A LABDOG-INPUT -i lo -j ACCEPT
--A LABDOG-INPUT -s 10.10.101.0/28 -p tcp --dport 22 -m comment --comment "Managed by LabDog: Allow SSH" -j ACCEPT
+-A LABDOG-INPUT -s 10.10.101.0/28 -p tcp --dport 22 -m comment --comment "Allow SSH" -j ACCEPT
 -A LABDOG-INPUT -p tcp --dport 22 -m comment --comment "Managed by LabDog" -j DROP
 -A LABDOG-INPUT -m comment --comment "Managed by LabDog: default policy" -j DROP
 -A LABDOG-OUTPUT -m comment --comment "Managed by LabDog: default policy" -j ACCEPT
