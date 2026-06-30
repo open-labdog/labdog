@@ -1,6 +1,8 @@
 import json
 
-from app.sync.parsers.iptables import parse_iptables_save
+from app.rules.model import ChainPolicies, FirewallRuleSpec
+from app.rules.renderers.iptables import render_iptables_rules
+from app.sync.parsers.iptables import parse_iptables_policies, parse_iptables_save
 from app.sync.parsers.nftables import parse_nftables_json
 
 # ---------------------------------------------------------------------------
@@ -379,3 +381,89 @@ COMMIT
         assert len(rules) == 1
         assert rules[0].direction == "output"
         assert rules[0].port_start == 8080
+
+    def test_parse_iptables_labdog_jump_chains(self):
+        """LabDog never writes rules directly into INPUT/OUTPUT — it jumps to its
+        own LABDOG-INPUT/LABDOG-OUTPUT chains (renderers/iptables.py) so reapply
+        stays idempotent without touching Docker's or other tools' base-chain
+        rules. The collector must follow that indirection or it always reports
+        zero rules for every iptables-backend host."""
+        content = """\
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:LABDOG-INPUT - [0:0]
+:LABDOG-OUTPUT - [0:0]
+-A INPUT -j LABDOG-INPUT
+-A OUTPUT -j LABDOG-OUTPUT
+-A LABDOG-INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A LABDOG-INPUT -i lo -j ACCEPT
+-A LABDOG-INPUT -s 10.10.101.0/28 -p tcp --dport 22 -m comment --comment "Managed by LabDog: Allow SSH" -j ACCEPT
+-A LABDOG-INPUT -p tcp --dport 22 -m comment --comment "Managed by LabDog" -j DROP
+-A LABDOG-INPUT -m comment --comment "Managed by LabDog: default policy" -j DROP
+-A LABDOG-OUTPUT -m comment --comment "Managed by LabDog: default policy" -j ACCEPT
+COMMIT
+"""
+        rules = parse_iptables_save(content)
+        assert len(rules) == 2
+        ssh = next(r for r in rules if r.port_start == 22 and r.action == "allow")
+        assert ssh.direction == "input"
+        assert ssh.source_cidr == "10.10.101.0/28"
+        deny = next(r for r in rules if r.action == "deny")
+        assert deny.direction == "input"
+        # the bare jump rule and the synthetic default-policy catch-all must
+        # not surface as explicit rules
+        assert all("default policy" not in (r.comment or "") for r in rules)
+
+    def test_parse_iptables_policies_reads_labdog_catchall(self):
+        """Base INPUT/OUTPUT stay ACCEPT regardless (the jump chain handles the
+        drop before control returns), so the effective policy must come from
+        LABDOG-INPUT/LABDOG-OUTPUT's catch-all rule, not the base declaration."""
+        content = """\
+*filter
+:INPUT ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+:LABDOG-INPUT - [0:0]
+:LABDOG-OUTPUT - [0:0]
+-A INPUT -j LABDOG-INPUT
+-A OUTPUT -j LABDOG-OUTPUT
+-A LABDOG-INPUT -m comment --comment "Managed by LabDog: default policy" -j DROP
+-A LABDOG-OUTPUT -m comment --comment "Managed by LabDog: default policy" -j ACCEPT
+COMMIT
+"""
+        policies = parse_iptables_policies(content)
+        assert policies.input == "drop"
+        assert policies.output == "accept"
+
+    def test_parse_iptables_policies_falls_back_without_labdog_chains(self):
+        content = """\
+*filter
+:INPUT DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+COMMIT
+"""
+        policies = parse_iptables_policies(content)
+        assert policies.input == "drop"
+        assert policies.output == "accept"
+
+    def test_parse_iptables_round_trip_with_renderer(self):
+        """Regression guard: whatever the renderer emits, the collector must be
+        able to parse back out, or drift detection silently reports everything
+        as missing."""
+        rules = [
+            FirewallRuleSpec(
+                action="allow", protocol="tcp", direction="input", port_start=22,
+                source_cidr="10.10.101.0/28", comment="Allow SSH",
+            ),
+            FirewallRuleSpec(action="deny", protocol="tcp", direction="input", port_start=22),
+        ]
+        policies = ChainPolicies(input="drop", output="accept")
+        ipv4_content, _ = render_iptables_rules(rules, policies)
+
+        parsed_rules = parse_iptables_save(ipv4_content)
+        parsed_policies = parse_iptables_policies(ipv4_content)
+
+        assert len(parsed_rules) == 2
+        assert parsed_policies.input == "drop"
+        assert parsed_policies.output == "accept"
