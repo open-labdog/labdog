@@ -7,11 +7,18 @@ from app.rules.model import ChainPolicies, FirewallRuleSpec
 _CHAIN_DIRECTION = {
     "INPUT": "input",
     "OUTPUT": "output",
+    # LabDog never writes rules directly into the base INPUT/OUTPUT chains —
+    # it jumps to its own chains (see renderers/iptables.py) so reapply stays
+    # idempotent without clobbering Docker's or other tools' base-chain rules.
+    "LABDOG-INPUT": "input",
+    "LABDOG-OUTPUT": "output",
 }
 
 _ACTION_MAP = {"ACCEPT": "allow", "DROP": "deny", "REJECT": "reject"}
 
 _RULE_RE = re.compile(r"^-A\s+(?P<chain>\S+)\s+(?P<flags>.+)$")
+
+_DEFAULT_POLICY_COMMENT = "default policy"
 
 
 def _parse_rule_flags(flags_str: str) -> dict[str, str]:
@@ -54,10 +61,13 @@ def _parse_port_spec(port_str: str) -> tuple[int, int | None]:
 
 
 def _is_infrastructure_rule(flags_str: str) -> bool:
-    """Return True for conntrack and loopback rules that should be skipped."""
+    """Return True for conntrack/loopback rules and LabDog's synthetic
+    default-policy catch-all rule — none of these are user-facing rules."""
     if "-m state --state" in flags_str:
         return True
     if "-i lo" in flags_str:
+        return True
+    if _DEFAULT_POLICY_COMMENT in flags_str:
         return True
     return False
 
@@ -129,7 +139,15 @@ _POLICY_RE = re.compile(r"^:(?P<chain>\S+)\s+(?P<policy>\S+)\s+\[")
 
 
 def parse_iptables_policies(content: str) -> ChainPolicies:
-    """Extract chain default policies from ``iptables-save`` output."""
+    """Extract effective chain default policies from ``iptables-save`` output.
+
+    LabDog renders its chain policy as a catch-all rule inside its own
+    LABDOG-INPUT/LABDOG-OUTPUT jump chains (commented "default policy"),
+    not as the base chain's built-in policy — INPUT/OUTPUT stay ACCEPT
+    regardless since the jump chain handles the drop before control would
+    return there. Prefer that catch-all rule's target when present; fall
+    back to the base chain's declared policy otherwise.
+    """
     input_policy = "drop"
     output_policy = "accept"
 
@@ -143,5 +161,24 @@ def parse_iptables_policies(content: str) -> ChainPolicies:
             input_policy = policy
         elif chain == "OUTPUT":
             output_policy = policy
+
+    for line in content.splitlines():
+        line = line.strip()
+        if not line.startswith("-A "):
+            continue
+        m = _RULE_RE.match(line)
+        if not m:
+            continue
+        flags_str = m.group("flags")
+        if _DEFAULT_POLICY_COMMENT not in flags_str:
+            continue
+        target = _parse_rule_flags(flags_str).get("-j")
+        if target not in ("ACCEPT", "DROP"):
+            continue
+        chain = m.group("chain")
+        if chain == "LABDOG-INPUT":
+            input_policy = "accept" if target == "ACCEPT" else "drop"
+        elif chain == "LABDOG-OUTPUT":
+            output_policy = "accept" if target == "ACCEPT" else "drop"
 
     return ChainPolicies(input=input_policy, output=output_policy)
