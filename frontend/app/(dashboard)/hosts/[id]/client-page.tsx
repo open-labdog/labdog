@@ -118,13 +118,13 @@ function ModuleStateView({
         data={rules}
         getRowKey={(_, i) => i}
         emptyMessage="No firewall rules."
-        // Column widths trimmed (Source/Destination/Comment) so the sum fits the ~770px content area at ~1080px viewport without a horizontal scrollbar; full text on hover via title.
+        // This table has fewer columns than Effective Rules (no Priority/Group/Actions), so Source/Destination get room for a full IPv4 CIDR (up to 18 chars); wider values still truncate with full text on hover via title.
         columns={[
           { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
           { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
           { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
-          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
+          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
           { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[90px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },
         ]}
