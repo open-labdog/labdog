@@ -150,7 +150,10 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install ansible-lint
-        run: pip install -U pip "ansible-lint>=24" "ansible-core>=2.16" -q
+        # Upper-bounded so a floating major release can't silently start
+        # enforcing new rules and break CI (as ansible-lint 26.x did with
+        # role-name).
+        run: pip install -U pip "ansible-lint>=24,<27" "ansible-core>=2.16" -q
       - name: Fetch bundled action pack
         # backend/app/ansible/ is gitignored; ansible-lint targets a
         # bundled action. Fetch the pinned ref via the shared script.
@@ -158,7 +161,13 @@ jobs:
           export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
           ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: ansible-lint
-        run: ansible-lint --strict backend/app/ansible/actions/k8s-upgrade
+        # Run from inside the fetched pack so ansible-lint discovers the
+        # pack's own .ansible-lint (skip_list: role-name) and
+        # .ansible-lint-ignore baseline. Linting from the repo root
+        # bypassed them, so the pack's deliberate role-name convention
+        # tripped --strict once a newer ansible-lint enforced the rule.
+        working-directory: backend/app/ansible
+        run: ansible-lint --strict actions/k8s-upgrade
 
   frontend-lint:
     if: >-
