@@ -290,9 +290,7 @@ async def _resolver_changes(
     if not effective:
         return []
 
-    actual = await collect_resolver_state(
-        host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type, ssh_user
-    )
+    actual = await collect_resolver_state(host, db, private_key_pem, effective.resolver_type)
     desired = {
         "nameservers": effective.nameservers,
         "search_domains": effective.search_domains,

@@ -2,10 +2,16 @@
 
 import asyncio
 import re
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 def _stdout(result: asyncssh.SSHCompletedProcess) -> str:
@@ -16,22 +22,16 @@ def _stdout(result: asyncssh.SSHCompletedProcess) -> str:
 
 
 async def collect_resolver_state(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     resolver_type: str,
-    ssh_user: str = "root",
 ) -> dict | None:
     """Return {"nameservers", "search_domains", "options"} or None if unmanaged."""
     private_key = asyncssh.import_private_key(private_key_pem)
 
     async def _run() -> dict | None:
-        async with ssh_connect(
-            host_ip,
-            port=ssh_port,
-            username=ssh_user,
-            client_keys=[private_key],
-        ) as conn:
+        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
             if resolver_type == "resolv_conf":
                 result = await conn.run("cat /etc/resolv.conf 2>/dev/null", check=False)
                 output = _stdout(result)
