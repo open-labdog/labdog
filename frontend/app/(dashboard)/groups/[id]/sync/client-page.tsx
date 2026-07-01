@@ -98,9 +98,11 @@ function formatRule(r: RuleDiffItem): string {
   const port = r.port_start
     ? r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`
     : "any"
-  // Mirror the nftables renderer fallback (backend/app/rules/renderers/nftables.py:33-37):
-  // empty/null user-authored comments still land on the host as "Managed by LabDog".
-  const comment = r.comment || "Managed by LabDog"
+  // Mirror the nftables renderer's _safe_comment (backend/app/rules/renderers/nftables.py):
+  // every rule lands on the host with the "Managed by LabDog" prefix, with the
+  // user's comment appended when present.
+  const text = (r.comment ?? "").trim()
+  const comment = text ? `Managed by LabDog: ${text}` : "Managed by LabDog"
   return `${r.action} ${r.protocol} ${r.direction} ${r.source_cidr ?? "any"} → ${r.destination_cidr ?? "any"} port=${port} (${comment})`
 }
 
