@@ -1,8 +1,12 @@
 import { z } from "zod"
 
-// Reusable validators
-const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/
-const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}\/\d{1,2}$/
+// Reusable validators. Octets are range-checked (0–255) and the CIDR prefix
+// is 0–32 so e.g. 300.1.1.1 or /33 is rejected client-side, not just server-side.
+// Built from a regex literal's .source so \d stays a single, unambiguous escape.
+const octet = /25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d/.source
+const prefix = /3[0-2]|[12]?\d/.source
+const ipRegex = new RegExp(`^(?:${octet})(?:\\.(?:${octet})){3}$`)
+const cidrRegex = new RegExp(`^(?:${octet})(?:\\.(?:${octet})){3}/(?:${prefix})$`)
 const cronFieldRegex = /^[\d\*\/,\-]+$/
 
 const ipAddress = z.string().regex(ipRegex, "Invalid IP address format")

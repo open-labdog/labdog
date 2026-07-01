@@ -75,6 +75,16 @@ export function RegisterForm() {
     if (loading) return
     setAuthError(null)
 
+    if (password.length < 8) {
+      setAuthError({
+        kind: "credentials",
+        title: "Password too short",
+        body: "Password must be at least 8 characters.",
+        fieldLevel: true,
+      })
+      return
+    }
+
     if (password !== confirmPassword) {
       setAuthError({
         kind: "credentials",
