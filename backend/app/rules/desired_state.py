@@ -42,6 +42,13 @@ async def get_desired_state(
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Get merged desired rules and policies for a host from DB.
 
+    Host references (``source_host_id`` / ``destination_host_id``) are
+    materialized into concrete /32 (or /128) CIDRs via ``resolve_specs`` so
+    every consumer — rendering, diffing and the effective-rules display — sees
+    a real source/destination address instead of an unresolved ref that would
+    otherwise render as (and diff against) "any". Raises
+    ``HostRefResolutionError`` if a referenced host has no IP.
+
     Returns (merged_rules, merged_policies).
     """
     memberships = await db.execute(
@@ -59,10 +66,10 @@ async def get_desired_state(
         # Always run merge_group_rules even when there are no groups
         # and no host rules — it injects the SSH lockout rule which
         # must never be skipped (security-critical anti-lockout).
-        return (
-            merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs),
-            ChainPolicies(),
+        merged = merge_group_rules(
+            [], host_source_ip=host_source_ip, host_rules=host_rule_specs
         )
+        return (await resolve_specs(db, merged), ChainPolicies())
 
     # 1 query for all groups (replaces N individual SELECTs)
     groups_result = await db.execute(select(HostGroup).where(HostGroup.id.in_(group_ids)))
@@ -91,11 +98,9 @@ async def get_desired_state(
             }
         )
 
-    return (
-        merge_group_rules(
-            groups_data,
-            host_source_ip=host_source_ip,
-            host_rules=host_rule_specs,
-        ),
-        merge_group_policies(groups_data),
+    merged = merge_group_rules(
+        groups_data,
+        host_source_ip=host_source_ip,
+        host_rules=host_rule_specs,
     )
+    return (await resolve_specs(db, merged), merge_group_policies(groups_data))
