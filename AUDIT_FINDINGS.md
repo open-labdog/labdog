@@ -52,11 +52,11 @@ current, versions near-latest; Next.js 16.2.9 is ahead of the May-2026 security 
 
 | ID | Sev | Status | Action | Detail |
 |----|-----|--------|--------|--------|
-| D1 | 🔴 | todo | **Add a backend lockfile** (`uv.lock` / pinned `requirements.txt`) | Single biggest supply-chain fix; makes builds reproducible. |
-| D2 | 🔴 | todo | Raise vulnerable floors | `cryptography>=49` (private-key leak / buffer overflow), `gitpython>=3.1.49` (path-traversal + RCE), `asyncssh>=2.23.1` (SSH auth path-traversal — directly relevant). |
-| D3 | 🔴 | todo | Force `starlette>=1.0.1` + `python-multipart>=0.0.30` | Via `fastapi>=0.138`. "BadHost" advisory is a critical path-auth-bypass; LabDog uses path-based auth middleware. |
-| D4 | 🟠 | todo | Audit the **Redis server** version in deploy | Client `redis-py` is fine; server had 2026 RCE advisories. |
-| D5 | 🟠 | todo | `fastapi-users` → 15.x; refresh `ansible-core` off near-EOL 2.16 branch | Maintenance-only / EOL drift. |
+| D1 | 🔴 | **done (partial)** | **Add a backend lockfile** (`uv.lock` / pinned `requirements.txt`) | _Added `backend/uv.lock` (99 pkgs, verified `uv lock` resolves) + a `uv lock --check` gate in CI's backend-test. **Follow-up:** install paths (Dockerfile, CI `uv pip install`) still re-resolve rather than consume the lock — full reproducibility needs wiring install to it (higher blast radius; deferred)._ |
+| D2 | 🔴 | **done** | Raise vulnerable floors | _Bumped `cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1` in pyproject; lock resolves to 49.0.0 / 3.1.50 / 2.24.0; `pip-audit` on the locked set = no known vulns. (asyncssh CVE is server-role; LabDog is a client — not directly exposed.)_ |
+| D3 | 🔴 | **done** | Force `starlette>=1.0.1` + `python-multipart>=0.0.30` | _Added both as direct-dep floors (FastAPI only requires `starlette>=0.46`, no cap — no risky FastAPI major bump needed). Lock resolves to starlette 1.3.1 / python-multipart 0.0.32. BadHost (CVE-2026-48710) web-verified: fixed 1.0.1._ |
+| D4 | 🟠 | todo | Audit the **Redis server** version in deploy | Client `redis-py` is fine (lock: 6.4.0); server had 2026 RCE advisories. **Ops/deploy task, not a code change.** |
+| D5 | 🟠 | **partial** | `fastapi-users` → 15.x; refresh `ansible-core` off near-EOL 2.16 branch | _The lock already resolves to fastapi-users 15.0.5 and ansible-core 2.21.1 (off EOL), so a reproducible install gets them. Floors still say `>=14` / `>=2.16` — bump the floors + review the fastapi-users 14→15 migration notes to fully close._ |
 | D6 | 🟠 | todo | Frontend: migrate **ESLint 9 → 10** before ~2026-08-06 EOL | Time-boxed, low urgency. |
 | D7 | 🟢 | todo | Frontend minor bumps | `lucide-react` 0.577 → 1.x is breaking (brand icons removed) — plan it; react-query / tailwind / zod / react-hook-form minor bumps are safe. |
 
