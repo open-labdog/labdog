@@ -59,7 +59,11 @@ def _pick_default_nic(ip_link_output: str) -> str | None:
 
 
 def _detect_firewall_backend(nft_probe: str, iptables_probe: str) -> str:
-    """Return 'nftables' | 'iptables' | 'unknown' from `command -v` outputs."""
+    """Return 'nftables' | 'iptables' | 'unknown' from the probe outputs.
+
+    Each probe is non-empty when the tool is present either on PATH or at its
+    /usr/sbin path (see the commands in ``_collect_host_facts_async``).
+    """
     if nft_probe.strip():
         return "nftables"
     if iptables_probe.strip():
@@ -123,10 +127,19 @@ async def _collect_host_facts_async(host_id: int) -> None:
                 uname_s = await conn.run("uname -s", check=False)
                 ip_link = await conn.run("ip -o link show", check=False)
                 # `command -v` returns empty output + rc=1 when the binary
-                # is absent, and the path + rc=0 when present. We only
-                # care about the presence signal, not the exit code.
-                nft = await conn.run("command -v nft || true", check=False)
-                iptables = await conn.run("command -v iptables || true", check=False)
+                # is absent, and the path + rc=0 when present. We only care
+                # about the presence signal, not the exit code. Fall back to an
+                # explicit /usr/sbin check because nft/iptables commonly live
+                # there and a non-login SSH shell's PATH often omits /usr/sbin
+                # (mirrors the collect-state detection in api/host_state.py).
+                nft = await conn.run(
+                    "command -v nft || { test -x /usr/sbin/nft && echo /usr/sbin/nft; } || true",
+                    check=False,
+                )
+                iptables = await conn.run(
+                    "command -v iptables || { test -x /usr/sbin/iptables && echo /usr/sbin/iptables; } || true",
+                    check=False,
+                )
 
             parsed = _parse_os_release(os_release.stdout or "")
             host.os_codename = parsed.get("VERSION_CODENAME") or None
