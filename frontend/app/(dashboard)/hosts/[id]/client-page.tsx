@@ -126,7 +126,8 @@ function ModuleStateView({
           { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
-          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[90px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },
+          // Last column with room to spare; widened so the "Managed by LabDog: …" comment every host rule carries is readable (long values still truncate with full text on hover).
+          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[280px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 280 },
         ]}
       />
     )
