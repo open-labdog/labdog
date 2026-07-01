@@ -551,11 +551,10 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         effective = await get_effective_resolver(host.id, db)
         resolver_type = effective.resolver_type if effective else "resolv_conf"
         return await collect_resolver_state(
-            host.ip_address,
-            host.ssh_port,
+            host,
+            db,
             private_pem,
             resolver_type=resolver_type,
-            ssh_user=ssh_user,
         )
 
     async def _collect_firewall():
