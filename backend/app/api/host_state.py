@@ -1,6 +1,7 @@
 """API endpoints for reading and refreshing collected host state."""
 
 import logging
+import shlex
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
@@ -507,7 +508,11 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
                 cron_users = ["root"]
 
             for user in cron_users:
-                result = await conn.run(f"crontab -u {user} -l 2>/dev/null || true", check=False)
+                # user is derived from the remote host's /var/spool/cron listing
+                # — quote it so a compromised host can't inject via the username.
+                result = await conn.run(
+                    f"crontab -u {shlex.quote(user)} -l 2>/dev/null || true", check=False
+                )
                 for line in (result.stdout or "").splitlines():
                     line = line.strip()
                     if not line or line.startswith("#"):

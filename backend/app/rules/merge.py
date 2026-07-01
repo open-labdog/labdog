@@ -86,8 +86,13 @@ def merge_group_rules(
         reverse=True,
     )
 
-    # Prepend SSH lockout rule (always first)
+    # Prepend SSH lockout rule (always first). Drop any group/host rule that
+    # targets the same match (allow *or* deny of SSH from the LabDog IP) so the
+    # effective set doesn't carry a duplicate — or a now-dead deny — alongside
+    # the auto-injected anti-lockout rule.
     ssh_rule = _make_ssh_lockout_rule(server_ip)
+    ssh_sig = ssh_rule._conflict_key()
+    merged = [r for r in merged if r._conflict_key() != ssh_sig]
     return [ssh_rule] + merged
 
 
