@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 
+from app.enum_utils import enum_str
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -96,11 +97,7 @@ async def fetch_current_firewall_state(host_id: int, db):
     if not host:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
 
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown" or not host.ssh_key_id:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
 
@@ -151,11 +148,7 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
     if not host:
         return []
 
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown" or not host.ssh_key_id:
         return []
 
