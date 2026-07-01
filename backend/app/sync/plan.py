@@ -120,9 +120,7 @@ async def _services_changes(
 
     desired = await get_effective_services(host.id, db)
     service_names = [s.service_name for s in desired]
-    current = await collect_service_states(
-        host.ip_address, host.ssh_port, private_key_pem, service_names, ssh_user
-    )
+    current = await collect_service_states(host, db, private_key_pem, service_names)
     diff = compute_service_diff(current, desired)
 
     changes: list[DiffChange] = []

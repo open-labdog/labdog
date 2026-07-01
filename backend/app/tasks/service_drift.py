@@ -21,7 +21,7 @@ def check_all_service_drift():
     from app.services.collector import collect_service_states
     from app.services.diff import compute_service_diff
     from app.services.merge import get_effective_services
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
 
     async def _run():
         async with task_session() as db:
@@ -56,7 +56,7 @@ def check_all_service_drift():
                     service_names = [s.service_name for s in desired]
 
                     current = await collect_service_states(
-                        host.ip_address, host.ssh_port, private_key_pem, service_names
+                        host, db, private_key_pem, service_names
                     )
                     diff = compute_service_diff(current, desired)
 
@@ -76,10 +76,9 @@ def check_all_service_drift():
                     if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(
-                                host.ip_address,
-                                port=host.ssh_port,
-                                username=ssh_key.ssh_user,
+                            async with ssh_connect_host(
+                                host,
+                                db,
                                 client_keys=[imported_key],
                             ) as probe:
                                 host.labdog_source_ip = await get_source_ip(probe)
