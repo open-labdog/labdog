@@ -23,31 +23,23 @@ function countByOp(changes: DiffChange[], op: DiffOp): number {
   return changes.reduce((n, c) => (c.op === op ? n + 1 : n), 0)
 }
 
+// Marker glyph + color per diff op. Unchanged lines carry no background and a
+// brighter-than-before text tone so they stay legible on the slate-900 card.
+const DIFF_OP_STYLES: Record<DiffOp, { marker: string; className: string }> = {
+  add: { marker: "+", className: "text-green-400 bg-green-950/30" },
+  remove: { marker: "-", className: "text-red-400 bg-red-950/30" },
+  update: { marker: "~", className: "text-amber-400 bg-amber-950/30" },
+  unchanged: { marker: "", className: "text-slate-300" },
+}
+
 function DiffChangeLine({ change }: { change: DiffChange }) {
-  if (change.op === "add") {
-    return (
-      <div className="font-mono text-xs text-green-400 bg-green-950/30 px-3 py-0.5 rounded">
-        + {change.summary}
-      </div>
-    )
-  }
-  if (change.op === "remove") {
-    return (
-      <div className="font-mono text-xs text-red-400 bg-red-950/30 px-3 py-0.5 rounded">
-        - {change.summary}
-      </div>
-    )
-  }
-  if (change.op === "update") {
-    return (
-      <div className="font-mono text-xs text-amber-400 bg-amber-950/30 px-3 py-0.5 rounded">
-        ~ {change.summary}
-      </div>
-    )
-  }
+  const { marker, className } = DIFF_OP_STYLES[change.op]
+  // Flex row so the marker stays in a fixed gutter and long, unbreakable tokens
+  // (CIDRs, FQDNs) wrap with a hanging indent instead of sliding under the marker.
   return (
-    <div className="font-mono text-xs text-slate-500 px-3 py-0.5">
-      &nbsp;&nbsp;{change.summary}
+    <div className={`flex gap-1.5 font-mono text-xs px-3 py-1 rounded ${className}`}>
+      <span className="select-none shrink-0 w-3 text-center opacity-70">{marker}</span>
+      <span className="min-w-0 break-words whitespace-pre-wrap">{change.summary}</span>
     </div>
   )
 }
@@ -88,11 +80,15 @@ export function ModuleDiffView({
   showHeader?: boolean
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded)
+  const [showUnchanged, setShowUnchanged] = useState(false)
   const changed = diff.changes.filter((c) => c.op !== "unchanged")
   const unchanged = diff.changes.filter((c) => c.op === "unchanged")
 
+  // Only the collapsible Sync-All cards cap their own height; the standalone
+  // per-module preview (no header) lets the dialog's own scroll region govern,
+  // avoiding a scrollbar-inside-a-scrollbar.
   const body = (
-    <div className="space-y-0.5 max-h-64 overflow-y-auto">
+    <div className={`space-y-1 ${showHeader ? "max-h-64 overflow-y-auto" : ""}`}>
       {diff.error ? (
         <div className="text-red-400 text-xs px-3 py-2">{diff.error}</div>
       ) : diff.changes.length === 0 ? (
@@ -102,9 +98,21 @@ export function ModuleDiffView({
           {changed.map((c, i) => (
             <DiffChangeLine key={`c${i}`} change={c} />
           ))}
-          {unchanged.map((c, i) => (
-            <DiffChangeLine key={`u${i}`} change={c} />
-          ))}
+          {unchanged.length > 0 && (
+            <>
+              {showUnchanged &&
+                unchanged.map((c, i) => <DiffChangeLine key={`u${i}`} change={c} />)}
+              <button
+                type="button"
+                onClick={() => setShowUnchanged((v) => !v)}
+                className="font-mono text-xs text-slate-500 hover:text-slate-300 px-3 py-1"
+              >
+                {showUnchanged
+                  ? "Hide unchanged"
+                  : `Show ${unchanged.length} unchanged ${unchanged.length === 1 ? "line" : "lines"}`}
+              </button>
+            </>
+          )}
         </>
       )}
     </div>
