@@ -33,6 +33,7 @@ import { GroupMultiSelect } from "@/components/group-multi-select"
 import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
+import { cronToHuman } from "@/lib/cron"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
 import { ModuleDiffView, moduleLabel } from "@/components/module-diff-view"
@@ -62,20 +63,6 @@ function formatPorts(rule: { port_start: number | null; port_end: number | null 
     return `${rule.port_start}–${rule.port_end}`
   }
   return String(rule.port_start)
-}
-
-function cronToHuman(schedule: string): string {
-  const s = schedule.trim()
-  if (s === "* * * * *") return "Every minute"
-  if (s === "0 * * * *") return "Every hour"
-  if (s === "0 0 * * *") return "Every day at midnight"
-  // 0 N * * *  => Every day at N:00
-  const dailyMatch = s.match(/^0\s+(\d+)\s+\*\s+\*\s+\*$/)
-  if (dailyMatch) return `Every day at ${dailyMatch[1]}:00`
-  // */N * * * *  => Every N minutes
-  const everyNMin = s.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
-  if (everyNMin) return `Every ${everyNMin[1]} minutes`
-  return s
 }
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
