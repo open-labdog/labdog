@@ -59,9 +59,7 @@ def check_all_user_drift():
                     usernames = [u.username for u in desired_users]
                     groupnames = [g.groupname for g in desired_groups]
 
-                    actual_users = await collect_user_states(
-                        host, db, private_key_pem, usernames
-                    )
+                    actual_users = await collect_user_states(host, db, private_key_pem, usernames)
                     actual_groups = await collect_group_states(
                         host, db, private_key_pem, groupnames
                     )
