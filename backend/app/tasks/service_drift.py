@@ -55,9 +55,7 @@ def check_all_service_drift():
                     desired = await get_effective_services(host.id, db)
                     service_names = [s.service_name for s in desired]
 
-                    current = await collect_service_states(
-                        host, db, private_key_pem, service_names
-                    )
+                    current = await collect_service_states(host, db, private_key_pem, service_names)
                     diff = compute_service_diff(current, desired)
 
                     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"

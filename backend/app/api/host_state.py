@@ -533,9 +533,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
 
         desired = await get_effective_packages(host.id, db)
         names = [p.package_name for p in desired]
-        packages = (
-            await collect_package_states(host, db, private_pem, names) if names else []
-        )
+        packages = await collect_package_states(host, db, private_pem, names) if names else []
         repos = await collect_repo_sources(host, db, private_pem)
         return {"packages": packages, "repos": repos}
 
