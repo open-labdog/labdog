@@ -27,6 +27,11 @@ _BLOCKED_URL_NETWORKS = [
 # scp-style SSH URL  →  git@<host>:<path>
 _SCP_HOST_RE = re.compile(r"^git@([^:]+):")
 
+# Allowed characters in a git branch / ref. Conservative allow-list so the
+# value is safe to pass as a `--branch <ref>` CLI argument and to interpolate
+# into `refs/heads/<branch>` webhook comparisons.
+_BRANCH_RE = re.compile(r"^[\w./-]+$")
+
 
 def _extract_hostname(url: str) -> str | None:
     """Return the hostname from a git URL, or None if it cannot be determined.
@@ -90,6 +95,30 @@ def derive_auth_type(
     raise ValueError("Repository URL must use https://, ssh://, or git@ scheme")
 
 
+def _validate_repo_url(v: str) -> str:
+    """Enforce the URL scheme and the blocked-host (SSRF) policy.
+
+    Shared by create and update so an update can't slip a
+    loopback/link-local/metadata URL past the check applied at create time.
+    """
+    if not (v.startswith(HTTPS_URL_PREFIX) or v.startswith(SSH_URL_PREFIXES)):
+        raise ValueError("Repository URL must use https://, ssh://, or git@ scheme")
+    host = _extract_hostname(v)
+    if host is None:
+        raise ValueError("Repository URL does not contain a recognisable hostname")
+    _check_host_blocked(host)
+    return v
+
+
+def _validate_branch(v: str) -> str:
+    """Restrict a branch/ref to a safe character set (see ``_BRANCH_RE``)."""
+    if v.startswith("-"):
+        raise ValueError("Branch/ref must not start with '-'")
+    if not _BRANCH_RE.match(v):
+        raise ValueError("Branch/ref may only contain letters, digits, '.', '_', '/', and '-'")
+    return v
+
+
 class GitRepoCreate(BaseModel):
     name: str
     url: str
@@ -101,13 +130,12 @@ class GitRepoCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, v: str) -> str:
-        if not (v.startswith(HTTPS_URL_PREFIX) or v.startswith(SSH_URL_PREFIXES)):
-            raise ValueError("Repository URL must use https://, ssh://, or git@ scheme")
-        host = _extract_hostname(v)
-        if host is None:
-            raise ValueError("Repository URL does not contain a recognisable hostname")
-        _check_host_blocked(host)
-        return v
+        return _validate_repo_url(v)
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, v: str) -> str:
+        return _validate_branch(v)
 
 
 class GitRepoUpdate(BaseModel):
@@ -117,6 +145,16 @@ class GitRepoUpdate(BaseModel):
     ssh_key_id: int | None = None
     https_token: str | None = None
     webhook_secret: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, v: str | None) -> str | None:
+        return _validate_repo_url(v) if v is not None else v
+
+    @field_validator("branch")
+    @classmethod
+    def validate_branch(cls, v: str | None) -> str | None:
+        return _validate_branch(v) if v is not None else v
 
 
 class GitRepoResponse(BaseModel):
