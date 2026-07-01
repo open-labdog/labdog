@@ -105,8 +105,16 @@ def merge_group_rules(
             seen_signatures.add(sig)
             merged.append(rule)
 
-    # Sort by group priority first (higher = first), then rule priority within group
-    merged.sort(key=lambda r: (r.group_priority or 0, r.priority), reverse=True)
+    # Host overrides replace group config for this host, so they must outrank
+    # every group rule in the emitted (first-match) ruleset — otherwise an
+    # override with a different signature than any group rule (dedup already
+    # handles identical ones) would sort below the group rules it is meant to
+    # take precedence over. host_id marks an override; group rules have it None.
+    # Then order by group priority, then rule priority within a group.
+    merged.sort(
+        key=lambda r: (1 if r.host_id else 0, r.group_priority or 0, r.priority),
+        reverse=True,
+    )
 
     # Prepend SSH lockout rule (always first)
     ssh_rule = _make_ssh_lockout_rule(server_ip)
