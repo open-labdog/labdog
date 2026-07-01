@@ -1,8 +1,11 @@
 """CRUD + sync endpoints for action packs.
 
-Superuser-only, audit-logged on writes. Credentials are NOT handled
-here — they live on the linked ``GitRepository`` row (managed on the
-Git Repos page). This router only persists the pack metadata and
+Writes (create/update/delete/sync/claim-keys) are superuser-only and
+audit-logged, since enabling a pack folds its manifests into the action
+registry and drives root-level Ansible runs against managed hosts. Reads
+(list/detail) are allowed for any active user. Credentials are NOT
+handled here — they live on the linked ``GitRepository`` row (managed on
+the Git Repos page). This router only persists the pack metadata and
 dispatches sync.
 """
 
@@ -16,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
 from app.audit.logger import log_action
-from app.auth.users import current_active_user
+from app.auth.users import current_active_user, current_superuser
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.user import User
@@ -158,7 +161,7 @@ async def list_action_packs(
 @router.post("", response_model=ActionPackResponse, status_code=201)
 async def create_action_pack(
     body: ActionPackCreate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     existing = await db.execute(select(ActionPack).where(ActionPack.name == body.name))
@@ -217,7 +220,7 @@ async def get_action_pack(
 async def update_action_pack(
     pack_id: int,
     body: ActionPackUpdate,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
@@ -267,7 +270,7 @@ async def update_action_pack(
 @router.delete("/{pack_id}", status_code=204)
 async def delete_action_pack(
     pack_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
@@ -298,7 +301,7 @@ async def delete_action_pack(
 @router.post("/{pack_id}/sync", response_model=ActionPackSyncResponse)
 async def sync_action_pack(
     pack_id: int,
-    _: User = Depends(current_active_user),
+    _: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(ActionPack).where(ActionPack.id == pack_id))
@@ -328,7 +331,7 @@ async def sync_action_pack(
 @router.post("/{pack_id}/claim-all-keys", response_model=ClaimAllKeysResponse)
 async def claim_all_keys(
     pack_id: int,
-    user: User = Depends(current_active_user),
+    user: User = Depends(current_superuser),
     db: AsyncSession = Depends(get_db),
 ):
     """Pin every action key this pack contributes to this pack.
