@@ -1,6 +1,7 @@
 """Collect current package states from remote hosts via SSH (dpkg/rpm)."""
 
 import asyncio
+import re
 import shlex
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,7 @@ async def collect_package_states(
     private_key_pem: str,
     package_names: list[str],
 ) -> list[dict]:
-    """Return [{"name": str, "state": "present"|"absent", "version": str|None}]."""
+    """Return [{"name", "state": "present"|"absent", "version", "hold": bool}]."""
     if not package_names:
         return []
 
@@ -36,6 +37,8 @@ async def collect_package_states(
 
                 use_dpkg = dpkg_check.exit_status == 0
                 use_rpm = rpm_check.exit_status == 0
+
+                held = await _collect_held(conn, package_names, use_dpkg, use_rpm)
 
                 for pkg_name in package_names:
                     try:
@@ -57,9 +60,18 @@ async def collect_package_states(
                         else:
                             state, version = "absent", None
 
-                        results.append({"name": pkg_name, "state": state, "version": version})
+                        results.append(
+                            {
+                                "name": pkg_name,
+                                "state": state,
+                                "version": version,
+                                "hold": pkg_name in held,
+                            }
+                        )
                     except Exception:
-                        results.append({"name": pkg_name, "state": "absent", "version": None})
+                        results.append(
+                            {"name": pkg_name, "state": "absent", "version": None, "hold": False}
+                        )
 
             return results
 
@@ -67,8 +79,39 @@ async def collect_package_states(
 
     except Exception:
         for pkg_name in package_names:
-            results.append({"name": pkg_name, "state": "absent", "version": None})
+            results.append({"name": pkg_name, "state": "absent", "version": None, "hold": False})
         return results
+
+
+async def _collect_held(conn, package_names: list[str], use_dpkg: bool, use_rpm: bool) -> set[str]:
+    """Return the subset of package_names whose install is held/version-locked.
+
+    apt: ``apt-mark showhold`` lists held package names verbatim.
+    dnf: ``dnf versionlock list`` lists ``[epoch:]name-version...`` entries; a
+    package is locked when an entry's name component matches exactly (the
+    ``name-<digit>`` boundary avoids matching e.g. ``foo`` against ``foo-libs``).
+    On any error the held set is empty (no hold drift asserted).
+    """
+    try:
+        if use_dpkg:
+            r = await conn.run("apt-mark showhold 2>/dev/null", check=False)
+            if r.exit_status != 0:
+                return set()
+            held_all = {ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()}
+            return {n for n in package_names if n in held_all}
+        if use_rpm:
+            r = await conn.run("dnf versionlock list 2>/dev/null", check=False)
+            if r.exit_status != 0:
+                return set()
+            lines = [ln.strip() for ln in (r.stdout or "").splitlines() if ln.strip()]
+            return {
+                n
+                for n in package_names
+                if any(re.match(rf"^(?:\d+:)?{re.escape(n)}-\d", ln) for ln in lines)
+            }
+    except Exception:
+        return set()
+    return set()
 
 
 def _parse_dpkg_output(output: str, pkg_name: str) -> tuple[str, str | None]:

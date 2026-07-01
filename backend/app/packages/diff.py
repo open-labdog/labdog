@@ -20,11 +20,15 @@ class PackageDiff:
     to_install: list[PackageEntry] = field(default_factory=list)
     to_remove: list[PackageEntry] = field(default_factory=list)
     to_upgrade: list[PackageEntry] = field(default_factory=list)
+    # Package is present at the desired version but its hold/versionlock state
+    # differs from desired — a sync would run apt-mark hold/unhold (or dnf
+    # versionlock add/delete), so this is genuine drift, not in_sync.
+    to_hold_change: list[PackageEntry] = field(default_factory=list)
     in_sync: list[PackageEntry] = field(default_factory=list)
 
     @property
     def has_drift(self) -> bool:
-        return bool(self.to_install or self.to_remove or self.to_upgrade)
+        return bool(self.to_install or self.to_remove or self.to_upgrade or self.to_hold_change)
 
 
 def compute_diff(
@@ -62,21 +66,31 @@ def compute_diff(
 
         elif desired_state == "latest":
             if actual_state == "present":
-                diff.in_sync.append(entry)
+                _classify_present(diff, entry)
             else:
                 diff.to_install.append(entry)
 
         else:
             if actual_state == "absent":
                 diff.to_install.append(entry)
-            elif desired_version is None:
-                diff.in_sync.append(entry)
-            elif _version_matches(actual_version, desired_version):
-                diff.in_sync.append(entry)
+            elif desired_version is None or _version_matches(actual_version, desired_version):
+                _classify_present(diff, entry)
             else:
                 diff.to_upgrade.append(entry)
 
     return diff
+
+
+def _classify_present(diff: PackageDiff, entry: PackageEntry) -> None:
+    """A package present at the desired version: in_sync unless hold drifts.
+
+    Hold only applies to present packages (the generator skips absent ones),
+    so this is the single place where a hold-only difference is detected.
+    """
+    if entry.desired_hold != entry.actual_hold:
+        diff.to_hold_change.append(entry)
+    else:
+        diff.in_sync.append(entry)
 
 
 def _version_matches(actual_version: str | None, desired_version: str) -> bool:
