@@ -5445,7 +5445,7 @@ export default function HostDetailPage() {
 
       {syncPreview && (
         <Dialog open onOpenChange={(o) => { if (!o) closeSyncPreview() }}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="sm:max-w-3xl">
             <DialogHeader>
               <DialogTitle>
                 {syncPreview.scope === "all"
@@ -5468,9 +5468,17 @@ export default function HostDetailPage() {
                   {!syncPreview.diffs.some((d) => d.has_changes) && (
                     <div className="text-green-400 text-sm">Everything is already in sync.</div>
                   )}
-                  {syncPreview.diffs.map((d) => (
-                    <ModuleDiffView key={d.module} diff={d} showHeader={syncPreview.scope === "all"} />
-                  ))}
+                  {/* Changed modules first so actionable content sits at the top; unchanged cards collapse by default. */}
+                  {[...syncPreview.diffs]
+                    .sort((a, b) => Number(b.has_changes) - Number(a.has_changes))
+                    .map((d) => (
+                      <ModuleDiffView
+                        key={d.module}
+                        diff={d}
+                        showHeader={syncPreview.scope === "all"}
+                        defaultExpanded={d.has_changes}
+                      />
+                    ))}
                 </>
               )}
 
@@ -5488,23 +5496,32 @@ export default function HostDetailPage() {
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={closeSyncPreview} disabled={applying}>
-                {bulkJob?.status === "success" || bulkJob?.status === "failed" ? "Close" : "Cancel"}
-              </Button>
-              {!(bulkJob?.status === "success" || bulkJob?.status === "failed") && (
-                <Button
-                  onClick={syncPreview.scope === "all" ? applyBulkSync : applyModuleSync}
-                  disabled={
-                    applying ||
-                    syncPreview.loading ||
-                    !!syncPreview.error ||
-                    !syncPreview.diffs ||
-                    !syncPreview.diffs.some((d) => d.has_changes)
-                  }
-                >
-                  {applying ? "Applying…" : "Apply Changes"}
-                </Button>
-              )}
+              {(() => {
+                const jobDone = bulkJob?.status === "success" || bulkJob?.status === "failed"
+                // Once the preview has loaded with nothing to apply, the primary
+                // action is just to dismiss — a disabled "Apply Changes" reads as
+                // "something is broken" rather than "nothing to do".
+                const noChanges =
+                  !!syncPreview.diffs &&
+                  !syncPreview.loading &&
+                  !syncPreview.error &&
+                  !syncPreview.diffs.some((d) => d.has_changes)
+                return (
+                  <>
+                    <Button variant="outline" onClick={closeSyncPreview} disabled={applying}>
+                      {jobDone || noChanges ? "Close" : "Cancel"}
+                    </Button>
+                    {!jobDone && !noChanges && (
+                      <Button
+                        onClick={syncPreview.scope === "all" ? applyBulkSync : applyModuleSync}
+                        disabled={applying || syncPreview.loading || !!syncPreview.error || !syncPreview.diffs}
+                      >
+                        {applying ? "Applying…" : "Apply Changes"}
+                      </Button>
+                    )}
+                  </>
+                )
+              })()}
             </DialogFooter>
           </DialogContent>
         </Dialog>
