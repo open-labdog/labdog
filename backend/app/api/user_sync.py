@@ -85,12 +85,8 @@ async def check_user_drift(
         usernames = [u.username for u in desired_users]
         groupnames = [g.groupname for g in desired_groups]
 
-        actual_users = await collect_user_states(
-            host.ip_address, host.ssh_port, private_key_pem, usernames
-        )
-        actual_groups = await collect_group_states(
-            host.ip_address, host.ssh_port, private_key_pem, groupnames
-        )
+        actual_users = await collect_user_states(host, db, private_key_pem, usernames)
+        actual_groups = await collect_group_states(host, db, private_key_pem, groupnames)
 
         user_diff = diff_users(desired_user_dicts, actual_users)
         group_diff = diff_groups(desired_group_dicts, actual_groups)
@@ -230,14 +226,14 @@ async def plan_user_sync(
     desired_groups = [g.model_dump() for g in effective_groups]
 
     actual_users = await collect_user_states(
-        host.ip_address,
-        host.ssh_port,
+        host,
+        db,
         private_key_pem,
         [u["username"] for u in desired_users],
     )
     actual_groups = await collect_group_states(
-        host.ip_address,
-        host.ssh_port,
+        host,
+        db,
         private_key_pem,
         [g["groupname"] for g in desired_groups],
     )

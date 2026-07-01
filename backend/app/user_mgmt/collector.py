@@ -1,18 +1,23 @@
 """Collect current Linux user and group states from remote hosts via SSH."""
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 async def collect_user_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     usernames: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -20,12 +25,7 @@ async def collect_user_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 for username in usernames:
                     try:
                         entry = await _collect_single_user(conn, username)
@@ -109,11 +109,10 @@ def _absent_user(username: str) -> dict:
 
 
 async def collect_group_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     groupnames: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -121,12 +120,7 @@ async def collect_group_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 for groupname in groupnames:
                     try:
                         result = await conn.run(f"getent group {groupname}", check=False)

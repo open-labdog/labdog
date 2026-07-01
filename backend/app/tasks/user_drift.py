@@ -17,7 +17,7 @@ def check_all_user_drift():
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
     from app.user_mgmt.collector import collect_group_states, collect_user_states
     from app.user_mgmt.diff import diff_groups, diff_users
     from app.user_mgmt.merge import get_effective_groups, get_effective_users
@@ -60,10 +60,10 @@ def check_all_user_drift():
                     groupnames = [g.groupname for g in desired_groups]
 
                     actual_users = await collect_user_states(
-                        host.ip_address, host.ssh_port, private_key_pem, usernames
+                        host, db, private_key_pem, usernames
                     )
                     actual_groups = await collect_group_states(
-                        host.ip_address, host.ssh_port, private_key_pem, groupnames
+                        host, db, private_key_pem, groupnames
                     )
 
                     user_diff = diff_users(desired_user_dicts, actual_users)
@@ -89,10 +89,9 @@ def check_all_user_drift():
                     if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(
-                                host.ip_address,
-                                port=host.ssh_port,
-                                username=ssh_key.ssh_user,
+                            async with ssh_connect_host(
+                                host,
+                                db,
                                 client_keys=[imported_key],
                             ) as probe:
                                 host.labdog_source_ip = await get_source_ip(probe)
