@@ -434,12 +434,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
     async def _collect_services():
         from app.services.collector import list_all_services
 
-        return await list_all_services(
-            host.ip_address,
-            host.ssh_port,
-            private_pem,
-            ssh_user=ssh_user,
-        )
+        return await list_all_services(host, db, private_pem)
 
     async def _collect_hosts_file():
         from app.hosts_mgmt.collector import collect_hosts_file

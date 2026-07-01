@@ -23,7 +23,7 @@ from app.services.live_schemas import (
     ServiceInventoryItem,
 )
 from app.services.merge import get_effective_services
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
 
 router = APIRouter(prefix="/services", tags=["service-live"])
 
@@ -50,9 +50,7 @@ async def get_service_inventory(
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
     # Fetch inventory via SSH
-    raw_services = await list_all_services(
-        host.ip_address, host.ssh_port, private_key_pem, ssh_user=host.ssh_user
-    )
+    raw_services = await list_all_services(host, db, private_key_pem)
 
     # Get managed service names for this host
     effective = await get_effective_services(host_id, db)
@@ -100,12 +98,11 @@ async def run_service_command(
 
     # Execute command via SSH
     result = await execute_service_command(
-        host.ip_address,
-        host.ssh_port,
+        host,
+        db,
         private_key_pem,
         body.service_name,
         body.action,
-        ssh_user=host.ssh_user,
     )
 
     # Audit log
@@ -161,12 +158,7 @@ async def get_unit_file(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> str | None:
-            async with ssh_connect(
-                host.ip_address,
-                port=host.ssh_port,
-                username=host.ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 result = await conn.run(cmd, check=False)
                 if result.exit_status != 0:
                     return None
