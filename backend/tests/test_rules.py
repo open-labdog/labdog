@@ -125,3 +125,33 @@ class TestMerge:
         # Should still have SSH lockout rule
         assert len(merged) >= 1
         assert merged[0].is_system
+
+    def test_host_override_sorts_above_group_rules(self):
+        # A host override with a different signature than the group rule must
+        # sort above it (host overrides replace group config for the host),
+        # even though the group has a positive priority and the override's own
+        # priority is lower.
+        group = {
+            "id": 1,
+            "priority": 100,
+            "rules": [
+                FirewallRuleSpec(
+                    action="deny", protocol="tcp", direction="input", port_start=22, priority=100
+                )
+            ],
+        }
+        host_override = FirewallRuleSpec(
+            action="allow",
+            protocol="tcp",
+            direction="input",
+            port_start=22,
+            source_cidr="10.9.9.9/32",
+            priority=800,
+            host_id=42,
+        )
+        merged = merge_group_rules([group], server_ip="10.0.0.1", host_rules=[host_override])
+        # Ignore the always-first system SSH lockout rule.
+        non_system = [r for r in merged if not r.is_system]
+        assert non_system[0].host_id == 42  # override first
+        assert non_system[0].action == "allow"
+        assert non_system[1].action == "deny"  # group rule after
