@@ -48,6 +48,19 @@ class TestRuleResolver:
         with pytest.raises(HostRefResolutionError):
             resolve_host_refs([spec], {9: None})
 
+    def test_missing_host_tolerant_leaves_unresolved(self):
+        # strict=False (read-only display): a dangling ref degrades to a
+        # name-only rule instead of raising.
+        spec = FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=9)
+        out = resolve_host_refs([spec], {}, strict=False)
+        assert out[0].source_cidr is None
+        assert out[0].source_host_id == 9  # preserved for display
+
+    def test_tolerant_still_resolves_when_ip_present(self):
+        spec = FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=7)
+        out = resolve_host_refs([spec], {7: "192.168.1.10"}, strict=False)
+        assert out[0].source_cidr == "192.168.1.10/32"
+
     def test_collect_ids(self):
         specs = [
             FirewallRuleSpec(action="allow", protocol="tcp", direction="input", source_host_id=1),

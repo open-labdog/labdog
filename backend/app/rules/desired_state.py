@@ -24,21 +24,30 @@ async def load_host_ip_lookup(db: AsyncSession, host_ids: set[int]) -> dict[int,
     return {row.id: row.ip_address for row in rows}
 
 
-async def resolve_specs(db: AsyncSession, specs: list[FirewallRuleSpec]) -> list[FirewallRuleSpec]:
+async def resolve_specs(
+    db: AsyncSession,
+    specs: list[FirewallRuleSpec],
+    *,
+    strict: bool = True,
+) -> list[FirewallRuleSpec]:
     """Replace source/destination host refs on specs with concrete CIDRs.
 
-    Fetches the current IP for every referenced host. Raises if a referenced
-    host is missing or has no IP (see resolver.HostRefResolutionError).
+    Fetches the current IP for every referenced host. When `strict` (default),
+    raises if a referenced host is missing or has no IP (see
+    resolver.HostRefResolutionError); when not `strict`, leaves such refs
+    unresolved for read-only callers.
     """
     ids = collect_referenced_host_ids(specs)
     lookup = await load_host_ip_lookup(db, ids)
-    return resolve_host_refs(specs, lookup)
+    return resolve_host_refs(specs, lookup, strict=strict)
 
 
 async def get_desired_state(
     host_id: int,
     db: AsyncSession,
     host_source_ip: str | None = None,
+    *,
+    resolve_strict: bool = True,
 ) -> tuple[list[FirewallRuleSpec], ChainPolicies]:
     """Get merged desired rules and policies for a host from DB.
 
@@ -46,8 +55,13 @@ async def get_desired_state(
     materialized into concrete /32 (or /128) CIDRs via ``resolve_specs`` so
     every consumer — rendering, diffing and the effective-rules display — sees
     a real source/destination address instead of an unresolved ref that would
-    otherwise render as (and diff against) "any". Raises
-    ``HostRefResolutionError`` if a referenced host has no IP.
+    otherwise render as (and diff against) "any".
+
+    With ``resolve_strict`` (the default) a referenced host with no IP raises
+    ``HostRefResolutionError`` — fail closed for rendering/diffing. Read-only
+    callers (the effective-rules display) pass ``resolve_strict=False`` so a
+    single dangling ref degrades to a name-only rule instead of 500-ing the
+    whole request.
 
     Returns (merged_rules, merged_policies).
     """
@@ -69,7 +83,7 @@ async def get_desired_state(
         merged = merge_group_rules(
             [], host_source_ip=host_source_ip, host_rules=host_rule_specs
         )
-        return (await resolve_specs(db, merged), ChainPolicies())
+        return (await resolve_specs(db, merged, strict=resolve_strict), ChainPolicies())
 
     # 1 query for all groups (replaces N individual SELECTs)
     groups_result = await db.execute(select(HostGroup).where(HostGroup.id.in_(group_ids)))
@@ -103,4 +117,7 @@ async def get_desired_state(
         host_source_ip=host_source_ip,
         host_rules=host_rule_specs,
     )
-    return (await resolve_specs(db, merged), merge_group_policies(groups_data))
+    return (
+        await resolve_specs(db, merged, strict=resolve_strict),
+        merge_group_policies(groups_data),
+    )

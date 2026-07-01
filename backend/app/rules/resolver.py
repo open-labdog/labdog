@@ -37,11 +37,18 @@ def collect_referenced_host_ids(specs: Iterable[FirewallRuleSpec]) -> set[int]:
 def resolve_host_refs(
     specs: Iterable[FirewallRuleSpec],
     host_ips: Mapping[int, str | None],
+    *,
+    strict: bool = True,
 ) -> list[FirewallRuleSpec]:
     """Return a new list of specs with host refs materialized into CIDRs.
 
     `host_ips` must contain every host_id appearing on any spec's source/dest
-    host ref. Missing keys or hosts without an IP raise HostRefResolutionError.
+    host ref. When `strict` (the default), a missing key or a host without an
+    IP raises HostRefResolutionError — the right choice for rendering and
+    diffing, where an unresolved ref would otherwise silently widen to "any".
+    When not `strict`, such a ref is left unresolved (its CIDR unchanged) so
+    read-only callers like the effective-rules display can still render the
+    host name instead of failing the whole request on one dangling ref.
     """
     resolved: list[FirewallRuleSpec] = []
     for s in specs:
@@ -50,16 +57,20 @@ def resolve_host_refs(
         if s.source_host_id is not None:
             ip = host_ips.get(s.source_host_id)
             if not ip:
-                raise HostRefResolutionError(
-                    f"rule references source host {s.source_host_id} with no IP"
-                )
-            src_cidr = _ip_to_host_cidr(ip)
+                if strict:
+                    raise HostRefResolutionError(
+                        f"rule references source host {s.source_host_id} with no IP"
+                    )
+            else:
+                src_cidr = _ip_to_host_cidr(ip)
         if s.destination_host_id is not None:
             ip = host_ips.get(s.destination_host_id)
             if not ip:
-                raise HostRefResolutionError(
-                    f"rule references destination host {s.destination_host_id} with no IP"
-                )
-            dst_cidr = _ip_to_host_cidr(ip)
+                if strict:
+                    raise HostRefResolutionError(
+                        f"rule references destination host {s.destination_host_id} with no IP"
+                    )
+            else:
+                dst_cidr = _ip_to_host_cidr(ip)
         resolved.append(replace(s, source_cidr=src_cidr, destination_cidr=dst_cidr))
     return resolved
