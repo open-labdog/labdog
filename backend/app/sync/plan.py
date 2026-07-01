@@ -166,6 +166,9 @@ async def _packages_changes(
         cur_ver = e.actual_version or "?"
         des_ver = e.desired_version or "latest"
         changes.append(DiffChange(op="update", summary=f"{e.package_name}: {cur_ver} → {des_ver}"))
+    for e in diff.to_hold_change:
+        action = "hold" if e.desired_hold else "unhold"
+        changes.append(DiffChange(op="update", summary=f"{e.package_name} ({action})"))
     for e in diff.in_sync:
         changes.append(DiffChange(op="unchanged", summary=e.package_name))
     return changes
