@@ -51,10 +51,15 @@ class FirewallRuleSpec:
             return f"{self.port_start}-{self.port_end}"
         return str(self.port_start)
 
-    def _match_key(self) -> tuple:
-        """Return a hashable key for functional equivalence comparison."""
+    def _conflict_key(self) -> tuple:
+        """Hashable key identifying the same match target, ignoring action.
+
+        Used by ``merge_group_rules`` for priority-based conflict resolution
+        (on the same match the higher-priority group's action wins). Shares
+        CIDR/port_end normalization with ``_match_key`` so the merge dedup and
+        the diff engine agree on what "the same rule" is.
+        """
         return (
-            self.action,
             self.protocol,
             self.direction,
             _normalize_cidr(self.source_cidr),
@@ -64,6 +69,10 @@ class FirewallRuleSpec:
             self.port_start,
             _normalize_port_end(self.port_start, self.port_end),
         )
+
+    def _match_key(self) -> tuple:
+        """Return a hashable key for functional equivalence comparison."""
+        return (self.action, *self._conflict_key())
 
     def matches(self, other: "FirewallRuleSpec") -> bool:
         """Check if two rules are functionally equivalent (ignoring comment/priority/ids)."""
