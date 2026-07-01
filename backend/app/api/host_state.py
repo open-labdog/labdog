@@ -439,12 +439,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
     async def _collect_hosts_file():
         from app.hosts_mgmt.collector import collect_hosts_file
 
-        current = await collect_hosts_file(
-            host.ip_address,
-            host.ssh_port,
-            private_pem,
-            ssh_user=ssh_user,
-        )
+        current = await collect_hosts_file(host, db, private_pem)
         return [
             {"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases}
             for e in current

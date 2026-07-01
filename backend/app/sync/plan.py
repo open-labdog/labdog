@@ -218,7 +218,7 @@ async def _hosts_file_changes(
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host.id, db)
-    current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem, ssh_user)
+    current = await collect_hosts_file(host, db, private_key_pem)
     diff = compute_hosts_diff(current, desired)
 
     changes: list[DiffChange] = []
