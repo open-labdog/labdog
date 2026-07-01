@@ -190,9 +190,7 @@ async def _cron_changes(
         for j in effective
     ]
     users = list({j.user for j in effective})
-    actual = await collect_cron_jobs(
-        host.ip_address, host.ssh_port, private_key_pem, users, ssh_user
-    )
+    actual = await collect_cron_jobs(host, db, private_key_pem, users)
     diff = diff_cron_jobs(desired_dicts, actual)
 
     changes: list[DiffChange] = []
