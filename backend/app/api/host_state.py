@@ -606,11 +606,10 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         for msg in info_messages:
             logger.info("Host %d: %s", host.id, msg)
         rules = await collect_current_rules(
-            host.ip_address,
-            host.ssh_port,
+            host,
+            db,
             private_pem,
             backend,
-            ssh_user=ssh_user,
         )
         return [asdict(r) for r in rules]
 

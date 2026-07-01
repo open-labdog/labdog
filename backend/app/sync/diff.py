@@ -114,11 +114,10 @@ async def fetch_current_firewall_state(host_id: int, db):
 
     try:
         return await collect_firewall_state(
-            host_ip=host.ip_address,
-            ssh_port=host.ssh_port,
+            host=host,
+            db=db,
             private_key_pem=private_key_pem,
             firewall_backend=backend,
-            ssh_user=ssh_key.ssh_user,
         )
     except Exception as exc:
         logger.warning(
@@ -170,11 +169,10 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
 
     try:
         return await collect_current_rules(
-            host_ip=host.ip_address,
-            ssh_port=host.ssh_port,
+            host=host,
+            db=db,
             private_key_pem=private_key_pem,
             firewall_backend=backend,
-            ssh_user=ssh_key.ssh_user,
         )
     except Exception as exc:
         logger.warning(
