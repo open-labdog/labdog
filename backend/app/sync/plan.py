@@ -67,10 +67,13 @@ def _fmt_port(port_start: int | None, port_end: int | None) -> str:
 
 
 def _fmt_rule(r) -> str:
-    # Mirrors the frontend firewall renderer (groups/[id]/sync formatRule)
-    # and the nftables renderer fallback comment.
+    # Mirrors the nftables renderer's _safe_comment: every LabDog-managed rule
+    # carries the "Managed by LabDog" prefix on the host, with the user's
+    # comment appended when present. Kept in sync with the frontend
+    # groups/[id]/sync formatRule.
     port = _fmt_port(r.port_start, r.port_end)
-    comment = r.comment or "Managed by LabDog"
+    text = (r.comment or "").strip()
+    comment = f"Managed by LabDog: {text}" if text else "Managed by LabDog"
     src = r.source_cidr or "any"
     dst = r.destination_cidr or "any"
     return f"{r.action} {r.protocol} {r.direction} {src} → {dst} port={port} ({comment})"
