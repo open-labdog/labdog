@@ -85,7 +85,7 @@ async def check_hosts_drift(
         desired = await get_effective_hosts_entries(host_id, db)
 
         # Collect current /etc/hosts from host
-        current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem)
+        current = await collect_hosts_file(host, db, private_key_pem)
 
         # Compute diff
         diff = compute_hosts_diff(current, desired)
