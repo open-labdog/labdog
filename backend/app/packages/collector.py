@@ -2,18 +2,23 @@
 
 import asyncio
 import shlex
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 async def collect_package_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     package_names: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     """Return [{"name": str, "state": "present"|"absent", "version": str|None}]."""
     if not package_names:
@@ -25,12 +30,7 @@ async def collect_package_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 dpkg_check = await conn.run("which dpkg 2>/dev/null", check=False)
                 rpm_check = await conn.run("which rpm 2>/dev/null", check=False)
 
@@ -100,10 +100,9 @@ def _parse_rpm_output(output: str, exit_status: int, pkg_name: str) -> tuple[str
 
 
 async def collect_repo_sources(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
-    ssh_user: str = "root",
 ) -> list[dict]:
     """Collect configured package repository sources from a remote host.
 
@@ -114,12 +113,7 @@ async def collect_repo_sources(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 repos: list[dict] = []
 
                 # Try APT

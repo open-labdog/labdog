@@ -79,9 +79,7 @@ async def plan_package_sync(
     desired_dicts = [p.model_dump() for p in effective_packages]
     package_names = [p.package_name for p in effective_packages]
 
-    actual = await collect_package_states(
-        host.ip_address, host.ssh_port, private_key_pem, package_names
-    )
+    actual = await collect_package_states(host, db, private_key_pem, package_names)
 
     diff = compute_diff(desired_dicts, actual)
 
@@ -258,9 +256,7 @@ async def check_package_drift(
         desired_dicts = [p.model_dump() for p in effective]
         package_names = [p.package_name for p in effective]
 
-        actual = await collect_package_states(
-            host.ip_address, host.ssh_port, private_key_pem, package_names
-        )
+        actual = await collect_package_states(host, db, private_key_pem, package_names)
 
         pkg_diff = compute_diff(desired_dicts, actual)
 

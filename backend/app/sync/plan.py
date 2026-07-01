@@ -153,9 +153,7 @@ async def _packages_changes(
     effective = await get_effective_packages(host.id, db)
     desired_dicts = [p.model_dump() for p in effective]
     package_names = [p.package_name for p in effective]
-    actual = await collect_package_states(
-        host.ip_address, host.ssh_port, private_key_pem, package_names, ssh_user
-    )
+    actual = await collect_package_states(host, db, private_key_pem, package_names)
     diff = compute_package_diff(desired_dicts, actual)
 
     changes: list[DiffChange] = []
