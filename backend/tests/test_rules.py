@@ -192,3 +192,24 @@ class TestMerge:
         p443 = [r for r in merged if r.port_start == 443]
         assert len(p443) == 1
         assert p443[0].action == "allow"
+
+    def test_ssh_lockout_dedups_matching_user_rule(self):
+        # A user rule identical to the auto-injected anti-lockout rule must not
+        # appear twice in the effective set.
+        g = {
+            "id": 1,
+            "priority": 100,
+            "rules": [
+                FirewallRuleSpec(
+                    action="allow",
+                    protocol="tcp",
+                    direction="input",
+                    port_start=22,
+                    source_cidr="10.0.0.1/32",
+                )
+            ],
+        }
+        merged = merge_group_rules([g], server_ip="10.0.0.1")
+        ssh22 = [r for r in merged if r.port_start == 22 and r.source_cidr == "10.0.0.1/32"]
+        assert len(ssh22) == 1
+        assert ssh22[0].is_system  # the system anti-lockout rule, not the dup

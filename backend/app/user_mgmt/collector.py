@@ -1,6 +1,7 @@
 """Collect current Linux user and group states from remote hosts via SSH."""
 
 import asyncio
+import shlex
 from typing import TYPE_CHECKING
 
 import asyncssh
@@ -43,7 +44,7 @@ async def _collect_single_user(
     conn: asyncssh.SSHClientConnection,
     username: str,
 ) -> dict:
-    passwd_result = await conn.run(f"getent passwd {username}", check=False)
+    passwd_result = await conn.run(f"getent passwd {shlex.quote(username)}", check=False)
     if passwd_result.exit_status != 0:
         return _absent_user(username)
 
@@ -56,7 +57,11 @@ async def _collect_single_user(
     home_dir = fields[5]
     shell = fields[6]
 
-    ak_result = await conn.run(f"cat {home_dir}/.ssh/authorized_keys 2>/dev/null", check=False)
+    # home_dir comes from the remote host's getent output — quote it so a
+    # compromised host can't inject shell metacharacters via the home path.
+    ak_result = await conn.run(
+        f"cat {shlex.quote(home_dir)}/.ssh/authorized_keys 2>/dev/null", check=False
+    )
     authorized_keys: list[str] = []
     if ak_result.exit_status == 0 and ak_result.stdout:
         for line in ak_result.stdout.splitlines():
@@ -64,7 +69,9 @@ async def _collect_single_user(
             if stripped and not stripped.startswith("#"):
                 authorized_keys.append(stripped)
 
-    sudo_result = await conn.run(f"cat /etc/sudoers.d/{username} 2>/dev/null", check=False)
+    sudo_result = await conn.run(
+        f"cat /etc/sudoers.d/{shlex.quote(username)} 2>/dev/null", check=False
+    )
     sudo_rule: str | None = None
     if sudo_result.exit_status == 0 and sudo_result.stdout:
         content = sudo_result.stdout.strip()
@@ -73,7 +80,7 @@ async def _collect_single_user(
 
     # groups output format: "username : primary group1 group2"
     # first is primary, rest supplementary
-    groups_result = await conn.run(f"groups {username} 2>/dev/null", check=False)
+    groups_result = await conn.run(f"groups {shlex.quote(username)} 2>/dev/null", check=False)
     supplementary_groups: list[str] = []
     if groups_result.exit_status == 0 and groups_result.stdout:
         stdout = groups_result.stdout.strip()
