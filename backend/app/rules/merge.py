@@ -167,7 +167,12 @@ async def get_effective_rules(
     host = host_result.scalar_one_or_none()
     host_source_ip = host.labdog_source_ip if host else None
 
-    merged_specs, _policies = await get_desired_state(host_id, db, host_source_ip=host_source_ip)
+    # Read-only display: tolerate a dangling host ref (render name-only)
+    # rather than 500-ing the whole Rules tab. Rendering/diffing keep the
+    # strict default so an unresolved ref can never silently widen to "any".
+    merged_specs, _policies = await get_desired_state(
+        host_id, db, host_source_ip=host_source_ip, resolve_strict=False
+    )
 
     group_ids = {s.group_id for s in merged_specs if s.group_id}
     if group_ids:
