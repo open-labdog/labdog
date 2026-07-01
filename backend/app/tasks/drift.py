@@ -34,7 +34,7 @@ async def _check_drift_for_one_host(host, db) -> bool:
     from app.drift.detector import check_drift
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
     from app.sync.diff import SSHFetchError, fetch_current_firewall_state
 
     backend = (
@@ -89,10 +89,9 @@ async def _check_drift_for_one_host(host, db) -> bool:
                         ssh_key.encrypted_private_key, get_master_key()
                     )
                     imported_key = asyncssh.import_private_key(private_key_pem)
-                    async with ssh_connect(
-                        host.ip_address,
-                        port=host.ssh_port,
-                        username=ssh_key.ssh_user,
+                    async with ssh_connect_host(
+                        host,
+                        db,
                         client_keys=[imported_key],
                     ) as probe:
                         host.labdog_source_ip = await get_source_ip(probe)

@@ -1,13 +1,19 @@
 """Collect current firewall state from remote hosts via SSH."""
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import asyncssh
 
 from app.rules.model import ChainPolicies, FirewallRuleSpec
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
 from app.sync.parsers.iptables import parse_iptables_policies, parse_iptables_save
 from app.sync.parsers.nftables import parse_nftables_json, parse_nftables_policies
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 # Commands per firewall backend
 _COMMANDS = {
@@ -35,13 +41,14 @@ class CollectedFirewallState:
 
 
 async def collect_firewall_state(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     firewall_backend: str,
-    ssh_user: str = "root",
 ) -> CollectedFirewallState:
     """SSH into a host and collect its current firewall rules and chain policies.
+
+    Connects via ssh_connect_host so the stored host key is verified (TOFU).
 
     Returns:
         CollectedFirewallState with parsed rules and policies.
@@ -49,6 +56,7 @@ async def collect_firewall_state(
     Raises:
         ValueError: If firewall_backend is "unknown" or unsupported
         asyncssh.Error: If SSH connection fails
+        HostKeyMismatchError: If the server host key does not match the stored key
     """
     if firewall_backend not in _COMMANDS:
         raise ValueError(f"Unsupported firewall backend: {firewall_backend}")
@@ -58,12 +66,7 @@ async def collect_firewall_state(
     policy_parser = _POLICY_PARSERS[firewall_backend]
 
     key = asyncssh.import_private_key(private_key_pem)
-    async with ssh_connect(
-        host_ip,
-        port=ssh_port,
-        username=ssh_user,
-        client_keys=[key],
-    ) as conn:
+    async with ssh_connect_host(host, db, client_keys=[key]) as conn:
         result = await conn.run(command, check=True)
         return CollectedFirewallState(
             rules=rule_parser(result.stdout),
@@ -72,21 +75,19 @@ async def collect_firewall_state(
 
 
 async def collect_current_rules(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     firewall_backend: str,
-    ssh_user: str = "root",
 ) -> list[FirewallRuleSpec]:
     """SSH into a host and collect its current firewall rules.
 
     Backward-compatible wrapper around collect_firewall_state.
     """
     state = await collect_firewall_state(
-        host_ip,
-        ssh_port,
+        host,
+        db,
         private_key_pem,
         firewall_backend,
-        ssh_user,
     )
     return state.rules
