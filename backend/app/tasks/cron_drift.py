@@ -20,7 +20,7 @@ def check_all_cron_drift():
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
 
     async def _run():
         async with task_session() as db:
@@ -63,9 +63,7 @@ def check_all_cron_drift():
 
                     users = list({j.user for j in effective})
 
-                    actual = await collect_cron_jobs(
-                        host.ip_address, host.ssh_port, private_key_pem, users
-                    )
+                    actual = await collect_cron_jobs(host, db, private_key_pem, users)
 
                     cron_diff = diff_cron_jobs(desired_dicts, actual)
 
@@ -88,10 +86,9 @@ def check_all_cron_drift():
                     if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(
-                                host.ip_address,
-                                port=host.ssh_port,
-                                username=ssh_key.ssh_user,
+                            async with ssh_connect_host(
+                                host,
+                                db,
                                 client_keys=[imported_key],
                             ) as probe:
                                 host.labdog_source_ip = await get_source_ip(probe)

@@ -2,19 +2,17 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock, ShieldAlert } from "lucide-react"
+import { CalendarClock } from "lucide-react"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { ScheduleActionDialog } from "@/components/scheduled-actions/schedule-action-dialog"
 import { ScheduledActionsList } from "@/components/scheduled-actions/scheduled-actions-list"
 import { apiFetch } from "@/lib/api"
-import { useAuth } from "@/lib/auth"
 import { useDelayedLoading } from "@/lib/utils"
 import type { ScheduledAction } from "@/lib/types"
 
 export default function SchedulesPage() {
-  const { user } = useAuth()
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data: rows, isLoading, error } = useQuery<ScheduledAction[]>({
@@ -37,26 +35,6 @@ export default function SchedulesPage() {
     },
   })
   const showLoading = useDelayedLoading(isLoading)
-
-  // Permission gate — the API requires superuser; show an inline
-  // explanation rather than letting non-superusers hit a 403 toast.
-  if (user && !user.is_superuser) {
-    return (
-      <div className="space-y-6">
-        <Breadcrumb items={[{ label: "Schedules" }]} />
-        <div className="flex flex-col items-center gap-3 rounded-lg border border-slate-700 bg-slate-900 p-10 text-center">
-          <ShieldAlert className="h-10 w-10 text-slate-700" />
-          <p className="text-slate-300 font-medium">
-            Schedules require superuser privileges
-          </p>
-          <p className="text-sm text-slate-500 max-w-md">
-            Ask an administrator to schedule actions on your behalf, or to
-            promote your account if you need ongoing access.
-          </p>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-6">

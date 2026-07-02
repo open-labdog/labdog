@@ -34,7 +34,10 @@ export function useApiMutation<TData = unknown, TVariables = void, TQueryData = 
       await queryClient.cancelQueries({ queryKey })
       const previousData = queryClient.getQueryData<TQueryData[]>(queryKey)
 
-      if (previousData) {
+      // `updater` is typed for arrays; only apply it when the cached value is
+      // actually an array so a non-array (object/paginated) cache can't be
+      // handed to it and corrupted. Undefined (never-fetched) is skipped too.
+      if (Array.isArray(previousData)) {
         queryClient.setQueryData<TQueryData[]>(queryKey, updater(previousData, variables))
       }
 

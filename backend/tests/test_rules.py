@@ -125,3 +125,91 @@ class TestMerge:
         # Should still have SSH lockout rule
         assert len(merged) >= 1
         assert merged[0].is_system
+
+    def test_host_override_sorts_above_group_rules(self):
+        # A host override with a different signature than the group rule must
+        # sort above it (host overrides replace group config for the host),
+        # even though the group has a positive priority and the override's own
+        # priority is lower.
+        group = {
+            "id": 1,
+            "priority": 100,
+            "rules": [
+                FirewallRuleSpec(
+                    action="deny", protocol="tcp", direction="input", port_start=22, priority=100
+                )
+            ],
+        }
+        host_override = FirewallRuleSpec(
+            action="allow",
+            protocol="tcp",
+            direction="input",
+            port_start=22,
+            source_cidr="10.9.9.9/32",
+            priority=800,
+            host_id=42,
+        )
+        merged = merge_group_rules([group], server_ip="10.0.0.1", host_rules=[host_override])
+        # Ignore the always-first system SSH lockout rule.
+        non_system = [r for r in merged if not r.is_system]
+        assert non_system[0].host_id == 42  # override first
+        assert non_system[0].action == "allow"
+        assert non_system[1].action == "deny"  # group rule after
+
+    def test_merge_dedup_normalizes_cidr_and_port_end(self):
+        # A bare IP and its /32 form (and port_end == port_start vs None) are
+        # the same match target, so merge must dedup them consistently with the
+        # diff engine's _match_key — higher-priority group's action wins.
+        g_hi = {
+            "id": 1,
+            "priority": 200,
+            "rules": [
+                FirewallRuleSpec(
+                    action="allow",
+                    protocol="tcp",
+                    direction="input",
+                    port_start=443,
+                    port_end=443,
+                    source_cidr="10.0.0.5",
+                )
+            ],
+        }
+        g_lo = {
+            "id": 2,
+            "priority": 100,
+            "rules": [
+                FirewallRuleSpec(
+                    action="deny",
+                    protocol="tcp",
+                    direction="input",
+                    port_start=443,
+                    port_end=None,
+                    source_cidr="10.0.0.5/32",
+                )
+            ],
+        }
+        merged = merge_group_rules([g_hi, g_lo], server_ip="10.0.0.1")
+        p443 = [r for r in merged if r.port_start == 443]
+        assert len(p443) == 1
+        assert p443[0].action == "allow"
+
+    def test_ssh_lockout_dedups_matching_user_rule(self):
+        # A user rule identical to the auto-injected anti-lockout rule must not
+        # appear twice in the effective set.
+        g = {
+            "id": 1,
+            "priority": 100,
+            "rules": [
+                FirewallRuleSpec(
+                    action="allow",
+                    protocol="tcp",
+                    direction="input",
+                    port_start=22,
+                    source_cidr="10.0.0.1/32",
+                )
+            ],
+        }
+        merged = merge_group_rules([g], server_ip="10.0.0.1")
+        ssh22 = [r for r in merged if r.port_start == 22 and r.source_cidr == "10.0.0.1/32"]
+        assert len(ssh22) == 1
+        assert ssh22[0].is_system  # the system anti-lockout rule, not the dup

@@ -80,9 +80,7 @@ async def get_desired_state(
         # Always run merge_group_rules even when there are no groups
         # and no host rules — it injects the SSH lockout rule which
         # must never be skipped (security-critical anti-lockout).
-        merged = merge_group_rules(
-            [], host_source_ip=host_source_ip, host_rules=host_rule_specs
-        )
+        merged = merge_group_rules([], host_source_ip=host_source_ip, host_rules=host_rule_specs)
         return (await resolve_specs(db, merged, strict=resolve_strict), ChainPolicies())
 
     # 1 query for all groups (replaces N individual SELECTs)

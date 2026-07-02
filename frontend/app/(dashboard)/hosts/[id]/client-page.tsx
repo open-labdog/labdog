@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, type FormEvent } from "react"
+import { useState, useEffect, useRef, type FormEvent } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
@@ -33,6 +33,7 @@ import { GroupMultiSelect } from "@/components/group-multi-select"
 import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
+import { cronToHuman } from "@/lib/cron"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
 import { ModuleDiffView, moduleLabel } from "@/components/module-diff-view"
@@ -62,20 +63,6 @@ function formatPorts(rule: { port_start: number | null; port_end: number | null 
     return `${rule.port_start}–${rule.port_end}`
   }
   return String(rule.port_start)
-}
-
-function cronToHuman(schedule: string): string {
-  const s = schedule.trim()
-  if (s === "* * * * *") return "Every minute"
-  if (s === "0 * * * *") return "Every hour"
-  if (s === "0 0 * * *") return "Every day at midnight"
-  // 0 N * * *  => Every day at N:00
-  const dailyMatch = s.match(/^0\s+(\d+)\s+\*\s+\*\s+\*$/)
-  if (dailyMatch) return `Every day at ${dailyMatch[1]}:00`
-  // */N * * * *  => Every N minutes
-  const everyNMin = s.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
-  if (everyNMin) return `Every ${everyNMin[1]} minutes`
-  return s
 }
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -461,6 +448,10 @@ function CurrentStateSection({
 function InstallFirewallSection({ hostId, queryClient }: { hostId: number; queryClient: ReturnType<typeof useQueryClient> }) {
   const [installing, setInstalling] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // The install flow polls for up to ~2 minutes. Guard against setState /
+  // continued polling after the host page unmounts (e.g. user navigates away).
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   const handleInstall = async () => {
     setInstalling(true)
@@ -479,12 +470,15 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
     } catch (e: unknown) {
       // 409 = already exists, continue
       if (!(e && typeof e === "object" && "status" in e && (e as { status: number }).status === 409)) {
-        setStatus("Failed to add package")
-        setInstalling(false)
+        if (mountedRef.current) {
+          setStatus("Failed to add package")
+          setInstalling(false)
+        }
         return
       }
     }
 
+    if (!mountedRef.current) return
     // 2. Trigger package sync and wait for completion
     setStatus("Installing nftables via package sync...")
     try {
@@ -492,26 +486,32 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
       // Poll sync job status until done
       for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 2000))
+        if (!mountedRef.current) return
         try {
           const job = await apiFetch<{ status: string }>(`/api/packages/jobs/${syncResult.id}`)
           if (job.status === "success" || job.status === "failed") break
         } catch { break }
       }
     } catch {
-      setStatus("Failed to sync packages")
-      setInstalling(false)
+      if (mountedRef.current) {
+        setStatus("Failed to sync packages")
+        setInstalling(false)
+      }
       return
     }
 
+    if (!mountedRef.current) return
     // 3. Re-collect firewall state to detect the new backend
     setStatus("Detecting firewall backend...")
     try {
       await apiFetch(`/api/hosts/${hostId}/collect-state?module=firewall`, { method: "POST" })
     } catch { /* ignore */ }
 
+    if (!mountedRef.current) return
     await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
     await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
     await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", hostId] })
+    if (!mountedRef.current) return
     setStatus(null)
     setInstalling(false)
   }

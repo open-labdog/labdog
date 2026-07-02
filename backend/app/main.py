@@ -1,6 +1,7 @@
 import logging
 import logging.config
 import os
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -448,9 +449,24 @@ def create_app() -> FastAPI:
                     # Rewrite the RSC flight data so the baked-in route
                     # params match the actual URL instead of "placeholder".
                     content = resolved_file.read_text(encoding="utf-8")
-                    # HTML has escaped quotes (\"), .txt has plain quotes
-                    content = content.replace('\\"placeholder\\"', f'\\"{dynamic_value}\\"')
-                    content = content.replace('"placeholder"', f'"{dynamic_value}"')
+                    # Rewrite only the baked-in route SEGMENT value ("placeholder"
+                    # as a quoted value), not a JSON prop key like
+                    # {"placeholder":"..."} from a form input — that would corrupt
+                    # the flight data. The route value is never immediately
+                    # followed by ':', so a negative lookahead skips prop keys.
+                    # HTML escapes quotes (\"), .txt uses plain quotes. Use a
+                    # replacement function so backslashes in the value aren't
+                    # treated as regex backreferences.
+                    content = re.sub(
+                        r'\\"placeholder\\"(?!:)',
+                        lambda _m: f'\\"{dynamic_value}\\"',
+                        content,
+                    )
+                    content = re.sub(
+                        r'"placeholder"(?!:)',
+                        lambda _m: f'"{dynamic_value}"',
+                        content,
+                    )
                     media_type = "text/html" if resolved_file.suffix == ".html" else "text/plain"
                     return Response(content=content, media_type=media_type)
                 return FileResponse(resolved_file)

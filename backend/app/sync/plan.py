@@ -120,9 +120,7 @@ async def _services_changes(
 
     desired = await get_effective_services(host.id, db)
     service_names = [s.service_name for s in desired]
-    current = await collect_service_states(
-        host.ip_address, host.ssh_port, private_key_pem, service_names, ssh_user
-    )
+    current = await collect_service_states(host, db, private_key_pem, service_names)
     diff = compute_service_diff(current, desired)
 
     changes: list[DiffChange] = []
@@ -155,9 +153,7 @@ async def _packages_changes(
     effective = await get_effective_packages(host.id, db)
     desired_dicts = [p.model_dump() for p in effective]
     package_names = [p.package_name for p in effective]
-    actual = await collect_package_states(
-        host.ip_address, host.ssh_port, private_key_pem, package_names, ssh_user
-    )
+    actual = await collect_package_states(host, db, private_key_pem, package_names)
     diff = compute_package_diff(desired_dicts, actual)
 
     changes: list[DiffChange] = []
@@ -170,6 +166,9 @@ async def _packages_changes(
         cur_ver = e.actual_version or "?"
         des_ver = e.desired_version or "latest"
         changes.append(DiffChange(op="update", summary=f"{e.package_name}: {cur_ver} → {des_ver}"))
+    for e in diff.to_hold_change:
+        action = "hold" if e.desired_hold else "unhold"
+        changes.append(DiffChange(op="update", summary=f"{e.package_name} ({action})"))
     for e in diff.in_sync:
         changes.append(DiffChange(op="unchanged", summary=e.package_name))
     return changes
@@ -194,9 +193,7 @@ async def _cron_changes(
         for j in effective
     ]
     users = list({j.user for j in effective})
-    actual = await collect_cron_jobs(
-        host.ip_address, host.ssh_port, private_key_pem, users, ssh_user
-    )
+    actual = await collect_cron_jobs(host, db, private_key_pem, users)
     diff = diff_cron_jobs(desired_dicts, actual)
 
     changes: list[DiffChange] = []
@@ -224,7 +221,7 @@ async def _hosts_file_changes(
     from app.hosts_mgmt.merge import get_effective_hosts_entries
 
     desired = await get_effective_hosts_entries(host.id, db)
-    current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem, ssh_user)
+    current = await collect_hosts_file(host, db, private_key_pem)
     diff = compute_hosts_diff(current, desired)
 
     changes: list[DiffChange] = []
@@ -255,12 +252,8 @@ async def _linux_users_changes(
     usernames = [u.username for u in desired_users]
     groupnames = [g.groupname for g in desired_groups]
 
-    actual_users = await collect_user_states(
-        host.ip_address, host.ssh_port, private_key_pem, usernames, ssh_user
-    )
-    actual_groups = await collect_group_states(
-        host.ip_address, host.ssh_port, private_key_pem, groupnames, ssh_user
-    )
+    actual_users = await collect_user_states(host, db, private_key_pem, usernames)
+    actual_groups = await collect_group_states(host, db, private_key_pem, groupnames)
     user_diff = diff_users(desired_user_dicts, actual_users)
     group_diff = diff_groups(desired_group_dicts, actual_groups)
 
@@ -296,9 +289,7 @@ async def _resolver_changes(
     if not effective:
         return []
 
-    actual = await collect_resolver_state(
-        host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type, ssh_user
-    )
+    actual = await collect_resolver_state(host, db, private_key_pem, effective.resolver_type)
     desired = {
         "nameservers": effective.nameservers,
         "search_domains": effective.search_domains,

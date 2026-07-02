@@ -99,14 +99,15 @@ class TestSSHFunctions:
 
     def test_list_all_services_signature(self):
         sig = inspect.signature(list_all_services)
-        assert "host_ip" in sig.parameters
-        assert "ssh_port" in sig.parameters
+        assert "host" in sig.parameters
+        assert "db" in sig.parameters
         assert "private_key_pem" in sig.parameters
 
     def test_execute_command_signature(self):
         sig = inspect.signature(execute_service_command)
         params = list(sig.parameters.keys())
-        assert "host_ip" in params
+        assert "host" in params
+        assert "db" in params
         assert "service_name" in params
         assert "action" in params
 

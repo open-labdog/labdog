@@ -59,9 +59,7 @@ async def plan_resolver_sync(
     ssh_key = key_result.scalar_one()
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
-    actual = await collect_resolver_state(
-        host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type
-    )
+    actual = await collect_resolver_state(host, db, private_key_pem, effective.resolver_type)
 
     desired = {
         "nameservers": effective.nameservers,
@@ -213,9 +211,7 @@ async def check_resolver_drift(
     ssh_key = (await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))).scalar_one()
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
-    actual = await collect_resolver_state(
-        host.ip_address, host.ssh_port, private_key_pem, effective.resolver_type
-    )
+    actual = await collect_resolver_state(host, db, private_key_pem, effective.resolver_type)
     desired = {
         "nameservers": effective.nameservers,
         "search_domains": effective.search_domains,

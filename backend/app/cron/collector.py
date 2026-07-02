@@ -2,20 +2,25 @@
 
 import asyncio
 import re
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 _ANSIBLE_MARKER_RE = re.compile(r"^#Ansible:\s+(.+)$")
 
 
 async def collect_cron_jobs(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     users: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     """SSH into a host and parse Ansible-managed crontab entries for each user.
 
@@ -30,12 +35,7 @@ async def collect_cron_jobs(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 for user in users:
                     try:
                         entries = await _collect_user_crontab(conn, user)

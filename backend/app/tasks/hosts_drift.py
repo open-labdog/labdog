@@ -52,7 +52,7 @@ def check_all_hosts_drift():
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
 
     async def _run():
         async with task_session() as db:
@@ -85,9 +85,7 @@ def check_all_hosts_drift():
                     )
                     desired = await get_effective_hosts_entries(host.id, db)
 
-                    current = await collect_hosts_file(
-                        host.ip_address, host.ssh_port, private_key_pem
-                    )
+                    current = await collect_hosts_file(host, db, private_key_pem)
                     diff = compute_hosts_diff(current, desired)
 
                     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
@@ -101,10 +99,9 @@ def check_all_hosts_drift():
 
                     try:
                         imported_key = asyncssh.import_private_key(private_key_pem)
-                        async with ssh_connect(
-                            host.ip_address,
-                            port=host.ssh_port,
-                            username=ssh_key.ssh_user,
+                        async with ssh_connect_host(
+                            host,
+                            db,
                             client_keys=[imported_key],
                         ) as probe:
                             if not host.labdog_source_ip:

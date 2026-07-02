@@ -1,6 +1,7 @@
 """API endpoints for reading and refreshing collected host state."""
 
 import logging
+import shlex
 from collections.abc import Iterable
 from datetime import UTC, datetime
 
@@ -434,22 +435,12 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
     async def _collect_services():
         from app.services.collector import list_all_services
 
-        return await list_all_services(
-            host.ip_address,
-            host.ssh_port,
-            private_pem,
-            ssh_user=ssh_user,
-        )
+        return await list_all_services(host, db, private_pem)
 
     async def _collect_hosts_file():
         from app.hosts_mgmt.collector import collect_hosts_file
 
-        current = await collect_hosts_file(
-            host.ip_address,
-            host.ssh_port,
-            private_pem,
-            ssh_user=ssh_user,
-        )
+        current = await collect_hosts_file(host, db, private_pem)
         return [
             {"ip_address": e.ip_address, "hostname": e.hostname, "aliases": e.aliases}
             for e in current
@@ -517,7 +508,11 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
                 cron_users = ["root"]
 
             for user in cron_users:
-                result = await conn.run(f"crontab -u {user} -l 2>/dev/null || true", check=False)
+                # user is derived from the remote host's /var/spool/cron listing
+                # — quote it so a compromised host can't inject via the username.
+                result = await conn.run(
+                    f"crontab -u {shlex.quote(user)} -l 2>/dev/null || true", check=False
+                )
                 for line in (result.stdout or "").splitlines():
                     line = line.strip()
                     if not line or line.startswith("#"):
@@ -543,23 +538,8 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
 
         desired = await get_effective_packages(host.id, db)
         names = [p.package_name for p in desired]
-        packages = (
-            await collect_package_states(
-                host.ip_address,
-                host.ssh_port,
-                private_pem,
-                names,
-                ssh_user=ssh_user,
-            )
-            if names
-            else []
-        )
-        repos = await collect_repo_sources(
-            host.ip_address,
-            host.ssh_port,
-            private_pem,
-            ssh_user=ssh_user,
-        )
+        packages = await collect_package_states(host, db, private_pem, names) if names else []
+        repos = await collect_repo_sources(host, db, private_pem)
         return {"packages": packages, "repos": repos}
 
     async def _collect_resolver():
@@ -569,11 +549,10 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         effective = await get_effective_resolver(host.id, db)
         resolver_type = effective.resolver_type if effective else "resolv_conf"
         return await collect_resolver_state(
-            host.ip_address,
-            host.ssh_port,
+            host,
+            db,
             private_pem,
             resolver_type=resolver_type,
-            ssh_user=ssh_user,
         )
 
     async def _collect_firewall():
@@ -606,11 +585,10 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
         for msg in info_messages:
             logger.info("Host %d: %s", host.id, msg)
         rules = await collect_current_rules(
-            host.ip_address,
-            host.ssh_port,
+            host,
+            db,
             private_pem,
             backend,
-            ssh_user=ssh_user,
         )
         return [asdict(r) for r in rules]
 

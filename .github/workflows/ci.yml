@@ -241,6 +241,9 @@ jobs:
         working-directory: backend
         run: |
           pip install -U pip uv -q
+          # Fail if uv.lock has drifted from pyproject.toml (dep changed
+          # without relocking). Keeps the committed lock honest.
+          uv lock --check
           uv pip install --system '.[dev]'
       - name: Fetch bundled action pack
         # backend/app/ansible/ is gitignored; pytest expects the bundled
