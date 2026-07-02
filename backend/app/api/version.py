@@ -4,6 +4,7 @@ import importlib.metadata
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/api", tags=["version"])
 
 _LICENSE = "AGPL-3.0-or-later"
 _REPO_URL = "https://github.com/open-labdog/labdog"
+_UNKNOWN_VERSION = "0.0.0+unknown"
 
 # ---------------------------------------------------------------------------
 # Build-metadata resolution (computed once at import time)
@@ -60,8 +62,61 @@ def _resolve_build_date() -> str | None:
         return None
 
 
+def _resolve_version() -> str:
+    """Resolve the running version, tolerating images without dist metadata.
+
+    Resolution order:
+      1. installed package metadata — the canonical source for pip/uv
+         installs (and the .deb/.rpm packages);
+      2. ``LABDOG_VERSION`` env override;
+      3. the ``VERSION`` file bundled at the app root — the container runs
+         from source with deps installed via ``--no-emit-project``, so the
+         ``labdog-backend`` ``.dist-info`` is absent and step 1 fails there;
+      4. ``app._build_info.VERSION`` if a build stamped one;
+      5. a last-resort sentinel.
+
+    This must never raise: it feeds the public ``/api/version`` endpoint
+    that the container healthcheck depends on, so a missing distribution
+    must degrade to a sentinel, not a 500.
+    """
+    try:
+        return importlib.metadata.version("labdog-backend")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+
+    env = os.environ.get("LABDOG_VERSION", "").strip()
+    if env:
+        return env
+
+    # version.py lives at <root>/app/api/version.py; the image copies the
+    # repo-root VERSION file to <root>/VERSION (WORKDIR) alongside `app/`.
+    try:
+        text = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+        if text:
+            return text
+    except OSError:
+        pass
+
+    try:
+        from app._build_info import VERSION as build_version  # type: ignore[import-not-found]
+
+        text = (build_version or "").strip()
+        if text:
+            return text
+    except ImportError:
+        pass
+
+    logger.warning(
+        "labdog-backend version unresolved (no dist metadata, LABDOG_VERSION, "
+        "VERSION file, or _build_info) — reporting %r",
+        _UNKNOWN_VERSION,
+    )
+    return _UNKNOWN_VERSION
+
+
 _COMMIT_SHA: str | None = _resolve_commit_sha()
 _BUILD_DATE: str | None = _resolve_build_date()
+_VERSION: str = _resolve_version()
 
 # ---------------------------------------------------------------------------
 # Response model
@@ -90,10 +145,9 @@ async def get_version() -> VersionResponse:
 
     This endpoint is intentionally public — no authentication required.
     """
-    version = importlib.metadata.version("labdog-backend")
     short = _COMMIT_SHA[:7] if _COMMIT_SHA else None
     return VersionResponse(
-        version=version,
+        version=_VERSION,
         commit_sha=_COMMIT_SHA,
         commit_sha_short=short,
         build_date=_BUILD_DATE,

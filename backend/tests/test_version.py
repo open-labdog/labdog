@@ -151,6 +151,52 @@ class TestVersionEndpoint:
     # Response schema completeness
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # Version resolution tolerates images without dist metadata
+    # ------------------------------------------------------------------
+
+    def test_resolve_version_prefers_installed_metadata(self, monkeypatch):
+        """When the distribution is installed, its metadata version wins."""
+        import app.api.version as ver
+
+        monkeypatch.setattr(ver.importlib.metadata, "version", lambda _name: "9.9.9")
+        assert ver._resolve_version() == "9.9.9"
+
+    def test_resolve_version_falls_back_to_env_when_metadata_missing(self, monkeypatch):
+        """No .dist-info (as in the from-source container image) → LABDOG_VERSION."""
+        import app.api.version as ver
+
+        def _raise(name):
+            raise ver.importlib.metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(ver.importlib.metadata, "version", _raise)
+        monkeypatch.setenv("LABDOG_VERSION", "1.2.3")
+        assert ver._resolve_version() == "1.2.3"
+
+    def test_resolve_version_returns_sentinel_not_error(self, monkeypatch):
+        """With every source exhausted, resolution degrades to a sentinel."""
+        import app.api.version as ver
+
+        def _raise(name):
+            raise ver.importlib.metadata.PackageNotFoundError(name)
+
+        monkeypatch.setattr(ver.importlib.metadata, "version", _raise)
+        monkeypatch.delenv("LABDOG_VERSION", raising=False)
+        result = ver._resolve_version()
+        # Either a bundled VERSION file (if present in the tree) or the sentinel,
+        # but always a non-empty string — never a raise.
+        assert result and isinstance(result, str)
+
+    async def test_endpoint_stays_200_when_version_unresolved(self, client, monkeypatch):
+        """The regression guard: a missing distribution must not 500 the endpoint."""
+        import app.api.version as ver
+
+        # Simulate the shipped image: version resolved to the sentinel.
+        monkeypatch.setattr(ver, "_VERSION", ver._UNKNOWN_VERSION)
+        resp = await client.get("/api/version")
+        assert resp.status_code == 200
+        assert resp.json()["version"] == ver._UNKNOWN_VERSION
+
     async def test_response_schema_has_all_required_keys(self, client, monkeypatch):
         """Response always contains all six keys defined by the frontend contract."""
         import app.api.version as ver
