@@ -50,59 +50,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
-## Mirror gitlab labdog-playbooks to github (resolves BUG-46)
-
-**Context:** Commit `8fb167d` switched the bundled action pack from
-an in-repo mirror to a build-time clone from
-`open-labdog/labdog-playbooks` at the SHA pinned in
-`LABDOG_PLAYBOOKS_REF`. The current pinned SHA is
-`e6e73728ea3692a5189553d51c225e7961517000` — that commit only
-exists on the maintainer's internal gitlab
-(`gitlab.example.internal/operator/labdog-playbooks.git`); github
-`open-labdog/labdog-playbooks` still has the old flat-layout
-content (no alloy-install, no idempotent k8s-upgrade, no
-directory-per-action layout).
-
-**Consequence today:** every build path is broken without an env
-override. github CI, public `docker build`, `packaging/build.sh`,
-and `./dev/dev.sh start` (without `LABDOG_PLAYBOOKS_LOCAL`) all
-attempt the github clone + checkout and fail because the SHA
-doesn't exist there. Workarounds: set
-`LABDOG_PLAYBOOKS_REPO=https://gitlab.example.internal/operator/labdog-playbooks.git`
-as build-arg / env, or use `LABDOG_PLAYBOOKS_LOCAL` for dev. See
-`BUGS.md` BUG-46.
-
-**Procedure to resolve:**
-
-1. Push gitlab `labdog-playbooks/main` → github
-   `open-labdog/labdog-playbooks/main`:
-   ```
-   cd /home/operator/priv/gitlab/labdog-playbooks
-   git remote add github https://github.com/open-labdog/labdog-playbooks.git  # if not already
-   git push github main
-   ```
-2. Capture the resulting github commit SHA:
-   ```
-   git ls-remote https://github.com/open-labdog/labdog-playbooks main
-   ```
-3. Bump `LABDOG_PLAYBOOKS_REF` in the labdog repo to that SHA.
-   Commit as `build: bump LABDOG_PLAYBOOKS_REF to <sha> (gitlab -> github sync)`.
-4. Verify a clean build works without overrides:
-   ```
-   docker build --build-arg LABDOG_PLAYBOOKS_REF=$(cat LABDOG_PLAYBOOKS_REF) -t labdog:test .
-   ```
-   and confirm `/app/app/ansible/actions/` lists the four current
-   actions (alloy-install, k8s-upgrade, linux-os-upgrade,
-   linux-upgrade).
-5. Delete this TODO entry + BUG-46 in the same commit.
-
-**Going forward:** treat gitlab → github mirroring as a one-shot
-during this transition. After this lands, develop directly on
-github (or push gitlab → github regularly via a sync hook). The
-two repos drifting again would re-create this exact problem.
-
----
-
 ## k8s-upgrade — broaden OS support
 
 **Context:** The bundled `k8s-upgrade` action is currently apt-only;
@@ -143,4 +90,28 @@ that the alloy-install action stamps. A few deliberate deferrals:
   stores the Loki push URL; querying/displaying logs is unbuilt).
 - **More metrics / tuning:** network throughput, per-mount disk, and
   operator-configurable thresholds + refresh interval.
+
+---
+
+## Dependency & supply-chain follow-ups (2026-07 code audit)
+
+**Context:** The 2026-07 code audit's security, correctness, and cleanup
+findings were fixed on the `code-audit` branch (see its `git log` — each
+commit is the canonical record). The vulnerable dependency floors were
+raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
+`starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
+added. These are the deferred hardening/maintenance tasks that remain.
+
+- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06.
+      Flat config is already in place (`eslint.config.mjs`), so this is just the
+      version bump — but it is **currently blocked upstream**: bumping `eslint`
+      to 10 crashes lint with `context.getFilename is not a function`, because
+      `eslint-config-next` (even the latest 16.2.10) bundles
+      `eslint-plugin-react@7.37.5`, which still calls the API ESLint 10 removed.
+      Re-attempt once `eslint-plugin-react` ships an ESLint-10-compatible
+      release and `eslint-config-next` picks it up (then just bump both).
+
+- [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
+      separately; the safe react-query / tailwindcss / zod / react-hook-form
+      minor bumps have already landed.
 

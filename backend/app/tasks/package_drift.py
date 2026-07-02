@@ -20,7 +20,7 @@ def check_all_package_drift():
     from app.packages.collector import collect_package_states
     from app.packages.diff import compute_diff
     from app.packages.merge import get_effective_packages
-    from app.ssh_utils import get_source_ip, ssh_connect
+    from app.ssh_utils import get_source_ip, ssh_connect_host
 
     async def _run():
         async with task_session() as db:
@@ -54,9 +54,7 @@ def check_all_package_drift():
                     desired_dicts = [p.model_dump() for p in effective]
                     package_names = [p.package_name for p in effective]
 
-                    actual = await collect_package_states(
-                        host.ip_address, host.ssh_port, private_key_pem, package_names
-                    )
+                    actual = await collect_package_states(host, db, private_key_pem, package_names)
 
                     pkg_diff = compute_diff(desired_dicts, actual)
 
@@ -73,10 +71,9 @@ def check_all_package_drift():
                     if not host.labdog_source_ip:
                         try:
                             imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect(
-                                host.ip_address,
-                                port=host.ssh_port,
-                                username=ssh_key.ssh_user,
+                            async with ssh_connect_host(
+                                host,
+                                db,
                                 client_keys=[imported_key],
                             ) as probe:
                                 host.labdog_source_ip = await get_source_ip(probe)

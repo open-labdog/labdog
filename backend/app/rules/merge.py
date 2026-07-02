@@ -55,17 +55,10 @@ def merge_group_rules(
 
     for group in sorted_groups:
         for rule in group["rules"]:
-            # Signature: (protocol, direction, port_start, port_end, source_cidr, dest_cidr)
-            sig = (
-                rule.protocol,
-                rule.direction,
-                rule.port_start,
-                rule.port_end,
-                rule.source_cidr,
-                rule.destination_cidr,
-                rule.source_host_id,
-                rule.destination_host_id,
-            )
+            # Conflict key = same-match signature ignoring action (see
+            # FirewallRuleSpec._conflict_key); shared normalization keeps merge
+            # dedup consistent with the diff engine's _match_key.
+            sig = rule._conflict_key()
             if sig not in seen_signatures:
                 seen_signatures.add(sig)
                 rule.group_priority = group["priority"]
@@ -75,41 +68,31 @@ def merge_group_rules(
     # Apply host-level overrides — host rules replace group rules with same signature
     if host_rules:
         for rule in host_rules:
-            sig = (
-                rule.protocol,
-                rule.direction,
-                rule.port_start,
-                rule.port_end,
-                rule.source_cidr,
-                rule.destination_cidr,
-                rule.source_host_id,
-                rule.destination_host_id,
-            )
+            sig = rule._conflict_key()
             if sig in seen_signatures:
                 # Replace existing group rule with host override
-                merged = [
-                    r
-                    for r in merged
-                    if (
-                        r.protocol,
-                        r.direction,
-                        r.port_start,
-                        r.port_end,
-                        r.source_cidr,
-                        r.destination_cidr,
-                        r.source_host_id,
-                        r.destination_host_id,
-                    )
-                    != sig
-                ]
+                merged = [r for r in merged if r._conflict_key() != sig]
             seen_signatures.add(sig)
             merged.append(rule)
 
-    # Sort by group priority first (higher = first), then rule priority within group
-    merged.sort(key=lambda r: (r.group_priority or 0, r.priority), reverse=True)
+    # Host overrides replace group config for this host, so they must outrank
+    # every group rule in the emitted (first-match) ruleset — otherwise an
+    # override with a different signature than any group rule (dedup already
+    # handles identical ones) would sort below the group rules it is meant to
+    # take precedence over. host_id marks an override; group rules have it None.
+    # Then order by group priority, then rule priority within a group.
+    merged.sort(
+        key=lambda r: (1 if r.host_id else 0, r.group_priority or 0, r.priority),
+        reverse=True,
+    )
 
-    # Prepend SSH lockout rule (always first)
+    # Prepend SSH lockout rule (always first). Drop any group/host rule that
+    # targets the same match (allow *or* deny of SSH from the LabDog IP) so the
+    # effective set doesn't carry a duplicate — or a now-dead deny — alongside
+    # the auto-injected anti-lockout rule.
     ssh_rule = _make_ssh_lockout_rule(server_ip)
+    ssh_sig = ssh_rule._conflict_key()
+    merged = [r for r in merged if r._conflict_key() != ssh_sig]
     return [ssh_rule] + merged
 
 
@@ -167,7 +150,12 @@ async def get_effective_rules(
     host = host_result.scalar_one_or_none()
     host_source_ip = host.labdog_source_ip if host else None
 
-    merged_specs, _policies = await get_desired_state(host_id, db, host_source_ip=host_source_ip)
+    # Read-only display: tolerate a dangling host ref (render name-only)
+    # rather than 500-ing the whole Rules tab. Rendering/diffing keep the
+    # strict default so an unresolved ref can never silently widen to "any".
+    merged_specs, _policies = await get_desired_state(
+        host_id, db, host_source_ip=host_source_ip, resolve_strict=False
+    )
 
     group_ids = {s.group_id for s in merged_specs if s.group_id}
     if group_ids:

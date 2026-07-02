@@ -8,7 +8,7 @@ from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import HostKeyMismatchError, ssh_connect_host
 
 
 class HostNotFoundError(Exception):
@@ -72,12 +72,14 @@ async def open_ssh_shell(
     private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
     imported_key = asyncssh.import_private_key(private_pem)
 
-    # Connect to remote host and open PTY shell
+    # Connect to remote host and open PTY shell. Use ssh_connect_host so the
+    # interactive session enforces TOFU host-key verification (same as the
+    # sync/collector paths) instead of blindly accepting any key — otherwise a
+    # MITM could impersonate the host and capture the root PTY.
     try:
-        conn = await ssh_connect(
-            host.ip_address,
-            port=host.ssh_port,
-            username=ssh_key.ssh_user,
+        conn = await ssh_connect_host(
+            host,
+            db,
             client_keys=[imported_key],
         )
         process = await conn.create_process(
@@ -85,6 +87,8 @@ async def open_ssh_shell(
             term_size=(initial_cols, initial_rows),
             encoding=None,
         )
+    except HostKeyMismatchError as e:
+        raise SSHConnectionError(str(e))
     except (asyncssh.Error, OSError) as e:
         raise SSHConnectionError(f"Failed to connect to {host.hostname}: {e}")
 

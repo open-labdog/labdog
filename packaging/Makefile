@@ -96,6 +96,12 @@ _build-venv: fetch-bundled-pack
 	$(PYTHON) -m venv $(DESTDIR)$(PREFIX)/venv
 	$(DESTDIR)$(PREFIX)/venv/bin/pip install --upgrade pip --quiet
 	@echo "[build-venv] Installing backend dependencies..."
+	@# setuptools' dynamic version reads a VERSION file relative to
+	@# backend/pyproject.toml, but the source of truth lives at the repo
+	@# root. Stage it in so the installed labdog-backend dist-metadata
+	@# carries the real version (otherwise it builds as 0.0.0 and
+	@# /api/version reports 0.0.0). backend/VERSION is gitignored.
+	cp ../VERSION ../backend/VERSION
 	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir --quiet ../backend/
 	@echo "[build-venv] Fixing shebangs..."
 	@find $(DESTDIR)$(PREFIX)/venv/bin -maxdepth 1 -type f | while read f; do \

@@ -85,9 +85,7 @@ async def check_service_drift(
         service_names = [s.service_name for s in desired]
 
         # Collect current state from host
-        current = await collect_service_states(
-            host.ip_address, host.ssh_port, private_key_pem, service_names
-        )
+        current = await collect_service_states(host, db, private_key_pem, service_names)
 
         # Compute diff
         diff = compute_service_diff(current, desired)

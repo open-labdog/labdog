@@ -1,8 +1,14 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 @dataclass
@@ -13,10 +19,9 @@ class ParsedHostsEntry:
 
 
 async def collect_hosts_file(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
-    ssh_user: str = "root",
 ) -> list[ParsedHostsEntry]:
     """
     SSH into host, cat /etc/hosts, parse entries.
@@ -26,12 +31,7 @@ async def collect_hosts_file(
     results = []
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with ssh_connect(
-            host_ip,
-            port=ssh_port,
-            username=ssh_user,
-            client_keys=[private_key],
-        ) as conn:
+        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
             result = await conn.run("cat /etc/hosts", check=True)
             content = result.stdout
 

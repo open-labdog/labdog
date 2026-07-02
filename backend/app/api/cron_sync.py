@@ -61,7 +61,7 @@ async def plan_cron_sync(
     desired = [j.model_dump() for j in effective_jobs]
 
     users = list({j["user"] for j in desired})
-    actual = await collect_cron_jobs(host.ip_address, host.ssh_port, private_key_pem, users)
+    actual = await collect_cron_jobs(host, db, private_key_pem, users)
 
     diff = diff_cron_jobs(desired, actual)
 
@@ -249,7 +249,7 @@ async def check_cron_drift(
 
         users = list({j.user for j in effective})
 
-        actual = await collect_cron_jobs(host.ip_address, host.ssh_port, private_key_pem, users)
+        actual = await collect_cron_jobs(host, db, private_key_pem, users)
 
         cron_diff = diff_cron_jobs(desired_dicts, actual)
 

@@ -6,7 +6,7 @@
 #
 # Host assumptions:
 #   * Debian/Ubuntu (switch package_manager to dnf/yum for RHEL-family).
-#   * PostgreSQL 16 from the official PGDG repository.
+#   * PostgreSQL 18 from the official PGDG repository.
 #   * Bind mount for backups lives at /var/backups/postgres.
 
 group: database

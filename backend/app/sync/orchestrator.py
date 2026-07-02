@@ -40,6 +40,7 @@ from app.ansible_runtime.outcomes import (
     aggregate_module_outcomes,
     determine_modules_to_run,
 )
+from app.enum_utils import enum_str
 from app.models.host import Host
 from app.models.ssh_key import SSHKey
 
@@ -71,8 +72,7 @@ def _firewall_backend_str(host: Host) -> str:
     raw = host.firewall_backend
     if raw is None:
         return "nftables"
-    value = raw.value if hasattr(raw, "value") else str(raw)
-    return value or "nftables"
+    return enum_str(raw) or "nftables"
 
 
 def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:

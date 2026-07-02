@@ -3,10 +3,16 @@
 import asyncio
 import shlex
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 @dataclass
@@ -17,14 +23,15 @@ class ServiceCurrentState:
 
 
 async def collect_service_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     service_names: list[str],
-    ssh_user: str = "root",
 ) -> list[ServiceCurrentState]:
     """
     SSH into host and check service states via systemctl.
+
+    Connects via ssh_connect_host so the stored host key is verified (TOFU).
 
     For each service:
       - `systemctl is-active {name}` → "active" = running, everything else = stopped
@@ -35,12 +42,7 @@ async def collect_service_states(
 
     try:
         private_key = asyncssh.import_private_key(private_key_pem)
-        async with ssh_connect(
-            host_ip,
-            port=ssh_port,
-            username=ssh_user,
-            client_keys=[private_key],
-        ) as conn:
+        async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
             for name in service_names:
                 try:
                     # Check active state
@@ -100,10 +102,9 @@ async def collect_service_states(
 
 
 async def list_all_services(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
-    ssh_user: str = "root",
 ) -> list[dict]:
     """
     SSH into host and list all systemd services via systemctl.
@@ -115,12 +116,7 @@ async def list_all_services(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 result = await conn.run(
                     "systemctl list-units --type=service --all --no-pager --plain",
                     check=False,
@@ -164,12 +160,11 @@ async def list_all_services(
 
 
 async def execute_service_command(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     service_name: str,
     action: str,
-    ssh_user: str = "root",
 ) -> dict:
     """
     SSH into host and execute a systemctl action on a service.
@@ -186,12 +181,7 @@ async def execute_service_command(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> dict:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 result = await conn.run(cmd, check=False)
                 return {
                     "success": result.exit_status == 0,
@@ -218,12 +208,11 @@ async def execute_service_command(
 
 
 async def collect_unit_file_content(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     service_name: str,
     deploy_mode: str,
-    ssh_user: str = "root",
 ) -> str | None:
     quoted = shlex.quote(service_name)
     if deploy_mode == "override":
@@ -235,12 +224,7 @@ async def collect_unit_file_content(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> str | None:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 result = await conn.run(cmd, check=False)
                 if result.exit_status != 0:
                     return None

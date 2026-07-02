@@ -80,8 +80,10 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
       xtermRef.current = null
       fitAddonRef.current = null
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectKey])
+    // connect/sendData/sendResize/close are stable (connect changes only with
+    // hostId), so this re-runs on reconnect (connectKey) and host switch —
+    // never capturing a stale connect.
+  }, [connectKey, connect, sendData, sendResize, close])
 
   return (
     <div className="flex flex-col h-full">

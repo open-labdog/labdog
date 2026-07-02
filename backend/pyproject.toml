@@ -10,6 +10,12 @@ requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 dependencies = [
     "fastapi>=0.115",
+    # Pinned as direct deps to force the security-patched transitive versions:
+    # starlette>=1.0.1 fixes CVE-2026-48710 "BadHost" host-header auth bypass
+    # (LabDog uses path-based auth middleware); python-multipart>=0.0.30 fixes
+    # CVE-2026-40347 (DoS) and CVE-2026-53537 (Content-Disposition smuggling).
+    "starlette>=1.0.1",
+    "python-multipart>=0.0.30",
     "uvicorn[standard]>=0.32",
     "sqlalchemy[asyncio]>=2.0",
     "asyncpg>=0.30",
@@ -18,12 +24,18 @@ dependencies = [
     "celery-redbeat>=2.0",
     "redis>=5.2",
     "ansible-runner>=2.4",
-    "ansible-core>=2.16",
-    "cryptography>=43",
-    "fastapi-users[sqlalchemy]>=14",
+    "ansible-core>=2.18",
+    # cryptography>=49 fixes CVE-2026-34073 (private-key leak) and
+    # CVE-2026-39892 (buffer overflow).
+    "cryptography>=49",
+    "fastapi-users[sqlalchemy]>=15",
     "slowapi>=0.1.9",
-    "gitpython>=3.1",
-    "asyncssh>=2.17",
+    # gitpython>=3.1.49 fixes CVE-2026-44243 (path traversal) and
+    # CVE-2026-44244 (newline-injection RCE via core.hooksPath).
+    "gitpython>=3.1.49",
+    # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
+    # traversal; LabDog is a client, so not directly exposed, but kept current).
+    "asyncssh>=2.23.1",
     "wsproto>=1.2",
     "croniter>=2.0",
     "httpx>=0.27",

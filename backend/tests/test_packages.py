@@ -109,6 +109,34 @@ class TestPackageDiff:
         assert len(diff.in_sync) == 1
         assert not diff.has_drift
 
+    def test_hold_drift_when_desired_held_but_not_held(self):
+        # Present at the desired version but not held → a sync would apt-mark
+        # hold it, so this is drift, not in_sync.
+        diff = compute_diff(
+            desired=[{"package_name": "nginx", "state": "present", "version": None, "hold": True}],
+            actual=[{"name": "nginx", "state": "present", "version": "1.24.0", "hold": False}],
+        )
+        assert len(diff.to_hold_change) == 1
+        assert not diff.in_sync
+        assert diff.has_drift
+
+    def test_hold_drift_when_held_but_should_not_be(self):
+        diff = compute_diff(
+            desired=[{"package_name": "nginx", "state": "present", "version": None, "hold": False}],
+            actual=[{"name": "nginx", "state": "present", "version": "1.24.0", "hold": True}],
+        )
+        assert len(diff.to_hold_change) == 1
+        assert diff.has_drift
+
+    def test_hold_matches_in_sync(self):
+        diff = compute_diff(
+            desired=[{"package_name": "nginx", "state": "present", "version": None, "hold": True}],
+            actual=[{"name": "nginx", "state": "present", "version": "1.24.0", "hold": True}],
+        )
+        assert len(diff.in_sync) == 1
+        assert not diff.to_hold_change
+        assert not diff.has_drift
+
 
 # ---------------------------------------------------------------------------
 # Playbook generator tests (pure unit tests, no DB)

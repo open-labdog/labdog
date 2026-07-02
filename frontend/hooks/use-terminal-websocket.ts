@@ -13,6 +13,18 @@ export function useTerminalWebSocket({ hostId, onData, onDisconnect }: UseTermin
   const [state, setState] = useState<ConnectionState>("connecting")
   const [closeReason, setCloseReason] = useState<string>("")
 
+  // Keep the latest callbacks in refs so `connect`'s identity is stable
+  // (changes only with hostId). Otherwise a caller passing an inline onData /
+  // onDisconnect would recreate `connect` every render, and any effect that
+  // depends on it would resubscribe — or, if it doesn't, silently capture a
+  // stale `connect`.
+  const onDataRef = useRef(onData)
+  const onDisconnectRef = useRef(onDisconnect)
+  useEffect(() => {
+    onDataRef.current = onData
+    onDisconnectRef.current = onDisconnect
+  })
+
   const connect = useCallback(() => {
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${window.location.protocol}//${window.location.host}`
     const wsUrl = apiUrl.replace(/^http/, "ws") + `/api/ssh-terminal/ws/${hostId}`
@@ -26,7 +38,7 @@ export function useTerminalWebSocket({ hostId, onData, onDisconnect }: UseTermin
 
     ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
-        onData(new Uint8Array(event.data))
+        onDataRef.current(new Uint8Array(event.data))
       } else if (typeof event.data === "string") {
         // Control message (pong, etc.) - ignore for now
       }
@@ -36,13 +48,13 @@ export function useTerminalWebSocket({ hostId, onData, onDisconnect }: UseTermin
       wsRef.current = null
       setCloseReason(event.reason || `Closed (${event.code})`)
       setState(event.code === 1000 ? "disconnected" : "error")
-      onDisconnect?.(event.code, event.reason)
+      onDisconnectRef.current?.(event.code, event.reason)
     }
 
     ws.onerror = () => {
       setState("error")
     }
-  }, [hostId, onData, onDisconnect])
+  }, [hostId])
 
   const sendData = useCallback((data: string | Uint8Array) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -65,12 +77,9 @@ export function useTerminalWebSocket({ hostId, onData, onDisconnect }: UseTermin
     wsRef.current = null
   }, [])
 
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close(1000)
-      wsRef.current = null
-    }
-  }, [])
+  // No unmount cleanup here: the consumer's effect calls close() on both
+  // reconnect (connectKey change) and unmount, so a cleanup here would just
+  // double-close. The consumer owns the socket lifecycle.
 
   return { state, closeReason, connect, sendData, sendResize, close }
 }

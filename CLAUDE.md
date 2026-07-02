@@ -10,7 +10,7 @@ LabDog is a centralized Linux configuration management tool with a FastAPI backe
 |-------|-----------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy (async), asyncpg |
 | Frontend | Next.js 16 (App Router), shadcn/ui (base-ui), TanStack Query |
-| Database | PostgreSQL 16 |
+| Database | PostgreSQL 18 |
 | Task Queue | Celery + Redis (RedBeat scheduler) |
 | Config Mgmt | Ansible (ansible-runner) |
 | SSH | asyncssh (terminal + host connections) |

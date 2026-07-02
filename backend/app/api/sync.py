@@ -2,21 +2,22 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
-from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
+from app.models.host_module_status import HostModuleStatus
 from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.sync.diff import SSHFetchError, compute_diff, fetch_current_firewall_state
+from app.sync.plan import ModuleDiff, plan_host_modules
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -158,8 +159,56 @@ async def plan_group(
 
 
 # ---------------------------------------------------------------------------
+# Generalized multi-module preview ("plan") for a single host
+# ---------------------------------------------------------------------------
+
+
+class PreviewRequest(BaseModel):
+    # ``None`` → preview every supported module. A non-empty list of
+    # canonical module names → preview just those.
+    module_filter: list[str] | None = None
+
+
+@router.post("/hosts/{host_id}/preview", response_model=list[ModuleDiff])
+async def preview_host(
+    host_id: int,
+    body: PreviewRequest,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Preview pending changes for a host across one or more modules.
+
+    Read-only normalized diff used by the host page to show what a
+    manual sync (per-module or "sync all") would apply, before applying.
+    Unlike the per-module ``drift-check`` endpoints this does not write
+    ``HostModuleStatus``.
+    """
+    try:
+        return await plan_host_modules(host_id, body.module_filter, db)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
 # Sync execution endpoints
 # ---------------------------------------------------------------------------
+
+
+class ModuleSubStatus(BaseModel):
+    """Per-module sync status for a host, from ``HostModuleStatus``.
+
+    During a bulk run the orchestrator flips each touched module's row to
+    ``running`` and then its terminal value, so this reflects live per-module
+    progress while a job runs. It is the host's current per-module state (not
+    scoped to a specific job), which is what the sync tray drills into.
+    """
+
+    module_type: str
+    sync_status: str
+    error_message: str | None = None
+    model_config = {"from_attributes": True}
 
 
 class SyncJobResponse(BaseModel):
@@ -178,7 +227,27 @@ class SyncJobResponse(BaseModel):
     triggered_by_user_id: int | None
     module_type: str = "firewall"
     created_at: datetime
+    # Per-module sub-status for the job's host (empty unless populated by the
+    # read endpoints get_job / list_jobs).
+    modules: list[ModuleSubStatus] = []
     model_config = {"from_attributes": True}
+
+
+async def _modules_by_host(
+    db: AsyncSession, host_ids: set[int]
+) -> dict[int, list[ModuleSubStatus]]:
+    """Fetch per-module HostModuleStatus for the given hosts, grouped by host id."""
+    if not host_ids:
+        return {}
+    rows = (
+        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id.in_(host_ids))))
+        .scalars()
+        .all()
+    )
+    out: dict[int, list[ModuleSubStatus]] = {}
+    for r in rows:
+        out.setdefault(r.host_id, []).append(ModuleSubStatus.model_validate(r))
+    return out
 
 
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
@@ -205,7 +274,7 @@ async def trigger_host_sync(
     if running.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Sync already in progress for this host")
 
-    # Check host has rules (via groups)
+    # Host must belong to a group to have any desired config to sync.
     memberships = await db.execute(
         select(HostGroupMembership.c.group_id).where(HostGroupMembership.c.host_id == host_id)
     )
@@ -213,14 +282,11 @@ async def trigger_host_sync(
     if not group_ids:
         raise HTTPException(status_code=400, detail="Host has no groups assigned")
 
-    rules_count = await db.execute(
-        select(func.count(FirewallRule.id)).where(FirewallRule.group_id.in_(group_ids))
-    )
-    if rules_count.scalar() == 0:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot sync — no rules defined. This would remove all firewall rules.",
-        )
+    # NOTE: no "zero user rules" guard here. Firewall desired-state always
+    # carries the auto SSH anti-lockout rule (see app.rules.merge), and the
+    # preview-then-confirm flow now shows the operator exactly what will
+    # change before applying — so the old blunt 400 (which also diverged
+    # from the unguarded bulk/orchestrator path) has been removed.
 
     # Capture user.id eagerly — see BUG-41/SEC-05 for the rationale: a
     # rollback during the IntegrityError path expires the ORM-bound
@@ -276,13 +342,9 @@ async def trigger_group_sync(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger sync for all hosts in a group."""
-    # Check group has rules
-    rules_count = await db.execute(
-        select(func.count(FirewallRule.id)).where(FirewallRule.group_id == group_id)
-    )
-    if rules_count.scalar() == 0:
-        raise HTTPException(status_code=400, detail="Cannot sync — no rules defined.")
-
+    # NOTE: no "zero user rules" guard (removed) — see trigger_host_sync.
+    # The firewall desired-state always includes the SSH anti-lockout rule
+    # and the preview flow surfaces changes before apply.
     memberships = await db.execute(
         select(HostGroupMembership.c.host_id).where(HostGroupMembership.c.group_id == group_id)
     )
@@ -629,7 +691,8 @@ async def get_job(
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    modules = (await _modules_by_host(db, {job.host_id})).get(job.host_id, [])
+    return SyncJobResponse.model_validate(job).model_copy(update={"modules": modules})
 
 
 @router.get("/jobs", response_model=list[SyncJobResponse])
@@ -638,11 +701,27 @@ async def list_jobs(
     group_id: int | None = None,
     status: str | None = None,
     module_type: str | None = None,
+    ids: str | None = None,
     limit: int = 20,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(SyncJob).order_by(SyncJob.id.desc()).limit(limit)
+    """List sync jobs. ``ids`` is a comma-separated set of job ids — used by
+    the client to batch-poll exactly the jobs an apply triggered (e.g. every
+    per-host job from a group bulk sync) in a single request."""
+    q = select(SyncJob).order_by(SyncJob.id.desc())
+    if ids:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="ids must be comma-separated integers"
+            ) from exc
+        if not id_list:
+            return []
+        q = q.where(SyncJob.id.in_(id_list)).limit(min(len(id_list), 500))
+    else:
+        q = q.limit(limit)
     if host_id:
         q = q.where(SyncJob.host_id == host_id)
     if group_id:
@@ -651,5 +730,9 @@ async def list_jobs(
         q = q.where(SyncJob.status == status)
     if module_type:
         q = q.where(SyncJob.module_type == module_type)
-    result = await db.execute(q)
-    return result.scalars().all()
+    jobs = list((await db.execute(q)).scalars().all())
+    mods = await _modules_by_host(db, {j.host_id for j in jobs})
+    return [
+        SyncJobResponse.model_validate(j).model_copy(update={"modules": mods.get(j.host_id, [])})
+        for j in jobs
+    ]
