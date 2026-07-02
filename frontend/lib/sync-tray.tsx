@@ -12,6 +12,12 @@ import {
 import { apiFetch } from "@/lib/api"
 import { showSuccess, showError } from "@/lib/toast"
 
+export interface ModuleSubStatus {
+  module_type: string
+  sync_status: string
+  error_message: string | null
+}
+
 // Mirror of backend SyncJobResponse (the subset the tray reads).
 export interface SyncJob {
   id: number
@@ -21,6 +27,7 @@ export interface SyncJob {
   error_message: string | null
   pending_reason: string | null
   module_type: string
+  modules?: ModuleSubStatus[]
 }
 
 // One user-initiated sync (a host apply, a group per-module apply, a Sync All)
