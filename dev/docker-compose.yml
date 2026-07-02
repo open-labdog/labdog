@@ -17,7 +17,9 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    # 7.4 line carries the fix for CVE-2026-23479 (patched in 7.4.9); the tag
+    # tracks latest 7.4.x so future backports are picked up on pull.
+    image: redis:7.4-alpine
     ports:
       - "6379:6379"
     healthcheck:

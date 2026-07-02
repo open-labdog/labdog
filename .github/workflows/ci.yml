@@ -217,7 +217,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7-alpine
+        # 7.4 line carries the fix for CVE-2026-23479 (patched in 7.4.9).
+        image: redis:7.4-alpine
         ports:
           - 6379:6379
         options: >-
@@ -244,7 +245,11 @@ jobs:
           # Fail if uv.lock has drifted from pyproject.toml (dep changed
           # without relocking). Keeps the committed lock honest.
           uv lock --check
-          uv pip install --system '.[dev]'
+          # Install the exact locked versions (reproducible), then the project
+          # itself without re-resolving deps.
+          uv export --frozen --no-emit-project --extra dev --format requirements-txt -o /tmp/req.txt
+          uv pip install --system -r /tmp/req.txt
+          uv pip install --system --no-deps .
       - name: Fetch bundled action pack
         # backend/app/ansible/ is gitignored; pytest expects the bundled
         # pack to be present (tests reference linux-upgrade etc.).
@@ -671,7 +676,9 @@ jobs:
         working-directory: backend
         run: |
           pip install -U pip uv pip-audit -q
-          uv pip install --system . -q
+          # Audit the exact locked dependency set (reproducible).
+          uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt
+          uv pip install --system -r /tmp/req.txt -q
       - name: pip-audit
         working-directory: backend
         # CVE-2026-3219 / GHSA-58qw-9mgm-455v: pip itself has an

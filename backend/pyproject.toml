@@ -24,11 +24,11 @@ dependencies = [
     "celery-redbeat>=2.0",
     "redis>=5.2",
     "ansible-runner>=2.4",
-    "ansible-core>=2.16",
+    "ansible-core>=2.18",
     # cryptography>=49 fixes CVE-2026-34073 (private-key leak) and
     # CVE-2026-39892 (buffer overflow).
     "cryptography>=49",
-    "fastapi-users[sqlalchemy]>=14",
+    "fastapi-users[sqlalchemy]>=15",
     "slowapi>=0.1.9",
     # gitpython>=3.1.49 fixes CVE-2026-44243 (path traversal) and
     # CVE-2026-44244 (newline-injection RCE via core.hooksPath).
