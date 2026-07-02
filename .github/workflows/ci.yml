@@ -204,7 +204,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        # EXPERIMENT: testing support for PostgreSQL 18 (was postgres:16-alpine).
+        image: postgres:18-alpine
         env:
           POSTGRES_DB: labdog_test
           POSTGRES_USER: labdog
@@ -217,8 +218,8 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        # 7.4 line carries the fix for CVE-2026-23479 (patched in 7.4.9).
-        image: redis:7.4-alpine
+        # EXPERIMENT: testing support for Redis 8 (was redis:7.4-alpine).
+        image: redis:8-alpine
         ports:
           - 6379:6379
         options: >-
