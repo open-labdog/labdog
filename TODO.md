@@ -166,12 +166,6 @@ added. These are the deferred hardening/maintenance tasks that remain.
       (prod image + every CI job) — the raised floors already block vulnerable
       versions, so this is reproducibility hardening, not a live exposure.
 
-- [ ] **Bump `fastapi-users` and `ansible-core` floors.** `backend/pyproject.toml`
-      still floors `fastapi-users>=14` / `ansible-core>=2.16` (near-EOL) even
-      though `uv.lock` already resolves to 15.0.5 / 2.21.1. Bump the floors,
-      review the fastapi-users 14→15 migration notes, then re-`uv lock` +
-      `pip-audit` to confirm.
-
 - [ ] **Audit the Redis *server* version in the deployment.** The `redis-py`
       client is current (lock: 6.4.0), but the 2026 Redis RCE advisories
       (e.g. CVE-2026-23479) are **server-side**. Confirm the Redis image/version

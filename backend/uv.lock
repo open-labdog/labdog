@@ -1000,7 +1000,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
-    { name = "ansible-core", specifier = ">=2.16" },
+    { name = "ansible-core", specifier = ">=2.18" },
     { name = "ansible-runner", specifier = ">=2.4" },
     { name = "asyncpg", specifier = ">=0.30" },
     { name = "asyncssh", specifier = ">=2.23.1" },
@@ -1010,7 +1010,7 @@ requires-dist = [
     { name = "croniter", specifier = ">=2.0" },
     { name = "cryptography", specifier = ">=49" },
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=14" },
+    { name = "fastapi-users", extras = ["sqlalchemy"], specifier = ">=15" },
     { name = "gitpython", specifier = ">=3.1.49" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
