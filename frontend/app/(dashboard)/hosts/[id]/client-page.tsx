@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, type FormEvent } from "react"
+import { useState, useEffect, useRef, useMemo, type FormEvent } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
@@ -811,9 +811,12 @@ export default function HostDetailPage() {
   } | null>(null)
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
-  const [bulkJob, setBulkJob] = useState<{ id: number; status: string } | null>(null)
+  // tabKey (present for a single-module apply) tells the polling effect which
+  // module tab's queries to invalidate when the job finishes.
+  const [bulkJob, setBulkJob] = useState<{ id: number; status: string; tabKey?: string } | null>(null)
 
-  const tabQueryKeys: Record<string, string[][]> = {
+  // Memoized on id so it's stable across renders (safe to depend on in effects).
+  const tabQueryKeys: Record<string, string[][]> = useMemo(() => ({
     overview: [["host", String(id)], ["host-current-state", String(id)], ["host-metrics", String(id)]],
     groups: [["host", String(id)], ["groups"]],
     rules: [["host-effective-rules", String(id)], ["host-firewall-overrides", String(id)], ["host-current-state", String(id)]],
@@ -825,19 +828,9 @@ export default function HostDetailPage() {
     "ca-certs": [["host-effective-ca-certs", String(id)], ["host-ca-cert-overrides", String(id)], ["host-ca-cert-runs", String(id)]],
     dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
     actions: [["actions-catalog"], ["action-runs", "host", String(id)]],
-  }
+  }), [id])
 
-  const moduleSyncEndpoints: Record<string, string> = {
-    rules: `/api/sync/hosts/${id}/sync`,
-    services: `/api/services/hosts/${id}/sync`,
-    "hosts-file": `/api/hosts-mgmt/hosts/${id}/sync`,
-    users: `/api/linux-users/hosts/${id}/sync`,
-    "cron-jobs": `/api/cron/hosts/${id}/sync`,
-    packages: `/api/packages/hosts/${id}/sync`,
-    dns: `/api/resolver/hosts/${id}/sync`,
-  }
-
-  // Tab key (used by moduleSyncEndpoints / tabQueryKeys) → canonical
+  // Tab key (used by tabQueryKeys) → canonical
   // module name understood by the preview/bulk endpoints.
   const tabToModule: Record<string, string> = {
     rules: "firewall",
@@ -892,19 +885,30 @@ export default function HostDetailPage() {
   }
 
   const applyModuleSync = async () => {
-    if (!syncPreview?.tabKey) return
+    if (!syncPreview?.tabKey || !syncPreview.module) return
     const tabKey = syncPreview.tabKey
+    const moduleName = syncPreview.module
     setApplying(true)
     setApplyError(null)
     try {
-      await apiFetch(moduleSyncEndpoints[tabKey], { method: "POST" })
-      for (const key of tabQueryKeys[tabKey] ?? []) await queryClient.invalidateQueries({ queryKey: key })
-      await queryClient.invalidateQueries({ queryKey: ["host", id] })
-      setSyncPreview(null)
+      // Go through the coalesced bulk job (single-module filter) so the sync is
+      // trackable: it returns a job id we register with the global tray and poll
+      // for completion — instead of the old fire-and-forget per-module POST that
+      // invalidated caches immediately (before the sync had actually run).
+      const resp = await apiFetch<{ job_id: number; status: string }>(`/api/sync/hosts/${id}/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: [moduleName] }),
+      })
+      setBulkJob({ id: resp.job_id, status: resp.status, tabKey })
+      registerSync({
+        label: `${host?.hostname ?? "Host"} — ${moduleLabel(moduleName)}`,
+        jobIds: [resp.job_id],
+      })
+      // Terminal state + cache invalidation handled by the polling effect.
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : "Sync failed")
+      setApplying(false)
     }
-    setApplying(false)
   }
 
   const applyBulkSync = async () => {
@@ -947,6 +951,9 @@ export default function HostDetailPage() {
           setApplying(false)
           await queryClient.invalidateQueries({ queryKey: ["host", id] })
           await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+          // Single-module apply: refresh that tab's effective-config queries too.
+          for (const key of (bulkJob.tabKey && tabQueryKeys[bulkJob.tabKey]) || [])
+            await queryClient.invalidateQueries({ queryKey: key })
         }
       } catch {
         /* transient — keep polling */
@@ -957,7 +964,7 @@ export default function HostDetailPage() {
       cancelled = true
       clearInterval(interval)
     }
-  }, [bulkJob, id, queryClient])
+  }, [bulkJob, id, queryClient, tabQueryKeys])
 
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
