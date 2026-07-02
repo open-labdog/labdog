@@ -7,6 +7,8 @@ import { Toaster } from 'sonner'
 import { AuthContext, User } from '@/lib/auth'
 import { API_BASE } from '@/lib/api'
 import { AuthGuard } from '@/components/auth-guard'
+import { SyncTrayProvider } from '@/lib/sync-tray'
+import { SyncTray } from '@/components/sync-tray'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,9 +67,12 @@ export function Providers({ children }: { children: ReactNode }) {
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <AuthGuard>
-            {children}
-          </AuthGuard>
+          <SyncTrayProvider>
+            <AuthGuard>
+              {children}
+            </AuthGuard>
+            <SyncTray />
+          </SyncTrayProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
