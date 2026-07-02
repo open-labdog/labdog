@@ -64,7 +64,8 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    # 7.4 line carries the fix for CVE-2026-23479 (patched in 7.4.9).
+    image: redis:7.4-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
