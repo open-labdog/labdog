@@ -16,10 +16,13 @@ RUN npm run build
 FROM python:3.12-slim AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
-COPY backend/pyproject.toml .
+COPY backend/pyproject.toml backend/uv.lock ./
 COPY VERSION .
-COPY backend/app/ app/
-RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
+# Install the exact locked dependency versions (reproducible builds). The app
+# package itself isn't installed — the runtime stage runs it from the copied
+# source (WORKDIR /app, `python -m app`), so only the deps need to be present.
+RUN uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt \
+    && uv pip install --no-cache-dir --system -r /tmp/req.txt
 
 # ── Stage 2b: Fetch bundled action pack at a pinned ref ───────────────
 # The bundled pack used to be a byte-identical mirror committed at
