@@ -169,7 +169,7 @@ added. These are the deferred hardening/maintenance tasks that remain.
 - [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06;
       flat-config migration in `frontend/`. Mechanical but time-boxed.
 
-- [ ] **Frontend minor dependency bumps.** react-query / tailwindcss / zod /
-      react-hook-form minor bumps are safe. `lucide-react` 0.577 → 1.x is a
-      breaking change (brand icons removed) — plan separately.
+- [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
+      separately; the safe react-query / tailwindcss / zod / react-hook-form
+      minor bumps have already landed.
 
