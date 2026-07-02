@@ -56,6 +56,10 @@ packaging/.cache/
 
 # Generated at Docker/packaging build time — never committed
 backend/app/_build_info.py
+# Staged from the repo-root VERSION at build time so setuptools' dynamic
+# version resolves (see packaging/Makefile _build-venv). Root VERSION is
+# the source of truth; this copy is build-only.
+backend/VERSION
 
 # Bundled action pack — fetched at build time from labdog-playbooks at
 # the SHA pinned in LABDOG_PLAYBOOKS_REF. Dev runs ./dev/dev.sh bundle
