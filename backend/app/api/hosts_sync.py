@@ -55,7 +55,7 @@ async def plan_hosts_sync(
     private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
     # Collect current /etc/hosts from remote host
-    current = await collect_hosts_file(host.ip_address, host.ssh_port, private_key_pem)
+    current = await collect_hosts_file(host, db, private_key_pem)
 
     # Compute diff
     diff = compute_hosts_diff(current, effective)

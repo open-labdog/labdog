@@ -7,6 +7,105 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-07-02
+
+### Added
+
+#### Sync preview + global progress tray
+
+- **Preview before every manual sync.** Host-page syncs — per-module and
+  "Sync All" — now show a diff preview of exactly what will change before
+  anything is applied, replacing the old fire-and-forget apply. Only
+  cleanly-previewed, changed modules are applied (a module whose current
+  state could not be read is never applied blind).
+- **Global sync progress tray + completion toasts.** A bottom-right tray
+  tracks every user-initiated sync (host apply, per-module, group, Sync
+  All) as a live operation with per-host progress bars, and raises a
+  success/failure toast on completion. Each host row has a per-module
+  drill-down.
+- **Group view reaches parity with the host view.** Replaced the separate
+  "Firewall Sync" tab with per-tab Sync buttons on every module tab plus a
+  "Sync All" (with preview). Group and host now sync the same way through
+  the same coalesced per-host job.
+- `GET /api/sync/jobs` gained an `ids` filter for efficient batch polling
+  of many jobs at once (backs the tray).
+
+### Changed
+
+- **Adopted PostgreSQL 18 + Redis 8** across CI, `dev/docker-compose.yml`,
+  and the production compose reference. The PG 18 volume mount moved from
+  `/var/lib/postgresql/data` to `/var/lib/postgresql` (PG 18 keeps the
+  cluster in a version-specific subdirectory). Existing PostgreSQL 16
+  deployments are **not** a drop-in tag bump — see the new
+  ["Upgrading PostgreSQL 16 → 18"](docs/production-deploy.md#upgrading-postgresql-16--18)
+  section for the dump/restore procedure.
+- **Reproducible builds.** Container images and packaging now install the
+  exact locked dependency set from `backend/uv.lock` (via `uv export`)
+  instead of resolving dependencies at build time.
+
+### Fixed
+
+- **`/api/version` no longer returns 500 when the distribution metadata is
+  absent** in the from-source container image, which had been flapping the
+  container healthcheck to "unhealthy". The version now resolves through a
+  fallback chain (installed metadata → `LABDOG_VERSION` → bundled `VERSION`
+  file → build info) and the image ships its `VERSION` file.
+- **`.deb`/`.rpm`/tarball installs reported `/api/version` as `0.0.0`.**
+  The packaged venv built `labdog-backend` without the repo-root `VERSION`
+  next to `pyproject.toml`, so setuptools' dynamic version resolved to
+  `0.0.0`; the build now stages `VERSION` in and the installed metadata
+  carries the real version.
+- **Firewall detection.** `nft`/`iptables` installed under `/usr/sbin` is
+  now detected during facts collection — hosts with a firewall were being
+  mis-reported as "No Firewall Detected".
+- **Firewall previews.** "Managed by LabDog" now shows on every managed
+  rule (not just some) in sync previews; a truncated source IP in the host
+  Current State table is fixed; the sync-preview dialog readability and
+  width were improved.
+- **Firewall host references** in rules now resolve to CIDRs in the desired
+  state, and dangling references are tolerated on the effective-rules
+  display instead of raising.
+- **Package drift** now detects apt `hold` / dnf `versionlock` state.
+- **UI stability.** Stabilized the SSH terminal (xterm) effect and guarded
+  the nftables-install poll loop against component unmount.
+- **Docker** busts the apt layer cache each build so base-image security
+  upgrades always land (previously a cached layer could serve stale
+  packages past a published fix).
+
+### Security
+
+- **SSH host-key verification (TOFU) enforced everywhere.** The interactive
+  terminal and **all** state collectors (firewall, services, packages,
+  cron, resolver, users/groups, hosts-file) now verify host keys, replacing
+  paths that previously connected with `known_hosts=None`.
+- **Dependency & supply-chain hardening.** Raised floors to patched
+  releases: `cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
+  `starlette>=1.0.1` (CVE-2026-48710 "BadHost" host-header auth bypass),
+  `python-multipart>=0.0.30`; bumped `fastapi-users>=15` and
+  `ansible-core>=2.18`. The Redis server is pinned to a line carrying the
+  CVE-2026-23479 fix.
+- **SSRF + authorization hardening** from the code audit. Clarified the
+  authorization model — all active users are trusted operators and
+  superuser status only gates user administration — and removed an
+  over-restrictive superuser gate that had crept onto the Schedules and
+  Settings surfaces.
+
+## [0.5.0] — 2026-06-30
+
+### Fixed
+
+- **iptables collector returning zero rules for all hosts.** The iptables
+  state collector reported an empty ruleset regardless of a host's actual
+  configuration, so iptables-backed hosts never diffed or synced correctly.
+
+### Changed
+
+- Bumped the bundled `LABDOG_PLAYBOOKS_REF` pin.
+
+### Security
+
+- `npm audit fix` cleared a high-severity frontend advisory.
+
 ## [0.4.0] — 2026-06-14
 
 ### Added
@@ -733,7 +832,9 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/open-labdog/labdog/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/open-labdog/labdog/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/open-labdog/labdog/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/open-labdog/labdog/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/open-labdog/labdog/compare/v0.2.5...v0.3.0

@@ -1,18 +1,24 @@
 """Collect current Linux user and group states from remote hosts via SSH."""
 
 import asyncio
+import shlex
+from typing import TYPE_CHECKING
 
 import asyncssh
 
-from app.ssh_utils import ssh_connect
+from app.ssh_utils import ssh_connect_host
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.models.host import Host
 
 
 async def collect_user_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     usernames: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -20,12 +26,7 @@ async def collect_user_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 for username in usernames:
                     try:
                         entry = await _collect_single_user(conn, username)
@@ -43,7 +44,7 @@ async def _collect_single_user(
     conn: asyncssh.SSHClientConnection,
     username: str,
 ) -> dict:
-    passwd_result = await conn.run(f"getent passwd {username}", check=False)
+    passwd_result = await conn.run(f"getent passwd {shlex.quote(username)}", check=False)
     if passwd_result.exit_status != 0:
         return _absent_user(username)
 
@@ -56,7 +57,11 @@ async def _collect_single_user(
     home_dir = fields[5]
     shell = fields[6]
 
-    ak_result = await conn.run(f"cat {home_dir}/.ssh/authorized_keys 2>/dev/null", check=False)
+    # home_dir comes from the remote host's getent output — quote it so a
+    # compromised host can't inject shell metacharacters via the home path.
+    ak_result = await conn.run(
+        f"cat {shlex.quote(home_dir)}/.ssh/authorized_keys 2>/dev/null", check=False
+    )
     authorized_keys: list[str] = []
     if ak_result.exit_status == 0 and ak_result.stdout:
         for line in ak_result.stdout.splitlines():
@@ -64,7 +69,9 @@ async def _collect_single_user(
             if stripped and not stripped.startswith("#"):
                 authorized_keys.append(stripped)
 
-    sudo_result = await conn.run(f"cat /etc/sudoers.d/{username} 2>/dev/null", check=False)
+    sudo_result = await conn.run(
+        f"cat /etc/sudoers.d/{shlex.quote(username)} 2>/dev/null", check=False
+    )
     sudo_rule: str | None = None
     if sudo_result.exit_status == 0 and sudo_result.stdout:
         content = sudo_result.stdout.strip()
@@ -73,7 +80,7 @@ async def _collect_single_user(
 
     # groups output format: "username : primary group1 group2"
     # first is primary, rest supplementary
-    groups_result = await conn.run(f"groups {username} 2>/dev/null", check=False)
+    groups_result = await conn.run(f"groups {shlex.quote(username)} 2>/dev/null", check=False)
     supplementary_groups: list[str] = []
     if groups_result.exit_status == 0 and groups_result.stdout:
         stdout = groups_result.stdout.strip()
@@ -109,11 +116,10 @@ def _absent_user(username: str) -> dict:
 
 
 async def collect_group_states(
-    host_ip: str,
-    ssh_port: int,
+    host: "Host",
+    db: "AsyncSession",
     private_key_pem: str,
     groupnames: list[str],
-    ssh_user: str = "root",
 ) -> list[dict]:
     results: list[dict] = []
 
@@ -121,12 +127,7 @@ async def collect_group_states(
         private_key = asyncssh.import_private_key(private_key_pem)
 
         async def _run() -> list[dict]:
-            async with ssh_connect(
-                host_ip,
-                port=ssh_port,
-                username=ssh_user,
-                client_keys=[private_key],
-            ) as conn:
+            async with ssh_connect_host(host, db, client_keys=[private_key]) as conn:
                 for groupname in groupnames:
                     try:
                         result = await conn.run(f"getent group {groupname}", check=False)

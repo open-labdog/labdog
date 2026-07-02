@@ -17,6 +17,7 @@ and env-sourced secrets.
 - [Secrets via .env](#secrets-via-env)
 - [labdog.toml](#labdogtoml)
 - [Bring it up](#bring-it-up)
+- [Upgrading PostgreSQL 16 → 18](#upgrading-postgresql-16--18)
 - [Differences from `dev/docker-compose.yml`](#differences-from-devdocker-composeyml)
 
 ---
@@ -34,7 +35,9 @@ and env-sourced secrets.
 
 Volumes managed by the compose file:
 
-- `postgres_data` — PostgreSQL 16 data directory.
+- `postgres_data` — PostgreSQL 18 data directory. Mounted at
+  `/var/lib/postgresql` (PG 18 keeps the cluster in a version-specific
+  subdirectory below that — do **not** mount at `.../data`).
 - `labdog_packs` — DB-backed action-pack checkouts. Mounts onto
   `ansible.packs_root_dir` (default `/var/lib/labdog/packs` —
   see `backend/app/config.py`). The bundled pack lives in the image
@@ -49,13 +52,14 @@ Volumes managed by the compose file:
 ```yaml
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: labdog
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: labdog
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # PG 18: mount the parent dir, not .../data (see "Upgrading" note below).
+      - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U labdog"]
       interval: 10s
@@ -64,7 +68,8 @@ services:
     restart: unless-stopped
 
   redis:
-    image: redis:7-alpine
+    # 8.x line carries the fix for CVE-2026-23479 (also patched in 7.4.9).
+    image: redis:8-alpine
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -240,6 +245,67 @@ For backups, see [backup-restore.md](./backup-restore.md). The
 backup script needs the Postgres credentials and read access to
 `labdog.toml` (or whichever env source holds the encryption key) —
 it does not need to run inside the container.
+
+---
+
+## Upgrading PostgreSQL 16 → 18
+
+Existing deployments on `postgres:16-alpine` cannot simply bump the
+image tag: PostgreSQL 18's Docker image changed the data-directory
+layout (data now lives in a version-specific subdirectory, and the
+volume is mounted at `/var/lib/postgresql` instead of `.../data`), and
+a major version won't start on a cluster written by an older major.
+Because LabDog's database is small, a **logical dump/restore** is the
+right method (not in-place `pg_upgrade`).
+
+> **Keep `LABDOG_SECURITY__ENCRYPTION_KEY` (and `SECRET_KEY`)
+> unchanged.** LabDog encrypts stored SSH credentials at the app layer,
+> so the dump holds ciphertext — restoring under a different encryption
+> key makes every credential undecryptable.
+
+```bash
+cd /srv/labdog
+
+# 1. Belt-and-suspenders: back up the raw PG 16 volume.
+docker run --rm -v labdog_postgres_data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/pg16-volume-$(date +%F).tgz -C /data .
+
+# 2. Quiesce the app (stop writes; leave PG 16 running).
+docker compose stop labdog
+
+# 3. Dump the database from the running PG 16 container.
+docker compose exec -T postgres pg_dump -U labdog -Fc labdog > labdog-$(date +%F).dump
+
+# 4. Stop the stack.
+docker compose down
+```
+
+5. Edit `compose.yaml`: set `image: postgres:18-alpine`, change the
+   mount to `postgres_data:/var/lib/postgresql` (drop `/data`), and use
+   a **new, empty volume name** (e.g. `postgres_data_v18`) — do not
+   remount the PG 16 volume, or PG 18 will trip over the legacy files.
+
+```bash
+# 6. Bring up only Postgres so a fresh PG 18 cluster initializes.
+docker compose up -d postgres
+docker compose exec postgres pg_isready -U labdog   # wait until ready
+
+# 7. Restore into the fresh cluster.
+docker compose exec -T postgres pg_restore -U labdog -d labdog \
+  --clean --if-exists < labdog-$(date +%F).dump
+
+# 8. Start the app (Alembic is a no-op — the dump is already at head).
+docker compose up -d
+docker compose logs -f labdog
+
+# 9. Once verified (log in, check hosts + stored SSH creds work),
+#    reclaim the old volume. Keep the .dump + tarball as a rollback path.
+docker volume rm labdog_postgres_data
+```
+
+**Redis needs none of this** — Redis 8 reads 7.x RDB/AOF and LabDog's
+Redis holds only transient broker/schedule state, so
+`redis:7.4-alpine` → `redis:8-alpine` is a plain tag swap.
 
 ---
 

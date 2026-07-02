@@ -1,9 +1,10 @@
 """CRUD + sync endpoints for action packs.
 
-Superuser-only, audit-logged on writes. Credentials are NOT handled
-here — they live on the linked ``GitRepository`` row (managed on the
-Git Repos page). This router only persists the pack metadata and
-dispatches sync.
+All active users are trusted operators and may manage action packs; the
+superuser flag only gates user administration, not infrastructure
+operations. Writes are audit-logged. Credentials are NOT handled here —
+they live on the linked ``GitRepository`` row (managed on the Git Repos
+page). This router only persists the pack metadata and dispatches sync.
 """
 
 from __future__ import annotations

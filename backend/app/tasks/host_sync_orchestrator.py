@@ -51,6 +51,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from app.db import task_session
+from app.enum_utils import enum_str
 from app.sync.orchestrator import orchestrate_host_sync
 from app.tasks import celery_app
 
@@ -108,7 +109,7 @@ def _firewall_backend_str(host) -> str:
     raw = getattr(host, "firewall_backend", None)
     if raw is None:
         return ""
-    return raw.value if hasattr(raw, "value") else str(raw)
+    return enum_str(raw)
 
 
 def _compute_timeout(modules_to_run: list[str]) -> int:

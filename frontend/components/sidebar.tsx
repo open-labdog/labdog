@@ -160,9 +160,11 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
     {
       label: "ADMIN",
       items: [
+        // Only user administration is superuser-gated; app settings are
+        // active-user (the /api/settings endpoints use current_active_user).
         ...(user?.is_superuser ? [{ href: "/users", label: "Users" }] : []),
         { href: "/audit", label: "Audit Log" },
-        ...(user?.is_superuser ? [{ href: "/settings", label: "Settings" }] : []),
+        { href: "/settings", label: "Settings" },
       ],
     },
   ]

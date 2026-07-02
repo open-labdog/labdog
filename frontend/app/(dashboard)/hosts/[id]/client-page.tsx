@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, type FormEvent } from "react"
+import { useState, useEffect, useRef, useMemo, type FormEvent } from "react"
 import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
@@ -33,14 +33,17 @@ import { GroupMultiSelect } from "@/components/group-multi-select"
 import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
+import { useSyncTray } from "@/lib/sync-tray"
+import { cronToHuman } from "@/lib/cron"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
+import { ModuleDiffView, moduleLabel } from "@/components/module-diff-view"
 import { HostMetricsSection } from "@/components/host-metrics-section"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { useHostQueries, useHostDialogs } from "@/hooks/use-host-detail"
-import type { CACertActionRun, EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectiveLinuxGroup, EffectiveLinuxUser, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, PackageRepository, ServiceCommandResult, VMMapping } from "@/lib/types"
+import type { CACertActionRun, EffectiveCACert, EffectiveCronJob, EffectiveFirewallRule, EffectiveHostsEntry, EffectiveLinuxGroup, EffectiveLinuxUser, EffectivePackage, EffectiveResolverConfig, EffectiveService, HostsEntry, LinuxGroup, LinuxUser, LiveService, ModuleDiff, PackageRepository, ServiceCommandResult, VMMapping } from "@/lib/types"
 
 function ActionBadge({ action }: { action: string }) {
   const config: Record<string, string> = {
@@ -61,20 +64,6 @@ function formatPorts(rule: { port_start: number | null; port_end: number | null 
     return `${rule.port_start}–${rule.port_end}`
   }
   return String(rule.port_start)
-}
-
-function cronToHuman(schedule: string): string {
-  const s = schedule.trim()
-  if (s === "* * * * *") return "Every minute"
-  if (s === "0 * * * *") return "Every hour"
-  if (s === "0 0 * * *") return "Every day at midnight"
-  // 0 N * * *  => Every day at N:00
-  const dailyMatch = s.match(/^0\s+(\d+)\s+\*\s+\*\s+\*$/)
-  if (dailyMatch) return `Every day at ${dailyMatch[1]}:00`
-  // */N * * * *  => Every N minutes
-  const everyNMin = s.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
-  if (everyNMin) return `Every ${everyNMin[1]} minutes`
-  return s
 }
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -117,15 +106,16 @@ function ModuleStateView({
         data={rules}
         getRowKey={(_, i) => i}
         emptyMessage="No firewall rules."
-        // Column widths trimmed (Source/Destination/Comment) so the sum fits the ~770px content area at ~1080px viewport without a horizontal scrollbar; full text on hover via title.
+        // This table has fewer columns than Effective Rules (no Priority/Group/Actions), so Source/Destination get room for a full IPv4 CIDR (up to 18 chars); wider values still truncate with full text on hover via title.
         columns={[
           { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
           { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
           { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
-          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[100px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 100, filter: { type: "text" } },
+          { key: "source", label: "Source", accessor: (r) => r.source_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
+          { key: "destination", label: "Destination", accessor: (r) => r.destination_cidr ?? "any", cell: (r) => <span className="font-mono text-slate-300 text-xs inline-block max-w-[140px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 140, filter: { type: "text" } },
           { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{r.port_start ? (r.port_end && r.port_end !== r.port_start ? `${r.port_start}-${r.port_end}` : `${r.port_start}`) : "any"}</span>, defaultWidth: 90 },
-          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[90px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },
+          // Last column with room to spare; widened so the "Managed by LabDog: …" comment every host rule carries is readable (long values still truncate with full text on hover).
+          { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs truncate max-w-[280px] inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 280 },
         ]}
       />
     )
@@ -459,6 +449,10 @@ function CurrentStateSection({
 function InstallFirewallSection({ hostId, queryClient }: { hostId: number; queryClient: ReturnType<typeof useQueryClient> }) {
   const [installing, setInstalling] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
+  // The install flow polls for up to ~2 minutes. Guard against setState /
+  // continued polling after the host page unmounts (e.g. user navigates away).
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   const handleInstall = async () => {
     setInstalling(true)
@@ -477,12 +471,15 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
     } catch (e: unknown) {
       // 409 = already exists, continue
       if (!(e && typeof e === "object" && "status" in e && (e as { status: number }).status === 409)) {
-        setStatus("Failed to add package")
-        setInstalling(false)
+        if (mountedRef.current) {
+          setStatus("Failed to add package")
+          setInstalling(false)
+        }
         return
       }
     }
 
+    if (!mountedRef.current) return
     // 2. Trigger package sync and wait for completion
     setStatus("Installing nftables via package sync...")
     try {
@@ -490,26 +487,32 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
       // Poll sync job status until done
       for (let i = 0; i < 60; i++) {
         await new Promise(r => setTimeout(r, 2000))
+        if (!mountedRef.current) return
         try {
           const job = await apiFetch<{ status: string }>(`/api/packages/jobs/${syncResult.id}`)
           if (job.status === "success" || job.status === "failed") break
         } catch { break }
       }
     } catch {
-      setStatus("Failed to sync packages")
-      setInstalling(false)
+      if (mountedRef.current) {
+        setStatus("Failed to sync packages")
+        setInstalling(false)
+      }
       return
     }
 
+    if (!mountedRef.current) return
     // 3. Re-collect firewall state to detect the new backend
     setStatus("Detecting firewall backend...")
     try {
       await apiFetch(`/api/hosts/${hostId}/collect-state?module=firewall`, { method: "POST" })
     } catch { /* ignore */ }
 
+    if (!mountedRef.current) return
     await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
     await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
     await queryClient.invalidateQueries({ queryKey: ["host-effective-packages", hostId] })
+    if (!mountedRef.current) return
     setStatus(null)
     setInstalling(false)
   }
@@ -709,6 +712,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
+  const { registerSync } = useSyncTray()
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get("tab") as HostTab) || "overview"
   const [activeTab, setActiveTab] = useState<HostTab>(initialTab)
@@ -789,13 +793,30 @@ export default function HostDetailPage() {
 
   const [terminalOpen, setTerminalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [moduleSyncing, setModuleSyncing] = useState(false)
   const [trustKeyOpen, setTrustKeyOpen] = useState(false)
   const [trustingKey, setTrustingKey] = useState(false)
 
-  const tabQueryKeys: Record<string, string[][]> = {
+  // Preview-then-confirm flow for manual syncs (per-module + "Sync All").
+  // `scope === "module"` previews one module (apply via its own endpoint);
+  // `scope === "all"` previews every module (apply via the coalesced bulk
+  // endpoint with a single pollable job).
+  const [syncPreview, setSyncPreview] = useState<{
+    scope: "module" | "all"
+    tabKey: string | null
+    module: string | null
+    loading: boolean
+    error: string | null
+    diffs: ModuleDiff[] | null
+  } | null>(null)
+  const [applying, setApplying] = useState(false)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  // tabKey (present for a single-module apply) tells the polling effect which
+  // module tab's queries to invalidate when the job finishes.
+  const [bulkJob, setBulkJob] = useState<{ id: number; status: string; tabKey?: string } | null>(null)
+
+  // Memoized on id so it's stable across renders (safe to depend on in effects).
+  const tabQueryKeys: Record<string, string[][]> = useMemo(() => ({
     overview: [["host", String(id)], ["host-current-state", String(id)], ["host-metrics", String(id)]],
     groups: [["host", String(id)], ["groups"]],
     rules: [["host-effective-rules", String(id)], ["host-firewall-overrides", String(id)], ["host-current-state", String(id)]],
@@ -807,17 +828,144 @@ export default function HostDetailPage() {
     "ca-certs": [["host-effective-ca-certs", String(id)], ["host-ca-cert-overrides", String(id)], ["host-ca-cert-runs", String(id)]],
     dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
     actions: [["actions-catalog"], ["action-runs", "host", String(id)]],
+  }), [id])
+
+  // Tab key (used by tabQueryKeys) → canonical
+  // module name understood by the preview/bulk endpoints.
+  const tabToModule: Record<string, string> = {
+    rules: "firewall",
+    services: "services",
+    "hosts-file": "hosts-file",
+    users: "linux-users",
+    "cron-jobs": "cron",
+    packages: "packages",
+    dns: "resolver",
   }
 
-  const moduleSyncEndpoints: Record<string, string> = {
-    rules: `/api/sync/hosts/${id}/sync`,
-    services: `/api/services/hosts/${id}/sync`,
-    "hosts-file": `/api/hosts-mgmt/hosts/${id}/sync`,
-    users: `/api/linux-users/hosts/${id}/sync`,
-    "cron-jobs": `/api/cron/hosts/${id}/sync`,
-    packages: `/api/packages/hosts/${id}/sync`,
-    dns: `/api/resolver/hosts/${id}/sync`,
+  const openModulePreview = async (tabKey: string) => {
+    const moduleName = tabToModule[tabKey]
+    setApplyError(null)
+    setBulkJob(null)
+    setSyncPreview({ scope: "module", tabKey, module: moduleName, loading: true, error: null, diffs: null })
+    try {
+      const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: [moduleName] }),
+      })
+      setSyncPreview((p) => (p ? { ...p, loading: false, diffs } : p))
+    } catch (e) {
+      setSyncPreview((p) =>
+        p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Preview failed" } : p
+      )
+    }
   }
+
+  const openSyncAllPreview = async () => {
+    setApplyError(null)
+    setBulkJob(null)
+    setSyncPreview({ scope: "all", tabKey: null, module: null, loading: true, error: null, diffs: null })
+    try {
+      const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: null }),
+      })
+      setSyncPreview((p) => (p ? { ...p, loading: false, diffs } : p))
+    } catch (e) {
+      setSyncPreview((p) =>
+        p ? { ...p, loading: false, error: e instanceof Error ? e.message : "Preview failed" } : p
+      )
+    }
+  }
+
+  const closeSyncPreview = () => {
+    if (applying) return
+    setSyncPreview(null)
+    setApplyError(null)
+    setBulkJob(null)
+  }
+
+  const applyModuleSync = async () => {
+    if (!syncPreview?.tabKey || !syncPreview.module) return
+    const tabKey = syncPreview.tabKey
+    const moduleName = syncPreview.module
+    setApplying(true)
+    setApplyError(null)
+    try {
+      // Go through the coalesced bulk job (single-module filter) so the sync is
+      // trackable: it returns a job id we register with the global tray and poll
+      // for completion — instead of the old fire-and-forget per-module POST that
+      // invalidated caches immediately (before the sync had actually run).
+      const resp = await apiFetch<{ job_id: number; status: string }>(`/api/sync/hosts/${id}/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: [moduleName] }),
+      })
+      setBulkJob({ id: resp.job_id, status: resp.status, tabKey })
+      registerSync({
+        label: `${host?.hostname ?? "Host"} — ${moduleLabel(moduleName)}`,
+        jobIds: [resp.job_id],
+      })
+      // Terminal state + cache invalidation handled by the polling effect.
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Sync failed")
+      setApplying(false)
+    }
+  }
+
+  const applyBulkSync = async () => {
+    // Apply exactly what the preview showed would change, and never a
+    // module whose current state could not be read (errored preview).
+    // Sending null would apply every module — including firewall when
+    // its diff errored, i.e. blind. So target the cleanly-previewed,
+    // changed modules only.
+    const modulesToApply = (syncPreview?.diffs ?? [])
+      .filter((d) => d.has_changes && !d.error)
+      .map((d) => d.module)
+    if (modulesToApply.length === 0) return
+    setApplying(true)
+    setApplyError(null)
+    try {
+      const resp = await apiFetch<{ job_id: number; status: string }>(`/api/sync/hosts/${id}/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ module_filter: modulesToApply }),
+      })
+      setBulkJob({ id: resp.job_id, status: resp.status })
+      registerSync({ label: `${host?.hostname ?? "Host"} — Sync All`, jobIds: [resp.job_id] })
+      // Terminal state + cache invalidation handled by the polling effect.
+    } catch (e) {
+      setApplyError(e instanceof Error ? e.message : "Sync failed")
+      setApplying(false)
+    }
+  }
+
+  // Poll the coalesced bulk SyncJob until it reaches a terminal state.
+  useEffect(() => {
+    if (!bulkJob) return
+    if (bulkJob.status === "success" || bulkJob.status === "failed") return
+    let cancelled = false
+    const poll = async () => {
+      try {
+        const data = await apiFetch<{ id: number; status: string }>(`/api/sync/jobs/${bulkJob.id}`)
+        if (cancelled) return
+        setBulkJob({ id: data.id, status: data.status })
+        if (data.status === "success" || data.status === "failed") {
+          setApplying(false)
+          await queryClient.invalidateQueries({ queryKey: ["host", id] })
+          await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
+          // Single-module apply: refresh that tab's effective-config queries too.
+          for (const key of (bulkJob.tabKey && tabQueryKeys[bulkJob.tabKey]) || [])
+            await queryClient.invalidateQueries({ queryKey: key })
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+    }
+    const interval = setInterval(poll, 3000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [bulkJob, id, queryClient, tabQueryKeys])
+
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
   const [editSshPort, setEditSshPort] = useState(22)
@@ -2001,29 +2149,12 @@ export default function HostDetailPage() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={syncing || !host.ssh_key_id}
-                  title={host.ssh_key_id ? "Sync all modules to this host" : "No SSH key assigned"}
-                  onClick={async () => {
-                    setSyncing(true)
-                    const endpoints = [
-                      `/api/sync/hosts/${id}/sync`,
-                      `/api/services/hosts/${id}/sync`,
-                      `/api/hosts-mgmt/hosts/${id}/sync`,
-                      `/api/linux-users/hosts/${id}/sync`,
-                      `/api/cron/hosts/${id}/sync`,
-                      `/api/packages/hosts/${id}/sync`,
-                      `/api/resolver/hosts/${id}/sync`,
-                    ]
-                    for (const ep of endpoints) {
-                      try { await apiFetch(ep, { method: "POST" }) } catch { /* skip modules with no config */ }
-                    }
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                    await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
-                    setSyncing(false)
-                  }}
+                  disabled={!host.ssh_key_id || !!syncPreview}
+                  title={host.ssh_key_id ? "Preview and sync all modules to this host" : "No SSH key assigned"}
+                  onClick={openSyncAllPreview}
                 >
                   <ArrowUpFromLineIcon className={`w-4 h-4 mr-1`} />
-                  {syncing ? "Syncing..." : "Sync All"}
+                  Sync All
                 </Button>
                 {!host.ssh_host_key_entry && (
                   <Button
@@ -2666,19 +2797,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["rules"], { method: "POST" })
-                    for (const key of tabQueryKeys["rules"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("rules")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync Rules"}
+                Sync Rules
               </Button>
             </div>
           </div>
@@ -2925,19 +3048,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["services"], { method: "POST" })
-                    for (const key of tabQueryKeys["services"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("services")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync Services"}
+                Sync Services
               </Button>
               <Button onClick={openSvcDialog}>Add Service</Button>
             </div>
@@ -3319,19 +3434,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["hosts-file"], { method: "POST" })
-                    for (const key of tabQueryKeys["hosts-file"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("hosts-file")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button
                 variant="outline"
@@ -3587,19 +3694,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["users"], { method: "POST" })
-                    for (const key of tabQueryKeys["users"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("users")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button variant="outline" onClick={openLuDialog}>Add User Override</Button>
               <Button variant="outline" onClick={openLgDialog}>Add Group Override</Button>
@@ -4076,19 +4175,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["cron-jobs"], { method: "POST" })
-                    for (const key of tabQueryKeys["cron-jobs"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("cron-jobs")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button onClick={openCjDialog}>Add Override</Button>
             </div>
@@ -4400,19 +4491,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["packages"], { method: "POST" })
-                    for (const key of tabQueryKeys["packages"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("packages")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync"}
+                Sync
               </Button>
               <Button onClick={openPpDialog}>Add Override</Button>
             </div>
@@ -5032,19 +5115,11 @@ export default function HostDetailPage() {
               <Button
                 variant="outline"
                 size="sm"
-                disabled={moduleSyncing || !host?.ssh_key_id}
-                onClick={async () => {
-                  setModuleSyncing(true)
-                  try {
-                    await apiFetch(moduleSyncEndpoints["dns"], { method: "POST" })
-                    for (const key of tabQueryKeys["dns"]) await queryClient.invalidateQueries({ queryKey: key })
-                    await queryClient.invalidateQueries({ queryKey: ["host", id] })
-                  } catch { /* ignore */ }
-                  setModuleSyncing(false)
-                }}
+                disabled={!host?.ssh_key_id || !!syncPreview}
+                onClick={() => openModulePreview("dns")}
               >
                 <ArrowUpFromLineIcon className="w-4 h-4 mr-1" />
-                {moduleSyncing ? "Syncing..." : "Sync DNS"}
+                Sync DNS
               </Button>
               {hostResolverOverride && (
                 <Button
@@ -5377,6 +5452,90 @@ export default function HostDetailPage() {
             }
           }}
         />
+      )}
+
+      {syncPreview && (
+        <Dialog open onOpenChange={(o) => { if (!o) closeSyncPreview() }}>
+          <DialogContent className="sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>
+                {syncPreview.scope === "all"
+                  ? "Sync All — Preview"
+                  : `Sync ${moduleLabel(syncPreview.module ?? "")} — Preview`}
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+              {syncPreview.loading && <CardSkeleton />}
+
+              {syncPreview.error && (
+                <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
+                  {syncPreview.error}
+                </div>
+              )}
+
+              {syncPreview.diffs && !syncPreview.loading && (
+                <>
+                  {!syncPreview.diffs.some((d) => d.has_changes) && (
+                    <div className="text-green-400 text-sm">Everything is already in sync.</div>
+                  )}
+                  {/* Changed modules first so actionable content sits at the top; unchanged cards collapse by default. */}
+                  {[...syncPreview.diffs]
+                    .sort((a, b) => Number(b.has_changes) - Number(a.has_changes))
+                    .map((d) => (
+                      <ModuleDiffView
+                        key={d.module}
+                        diff={d}
+                        showHeader={syncPreview.scope === "all"}
+                        defaultExpanded={d.has_changes}
+                      />
+                    ))}
+                </>
+              )}
+
+              {bulkJob && (
+                <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+                  Job status: <span className="font-medium">{bulkJob.status}</span>
+                </div>
+              )}
+
+              {applyError && (
+                <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
+                  {applyError}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              {(() => {
+                const jobDone = bulkJob?.status === "success" || bulkJob?.status === "failed"
+                // Once the preview has loaded with nothing to apply, the primary
+                // action is just to dismiss — a disabled "Apply Changes" reads as
+                // "something is broken" rather than "nothing to do".
+                const noChanges =
+                  !!syncPreview.diffs &&
+                  !syncPreview.loading &&
+                  !syncPreview.error &&
+                  !syncPreview.diffs.some((d) => d.has_changes)
+                return (
+                  <>
+                    <Button variant="outline" onClick={closeSyncPreview} disabled={applying}>
+                      {jobDone || noChanges ? "Close" : "Cancel"}
+                    </Button>
+                    {!jobDone && !noChanges && (
+                      <Button
+                        onClick={syncPreview.scope === "all" ? applyBulkSync : applyModuleSync}
+                        disabled={applying || syncPreview.loading || !!syncPreview.error || !syncPreview.diffs}
+                      >
+                        {applying ? "Applying…" : "Apply Changes"}
+                      </Button>
+                    )}
+                  </>
+                )
+              })()}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )

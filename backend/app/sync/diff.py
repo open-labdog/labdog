@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 
+from app.enum_utils import enum_str
 from app.rules.model import ChainPolicies, FirewallRuleSpec
 
 logger = logging.getLogger(__name__)
@@ -96,11 +97,7 @@ async def fetch_current_firewall_state(host_id: int, db):
     if not host:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
 
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown" or not host.ssh_key_id:
         return CollectedFirewallState(rules=[], policies=ChainPolicies())
 
@@ -114,11 +111,10 @@ async def fetch_current_firewall_state(host_id: int, db):
 
     try:
         return await collect_firewall_state(
-            host_ip=host.ip_address,
-            ssh_port=host.ssh_port,
+            host=host,
+            db=db,
             private_key_pem=private_key_pem,
             firewall_backend=backend,
-            ssh_user=ssh_key.ssh_user,
         )
     except Exception as exc:
         logger.warning(
@@ -152,11 +148,7 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
     if not host:
         return []
 
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown" or not host.ssh_key_id:
         return []
 
@@ -170,11 +162,10 @@ async def fetch_current_state(host_id: int, db) -> list[FirewallRuleSpec]:
 
     try:
         return await collect_current_rules(
-            host_ip=host.ip_address,
-            ssh_port=host.ssh_port,
+            host=host,
+            db=db,
             private_key_pem=private_key_pem,
             firewall_backend=backend,
-            ssh_user=ssh_key.ssh_user,
         )
     except Exception as exc:
         logger.warning(

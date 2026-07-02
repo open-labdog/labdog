@@ -46,7 +46,7 @@ class TestFullWorkflow:
     async def setup(self):
         from testcontainers.postgres import PostgresContainer
 
-        with PostgresContainer("postgres:16-alpine") as pg:
+        with PostgresContainer("postgres:18-alpine") as pg:
             # Build asyncpg-compatible URL
             sync_url = pg.get_connection_url()
             async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://").replace(

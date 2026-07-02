@@ -16,10 +16,13 @@ RUN npm run build
 FROM python:3.12-slim AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
-COPY backend/pyproject.toml .
+COPY backend/pyproject.toml backend/uv.lock ./
 COPY VERSION .
-COPY backend/app/ app/
-RUN uv pip install --no-cache-dir --system . || pip install --no-cache-dir .
+# Install the exact locked dependency versions (reproducible builds). The app
+# package itself isn't installed — the runtime stage runs it from the copied
+# source (WORKDIR /app, `python -m app`), so only the deps need to be present.
+RUN uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt \
+    && uv pip install --no-cache-dir --system -r /tmp/req.txt
 
 # ── Stage 2b: Fetch bundled action pack at a pinned ref ───────────────
 # The bundled pack used to be a byte-identical mirror committed at
@@ -52,7 +55,18 @@ WORKDIR /app
 # package so Debian security fixes are applied (e.g. krb5 libs pulled in
 # transitively by git/openssh-client). A blanket upgrade avoids the
 # whack-a-mole of naming each CVE'd package as Trivy/Grype flag them.
-RUN apt-get update \
+#
+# BUILD_DATE is declared here (and re-declared later for the version
+# stamp) solely to bust this layer's BuildKit cache. CI builds with
+# `cache-from/to: type=gha`, so without a per-build input the cached apt
+# layer keeps serving packages from whenever the cache was populated —
+# security fixes published afterwards (e.g. libssh2 +deb13u1) never land
+# and Trivy gates the stale image. Referencing the per-build BUILD_DATE
+# forces apt to refresh on every CI build. Local builds (no BUILD_DATE)
+# keep the cached layer, which is fine — they aren't security-gated.
+ARG BUILD_DATE=""
+RUN echo "apt security refresh @ ${BUILD_DATE}" \
+    && apt-get update \
     && apt-get install -y --no-install-recommends openssh-client git \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
@@ -76,6 +90,11 @@ RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx
 COPY --chown=labdog:labdog backend/app/ app/
 COPY --chown=labdog:labdog backend/alembic/ alembic/
 COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
+# The image runs from source with deps installed via --no-emit-project, so the
+# labdog-backend .dist-info is absent and importlib.metadata can't report the
+# version. Ship the VERSION file at the app root so /api/version (and thus the
+# healthcheck) resolves it — see app/api/version.py:_resolve_version().
+COPY --chown=labdog:labdog VERSION VERSION
 
 # Bundled action pack: cloned from labdog-playbooks at build time at
 # the LABDOG_PLAYBOOKS_REF pinned in the repo (see Stage 2b above).
