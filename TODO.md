@@ -155,8 +155,14 @@ raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
 `starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
 added. These are the deferred hardening/maintenance tasks that remain.
 
-- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06;
-      flat-config migration in `frontend/`. Mechanical but time-boxed.
+- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06.
+      Flat config is already in place (`eslint.config.mjs`), so this is just the
+      version bump — but it is **currently blocked upstream**: bumping `eslint`
+      to 10 crashes lint with `context.getFilename is not a function`, because
+      `eslint-config-next` (even the latest 16.2.10) bundles
+      `eslint-plugin-react@7.37.5`, which still calls the API ESLint 10 removed.
+      Re-attempt once `eslint-plugin-react` ships an ESLint-10-compatible
+      release and `eslint-config-next` picks it up (then just bump both).
 
 - [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
       separately; the safe react-query / tailwindcss / zod / react-hook-form
