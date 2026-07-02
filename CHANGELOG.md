@@ -50,6 +50,11 @@ The format follows [Keep a Changelog]; LabDog follows
   container healthcheck to "unhealthy". The version now resolves through a
   fallback chain (installed metadata → `LABDOG_VERSION` → bundled `VERSION`
   file → build info) and the image ships its `VERSION` file.
+- **`.deb`/`.rpm`/tarball installs reported `/api/version` as `0.0.0`.**
+  The packaged venv built `labdog-backend` without the repo-root `VERSION`
+  next to `pyproject.toml`, so setuptools' dynamic version resolved to
+  `0.0.0`; the build now stages `VERSION` in and the installed metadata
+  carries the real version.
 - **Firewall detection.** `nft`/`iptables` installed under `/usr/sbin` is
   now detected during facts collection — hosts with a firewall were being
   mis-reported as "No Firewall Detected".
