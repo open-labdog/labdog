@@ -165,7 +165,7 @@ but internally delegate to the same orchestrator.
 |-----------|-----------|------|
 | Frontend | Next.js 16 + shadcn/ui + TanStack Query | 3000 |
 | Backend API | FastAPI + SQLAlchemy (async) | 8000 |
-| Database | PostgreSQL 16 | 5432 |
+| Database | PostgreSQL 18 | 5432 |
 | Task Queue | Celery + Redis (RedBeat scheduler) | -- |
 | Config Management | Ansible (ansible-runner) | -- |
 

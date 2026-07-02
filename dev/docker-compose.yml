@@ -1,12 +1,14 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: labdog
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-labdog_test_pw}
       POSTGRES_DB: labdog
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # PG 18 stores data in a version-specific subdir; mount the parent
+      # (/var/lib/postgresql), not .../data, or nothing persists.
+      - postgres_data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:
@@ -17,9 +19,9 @@ services:
     restart: unless-stopped
 
   redis:
-    # 7.4 line carries the fix for CVE-2026-23479 (patched in 7.4.9); the tag
-    # tracks latest 7.4.x so future backports are picked up on pull.
-    image: redis:7.4-alpine
+    # 8.x line carries the fix for CVE-2026-23479 (also patched in 7.4.9); the
+    # tag tracks latest 8.x so future backports are picked up on pull.
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     healthcheck:
