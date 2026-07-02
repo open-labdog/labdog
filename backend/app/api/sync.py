@@ -11,6 +11,7 @@ from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
+from app.models.host_module_status import HostModuleStatus
 from app.models.sync_job import SyncJob
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
@@ -195,6 +196,21 @@ async def preview_host(
 # ---------------------------------------------------------------------------
 
 
+class ModuleSubStatus(BaseModel):
+    """Per-module sync status for a host, from ``HostModuleStatus``.
+
+    During a bulk run the orchestrator flips each touched module's row to
+    ``running`` and then its terminal value, so this reflects live per-module
+    progress while a job runs. It is the host's current per-module state (not
+    scoped to a specific job), which is what the sync tray drills into.
+    """
+
+    module_type: str
+    sync_status: str
+    error_message: str | None = None
+    model_config = {"from_attributes": True}
+
+
 class SyncJobResponse(BaseModel):
     id: int
     host_id: int
@@ -211,7 +227,27 @@ class SyncJobResponse(BaseModel):
     triggered_by_user_id: int | None
     module_type: str = "firewall"
     created_at: datetime
+    # Per-module sub-status for the job's host (empty unless populated by the
+    # read endpoints get_job / list_jobs).
+    modules: list[ModuleSubStatus] = []
     model_config = {"from_attributes": True}
+
+
+async def _modules_by_host(
+    db: AsyncSession, host_ids: set[int]
+) -> dict[int, list[ModuleSubStatus]]:
+    """Fetch per-module HostModuleStatus for the given hosts, grouped by host id."""
+    if not host_ids:
+        return {}
+    rows = (
+        (await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id.in_(host_ids))))
+        .scalars()
+        .all()
+    )
+    out: dict[int, list[ModuleSubStatus]] = {}
+    for r in rows:
+        out.setdefault(r.host_id, []).append(ModuleSubStatus.model_validate(r))
+    return out
 
 
 @router.post("/hosts/{host_id}/sync", response_model=SyncJobResponse, status_code=201)
@@ -655,7 +691,8 @@ async def get_job(
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+    modules = (await _modules_by_host(db, {job.host_id})).get(job.host_id, [])
+    return SyncJobResponse.model_validate(job).model_copy(update={"modules": modules})
 
 
 @router.get("/jobs", response_model=list[SyncJobResponse])
@@ -693,5 +730,9 @@ async def list_jobs(
         q = q.where(SyncJob.status == status)
     if module_type:
         q = q.where(SyncJob.module_type == module_type)
-    result = await db.execute(q)
-    return result.scalars().all()
+    jobs = list((await db.execute(q)).scalars().all())
+    mods = await _modules_by_host(db, {j.host_id for j in jobs})
+    return [
+        SyncJobResponse.model_validate(j).model_copy(update={"modules": mods.get(j.host_id, [])})
+        for j in jobs
+    ]

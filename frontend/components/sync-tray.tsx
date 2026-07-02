@@ -27,6 +27,83 @@ function barColor(op: SyncOperation, jobs: Record<number, SyncJob>): string {
   return "bg-green-500"
 }
 
+const MODULE_LABELS: Record<string, string> = {
+  firewall: "Firewall",
+  services: "Services",
+  packages: "Packages",
+  "hosts-file": "/etc/hosts",
+  cron: "Cron",
+  "linux-users": "Users",
+  resolver: "DNS",
+  "ca-certs": "CA Certs",
+}
+
+// HostModuleStatus.sync_status → tint + label for the per-module drill-down.
+const MOD_STATUS: Record<string, { cls: string; label: string }> = {
+  running: { cls: "text-blue-400", label: "running" },
+  in_sync: { cls: "text-green-400", label: "in sync" },
+  out_of_sync: { cls: "text-amber-400", label: "out of sync" },
+  drifted: { cls: "text-amber-400", label: "drifted" },
+  error: { cls: "text-red-400", label: "error" },
+}
+
+function HostRow({
+  jid,
+  job,
+  hostName,
+}: {
+  jid: number
+  job?: SyncJob
+  hostName: (id: number) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const modules = job?.modules ?? []
+  const canExpand = modules.length > 0
+
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 px-1">
+        <button
+          type="button"
+          disabled={!canExpand}
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 min-w-0 flex items-center gap-1 text-left disabled:cursor-default"
+        >
+          {canExpand && (
+            <ChevronDown
+              className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          )}
+          <span className="truncate text-xs text-slate-300" title={job ? hostName(job.host_id) : ""}>
+            {job ? hostName(job.host_id) : `job ${jid}`}
+          </span>
+        </button>
+        <RunStatusBadge
+          status={badgeStatus(job?.status ?? "pending")}
+          reason={job?.pending_reason || job?.error_message || null}
+        />
+      </div>
+      {open && canExpand && (
+        <div className="ml-4 mt-0.5 space-y-0.5">
+          {modules.map((m) => {
+            const st = MOD_STATUS[m.sync_status] ?? { cls: "text-slate-400", label: m.sync_status }
+            return (
+              <div key={m.module_type} className="flex items-center justify-between gap-2 px-1">
+                <span className="truncate text-[11px] text-slate-400">
+                  {MODULE_LABELS[m.module_type] ?? m.module_type}
+                </span>
+                <span className={`text-[11px] ${st.cls}`} title={m.error_message ?? ""}>
+                  {st.label}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OperationCard({
   op,
   jobs,
@@ -89,20 +166,9 @@ function OperationCard({
       </div>
       {open && (
         <div className="max-h-56 overflow-y-auto border-t border-slate-800 p-2 space-y-1">
-          {op.jobIds.map((jid) => {
-            const j = jobs[jid]
-            return (
-              <div key={jid} className="flex items-center justify-between gap-2 px-1">
-                <span className="truncate text-xs text-slate-300" title={j ? hostName(j.host_id) : ""}>
-                  {j ? hostName(j.host_id) : `job ${jid}`}
-                </span>
-                <RunStatusBadge
-                  status={badgeStatus(j?.status ?? "pending")}
-                  reason={j?.pending_reason || j?.error_message || null}
-                />
-              </div>
-            )
-          })}
+          {op.jobIds.map((jid) => (
+            <HostRow key={jid} jid={jid} job={jobs[jid]} hostName={hostName} />
+          ))}
         </div>
       )}
     </div>
