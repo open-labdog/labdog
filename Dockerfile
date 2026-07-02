@@ -90,6 +90,11 @@ RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx
 COPY --chown=labdog:labdog backend/app/ app/
 COPY --chown=labdog:labdog backend/alembic/ alembic/
 COPY --chown=labdog:labdog backend/alembic.ini alembic.ini
+# The image runs from source with deps installed via --no-emit-project, so the
+# labdog-backend .dist-info is absent and importlib.metadata can't report the
+# version. Ship the VERSION file at the app root so /api/version (and thus the
+# healthcheck) resolves it — see app/api/version.py:_resolve_version().
+COPY --chown=labdog:labdog VERSION VERSION
 
 # Bundled action pack: cloned from labdog-playbooks at build time at
 # the LABDOG_PLAYBOOKS_REF pinned in the repo (see Stage 2b above).
