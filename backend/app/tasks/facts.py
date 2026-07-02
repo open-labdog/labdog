@@ -137,7 +137,8 @@ async def _collect_host_facts_async(host_id: int) -> None:
                     check=False,
                 )
                 iptables = await conn.run(
-                    "command -v iptables || { test -x /usr/sbin/iptables && echo /usr/sbin/iptables; } || true",
+                    "command -v iptables || "
+                    "{ test -x /usr/sbin/iptables && echo /usr/sbin/iptables; } || true",
                     check=False,
                 )
 
