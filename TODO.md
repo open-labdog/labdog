@@ -166,11 +166,6 @@ added. These are the deferred hardening/maintenance tasks that remain.
       (prod image + every CI job) — the raised floors already block vulnerable
       versions, so this is reproducibility hardening, not a live exposure.
 
-- [ ] **Audit the Redis *server* version in the deployment.** The `redis-py`
-      client is current (lock: 6.4.0), but the 2026 Redis RCE advisories
-      (e.g. CVE-2026-23479) are **server-side**. Confirm the Redis image/version
-      used in deploy (compose / infra) is patched. Ops/deploy task, not code.
-
 - [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06;
       flat-config migration in `frontend/`. Mechanical but time-boxed.
 
