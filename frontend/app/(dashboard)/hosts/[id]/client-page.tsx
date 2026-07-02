@@ -33,6 +33,7 @@ import { GroupMultiSelect } from "@/components/group-multi-select"
 import { HostCombobox } from "@/components/host-combobox"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { useApiMutation } from "@/lib/mutations"
+import { useSyncTray } from "@/lib/sync-tray"
 import { cronToHuman } from "@/lib/cron"
 import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
@@ -711,6 +712,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
+  const { registerSync } = useSyncTray()
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get("tab") as HostTab) || "overview"
   const [activeTab, setActiveTab] = useState<HostTab>(initialTab)
@@ -923,6 +925,7 @@ export default function HostDetailPage() {
         body: JSON.stringify({ module_filter: modulesToApply }),
       })
       setBulkJob({ id: resp.job_id, status: resp.status })
+      registerSync({ label: `${host?.hostname ?? "Host"} — Sync All`, jobIds: [resp.job_id] })
       // Terminal state + cache invalidation handled by the polling effect.
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : "Sync failed")
