@@ -1,11 +1,12 @@
 """CRUD + sync endpoints for action packs.
 
-Writes (create/update/delete/sync/claim-keys) are superuser-only and
+Pack-config writes (create/update/delete/sync) are superuser-only and
 audit-logged, since enabling a pack folds its manifests into the action
 registry and drives root-level Ansible runs against managed hosts. Reads
-(list/detail) are allowed for any active user. Credentials are NOT
-handled here — they live on the linked ``GitRepository`` row (managed on
-the Git Repos page). This router only persists the pack metadata and
+(list/detail) and claim-all-keys are allowed for any active user (the
+latter only associates SSH keys, it doesn't enable code). Credentials are
+NOT handled here — they live on the linked ``GitRepository`` row (managed
+on the Git Repos page). This router only persists the pack metadata and
 dispatches sync.
 """
 
@@ -331,7 +332,7 @@ async def sync_action_pack(
 @router.post("/{pack_id}/claim-all-keys", response_model=ClaimAllKeysResponse)
 async def claim_all_keys(
     pack_id: int,
-    user: User = Depends(current_superuser),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Pin every action key this pack contributes to this pack.
