@@ -155,32 +155,16 @@ raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
 `starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
 added. These are the deferred hardening/maintenance tasks that remain.
 
-- [ ] **Consume `uv.lock` in the install path (reproducible builds).**
-      The lockfile + a `uv lock --check` CI gate exist, but the Dockerfiles
-      (`Dockerfile`, `backend/Dockerfile`) and CI (`.github/workflows/ci.yml`
-      `backend-test` / `backend-audit`) still `uv pip install .` (re-resolve)
-      instead of consuming the lock, so builds aren't yet reproducible. Switch
-      to a lock-respecting install (e.g. `uv export --frozen -o requirements.txt
-      && uv pip install --system -r requirements.txt`, and `COPY backend/uv.lock`
-      in the images). Validate with a clean `docker build`. Higher blast radius
-      (prod image + every CI job) — the raised floors already block vulnerable
-      versions, so this is reproducibility hardening, not a live exposure.
+- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06.
+      Flat config is already in place (`eslint.config.mjs`), so this is just the
+      version bump — but it is **currently blocked upstream**: bumping `eslint`
+      to 10 crashes lint with `context.getFilename is not a function`, because
+      `eslint-config-next` (even the latest 16.2.10) bundles
+      `eslint-plugin-react@7.37.5`, which still calls the API ESLint 10 removed.
+      Re-attempt once `eslint-plugin-react` ships an ESLint-10-compatible
+      release and `eslint-config-next` picks it up (then just bump both).
 
-- [ ] **Bump `fastapi-users` and `ansible-core` floors.** `backend/pyproject.toml`
-      still floors `fastapi-users>=14` / `ansible-core>=2.16` (near-EOL) even
-      though `uv.lock` already resolves to 15.0.5 / 2.21.1. Bump the floors,
-      review the fastapi-users 14→15 migration notes, then re-`uv lock` +
-      `pip-audit` to confirm.
-
-- [ ] **Audit the Redis *server* version in the deployment.** The `redis-py`
-      client is current (lock: 6.4.0), but the 2026 Redis RCE advisories
-      (e.g. CVE-2026-23479) are **server-side**. Confirm the Redis image/version
-      used in deploy (compose / infra) is patched. Ops/deploy task, not code.
-
-- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06;
-      flat-config migration in `frontend/`. Mechanical but time-boxed.
-
-- [ ] **Frontend minor dependency bumps.** react-query / tailwindcss / zod /
-      react-hook-form minor bumps are safe. `lucide-react` 0.577 → 1.x is a
-      breaking change (brand icons removed) — plan separately.
+- [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
+      separately; the safe react-query / tailwindcss / zod / react-hook-form
+      minor bumps have already landed.
 
