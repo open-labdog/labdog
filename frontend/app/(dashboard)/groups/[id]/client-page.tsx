@@ -48,11 +48,24 @@ import GroupCronJobsPage from "./cron-jobs/client-page"
 import GroupPackagesPage from "./packages/client-page"
 import GroupCACertsPage from "./ca-certs/client-page"
 import GroupResolverPage from "./resolver/client-page"
-import GroupSyncPage from "./sync/client-page"
 import GroupActionsPage from "./actions/client-page"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
+import { GroupSyncButton } from "@/components/group-sync-dialog"
 
-type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "sync" | "schedules" | "actions"
+type Tab = "overview" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "schedules" | "actions"
+
+// Config-module tabs that sync via the bulk orchestrator, mapped to the
+// canonical module name understood by /api/sync/.../bulk + /preview. CA Certs
+// syncs through its own Deploy action (see the ca-certs tab), not the bulk flow.
+const MODULE_SYNC: Partial<Record<Tab, { module: string; label: string }>> = {
+  rules: { module: "firewall", label: "Firewall Rules" },
+  services: { module: "services", label: "Services" },
+  "hosts-file": { module: "hosts-file", label: "Hosts File" },
+  users: { module: "linux-users", label: "Users" },
+  "cron-jobs": { module: "cron", label: "Cron Jobs" },
+  packages: { module: "packages", label: "Packages" },
+  dns: { module: "resolver", label: "DNS Resolver" },
+}
 
 export default function GroupDetailPage() {
   const params = useParams()
@@ -420,12 +433,12 @@ export default function GroupDetailPage() {
             <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold text-white">Sync Status</h2>
-                <Button
-                  size="sm"
-                  onClick={() => setActiveTab("sync")}
-                >
-                  Sync
-                </Button>
+                <GroupSyncButton
+                  groupId={id}
+                  moduleFilter={null}
+                  label="Sync all modules"
+                  triggerLabel="Sync"
+                />
               </div>
               {total > 0 ? (
                 <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
@@ -571,7 +584,6 @@ export default function GroupDetailPage() {
           ["packages", "Packages"],
           ["ca-certs", "CA Certs"],
           ["dns", "DNS Resolver"],
-          ["sync", "Firewall Sync"],
           ["schedules", "Schedules"],
           ["actions", "Actions"],
         ] as const).map(([key, label]) => (
@@ -590,6 +602,18 @@ export default function GroupDetailPage() {
           </button>
         ))}
       </div>
+
+      {/* Per-module Sync button — mirrors the host view: preview+apply this
+          module across every host in the group. CA Certs has its own Deploy. */}
+      {MODULE_SYNC[activeTab] && (
+        <div className="flex justify-end">
+          <GroupSyncButton
+            groupId={id}
+            moduleFilter={[MODULE_SYNC[activeTab]!.module]}
+            label={`Sync ${MODULE_SYNC[activeTab]!.label}`}
+          />
+        </div>
+      )}
 
       {activeTab === "overview" && (
         <>
@@ -826,7 +850,6 @@ export default function GroupDetailPage() {
       {activeTab === "packages" && <GroupPackagesPage embedded />}
       {activeTab === "ca-certs" && <GroupCACertsPage embedded />}
       {activeTab === "dns" && <GroupResolverPage embedded />}
-      {activeTab === "sync" && <GroupSyncPage embedded />}
       {activeTab === "schedules" && (
         <ScheduledActionsSection scope="group" targetId={id} />
       )}

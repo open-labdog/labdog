@@ -664,11 +664,27 @@ async def list_jobs(
     group_id: int | None = None,
     status: str | None = None,
     module_type: str | None = None,
+    ids: str | None = None,
     limit: int = 20,
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(SyncJob).order_by(SyncJob.id.desc()).limit(limit)
+    """List sync jobs. ``ids`` is a comma-separated set of job ids — used by
+    the client to batch-poll exactly the jobs an apply triggered (e.g. every
+    per-host job from a group bulk sync) in a single request."""
+    q = select(SyncJob).order_by(SyncJob.id.desc())
+    if ids:
+        try:
+            id_list = [int(x) for x in ids.split(",") if x.strip()]
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail="ids must be comma-separated integers"
+            ) from exc
+        if not id_list:
+            return []
+        q = q.where(SyncJob.id.in_(id_list)).limit(min(len(id_list), 500))
+    else:
+        q = q.limit(limit)
     if host_id:
         q = q.where(SyncJob.host_id == host_id)
     if group_id:
