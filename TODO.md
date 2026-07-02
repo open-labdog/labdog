@@ -155,17 +155,6 @@ raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
 `starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
 added. These are the deferred hardening/maintenance tasks that remain.
 
-- [ ] **Consume `uv.lock` in the install path (reproducible builds).**
-      The lockfile + a `uv lock --check` CI gate exist, but the Dockerfiles
-      (`Dockerfile`, `backend/Dockerfile`) and CI (`.github/workflows/ci.yml`
-      `backend-test` / `backend-audit`) still `uv pip install .` (re-resolve)
-      instead of consuming the lock, so builds aren't yet reproducible. Switch
-      to a lock-respecting install (e.g. `uv export --frozen -o requirements.txt
-      && uv pip install --system -r requirements.txt`, and `COPY backend/uv.lock`
-      in the images). Validate with a clean `docker build`. Higher blast radius
-      (prod image + every CI job) — the raised floors already block vulnerable
-      versions, so this is reproducibility hardening, not a live exposure.
-
 - [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06;
       flat-config migration in `frontend/`. Mechanical but time-boxed.
 
