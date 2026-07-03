@@ -7,6 +7,24 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-07-03
+
+### Fixed
+
+- **Host sync progress no longer shows in two places.** Syncing a module
+  from the host page ran its own progress poller in the preview dialog *and*
+  registered the job with the global sync tray, so progress appeared twice
+  and the dialog reached completion before the tray did. The host flow now
+  matches the group flow: on Apply the dialog closes and the global sync
+  tray is the single source of truth for progress and completion.
+- **Firewall backend is now detected when collecting from the Rules tab.**
+  "Collect" on the Rules tab could leave a host stuck on "No Firewall
+  Detected" — the firewall only appeared after running "Collect all" on the
+  Overview tab. A per-module collect now refreshes the host row so a
+  newly-detected backend surfaces, and a single firewall collect against a
+  still-unknown host runs the same robust detection the Overview collect
+  uses.
+
 ## [0.6.0] — 2026-07-02
 
 ### Added
@@ -832,7 +850,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/open-labdog/labdog/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/open-labdog/labdog/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/open-labdog/labdog/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/open-labdog/labdog/compare/v0.3.1...v0.4.0
