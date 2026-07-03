@@ -13,13 +13,14 @@ For a normal feature/fix PR into dev, do NOT use this template.
 Tick every box before merging. CI runs the full suite on this PR, but
 the items below are the human-owned ones CI cannot verify.
 
+- [ ] **`dev` is up to date with `main`** — `main` requires it (strict protection), so a stale `dev` can't merge. Sync first: `git checkout dev && git merge origin/main && git push`
 - [ ] **`VERSION` bumped** — one line, no `v` prefix, valid semver
 - [ ] **`CHANGELOG.md`** — `[Unreleased]` renamed to `[X.Y.Z] — YYYY-MM-DD`, a fresh empty `[Unreleased]` added above it, and the comparison-link refs at the bottom updated (`vPREV...vX.Y.Z` and `vX.Y.Z...HEAD`)
 - [ ] **`docs/` updated for every user-visible feature in this release** — new modules, API surface, UI flows, settings. (This should already be true per-feature PR; this box is the backstop.)
 - [ ] **`TODO.md`** — items completed this cycle removed
 - [ ] **`BUGS.md`** — bugs fixed this cycle deleted (the fixing commit references the bug ID)
 - [ ] **`plans/` is absent** — it must never ship on `dev` or `main`
-- [ ] **CI is green on this PR** — `version-check`, lint, `backend-test`, `frontend-build-check`, `docs-build-check`, `build-test-image`, trivy
+- [ ] **CI is green on this PR** — `version-check` (required), `packaging-smoke`, lint, `backend-test`, `frontend-build-check`, `docs-build-check`, `build-test-image`, trivy
 
 > **Do not hand-bump** `backend/pyproject.toml` or `frontend/package.json`.
 > The `release-artifacts` job syncs both from `VERSION` on merge, then
