@@ -25,15 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Container-based packaging smoke test in CI.** A hand-run
-      smoke pass during v0.2.0 prep surfaced and fixed three
-      install-path bugs (see `git log --grep packaging` for the
-      individual fix commits). Still open: add `packaging/tests/`
-      with a containerised harness (Ubuntu 24.04 .deb, Rocky 9 .rpm,
-      Ubuntu 24.04 tarball-via-install.sh) and a new CI job that
-      runs it after `release-artifacts`, so the smoke procedure that
-      was run by hand for v0.2.0 becomes a permanent gate on
-      subsequent releases.
 - [ ] **Mark `version-check` as a required status check on `main`.**
       The new release pipeline gates release PRs on a `version-check`
       job that asserts `VERSION` is bumped, semver-shaped, and the
@@ -47,6 +38,15 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
       to be up to date" so the check runs against the actual merge
       commit. This is GitHub repo config, not a code change — won't
       land in any commit; needs a maintainer with admin rights.
+- [ ] **Audit GitHub Actions pins for Node 24 readiness (low priority).**
+      GitHub is deprecating the Node 20 runtime on Actions runners; the
+      runner default has already moved to Node 24 (surfaced as a warning
+      during the v0.6.1 release run, e.g. under `actions/deploy-pages`).
+      Nothing fails on Node 24 today, so this is not urgent — but before
+      Node 20 support is fully removed, sweep `.github/workflows/*.yml`
+      for any action pinned to a version whose runtime is Node 20 and
+      bump to a Node 24-compatible release, so no workflow starts failing
+      when the old runtime is dropped.
 
 ---
 
