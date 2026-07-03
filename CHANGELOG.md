@@ -7,6 +7,29 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-07-03
+
+### Fixed
+
+- **`.deb` / `.rpm` / tarball installs shipped a non-working virtualenv.**
+  The bundled venv referenced the *build machine's* Python path (in CI, a
+  tool-cache interpreter under `/opt/hostedtoolcache/...`), so on a clean
+  target host `venv/bin/python` was a dangling symlink and the systemd
+  service failed to start. The venv is now relocated at build time to the
+  distro `python3.12` the package depends on (`/usr/bin/python3.12`).
+  Affected the 0.6.0 and 0.6.1 packages; the container image was not
+  affected.
+
+### Added
+
+- **Containerised packaging smoke harness (`packaging/tests/`).** A new
+  `packaging-smoke` CI job builds the `.deb` / `.rpm` / tarball and
+  install-tests each in a clean target-OS container (Ubuntu 24.04, Rocky
+  9) — files present, service account created, the venv imports the app
+  cross-distro, and the reported version is correct. Runs on release
+  commits and packaging PRs. (It caught the venv bug above on its first
+  run.)
+
 ## [0.6.1] — 2026-07-03
 
 ### Fixed
@@ -850,7 +873,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/open-labdog/labdog/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/open-labdog/labdog/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/open-labdog/labdog/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/open-labdog/labdog/compare/v0.4.0...v0.5.0

@@ -486,6 +486,64 @@ jobs:
         uses: actions/deploy-pages@v4
 
 
+  # ---- PACKAGING SMOKE --------------------------------------------------
+  #
+  # Builds the release artifacts (.deb / .rpm / .tar.gz) and installs each
+  # in a clean target-OS container, asserting the install landed correctly
+  # and reports the right version — the hand-run pre-release smoke, now
+  # automatic. Runs on release commits (push to main) and on PRs that touch
+  # packaging (a git-diff guard keeps it off unrelated PRs). On main it is
+  # a hard gate: `release-artifacts` needs it, so a broken install path
+  # blocks the release. See packaging/tests/ for the harness and assertions.
+  packaging-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need the PR base commit for the change guard
+      - name: Decide whether to run
+        id: decide
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN=false
+          case "${{ github.event_name }}" in
+            workflow_dispatch) RUN=true ;;
+            push) if [ "${{ github.ref }}" = "refs/heads/main" ]; then RUN=true; fi ;;
+            pull_request)
+              BASE="${{ github.event.pull_request.base.sha }}"
+              if git diff --name-only "$BASE" HEAD \
+                   | grep -qE '^(packaging/|backend/pyproject\.toml|backend/uv\.lock|scripts/fetch-bundled-pack\.sh|LABDOG_PLAYBOOKS_REF|VERSION|\.github/workflows/ci\.yml)'; then
+                RUN=true
+              fi ;;
+          esac
+          echo "run=$RUN" | tee -a "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v5
+        if: steps.decide.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        if: steps.decide.outputs.run == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install nfpm
+        if: steps.decide.outputs.run == 'true'
+        run: |
+          NFPM_VERSION=2.41.3
+          curl -sSL \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
+            | sudo tar -xzC /usr/local/bin nfpm
+          nfpm --version
+      - name: Build artifacts
+        if: steps.decide.outputs.run == 'true'
+        run: ./packaging/build.sh --version="$(tr -d '[:space:]' < VERSION)"
+      - name: Smoke-test artifacts in target-OS containers
+        if: steps.decide.outputs.run == 'true'
+        run: ./packaging/tests/run-smoke.sh
+
+
   # ---- RELEASE ARTIFACTS ------------------------------------------------
   #
   # Runs on every push to main (= a release PR was just merged). Reads
@@ -497,10 +555,13 @@ jobs:
   #
   # The version-check job above gates the PR so that this job almost
   # never sees a missing/duplicate VERSION on main; the runtime checks
-  # below are belt-and-braces. To smoke-test packaging locally, run
-  # ./packaging/build.sh — there is no CI dry-run mode.
+  # below are belt-and-braces. This job `needs: packaging-smoke`, which
+  # builds and install-tests these artifacts in clean target-OS containers
+  # — a broken install path blocks the release rather than shipping. Run
+  # ./packaging/tests/run-smoke.sh to reproduce the smoke locally.
 
   release-artifacts:
+    needs: [packaging-smoke]
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
