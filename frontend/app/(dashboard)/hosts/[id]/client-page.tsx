@@ -382,6 +382,11 @@ function CurrentStateSection({
     try {
       await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
+      // Also refetch the host row: a firewall collect can newly detect the
+      // firewall backend (host.firewall_backend), and any collect updates the
+      // host sync_status. Without this the Rules tab stays on "No Firewall
+      // Detected" even after detection succeeded.
+      await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
     setCollecting(false)
   }
@@ -712,7 +717,7 @@ export default function HostDetailPage() {
   const params = useParams()
   const id = Number(params.id)
   const queryClient = useQueryClient()
-  const { registerSync } = useSyncTray()
+  const { registerSync, jobs: trayJobs } = useSyncTray()
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get("tab") as HostTab) || "overview"
   const [activeTab, setActiveTab] = useState<HostTab>(initialTab)
@@ -811,9 +816,11 @@ export default function HostDetailPage() {
   } | null>(null)
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
-  // tabKey (present for a single-module apply) tells the polling effect which
-  // module tab's queries to invalidate when the job finishes.
-  const [bulkJob, setBulkJob] = useState<{ id: number; status: string; tabKey?: string } | null>(null)
+  // Sync jobs we triggered and are waiting to finish, with the query keys to
+  // invalidate once they do. Progress itself lives in the global sync tray —
+  // we only watch the tray's job state (no second poller) to refresh this
+  // host's data when a job reaches a terminal state.
+  const [pendingSyncJobs, setPendingSyncJobs] = useState<{ id: number; keys: string[][] }[]>([])
 
   // Memoized on id so it's stable across renders (safe to depend on in effects).
   const tabQueryKeys: Record<string, string[][]> = useMemo(() => ({
@@ -845,7 +852,6 @@ export default function HostDetailPage() {
   const openModulePreview = async (tabKey: string) => {
     const moduleName = tabToModule[tabKey]
     setApplyError(null)
-    setBulkJob(null)
     setSyncPreview({ scope: "module", tabKey, module: moduleName, loading: true, error: null, diffs: null })
     try {
       const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
@@ -862,7 +868,6 @@ export default function HostDetailPage() {
 
   const openSyncAllPreview = async () => {
     setApplyError(null)
-    setBulkJob(null)
     setSyncPreview({ scope: "all", tabKey: null, module: null, loading: true, error: null, diffs: null })
     try {
       const diffs = await apiFetch<ModuleDiff[]>(`/api/sync/hosts/${id}/preview`, {
@@ -881,7 +886,6 @@ export default function HostDetailPage() {
     if (applying) return
     setSyncPreview(null)
     setApplyError(null)
-    setBulkJob(null)
   }
 
   const applyModuleSync = async () => {
@@ -891,20 +895,21 @@ export default function HostDetailPage() {
     setApplying(true)
     setApplyError(null)
     try {
-      // Go through the coalesced bulk job (single-module filter) so the sync is
-      // trackable: it returns a job id we register with the global tray and poll
-      // for completion — instead of the old fire-and-forget per-module POST that
-      // invalidated caches immediately (before the sync had actually run).
+      // Coalesced bulk job with a single-module filter. The returned job id is
+      // handed to the global sync tray, which owns progress and completion.
+      // We close the dialog immediately (matching the group sync flow) and only
+      // watch the job id to refresh this host's queries once it finishes.
       const resp = await apiFetch<{ job_id: number; status: string }>(`/api/sync/hosts/${id}/bulk`, {
         method: "POST",
         body: JSON.stringify({ module_filter: [moduleName] }),
       })
-      setBulkJob({ id: resp.job_id, status: resp.status, tabKey })
       registerSync({
         label: `${host?.hostname ?? "Host"} — ${moduleLabel(moduleName)}`,
         jobIds: [resp.job_id],
       })
-      // Terminal state + cache invalidation handled by the polling effect.
+      setPendingSyncJobs((prev) => [...prev, { id: resp.job_id, keys: tabQueryKeys[tabKey] ?? [] }])
+      setApplying(false)
+      setSyncPreview(null)
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : "Sync failed")
       setApplying(false)
@@ -928,43 +933,40 @@ export default function HostDetailPage() {
         method: "POST",
         body: JSON.stringify({ module_filter: modulesToApply }),
       })
-      setBulkJob({ id: resp.job_id, status: resp.status })
       registerSync({ label: `${host?.hostname ?? "Host"} — Sync All`, jobIds: [resp.job_id] })
-      // Terminal state + cache invalidation handled by the polling effect.
+      // Sync All: refresh every module tab's queries when the job finishes.
+      setPendingSyncJobs((prev) => [
+        ...prev,
+        { id: resp.job_id, keys: Object.values(tabQueryKeys).flat() },
+      ])
+      setApplying(false)
+      setSyncPreview(null)
     } catch (e) {
       setApplyError(e instanceof Error ? e.message : "Sync failed")
       setApplying(false)
     }
   }
 
-  // Poll the coalesced bulk SyncJob until it reaches a terminal state.
+  // Progress polling is owned by the global sync tray (a single source of
+  // truth). We only watch the tray's job state for the syncs we triggered and,
+  // when one reaches a terminal state, refresh this host's queries — no second
+  // poller, so the dialog and tray can't disagree on completion.
   useEffect(() => {
-    if (!bulkJob) return
-    if (bulkJob.status === "success" || bulkJob.status === "failed") return
-    let cancelled = false
-    const poll = async () => {
-      try {
-        const data = await apiFetch<{ id: number; status: string }>(`/api/sync/jobs/${bulkJob.id}`)
-        if (cancelled) return
-        setBulkJob({ id: data.id, status: data.status })
-        if (data.status === "success" || data.status === "failed") {
-          setApplying(false)
-          await queryClient.invalidateQueries({ queryKey: ["host", id] })
-          await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
-          // Single-module apply: refresh that tab's effective-config queries too.
-          for (const key of (bulkJob.tabKey && tabQueryKeys[bulkJob.tabKey]) || [])
-            await queryClient.invalidateQueries({ queryKey: key })
-        }
-      } catch {
-        /* transient — keep polling */
-      }
-    }
-    const interval = setInterval(poll, 3000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [bulkJob, id, queryClient, tabQueryKeys])
+    if (pendingSyncJobs.length === 0) return
+    const TERMINAL = new Set(["success", "failed", "cancelled"])
+    const finished = pendingSyncJobs.filter((p) => TERMINAL.has(trayJobs[p.id]?.status ?? ""))
+    if (finished.length === 0) return
+    const keys: string[][] = [
+      ["host", String(id)],
+      ["host-current-state", String(id)],
+      ...finished.flatMap((p) => p.keys),
+    ]
+    void (async () => {
+      for (const key of keys) await queryClient.invalidateQueries({ queryKey: key })
+    })()
+    const finishedIds = new Set(finished.map((p) => p.id))
+    setPendingSyncJobs((prev) => prev.filter((p) => !finishedIds.has(p.id)))
+  }, [trayJobs, pendingSyncJobs, id, queryClient])
 
   const [editHostname, setEditHostname] = useState("")
   const [editIp, setEditIp] = useState("")
@@ -5493,12 +5495,6 @@ export default function HostDetailPage() {
                 </>
               )}
 
-              {bulkJob && (
-                <div className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-300">
-                  Job status: <span className="font-medium">{bulkJob.status}</span>
-                </div>
-              )}
-
               {applyError && (
                 <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-400 text-sm">
                   {applyError}
@@ -5508,7 +5504,6 @@ export default function HostDetailPage() {
 
             <DialogFooter>
               {(() => {
-                const jobDone = bulkJob?.status === "success" || bulkJob?.status === "failed"
                 // Once the preview has loaded with nothing to apply, the primary
                 // action is just to dismiss — a disabled "Apply Changes" reads as
                 // "something is broken" rather than "nothing to do".
@@ -5520,9 +5515,9 @@ export default function HostDetailPage() {
                 return (
                   <>
                     <Button variant="outline" onClick={closeSyncPreview} disabled={applying}>
-                      {jobDone || noChanges ? "Close" : "Cancel"}
+                      {noChanges ? "Close" : "Cancel"}
                     </Button>
-                    {!jobDone && !noChanges && (
+                    {!noChanges && (
                       <Button
                         onClick={syncPreview.scope === "all" ? applyBulkSync : applyModuleSync}
                         disabled={applying || syncPreview.loading || !!syncPreview.error || !syncPreview.diffs}

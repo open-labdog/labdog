@@ -72,7 +72,7 @@ services:
   - service_name: postgresql
     state: running
     enabled: true
-    comment: "Postgres 16 main"
+    comment: "Postgres 18 main"
 
   - service_name: fail2ban
     state: running
@@ -96,11 +96,11 @@ package_repositories:
     state: present
 
 packages:
-  - package_name: postgresql-16
+  - package_name: postgresql-18
     state: present
     package_manager: apt
 
-  - package_name: postgresql-client-16
+  - package_name: postgresql-client-18
     state: present
 
   - package_name: pgbackrest

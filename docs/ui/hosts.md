@@ -51,7 +51,7 @@ Shows a single host's configuration, group memberships, and per-module sync stat
 - Edit the host's connection settings
 - Enable or disable **drift detection** for this host
 - Open the **SSH terminal**
-- Trigger a **sync** for individual modules
+- **Sync** an individual module or all modules at once — each opens a diff **preview** before applying, with live progress shown in the global sync tray
 - View and discover the host's **Proxmox VM mapping**
 - See **live CPU / memory / disk usage** when a Grafana backend is
   configured — see [Live host metrics](metrics.md)
