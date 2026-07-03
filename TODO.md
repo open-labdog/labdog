@@ -25,19 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Mark `version-check` as a required status check on `main`.**
-      The new release pipeline gates release PRs on a `version-check`
-      job that asserts `VERSION` is bumped, semver-shaped, and the
-      `vX.Y.Z` tag isn't already taken. The gate only enforces if
-      branch protection on `main` lists `version-check` as a required
-      status check — otherwise a maintainer can merge a PR even when
-      the job fails or is skipped. Configure in
-      **Settings → Branches → main → Branch protection rules →
-      Require status checks to pass before merging → search for
-      "version-check"**. Same screen, also confirm "Require branches
-      to be up to date" so the check runs against the actual merge
-      commit. This is GitHub repo config, not a code change — won't
-      land in any commit; needs a maintainer with admin rights.
 - [ ] **Audit GitHub Actions pins for Node 24 readiness (low priority).**
       GitHub is deprecating the Node 20 runtime on Actions runners; the
       runner default has already moved to Node 24 (surfaced as a warning
