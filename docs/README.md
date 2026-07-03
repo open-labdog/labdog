@@ -37,7 +37,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/](./ui/README.md) | Overview of every page in the LabDog web interface |
 | [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Collect State |
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
-| [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, Firewall Sync) |
+| [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, CA certs) and preview-then-apply syncing |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
 | [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Schedules — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |

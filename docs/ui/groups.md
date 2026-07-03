@@ -53,7 +53,7 @@ Shows the group's metadata, sync status summary, GitOps status, and tabs for eve
 | Error | Hosts where the last check failed |
 | Unknown | Hosts never checked |
 
-The **Sync** button in the top-right of the card triggers an immediate sync for all hosts in the group.
+The **Sync all modules** button in the top-right of the card previews every changed module across all hosts in the group, then applies them on confirmation. See [Syncing changes](#syncing-changes).
 
 ### GitOps Card
 
@@ -72,8 +72,9 @@ Shows whether this group is managed by a Git repository. Click **Enable** to lin
 | Packages | [Packages](#packages) |
 | CA Certs | [CA Certificates](#ca-certificates) |
 | DNS Resolver | [DNS Resolver](#dns-resolver) |
-| Firewall Sync | [Firewall Sync](#firewall-sync) |
 | Schedules | [Schedules](scheduled-actions.md) |
+
+Every module tab carries its own **Sync** button; the Sync Status card also has a **Sync all modules** button. Both are preview-first — see [Syncing changes](#syncing-changes).
 
 ---
 
@@ -153,7 +154,7 @@ Two tables: **Package Rules** and **Package Repositories**.
 
 | Column | Description |
 |--------|-------------|
-| Package Name | e.g. `nginx`, `postgresql-16` |
+| Package Name | e.g. `nginx`, `postgresql-18` |
 | Version | `any` (latest), or a pinned version string |
 | State | `present`, `absent`, or `latest` |
 | Package Manager | `auto` (detect from OS), `apt`, `dnf`, or `yum` |
@@ -311,50 +312,47 @@ The **Recent Deployment Runs** panel below the table shows the per-host outcome 
 
 ---
 
-## Firewall Sync
+## Syncing changes
 
-![Firewall Sync page](screenshots/group-sync.png)
+LabDog applies a group's desired configuration to its hosts over SSH.
+There are two entry points, both **preview-first**:
 
-**Path:** `/groups/{id}/sync`
+- **Per module** — each module tab (Rules, Services, Hosts File, Users,
+  Cron Jobs, Packages, CA Certs, DNS Resolver) has a **Sync _module_**
+  button (e.g. "Sync Firewall Rules") that previews and applies just that
+  module across every host in the group.
+- **All modules at once** — the **Sync all modules** button on the Sync
+  Status card previews and applies every changed module across the group
+  in a single operation.
 
-The Firewall Sync tab previews and applies **firewall rule** changes
-across every host in the group. Other modules (Services, Packages,
-Hosts File, Cron Jobs, Linux Users, DNS Resolver, CA Certs) sync from
-their own per-tab **Sync** buttons.
+### 1. Preview
 
-Behind the scenes (v0.2.0+) every per-tab sync goes through the
-unified per-host orchestrator with a single-module filter, so two
-tabs syncing the same host queue rather than race over SSH. The UI
-contract is unchanged — each module still has its own Sync button
-and audit row — but the underlying ansible-runner invocations are
-serialised per host.
+Both buttons open a **Preview** dialog first. LabDog computes a per-host
+diff between the desired state (stored in its database, merged across all
+groups the host belongs to) and the current state fetched live over SSH.
+Each host card shows:
 
-The flow has two steps:
+- Config to **add** (green, `+` prefix)
+- Config to **remove** (red, `-` prefix)
+- Config **unchanged** (grey, indented)
 
-### 1. Preview Changes
+Hosts already in sync are flagged "no changes". A module whose current
+state could not be read is shown as an error and is **never applied
+blind** — only cleanly-previewed, changed modules are sent.
 
-Click **Preview Changes** to compute a per-host firewall diff between
-the desired state (stored in LabDog's database, merged across all
-groups the host belongs to) and the current state on each host
-(fetched live over SSH). Each host card expands to show:
+### 2. Apply
 
-- Rules to **add** (green, `+` prefix)
-- Rules to **remove** (red, `-` prefix)
-- Rules **unchanged** (grey, indented)
+Confirm the dialog to apply. Each host runs as a background job through
+the unified per-host orchestrator (v0.2.0+): one Ansible playbook per
+host covering every requested module, so two syncs targeting the same
+host queue rather than race over SSH. LabDog generates the playbook from
+the previewed diff, runs it via `ansible-runner`, updates the per-host
+and per-module sync status, and writes an audit-log entry.
 
-Hosts already in sync are flagged "no changes" inline; if every host
-is in sync, the preview header reads "All hosts in sync."
+### Progress
 
-### 2. Apply Changes
-
-Click **Apply Changes** and confirm the dialog to run the Ansible
-firewall playbook. LabDog:
-
-1. Generates the playbook from the previewed diff
-2. Runs it via `ansible-runner` against each host
-3. Updates per-host firewall sync status
-4. Writes an audit log entry with before/after rule sets
-
-Apply runs as a background job — the page polls for completion and
-shows live status (`pending` → `running` → `success`/`failed`). Only
-one firewall sync can run per group at a time.
+Applied syncs are tracked in the **global Sync tray** at the bottom-right
+of every page — a live progress bar per operation, a per-host and
+per-module drill-down, and a success/failure toast on completion. You can
+navigate away while a sync runs; the tray keeps tracking until every job
+reaches a terminal state.
