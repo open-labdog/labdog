@@ -107,9 +107,20 @@ _build-venv: fetch-bundled-pack
 	@find $(DESTDIR)$(PREFIX)/venv/bin -maxdepth 1 -type f | while read f; do \
 		head -c2 "$$f" | grep -q '^#!' && sed -i "1s|$(DESTDIR)||g" "$$f" || true; \
 	done
-	@echo "[build-venv] Fixing pyvenv.cfg..."
-	@PYDIR=$$(dirname $$($(PYTHON) -c "import sys; print(sys.executable)")); \
-	sed -i "s|home = .*|home = $$PYDIR|g" $(DESTDIR)$(PREFIX)/venv/pyvenv.cfg
+	@echo "[build-venv] Relocating venv to the target system python..."
+	@# The venv is created with whatever python3.12 built it. In CI that is
+	@# a tool-cache python (e.g. /opt/hostedtoolcache/...) whose path does
+	@# NOT exist on the target host, leaving venv/bin/python a dangling
+	@# symlink and the install broken. Repoint bin/python* and pyvenv.cfg
+	@# at the distro python3.12 the package depends on — /usr/bin/python3.12
+	@# on both Ubuntu 24.04 and Rocky 9 — so the installed venv actually
+	@# runs. (Safe: the venv's 3.12.x site-packages are ABI-compatible with
+	@# the target's 3.12.x interpreter.)
+	@ln -sfn /usr/bin/python3.12 $(DESTDIR)$(PREFIX)/venv/bin/python3.12
+	@ln -sfn python3.12 $(DESTDIR)$(PREFIX)/venv/bin/python3
+	@ln -sfn python3.12 $(DESTDIR)$(PREFIX)/venv/bin/python
+	@sed -i "s|^home = .*|home = /usr/bin|" $(DESTDIR)$(PREFIX)/venv/pyvenv.cfg
+	@sed -i "s|^executable = .*|executable = /usr/bin/python3.12|" $(DESTDIR)$(PREFIX)/venv/pyvenv.cfg
 	@echo "[build-venv] Stripping bytecode..."
 	@find $(DESTDIR)$(PREFIX)/venv -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
 	@find $(DESTDIR)$(PREFIX)/venv -name "*.pyc" -delete 2>/dev/null; true
