@@ -25,15 +25,16 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Container-based packaging smoke test in CI.** A hand-run
-      smoke pass during v0.2.0 prep surfaced and fixed three
-      install-path bugs (see `git log --grep packaging` for the
-      individual fix commits). Still open: add `packaging/tests/`
-      with a containerised harness (Ubuntu 24.04 .deb, Rocky 9 .rpm,
-      Ubuntu 24.04 tarball-via-install.sh) and a new CI job that
-      runs it after `release-artifacts`, so the smoke procedure that
-      was run by hand for v0.2.0 becomes a permanent gate on
-      subsequent releases.
+- [ ] **Promote `packaging-smoke` to a hard release gate (optional).**
+      The `packaging-smoke` CI job builds the `.deb` / `.rpm` / `.tar.gz`
+      and install-tests each in a target-OS container (Ubuntu 24.04,
+      Rocky 9) on every release commit and packaging PR — see
+      `packaging/tests/`. It currently runs as a **visible check**, not a
+      hard blocker: `release-artifacts` does not `needs:` it, so a broken
+      package shows red but doesn't stop the tag/release. Promote it to a
+      hard gate (`needs: [packaging-smoke]` on `release-artifacts`) once it
+      has proven stable across a few releases — accepting that a transient
+      base-image pull / Docker Hub hiccup could then block a release.
 - [ ] **Mark `version-check` as a required status check on `main`.**
       The new release pipeline gates release PRs on a `version-check`
       job that asserts `VERSION` is bumped, semver-shaped, and the
