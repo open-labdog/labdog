@@ -196,9 +196,16 @@ async def collect_state(
     # backend, NIC, and the placeholder-hostname auto-heal). Fire-and-
     # forget on the long_running queue -- the UI re-fetches the host
     # row via React Query so the new fields surface on next refresh.
-    # Skipped on collect-one-module calls since the operator is focused
-    # on a single module surface, not the Overview tab.
-    if module is None:
+    # Normally skipped on collect-one-module calls (the operator is focused
+    # on a single module surface, not the Overview tab) -- but also run it
+    # when a firewall collect ran against a host whose backend is still
+    # unknown, so "Collect" on the Rules tab detects the firewall the same
+    # way the Overview "collect all" does (its robust probe is what sets
+    # host.firewall_backend). Gated on still-unknown so a detected host
+    # doesn't re-probe on every collect.
+    backend_value = getattr(host.firewall_backend, "value", host.firewall_backend)
+    firewall_unknown = str(backend_value) == "unknown"
+    if module is None or (module == "firewall" and firewall_unknown):
         from app.tasks.facts import collect_host_facts
 
         collect_host_facts.delay(host_id)

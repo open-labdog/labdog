@@ -382,6 +382,11 @@ function CurrentStateSection({
     try {
       await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
+      // Also refetch the host row: a firewall collect can newly detect the
+      // firewall backend (host.firewall_backend), and any collect updates the
+      // host sync_status. Without this the Rules tab stays on "No Firewall
+      // Detected" even after detection succeeded.
+      await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
     setCollecting(false)
   }
