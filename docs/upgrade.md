@@ -92,7 +92,7 @@ not for stable installs.
 docker inspect labdog | grep -i 'image\|labdog/labdog'
 
 # 2. Pull the new image and recreate the container.
-docker pull ghcr.io/open-labdog/labdog:0.2.0
+docker pull ghcr.io/open-labdog/labdog:0.6.1
 docker compose -f /etc/labdog/compose.yaml up -d labdog
 
 # 3. Watch the logs as alembic runs.
@@ -106,7 +106,7 @@ points at:
 ```yaml
 services:
   labdog:
-    image: ghcr.io/open-labdog/labdog:0.2.0
+    image: ghcr.io/open-labdog/labdog:0.6.1
 ```
 
 ### Debian / Ubuntu (.deb)
