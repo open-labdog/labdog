@@ -47,6 +47,9 @@ class ModuleState(BaseModel):
     collected_at: datetime | None = None
     drift_check_enabled: bool = False
     error_message: str | None = None
+    # Non-fatal notices computed at collect time (not persisted): e.g. the
+    # firewall competing-store warning. Empty on the cached GET /current-state.
+    warnings: list[str] = []
 
 
 @router.get("/{host_id}/current-state", response_model=list[ModuleState])
@@ -107,6 +110,9 @@ async def collect_state(
 
     now = datetime.now(UTC)
     results: list[ModuleState] = []
+    # Non-fatal, collect-time-only notices, keyed by module. Currently only the
+    # firewall competing-store warning; recomputed each collect, never persisted.
+    warnings_by_module: dict[str, list[str]] = {}
 
     # Connectivity check: probe SSH before running any collectors.
     # If the host is unreachable, mark ALL modules and return immediately.
@@ -118,6 +124,17 @@ async def collect_state(
             client_keys=[imported_key],
         ) as probe:
             host.labdog_source_ip = await get_source_ip(probe)
+            # While we hold a connection, check whether LabDog-managed rules
+            # linger in the backend we are NOT managing (dual-stack hosts). Skip
+            # when the backend is still unknown — detection runs later in the
+            # firewall collector and emits its own competing-store notice.
+            if "firewall" in collectors:
+                active_backend = getattr(host.firewall_backend, "value", host.firewall_backend)
+                if str(active_backend) in ("nftables", "iptables"):
+                    competing = await _probe_competing_firewall_store(probe, str(active_backend))
+                    if competing:
+                        warnings_by_module["firewall"] = [competing]
+                        logger.info("Host %d: %s", host_id, competing)
     except HostKeyMismatchError:
         raise
     except (TimeoutError, OSError, asyncssh.Error) as e:
@@ -184,6 +201,7 @@ async def collect_state(
                 collected_at=hms.collected_at,
                 drift_check_enabled=hms.drift_check_enabled,
                 error_message=hms.error_message,
+                warnings=warnings_by_module.get(module_type, []),
             )
         )
 
@@ -609,6 +627,81 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
     return collectors
 
 
+# ---------------------------------------------------------------------------
+# Firewall-backend probes
+#
+# A modern host almost always has *both* `nft` and `iptables` binaries present
+# (iptables is usually the iptables-nft shim), so "which binary exists" is a
+# weak signal. The probes below distinguish what actually matters:
+#
+#   * presence      — is the binary installed at all
+#   * LabDog marker — does this backend already carry a LabDog-managed ruleset
+#                     (used for *stickiness* and for the *competing-store*
+#                     warning). iptables isolates its rules in the LABDOG-INPUT
+#                     chain; nftables owns the whole `inet filter` table, whose
+#                     rules carry the "Managed by LabDog" comment.
+#   * active        — is *some* real input filtering configured in this backend
+#                     (a tiebreaker when neither backend carries a LabDog marker)
+#
+# The `nft` / `iptables` binaries are frequently in /usr/sbin, which isn't on a
+# non-login shell's PATH, so every command resolves the binary defensively.
+# ---------------------------------------------------------------------------
+
+# Managed by LabDog: firewall probe commands, not credentials.  # nosec B105
+_NFT = "n=$(command -v nft || echo /usr/sbin/nft)"
+_IPT = "i=$(command -v iptables || echo /usr/sbin/iptables)"
+
+_PROBE_NFT_PRESENT = "command -v nft >/dev/null 2>&1 || test -x /usr/sbin/nft"
+_PROBE_IPT_PRESENT = "command -v iptables >/dev/null 2>&1 || test -x /usr/sbin/iptables"
+# LabDog's nftables rules all carry the "Managed by LabDog" comment.
+_PROBE_NFT_LABDOG = f'{_NFT}; "$n" list table inet filter 2>/dev/null | grep -q "Managed by LabDog"'
+# LabDog's iptables rules live in the dedicated LABDOG-INPUT chain.
+_PROBE_IPT_LABDOG = f'{_IPT}; "$i" -S LABDOG-INPUT >/dev/null 2>&1'
+# "active" = some real input filtering exists (LabDog's or the operator's).
+_PROBE_NFT_ACTIVE = f'{_NFT}; "$n" list table inet filter 2>/dev/null | grep -qE "hook input"'
+_PROBE_IPT_ACTIVE = (
+    f'{_IPT}; "$i" -S LABDOG-INPUT >/dev/null 2>&1 '
+    f'|| "$i" -S INPUT 2>/dev/null | grep -qvE "^-P|^-N"'
+)
+
+
+async def _probe_ok(conn, command: str) -> bool:
+    """Run a probe command over SSH; True when it exits 0."""
+    r = await conn.run(command, check=False)
+    return r.exit_status == 0
+
+
+async def _probe_competing_firewall_store(conn, active_backend: str) -> str | None:
+    """Warn when LabDog-managed rules linger in the *non-active* backend.
+
+    On a dual-stack host LabDog manages exactly one backend, but a leftover
+    LabDog ruleset can survive in the other one — e.g. after the operator
+    switches backends, or after a manual `iptables -F LABDOG-INPUT` on a host
+    LabDog actually manages via nftables. Collection only ever reads the active
+    backend, so those stale rules are invisible to the "Current State" view yet
+    may still be filtering traffic. Surface that explicitly; the next firewall
+    sync tears the stale store down (see ``generate_firewall_playbook``).
+
+    Returns a human-readable warning, or ``None`` when there is no competing
+    store. ``active_backend`` must be ``"nftables"`` or ``"iptables"``.
+    """
+    if active_backend == "nftables":
+        if await _probe_ok(conn, _PROBE_IPT_LABDOG):
+            return (
+                "nftables is the active backend, but LabDog-managed iptables rules "
+                "(LABDOG-INPUT / LABDOG-OUTPUT) are still present on this host. They are "
+                "ignored by collection and will be removed on the next firewall sync."
+            )
+    elif active_backend == "iptables":
+        if await _probe_ok(conn, _PROBE_NFT_LABDOG):
+            return (
+                "iptables is the active backend, but a LabDog-managed nftables "
+                "'inet filter' table is still present on this host. It is ignored by "
+                "collection and will be removed on the next firewall sync."
+            )
+    return None
+
+
 async def _detect_firewall_backend(
     host_ip: str,
     ssh_port: int,
@@ -618,11 +711,34 @@ async def _detect_firewall_backend(
     db: AsyncSession,
     host: Host | None = None,
 ) -> tuple[str | None, list[str]]:
-    """Auto-detect firewall backend by probing for known tools.
+    """Auto-detect the firewall backend for a host with no backend pinned yet.
 
-    Returns (backend, info_messages) where info_messages are user-facing
-    notices about wrapper firewalls (firewalld/ufw) that have been marked
-    for disabling.
+    Only ever called when ``host.firewall_backend == "unknown"`` — a value the
+    operator set (via the host edit form) or that a previous detection wrote is
+    authoritative and is never overridden here. In other words, *operator
+    override* and *DB-level stickiness* are enforced by the caller
+    (``_collect_firewall``); this function decides the greenfield case.
+
+    Because both binaries are usually installed, the decision is a first-match
+    ladder rather than a simple presence check:
+
+      1. Only one backend installed → that one.
+      2. **Marker stickiness** — if exactly one backend already carries a
+         LabDog-managed ruleset, keep it (avoids flip-flopping and orphaning our
+         own rules). If *both* do, that's a competing store: warn and fall
+         through to the tiebreakers.
+      3. **Container-runtime constraint** — Docker / kube-proxy (iptables mode)
+         / nerdctl+CNI hardcode iptables and will fight an nftables ruleset, so
+         they force **iptables**. This is a correctness constraint, not a
+         preference, but it sits *below* stickiness so we never yank a working
+         operator-established setup out from under them.
+      4. **Active-ruleset signal** — whichever backend already has real input
+         filtering configured wins.
+      5. **Default → nftables** (the modern default) on a greenfield host.
+
+    Returns (backend, info_messages). ``info_messages`` are user-facing notices:
+    the reason the backend was chosen, any competing-store warning, and the
+    firewalld/ufw wrapper notices (those also mark the wrapper for disabling).
     """
     from app.packages.models import PackageRule, PackageState
     from app.services.models import ServiceRule, ServiceState
@@ -642,77 +758,102 @@ async def _detect_firewall_backend(
                 client_keys=[key],
             )
         async with _connect_ctx as conn:
-            # Check for nftables (nft may be in /usr/sbin which isn't always in PATH)
-            r = await conn.run("command -v nft || test -x /usr/sbin/nft", check=False)
-            if r.exit_status == 0:
-                backend = "nftables"
+            # --- Capability + footprint probes (see module-level docs) ---
+            nft_present = await _probe_ok(conn, _PROBE_NFT_PRESENT)
+            iptables_present = await _probe_ok(conn, _PROBE_IPT_PRESENT)
 
-            # Cached helper: check iptables availability at most once across
-            # all container-runtime downgrade checks below.
-            iptables_available = None
-
-            async def _check_iptables_available() -> bool:
-                nonlocal iptables_available
-                if iptables_available is None:
-                    r = await conn.run(
-                        "command -v iptables || test -x /usr/sbin/iptables",
-                        check=False,
-                    )
-                    iptables_available = r.exit_status == 0
-                return iptables_available
-
-            # If Docker is running, prefer iptables — Docker defaults to
-            # iptables and its nftables support is experimental (v29+).
-            if backend == "nftables":
-                r = await conn.run(
+            # A container runtime that hardcodes iptables forces the iptables
+            # backend (step 3). Only meaningful when iptables is installed.
+            async def _container_forces_iptables() -> str | None:
+                if not iptables_present:
+                    return None
+                # Docker: defaults to iptables; its nftables support is
+                # experimental (v29+).
+                if await _probe_ok(
+                    conn,
                     "test -S /run/docker.sock || systemctl is-active --quiet docker 2>/dev/null",
-                    check=False,
-                )
-                if r.exit_status == 0:
-                    if await _check_iptables_available():
-                        backend = "iptables"
-                        messages.append(
-                            "Docker detected; using iptables backend (Docker defaults to iptables)."
-                        )
-
-            # If kube-proxy is running in iptables mode, prefer iptables to
-            # avoid conflicts with KUBE-* chains it manages.
-            if backend == "nftables":
-                r = await conn.run(
+                ):
+                    return "Docker detected; using iptables backend (Docker defaults to iptables)."
+                # kube-proxy in iptables mode manages KUBE-* chains.
+                if await _probe_ok(
+                    conn,
                     "systemctl is-active --quiet kubelet 2>/dev/null && "
                     "iptables -S 2>/dev/null | grep -q KUBE-",
-                    check=False,
-                )
-                if r.exit_status == 0:
-                    if await _check_iptables_available():
-                        backend = "iptables"
-                        messages.append(
-                            "Kubernetes kube-proxy (iptables mode) detected; "
-                            "using iptables backend to avoid rule conflicts."
-                        )
-
-            # If nerdctl with rootful CNI networking is present, prefer
-            # iptables — CNI plugins default to iptables rules.
-            if backend == "nftables":
-                r = await conn.run(
-                    "command -v nerdctl >/dev/null 2>&1 && "
-                    "test -d /etc/cni/net.d && "
+                ):
+                    return (
+                        "Kubernetes kube-proxy (iptables mode) detected; using iptables "
+                        "backend to avoid rule conflicts."
+                    )
+                # nerdctl with rootful CNI networking; CNI plugins default to iptables.
+                if await _probe_ok(
+                    conn,
+                    "command -v nerdctl >/dev/null 2>&1 && test -d /etc/cni/net.d && "
                     "ls /etc/cni/net.d/nerdctl-*.conflist >/dev/null 2>&1",
-                    check=False,
-                )
-                if r.exit_status == 0:
-                    if await _check_iptables_available():
-                        backend = "iptables"
-                        messages.append(
-                            "nerdctl with CNI networking detected; using iptables "
-                            "backend (CNI plugins default to iptables)."
-                        )
+                ):
+                    return (
+                        "nerdctl with CNI networking detected; using iptables backend "
+                        "(CNI plugins default to iptables)."
+                    )
+                return None
 
-            # Check for iptables
-            if backend is None:
-                r = await conn.run("command -v iptables || test -x /usr/sbin/iptables", check=False)
-                if r.exit_status == 0:
+            # --- Decision ladder (first match wins) ---
+            if nft_present and not iptables_present:
+                backend = "nftables"
+                messages.append("Only nftables is installed; using the nftables backend.")
+            elif iptables_present and not nft_present:
+                backend = "iptables"
+                messages.append("Only iptables is installed; using the iptables backend.")
+            elif nft_present and iptables_present:
+                nft_labdog = await _probe_ok(conn, _PROBE_NFT_LABDOG)
+                ipt_labdog = await _probe_ok(conn, _PROBE_IPT_LABDOG)
+
+                # 2. Marker stickiness — keep whichever backend LabDog already manages.
+                if nft_labdog and not ipt_labdog:
+                    backend = "nftables"
+                    messages.append(
+                        "Both firewalls installed; keeping nftables (an existing "
+                        "LabDog-managed nftables ruleset was found)."
+                    )
+                elif ipt_labdog and not nft_labdog:
                     backend = "iptables"
+                    messages.append(
+                        "Both firewalls installed; keeping iptables (an existing "
+                        "LabDog-managed iptables ruleset was found)."
+                    )
+                else:
+                    # Either both carry a LabDog ruleset (competing store — warn and
+                    # pick via the tiebreakers) or neither does (a fresh host).
+                    if nft_labdog and ipt_labdog:
+                        messages.append(
+                            "LabDog-managed rules found in BOTH nftables and iptables — "
+                            "the inactive backend's copy will be removed on the next sync."
+                        )
+                    container_reason = await _container_forces_iptables()
+                    if container_reason:
+                        # 3. Container-runtime constraint (hard).
+                        backend = "iptables"
+                        messages.append(container_reason)
+                    else:
+                        # 4. Active-ruleset tiebreaker, else 5. default nftables.
+                        nft_active = await _probe_ok(conn, _PROBE_NFT_ACTIVE)
+                        ipt_active = await _probe_ok(conn, _PROBE_IPT_ACTIVE)
+                        if nft_active and not ipt_active:
+                            backend = "nftables"
+                            messages.append(
+                                "Both firewalls installed; using nftables "
+                                "(an active nftables ruleset was found)."
+                            )
+                        elif ipt_active and not nft_active:
+                            backend = "iptables"
+                            messages.append(
+                                "Both firewalls installed; using iptables "
+                                "(an active iptables ruleset was found)."
+                            )
+                        else:
+                            backend = "nftables"
+                            messages.append(
+                                "Both firewalls installed; defaulting to the nftables backend."
+                            )
 
             # Check for firewalld wrapper
             r = await conn.run(
