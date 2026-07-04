@@ -5,11 +5,35 @@ The function opens its own SSH connection internally, so we patch
 asyncssh.import_private_key (to avoid key parsing) and ssh_connect
 (to inject a mock connection).  The database session is mocked to
 return empty result-sets for the firewalld/ufw package-rule checks.
+
+conn.run() is mocked with a substring matcher (``make_run_side_effect``):
+the first key that is a substring of the command wins, everything else
+returns exit 1 (== "absent"/"false").  The token constants below are
+chosen so each probe is matched by a substring unique to that probe's
+command — see the ``_PROBE_*`` constants in host_state.  Because the
+iptables "active" probe string is a superset of the iptables "LabDog"
+probe string, its unique token (``T_IPT_ACTIVE``) must be inserted into
+the mapping *before* ``T_IPT_LABDOG`` for the active case.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.api.host_state import _detect_firewall_backend
+from app.api.host_state import _detect_firewall_backend, _probe_competing_firewall_store
+
+# ---------------------------------------------------------------------------
+# Probe tokens — each is a substring of exactly one _PROBE_* command
+# ---------------------------------------------------------------------------
+
+T_NFT_PRESENT = "command -v nft >/dev/null"  # _PROBE_NFT_PRESENT (labdog/active use "|| echo")
+T_IPT_PRESENT = "command -v iptables >/dev/null"  # _PROBE_IPT_PRESENT
+T_NFT_LABDOG = "Managed by LabDog"  # _PROBE_NFT_LABDOG only
+T_NFT_ACTIVE = "hook input"  # _PROBE_NFT_ACTIVE only
+T_IPT_ACTIVE = "grep -qvE"  # _PROBE_IPT_ACTIVE only (must precede T_IPT_LABDOG)
+T_IPT_LABDOG = "LABDOG-INPUT >/dev/null 2>&1"  # in both ipt LabDog + active commands
+T_DOCKER = "docker.sock"
+T_KUBE = "kubelet"
+T_NERDCTL = "nerdctl"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -19,7 +43,8 @@ from app.api.host_state import _detect_firewall_backend
 def make_run_side_effect(command_results: dict[str, int]):
     """Return an async side-effect for conn.run() keyed on command substrings.
 
-    The first matching key wins.  Any command not matched returns exit_status=1.
+    The first matching key (in insertion order) wins.  Any command not matched
+    returns exit_status=1.
     """
 
     async def side_effect(cmd, check=False):
@@ -90,120 +115,131 @@ async def _run(command_results: dict[str, int]):
 
 
 # ---------------------------------------------------------------------------
-# Test cases
+# Single-backend cases
 # ---------------------------------------------------------------------------
 
 
-class TestFirewallBackendDetection:
-    async def test_nftables_no_containers(self):
-        """nft present, no Docker/k8s/nerdctl — stays nftables, no messages."""
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                # All container checks return non-zero (absent)
-            }
-        )
+class TestSingleBackendPresent:
+    async def test_only_nftables(self):
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0})
         assert backend == "nftables"
+        assert any("Only nftables" in m for m in messages)
+
+    async def test_only_iptables(self):
+        (backend, messages), *_ = await _run({T_IPT_PRESENT: 0})
+        assert backend == "iptables"
+        assert any("Only iptables" in m for m in messages)
+
+    async def test_neither_present(self):
+        (backend, messages), *_ = await _run({})
+        assert backend is None
         assert messages == []
 
-    async def test_docker_downgrades_to_iptables(self):
-        """nft + Docker + iptables available → iptables with Docker message."""
-        (backend, messages), conn, db = await _run(
+
+# ---------------------------------------------------------------------------
+# Both present — the decision ladder
+# ---------------------------------------------------------------------------
+
+
+class TestBothPresentLadder:
+    async def test_stickiness_nftables_labdog(self):
+        """Existing LabDog nftables ruleset → keep nftables."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_LABDOG: 0}
+        )
+        assert backend == "nftables"
+        assert any("keeping nftables" in m for m in messages)
+
+    async def test_stickiness_iptables_labdog(self):
+        """Existing LabDog iptables ruleset → keep iptables."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_LABDOG: 0}
+        )
+        assert backend == "iptables"
+        assert any("keeping iptables" in m for m in messages)
+
+    async def test_stickiness_beats_container_constraint(self):
+        """Stickiness (step 2) sits above the container constraint (step 3):
+        a LabDog nftables ruleset is kept even when Docker is present."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_LABDOG: 0, T_DOCKER: 0}
+        )
+        assert backend == "nftables"
+        assert any("keeping nftables" in m for m in messages)
+        # The container reason must not have been reached.
+        assert not any("Docker" in m for m in messages)
+
+    async def test_competing_store_warns_and_falls_through(self):
+        """LabDog rules in BOTH backends → warn, then decide via tiebreakers
+        (here Docker forces iptables)."""
+        (backend, messages), *_ = await _run(
             {
-                "command -v nft": 0,
-                "docker.sock": 0,  # Docker present
-                "command -v iptables": 0,  # iptables available
+                T_NFT_PRESENT: 0,
+                T_IPT_PRESENT: 0,
+                T_NFT_LABDOG: 0,
+                T_IPT_LABDOG: 0,
+                T_DOCKER: 0,
             }
         )
         assert backend == "iptables"
-        assert len(messages) == 1
-        assert "Docker" in messages[0]
+        assert any("BOTH" in m for m in messages)
+        assert any("Docker" in m for m in messages)
 
-    async def test_docker_no_iptables_stays_nftables(self):
-        """nft + Docker present but iptables absent → stays nftables."""
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                "docker.sock": 0,  # Docker present
-                # iptables check falls through to exit_status=1
-            }
-        )
-        assert backend == "nftables"
-        assert messages == []
-
-    async def test_kubeproxy_iptables_mode_downgrades(self):
-        """nft + no Docker + kubelet active + KUBE- chains + iptables → iptables."""
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                # Docker absent (docker.sock / systemctl docker not in map → exit 1)
-                "kubelet": 0,  # kubelet active AND KUBE- grep succeeds
-                "command -v iptables": 0,
-            }
+    async def test_container_docker_forces_iptables(self):
+        """No LabDog rules, Docker present → iptables (hard constraint)."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_DOCKER: 0}
         )
         assert backend == "iptables"
-        assert len(messages) == 1
-        assert "kube-proxy" in messages[0].lower() or "kubernetes" in messages[0].lower()
+        assert any("Docker" in m for m in messages)
 
-    async def test_kubeproxy_nftables_mode_no_downgrade(self):
-        """kubelet active but no KUBE- chains (nftables-mode kube-proxy) → nftables."""
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                # The combined kube command fails (grep -q KUBE- finds nothing)
-                # We need the combined kubelet command to fail, not the individual parts.
-                # Since our helper matches on substrings, we can't easily distinguish
-                # "kubelet active" from the full compound command.  The compound command
-                # key "systemctl is-active --quiet kubelet" is in the map, but we want
-                # it to fail (simulate KUBE- grep miss).
-                # We leave it unmapped so exit_status=1.
-            }
-        )
-        assert backend == "nftables"
-        assert messages == []
-
-    async def test_nerdctl_rootful_downgrades(self):
-        """nft + no Docker + no k8s + nerdctl + CNI conflist → iptables."""
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                "nerdctl": 0,  # nerdctl present + /etc/cni/net.d + conflist
-                "command -v iptables": 0,
-            }
+    async def test_container_kubeproxy_forces_iptables(self):
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_KUBE: 0}
         )
         assert backend == "iptables"
-        assert len(messages) == 1
-        assert "nerdctl" in messages[0].lower()
+        assert any("kube" in m.lower() for m in messages)
 
-    async def test_nerdctl_rootless_no_downgrade(self):
-        """nerdctl binary present but no /etc/cni/net.d conflist → nftables."""
-        # The compound nerdctl command checks for the conflist file; if the
-        # ls fails the whole compound exits non-zero.  We simulate that by
-        # NOT mapping "nerdctl" (so exit_status=1 for the compound check).
-        (backend, messages), conn, db = await _run(
-            {
-                "command -v nft": 0,
-                # nerdctl compound command not mapped → exit 1
-            }
+    async def test_container_nerdctl_forces_iptables(self):
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NERDCTL: 0}
+        )
+        assert backend == "iptables"
+        assert any("nerdctl" in m.lower() for m in messages)
+
+    async def test_active_ruleset_tiebreak_nftables(self):
+        """No LabDog rules, no container, only nftables has an active ruleset."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_ACTIVE: 0}
         )
         assert backend == "nftables"
-        assert messages == []
+        assert any("active nftables" in m for m in messages)
 
-    async def test_docker_preempts_kube_and_nerdctl(self):
-        """Docker triggers iptables downgrade; k8s + nerdctl probes must not run."""
-        conn, db, ctx = _make_ctx(
-            {
-                "command -v nft": 0,
-                "docker.sock": 0,
-                "command -v iptables": 0,
-            }
+    async def test_active_ruleset_tiebreak_iptables(self):
+        """No LabDog rules, no container, only iptables has an active ruleset.
+
+        T_IPT_ACTIVE is inserted before T_IPT_LABDOG so the iptables 'active'
+        probe resolves true while its 'LabDog' probe resolves false."""
+        (backend, messages), *_ = await _run(
+            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_ACTIVE: 0}
         )
-        # Intercept conn.run so we can record which commands were executed
+        assert backend == "iptables"
+        assert any("active iptables" in m for m in messages)
+
+    async def test_default_nftables_on_greenfield(self):
+        """Both installed, nothing configured → default to nftables."""
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0})
+        assert backend == "nftables"
+        assert any("defaulting" in m for m in messages)
+
+    async def test_docker_preempts_kube_and_nerdctl_probes(self):
+        """Once Docker forces iptables, kube/nerdctl probes must not run."""
+        conn, db, ctx = _make_ctx({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_DOCKER: 0})
         original_run = conn.run
-        executed_cmds: list[str] = []
+        executed: list[str] = []
 
         async def recording_run(cmd, check=False):
-            executed_cmds.append(cmd)
+            executed.append(cmd)
             return await original_run(cmd, check=check)
 
         conn.run = recording_run
@@ -212,34 +248,33 @@ class TestFirewallBackendDetection:
             patch(_PATCH_IMPORT_KEY, return_value=MagicMock()),
             patch(_PATCH_SSH_CONNECT, return_value=ctx),
         ):
-            backend, messages = await _detect_firewall_backend(
+            backend, _messages = await _detect_firewall_backend(
                 _HOST_IP, _SSH_PORT, _PRIVATE_PEM, _SSH_USER, _HOST_ID, db
             )
 
         assert backend == "iptables"
-        # Neither kubelet nor nerdctl probes should have been issued
-        kube_or_nerdctl = [c for c in executed_cmds if "kubelet" in c or "nerdctl" in c]
-        assert kube_or_nerdctl == [], (
-            f"Expected no k8s/nerdctl probes after Docker downgrade, but got: {kube_or_nerdctl}"
-        )
+        assert [c for c in executed if "kubelet" in c or "nerdctl" in c] == []
 
-    async def test_iptables_fallback(self):
-        """No nft, iptables present → iptables backend."""
-        (backend, messages), conn, db = await _run(
-            {
-                # nft not found → exit 1 (unmapped)
-                "command -v iptables": 0,
-            }
-        )
-        assert backend == "iptables"
-        assert messages == []
 
-    async def test_no_firewall(self):
-        """Neither nft nor iptables found → None backend."""
-        (backend, messages), conn, db = await _run(
-            {
-                # nothing maps → everything returns exit_status=1
-            }
-        )
-        assert backend is None
-        assert messages == []
+# ---------------------------------------------------------------------------
+# Competing-store probe (collect-time, on an already-known backend)
+# ---------------------------------------------------------------------------
+
+
+class TestCompetingStoreProbe:
+    async def test_nftables_active_warns_on_stale_iptables(self):
+        conn = make_mock_conn({T_IPT_LABDOG: 0})
+        warning = await _probe_competing_firewall_store(conn, "nftables")
+        assert warning is not None
+        assert "iptables" in warning
+
+    async def test_iptables_active_warns_on_stale_nftables(self):
+        conn = make_mock_conn({T_NFT_LABDOG: 0})
+        warning = await _probe_competing_firewall_store(conn, "iptables")
+        assert warning is not None
+        assert "nftables" in warning
+
+    async def test_no_competing_store_returns_none(self):
+        conn = make_mock_conn({})  # neither marker present
+        assert await _probe_competing_firewall_store(conn, "nftables") is None
+        assert await _probe_competing_firewall_store(conn, "iptables") is None
