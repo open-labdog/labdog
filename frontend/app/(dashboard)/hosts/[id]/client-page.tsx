@@ -380,13 +380,22 @@ function CurrentStateSection({
   const handleCollect = async () => {
     setCollecting(true)
     try {
-      await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
+      const collected = await apiFetch<import("@/lib/types").ModuleCurrentState[]>(
+        `/api/hosts/${hostId}/collect-state?module=${moduleType}`,
+        { method: "POST" },
+      )
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
       // Also refetch the host row: a firewall collect can newly detect the
       // firewall backend (host.firewall_backend), and any collect updates the
       // host sync_status. Without this the Rules tab stays on "No Firewall
       // Detected" even after detection succeeded.
       await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
+      // Surface non-fatal collect-time notices (e.g. a competing LabDog ruleset
+      // left in the inactive firewall backend on a dual-stack host). These are
+      // not persisted, so they only show at the moment of collection.
+      for (const w of collected?.find(m => m.module_type === moduleType)?.warnings ?? []) {
+        toast.warning(w, { duration: 10000 })
+      }
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
     setCollecting(false)
   }
@@ -2787,7 +2796,13 @@ export default function HostDetailPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+                {/* Which firewall backend LabDog manages on this host. On a
+                    dual-stack host this is the store Sync writes to and Collect
+                    reads from — the other backend is left untouched. */}
+                {host && <FirewallBadge backend={host.firewall_backend} />}
+              </div>
               <p className="text-slate-400 text-sm mt-1">
                 Combined rules applied to this host from all assigned groups, in priority order.
               </p>
@@ -2858,8 +2873,8 @@ export default function HostDetailPage() {
                 { key: "action", label: "Action", accessor: (r) => r.action, cell: (r) => <ActionBadge action={r.action} />, defaultWidth: 90, filter: { type: "enum", options: [{label:"Allow",value:"allow"},{label:"Deny",value:"deny"},{label:"Reject",value:"reject"}] } },
                 { key: "protocol", label: "Protocol", accessor: (r) => r.protocol, cell: (r) => <span className="text-slate-300 uppercase text-xs">{r.protocol}</span>, defaultWidth: 90, filter: { type: "enum", options: [{label:"TCP",value:"tcp"},{label:"UDP",value:"udp"},{label:"ICMP",value:"icmp"},{label:"Any",value:"any"}] } },
                 { key: "direction", label: "Direction", accessor: (r) => r.direction, cell: (r) => <span className="text-slate-300 capitalize text-xs">{r.direction}</span>, defaultWidth: 100, filter: { type: "enum", options: [{label:"Input",value:"input"},{label:"Output",value:"output"}] } },
-                { key: "source", label: "Source", accessor: (r) => r.source_host_name ?? r.source_cidr ?? "any", cell: (r) => r.source_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.source_host_name} (${r.source_cidr ?? ""})`}>{r.source_host_name} <span className="text-slate-500">({r.source_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
-                { key: "destination", label: "Destination", accessor: (r) => r.destination_host_name ?? r.destination_cidr ?? "any", cell: (r) => r.destination_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.destination_host_name} (${r.destination_cidr ?? ""})`}>{r.destination_host_name} <span className="text-slate-500">({r.destination_cidr ?? "…"})</span></span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
+                { key: "source", label: "Source", accessor: (r) => r.source_host_name ?? r.source_cidr ?? "any", cell: (r) => r.source_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.source_host_name} (${r.source_cidr?.split("/")[0] ?? ""})`}>{r.source_host_name}</span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.source_cidr ?? "any"}>{r.source_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
+                { key: "destination", label: "Destination", accessor: (r) => r.destination_host_name ?? r.destination_cidr ?? "any", cell: (r) => r.destination_host_name ? <span className="text-sky-400 text-xs inline-block max-w-[110px] truncate align-middle" title={`${r.destination_host_name} (${r.destination_cidr?.split("/")[0] ?? ""})`}>{r.destination_host_name}</span> : <span className="font-mono text-slate-300 text-xs inline-block max-w-[110px] truncate align-middle" title={r.destination_cidr ?? "any"}>{r.destination_cidr ?? "any"}</span>, defaultWidth: 110, filter: { type: "text" } },
                 { key: "ports", label: "Port(s)", cell: (r) => <span className="font-mono text-slate-300 text-xs">{formatPorts(r)}</span>, defaultWidth: 90 },
                 { key: "group", label: "Group", accessor: (r) => r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "", cell: (r) => <Badge variant="outline" className="text-xs font-mono max-w-[100px] truncate" title={r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? ""}>{r.source === "system" ? "System" : r.source === "host" ? "Host override" : r.group_name ?? "—"}</Badge>, defaultWidth: 110, filter: { type: "enum", from: "accessor" } },
                 { key: "comment", label: "Comment", accessor: (r) => r.comment ?? "", cell: (r) => <span className="text-slate-400 text-xs max-w-[90px] truncate inline-block align-middle" title={r.comment ?? ""}>{r.comment ?? "—"}</span>, defaultWidth: 90 },

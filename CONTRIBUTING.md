@@ -140,7 +140,18 @@ opening a confidential discussion.
 ## Release process
 
 Maintainer-only. Releases are triggered by **merging a release PR
-into `main`**; there's no separate tag-push step. The flow:
+into `main`**; there's no separate tag-push step.
+
+`main` is a protected branch that requires release PRs to be **up to
+date** with it, so start by syncing the previous release's merge commit
+and tag back into `dev` (skip if `dev` is already current — e.g. the
+first release after this was set up):
+
+```bash
+git checkout dev && git pull && git merge origin/main && git push
+```
+
+Then the flow:
 
 1. On `dev`, edit the [`VERSION`](VERSION) file at the repo root to
    the new version (e.g. `0.2.0`). One line, no `v` prefix.
@@ -154,8 +165,11 @@ into `main`**; there's no separate tag-push step. The flow:
    merge unless `VERSION` is bumped relative to `main`, is valid
    semver, and the resulting `vX.Y.Z` tag does not already exist
    upstream.
-4. Merge the PR. The merge to `main` triggers `release-artifacts`,
-   which:
+4. Merge the PR. On `main`, the `packaging-smoke` job first builds and
+   install-tests the `.deb` / `.rpm` / tarball in clean target-OS
+   containers (Ubuntu 24.04, Rocky 9); `release-artifacts` **needs** it,
+   so a broken install path blocks the release rather than shipping.
+   Once it passes, `release-artifacts` runs and:
    - syncs `backend/pyproject.toml` and `frontend/package.json`
      from `VERSION` (so `/api/version` and the package filenames
      stay in lockstep — **do not hand-bump** these files),
@@ -169,8 +183,11 @@ The job is idempotent on tag presence: if `vX.Y.Z` already exists
 (e.g. you re-ran a previous merge's workflow), it skips with a
 notice instead of double-releasing.
 
-To smoke-test the packaging path without cutting a real release,
-run `./packaging/build.sh` locally — there is no CI dry-run mode.
+To smoke-test the packaging path without cutting a real release, run
+`./packaging/tests/run-smoke.sh` locally (builds the artifacts and
+install-tests them in containers — needs Docker), or `./packaging/build.sh`
+to only build. The `packaging-smoke` CI job runs the same harness on
+packaging PRs, so most install-path breakage is caught before release.
 
 ### Before you open the release PR
 
@@ -196,7 +213,17 @@ the human-owned steps it cannot verify:
   `frontend-build-check`, `docs-build-check`, `build-test-image`,
   trivy.
 
-Note: CI surfaces these checks on the PR but does not by itself
-*block* the merge — that requires the `main` branch ruleset to mark
-those job contexts as required status checks. Keep that ruleset
-enabled so a red build can't be merged.
+Note: `main` is protected and the `version-check` context is a
+**required** status check, so a release PR cannot merge unless
+`version-check` passes and — because "require branches to be up to
+date" is enabled — `dev` is current with `main` (the sync step at the
+top of this section). The rest of the suite (lint, `backend-test`,
+`frontend-build-check`, `docs-build-check`, `build-test-image`,
+`packaging-smoke`, trivy) is surfaced on the PR but **not** currently
+required, so confirm those are green yourself before merging. To
+require more contexts, add them to the `main` branch protection:
+
+```bash
+gh api repos/open-labdog/labdog/branches/main/protection/required_status_checks \
+  --jq '.strict, .contexts'   # inspect current required checks
+```

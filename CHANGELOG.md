@@ -7,6 +7,43 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-07-04
+
+### Fixed
+
+- **Firewall rules referencing a LabDog host diffed forever as remove +
+  re-add.** A rule whose source/destination is another registered host is
+  resolved to that host's `/32` (or `/128`) CIDR before diffing, but keeps its
+  host-reference FK so the effective-rules view can still show the host name.
+  The diff engine's match key included that FK, while the state parsed back
+  over SSH carries only the CIDR — so the two never matched and the Sync
+  preview showed a spurious delete + add for the same address (and drift never
+  converged). The diff match key now keys on the resolved CIDR alone; the merge
+  key still keeps the FK (it runs before resolution, where two unresolved host
+  refs must stay distinct).
+- **Effective Rules showed the resolved IP inline for host-referenced rules.**
+  A source or destination that targets a registered host now renders the
+  hostname only (e.g. `wireguard`), with the resolved IP shown in the hover
+  tooltip instead of an awkwardly truncated inline CIDR.
+
+### Added
+
+- **Dual-stack firewall handling.** On hosts with both `nft` and `iptables`
+  installed, LabDog now:
+  - picks the managed backend with a documented decision ladder — operator
+    override / stickiness to an existing LabDog ruleset, then a
+    container-runtime constraint (Docker / kube-proxy / nerdctl force
+    iptables), then the active ruleset, then a default of nftables — and
+    records the reason;
+  - **tears down its own footprint in the inactive backend on every firewall
+    sync** (drops the `LABDOG-INPUT`/`LABDOG-OUTPUT` iptables chains, or deletes
+    the LabDog-owned nftables `inet filter` table), so there is a single source
+    of truth and stale rules can't hide in the backend collection doesn't read;
+  - **warns at collect time** when a competing LabDog ruleset is found in the
+    inactive backend.
+  The host's **Rules** tab now shows the active backend as a badge next to
+  **Effective Rules**. See [Hosts › Firewall backend selection](docs/ui/hosts.md).
+
 ## [0.6.2] — 2026-07-03
 
 ### Fixed
@@ -873,7 +910,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/open-labdog/labdog/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/open-labdog/labdog/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/open-labdog/labdog/compare/v0.5.0...v0.6.0
