@@ -4,6 +4,88 @@ from app.rules.model import ChainPolicies, FirewallRuleSpec
 from app.rules.renderers.iptables import render_iptables_rules
 from app.rules.renderers.nftables import render_nftables_config
 
+# ---------------------------------------------------------------------------
+# Inactive-backend teardown
+#
+# On a dual-stack host (both nft and iptables installed) LabDog manages exactly
+# one backend, but a LabDog ruleset can linger in the other one — left over from
+# a backend switch, or from a manual edit. Collection only ever reads the active
+# backend, so the stale copy is invisible in the UI yet may still filter
+# traffic. Every firewall sync therefore removes LabDog's footprint from the
+# *inactive* backend so there is a single source of truth.
+#
+# Both teardowns are strictly scoped to LabDog's own footprint and are safe to
+# run unconditionally: they self-guard on the tool being installed and only act
+# when the LabDog marker is present. They never touch the base INPUT/OUTPUT
+# chains or any table LabDog doesn't own, so Docker/kube-proxy/firewalld rules
+# are left intact.
+# ---------------------------------------------------------------------------
+
+
+def _iptables_teardown_task() -> dict:
+    """Task removing stale LabDog iptables chains (run when nftables is active).
+
+    Drops the ``INPUT``/``OUTPUT`` jumps and flush/deletes the dedicated
+    ``LABDOG-INPUT``/``LABDOG-OUTPUT`` chains for both IPv4 and IPv6, then
+    re-persists so the chains don't reappear at boot. Only LabDog's own chains
+    are touched — the base chains and other tools' rules are left alone.
+    """
+    script = r"""
+for t in "$(command -v iptables || echo /usr/sbin/iptables)" \
+         "$(command -v ip6tables || echo /usr/sbin/ip6tables)"; do
+    [ -x "$t" ] || command -v "$t" >/dev/null 2>&1 || continue
+    if "$t" -S LABDOG-INPUT >/dev/null 2>&1; then
+        while "$t" -D INPUT -j LABDOG-INPUT 2>/dev/null; do :; done
+        "$t" -F LABDOG-INPUT 2>/dev/null || true
+        "$t" -X LABDOG-INPUT 2>/dev/null || true
+    fi
+    if "$t" -S LABDOG-OUTPUT >/dev/null 2>&1; then
+        while "$t" -D OUTPUT -j LABDOG-OUTPUT 2>/dev/null; do :; done
+        "$t" -F LABDOG-OUTPUT 2>/dev/null || true
+        "$t" -X LABDOG-OUTPUT 2>/dev/null || true
+    fi
+done
+# Persist the cleaned state so the stale chains stay gone across reboots.
+if command -v netfilter-persistent >/dev/null 2>&1; then
+    netfilter-persistent save 2>/dev/null || true
+fi
+"""
+    return {
+        "name": "Remove stale LabDog iptables rules (nftables is the active backend)",
+        "ansible.builtin.shell": script.strip() + "\n",
+        "ignore_errors": True,
+    }
+
+
+def _nftables_teardown_task() -> dict:
+    """Task removing a stale LabDog nftables table (run when iptables is active).
+
+    Deletes ``table inet filter`` only when it carries the LabDog marker, so an
+    operator's own ``inet filter`` table is never touched, and neutralises
+    ``/etc/nftables.conf`` if LabDog wrote it so the table doesn't return at
+    boot. LabDog owns the whole table (its renderer does delete+recreate), so
+    deleting it is the correct teardown.
+    """
+    script = r"""
+n="$(command -v nft || echo /usr/sbin/nft)"
+{ [ -x "$n" ] || command -v nft >/dev/null 2>&1; } || exit 0
+if "$n" list table inet filter 2>/dev/null | grep -q "Managed by LabDog"; then
+    "$n" delete table inet filter 2>/dev/null || true
+fi
+# If LabDog wrote the boot config, replace it with a harmless no-op so the
+# table isn't recreated on the next boot. A file with no ruleset directives
+# does not flush anything, so other nftables tables are unaffected.
+if [ -f /etc/nftables.conf ] && grep -q "Managed by LabDog" /etc/nftables.conf; then
+    printf '#!/usr/sbin/nft -f\n# Managed by LabDog: nftables backend inactive on this host.\n' \
+        > /etc/nftables.conf
+fi
+"""
+    return {
+        "name": "Remove stale LabDog nftables table (iptables is the active backend)",
+        "ansible.builtin.shell": script.strip() + "\n",
+        "ignore_errors": True,
+    }
+
 
 def generate_nftables_playbook(
     host_ip: str,
@@ -19,7 +101,8 @@ def generate_nftables_playbook(
     3. Write and validate new config
     4. Apply atomically with nft -f
     5. If we're still connected (SSH survived), cancel the revert
-    6. Enable nftables service on boot
+    6. Remove any stale LabDog iptables footprint (dual-stack teardown)
+    7. Enable nftables service on boot
 
     If applying the new rules kills SSH, the scheduled revert fires
     after 60 seconds and restores the previous ruleset automatically.
@@ -78,6 +161,9 @@ def generate_nftables_playbook(
                 "fi"
             ),
         },
+        # nftables is now the active backend; strip any stale LabDog iptables
+        # footprint so it can't shadow this ruleset or confuse collection.
+        _iptables_teardown_task(),
         {
             "name": "Enable nftables service on boot",
             "ansible.builtin.service": {
@@ -124,8 +210,9 @@ def generate_iptables_playbook(
     3. Write new IPv4 and IPv6 rules files
     4. Apply with iptables-restore / ip6tables-restore
     5. If we're still connected (SSH survived), cancel the revert
-    6. Install iptables-persistent for boot persistence
-    7. Save rules for persistence
+    6. Remove any stale LabDog nftables footprint (dual-stack teardown)
+    7. Install iptables-persistent for boot persistence
+    8. Save rules for persistence
 
     If applying the new rules kills SSH, the scheduled revert fires
     after 60 seconds and restores the previous ruleset automatically.
@@ -222,6 +309,9 @@ def generate_iptables_playbook(
                 "fi"
             ),
         },
+        # iptables is now the active backend; strip any stale LabDog nftables
+        # table so it can't shadow this ruleset or confuse collection.
+        _nftables_teardown_task(),
         {
             "name": "Install iptables-persistent for boot persistence",
             "ansible.builtin.package": {
