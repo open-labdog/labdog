@@ -69,6 +69,27 @@ Each configuration module follows: **model → schemas → merge engine → API 
 ### Firewall backends
 Only `nftables` and `iptables` are supported. The `FirewallBackend` enum in `app/models/host.py` defines: `nftables`, `iptables`, `unknown`.
 
+- **iptables** isolates LabDog's rules in dedicated `LABDOG-INPUT` /
+  `LABDOG-OUTPUT` chains jumped from the base chains (so a reapply/flush never
+  clobbers Docker's or other tools' base-chain rules). **nftables** instead owns
+  the whole `inet filter` table (delete + recreate) — table-level isolation is
+  the nftables-idiomatic equivalent, since tables are independent and every
+  base chain at a hook runs. Parsers/renderers must stay paired per backend
+  (`app/rules/renderers/*`, `app/sync/parsers/*`); note the iptables parser does
+  not extract rule comments, the nftables one does.
+- **Backend selection** (`_detect_firewall_backend` in `app/api/host_state.py`)
+  only runs while `host.firewall_backend == "unknown"` — an operator-set or
+  previously-detected value is authoritative (operator override + stickiness are
+  enforced at that gate). Because both binaries are usually installed, the
+  greenfield choice is a first-match ladder: single-installed → LabDog-marker
+  stickiness → container-runtime constraint (Docker/kube-proxy/nerdctl force
+  iptables) → active-ruleset → default nftables.
+- **Dual-stack hosts:** every firewall sync tears down LabDog's footprint in the
+  *inactive* backend (`_iptables_teardown_task` / `_nftables_teardown_task` in
+  `app/ansible_runtime/generator.py`), and collection surfaces a competing-store
+  warning (`_probe_competing_firewall_store`) so stale rules can't hide in the
+  store LabDog isn't reading.
+
 ### Priority-based merge
 Groups have priorities (higher number wins). When a host belongs to multiple groups, configurations merge with higher-priority groups winning conflicts. Host-level overrides always win.
 

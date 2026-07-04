@@ -55,9 +55,11 @@ class FirewallRuleSpec:
         """Hashable key identifying the same match target, ignoring action.
 
         Used by ``merge_group_rules`` for priority-based conflict resolution
-        (on the same match the higher-priority group's action wins). Shares
-        CIDR/port_end normalization with ``_match_key`` so the merge dedup and
-        the diff engine agree on what "the same rule" is.
+        (on the same match the higher-priority group's action wins). This runs
+        *before* host refs are materialized into CIDRs, so it keys on the
+        ``source_host_id`` / ``destination_host_id`` FKs to tell two distinct
+        unresolved host refs apart (both would have ``source_cidr is None`` at
+        merge time). Shares CIDR/port_end normalization with ``_match_key``.
         """
         return (
             self.protocol,
@@ -71,8 +73,26 @@ class FirewallRuleSpec:
         )
 
     def _match_key(self) -> tuple:
-        """Return a hashable key for functional equivalence comparison."""
-        return (self.action, *self._conflict_key())
+        """Return a hashable key for functional equivalence comparison.
+
+        Used by the diff engine, which runs *after* ``resolve_host_refs`` has
+        materialized every host ref into a concrete /32 (or /128) CIDR. At that
+        point the ``source_host_id`` / ``destination_host_id`` FKs are redundant
+        with the resolved CIDR and must be **excluded**: a rule that referenced
+        a host and a literal-CIDR rule that resolve to the same address are the
+        same rule. The on-host state parsed back over SSH only ever carries the
+        CIDR (it has no way to know a labdog host FK), so keying on the FK here
+        would spuriously diff every host-ref rule as a remove + re-add.
+        """
+        return (
+            self.action,
+            self.protocol,
+            self.direction,
+            _normalize_cidr(self.source_cidr),
+            _normalize_cidr(self.destination_cidr),
+            self.port_start,
+            _normalize_port_end(self.port_start, self.port_end),
+        )
 
     def matches(self, other: "FirewallRuleSpec") -> bool:
         """Check if two rules are functionally equivalent (ignoring comment/priority/ids)."""
