@@ -380,13 +380,22 @@ function CurrentStateSection({
   const handleCollect = async () => {
     setCollecting(true)
     try {
-      await apiFetch(`/api/hosts/${hostId}/collect-state?module=${moduleType}`, { method: "POST" })
+      const collected = await apiFetch<import("@/lib/types").ModuleCurrentState[]>(
+        `/api/hosts/${hostId}/collect-state?module=${moduleType}`,
+        { method: "POST" },
+      )
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
       // Also refetch the host row: a firewall collect can newly detect the
       // firewall backend (host.firewall_backend), and any collect updates the
       // host sync_status. Without this the Rules tab stays on "No Firewall
       // Detected" even after detection succeeded.
       await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
+      // Surface non-fatal collect-time notices (e.g. a competing LabDog ruleset
+      // left in the inactive firewall backend on a dual-stack host). These are
+      // not persisted, so they only show at the moment of collection.
+      for (const w of collected?.find(m => m.module_type === moduleType)?.warnings ?? []) {
+        toast.warning(w, { duration: 10000 })
+      }
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
     setCollecting(false)
   }
@@ -2787,7 +2796,13 @@ export default function HostDetailPage() {
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-white">Effective Rules</h2>
+                {/* Which firewall backend LabDog manages on this host. On a
+                    dual-stack host this is the store Sync writes to and Collect
+                    reads from — the other backend is left untouched. */}
+                {host && <FirewallBadge backend={host.firewall_backend} />}
+              </div>
               <p className="text-slate-400 text-sm mt-1">
                 Combined rules applied to this host from all assigned groups, in priority order.
               </p>
