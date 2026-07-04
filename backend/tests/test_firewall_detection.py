@@ -144,17 +144,13 @@ class TestSingleBackendPresent:
 class TestBothPresentLadder:
     async def test_stickiness_nftables_labdog(self):
         """Existing LabDog nftables ruleset → keep nftables."""
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_LABDOG: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_LABDOG: 0})
         assert backend == "nftables"
         assert any("keeping nftables" in m for m in messages)
 
     async def test_stickiness_iptables_labdog(self):
         """Existing LabDog iptables ruleset → keep iptables."""
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_LABDOG: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_LABDOG: 0})
         assert backend == "iptables"
         assert any("keeping iptables" in m for m in messages)
 
@@ -187,31 +183,23 @@ class TestBothPresentLadder:
 
     async def test_container_docker_forces_iptables(self):
         """No LabDog rules, Docker present → iptables (hard constraint)."""
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_DOCKER: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_DOCKER: 0})
         assert backend == "iptables"
         assert any("Docker" in m for m in messages)
 
     async def test_container_kubeproxy_forces_iptables(self):
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_KUBE: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_KUBE: 0})
         assert backend == "iptables"
         assert any("kube" in m.lower() for m in messages)
 
     async def test_container_nerdctl_forces_iptables(self):
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NERDCTL: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NERDCTL: 0})
         assert backend == "iptables"
         assert any("nerdctl" in m.lower() for m in messages)
 
     async def test_active_ruleset_tiebreak_nftables(self):
         """No LabDog rules, no container, only nftables has an active ruleset."""
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_ACTIVE: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_NFT_ACTIVE: 0})
         assert backend == "nftables"
         assert any("active nftables" in m for m in messages)
 
@@ -220,9 +208,7 @@ class TestBothPresentLadder:
 
         T_IPT_ACTIVE is inserted before T_IPT_LABDOG so the iptables 'active'
         probe resolves true while its 'LabDog' probe resolves false."""
-        (backend, messages), *_ = await _run(
-            {T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_ACTIVE: 0}
-        )
+        (backend, messages), *_ = await _run({T_NFT_PRESENT: 0, T_IPT_PRESENT: 0, T_IPT_ACTIVE: 0})
         assert backend == "iptables"
         assert any("active iptables" in m for m in messages)
 
