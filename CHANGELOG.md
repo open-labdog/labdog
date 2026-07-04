@@ -7,6 +7,8 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-07-04
+
 ### Fixed
 
 - **Firewall rules referencing a LabDog host diffed forever as remove +
@@ -19,6 +21,10 @@ The format follows [Keep a Changelog]; LabDog follows
   converged). The diff match key now keys on the resolved CIDR alone; the merge
   key still keeps the FK (it runs before resolution, where two unresolved host
   refs must stay distinct).
+- **Effective Rules showed the resolved IP inline for host-referenced rules.**
+  A source or destination that targets a registered host now renders the
+  hostname only (e.g. `wireguard`), with the resolved IP shown in the hover
+  tooltip instead of an awkwardly truncated inline CIDR.
 
 ### Added
 
@@ -904,7 +910,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/open-labdog/labdog/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/open-labdog/labdog/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/open-labdog/labdog/compare/v0.5.0...v0.6.0
