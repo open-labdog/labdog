@@ -13,6 +13,36 @@ def _sanitise_inventory_name(name: str) -> str:
     return cleaned or "target"
 
 
+def build_ssh_common_args() -> str:
+    """SSH options injected into every Ansible inventory entry.
+
+    * ``ConnectTimeout`` — from the ``ssh.connect_timeout`` setting, so
+      the operator-facing knob actually governs Ansible connections
+      (initial connect AND mid-play reconnects), not just the asyncssh
+      paths.
+    * ``ServerAliveInterval/CountMax`` — a host that freezes mid-task
+      while keeping the TCP session open is detected in ~3 minutes
+      instead of riding out the full playbook wall-clock timeout. A
+      busy-but-alive host (e.g. dist-upgrade pegging CPU) still answers
+      keepalives, so this can't kill legitimate long tasks.
+
+    Failure-safe: any error reading the setting (no DB, tests) falls
+    back to Ansible-compatible defaults — inventory generation must
+    never crash.
+    """
+    try:
+        from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+
+        connect_timeout = int(get_setting_sync_typed("ssh.connect_timeout"))
+    except Exception:
+        connect_timeout = 10
+    return (
+        "-o StrictHostKeyChecking=accept-new "
+        f"-o ConnectTimeout={connect_timeout} "
+        "-o ServerAliveInterval=30 -o ServerAliveCountMax=6"
+    )
+
+
 def generate_inventory(
     host_ip: str,
     ssh_port: int,
@@ -38,7 +68,7 @@ def generate_inventory(
                     "ansible_port": ssh_port,
                     "ansible_user": ssh_user,
                     "ansible_ssh_private_key_file": ssh_key_path,
-                    "ansible_ssh_common_args": "-o StrictHostKeyChecking=accept-new",
+                    "ansible_ssh_common_args": build_ssh_common_args(),
                 }
             }
         }

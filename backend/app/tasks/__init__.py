@@ -82,6 +82,23 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
         logger.exception("action-pack sync on worker_ready failed; bundled pack only")
 
 
+@worker_ready.connect
+def _sweep_orphans_on_worker_start(sender=None, **_kwargs):
+    """Startup reconciliation: enqueue one sweep of each stale-row sweeper.
+
+    A worker restart is exactly the moment rows get orphaned in
+    ``running`` (the old worker was killed mid-task and its DB
+    finalisation never ran). Both sweepers are deadline-based, so
+    fresh legitimate rows are untouched; genuinely orphaned ones are
+    reaped now instead of waiting for the next 5-minute beat.
+    """
+    try:
+        celery_app.send_task("app.tasks.sync_sweeper.sweep_stale_syncs")
+        celery_app.send_task("app.tasks.action_sweeper.sweep_stale_action_runs")
+    except Exception:
+        logger.exception("startup sweep enqueue failed; periodic sweeps will cover it")
+
+
 # Auto-discover tasks
 celery_app.conf.include = [
     "app.tasks.discovery",
@@ -110,5 +127,6 @@ celery_app.conf.include = [
     "app.tasks.scan_run",
     "app.tasks.facts",
     "app.tasks.sync_sweeper",
+    "app.tasks.action_sweeper",
     "app.tasks.audit_retention",
 ]

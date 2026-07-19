@@ -4,6 +4,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from app.ansible_runtime.inventory import build_ssh_common_args
+
 ANSIBLE_ROLES_PATH = Path(__file__).parent / "roles"
 
 
@@ -35,7 +37,7 @@ def generate_multi_host_inventory(
             "ansible_port": host["port"],
             "ansible_user": host["ssh_user"],
             "ansible_ssh_private_key_file": host["ssh_key_path"],
-            "ansible_ssh_common_args": "-o StrictHostKeyChecking=accept-new",
+            "ansible_ssh_common_args": build_ssh_common_args(),
         }
     inventory = {"all": {"hosts": all_hosts}}
     return json.dumps(inventory, indent=2)

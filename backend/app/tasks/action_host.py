@@ -47,6 +47,66 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Preflight reachability
+# ---------------------------------------------------------------------------
+
+
+async def _preflight_reachable(host_id: int, ssh_key_path: str) -> tuple[bool, str | None]:
+    """Bounded SSH liveness probe run before the action playbook.
+
+    Reuses :func:`app.ssh_utils.ssh_connect_host` (inherits the
+    ``ssh.connect_timeout`` setting and TOFU host-key handling) to run a
+    trivial command. Two attempts with a short pause tolerate a
+    transient blip while still failing a genuinely dead/hung host in
+    ~25s instead of the full playbook timeout.
+
+    Returns ``(True, None)`` on success, ``(False, reason)`` on failure.
+    A host-key mismatch is a real, actionable condition and is surfaced
+    with its own message rather than a generic timeout.
+    """
+    import asyncio
+
+    import asyncssh
+    from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
+    from app.db import task_session
+    from app.models.host import Host
+    from app.models.ssh_key import SSHKey
+    from app.ssh_utils import HostKeyMismatchError, ssh_connect_host
+
+    last_error = "unreachable"
+    for attempt in range(2):
+        if attempt:
+            await asyncio.sleep(5)
+        try:
+            async with task_session() as db:
+                host = (
+                    await db.execute(select(Host).where(Host.id == host_id))
+                ).scalar_one_or_none()
+                if host is None:
+                    return False, "host row not found"
+                ssh_key = (
+                    await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+                ).scalar_one_or_none()
+                if ssh_key is None:
+                    return False, "host has no SSH key"
+                private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+                imported_key = asyncssh.import_private_key(private_pem)
+                async with ssh_connect_host(host, db, client_keys=[imported_key]) as conn:
+                    await conn.run("true", check=False)
+            return True, None
+        except HostKeyMismatchError as exc:
+            # Not transient — a re-key or MITM. Don't retry; surface it.
+            return False, f"SSH host key mismatch: {exc}"
+        except (TimeoutError, OSError, asyncssh.Error) as exc:
+            last_error = str(exc) or "connection timed out"
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc) or exc.__class__.__name__
+    return False, last_error
+
+
+# ---------------------------------------------------------------------------
 # Async implementation
 # ---------------------------------------------------------------------------
 
@@ -59,6 +119,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     import json
 
     import redis as redis_lib
+    from celery.exceptions import SoftTimeLimitExceeded
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
@@ -71,6 +132,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
     from app.settings_service import get_setting_sync_typed
+    from app.tasks.action_timeouts import effective_playbook_timeout
     from app.tasks.host_lock import (
         acquire_host_lock,
         check_host_busy,
@@ -365,6 +427,44 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         os.chmod(ssh_key_path, 0o600)
 
         # ------------------------------------------------------------------ #
+        # Preflight reachability — before any snapshot so we never snapshot  #
+        # a host we can't reach. A dead/hung host fails here in ~25s instead #
+        # of tying up a worker slot for the full playbook timeout. Opt-out   #
+        # via the ``actions.preflight_enabled`` setting.                     #
+        # ------------------------------------------------------------------ #
+        preflight_on = True
+        try:
+            preflight_on = bool(int(get_setting_sync_typed("actions.preflight_enabled")))
+        except Exception:
+            preflight_on = True
+        if preflight_on:
+            ok, preflight_err = await _preflight_reachable(host_id, ssh_key_path)
+            if not ok:
+                _log_step(f"[preflight] FAILED: {preflight_err}")
+                async with task_session() as db:
+                    hr_result = await db.execute(
+                        select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+                    )
+                    hr = hr_result.scalar_one()
+                    hr.status = "failed"
+                    hr.error_message = f"host unreachable (preflight): {preflight_err}"
+                    hr.finished_at = datetime.now(UTC)
+                    hr.output = "\n".join(step_log)
+                    await db.commit()
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {
+                            "event": "host_status",
+                            "host_run_id": host_run_id,
+                            "status": "failed",
+                        }
+                    ),
+                )
+                return
+            _log_step("[preflight] host reachable")
+
+        # ------------------------------------------------------------------ #
         # Build inventory and extra vars                                      #
         # ------------------------------------------------------------------ #
         inventory_json = generate_inventory(
@@ -392,16 +492,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         # ------------------------------------------------------------------ #
         # Resolve playbook timeout from app settings                          #
         # ------------------------------------------------------------------ #
-        try:
-            timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
-        except Exception:
-            timeout = 1800
         # A per-action floor (manifest ``playbook_timeout_seconds``) lets a
         # long-running action guarantee itself enough budget without forcing
         # operators to raise the global limit for every playbook. The global
         # setting can only widen it further, never shrink it below the floor.
-        if action_playbook_timeout:
-            timeout = max(timeout, action_playbook_timeout)
+        timeout = effective_playbook_timeout(action_playbook_timeout)
 
         # ------------------------------------------------------------------ #
         # Optional pre-update snapshot (destructive + VM mapping only)        #
@@ -859,6 +954,54 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             host_run_id,
             final_status,
         )
+
+    except SoftTimeLimitExceeded:
+        # Celery's graceful abort. The soft limit sits above the ansible
+        # timeout + verify + grace, so by now the playbook's own timeout
+        # has long fired — this catches a hung envelope step (Proxmox
+        # API, verify SSH, rollback). Finalise the row here so the host
+        # queue and the run's schedule aren't wedged by an eternal
+        # ``running`` row; the finally block below still dispatches the
+        # next pending op and cleans up tmpfs.
+        logger.error(
+            "action_host: action_run %d / host_run %d exceeded its soft time limit",
+            action_run_id,
+            host_run_id,
+        )
+        try:
+            async with task_session() as db:
+                hr_result = await db.execute(
+                    select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+                )
+                hr = hr_result.scalar_one_or_none()
+                if hr is not None and hr.status not in (
+                    "succeeded",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                ):
+                    hr.status = "failed"
+                    hr.error_message = (
+                        "aborted: exceeded task soft time limit — playbook or "
+                        "snapshot/verify/rollback step hung"
+                    )
+                    hr.finished_at = datetime.now(UTC)
+                    await db.commit()
+        except Exception:
+            logger.exception(
+                "action_host: could not persist soft-limit failure for host_run %d",
+                host_run_id,
+            )
+        try:
+            r.publish(
+                channel,
+                json.dumps(
+                    {"event": "host_status", "host_run_id": host_run_id, "status": "failed"}
+                ),
+            )
+        except Exception:
+            pass
+        raise
 
     except Exception as exc:
         error_msg = str(exc)

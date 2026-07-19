@@ -46,6 +46,7 @@ async def _check_due_async() -> dict:
     from app.db import task_session
     from app.models.action_run import ActionRun
     from app.models.scheduled_action import ScheduledAction
+    from app.tasks.action_timeouts import per_host_deadline_seconds
 
     dispatched = 0
     skipped_in_flight = 0
@@ -78,17 +79,40 @@ async def _check_due_async() -> dict:
                 if now < next_run_at:
                     continue
 
-                in_flight = await db.scalar(
-                    select(ActionRun.id)
-                    .where(
-                        ActionRun.scheduled_action_id == sa.id,
-                        ActionRun.status.in_(("queued", "running")),
+                in_flight = (
+                    await db.execute(
+                        select(ActionRun.id, ActionRun.created_at, ActionRun.action_key)
+                        .where(
+                            ActionRun.scheduled_action_id == sa.id,
+                            ActionRun.status.in_(("queued", "running")),
+                        )
+                        .order_by(ActionRun.created_at.desc())
+                        .limit(1)
                     )
-                    .limit(1)
-                )
+                ).first()
                 if in_flight is not None:
-                    skipped_in_flight += 1
-                    continue
+                    # Age cap on the overlap guard: an in-flight row this
+                    # far past its action's deadline belongs to a dead
+                    # worker (the action sweeper will fail it within one
+                    # sweep). Without the cap, one orphaned ``running``
+                    # row silences the schedule forever.
+                    run_id, run_created_at, run_action_key = in_flight
+                    if run_created_at.tzinfo is None:
+                        run_created_at = run_created_at.replace(tzinfo=UTC)
+                    age_cap = per_host_deadline_seconds(run_action_key) * 4
+                    age = (now - run_created_at).total_seconds()
+                    if age <= age_cap:
+                        skipped_in_flight += 1
+                        continue
+                    logger.warning(
+                        "scheduled_action %d: ignoring wedged in-flight "
+                        "ActionRun %d (age %.0fs > cap %ds) — dispatching "
+                        "anyway; the action sweeper will reap it",
+                        sa.id,
+                        run_id,
+                        age,
+                        age_cap,
+                    )
 
                 action = ACTION_REGISTRY.get(sa.action_key)
                 if action is None:
