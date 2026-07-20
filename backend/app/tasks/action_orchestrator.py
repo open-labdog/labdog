@@ -118,9 +118,7 @@ async def _run_action_async(action_run_id: int) -> None:
                     )
                     or 1
                 )
-                group_soft = run_deadline_seconds(
-                    run_peek.action_key, member_count, parallelism=1
-                )
+                group_soft = run_deadline_seconds(run_peek.action_key, member_count, parallelism=1)
                 celery_app.send_task(
                     "app.tasks.action_group.run_action_group",
                     args=[action_run_id],

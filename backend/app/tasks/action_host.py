@@ -999,8 +999,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     {"event": "host_status", "host_run_id": host_run_id, "status": "failed"}
                 ),
             )
-        except Exception:
-            pass
+        except Exception as pub_exc:  # noqa: BLE001
+            # The DB row is already authoritative; a lost notification only
+            # means the live view lags until the client refetches.
+            logger.warning(
+                "action_host: could not publish soft-limit status for host_run %d: %s",
+                host_run_id,
+                pub_exc,
+            )
         raise
 
     except Exception as exc:

@@ -136,9 +136,7 @@ async def test_stale_host_run_swept_and_dispatches_next(db, stub_redispatch):
     host = await create_host(db, ssh_key_id=ssh_key.id)
 
     run_id = await _make_run(db, host_id=host.id, started_seconds_ago=2 * 86400)
-    hr_id = await _make_host_run(
-        db, run_id=run_id, host_id=host.id, started_seconds_ago=2 * 86400
-    )
+    hr_id = await _make_host_run(db, run_id=run_id, host_id=host.id, started_seconds_ago=2 * 86400)
     # A queued sibling run on the same host, waiting to be dispatched.
     pending_id = await _make_run(
         db,
@@ -262,9 +260,7 @@ async def test_run_past_deadline_fails_and_cancels_queued_children(db, stub_redi
 
     # Parent running past the whole-run deadline, with a queued child that
     # was never dispatched.
-    run_id = await _make_run(
-        db, host_id=host.id, started_seconds_ago=RUN_DEADLINE_1H + 600
-    )
+    run_id = await _make_run(db, host_id=host.id, started_seconds_ago=RUN_DEADLINE_1H + 600)
     queued_child = await _make_host_run(
         db, run_id=run_id, host_id=host.id, status="queued", started_seconds_ago=None
     )
@@ -336,9 +332,7 @@ async def test_second_sweep_is_idempotent(db, stub_redispatch):
     host = await create_host(db, ssh_key_id=ssh_key.id)
 
     run_id = await _make_run(db, host_id=host.id, started_seconds_ago=2 * 86400)
-    hr_id = await _make_host_run(
-        db, run_id=run_id, host_id=host.id, started_seconds_ago=2 * 86400
-    )
+    hr_id = await _make_host_run(db, run_id=run_id, host_id=host.id, started_seconds_ago=2 * 86400)
     await db.commit()
 
     first = await _sweep_stale_action_runs_async()

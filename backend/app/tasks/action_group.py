@@ -672,9 +672,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         # (playbook past its own timeout, Proxmox API, verify SSH).
         # _mark_run_failed finalises the run AND all in-flight host rows,
         # so nothing is left ``running`` to wedge the schedule.
-        logger.error(
-            "action_group: action_run %d exceeded its soft time limit", action_run_id
-        )
+        logger.error("action_group: action_run %d exceeded its soft time limit", action_run_id)
         await _mark_run_failed(
             action_run_id,
             "aborted: exceeded task soft time limit — playbook or "

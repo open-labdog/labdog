@@ -36,9 +36,7 @@ def test_build_ssh_common_args_falls_back_on_error():
 
 def test_single_host_inventory_carries_ssh_args():
     with patch("app.settings_service.get_setting_sync_typed", return_value=10):
-        inv = json.loads(
-            generate_inventory("10.0.0.5", 22, "/dev/shm/k.key", hostname="node-1")
-        )
+        inv = json.loads(generate_inventory("10.0.0.5", 22, "/dev/shm/k.key", hostname="node-1"))
     entry = next(iter(inv["all"]["hosts"].values()))
     common = entry["ansible_ssh_common_args"]
     assert "ConnectTimeout=10" in common

@@ -189,8 +189,7 @@ async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
                     run.status = "failed"
                     run.finished_at = now
                     run.error_message = (
-                        "never picked up by a worker within 1h of enqueue — "
-                        "swept by action_sweeper"
+                        "never picked up by a worker within 1h of enqueue — swept by action_sweeper"
                     )
                     await db.commit()
                     failed.append(run_id)
@@ -218,9 +217,7 @@ async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
                 continue
 
             started = _aware(run.started_at) or _aware(run.created_at)
-            deadline = run_deadline_seconds(
-                run.action_key, max(1, len(children)), run.parallelism
-            )
+            deadline = run_deadline_seconds(run.action_key, max(1, len(children)), run.parallelism)
             if started is not None and started < now - timedelta(seconds=deadline):
                 run.status = "failed"
                 run.finished_at = now
@@ -298,5 +295,9 @@ def _register_beat_schedule() -> None:
 
 try:
     _register_beat_schedule()
-except Exception:
-    pass
+except Exception as exc:  # noqa: BLE001
+    # Redis is absent at import time in unit tests, and a transient Redis
+    # blip shouldn't stop the worker from booting. Log rather than pass:
+    # a silently-unregistered sweeper means stale action runs are never
+    # reaped, which is precisely the failure this module exists to fix.
+    logger.warning("action_sweeper: RedBeat registration failed: %s", exc)
