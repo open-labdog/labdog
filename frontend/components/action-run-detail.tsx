@@ -36,6 +36,9 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
   const [selectedHostId, setSelectedHostId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
   const outputRef = useRef<HTMLPreElement>(null)
+  // Tracks the runId we've already loaded persisted output for, so the
+  // terminal fetch runs exactly once per run (see the effect below).
+  const terminalFetchedForRef = useRef<number | null>(null)
   const [cancelling, setCancelling] = useState(false)
 
   // Fetch initial run state
@@ -50,13 +53,20 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
     },
   })
 
-  // Terminal runs: fetch stored output from DB (SSE doesn't replay)
+  // Once a run reaches a terminal state, load the authoritative, complete
+  // output from the DB. Do this even when SSE already streamed partial output
+  // (e.g. the pre-run step-log): the live stream only carries what was
+  // published while this tab was connected and is never replayed, so the
+  // persisted per-host output is the source of truth. Gate on a ref keyed by
+  // runId (NOT on `output` being empty) so a live-watched run still loads its
+  // full log on completion — previously a partial SSE payload made this skip,
+  // leaving the pane stuck on the step-log. Fetches exactly once per run.
   useEffect(() => {
     if (!run || !TERMINAL.has(run.status)) return
-    if (output) return  // already have it — either from SSE or a previous fetch
+    if (terminalFetchedForRef.current === runId) return
     if (run.host_runs.length === 0) return
+    terminalFetchedForRef.current = runId
 
-    let cancelled = false
     ;(async () => {
       const entries = await Promise.all(
         run.host_runs.map(async (hr) => {
@@ -70,7 +80,12 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           }
         }),
       )
-      if (cancelled) return
+      // Drop the result only if we've since navigated to a different run. We
+      // deliberately do NOT cancel on every `run`-object change: the SSE
+      // status handler invalidates (and thus re-creates) the run object right
+      // at terminal, and cancelling on that churn would race this fetch and
+      // leave the pane empty. Keying on runId is sufficient.
+      if (terminalFetchedForRef.current !== runId) return
       // Cache each host's log so clicking a host card switches instantly.
       const map: Record<number, string> = {}
       for (const { hr, text } of entries) map[hr.host_id] = text
@@ -87,11 +102,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           : entries.map((e) => e.text).join("\n")
       setOutput(combined)
     })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [run, runId, output])
+  }, [run, runId])
 
   // SSE subscription for live output
   useEffect(() => {
