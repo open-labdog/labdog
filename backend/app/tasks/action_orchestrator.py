@@ -36,6 +36,15 @@ _DEFAULT_PER_HOST_TASK = "app.tasks.action_host.run_action_host"
     bind=True,
     name="app.tasks.action_orchestrator.run_action",
     queue="long_running",
+    # Override the global 1500/1800s limits: the orchestrator mostly sits
+    # idle in result.join() waiting for its children, and a hard-kill
+    # mid-join skips the Phase 3 aggregation, orphaning the ActionRun in
+    # ``running`` (which then wedges its schedule and the host queue).
+    # 12h covers the worst realistic case (fleet run at parallelism 1 ×
+    # a 5400s action); the action sweeper is the real guardrail beyond
+    # that.
+    soft_time_limit=43200,
+    time_limit=43500,
 )
 def run_action(self, action_run_id: int) -> dict:
     """Orchestrate an action run against one host or a group of hosts.
@@ -63,6 +72,11 @@ async def _run_action_async(action_run_id: int) -> None:
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host, HostGroupMembership
+    from app.tasks.action_timeouts import (
+        HARD_LIMIT_MARGIN_SECONDS,
+        per_host_deadline_seconds,
+        run_deadline_seconds,
+    )
 
     # ------------------------------------------------------------------ #
     # Phase 0: dispatch shape decision                                    #
@@ -89,10 +103,28 @@ async def _run_action_async(action_run_id: int) -> None:
                     action_run_id,
                     run_peek.action_key,
                 )
+                # Size the group task's Celery limits from the run's
+                # deadline (member_count sequential envelopes + slack)
+                # instead of the global 1500/1800s — a hard-kill at the
+                # global limit skips the group task's DB finalisation
+                # and orphans the run in ``running``.
+                from sqlalchemy import func  # noqa: PLC0415
+
+                member_count = (
+                    await db.scalar(
+                        select(func.count())
+                        .select_from(HostGroupMembership)
+                        .where(HostGroupMembership.c.group_id == run_peek.group_id)
+                    )
+                    or 1
+                )
+                group_soft = run_deadline_seconds(run_peek.action_key, member_count, parallelism=1)
                 celery_app.send_task(
                     "app.tasks.action_group.run_action_group",
                     args=[action_run_id],
                     queue="long_running",
+                    soft_time_limit=group_soft,
+                    time_limit=group_soft + HARD_LIMIT_MARGIN_SECONDS,
                 )
                 return
     except Exception:
@@ -109,6 +141,10 @@ async def _run_action_async(action_run_id: int) -> None:
     # ------------------------------------------------------------------ #
     host_run_ids: list[int] = []
     per_host_task_name = _DEFAULT_PER_HOST_TASK
+    # Per-child Celery limits, sized from the action's own deadline in
+    # Phase 1. Fallback matches the global config so a Phase-1 failure
+    # can't dispatch children with unbounded lifetimes.
+    child_soft_limit = 1500
 
     try:
         async with task_session() as db:
@@ -140,6 +176,15 @@ async def _run_action_async(action_run_id: int) -> None:
             per_host_task_name = PER_HOST_TASK_FOR_BUILTIN.get(
                 run.action_key, _DEFAULT_PER_HOST_TASK
             )
+
+            # Per-child Celery limits: soft above the whole per-host
+            # envelope (ansible timeout + verify + grace) so the child's
+            # SoftTimeLimitExceeded handler and finally block get to
+            # finalise the DB rows; hard-kill only after a further margin.
+            # The global 1500/1800s config would SIGKILL a child at the
+            # same moment its ansible timeout fires, orphaning the
+            # ActionHostRun in ``running``.
+            child_soft_limit = per_host_deadline_seconds(run.action_key)
 
             # Resolve target hosts. Fleet runs (both host_id and
             # group_id NULL) are scheduled-only — the action_runs
@@ -195,6 +240,7 @@ async def _run_action_async(action_run_id: int) -> None:
     # ------------------------------------------------------------------ #
     import redis as redis_lib
     from celery import group as celery_group
+    from celery.exceptions import SoftTimeLimitExceeded
     from celery.result import allow_join_result
 
     from app.config import settings
@@ -233,6 +279,8 @@ async def _run_action_async(action_run_id: int) -> None:
                     per_host_task_name,
                     args=[action_run_id, host_run_id],
                     queue="long_running",
+                    soft_time_limit=child_soft_limit,
+                    time_limit=child_soft_limit + HARD_LIMIT_MARGIN_SECONDS,
                 )
                 for host_run_id in batch
             )
@@ -242,8 +290,15 @@ async def _run_action_async(action_run_id: int) -> None:
                 # by default (deadlock risk when the worker pool is saturated).
                 # allow_join_result() is the documented opt-in for orchestrators
                 # that genuinely need to block until their children finish.
+                # The join must outlast the children's own hard limit or a
+                # slow batch turns into a spurious wait error.
                 with allow_join_result():
-                    result.join(timeout=3600, propagate=False)
+                    result.join(
+                        timeout=max(3600, child_soft_limit + HARD_LIMIT_MARGIN_SECONDS),
+                        propagate=False,
+                    )
+            except SoftTimeLimitExceeded:
+                raise
             except Exception as exc:
                 logger.warning(
                     "action_orchestrator: action_run %d batch %d wait error: %s",
@@ -251,6 +306,20 @@ async def _run_action_async(action_run_id: int) -> None:
                     batch_index + 1,
                     exc,
                 )
+
+    except SoftTimeLimitExceeded:
+        # Celery's graceful abort fired (12h). Children that finished keep
+        # their statuses; still-queued ones are cancelled; still-running
+        # ones are left for the action sweeper. Aggregate what we have so
+        # the run reaches a terminal state instead of wedging its
+        # schedule in ``running``.
+        logger.error(
+            "action_orchestrator: action_run %d exceeded orchestrator soft time "
+            "limit; finalising with partial results",
+            action_run_id,
+        )
+        await _finalise_soft_limited(action_run_id)
+        return
 
     except Exception as exc:
         logger.exception(
@@ -342,6 +411,63 @@ async def _mark_run_failed(action_run_id: int, error_message: str) -> None:
     except Exception:
         logger.exception(
             "action_orchestrator: could not mark action_run %d as failed",
+            action_run_id,
+        )
+
+
+async def _finalise_soft_limited(action_run_id: int) -> None:
+    """Best-effort terminal aggregation after the orchestrator's own soft
+    time limit fired mid-batch.
+
+    Children with terminal statuses keep them; ``queued`` children were
+    never dispatched and are cancelled; ``running``/``pending`` children
+    are left alone — the action sweeper reaps or re-dispatches them by
+    deadline. The run ends ``partial``/``failed`` with a truthful
+    message so the scheduler's in-flight guard releases.
+    """
+    try:
+        import json
+
+        import redis as redis_lib
+        from sqlalchemy import select
+
+        from app.config import settings
+        from app.db import task_session
+        from app.models.action_run import ActionHostRun, ActionRun
+
+        async with task_session() as db:
+            hr_result = await db.execute(
+                select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
+            )
+            host_runs = list(hr_result.scalars().all())
+
+            for hr in host_runs:
+                if hr.status == "queued":
+                    hr.status = "cancelled"
+                    hr.error_message = "parent orchestrator exceeded its time limit before dispatch"
+
+            succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
+            final_status = "partial" if succeeded else "failed"
+
+            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+            run = run_result.scalar_one_or_none()
+            if run is not None and run.status != "cancelled":
+                run.status = final_status
+                run.error_message = (
+                    "orchestrator exceeded its soft time limit while waiting on "
+                    "host batches; results aggregated partially"
+                )
+                run.finished_at = datetime.now(UTC)
+            await db.commit()
+
+        r = redis_lib.from_url(settings.redis.url)
+        r.publish(
+            f"actions.run.{action_run_id}",
+            json.dumps({"event": "status", "status": final_status}),
+        )
+    except Exception:
+        logger.exception(
+            "action_orchestrator: could not finalise soft-limited action_run %d",
             action_run_id,
         )
 

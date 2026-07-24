@@ -53,6 +53,13 @@ The envelope honours the run-time toggles ``snapshot_enabled``,
 ``verify_enabled``, ``auto_rollback`` from ``ActionRun`` (mirrored
 from the scheduler / API at dispatch time) and is a no-op when the
 action's manifest declares ``destructive: false``.
+
+Note: unlike the per-host path (``action_host.py``), this path has no
+explicit SSH preflight. Unreachable members surface as
+``runner_on_unreachable`` events within seconds (the inventory's
+``ConnectTimeout``/keepalives from ``build_ssh_common_args`` bound the
+attempt), and Phase C routes those straight to per-host ``failed``
+rows — so a dead member can't wedge the run.
 """
 
 from __future__ import annotations
@@ -164,6 +171,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     actions when the host has a Proxmox VM mapping.
     """
     import redis as redis_lib
+    from celery.exceptions import SoftTimeLimitExceeded
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
@@ -174,7 +182,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host, HostGroupMembership
     from app.models.ssh_key import SSHKey
-    from app.settings_service import get_setting_sync_typed
+    from app.tasks.action_timeouts import effective_playbook_timeout
     from app.tasks.host_lock import (
         acquire_host_locks,
         check_hosts_busy,
@@ -481,13 +489,8 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             extra_vars = extra_vars or {}
             extra_vars["ansible_check_mode"] = True
 
-        try:
-            timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
-        except Exception:
-            timeout = 1800
         # Per-action floor — see the matching comment in action_host.py.
-        if action_playbook_timeout:
-            timeout = max(timeout, action_playbook_timeout)
+        timeout = effective_playbook_timeout(action_playbook_timeout)
 
         runner = run_ansible(
             playbook_path=playbook_path,
@@ -662,6 +665,22 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         # Phase G: aggregate run-level status                                 #
         # ------------------------------------------------------------------ #
         await _aggregate_and_finalise(action_run_id, channel, r)
+
+    except SoftTimeLimitExceeded:
+        # Celery's graceful abort — the orchestrator sizes our soft limit
+        # above the whole run deadline, so reaching it means a step hung
+        # (playbook past its own timeout, Proxmox API, verify SSH).
+        # _mark_run_failed finalises the run AND all in-flight host rows,
+        # so nothing is left ``running`` to wedge the schedule.
+        logger.error("action_group: action_run %d exceeded its soft time limit", action_run_id)
+        await _mark_run_failed(
+            action_run_id,
+            "aborted: exceeded task soft time limit — playbook or "
+            "snapshot/verify/rollback step hung",
+            channel,
+            r,
+        )
+        return
 
     except Exception as exc:
         logger.exception("action_group: unhandled error for action_run %d", action_run_id)
