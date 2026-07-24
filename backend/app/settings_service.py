@@ -68,6 +68,17 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "choices": ["debug", "info", "warning", "error", "critical"],
         "description": "Application log level",
     },
+    "actions.preflight_enabled": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Probe SSH reachability before running an action playbook "
+            "(1 = on, 0 = off). When on, an unreachable host fails in "
+            "seconds instead of burning the full playbook timeout."
+        ),
+    },
     "workflow.snapshot_max_age_hours": {
         "type": "int",
         "default": 24,
