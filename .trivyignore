@@ -1,4 +1,5 @@
-# No fix available upstream for these CVEs as of 2026-05-27.
+# No fix available upstream for these CVEs (re-verified 2026-07-24: both
+# still marked <no-dsa> "Minor issue" for Debian bookworm/trixie).
 # Each entry should have a corresponding rationale paragraph in
 # docs/trivy-rationale.md. The Trivy CI gate runs with
 # `ignore-unfixed: true`, so these unfixed-upstream CVEs are
