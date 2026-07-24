@@ -7,6 +7,61 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-07-24
+
+### Added
+
+- **Live streaming of per-host action output.** A host-targeted action run
+  (e.g. `linux-upgrade`) now streams its Ansible output to the run view
+  task-by-task as it happens, instead of appearing as a single block only
+  after the whole playbook finishes. A heartbeat keeps a long-blocking task
+  (e.g. a multi-minute apt upgrade) visibly alive rather than looking frozen.
+- **Self-healing for orphaned action runs.** A periodic sweeper (every 5 min,
+  plus once on worker start) reconciles `ActionRun` / `ActionHostRun` rows left
+  stuck in `running` / `queued` by a dead worker (OOM, SIGKILL at a time limit,
+  container restart). Without it the scheduler skipped the affected schedule and
+  the host queue deferred every new op forever. Rows are only reaped once past
+  their action's own deadline (ansible timeout + verify + envelope grace), so a
+  legitimately slow run is never swept — ansible's own timeout always fires
+  first on a live worker.
+- **Fast-fail preflight for dead hosts.** Each per-host action first runs a
+  bounded SSH liveness probe; a genuinely unreachable host fails in ~25 s with a
+  clear `host unreachable (preflight)` error instead of tying up a worker for the
+  full playbook timeout. Opt out via the new `actions.preflight_enabled` setting
+  — see [Settings › Actions](docs/ui/settings.md).
+
+### Fixed
+
+- **The run view stayed stuck on the pre-run step-log after a live-watched run
+  finished.** The action run-detail page now always loads the complete persisted
+  log from the DB once a run reaches a terminal state, even when a live SSE
+  session had already delivered partial output. Previously the pane was left
+  showing only `[preflight]` / `[snapshot]` with none of the task output or
+  PLAY RECAP until a hard reload.
+
+### Changed
+
+- **Bundled playbooks updated** (`LABDOG_PLAYBOOKS_REF` → `1f1fcdc`), which
+  carries the `linux-upgrade` fix where `apt-get update` failures were silently
+  swallowed (`failed_when: false` plus a dead abort guard). The daily upgrade now
+  actually refreshes the package index and applies pending updates, and surfaces
+  a real failure instead of reporting a no-op as success.
+
+### Security
+
+- **GitPython 3.1.50 → 3.1.52** — clears the HIGH command-injection /
+  environment-variable-exfiltration advisories flagged by both `pip-audit` and
+  Trivy (GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj,
+  GHSA-rwj8-pgh3-r573).
+- **Frontend advisories cleared** — `next` bumped to the patched 16.2.11, with
+  patched transitive versions pinned via npm `overrides` (`sharp`, `postcss`,
+  `fast-uri`, `js-yaml`, and a scoped `brace-expansion` that avoids breaking
+  classic `minimatch`).
+- **`.trivyignore` is now actually applied** in the `trivy-scan` CI job. The job
+  never checked out the repo or passed the ignore file, so the list silently had
+  no effect (and its documented purpose — a safety net for when `ignore-unfixed`
+  is flipped — could never work).
+
 ## [0.6.3] — 2026-07-04
 
 ### Fixed
@@ -910,7 +965,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/open-labdog/labdog/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/open-labdog/labdog/compare/v0.6.0...v0.6.1

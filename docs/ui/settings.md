@@ -44,6 +44,14 @@ The Settings page controls operational behaviour that can be tuned without resta
 
 ---
 
+### Actions
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Preflight reachability check | `actions.preflight_enabled` | `1` (on) | `0` / `1` | When enabled, every per-host action run first performs a bounded SSH liveness probe. A genuinely unreachable host fails in ~25 s with a clear `host unreachable (preflight)` error instead of tying up a worker for the full playbook timeout. Set to `0` to disable if the probe is too aggressive for flaky hosts. |
+
+---
+
 ### Discovery
 
 | Setting | Key | Default | Range | Description |
