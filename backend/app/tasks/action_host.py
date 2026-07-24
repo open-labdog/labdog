@@ -10,6 +10,8 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
+import time
 from datetime import UTC, datetime
 
 from app.tasks import celery_app
@@ -476,16 +478,73 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             )
 
         # ------------------------------------------------------------------ #
-        # Run ansible-runner                                                  #
+        # Run ansible-runner, streaming output live                          #
         # ------------------------------------------------------------------ #
-        runner = run_ansible(
-            playbook_path=playbook_path,
-            inventory_json=inventory_json,
-            private_data_dir=private_data_dir,
-            extra_vars=extra_vars,
-            timeout=timeout,
-            roles_paths=list(action_roles_paths) if action_roles_paths else None,
+        # ansible-runner blocks until the whole playbook finishes, so without
+        # streaming the live view sits on the pre-run step-log and looks
+        # frozen for the entire upgrade. Publish each event's stdout to the
+        # SSE channel as it arrives (task-by-task), and run a heartbeat so a
+        # single long-blocking task (e.g. the apt upgrade) still shows the run
+        # is alive. Runs in the Celery worker; the SSE endpoint (separate
+        # process) relays these over Redis, so blocking here is fine.
+        _stream = {"task": "Gathering facts", "start": time.monotonic(), "last": time.monotonic()}
+
+        def _publish_stream(text: str) -> None:
+            try:
+                r.publish(
+                    channel,
+                    json.dumps({"event": "output", "host_run_id": host_run_id, "text": text}),
+                )
+            except Exception:
+                logger.debug("action_host: SSE publish failed for streamed output", exc_info=True)
+
+        def _on_event(event: dict) -> bool:
+            # Track the active task name for the heartbeat, then stream this
+            # event's rendered stdout. Must never raise — ansible-runner calls
+            # this inside its event loop.
+            try:
+                if event.get("event") == "playbook_on_task_start":
+                    task_name = (event.get("event_data") or {}).get("task")
+                    if task_name:
+                        _stream["task"] = task_name
+                out = event.get("stdout")
+                if out:
+                    _stream["last"] = time.monotonic()
+                    _publish_stream(out + "\n")
+            except Exception:
+                logger.debug("action_host: stream event handler error", exc_info=True)
+            return True
+
+        _hb_stop = threading.Event()
+
+        def _heartbeat() -> None:
+            # While a task is blocking with no new output, emit a keepalive
+            # every ~20s so long steps (apt upgrade) don't look hung.
+            while not _hb_stop.wait(20):
+                if time.monotonic() - _stream["last"] < 20:
+                    continue
+                elapsed = int(time.monotonic() - _stream["start"])
+                _publish_stream(
+                    f"… still running: {_stream['task']} "
+                    f"({elapsed // 60}m{elapsed % 60:02d}s elapsed)\n"
+                )
+
+        _hb_thread = threading.Thread(
+            target=_heartbeat, name=f"labdog-hb-{host_run_id}", daemon=True
         )
+        _hb_thread.start()
+        try:
+            runner = run_ansible(
+                playbook_path=playbook_path,
+                inventory_json=inventory_json,
+                private_data_dir=private_data_dir,
+                extra_vars=extra_vars,
+                timeout=timeout,
+                roles_paths=list(action_roles_paths) if action_roles_paths else None,
+                event_handler=_on_event,
+            )
+        finally:
+            _hb_stop.set()
 
         playbook_output: str = (
             runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
@@ -502,22 +561,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         step_log.append("=== Ansible output ===")
         step_log.append(playbook_output)
 
-        # Publish last 4 KB of playbook output to SSE. Prepend a divider so
-        # the step-log lines stay visually separated from the raw ansible
-        # stream in the live view.
-        try:
-            r.publish(
-                channel,
-                json.dumps(
-                    {
-                        "event": "output",
-                        "host_run_id": host_run_id,
-                        "text": "=== Ansible output ===\n" + playbook_output[-4000:],
-                    }
-                ),
-            )
-        except Exception:
-            logger.debug("action_host: SSE publish failed for ansible output", exc_info=True)
+        # No end-of-run block is published to SSE: the playbook output was
+        # already streamed task-by-task via the event handler above, and the
+        # frontend reloads the authoritative full log from the DB once the run
+        # reaches a terminal state. Publishing the tail again here would just
+        # duplicate it in the live view.
 
         # ------------------------------------------------------------------ #
         # Post-run verification (only when we also took a snapshot — i.e.     #
