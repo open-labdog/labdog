@@ -49,9 +49,9 @@
   },
   "overrides": {
     "next": {
-      "sharp": ">=0.35.0",
-      "postcss": ">=8.5.12"
+      "sharp": ">=0.35.0"
     },
+    "postcss": ">=8.5.18",
     "fast-uri": ">=3.1.4 <4",
     "js-yaml": ">=4.3.0 <5",
     "@ts-morph/common": {
