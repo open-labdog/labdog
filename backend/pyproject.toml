@@ -30,12 +30,11 @@ dependencies = [
     "cryptography>=49",
     "fastapi-users[sqlalchemy]>=15",
     "slowapi>=0.1.9",
-    # gitpython>=3.1.52 fixes CVE-2026-44243 (path traversal),
-    # CVE-2026-44244 (newline-injection RCE via core.hooksPath), and the
-    # 3.1.51/3.1.52 command-injection / env-exfiltration advisories
-    # GHSA-2f96-g7mh-g2hx, GHSA-956x-8gvw-wg5v, GHSA-v396-v7q4-x2qj,
-    # GHSA-rwj8-pgh3-r573 (flagged by pip-audit + trivy as HIGH).
-    "gitpython>=3.1.52",
+    # gitpython>=3.1.54 clears the path-traversal / RCE / command-injection
+    # / env-exfiltration advisories fixed across 3.1.49–3.1.54, incl. the
+    # 3.1.53/3.1.54 batch GHSA-3rp5-jjmw-4wv2, GHSA-fjr4-x663-mwxc,
+    # GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3 (flagged by pip-audit as HIGH).
+    "gitpython>=3.1.54",
     # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
     # traversal; LabDog is a client, so not directly exposed, but kept current).
     "asyncssh>=2.23.1",
