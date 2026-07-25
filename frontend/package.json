@@ -25,7 +25,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "lucide-react": "^0.577.0",
-    "next": "^16.2.4",
+    "next": "^16.2.11",
     "next-themes": "^0.4.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -46,5 +46,19 @@
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "next": {
+      "sharp": ">=0.35.0"
+    },
+    "postcss": ">=8.5.18",
+    "fast-uri": ">=3.1.4 <4",
+    "js-yaml": ">=4.3.0 <5",
+    "@ts-morph/common": {
+      "brace-expansion": ">=5.0.7"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "brace-expansion": ">=5.0.7"
+    }
   }
 }

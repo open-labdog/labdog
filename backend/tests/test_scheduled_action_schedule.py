@@ -137,6 +137,83 @@ async def test_in_flight_run_blocks_dispatch(db):
     assert result["skipped_in_flight"] == 1
 
 
+async def test_wedged_in_flight_run_is_ignored_and_dispatches(db):
+    """An in-flight run older than the action's deadline*4 is treated as a
+    dead-worker orphan: the schedule dispatches anyway (the action sweeper
+    reaps the orphan separately)."""
+    host = await create_host(db)
+    sa = ScheduledAction(
+        target_kind="host",
+        target_id=host.id,
+        action_key="_builtin.collect_state",
+        schedule_cron="* * * * *",
+        enabled=True,
+        last_dispatched_at=datetime.now(UTC) - timedelta(minutes=2),
+    )
+    db.add(sa)
+    await db.flush()
+    # A run wedged in ``running`` two days ago — far past any plausible
+    # per-host-deadline*4 age cap.
+    db.add(
+        ActionRun(
+            action_key="_builtin.collect_state",
+            action_version="1.0.0",
+            host_id=host.id,
+            scheduled_action_id=sa.id,
+            parameters={},
+            parallelism=1,
+            status="running",
+            created_at=datetime.now(UTC) - timedelta(days=2),
+        )
+    )
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 1
+    assert result["skipped_in_flight"] == 0
+
+    # A fresh run row now exists alongside the wedged one.
+    runs = (
+        (await db.execute(select(ActionRun).where(ActionRun.scheduled_action_id == sa.id)))
+        .scalars()
+        .all()
+    )
+    assert len(runs) == 2
+
+
+async def test_recent_in_flight_run_still_skips(db):
+    """A run created just now (well within the age cap) still blocks the
+    schedule — the age cap must not fire on healthy in-flight runs."""
+    host = await create_host(db)
+    sa = ScheduledAction(
+        target_kind="host",
+        target_id=host.id,
+        action_key="_builtin.collect_state",
+        schedule_cron="* * * * *",
+        enabled=True,
+        last_dispatched_at=datetime.now(UTC) - timedelta(minutes=2),
+    )
+    db.add(sa)
+    await db.flush()
+    db.add(
+        ActionRun(
+            action_key="_builtin.collect_state",
+            action_version="1.0.0",
+            host_id=host.id,
+            scheduled_action_id=sa.id,
+            parameters={},
+            parallelism=1,
+            status="running",
+            created_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+    )
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 0
+    assert result["skipped_in_flight"] == 1
+
+
 async def test_orphan_action_key_skipped(db):
     host = await create_host(db)
     sa = ScheduledAction(

@@ -685,6 +685,10 @@ jobs:
     needs: [build-test-image]
     runs-on: ubuntu-latest
     steps:
+      # Check out so the scanner can read .trivyignore. Without this the
+      # ignore file is absent from the runner workspace and silently has no
+      # effect — including the day someone flips ignore-unfixed to false.
+      - uses: actions/checkout@v4
       - name: Trivy — informational scan (low/medium)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -692,6 +696,7 @@ jobs:
           severity: LOW,MEDIUM
           exit-code: "0"
           ignore-unfixed: "true"
+          trivyignores: .trivyignore
       - name: Trivy — gate on HIGH/CRITICAL
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -699,6 +704,7 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: "true"
+          trivyignores: .trivyignore
 
   gitleaks:
     if: >-

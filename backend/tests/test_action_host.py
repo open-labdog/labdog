@@ -71,6 +71,20 @@ def fake_redis():
         yield fr
 
 
+@pytest.fixture(autouse=True)
+def bypass_preflight():
+    """The per-host executor now SSH-probes the host before running the
+    playbook. The envelope/toggle tests use fake hosts that aren't
+    reachable, so default the probe to success. The dedicated preflight
+    tests below patch it themselves to exercise the failure path."""
+
+    async def _ok(_host_id, _ssh_key_path):
+        return True, None
+
+    with patch("app.tasks.action_host._preflight_reachable", side_effect=_ok):
+        yield
+
+
 class _FakeProxmoxClient:
     """In-memory stand-in mirroring ``test_action_group.py``'s helper."""
 
@@ -320,3 +334,110 @@ async def test_auto_rollback_false_keeps_snapshot_on_failure(
     hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
     assert hr.status == "failed"
     assert hr.snapshot_name is not None  # snapshot row preserved
+
+
+# ---------------------------------------------------------------------------
+# Preflight reachability (B1)
+# ---------------------------------------------------------------------------
+
+
+async def _make_simple_run(db):
+    """A non-destructive host-targeted run using a bundled action, so the
+    executor reaches the preflight step without needing a Proxmox mapping."""
+    key = await create_ssh_key(db)
+    host = await create_host(db, ssh_key_id=key.id, hostname="preflight-host")
+    run = ActionRun(
+        action_key="linux-upgrade",
+        action_version="1.0",
+        host_id=host.id,
+        parameters={},
+        parallelism=1,
+        status="queued",
+        snapshot_enabled=False,
+        verify_enabled=False,
+        auto_rollback=False,
+    )
+    db.add(run)
+    await db.flush()
+    hr = ActionHostRun(action_run_id=run.id, host_id=host.id, status="queued")
+    db.add(hr)
+    await db.flush()
+    await db.commit()
+    return run.id, hr.id
+
+
+async def test_preflight_failure_fails_fast_without_running_playbook(db, fake_redis):
+    """An unreachable host fails at preflight; ``run_ansible`` is never
+    called and the host run is marked failed with the preflight reason."""
+    from app.tasks.action_host import _run_action_host_async
+
+    run_id, hr_id = await _make_simple_run(db)
+
+    async def _unreachable(_host_id, _ssh_key_path):
+        return False, "connection timed out"
+
+    run_ansible_mock = MagicMock(return_value=_runner())
+    with (
+        patch("app.tasks.action_host._preflight_reachable", side_effect=_unreachable),
+        patch("app.ansible_runtime.runner.run_ansible", run_ansible_mock),
+    ):
+        await _run_action_host_async(run_id, hr_id)
+
+    run_ansible_mock.assert_not_called()
+    hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
+    assert hr.status == "failed"
+    assert "host unreachable (preflight)" in (hr.error_message or "")
+    assert "connection timed out" in (hr.error_message or "")
+
+
+async def test_preflight_disabled_skips_probe(db, fake_redis):
+    """With ``actions.preflight_enabled=0`` the probe is skipped entirely,
+    even if it would have failed, and the playbook runs."""
+    from app.tasks.action_host import _run_action_host_async
+
+    run_id, hr_id = await _make_simple_run(db)
+
+    preflight_mock = MagicMock()
+
+    async def _would_fail(_host_id, _ssh_key_path):
+        preflight_mock()
+        return False, "should not be called"
+
+    def _setting(key):
+        if key == "actions.preflight_enabled":
+            return 0
+        return 1800  # ansible.playbook_timeout etc.
+
+    runner = _runner(status="successful", rc=0)
+    with (
+        patch("app.settings_service.get_setting_sync_typed", side_effect=_setting),
+        patch("app.tasks.action_host._preflight_reachable", side_effect=_would_fail),
+        patch("app.ansible_runtime.runner.run_ansible", return_value=runner),
+    ):
+        await _run_action_host_async(run_id, hr_id)
+
+    preflight_mock.assert_not_called()
+    hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
+    assert hr.status == "succeeded"
+
+
+async def test_preflight_success_proceeds_to_playbook(db, fake_redis):
+    """A reachable host proceeds normally to the playbook run."""
+    from app.tasks.action_host import _run_action_host_async
+
+    run_id, hr_id = await _make_simple_run(db)
+
+    async def _ok(_host_id, _ssh_key_path):
+        return True, None
+
+    runner = _runner(status="successful", rc=0)
+    run_ansible_mock = MagicMock(return_value=runner)
+    with (
+        patch("app.tasks.action_host._preflight_reachable", side_effect=_ok),
+        patch("app.ansible_runtime.runner.run_ansible", run_ansible_mock),
+    ):
+        await _run_action_host_async(run_id, hr_id)
+
+    run_ansible_mock.assert_called_once()
+    hr = (await db.execute(select(ActionHostRun).where(ActionHostRun.id == hr_id))).scalar_one()
+    assert hr.status == "succeeded"

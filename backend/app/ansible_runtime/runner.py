@@ -1,7 +1,10 @@
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+from app.ansible_runtime.inventory import build_ssh_common_args
 
 ANSIBLE_ROLES_PATH = Path(__file__).parent / "roles"
 
@@ -34,7 +37,7 @@ def generate_multi_host_inventory(
             "ansible_port": host["port"],
             "ansible_user": host["ssh_user"],
             "ansible_ssh_private_key_file": host["ssh_key_path"],
-            "ansible_ssh_common_args": "-o StrictHostKeyChecking=accept-new",
+            "ansible_ssh_common_args": build_ssh_common_args(),
         }
     inventory = {"all": {"hosts": all_hosts}}
     return json.dumps(inventory, indent=2)
@@ -50,6 +53,7 @@ def run_ansible(
     timeout: int | None = None,
     envvars: dict | None = None,
     roles_paths: list[Path] | tuple[Path, ...] | None = None,
+    event_handler: Callable[[dict[str, Any]], Any] | None = None,
 ) -> Any:
     """Write playbook + inventory to *private_data_dir* and invoke ansible_runner.
 
@@ -77,6 +81,11 @@ def run_ansible(
         roles_paths: Optional list of additional roles directories (e.g. from
             user packs) joined into ``ANSIBLE_ROLES_PATH``. The bundled
             ``roles/`` dir is always included as a fallback.
+        event_handler: Optional callback invoked by ansible-runner for every
+            event as it is emitted during the run (not just at the end). Used
+            to stream task-by-task output to the live view. Receives the event
+            dict (which carries ``stdout``); its return value is ignored here.
+            It must not raise — it runs inside ansible-runner's event loop.
 
     Returns:
         The ``ansible_runner.Runner`` object returned by ``ansible_runner.run()``.
@@ -132,5 +141,6 @@ def run_ansible(
         extravars=extra_vars or {},
         timeout=timeout,
         envvars=merged_env,
+        event_handler=event_handler,
     )
     return runner

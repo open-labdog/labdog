@@ -10,6 +10,8 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
+import time
 from datetime import UTC, datetime
 
 from app.tasks import celery_app
@@ -45,6 +47,66 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Preflight reachability
+# ---------------------------------------------------------------------------
+
+
+async def _preflight_reachable(host_id: int, ssh_key_path: str) -> tuple[bool, str | None]:
+    """Bounded SSH liveness probe run before the action playbook.
+
+    Reuses :func:`app.ssh_utils.ssh_connect_host` (inherits the
+    ``ssh.connect_timeout`` setting and TOFU host-key handling) to run a
+    trivial command. Two attempts with a short pause tolerate a
+    transient blip while still failing a genuinely dead/hung host in
+    ~25s instead of the full playbook timeout.
+
+    Returns ``(True, None)`` on success, ``(False, reason)`` on failure.
+    A host-key mismatch is a real, actionable condition and is surfaced
+    with its own message rather than a generic timeout.
+    """
+    import asyncio
+
+    import asyncssh
+    from sqlalchemy import select
+
+    from app.crypto import decrypt_ssh_key, get_master_key
+    from app.db import task_session
+    from app.models.host import Host
+    from app.models.ssh_key import SSHKey
+    from app.ssh_utils import HostKeyMismatchError, ssh_connect_host
+
+    last_error = "unreachable"
+    for attempt in range(2):
+        if attempt:
+            await asyncio.sleep(5)
+        try:
+            async with task_session() as db:
+                host = (
+                    await db.execute(select(Host).where(Host.id == host_id))
+                ).scalar_one_or_none()
+                if host is None:
+                    return False, "host row not found"
+                ssh_key = (
+                    await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+                ).scalar_one_or_none()
+                if ssh_key is None:
+                    return False, "host has no SSH key"
+                private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+                imported_key = asyncssh.import_private_key(private_pem)
+                async with ssh_connect_host(host, db, client_keys=[imported_key]) as conn:
+                    await conn.run("true", check=False)
+            return True, None
+        except HostKeyMismatchError as exc:
+            # Not transient — a re-key or MITM. Don't retry; surface it.
+            return False, f"SSH host key mismatch: {exc}"
+        except (TimeoutError, OSError, asyncssh.Error) as exc:
+            last_error = str(exc) or "connection timed out"
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc) or exc.__class__.__name__
+    return False, last_error
+
+
+# ---------------------------------------------------------------------------
 # Async implementation
 # ---------------------------------------------------------------------------
 
@@ -57,6 +119,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     import json
 
     import redis as redis_lib
+    from celery.exceptions import SoftTimeLimitExceeded
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
@@ -69,6 +132,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
     from app.settings_service import get_setting_sync_typed
+    from app.tasks.action_timeouts import effective_playbook_timeout
     from app.tasks.host_lock import (
         acquire_host_lock,
         check_host_busy,
@@ -363,6 +427,44 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         os.chmod(ssh_key_path, 0o600)
 
         # ------------------------------------------------------------------ #
+        # Preflight reachability — before any snapshot so we never snapshot  #
+        # a host we can't reach. A dead/hung host fails here in ~25s instead #
+        # of tying up a worker slot for the full playbook timeout. Opt-out   #
+        # via the ``actions.preflight_enabled`` setting.                     #
+        # ------------------------------------------------------------------ #
+        preflight_on = True
+        try:
+            preflight_on = bool(int(get_setting_sync_typed("actions.preflight_enabled")))
+        except Exception:
+            preflight_on = True
+        if preflight_on:
+            ok, preflight_err = await _preflight_reachable(host_id, ssh_key_path)
+            if not ok:
+                _log_step(f"[preflight] FAILED: {preflight_err}")
+                async with task_session() as db:
+                    hr_result = await db.execute(
+                        select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+                    )
+                    hr = hr_result.scalar_one()
+                    hr.status = "failed"
+                    hr.error_message = f"host unreachable (preflight): {preflight_err}"
+                    hr.finished_at = datetime.now(UTC)
+                    hr.output = "\n".join(step_log)
+                    await db.commit()
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {
+                            "event": "host_status",
+                            "host_run_id": host_run_id,
+                            "status": "failed",
+                        }
+                    ),
+                )
+                return
+            _log_step("[preflight] host reachable")
+
+        # ------------------------------------------------------------------ #
         # Build inventory and extra vars                                      #
         # ------------------------------------------------------------------ #
         inventory_json = generate_inventory(
@@ -390,16 +492,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         # ------------------------------------------------------------------ #
         # Resolve playbook timeout from app settings                          #
         # ------------------------------------------------------------------ #
-        try:
-            timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
-        except Exception:
-            timeout = 1800
         # A per-action floor (manifest ``playbook_timeout_seconds``) lets a
         # long-running action guarantee itself enough budget without forcing
         # operators to raise the global limit for every playbook. The global
         # setting can only widen it further, never shrink it below the floor.
-        if action_playbook_timeout:
-            timeout = max(timeout, action_playbook_timeout)
+        timeout = effective_playbook_timeout(action_playbook_timeout)
 
         # ------------------------------------------------------------------ #
         # Optional pre-update snapshot (destructive + VM mapping only)        #
@@ -476,16 +573,73 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             )
 
         # ------------------------------------------------------------------ #
-        # Run ansible-runner                                                  #
+        # Run ansible-runner, streaming output live                          #
         # ------------------------------------------------------------------ #
-        runner = run_ansible(
-            playbook_path=playbook_path,
-            inventory_json=inventory_json,
-            private_data_dir=private_data_dir,
-            extra_vars=extra_vars,
-            timeout=timeout,
-            roles_paths=list(action_roles_paths) if action_roles_paths else None,
+        # ansible-runner blocks until the whole playbook finishes, so without
+        # streaming the live view sits on the pre-run step-log and looks
+        # frozen for the entire upgrade. Publish each event's stdout to the
+        # SSE channel as it arrives (task-by-task), and run a heartbeat so a
+        # single long-blocking task (e.g. the apt upgrade) still shows the run
+        # is alive. Runs in the Celery worker; the SSE endpoint (separate
+        # process) relays these over Redis, so blocking here is fine.
+        _stream = {"task": "Gathering facts", "start": time.monotonic(), "last": time.monotonic()}
+
+        def _publish_stream(text: str) -> None:
+            try:
+                r.publish(
+                    channel,
+                    json.dumps({"event": "output", "host_run_id": host_run_id, "text": text}),
+                )
+            except Exception:
+                logger.debug("action_host: SSE publish failed for streamed output", exc_info=True)
+
+        def _on_event(event: dict) -> bool:
+            # Track the active task name for the heartbeat, then stream this
+            # event's rendered stdout. Must never raise — ansible-runner calls
+            # this inside its event loop.
+            try:
+                if event.get("event") == "playbook_on_task_start":
+                    task_name = (event.get("event_data") or {}).get("task")
+                    if task_name:
+                        _stream["task"] = task_name
+                out = event.get("stdout")
+                if out:
+                    _stream["last"] = time.monotonic()
+                    _publish_stream(out + "\n")
+            except Exception:
+                logger.debug("action_host: stream event handler error", exc_info=True)
+            return True
+
+        _hb_stop = threading.Event()
+
+        def _heartbeat() -> None:
+            # While a task is blocking with no new output, emit a keepalive
+            # every ~20s so long steps (apt upgrade) don't look hung.
+            while not _hb_stop.wait(20):
+                if time.monotonic() - _stream["last"] < 20:
+                    continue
+                elapsed = int(time.monotonic() - _stream["start"])
+                _publish_stream(
+                    f"… still running: {_stream['task']} "
+                    f"({elapsed // 60}m{elapsed % 60:02d}s elapsed)\n"
+                )
+
+        _hb_thread = threading.Thread(
+            target=_heartbeat, name=f"labdog-hb-{host_run_id}", daemon=True
         )
+        _hb_thread.start()
+        try:
+            runner = run_ansible(
+                playbook_path=playbook_path,
+                inventory_json=inventory_json,
+                private_data_dir=private_data_dir,
+                extra_vars=extra_vars,
+                timeout=timeout,
+                roles_paths=list(action_roles_paths) if action_roles_paths else None,
+                event_handler=_on_event,
+            )
+        finally:
+            _hb_stop.set()
 
         playbook_output: str = (
             runner.stdout.read() if hasattr(runner.stdout, "read") else str(runner.stdout)
@@ -502,22 +656,11 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         step_log.append("=== Ansible output ===")
         step_log.append(playbook_output)
 
-        # Publish last 4 KB of playbook output to SSE. Prepend a divider so
-        # the step-log lines stay visually separated from the raw ansible
-        # stream in the live view.
-        try:
-            r.publish(
-                channel,
-                json.dumps(
-                    {
-                        "event": "output",
-                        "host_run_id": host_run_id,
-                        "text": "=== Ansible output ===\n" + playbook_output[-4000:],
-                    }
-                ),
-            )
-        except Exception:
-            logger.debug("action_host: SSE publish failed for ansible output", exc_info=True)
+        # No end-of-run block is published to SSE: the playbook output was
+        # already streamed task-by-task via the event handler above, and the
+        # frontend reloads the authoritative full log from the DB once the run
+        # reaches a terminal state. Publishing the tail again here would just
+        # duplicate it in the live view.
 
         # ------------------------------------------------------------------ #
         # Post-run verification (only when we also took a snapshot — i.e.     #
@@ -811,6 +954,60 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             host_run_id,
             final_status,
         )
+
+    except SoftTimeLimitExceeded:
+        # Celery's graceful abort. The soft limit sits above the ansible
+        # timeout + verify + grace, so by now the playbook's own timeout
+        # has long fired — this catches a hung envelope step (Proxmox
+        # API, verify SSH, rollback). Finalise the row here so the host
+        # queue and the run's schedule aren't wedged by an eternal
+        # ``running`` row; the finally block below still dispatches the
+        # next pending op and cleans up tmpfs.
+        logger.error(
+            "action_host: action_run %d / host_run %d exceeded its soft time limit",
+            action_run_id,
+            host_run_id,
+        )
+        try:
+            async with task_session() as db:
+                hr_result = await db.execute(
+                    select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+                )
+                hr = hr_result.scalar_one_or_none()
+                if hr is not None and hr.status not in (
+                    "succeeded",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                ):
+                    hr.status = "failed"
+                    hr.error_message = (
+                        "aborted: exceeded task soft time limit — playbook or "
+                        "snapshot/verify/rollback step hung"
+                    )
+                    hr.finished_at = datetime.now(UTC)
+                    await db.commit()
+        except Exception:
+            logger.exception(
+                "action_host: could not persist soft-limit failure for host_run %d",
+                host_run_id,
+            )
+        try:
+            r.publish(
+                channel,
+                json.dumps(
+                    {"event": "host_status", "host_run_id": host_run_id, "status": "failed"}
+                ),
+            )
+        except Exception as pub_exc:  # noqa: BLE001
+            # The DB row is already authoritative; a lost notification only
+            # means the live view lags until the client refetches.
+            logger.warning(
+                "action_host: could not publish soft-limit status for host_run %d: %s",
+                host_run_id,
+                pub_exc,
+            )
+        raise
 
     except Exception as exc:
         error_msg = str(exc)
