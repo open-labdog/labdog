@@ -13,6 +13,9 @@ import { useDelayedLoading, cn, formatRelativeTime } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { showSuccess, showError } from "@/lib/toast"
 import { DataTable } from "@/components/ui/data-table"
+import { SyncSuccessChart } from "@/components/dashboard/sync-success-chart"
+import { DriftTrendChart } from "@/components/dashboard/drift-trend-chart"
+import { ActivityFeedPanel } from "@/components/dashboard/activity-feed-panel"
 
 const ROW_BORDER: Record<SyncStatus, string> = {
   in_sync: "border-l-2 border-l-green-500/60",
@@ -148,6 +151,19 @@ export default function DashboardPage() {
           colorClass={neverSynced > 0 ? "text-amber-400" : "text-slate-500"}
           sub={`of ${allHosts.length} hosts`}
         />
+      </div>
+
+      {/* Charts + activity feed */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="xl:col-span-1">
+          <SyncSuccessChart />
+        </div>
+        <div className="xl:col-span-1">
+          <DriftTrendChart />
+        </div>
+        <div className="md:col-span-2 xl:col-span-1">
+          <ActivityFeedPanel />
+        </div>
       </div>
 
       {/* Host triage table */}
