@@ -38,6 +38,7 @@ async def _maybe_update_host_ip(conn, host, db):
 def check_all_hosts_drift():
     """Periodic task: check hosts file drift for all hosts with hosts_file drift enabled."""
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -49,6 +50,7 @@ def check_all_hosts_drift():
     from app.hosts_mgmt.collector import collect_hosts_file
     from app.hosts_mgmt.diff import compute_hosts_diff
     from app.hosts_mgmt.merge import get_effective_hosts_entries
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -85,8 +87,10 @@ def check_all_hosts_drift():
                     )
                     desired = await get_effective_hosts_entries(host.id, db)
 
+                    _t0 = time.monotonic()
                     current = await collect_hosts_file(host, db, private_key_pem)
                     diff = compute_hosts_diff(current, desired)
+                    _duration_ms = int((time.monotonic() - _t0) * 1000)
 
                     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
                     hms.last_drift_check_at = datetime.now(UTC)
@@ -96,6 +100,16 @@ def check_all_hosts_drift():
                     ]
                     hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
+                    await record_drift_sample(
+                        db,
+                        host_id=host.id,
+                        module_type="hosts_file",
+                        status=hms.sync_status,
+                        add_count=len(diff.entries_to_add),
+                        remove_count=len(diff.entries_to_remove),
+                        policy_change_count=len(diff.entries_to_update),
+                        duration_ms=_duration_ms,
+                    )
 
                     try:
                         imported_key = asyncssh.import_private_key(private_key_pem)

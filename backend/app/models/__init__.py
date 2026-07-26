@@ -8,6 +8,7 @@ calls ``import_all_models()`` explicitly after the package is ready.
 
 from app.models.audit_log import AuditLog
 from app.models.base import Base
+from app.models.drift_sample import DriftSample
 from app.models.firewall_rule import FirewallRule, RuleAction, RuleDirection, RuleProtocol
 from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
 from app.models.host import FirewallBackend, Host, HostGroupMembership, SyncStatus
@@ -90,6 +91,7 @@ __all__ = [
     "GitAuthType",
     "GitOpsStatus",
     "HostModuleStatus",
+    "DriftSample",
     "ScheduledAction",
     "ServiceRule",
     "HostsEntry",

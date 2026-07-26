@@ -23,6 +23,7 @@ from app.api.ca_cert_actions import router as ca_cert_actions_router
 from app.api.ca_certs import router as ca_certs_router
 from app.api.cron_jobs import router as cron_jobs_router
 from app.api.cron_sync import router as cron_sync_router
+from app.api.dashboard import router as dashboard_router
 from app.api.discovery import router as discovery_router
 from app.api.drift import router as drift_router
 from app.api.git_repos import router as git_repos_router
@@ -385,6 +386,7 @@ def create_app() -> FastAPI:
     app.include_router(sync_router, prefix="/api")
     app.include_router(drift_router, prefix="/api")
     app.include_router(audit_router, prefix="/api")
+    app.include_router(dashboard_router, prefix="/api")
     app.include_router(discovery_router, prefix="/api")
     app.include_router(git_repos_router, prefix="/api")
     app.include_router(repo_scan_router, prefix="/api")
