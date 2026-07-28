@@ -8,6 +8,7 @@ import type { AuditLogEntry, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge } from "@/components/status-badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn, formatRelativeTime, useDelayedLoading } from "@/lib/utils"
+import { PanelShell, PanelHeader, PanelFootnote, PANEL_BODY_HEIGHT } from "@/components/dashboard/panel-shell"
 
 // Derived from the real `action` values seen in app/api/audit.py callers.
 const ACTION_PHRASES: Record<string, string> = {
@@ -69,7 +70,7 @@ function dotColor(entry: AuditLogEntry): string {
 
 function EmptyFeedState() {
   return (
-    <div className="flex h-[240px] flex-col items-center justify-center gap-2 text-center">
+    <div className={cn(PANEL_BODY_HEIGHT, "flex flex-col items-center justify-center gap-2 text-center")}>
       <Inbox className="h-8 w-8 text-slate-600" />
       <p className="text-sm text-slate-400">No activity yet</p>
       <p className="max-w-[240px] text-xs text-slate-500">
@@ -105,18 +106,21 @@ export function ActivityFeedPanel() {
   const entries = data ?? []
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 flex flex-col">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold text-white">Recent Activity</span>
-        <Link href="/audit" className="text-xs text-blue-400 hover:underline">
-          View all →
-        </Link>
-      </div>
+    <PanelShell>
+      <PanelHeader
+        title="Recent Activity"
+        action={
+          <Link href="/audit" className="text-xs text-blue-400 hover:underline">
+            View all →
+          </Link>
+        }
+      />
+      <PanelFootnote />
 
-      {showLoading && <FeedSkeleton />}
+      {showLoading && <div className={PANEL_BODY_HEIGHT}><FeedSkeleton /></div>}
 
       {!showLoading && error && (
-        <div className="flex h-[240px] items-center justify-center text-sm text-red-400">
+        <div className={cn(PANEL_BODY_HEIGHT, "flex items-center justify-center text-sm text-red-400")}>
           Failed to load activity feed
         </div>
       )}
@@ -124,7 +128,7 @@ export function ActivityFeedPanel() {
       {!showLoading && !error && entries.length === 0 && <EmptyFeedState />}
 
       {!showLoading && !error && entries.length > 0 && (
-        <div className="h-[240px] overflow-y-auto">
+        <div className={cn(PANEL_BODY_HEIGHT, "overflow-y-auto")}>
           {entries.map((entry) => {
             const status = derivedStatus(entry)
             const actor = entry.user_email ?? (entry.user_id ? `User #${entry.user_id}` : "System")
@@ -151,6 +155,6 @@ export function ActivityFeedPanel() {
           })}
         </div>
       )}
-    </div>
+    </PanelShell>
   )
 }

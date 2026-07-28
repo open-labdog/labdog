@@ -16,6 +16,8 @@ import { DataTable } from "@/components/ui/data-table"
 import { SyncSuccessChart } from "@/components/dashboard/sync-success-chart"
 import { DriftTrendChart } from "@/components/dashboard/drift-trend-chart"
 import { ActivityFeedPanel } from "@/components/dashboard/activity-feed-panel"
+import { RecentScheduledRunsPanel } from "@/components/dashboard/recent-scheduled-runs-panel"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 const ROW_BORDER: Record<SyncStatus, string> = {
   in_sync: "border-l-2 border-l-green-500/60",
@@ -33,6 +35,83 @@ const TRIAGE_ORDER: Record<SyncStatus, number> = {
   in_sync: 4,
 }
 
+/** Ascending date compare, nulls sort first ("infinitely stale"/never happened). */
+function compareAscNullsFirst(a: string | null, b: string | null): number {
+  if (a === b) return 0
+  if (a === null) return -1
+  if (b === null) return 1
+  return a.localeCompare(b)
+}
+
+/** Descending date compare, nulls sort last (never-happened ranks behind any real date). */
+function compareDescNullsLast(a: string | null, b: string | null): number {
+  if (a === b) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  return b.localeCompare(a)
+}
+
+interface HostDimension {
+  value: string
+  label: string
+  apply: (hosts: Host[]) => Host[]
+}
+
+const DIMENSIONS: HostDimension[] = [
+  {
+    value: "needs_attention",
+    label: "Needs attention",
+    apply: (hosts) =>
+      [...hosts].sort((a, b) => (TRIAGE_ORDER[a.sync_status] ?? 3) - (TRIAGE_ORDER[b.sync_status] ?? 3)),
+  },
+  {
+    value: "recently_synced",
+    label: "Recently synced",
+    apply: (hosts) => [...hosts].sort((a, b) => compareDescNullsLast(a.last_sync_at, b.last_sync_at)),
+  },
+  {
+    value: "stalest_sync",
+    label: "Stalest sync",
+    apply: (hosts) => [...hosts].sort((a, b) => compareAscNullsFirst(a.last_sync_at, b.last_sync_at)),
+  },
+  {
+    value: "longest_since_check",
+    label: "Longest since check",
+    apply: (hosts) => [...hosts].sort((a, b) => compareAscNullsFirst(a.last_drift_check_at, b.last_drift_check_at)),
+  },
+  {
+    value: "recently_drifted",
+    label: "Recently drifted",
+    apply: (hosts) =>
+      hosts
+        .filter((h) => h.sync_status === "out_of_sync")
+        .sort((a, b) => compareDescNullsLast(a.last_drift_check_at, b.last_drift_check_at)),
+  },
+  {
+    value: "never_checked",
+    label: "Never checked",
+    apply: (hosts) =>
+      hosts
+        .filter((h) => !h.last_drift_check_at)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at)),
+  },
+  {
+    value: "errors_only",
+    label: "Errors only",
+    apply: (hosts) =>
+      hosts
+        .filter((h) => h.sync_status === "error")
+        .sort((a, b) => compareDescNullsLast(a.last_drift_check_at, b.last_drift_check_at)),
+  },
+  {
+    value: "newest_hosts",
+    label: "Newest hosts",
+    apply: (hosts) => [...hosts].sort((a, b) => b.created_at.localeCompare(a.created_at)),
+  },
+]
+
+const DEFAULT_DIMENSION = "needs_attention"
+
 function StatCard({ label, count, colorClass, sub, textValue }: { label: string; count?: number; colorClass: string; sub?: string; textValue?: string }) {
   return (
     <div className="rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
@@ -49,6 +128,7 @@ function StatCard({ label, count, colorClass, sub, textValue }: { label: string;
 export default function DashboardPage() {
   const [checkingAll, setCheckingAll] = useState(false)
   const [syncingHost, setSyncingHost] = useState<number | null>(null)
+  const [dimension, setDimension] = useState<string>(DEFAULT_DIMENSION)
 
   const { data: hosts, isLoading: hostsLoading, refetch: refetchHosts } = useQuery<Host[]>({
     queryKey: ["hosts"],
@@ -75,10 +155,8 @@ export default function DashboardPage() {
     }
   }
 
-  // Sort by triage priority: errors first
-  const sortedHosts = [...allHosts].sort((a, b) =>
-    (TRIAGE_ORDER[a.sync_status] ?? 3) - (TRIAGE_ORDER[b.sync_status] ?? 3)
-  )
+  const activeDimension = DIMENSIONS.find((d) => d.value === dimension) ?? DIMENSIONS[0]
+  const top10Hosts = activeDimension.apply(allHosts).slice(0, 10)
 
   const handleCheckAll = async () => {
     setCheckingAll(true)
@@ -153,31 +231,55 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Charts + activity feed */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <div className="xl:col-span-1">
-          <SyncSuccessChart />
-        </div>
-        <div className="xl:col-span-1">
-          <DriftTrendChart />
-        </div>
-        <div className="md:col-span-2 xl:col-span-1">
-          <ActivityFeedPanel />
-        </div>
+      {/* Charts row — 2 up */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-stretch">
+        <div className="h-full"><SyncSuccessChart /></div>
+        <div className="h-full"><DriftTrendChart /></div>
+      </div>
+
+      {/* Feeds row — 2 up */}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-stretch">
+        <div className="h-full"><ActivityFeedPanel /></div>
+        <div className="h-full"><RecentScheduledRunsPanel /></div>
       </div>
 
       {/* Host triage table */}
       {showHostsLoading && <TableSkeleton rows={5} columns={5} />}
 
       {!hostsLoading && (
-        <DataTable<Host>
-          tableId="dashboard-v2"
-          data={sortedHosts}
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-400">Showing top 10 by</span>
+              <Select value={dimension} onValueChange={(v) => v && setDimension(v)}>
+                <SelectTrigger className="w-[190px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DIMENSIONS.map((d) => (
+                    <SelectItem key={d.value} value={d.value}>
+                      {d.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Link href="/hosts" className="text-xs text-blue-400 hover:underline">
+              View all hosts →
+            </Link>
+          </div>
+          <DataTable<Host>
+            tableId="dashboard-v2"
+            data={top10Hosts}
           emptyMessage={
-            <>
-              No hosts configured yet.{" "}
-              <Link href="/hosts/new" className="underline hover:text-white">Add your first host</Link>
-            </>
+            allHosts.length === 0 ? (
+              <>
+                No hosts configured yet.{" "}
+                <Link href="/hosts/new" className="underline hover:text-white">Add your first host</Link>
+              </>
+            ) : (
+              <>No hosts match &ldquo;{activeDimension.label}&rdquo;.</>
+            )
           }
           getRowKey={(h) => h.id}
           rowClassName={(h) => ROW_BORDER[h.sync_status] ?? ROW_BORDER.unknown}
@@ -252,7 +354,8 @@ export default function DashboardPage() {
               sortable: false,
             },
           ]}
-        />
+          />
+        </>
       )}
     </div>
   )

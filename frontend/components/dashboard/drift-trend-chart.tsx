@@ -8,6 +8,8 @@ import type { DriftTrendPoint, DriftTrendSeries } from "@/lib/types"
 import { useDelayedLoading } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { PanelShell, PanelHeader, PanelFootnote, PANEL_BODY_HEIGHT } from "@/components/dashboard/panel-shell"
+import { cn } from "@/lib/utils"
 
 export const driftTrendChartConfig = {
   drifted_checks: { label: "Drifted Checks", color: "#f59e0b" }, // amber-500
@@ -53,30 +55,25 @@ export function DriftTrendChart() {
   const allZero = points.length > 0 && points.every((p) => p.drifted_checks === 0)
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm font-semibold text-white">Drift Trend</span>
-        <span className="text-xs text-slate-400">Last {DAYS} days</span>
-      </div>
-      {/* Fixed-height reservation so the "no drift detected" callout doesn't shift the
-          chart canvas below when present vs. absent. */}
-      <div className="mb-3 h-4">
+    <PanelShell>
+      <PanelHeader title="Drift Trend" meta={`Last ${DAYS} days`} />
+      <PanelFootnote>
         {!showLoading && !error && allZero && (
-          <p className="text-xs text-green-400">No drift detected in the last {DAYS} days.</p>
+          <span className="text-green-400">No drift detected in the last {DAYS} days.</span>
         )}
-      </div>
+      </PanelFootnote>
 
-      {showLoading && <Skeleton className="h-[240px] w-full rounded-md" />}
+      {showLoading && <Skeleton className={cn(PANEL_BODY_HEIGHT, "w-full rounded-md")} />}
 
       {!showLoading && error && (
-        <div className="flex h-[240px] items-center justify-center text-sm text-red-400">
+        <div className={cn(PANEL_BODY_HEIGHT, "flex items-center justify-center text-sm text-red-400")}>
           Failed to load drift trend data
         </div>
       )}
 
       {/* Distinct empty-state: no data collected yet at all -- not "zero drift" (see allZero above). */}
       {!showLoading && !error && points.length === 0 && (
-        <div className="flex h-[240px] flex-col items-center justify-center gap-2 text-center">
+        <div className={cn(PANEL_BODY_HEIGHT, "flex flex-col items-center justify-center gap-2 text-center")}>
           <History className="h-8 w-8 text-slate-600" />
           <p className="text-sm text-slate-400">Drift history is being collected</p>
           <p className="max-w-[280px] text-xs text-slate-500">
@@ -86,7 +83,7 @@ export function DriftTrendChart() {
       )}
 
       {!showLoading && !error && points.length > 0 && (
-        <div className="h-[240px] w-full">
+        <div className={cn(PANEL_BODY_HEIGHT, "w-full")}>
           <ChartContainer config={driftTrendChartConfig}>
             <BarChart data={points} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
               <CartesianGrid vertical={false} stroke="#1e293b" strokeDasharray="3 3" />
@@ -118,6 +115,6 @@ export function DriftTrendChart() {
           </ChartContainer>
         </div>
       )}
-    </div>
+    </PanelShell>
   )
 }
