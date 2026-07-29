@@ -45,6 +45,7 @@ from app.schemas.actions import ActionRunOut
 from app.schemas.scheduled_actions import (
     ScheduledActionIn,
     ScheduledActionOut,
+    ScheduledActionRunOut,
     ScheduledActionRunSummary,
     ValidateCronRequest,
     ValidateCronResponse,
@@ -223,6 +224,51 @@ async def list_scheduled_actions(
 
     rows = (await db.execute(stmt)).scalars().all()
     return [await _hydrate(db, sa, include_last_run=include_last_run) for sa in rows]
+
+
+# NOTE: declared before "/{scheduled_action_id}" so the literal "runs"
+# segment isn't captured by the int path param (which would 422).
+@router.get("/runs", response_model=list[ScheduledActionRunOut])
+async def list_scheduled_action_runs(
+    limit: int = Query(default=10, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(current_active_user),
+) -> list[ScheduledActionRunOut]:
+    """Flat, newest-first feed of individual runs that came from a schedule.
+
+    Powers the "Recent Scheduled Runs" dashboard panel's per-run and grouped
+    views. Only runs with ``scheduled_action_id`` set are returned; each row is
+    hydrated with the schedule's ``action_name`` / ``target_name`` via the same
+    helpers the per-schedule listing uses.
+    """
+    stmt = (
+        select(ActionRun, ScheduledAction)
+        .join(ScheduledAction, ScheduledAction.id == ActionRun.scheduled_action_id)
+        .order_by(desc(ActionRun.created_at))
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await db.execute(stmt)).all()
+    out: list[ScheduledActionRunOut] = []
+    for run, sa in rows:
+        action = ACTION_REGISTRY.get(run.action_key)
+        out.append(
+            ScheduledActionRunOut(
+                id=run.id,
+                action_key=run.action_key,
+                action_name=action.name if action is not None else None,
+                scheduled_action_id=sa.id,
+                target_kind=sa.target_kind,
+                target_name=await _resolve_target_name(db, sa.target_kind, sa.target_id),
+                status=run.status,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                created_at=run.created_at,
+                error_message=run.error_message,
+            )
+        )
+    return out
 
 
 @router.post("", response_model=ScheduledActionOut, status_code=201)

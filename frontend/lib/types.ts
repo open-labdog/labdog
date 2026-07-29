@@ -898,6 +898,23 @@ export interface ScheduledAction {
   last_run: ScheduledActionRunSummary | null
 }
 
+// GET /api/scheduled-actions/runs — flat, newest-first feed of individual
+// runs that came from a schedule. Powers the dashboard "Recent Scheduled
+// Runs" panel's per-run and grouped views.
+export interface ScheduledActionRun {
+  id: number
+  action_key: string
+  action_name: string | null
+  scheduled_action_id: number
+  target_kind: ScheduledActionTargetKind
+  target_name: string | null
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  error_message: string | null
+}
+
 export interface ScheduledActionCreate {
   target_kind: ScheduledActionTargetKind
   target_id: number | null
