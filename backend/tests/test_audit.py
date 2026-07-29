@@ -145,6 +145,30 @@ class TestAudit:
         assert len(data) == 2
         assert all(entry["action"] == "create" for entry in data)
 
+    async def test_exclude_action(self, superuser_client, db: AsyncSession):
+        """exclude_action drops matching rows (dashboard feed hides scheduled dispatches)."""
+        actions = ["create", "scheduled_action.dispatched", "update", "scheduled_action.dispatched"]
+        for i, action in enumerate(actions):
+            db.add(
+                AuditLog(
+                    action=action,
+                    entity_type="rule",
+                    entity_id=i + 1,
+                    user_id=None,
+                    ip_address="127.0.0.1",
+                )
+            )
+        await db.flush()
+
+        resp = await superuser_client.get(
+            "/api/audit-log?exclude_action=scheduled_action.dispatched"
+        )
+
+        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+        data = resp.json()
+        assert len(data) == 2
+        assert all(entry["action"] != "scheduled_action.dispatched" for entry in data)
+
 
 class TestSSHSessionTranscriptEndpoint:
     """Tests for GET /api/audit-log/ssh-sessions/{session_id}/transcript (SEC-09)."""

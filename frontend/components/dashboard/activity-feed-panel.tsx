@@ -99,7 +99,12 @@ function FeedSkeleton() {
 export function ActivityFeedPanel() {
   const { data, isLoading, error } = useQuery<AuditLogEntry[]>({
     queryKey: ["audit", "recent"],
-    queryFn: () => apiFetch<AuditLogEntry[]>("/api/audit-log?limit=10"),
+    // Scheduled-action dispatches live in the Recent Scheduled Runs panel;
+    // exclude them here so this feed stays focused on config & operator events.
+    queryFn: () =>
+      apiFetch<AuditLogEntry[]>(
+        "/api/audit-log?limit=10&exclude_action=scheduled_action.dispatched"
+      ),
     refetchInterval: 30000,
   })
   const showLoading = useDelayedLoading(isLoading)
@@ -115,7 +120,9 @@ export function ActivityFeedPanel() {
           </Link>
         }
       />
-      <PanelFootnote />
+      <PanelFootnote>
+        <span className="text-slate-500">Config &amp; operator changes</span>
+      </PanelFootnote>
 
       {showLoading && <div className={PANEL_BODY_HEIGHT}><FeedSkeleton /></div>}
 

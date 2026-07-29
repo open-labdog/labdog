@@ -43,6 +43,7 @@ async def list_audit_logs(
     entity_type: str | None = None,
     entity_id: int | None = None,
     action: str | None = None,
+    exclude_action: str | None = None,
     user_id: int | None = None,
     limit: int = Query(default=50, le=200),
     cursor: int | None = None,  # cursor-based: pass last seen id
@@ -71,6 +72,8 @@ async def list_audit_logs(
         q = q.where(AuditLog.entity_id == entity_id)
     if action:
         q = q.where(AuditLog.action == action)
+    if exclude_action:
+        q = q.where(AuditLog.action != exclude_action)
     if user_id:
         q = q.where(AuditLog.user_id == user_id)
     result = await db.execute(q)

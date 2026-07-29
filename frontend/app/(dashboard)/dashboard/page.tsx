@@ -249,20 +249,25 @@ export default function DashboardPage() {
       {!hostsLoading && (
         <>
           <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-slate-400">Showing top 10 by</span>
-              <Select value={dimension} onValueChange={(v) => v && setDimension(v)}>
-                <SelectTrigger className="w-[190px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DIMENSIONS.map((d) => (
-                    <SelectItem key={d.value} value={d.value}>
-                      {d.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-baseline gap-3">
+              <h2 className="text-sm font-semibold text-white">Hosts</h2>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">Showing top 10 by</span>
+                <Select value={dimension} onValueChange={(v) => v && setDimension(v)}>
+                  <SelectTrigger className="w-auto min-w-[9rem] h-7 gap-1.5 px-2 text-xs">
+                    <SelectValue>
+                      {(value: string) => DIMENSIONS.find((d) => d.value === value)?.label ?? value}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIMENSIONS.map((d) => (
+                      <SelectItem key={d.value} value={d.value}>
+                        {d.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
             <Link href="/hosts" className="text-xs text-blue-400 hover:underline">
               View all hosts →
