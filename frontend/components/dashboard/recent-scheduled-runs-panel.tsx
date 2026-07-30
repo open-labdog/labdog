@@ -8,16 +8,10 @@ import { apiFetch } from "@/lib/api"
 import type { ScheduledActionRun } from "@/lib/types"
 import { RunStatusBadge, RUN_STATUS_COLORS } from "@/components/status-badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { SegmentedToggle } from "@/components/ui/segmented-toggle"
 import { cn, formatRelativeTime, useDelayedLoading } from "@/lib/utils"
 import { PanelShell, PanelHeader, PanelFootnote, PANEL_BODY_HEIGHT } from "@/components/dashboard/panel-shell"
 
 type ViewMode = "per_run" | "grouped"
-
-const MODE_OPTIONS: { value: ViewMode; label: string }[] = [
-  { value: "per_run", label: "Per run" },
-  { value: "grouped", label: "Grouped" },
-]
 
 interface RunGroup {
   scheduledActionId: number
@@ -196,6 +190,7 @@ function GroupRow({ group, isOpen, onToggle }: { group: RunGroup; isOpen: boolea
 
 export function RecentScheduledRunsPanel() {
   const [mode, setMode] = useState<ViewMode>("per_run")
+  const grouped = mode === "grouped"
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set())
 
   const perRunQuery = useQuery<ScheduledActionRun[]>({
@@ -233,7 +228,20 @@ export function RecentScheduledRunsPanel() {
         title="Recent Scheduled Runs"
         action={
           <div className="flex items-center gap-3">
-            <SegmentedToggle value={mode} onValueChange={setMode} options={MODE_OPTIONS} />
+            <button
+              type="button"
+              aria-pressed={grouped}
+              onClick={() => setMode(grouped ? "per_run" : "grouped")}
+              title="Group runs by schedule"
+              className={cn(
+                "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                grouped
+                  ? "border-slate-600 bg-slate-600 text-white"
+                  : "border-slate-700 bg-slate-800 text-slate-400 hover:text-slate-200"
+              )}
+            >
+              Grouped
+            </button>
             <Link href="/schedules" className="text-xs text-blue-400 hover:underline">
               View all →
             </Link>
