@@ -6,6 +6,7 @@ from app.tasks import celery_app
 @celery_app.task(name="app.tasks.user_drift.check_all_user_drift", queue="long_running")
 def check_all_user_drift():
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -14,6 +15,7 @@ def check_all_user_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -59,6 +61,7 @@ def check_all_user_drift():
                     usernames = [u.username for u in desired_users]
                     groupnames = [g.groupname for g in desired_groups]
 
+                    _t0 = time.monotonic()
                     actual_users = await collect_user_states(host, db, private_key_pem, usernames)
                     actual_groups = await collect_group_states(
                         host, db, private_key_pem, groupnames
@@ -66,6 +69,7 @@ def check_all_user_drift():
 
                     user_diff = diff_users(desired_user_dicts, actual_users)
                     group_diff = diff_groups(desired_group_dicts, actual_groups)
+                    _duration_ms = int((time.monotonic() - _t0) * 1000)
 
                     users_drifted = bool(
                         user_diff.users_to_add
@@ -83,6 +87,18 @@ def check_all_user_drift():
                     hms.collected_state = {"users": actual_users, "groups": actual_groups}
                     hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
+                    await record_drift_sample(
+                        db,
+                        host_id=host.id,
+                        module_type="linux_user",
+                        status="out_of_sync" if (users_drifted or groups_drifted) else "in_sync",
+                        add_count=len(user_diff.users_to_add) + len(group_diff.groups_to_add),
+                        remove_count=len(user_diff.users_to_remove)
+                        + len(group_diff.groups_to_remove),
+                        policy_change_count=len(user_diff.users_to_update)
+                        + len(group_diff.groups_to_update),
+                        duration_ms=_duration_ms,
+                    )
 
                     if not host.labdog_source_ip:
                         try:

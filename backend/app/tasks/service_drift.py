@@ -7,6 +7,7 @@ from app.tasks import celery_app
 def check_all_service_drift():
     """Periodic task: check service drift for all hosts with service drift enabled."""
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -15,6 +16,7 @@ def check_all_service_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -55,11 +57,21 @@ def check_all_service_drift():
                     desired = await get_effective_services(host.id, db)
                     service_names = [s.service_name for s in desired]
 
+                    _t0 = time.monotonic()
                     current = await collect_service_states(host, db, private_key_pem, service_names)
                     diff = compute_service_diff(current, desired)
+                    _duration_ms = int((time.monotonic() - _t0) * 1000)
 
                     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
                     hms.last_drift_check_at = datetime.now(UTC)
+                    await record_drift_sample(
+                        db,
+                        host_id=host.id,
+                        module_type="service",
+                        status=hms.sync_status,
+                        policy_change_count=len(diff.services_to_update),
+                        duration_ms=_duration_ms,
+                    )
                     hms.collected_state = [
                         {
                             "service_name": s.service_name,

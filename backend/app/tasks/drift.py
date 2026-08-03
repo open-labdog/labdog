@@ -23,6 +23,7 @@ async def _check_drift_for_one_host(host, db) -> bool:
     sweep's behaviour) — the caller does not see them.
     """
     import asyncio  # noqa: F401  — re-export for compatibility
+    import time
     from dataclasses import asdict
     from datetime import datetime
 
@@ -32,6 +33,7 @@ async def _check_drift_for_one_host(host, db) -> bool:
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.drift.detector import check_drift
+    from app.metrics.recorder import record_drift_sample
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
     from app.ssh_utils import get_source_ip, ssh_connect_host
@@ -51,6 +53,7 @@ async def _check_drift_for_one_host(host, db) -> bool:
         desired, desired_policies = await _get_desired_state_for_host(
             host.id, db, host_source_ip=host.labdog_source_ip
         )
+        _t0 = time.monotonic()
         current_fw_state = await fetch_current_firewall_state(host.id, db)
         drift_result = await check_drift(
             host.id,
@@ -59,7 +62,22 @@ async def _check_drift_for_one_host(host, db) -> bool:
             desired_policies=desired_policies,
             current_state=current_fw_state,
         )
+        _duration_ms = int((time.monotonic() - _t0) * 1000)
         host.last_drift_check_at = datetime.now(UTC)
+
+        diff = drift_result.diff
+        await record_drift_sample(
+            db,
+            host_id=host.id,
+            module_type="firewall",
+            status=drift_result.status.value
+            if hasattr(drift_result.status, "value")
+            else drift_result.status,
+            add_count=len(diff.rules_to_add) if diff else 0,
+            remove_count=len(diff.rules_to_remove) if diff else 0,
+            policy_change_count=len(diff.policy_changes) if diff else 0,
+            duration_ms=_duration_ms,
+        )
 
         hms = (
             await db.execute(
