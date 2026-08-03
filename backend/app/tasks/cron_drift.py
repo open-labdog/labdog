@@ -6,6 +6,7 @@ from app.tasks import celery_app
 @celery_app.task(name="app.tasks.cron_drift.check_all_cron_drift", queue="long_running")
 def check_all_cron_drift():
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -17,6 +18,7 @@ def check_all_cron_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -63,9 +65,11 @@ def check_all_cron_drift():
 
                     users = list({j.user for j in effective})
 
+                    _t0 = time.monotonic()
                     actual = await collect_cron_jobs(host, db, private_key_pem, users)
 
                     cron_diff = diff_cron_jobs(desired_dicts, actual)
+                    _duration_ms = int((time.monotonic() - _t0) * 1000)
 
                     drifted = bool(
                         cron_diff.jobs_to_add
@@ -78,6 +82,16 @@ def check_all_cron_drift():
                     hms.collected_state = actual
                     hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
+                    await record_drift_sample(
+                        db,
+                        host_id=host.id,
+                        module_type="cron",
+                        status="out_of_sync" if drifted else "in_sync",
+                        add_count=len(cron_diff.jobs_to_add),
+                        remove_count=len(cron_diff.jobs_to_remove),
+                        policy_change_count=len(cron_diff.jobs_to_update),
+                        duration_ms=_duration_ms,
+                    )
 
                     from app.api.host_state import refresh_host_sync_status
 

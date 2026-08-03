@@ -1,3 +1,4 @@
+import time
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.drift.detector import check_drift
+from app.metrics.recorder import record_drift_sample
 from app.models.host import Host, HostGroupMembership
 from app.models.user import User
 from app.rules.desired_state import get_desired_state
@@ -89,9 +91,23 @@ async def check_host_drift(
     desired, policies = await _get_desired_state_for_host(
         host_id, db, host_source_ip=host.labdog_source_ip
     )
+    _t0 = time.monotonic()
     result = await check_drift(host_id, desired, db, desired_policies=policies)
+    _duration_ms = int((time.monotonic() - _t0) * 1000)
     host.sync_status = result.status
     host.last_drift_check_at = datetime.now(UTC)
+    diff = result.diff
+    status_value = result.status.value if hasattr(result.status, "value") else result.status
+    await record_drift_sample(
+        db,
+        host_id=host_id,
+        module_type="firewall",
+        status=status_value,
+        add_count=len(diff.rules_to_add) if diff else 0,
+        remove_count=len(diff.rules_to_remove) if diff else 0,
+        policy_change_count=len(diff.policy_changes) if diff else 0,
+        duration_ms=_duration_ms,
+    )
     await db.commit()
     return _drift_result_to_response(host_id, result)
 
@@ -136,9 +152,23 @@ async def check_group_drift(
         desired, policies = await _get_desired_state_for_host(
             hid, db, host_source_ip=host.labdog_source_ip
         )
+        _t0 = time.monotonic()
         result = await check_drift(hid, desired, db, desired_policies=policies)
+        _duration_ms = int((time.monotonic() - _t0) * 1000)
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(UTC)
+        diff = result.diff
+        status_value = result.status.value if hasattr(result.status, "value") else result.status
+        await record_drift_sample(
+            db,
+            host_id=hid,
+            module_type="firewall",
+            status=status_value,
+            add_count=len(diff.rules_to_add) if diff else 0,
+            remove_count=len(diff.rules_to_remove) if diff else 0,
+            policy_change_count=len(diff.policy_changes) if diff else 0,
+            duration_ms=_duration_ms,
+        )
         await db.commit()
         results.append(_drift_result_to_response(hid, result))
     return results

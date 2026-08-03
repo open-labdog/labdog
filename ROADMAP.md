@@ -29,17 +29,17 @@ Currently bundled:
   The playbook self-discovers control-plane vs worker by probing each
   node — no per-member roles in labdog. Currently apt-only;
   broadening to `dnf` is tracked in [TODO.md](TODO.md).
-
-Planned additions:
-- **`grafana-alloy`** — install and configure
+- `alloy-install` (**`grafana-alloy`**) — installs and configures
   [Grafana Alloy](https://grafana.com/oss/alloy/) on Debian/Ubuntu
-  and Windows hosts. Multi-role pack: GPG/repo setup, package
-  install (apt or local file), config templating with group-based
-  overlays, optional service detection (docker, mysql, postgresql,
-  custom), systemd / Windows service management. Existing scaffold
-  proves out the playbook design; conversion to the LabDog action
-  pack format (`pack.yml`, `actions/<key>.manifest.yml` sidecars,
-  `verify/` playbooks) is the remaining work.
+  (and Windows) hosts: GPG/repo setup, package install (apt or local
+  file), config templating with group-based overlays, optional service
+  detection (docker, mysql, postgresql, custom), and systemd / Windows
+  service management. Stamps the `labdog_host_id` label and closes the
+  loop with the **Integrations → Grafana** page — registered Mimir/Loki
+  instances auto-populate the Alloy remote-write / Loki push URLs, so
+  live host metrics appear on the host Overview tab with no free-text
+  endpoint entry. Remaining follow-ups (per-host metrics backend
+  routing, Loki log surfacing) are tracked in [TODO.md](TODO.md).
 
 ---
 

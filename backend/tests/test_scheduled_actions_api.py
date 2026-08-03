@@ -333,6 +333,65 @@ async def test_delete_returns_204_and_runs_history_survives(superuser_client, db
     assert rows[0].scheduled_action_id is None
 
 
+async def test_scheduled_action_runs_feed(superuser_client, db):
+    """GET /scheduled-actions/runs returns hydrated scheduled-origin runs, newest first."""
+    host = await create_host(db)
+    await db.commit()
+
+    create_resp = await superuser_client.post(
+        "/api/scheduled-actions",
+        json={
+            "target_kind": "host",
+            "target_id": host.id,
+            "action_key": "_builtin.collect_state",
+            "schedule_cron": "0 * * * *",
+        },
+    )
+    sa_id = create_resp.json()["id"]
+
+    # Three scheduled-origin runs for this schedule, plus one ad-hoc run
+    # (scheduled_action_id=None) that must be excluded from the feed.
+    for status in ("succeeded", "failed", "running"):
+        db.add(
+            ActionRun(
+                action_key="_builtin.collect_state",
+                action_version="1.0.0",
+                host_id=host.id,
+                scheduled_action_id=sa_id,
+                parameters={},
+                parallelism=1,
+                status=status,
+            )
+        )
+    db.add(
+        ActionRun(
+            action_key="_builtin.collect_state",
+            action_version="1.0.0",
+            host_id=host.id,
+            scheduled_action_id=None,
+            parameters={},
+            parallelism=1,
+            status="succeeded",
+        )
+    )
+    await db.flush()
+    await db.commit()
+
+    resp = await superuser_client.get("/api/scheduled-actions/runs?limit=10")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    # Only the 3 scheduled-origin runs, not the ad-hoc one.
+    assert len(data) == 3
+    assert all(r["scheduled_action_id"] == sa_id for r in data)
+    # Newest first (created_at desc, so most recently inserted leads).
+    created = [r["created_at"] for r in data]
+    assert created == sorted(created, reverse=True)
+    # Hydrated presentation hints resolved server-side.
+    assert data[0]["target_name"] == host.hostname
+    assert data[0]["target_kind"] == "host"
+
+
 # ---------------------------------------------------------------------------
 # run-now + runs list
 # ---------------------------------------------------------------------------

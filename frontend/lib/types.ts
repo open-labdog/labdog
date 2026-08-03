@@ -2,6 +2,59 @@ export type FirewallBackend = "nftables" | "iptables" | "unknown"
 export type SyncStatus = "pending" | "in_sync" | "out_of_sync" | "unknown" | "error"
 export type GitOpsStatus = "disconnected" | "synced" | "error" | "importing"
 
+// ---------------------------------------------------------------------------
+// Dashboard charts (GET /api/dashboard/sync-success-rate, /drift-trend)
+// Mirrors backend/app/metrics/schemas.py exactly.
+// ---------------------------------------------------------------------------
+
+export type Granularity = "day" | "hour"
+
+export interface SyncRatePoint {
+  bucket: string
+  total: number
+  success: number
+  failed: number
+  /** 0-1, or null when `total === 0` (no syncs attempted, not "0% success"). */
+  success_rate: number | null
+}
+
+export interface SyncRateSeries {
+  granularity: Granularity
+  since: string
+  points: SyncRatePoint[]
+}
+
+export interface DriftTrendPoint {
+  bucket: string
+  checks: number
+  drifted_checks: number
+  total_drift: number
+}
+
+export interface DriftTrendSeries {
+  granularity: Granularity
+  since: string
+  points: DriftTrendPoint[]
+}
+
+// ---------------------------------------------------------------------------
+// Audit log (GET /api/audit-log) — mirrors backend/app/api/audit.py
+// AuditLogResponse. Shared by the audit page and the dashboard activity feed.
+// ---------------------------------------------------------------------------
+
+export interface AuditLogEntry {
+  id: number
+  created_at: string
+  user_id: number | null
+  user_email: string | null
+  action: "create" | "update" | "delete" | string
+  entity_type: string
+  entity_id: number | null
+  before_state: Record<string, unknown> | null
+  after_state: Record<string, unknown> | null
+  ip_address: string | null
+}
+
 export interface HostGroup {
   id: number; name: string; description: string | null; category: string | null; priority: number
   input_policy: string | null; output_policy: string | null
@@ -843,6 +896,23 @@ export interface ScheduledAction {
   pack_name: string | null
   destructive: boolean | null
   last_run: ScheduledActionRunSummary | null
+}
+
+// GET /api/scheduled-actions/runs — flat, newest-first feed of individual
+// runs that came from a schedule. Powers the dashboard "Recent Scheduled
+// Runs" panel's per-run and grouped views.
+export interface ScheduledActionRun {
+  id: number
+  action_key: string
+  action_name: string | null
+  scheduled_action_id: number
+  target_kind: ScheduledActionTargetKind
+  target_name: string | null
+  status: string
+  started_at: string | null
+  finished_at: string | null
+  created_at: string
+  error_message: string | null
 }
 
 export interface ScheduledActionCreate {

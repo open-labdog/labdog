@@ -103,7 +103,10 @@ export function SystemdStateBadge({
   return <Badge className={className}>{text}</Badge>
 }
 
-const RUN_STATUS_COLORS: Record<string, string> = {
+/** Exported so other run-status visualizations (e.g. the grouped run-history
+ *  dot-strip on the dashboard's Recent Scheduled Runs panel) reuse the same
+ *  status→color mapping instead of inventing a parallel palette. */
+export const RUN_STATUS_COLORS: Record<string, string> = {
   queued: "bg-slate-600 text-white",
   // `pending` means claim-or-defer decided another op is running on
   // the target host; the run is waiting for the per-host queue to
