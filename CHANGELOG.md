@@ -7,6 +7,48 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **Prometheus metrics export.** A new `GET /metrics` endpoint serves LabDog's
+  own state in Prometheus text exposition format, so an existing Prometheus +
+  Grafana stack can scrape it directly instead of bolting on another tool. It
+  covers both **fleet state** (hosts by sync status, per-module state, desired-
+  state rule counts, staleness ages, CA certificate expiry, discovery backlog)
+  and **LabDog self-health** (sync and action outcomes, duration histograms,
+  queue depth, stuck jobs, scheduler and action-pack health).
+
+  **Disabled by default.** Enable with `[metrics] enabled = true` (or
+  `LABDOG_METRICS__ENABLED=true`); the endpoint returns 404 while disabled.
+  When enabled it is **unauthenticated** — Prometheus cannot use LabDog's
+  cookie session auth, so the endpoint is deliberately open-and-opt-in rather
+  than half-gated, and is meant to be restricted at the reverse proxy. It is a
+  config-file setting rather than a UI toggle on purpose: the in-app settings
+  API is available to any signed-in user, so a UI toggle would let any
+  authenticated session publish fleet state to the network.
+
+  The **Integrations → Grafana** page now shows both directions explicitly —
+  *Metrics in* (the existing Mimir/Loki backends LabDog queries for host
+  CPU/memory/disk) and *Metrics out* (a new card with the scrape URL, status,
+  and a copy-paste `prometheus.yml` snippet).
+
+  Ships a ready-made Grafana dashboard, 14 example alerting rules, and a scrape
+  config in `docs/examples/prometheus/`, documented in
+  [`docs/metrics-export.md`](docs/metrics-export.md).
+
+  Notable design points: values are aggregated from PostgreSQL per scrape and
+  cached briefly, so counters are DB-derived and every worker returns identical
+  numbers (in-process counters would be wrong under multiple uvicorn workers);
+  there is deliberately **no per-host label** anywhere, since per-host telemetry
+  already belongs to the Alloy → Mimir path; and the renderer is dependency-free
+  (`prometheus-client` is a dev-only dependency used to validate output in
+  tests).
+
+  One observability gap this closes: `labdog_drift_checks_total` exposes the
+  drift-check `result` verbatim, including `error`. A drift check that *fails to
+  run* is not the same as one that *finds drift*, but the in-app drift trend
+  counts only confirmed drift — so a check erroring 100% of the time was
+  previously indistinguishable from a healthy one.
+
 ## [0.7.0] — 2026-07-24
 
 ### Added

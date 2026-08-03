@@ -1,0 +1,178 @@
+# Example Prometheus alerting rules for LabDog.
+#
+# Load with `rule_files: [labdog-alerts.yml]` in prometheus.yml, or drop into
+# a PrometheusRule CR (the `groups:` block below is the CR's `spec:` verbatim).
+#
+# Thresholds here are deliberately conservative for a homelab / small fleet.
+# Tune `for:` durations and comparisons to your environment before relying on
+# them -- in particular LabDogHostsOutOfSync will be noisy if you routinely
+# leave hosts drifted.
+#
+# runbook_url anchors point at docs/metrics-export.md.
+
+groups:
+  - name: labdog
+    rules:
+      # --- Availability ------------------------------------------------------
+      - alert: LabDogDown
+        expr: up{job="labdog"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LabDog is not scrapeable"
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} for 5
+            minutes. Either LabDog is down, or [metrics] enabled was turned
+            off (the endpoint returns 404 when disabled).
+          runbook_url: "https://github.com/open-labdog/labdog/blob/main/docs/metrics-export.md#troubleshooting"
+
+      # --- Fleet state -------------------------------------------------------
+      - alert: LabDogHostsInError
+        expr: labdog_hosts{sync_status="error"} > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} host(s) in error state"
+          description: >-
+            LabDog cannot reach or manage {{ $value }} host(s). Check the
+            Fleet Overview triage table for the affected hosts.
+          runbook_url: "https://github.com/open-labdog/labdog/blob/main/docs/metrics-export.md#fleet-state"
+
+      - alert: LabDogHostsOutOfSync
+        expr: labdog_hosts{sync_status="out_of_sync"} > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} host(s) drifted for over an hour"
+          description: >-
+            Configuration drift has persisted for an hour without a
+            reconciling sync.
+
+      - alert: LabDogDriftChecksStalled
+        expr: labdog_host_last_drift_check_age_seconds_max > 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Some host has not been drift-checked in over 24h"
+          description: >-
+            The stalest host was last checked
+            {{ $value | humanizeDuration }} ago. Drift checking may be
+            disabled for that host, or celery-beat/RedBeat may be down.
+
+      - alert: LabDogDriftCheckErrors
+        expr: sum(rate(labdog_drift_checks_total{result="error"}[1h])) by (module) > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Drift checks erroring for module {{ $labels.module }}"
+          description: >-
+            Drift checks are raising errors rather than returning a result.
+            An erroring check is NOT the same as detected drift -- the host's
+            true state is unknown.
+
+      # --- Sync health -------------------------------------------------------
+      - alert: LabDogSyncFailureRateHigh
+        expr: >-
+          (
+            sum(rate(labdog_sync_jobs_total{status="failed"}[1h]))
+            /
+            clamp_min(sum(rate(labdog_sync_jobs_total{status=~"success|failed|cancelled"}[1h])), 0.0001)
+          ) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 10% of syncs are failing"
+          description: "Sync failure ratio over the last hour: {{ $value | humanizePercentage }}."
+
+      - alert: LabDogSyncQueueStuck
+        expr: labdog_stale_sync_jobs > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} sync job(s) stuck in running state"
+          description: >-
+            Jobs have been running past the sweeper threshold. The sweeper
+            runs every 5 minutes and should clear these -- if they persist,
+            celery-beat/RedBeat is likely not running.
+
+      - alert: LabDogHostQueueBlocked
+        expr: labdog_hosts_queue_blocked > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} host(s) have a backed-up operation queue"
+          description: >-
+            Operations are queued behind an in-flight one for the same host
+            and have not drained in 30 minutes.
+
+      # --- Scheduling & packs ------------------------------------------------
+      - alert: LabDogScheduledActionOrphaned
+        expr: labdog_scheduled_actions_orphaned > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} enabled schedule(s) reference a missing action"
+          description: >-
+            An enabled schedule's action_key has no winner in the action
+            registry, so it silently does nothing when it fires. Either the
+            pack was removed, or the key is unresolved and needs a winner
+            pinned on the Action Packs page.
+
+      - alert: LabDogActionPackSyncFailing
+        expr: labdog_action_packs{sync_status="failed"} > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} action pack(s) failing to sync"
+          description: >-
+            LabDog is running against a stale copy of the pack's playbooks.
+
+      # --- Certificates ------------------------------------------------------
+      - alert: LabDogCACertExpiringSoon
+        expr: (labdog_ca_cert_not_after_timestamp_seconds - time()) < 30 * 86400
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "CA certificate {{ $labels.name }} expires in under 30 days"
+          description: "Expires {{ $value | humanizeDuration }} from now."
+
+      - alert: LabDogCACertExpiringCritical
+        expr: (labdog_ca_cert_not_after_timestamp_seconds - time()) < 7 * 86400
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "CA certificate {{ $labels.name }} expires in under 7 days"
+
+      # --- Discovery ---------------------------------------------------------
+      - alert: LabDogPendingHostsBacklog
+        expr: labdog_scan_pending_hosts > 20
+        for: 24h
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $value }} discovered hosts awaiting review"
+
+      # --- Exporter health ---------------------------------------------------
+      - alert: LabDogMetricsSlow
+        expr: labdog_metrics_scrape_duration_seconds > 5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LabDog metric collection is taking over 5s"
+          description: >-
+            Collection runs ~13 aggregate queries against PostgreSQL. Sustained
+            slowness usually means a large history table wants pruning or an
+            index.

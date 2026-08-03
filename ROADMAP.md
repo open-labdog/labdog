@@ -52,8 +52,6 @@ entry for the work itself.
 
 | Idea | Notes |
 |------|-------|
-| **Dashboard charts & activity feed** | Today's dashboard ships counts and a triage table (numeric tiles + list). Missing: visual charts (e.g. sync success-rate over time, drift trend over the past week) and an inline "recent activity" feed surfacing the last N audit events on the main page — today they live behind a separate `/audit` route. |
-| **Exportable metrics (OpenMetrics)** | A `/metrics` endpoint in the standard OpenMetrics / Prometheus exposition format so existing Prometheus + Grafana stacks can scrape LabDog without bolting on another tool. Counters for sync attempts / successes / failures by module, gauges for hosts-by-status and drift counts, histograms for sync + drift-check durations. Same underlying numbers as the in-UI dashboard charts; different audience (external monitoring stack vs operator looking at the LabDog UI). |
 | **Notification system** | Email/webhook/Slack alerts on drift detection, sync failures, certificate expiry |
 | **API tokens** | Non-cookie auth for CI/CD integration or scripting against the LabDog API |
 | **Host tagging & filtering** | Tags beyond groups for flexible organisation (e.g. `region:eu`, `env:prod`) |
