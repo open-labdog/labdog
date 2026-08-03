@@ -2,11 +2,14 @@
 
 Forward-only metrics substrate: every module drift-check task/endpoint will
 write exactly one row per check here, atomically with its existing
-``HostModuleStatus`` / ``Host.sync_status`` write. Powers the dashboard
-"sync success rate" and "drift trend" charts (``GET /api/dashboard/*``) and,
-later, an OpenMetrics ``/metrics`` exporter that reuses the same
-aggregations. No seeding / backfill on this migration — intentional, the
-table starts empty and only accumulates going forward.
+``HostModuleStatus`` / ``Host.sync_status`` write. Powers two independent
+read paths: the dashboard "sync success rate" and "drift trend" charts
+(``GET /api/dashboard/*``, time-bucketed by ``app.metrics.service``) and
+the Prometheus ``/metrics`` exporter (point-in-time snapshots via
+``app.metrics.aggregates`` — a separate aggregation layer, not a reuse of
+the dashboard's ``date_trunc`` series; see ``app.metrics.__init__``). No
+seeding / backfill on this migration — intentional, the table starts empty
+and only accumulates going forward.
 
 Revision ID: 0013_drift_samples
 Revises: 0012_grafana_instances_kind_url

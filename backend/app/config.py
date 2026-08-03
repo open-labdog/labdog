@@ -73,6 +73,25 @@ class RateLimitConfig(BaseModel):
     api: str = "100/minute"
 
 
+class MetricsConfig(BaseModel):
+    """Prometheus ``/metrics`` exporter.
+
+    Disabled by default and deliberately **file-level, not a DB-backed
+    ``AppSetting``**: the endpoint is unauthenticated (like ``GET
+    /api/version``) once enabled, so flipping it on must require server
+    access (editing ``labdog.toml`` / setting ``LABDOG_METRICS__ENABLED``
+    and restarting), not just a LabDog login. ``/api/settings`` gates on
+    ``current_active_user`` (not superuser), so a DB toggle would let any
+    authenticated — or XSS'd — session expose fleet state with one PATCH.
+    Protection for the enabled endpoint itself is expected to be a reverse
+    proxy allow-list, not application-level auth.
+    """
+
+    enabled: bool = False
+    cache_ttl_seconds: float = 15.0
+    action_key_label: bool = True
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error", "critical"] = "info"
     format: Literal["text", "json"] = "text"
@@ -138,6 +157,7 @@ class Settings(BaseModel):
     security: SecurityConfig = SecurityConfig()
     tls: TLSConfig = TLSConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
+    metrics: MetricsConfig = MetricsConfig()
     logging: LoggingConfig = LoggingConfig()
     ssh: SSHConfig = SSHConfig()
     discovery: DiscoveryConfig = DiscoveryConfig()

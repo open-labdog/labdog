@@ -13,9 +13,12 @@ class DriftSample(Base):
     every module drift-check task/endpoint writes exactly one row here,
     atomically with its ``HostModuleStatus`` / ``Host.sync_status`` write.
     Sits alongside ``HostModuleStatus`` (current state) and ``AuditLog``
-    (audit trail) — this table exists purely to power the dashboard charts
-    (``app.api.dashboard``) and, later, an OpenMetrics ``/metrics`` exporter
-    reusing the same aggregations in ``app.metrics.service``.
+    (audit trail) — this table powers two independent consumers with two
+    independent aggregation layers: the dashboard charts
+    (``app.api.dashboard`` via the time-bucketed ``app.metrics.service``)
+    and the Prometheus ``/metrics`` exporter (via the point-in-time
+    ``app.metrics.aggregates``). See ``app.metrics.__init__`` for why
+    those two aggregation layers are deliberately not the same code.
     """
 
     __tablename__ = "drift_samples"

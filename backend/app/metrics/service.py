@@ -1,9 +1,14 @@
 """Read-side aggregations powering the dashboard charts.
 
 Both functions are pure read/aggregation over existing tables (``SyncJob``
-and ``DriftSample``) so a future OpenMetrics ``/metrics`` exporter can reuse
-them unchanged — the exporter would just render the same series in
-OpenMetrics text format instead of JSON.
+and ``DriftSample``), bucketed by ``date_trunc`` into a time series — this
+is dashboard-only. The Prometheus ``/metrics`` exporter does **not** reuse
+these: Prometheus needs current point-in-time values (its TSDB does its own
+bucketing over scrape history, and a back-dated sample is rejected as
+out-of-order on the next scrape), so it has its own point-in-time
+aggregations in ``app.metrics.aggregates`` instead. See
+``app.metrics.__init__`` for the full three-way split (recorder / service /
+aggregates).
 """
 
 from datetime import datetime

@@ -36,6 +36,8 @@ from app.api.hosts_entries import router as hosts_entries_router
 from app.api.hosts_sync import router as hosts_sync_router
 from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
+from app.api.metrics import router as metrics_router
+from app.api.metrics import status_router as metrics_status_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
 from app.api.proxmox_discovery import router as proxmox_discovery_router
@@ -310,6 +312,21 @@ def create_app() -> FastAPI:
             async def __call__(self, scope, receive, send):
                 if scope["type"] != "http":
                     await self._ws_app(scope, receive, send)
+                elif scope["path"] == "/metrics":
+                    # Exempt the scrape endpoint from the general API rate
+                    # limit. `@limiter.exempt` isn't usable here — the
+                    # `Limiter` is constructed inside `create_app()`, so
+                    # there's no module-level object to decorate. Without
+                    # this, `_get_client_ip` (which only trusts
+                    # `X-Forwarded-For` from `settings.server.trusted_proxies`,
+                    # empty by default) sees every request as the reverse
+                    # proxy's IP, so a Prometheus scraper would share the
+                    # 100/min bucket with every logged-in operator — a
+                    # monitoring gap that opens exactly when the UI is
+                    # busiest. The TTL cache in app.metrics.collector is
+                    # what actually bounds the DoS surface here, not this
+                    # rate limit.
+                    await self._ws_app(scope, receive, send)
                 else:
                     await self._http_app(scope, receive, send)
 
@@ -415,10 +432,22 @@ def create_app() -> FastAPI:
     app.include_router(proxmox_nodes_router, prefix="/api")
     app.include_router(proxmox_discovery_router, prefix="/api")
     app.include_router(grafana_router, prefix="/api")
+    app.include_router(metrics_status_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 
     app.include_router(version_router)
     app.include_router(webhooks_router)
+    # metrics_router owns the literal root path "/metrics" and MUST be
+    # registered before the SPA catch-all route below
+    # (`@app.api_route("/{full_path:path}", ...)`) is added — FastAPI/
+    # Starlette match routes in registration order, and the catch-all
+    # matches every unmatched GET/HEAD with `index.html` + HTTP 200. If
+    # metrics_router were registered after (or conditionally, only when
+    # enabled), a disabled or misregistered exporter would silently serve
+    # the SPA shell for `/metrics` instead of a 404 — exactly the failure
+    # mode `app.api.metrics.get_metrics` is designed to avoid by always
+    # registering and branching on `settings.metrics.enabled` internally.
+    app.include_router(metrics_router)
 
     @app.get("/health")
     async def health():

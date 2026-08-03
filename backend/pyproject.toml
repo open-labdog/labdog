@@ -52,6 +52,11 @@ dev = [
     "ruff>=0.8",
     "bandit>=1.9",
     "testcontainers[postgres]>=4",
+    # Test-side only — round-trips app.metrics.exposition output through the
+    # real parser (tests/test_metrics_endpoint.py). Never imported at
+    # runtime; see app.metrics.exposition's module docstring for why the
+    # exporter itself is dependency-free.
+    "prometheus-client>=0.20",
 ]
 
 [tool.ruff]
