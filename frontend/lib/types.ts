@@ -952,6 +952,23 @@ export interface VersionInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Prometheus scrape export (GET /api/metrics/status — authenticated)
+// Mirrors backend MetricsStatus. The scrape endpoint itself (GET /metrics)
+// is unauthenticated and opt-in; there is no token to display, only status.
+// ---------------------------------------------------------------------------
+
+export interface MetricsStatus {
+  enabled: boolean
+  path: string
+  scrape_url: string
+  cache_ttl_seconds: number
+  /** Always false — the /metrics endpoint is deliberately unauthenticated. */
+  authenticated: boolean
+  toml_snippet: string
+  env_snippet: string
+}
+
+// ---------------------------------------------------------------------------
 // Normalized multi-module sync preview
 // (POST /api/sync/hosts/{id}/preview → ModuleDiff[])
 // ---------------------------------------------------------------------------
