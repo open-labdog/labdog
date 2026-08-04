@@ -29,17 +29,17 @@ Currently bundled:
   The playbook self-discovers control-plane vs worker by probing each
   node — no per-member roles in labdog. Currently apt-only;
   broadening to `dnf` is tracked in [TODO.md](TODO.md).
-
-Planned additions:
-- **`grafana-alloy`** — install and configure
+- `alloy-install` (**`grafana-alloy`**) — installs and configures
   [Grafana Alloy](https://grafana.com/oss/alloy/) on Debian/Ubuntu
-  and Windows hosts. Multi-role pack: GPG/repo setup, package
-  install (apt or local file), config templating with group-based
-  overlays, optional service detection (docker, mysql, postgresql,
-  custom), systemd / Windows service management. Existing scaffold
-  proves out the playbook design; conversion to the LabDog action
-  pack format (`pack.yml`, `actions/<key>.manifest.yml` sidecars,
-  `verify/` playbooks) is the remaining work.
+  (and Windows) hosts: GPG/repo setup, package install (apt or local
+  file), config templating with group-based overlays, optional service
+  detection (docker, mysql, postgresql, custom), and systemd / Windows
+  service management. Stamps the `labdog_host_id` label and closes the
+  loop with the **Integrations → Grafana** page — registered Mimir/Loki
+  instances auto-populate the Alloy remote-write / Loki push URLs, so
+  live host metrics appear on the host Overview tab with no free-text
+  endpoint entry. Remaining follow-ups (per-host metrics backend
+  routing, Loki log surfacing) are tracked in [TODO.md](TODO.md).
 
 ---
 
@@ -52,8 +52,6 @@ entry for the work itself.
 
 | Idea | Notes |
 |------|-------|
-| **Dashboard charts & activity feed** | Today's dashboard ships counts and a triage table (numeric tiles + list). Missing: visual charts (e.g. sync success-rate over time, drift trend over the past week) and an inline "recent activity" feed surfacing the last N audit events on the main page — today they live behind a separate `/audit` route. |
-| **Exportable metrics (OpenMetrics)** | A `/metrics` endpoint in the standard OpenMetrics / Prometheus exposition format so existing Prometheus + Grafana stacks can scrape LabDog without bolting on another tool. Counters for sync attempts / successes / failures by module, gauges for hosts-by-status and drift counts, histograms for sync + drift-check durations. Same underlying numbers as the in-UI dashboard charts; different audience (external monitoring stack vs operator looking at the LabDog UI). |
 | **Notification system** | Email/webhook/Slack alerts on drift detection, sync failures, certificate expiry |
 | **API tokens** | Non-cookie auth for CI/CD integration or scripting against the LabDog API |
 | **Host tagging & filtering** | Tags beyond groups for flexible organisation (e.g. `region:eu`, `env:prod`) |

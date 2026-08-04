@@ -1,0 +1,65 @@
+// Grafana Alloy configuration for scraping LabDog's /metrics endpoint.
+//
+// Alloy is LabDog's house agent — the bundled `alloy-install` action already
+// deploys it to managed hosts and points it at your Mimir/Loki endpoints — so
+// scraping LabDog itself is usually just this one extra block.
+//
+// LabDog's /metrics endpoint is DISABLED by default. Enable it first in
+// /etc/labdog/labdog.toml (then restart LabDog):
+//
+//     [metrics]
+//     enabled = true
+//
+// The endpoint is UNAUTHENTICATED when enabled. Restrict access at your
+// reverse proxy -- see docs/security-hardening.md.
+//
+// The exposition format is standard Prometheus text, so any compatible
+// scraper works if you don't run Alloy -- point it at the same URL.
+
+prometheus.scrape "labdog" {
+  targets = [
+    { __address__ = "labdog.example.com" },
+  ]
+
+  job_name = "labdog"
+  scheme   = "https"
+
+  // LabDog aggregates from PostgreSQL on each scrape and caches the result
+  // for [metrics] cache_ttl_seconds (default 15s). Scraping faster than the
+  // cache TTL is harmless but gains nothing.
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+  scrape_timeout  = "10s"
+
+  // Point this at whichever remote_write component you already have. If Alloy
+  // was configured by the bundled alloy-install action, that component is the
+  // one already forwarding node_exporter metrics to Mimir.
+  forward_to = [prometheus.remote_write.default.receiver]
+}
+
+// --- Reference: a remote_write component, if you don't already have one -----
+//
+// prometheus.remote_write "default" {
+//   endpoint {
+//     url = "https://mimir.example.com/api/v1/push"
+//
+//     // Mimir multi-tenancy. LabDog's own Grafana integration defaults to the
+//     // "anonymous" tenant when none is configured.
+//     headers = {
+//       "X-Scope-OrgID" = "anonymous",
+//     }
+//   }
+// }
+
+// --- If /metrics is behind basic auth at your reverse proxy -----------------
+//
+// prometheus.scrape "labdog" {
+//   targets    = [{ __address__ = "labdog.example.com" }]
+//   scheme     = "https"
+//   forward_to = [prometheus.remote_write.default.receiver]
+//
+//   basic_auth {
+//     username      = "prometheus"
+//     password_file = "/etc/alloy/labdog-password"
+//   }
+// }

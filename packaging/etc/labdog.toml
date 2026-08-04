@@ -87,6 +87,34 @@ login = "5/minute"
 # General API limit per client IP
 api = "100/minute"
 
+# ── Prometheus metrics export ────────────────────────────────
+[metrics]
+# Expose LabDog's own fleet state and health at GET /metrics in
+# Prometheus text exposition format.
+#
+# ⚠️  WHEN ENABLED, THIS ENDPOINT IS UNAUTHENTICATED.
+#     Prometheus cannot use LabDog's cookie session auth, so the
+#     endpoint is deliberately open-and-opt-in rather than half-gated.
+#     Restrict it at your reverse proxy before exposing LabDog to an
+#     untrusted network -- see docs/security-hardening.md.
+#     It discloses aggregate counts only: no hostnames, no IP
+#     addresses, no usernames, no secrets, no error text.
+#
+# This is a config-file setting rather than a UI toggle on purpose:
+# the in-app settings API is available to any signed-in user, so a UI
+# toggle would let any authenticated session publish fleet state to
+# the network. Turning it on should require server access.
+enabled = false
+# Reuse a collected snapshot for this many seconds. Values are
+# aggregated from PostgreSQL per scrape; the cache means several
+# Prometheus servers (or a misconfigured 1s scrape interval) cost no
+# more than one collection per window.
+cache_ttl_seconds = 15.0
+# Label labdog_action_runs_total by action_key. Scales with the number
+# of distinct actions you run (typically 10-100). Set false to trade
+# that detail away if your series count matters.
+action_key_label = true
+
 # ── Logging ──────────────────────────────────────────────────
 [logging]
 # Log level: debug, info, warning, error, critical

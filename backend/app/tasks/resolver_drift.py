@@ -11,6 +11,7 @@ from app.tasks import celery_app
 def run_resolver_drift_check(self, host_id: int) -> dict:
     """Check DNS resolver drift on a single host via SSH."""
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -19,6 +20,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -41,6 +43,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
             master_key = get_master_key()
             private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, master_key)
 
+            _t0 = time.monotonic()
             actual = await collect_resolver_state(
                 host, db, private_key_pem, effective.resolver_type
             )
@@ -52,6 +55,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
             }
 
             diff = compute_resolver_diff(actual, desired)
+            _duration_ms = int((time.monotonic() - _t0) * 1000)
 
             hms = (
                 await db.execute(
@@ -69,6 +73,20 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
             hms.last_drift_check_at = datetime.now(UTC)
             hms.collected_state = actual
             hms.collected_at = datetime.now(UTC)
+            await record_drift_sample(
+                db,
+                host_id=host_id,
+                module_type="resolver",
+                status=hms.sync_status,
+                policy_change_count=sum(
+                    [
+                        diff.nameservers_changed,
+                        diff.search_domains_changed,
+                        diff.options_changed,
+                    ]
+                ),
+                duration_ms=_duration_ms,
+            )
 
             from app.api.host_state import refresh_host_sync_status
 
@@ -108,6 +126,7 @@ def run_resolver_drift_check(self, host_id: int) -> dict:
 def check_all_resolver_drift():
     """Periodic task: check resolver drift for all hosts with resolver drift enabled."""
     import asyncio
+    import time
     from datetime import datetime
 
     import asyncssh
@@ -116,6 +135,7 @@ def check_all_resolver_drift():
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
     from app.db import task_session
+    from app.metrics.recorder import record_drift_sample
     from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
@@ -155,6 +175,7 @@ def check_all_resolver_drift():
                     if not effective:
                         continue
 
+                    _t0 = time.monotonic()
                     actual = await collect_resolver_state(
                         host, db, private_key_pem, effective.resolver_type
                     )
@@ -164,12 +185,27 @@ def check_all_resolver_drift():
                         "options": effective.options,
                     }
                     diff = compute_resolver_diff(actual, desired)
+                    _duration_ms = int((time.monotonic() - _t0) * 1000)
 
                     hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
                     hms.last_drift_check_at = datetime.now(UTC)
                     hms.collected_state = actual
                     hms.collected_at = datetime.now(UTC)
                     hms.error_message = None
+                    await record_drift_sample(
+                        db,
+                        host_id=host.id,
+                        module_type="resolver",
+                        status=hms.sync_status,
+                        policy_change_count=sum(
+                            [
+                                diff.nameservers_changed,
+                                diff.search_domains_changed,
+                                diff.options_changed,
+                            ]
+                        ),
+                        duration_ms=_duration_ms,
+                    )
 
                     if not host.labdog_source_ip:
                         try:

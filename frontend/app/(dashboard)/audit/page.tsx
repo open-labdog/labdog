@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { DataTable } from "@/components/ui/data-table"
+import type { AuditLogEntry } from "@/lib/types"
 import {
   Dialog,
   DialogContent,
@@ -17,18 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 
-interface AuditEntry {
-  id: number
-  created_at: string
-  user_id: number | null
-  user_email: string | null
-  action: "create" | "update" | "delete" | string
-  entity_type: string
-  entity_id: number | string | null
-  before_state: Record<string, unknown> | null
-  after_state: Record<string, unknown> | null
-  ip_address: string | null
-}
+type AuditEntry = AuditLogEntry
 
 interface TranscriptRow {
   id: number

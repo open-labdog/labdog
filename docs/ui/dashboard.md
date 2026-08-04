@@ -29,12 +29,51 @@ Two rows of summary cards at the top:
 | **Never Checked** | Hosts with no drift-check history |
 | **Never Synced** | Hosts that have never had Ansible applied |
 
+## Charts and feeds
+
+Below the cards sit two rows of panels. All four share a fixed height
+and refresh on the same 30-second cycle as the rest of the page.
+
+| Panel | What it shows |
+|-------|---------------|
+| **Sync Success Rate** | Share of syncs that succeeded, bucketed by day over the last 7 days. Sourced from LabDog's full sync-job history, so it has data immediately. |
+| **Drift Trend** | Drift checks that found a host out of sync, per day over the last 7 days, with total drift volume in the tooltip. |
+| **Recent Activity** | The last 10 audit events — config and operator changes. "View all" opens the full [Audit Log](admin.md#audit-log). |
+| **Recent Scheduled Runs** | Runs dispatched from a schedule. Defaults to one row per run; the **Grouped** toggle collapses them to one row per schedule with a status strip you can expand. |
+
+**Drift Trend starts empty, and that is expected.** LabDog only stores
+each host's *current* drift state, so trend history had to be recorded
+going forward rather than reconstructed. The chart shows "Drift history
+is being collected" until the first drift checks run, then fills in.
+
+If it stays empty, the usual cause is that **drift checking is disabled**
+— it is off by default on every host. Enable it per host on the Host
+detail page, or for many hosts at once from the [Hosts](hosts.md) list.
+A chart reading "No drift detected" (green) is the opposite situation:
+checks are running and finding nothing.
+
 ## Host Table
 
-Below the cards, a table lists every host with its IP address, current
-status badge, **Last Check**, and **Last Sync** timestamps. Rows are
-sorted by triage priority (errors first). Click the hostname to open
-the host detail page.
+Below the panels, a table lists hosts with IP address, current status
+badge, **Last Check**, and **Last Sync** timestamps. Click the hostname
+to open the host detail page.
+
+The table shows the **top 10** hosts, and a selector above it chooses
+which 10:
+
+| Option | Ordering |
+|--------|----------|
+| **Needs attention** (default) | Triage priority — errors first, then drifted, pending, unknown, in sync |
+| **Recently synced** | Most recently synced first |
+| **Stalest sync** | Longest since last sync; never-synced hosts first |
+| **Longest since check** | Longest since last drift check; never-checked first |
+| **Recently drifted** | Drifted hosts, most recently confirmed first |
+| **Never checked** | Only hosts with no drift-check history |
+| **Errors only** | Only hosts in an error state |
+| **Newest hosts** | Most recently added first |
+
+**View all hosts** opens the full [Hosts](hosts.md) list, which is not
+capped.
 
 **Status badges:**
 

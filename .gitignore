@@ -54,6 +54,11 @@ packaging/.cache/
 # Playwright MCP
 .playwright-mcp/
 
+# Agent/tooling scratch dirs. `.sisyphus/` was committed historically
+# (root, backend/ and frontend/) and had to be removed from git history;
+# ignore it everywhere so it cannot come back.
+.sisyphus/
+
 # Generated at Docker/packaging build time — never committed
 backend/app/_build_info.py
 # Staged from the repo-root VERSION at build time so setuptools' dynamic

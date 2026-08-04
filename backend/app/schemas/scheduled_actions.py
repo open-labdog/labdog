@@ -26,6 +26,31 @@ class ScheduledActionRunSummary(BaseModel):
     created_at: datetime
 
 
+class ScheduledActionRunOut(BaseModel):
+    """One individual scheduled-origin action run, hydrated for the dashboard.
+
+    Powers the "Recent Scheduled Runs" panel's per-run / grouped views: unlike
+    ``ScheduledActionRunSummary`` (one latest run per schedule), this is a flat
+    feed of *every* run that came from a schedule, carrying the same
+    server-resolved ``action_name`` / ``target_name`` presentation hints the
+    per-schedule listing uses so the UI doesn't need N+1 lookups.
+    """
+
+    id: int
+    action_key: str
+    action_name: str | None = None
+    scheduled_action_id: int
+    target_kind: ScheduledActionTargetKind
+    target_name: str | None = None
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    created_at: datetime
+    error_message: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class ScheduledActionIn(BaseModel):
     """Body for POST /api/scheduled-actions and PUT /api/scheduled-actions/{id}."""
 

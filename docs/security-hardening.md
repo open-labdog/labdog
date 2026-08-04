@@ -222,6 +222,58 @@ The proxy-layer limits should be more permissive than the
 application-layer ones — they exist to protect the service against
 flood traffic that doesn't make it past the proxy at all.
 
+Note that `/metrics` is **exempt** from the application-level API
+limit (see below) — a Prometheus scraper arriving through the same
+proxy as user traffic would otherwise share one bucket with every
+logged-in operator, and monitoring would break exactly when the UI
+was busiest. If you want a cap on it, apply one at the proxy.
+
+---
+
+## Exposing `/metrics`
+
+The Prometheus metrics endpoint is **disabled by default**. When you
+enable it with `[metrics] enabled = true`, it is served
+**unauthenticated** — Prometheus cannot use LabDog's cookie session
+auth, so the endpoint is deliberately open-and-opt-in rather than
+half-gated. See [Metrics export](metrics-export.md) for what it does
+and does not disclose (aggregate counts only: no hostnames, no IPs,
+no usernames, no secrets, no free-text error messages).
+
+Restrict it at the reverse proxy. nginx:
+
+```nginx
+# Inside server { ... } in the labdog vhost, BEFORE the catch-all location.
+location = /metrics {
+    allow 10.0.0.0/8;        # your monitoring network
+    allow 127.0.0.1;
+    deny  all;
+    proxy_pass http://127.0.0.1:8000;
+    # ...same proxy_set_header lines as the catch-all location
+}
+```
+
+Caddy:
+
+```caddy
+@metrics path /metrics
+handle @metrics {
+    @notmonitoring not remote_ip 10.0.0.0/8 127.0.0.1
+    respond @notmonitoring 403
+    reverse_proxy 127.0.0.1:8000
+}
+```
+
+If your scraper cannot be constrained by source address, put HTTP
+basic auth on that location at the proxy and configure `basic_auth`
+in the Prometheus scrape job — LabDog itself does not implement a
+scrape credential.
+
+Leaving the endpoint enabled but unrestricted on an untrusted network
+discloses fleet size, drift levels, action names, and certificate
+expiry dates to anyone who asks. If you are not scraping it, leave
+`[metrics] enabled = false` (the default).
+
 ---
 
 ## Superuser scope

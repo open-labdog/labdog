@@ -43,7 +43,7 @@ when filing a new entry.
 ### Security findings — High
 
 Filed 2026-05-21 from a `security-auditor` whitebox source-level
-review (commit `1108d67` as the audit baseline). Each entry was
+review (see the `code-audit` branch history for the baseline). Each entry was
 spot-checked against current HEAD before filing.
 
 _No bugs are currently open._
