@@ -120,6 +120,5 @@ def test_referenced_metrics_exist_in_exporter(filename: str):
 
     missing = sorted(name for name in referenced if name not in source)
     assert not missing, (
-        f"{filename} references metric(s) not emitted by "
-        f"app/metrics/collector.py: {missing}"
+        f"{filename} references metric(s) not emitted by app/metrics/collector.py: {missing}"
     )

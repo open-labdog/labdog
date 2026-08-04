@@ -181,12 +181,15 @@ def histogram(
         if __debug__:
             prev = 0
             for count in bucket_counts:
-                assert count >= prev, (
+                # nosec B101 — deliberate developer-facing invariant, guarded by
+                # __debug__ so it is compiled out under -O. It catches a caller/SQL
+                # bug at test time; it is not a runtime security or input check.
+                assert count >= prev, (  # nosec B101
                     f"non-monotonic histogram bucket for {name}{labels}: "
                     f"{count} < previous cumulative count {prev}"
                 )
                 prev = count
-            assert total_count >= prev, (
+            assert total_count >= prev, (  # nosec B101
                 f"le=+Inf count ({total_count}) is less than the last finite "
                 f"bucket ({prev}) for {name}{labels}"
             )
