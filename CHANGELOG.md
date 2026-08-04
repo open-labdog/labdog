@@ -7,7 +7,34 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-04
+
 ### Added
+
+- **Dashboard charts and activity feeds.** The Fleet Overview page gains two
+  charts and two feeds below the existing summary cards:
+
+  - **Sync Success Rate** — success share per day over the last 7 days, drawn
+    from LabDog's full sync-job history, so it has data immediately.
+  - **Drift Trend** — drift checks that found a host out of sync, per day.
+  - **Recent Activity** — the last 10 audit events, inline instead of only
+    behind the `/audit` route.
+  - **Recent Scheduled Runs** — individual runs from schedules, with a
+    **Grouped** toggle that collapses them to one row per schedule with an
+    expandable status strip.
+
+  The host table is now capped at the **top 10**, with a selector offering
+  eight orderings (needs-attention, recently synced, stalest sync, longest
+  since check, recently drifted, never checked, errors only, newest).
+
+  Drift history required new storage: LabDog only kept each host's *current*
+  drift state, overwritten on every check, so there was nothing to plot. Every
+  drift check now records an append-only sample, written in the same
+  transaction as the existing status update. It is **forward-only** — no
+  backfill, because fabricating history would misrepresent it — so the chart
+  shows a "collecting history" state until checks start running. That same
+  storage is what the metrics exporter below reads, so both surfaces report
+  the same numbers.
 
 - **Prometheus metrics export.** A new `GET /metrics` endpoint serves LabDog's
   own state in Prometheus text exposition format, so an existing Prometheus +
@@ -48,6 +75,30 @@ The format follows [Keep a Changelog]; LabDog follows
   run* is not the same as one that *finds drift*, but the in-app drift trend
   counts only confirmed drift — so a check erroring 100% of the time was
   previously indistinguishable from a healthy one.
+
+### Fixed
+
+- Hovering a dashboard chart no longer washes the whole panel out. Recharts'
+  default tooltip cursor is a near-white rectangle sized to the hovered
+  category band, which on a dark panel with a single day bucket covered the
+  entire plot area. Both charts were affected.
+
+### Security
+
+- `cryptography` floor raised to `>=50` (CVE-2026-69247) and `gitpython` to
+  `>=3.1.57` (GHSA-3f7w-8rr8-f37f).
+- `shadcn` moved from production dependencies to devDependencies. It is a
+  component-scaffolding CLI, never imported at runtime, and it was pulling
+  `hono` and `ip-address` — and their ReDoS and SSRF advisories — into the
+  production dependency tree.
+
+### Changed
+
+- Internal hostnames, a username, a home-directory path and a LAN subnet were
+  removed from the repository and purged from git history, along with a
+  committed virtualenv, `__pycache__` and agent scratch directories. **All
+  commit SHAs before this release changed**, and the repository is roughly 75%
+  smaller. Existing clones should be re-cloned rather than pulled.
 
 ## [0.7.0] — 2026-07-24
 
@@ -1007,7 +1058,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/open-labdog/labdog/compare/v0.6.1...v0.6.2
