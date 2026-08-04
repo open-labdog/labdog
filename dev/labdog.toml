@@ -33,6 +33,11 @@ session_lifetime_seconds = 86400
 [rate_limit]
 enabled = false
 
+# Prometheus exporter — on in dev so /metrics is scrapeable without extra
+# setup. Off by default in production (see packaging/etc/labdog.toml).
+[metrics]
+enabled = true
+
 [logging]
 format = "text"
 

@@ -1,5 +1,12 @@
 # Live host metrics (Grafana Mimir/Loki)
 
+> **Two different features share the word "metrics".**
+> This page is about LabDog **reading** per-host CPU / memory / disk *inward*
+> from a Grafana Mimir backend.
+> For LabDog **exposing** its own fleet state and health *outward* so Prometheus
+> can scrape it, see [Metrics export](../metrics-export.md).
+> They are independent — you can use either, both, or neither.
+
 LabDog can show **instant** CPU, memory, and disk usage on each host's
 **Overview** tab by querying a Grafana Mimir (or any Prometheus-compatible)
 backend. These are single current values, not graphs — LabDog points you at

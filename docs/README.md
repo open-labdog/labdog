@@ -64,7 +64,8 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [encryption-key-rotation.md](./encryption-key-rotation.md) | When and how to rotate `security.encryption_key`: pre-rotation checklist, step-by-step procedure, rollback, and failure modes. |
 | [upgrade.md](./upgrade.md) | Upgrade and rollback procedure for new releases. |
 | [production-deploy.md](./production-deploy.md) | Docker Compose production reference (TLS, volumes, secrets). |
-| [security-hardening.md](./security-hardening.md) | Reverse-proxy TLS, cookie/CSP/rate-limit configuration, DB security, superuser policy. |
+| [security-hardening.md](./security-hardening.md) | Reverse-proxy TLS, cookie/CSP/rate-limit configuration, restricting `/metrics`, DB security, superuser policy. |
+| [metrics-export.md](./metrics-export.md) | Exposing LabDog's own fleet state and health for Prometheus to scrape — enabling the opt-in `/metrics` endpoint, full metric reference, counter semantics, cardinality, and the shipped Grafana dashboard + alert rules. |
 | [trivy-rationale.md](./trivy-rationale.md) | Per-CVE rationale for entries in `.trivyignore`. |
 
 ### Where to start
@@ -350,6 +351,7 @@ common ones:
 | `LABDOG_SECURITY__LABDOG_SERVER_IP` | No | `127.0.0.1` | IP of the LabDog server (used in the auto-injected SSH lockout rule) |
 | `POSTGRES_PASSWORD` | Docker | `labdog` | PostgreSQL password — consumed by the `postgres` container and interpolated into `LABDOG_DATABASE__URL` in the compose file |
 | `NEXT_PUBLIC_API_URL` | Frontend build | `http://localhost:8000` | Backend API URL baked into the frontend at build time |
+| `LABDOG_METRICS__ENABLED` | No | `false` | Enable the public, unauthenticated Prometheus `/metrics` endpoint — see [metrics-export.md](./metrics-export.md) |
 
 > Operational settings (drift interval, log level, SSH/Ansible
 > timeouts, audit retention, discovery tuning) are managed on the
@@ -551,7 +553,7 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
 
-### Grafana metrics
+### Grafana metrics (inbound — LabDog reads host metrics)
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST` | `/api/grafana/instances` | List/register Grafana Mimir/Loki backends (bearer or basic auth; secret encrypted at rest) |
@@ -560,6 +562,14 @@ See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrou
 | `GET` | `/api/grafana/hosts/{id}/metrics` | Instant CPU/memory/disk for a host (queried from the default Mimir instance by the `labdog_host_id` label) |
 
 See [ui/metrics.md](./ui/metrics.md) for the end-to-end loop with the bundled Alloy install action.
+
+### Metrics export (outbound — Prometheus scrapes LabDog)
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/metrics` | Prometheus text exposition of fleet state and LabDog self-health. **Public and unauthenticated**, and **disabled by default** — set `[metrics] enabled = true`. Returns 404 when disabled. |
+| `GET` | `/api/metrics/status` | Authenticated: whether the exporter is enabled, its scrape URL, and copy-paste config snippets (drives the UI card) |
+
+See [metrics-export.md](./metrics-export.md) for the metric reference and [examples/prometheus/](./examples/prometheus/README.md) for scrape config, alert rules and a Grafana dashboard.
 
 ## Project Structure
 
@@ -640,6 +650,7 @@ LabDog uses a modular extension architecture. Each module follows the same patte
 | Host Discovery | Shipped | Network scanning + SSH-verified bulk host import |
 | Proxmox Integration | Shipped | VM/container discovery from Proxmox VE hypervisors |
 | Grafana metrics | Shipped | Instant CPU/memory/disk on the host page from a Mimir/Prometheus backend; ties into the Alloy install action |
+| Metrics export | Shipped | Opt-in, unauthenticated `/metrics` endpoint in Prometheus exposition format covering fleet state and LabDog self-health; ships a Grafana dashboard and alert rules |
 | GitOps | Shipped | Git-based configuration import with webhook sync |
 
 ## Known Limitations

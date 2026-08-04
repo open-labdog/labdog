@@ -1,12 +1,10 @@
 "use client"
 
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CopyIcon, CheckIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { type VersionInfo } from "@/lib/types"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { Button } from "@/components/ui/button"
+import { CopyButton } from "@/components/ui/copy-button"
 import {
   Card,
   CardContent,
@@ -31,35 +29,6 @@ function buildSupportLine(info: VersionInfo): string {
   const sha = info.commit_sha_short ?? "dev"
   const date = info.build_date ? info.build_date.slice(0, 10) : "dev"
   return `LabDog ${info.version} (${sha}, ${date})`
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  function handleCopy() {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }).catch(() => {
-      // clipboard API unavailable (non-HTTPS or permissions denied) — silently ignore
-    })
-  }
-
-  return (
-    <Button
-      variant="ghost"
-      size="icon-xs"
-      onClick={handleCopy}
-      aria-label="Copy to clipboard"
-      className="shrink-0"
-    >
-      {copied ? (
-        <CheckIcon className="w-3 h-3 text-green-400" />
-      ) : (
-        <CopyIcon className="w-3 h-3" />
-      )}
-    </Button>
-  )
 }
 
 function InfoRow({

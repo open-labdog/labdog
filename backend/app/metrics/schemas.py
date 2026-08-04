@@ -1,8 +1,11 @@
 """Shared Pydantic response shapes for the dashboard charts.
 
-These are consumed today by ``app.api.dashboard`` and are designed to be
-reused unchanged by a future OpenMetrics ``/metrics`` exporter built on top
-of the same ``app.metrics.service`` aggregations.
+Consumed by ``app.api.dashboard``, backed by ``app.metrics.service``'s
+time-bucketed aggregations. The Prometheus ``/metrics`` exporter does
+**not** use these — its aggregations (``app.metrics.aggregates``) return
+plain tuples/dataclasses and are rendered as exposition-format text by
+``app.metrics.exposition``, not JSON, so there's no shared Pydantic shape
+between the two. See ``app.metrics.__init__`` for the full split.
 """
 
 from datetime import datetime

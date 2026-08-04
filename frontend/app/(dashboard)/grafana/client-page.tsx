@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { DataTable } from "@/components/ui/data-table"
+import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
 import type { GrafanaInstance, GrafanaKind, GrafanaAuthType } from "@/lib/types"
 
 interface FormState {
@@ -238,6 +239,13 @@ export default function GrafanaPage() {
         <Button onClick={openCreate}>Add Instance</Button>
       </div>
 
+      <div>
+        <h2 className="text-sm font-semibold text-white">Metrics in — query backends</h2>
+        <p className="text-slate-400 text-xs mt-1">
+          LabDog reads host CPU/mem/disk from the Mimir and Loki instances registered below.
+        </p>
+      </div>
+
       {showLoading && <TableSkeleton rows={3} columns={5} />}
 
       {error && (
@@ -333,6 +341,17 @@ export default function GrafanaPage() {
           ]}
         />
       )}
+
+      <div>
+        <h2 className="text-sm font-semibold text-white">Metrics out — scrape endpoint</h2>
+        <p className="text-slate-400 text-xs mt-1">
+          An opt-in, unauthenticated <code className="font-mono">/metrics</code>{" "}
+          endpoint that lets Alloy (or any Prometheus-compatible scraper) collect
+          LabDog&apos;s fleet state and self-health directly.
+        </p>
+      </div>
+
+      <MetricsScrapeCard />
 
       <Dialog
         open={dialogOpen}

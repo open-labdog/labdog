@@ -80,6 +80,115 @@ that the alloy-install action stamps. A few deliberate deferrals:
 
 ---
 
+## Drift check — make enabling it discoverable
+
+**Context:** `Host.drift_check_enabled` defaults to `False`, and
+`check_all_drift` only walks hosts where it is `True`. So on a fresh
+install the periodic sweep runs every 30 minutes and does nothing,
+indefinitely, with no indication anywhere that drift checking is off.
+Found on a real deployment: 17 hosts, all with drift checking disabled,
+where the operator reasonably assumed it was running.
+
+The cost is not just the missing checks — it silently empties every
+downstream surface. `drift_samples` stays empty, so the dashboard's
+drift-trend chart shows its "collecting history" state forever, and the
+exporter emits no `labdog_drift_*` families at all (they are absent
+rather than zero, because `module` is a free-text column and cannot be
+zero-filled). All three look like bugs and none of them are.
+
+- [ ] **Surface the fleet-wide state.** Nothing tells you "0 of 17 hosts
+      have drift checking enabled". The Fleet Overview already has
+      `Never Checked` as a passive count — make it, or a sibling tile,
+      say *why* and link to the fix. The data is already there
+      (`labdog_hosts_drift_check_enabled` / `hosts_never_drift_checked`
+      exist precisely because this was invisible).
+
+- [ ] **Explain the two flags.** `Host.drift_check_enabled` and
+      `HostModuleStatus.drift_check_enabled` are independent, set from
+      three unrelated places — the bulk toggle on the Hosts list, the
+      Enabled/Disabled button on Host → Overview, and a per-module
+      "Enable Drift Check" action on each module tab (backed by three
+      different route prefixes: `/api/drift`, `/api/hosts-mgmt`,
+      `/api/cron`). Nothing states how host-level and module-level
+      interact, or which one a given control writes.
+
+- [ ] **Make the empty states diagnostic rather than passive.** The
+      drift-trend chart should distinguish "no checks are configured"
+      from "checks are running, no drift found yet" — currently both
+      render the same "collecting history" message. Same for the
+      per-module drift panels.
+
+- [ ] **Decide the default.** Whether new hosts should opt in
+      automatically is a genuine product call, not an oversight:
+      flipping it to `True` means LabDog starts SSHing to every newly
+      added host on a timer without being asked. If it stays `False`,
+      the onboarding flow should prompt for it explicitly rather than
+      leaving it to be discovered.
+
+---
+
+## Metrics export — follow-ups
+
+**Context:** the opt-in Prometheus `/metrics` endpoint shipped (see
+[docs/metrics-export.md](docs/metrics-export.md)). These were
+deliberately scoped out of that PR.
+
+- [ ] **Redis broker queue depth.** Export `LLEN default` /
+      `LLEN long_running` plus a `labdog_broker_reachable` gauge. Needs
+      a short (~200ms) `redis.asyncio` timeout and a defined value to
+      emit on timeout — it puts a second failure domain into an
+      unauthenticated request path, which is why it wasn't bundled in.
+      Celery *worker* introspection stays out of scope entirely
+      (`inspect().active()` is a multi-second broadcast RPC); point
+      operators at `celery-exporter` instead.
+
+- [ ] **`drift_samples` retention + rollup.** The table has no
+      retention job (unlike `audit_log` / `ssh_session_transcripts`) and
+      grows unbounded. The catch: naively deleting rows makes
+      `labdog_drift_checks_total` and `labdog_drift_changes_total`
+      *decrease*, which Prometheus reads as a counter reset — `rate()`
+      copes, `increase()` across the deletion silently under-reports.
+      Recommended shape: a `drift_sample_rollup(module_type, status,
+      checks, add_count, remove_count, policy_change_count)` table
+      incremented **in the same transaction as the delete**, with the
+      exporter's aggregates summing live rows + rollup. `app/metrics/
+      aggregates.py` is written so this is a one-line `UNION ALL`
+      change. Model the job on `app/tasks/audit_retention.py`.
+
+- [ ] **Index `sync_jobs.created_at`.** There is no index on it
+      (`0001_initial_schema.py` only has `(host_id, module_type,
+      status)` plus a partial unique). This is **not** an exporter
+      problem — the exporter's counters are all-time and use no time
+      predicate — but `GET /api/dashboard/sync-success-rate` does
+      `WHERE created_at >= :since` and full-scans today. Needs
+      `CREATE INDEX CONCURRENTLY` in its own migration with Alembic's
+      `autocommit_block()`.
+
+- [ ] **Unify `HostModuleStatus.sync_status` vocabulary.** Three
+      modules (`package_drift`, `cron_drift`, `user_drift`) write the
+      legacy value `"drifted"` where the rest write `"out_of_sync"`;
+      `refresh_host_sync_status` already treats them as equivalent, and
+      each drift task deliberately normalises before recording a metric
+      sample. Consolidating needs a data migration and touches
+      `api/user_sync.py`, `api/cron_sync.py`, `api/package_sync.py`,
+      the three drift tasks, `api/host_state.py`, and the frontend
+      status badges.
+
+- [ ] **Rename `docs/ui/metrics.md` → `docs/ui/host-metrics.md`.** The
+      name collides conceptually with the new outbound
+      `docs/metrics-export.md`; both now carry disambiguation banners,
+      but distinct filenames would be clearer. Docusaurus is configured
+      with `onBrokenLinks: 'throw'`, so CI will catch any missed
+      reference.
+
+- [ ] **True OpenMetrics 1.0 output.** The endpoint currently serves
+      Prometheus text exposition `0.0.4` unconditionally (universally
+      parsed; OpenMetrics 1.0's `# EOF` terminator and counter-naming
+      differences are a common footgun). Add 1.0 as an additive
+      `Accept`-negotiated branch if something in the stack requires it.
+
+---
+
 ## Dependency & supply-chain follow-ups (2026-07 code audit)
 
 **Context:** The 2026-07 code audit's security, correctness, and cleanup
