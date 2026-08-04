@@ -66,6 +66,19 @@ def test_yaml_examples_parse(path: Path):
     assert isinstance(data, dict)
 
 
+def test_alloy_scrape_example_present():
+    """The scrape example is the entry point of the whole directory.
+
+    Not parseable as YAML/JSON (Alloy has its own syntax), so this is a
+    presence-and-shape check rather than a real parse.
+    """
+    alloy = (_EXAMPLES / "labdog.alloy").read_text()
+    assert 'prometheus.scrape "labdog"' in alloy
+    assert "/metrics" in alloy
+    assert "forward_to" in alloy, "a scrape block with no forward_to collects nothing"
+    assert alloy.count("{") == alloy.count("}"), "unbalanced braces"
+
+
 def test_dashboard_has_expected_identity():
     """The uid is what "update in place" reimports key off."""
     dashboard = json.loads((_EXAMPLES / "labdog-overview.json").read_text())

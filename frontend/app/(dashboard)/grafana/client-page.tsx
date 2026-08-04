@@ -343,10 +343,11 @@ export default function GrafanaPage() {
       )}
 
       <div>
-        <h2 className="text-sm font-semibold text-white">Metrics out — Prometheus scrape</h2>
+        <h2 className="text-sm font-semibold text-white">Metrics out — scrape endpoint</h2>
         <p className="text-slate-400 text-xs mt-1">
-          An opt-in, unauthenticated <code className="font-mono">/metrics</code> endpoint that
-          lets your existing Prometheus scrape LabDog&apos;s fleet state and self-health directly.
+          An opt-in, unauthenticated <code className="font-mono">/metrics</code>{" "}
+          endpoint that lets Alloy (or any Prometheus-compatible scraper) collect
+          LabDog&apos;s fleet state and self-health directly.
         </p>
       </div>
 

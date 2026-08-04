@@ -13,11 +13,16 @@ const SECURITY_HARDENING_URL =
 const PROMETHEUS_EXAMPLES_URL =
   "https://github.com/open-labdog/labdog/tree/main/docs/examples/prometheus"
 
-/** Builds a copy-paste `prometheus.yml` scrape_configs snippet from the
- *  resolved scrape URL. Purely client-side — the backend only reports
- *  status, not a rendered scrape config. Falls back to a placeholder host
- *  if scrape_url isn't a parseable absolute URL. */
-function buildPrometheusYml(status: MetricsStatus): string {
+/** Builds a copy-paste Grafana Alloy `prometheus.scrape` block from the
+ *  resolved scrape URL. Alloy is LabDog's house agent — the bundled
+ *  alloy-install action already deploys it to managed hosts. The
+ *  exposition format is standard Prometheus text, so any compatible
+ *  scraper works — point it at the same URL.
+ *
+ *  Purely client-side — the backend only reports status, not a rendered
+ *  config. Falls back to a placeholder host if scrape_url isn't a
+ *  parseable absolute URL. */
+function buildAlloyConfig(status: MetricsStatus): string {
   let scheme = "https"
   let host = "<labdog-host:port>"
   try {
@@ -28,12 +33,16 @@ function buildPrometheusYml(status: MetricsStatus): string {
     // scrape_url wasn't absolute — keep the placeholder host.
   }
   return [
-    "scrape_configs:",
-    "  - job_name: labdog",
-    `    scheme: ${scheme}`,
-    `    metrics_path: ${status.path}`,
-    "    static_configs:",
-    `      - targets: ["${host}"]`,
+    'prometheus.scrape "labdog" {',
+    `  targets         = [{ __address__ = "${host}" }]`,
+    '  job_name        = "labdog"',
+    `  scheme          = "${scheme}"`,
+    `  metrics_path    = "${status.path}"`,
+    '  scrape_interval = "30s"',
+    "",
+    "  // Point this at the remote_write component you already have.",
+    "  forward_to = [prometheus.remote_write.default.receiver]",
+    "}",
   ].join("\n")
 }
 
@@ -146,7 +155,7 @@ export function MetricsScrapeCard() {
                 </span>
               </p>
 
-              <CodeBlock title="prometheus.yml" code={buildPrometheusYml(data)} />
+              <CodeBlock title="config.alloy" code={buildAlloyConfig(data)} />
             </>
           ) : (
             <div className="space-y-3">

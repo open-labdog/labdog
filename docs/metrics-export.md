@@ -44,9 +44,9 @@ curl -i http://labdog.example.com:8000/metrics
 Expect `HTTP/1.1 200` and
 `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
 
-The current status, the exact scrape URL and a copy-paste `prometheus.yml`
-snippet are also shown in the UI under **Integrations → Grafana**, in the
-**Metrics out — Prometheus scrape** card.
+The current status, the exact scrape URL and a copy-paste Alloy snippet are also
+shown in the UI under **Integrations → Grafana**, in the
+**Metrics out — scrape endpoint** card.
 
 ### Why this is a config-file setting and not a UI toggle
 
@@ -88,22 +88,30 @@ your fleet.
 
 ## Scraping
 
-Minimal config (full version in
-[`examples/prometheus/prometheus.yml`](examples/prometheus/prometheus.yml)):
+Examples use **Grafana Alloy**, since LabDog already deploys it to managed hosts
+via the bundled `alloy-install` action — scraping LabDog itself is usually one
+extra block. The endpoint serves standard Prometheus text exposition, so any
+compatible scraper works; point it at the same URL.
 
-```yaml
-scrape_configs:
-  - job_name: labdog
-    scrape_interval: 30s
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["labdog.example.com:8000"]
+Minimal config (full version, with `remote_write` and basic-auth variants, in
+[`examples/prometheus/labdog.alloy`](examples/prometheus/labdog.alloy)):
+
+```alloy
+prometheus.scrape "labdog" {
+  targets         = [{ __address__ = "labdog.example.com" }]
+  job_name        = "labdog"
+  scheme          = "https"
+  metrics_path    = "/metrics"
+  scrape_interval = "30s"
+
+  // Point this at the remote_write component you already have.
+  forward_to = [prometheus.remote_write.default.receiver]
+}
 ```
 
 LabDog aggregates from PostgreSQL on each scrape and caches the result for
 `cache_ttl_seconds` (default 15s). Scraping faster than the TTL is harmless but
-pointless; multiple Prometheus servers scraping the same instance share the
-cache.
+pointless; multiple scrapers hitting the same instance share the cache.
 
 `/metrics` is exempt from LabDog's global API rate limit. Without that
 exemption a scraper arriving through the same reverse proxy as user traffic

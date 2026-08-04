@@ -5,9 +5,15 @@ useful dashboards and alerts out of it.
 
 | File | What it is |
 |------|------------|
-| [`prometheus.yml`](prometheus.yml) | Minimal Prometheus config with a LabDog `scrape_configs` block (plus commented TLS / basic-auth variants) |
+| [`labdog.alloy`](labdog.alloy) | Grafana Alloy `prometheus.scrape` block for LabDog (plus commented `remote_write` and basic-auth variants) |
 | [`labdog-alerts.yml`](labdog-alerts.yml) | 14 alerting rules — availability, fleet state, sync health, scheduling, certificate expiry |
 | [`labdog-overview.json`](labdog-overview.json) | Grafana dashboard — fleet, sync, drift, actions, certificates, exporter health |
+
+Scraping is shown with **Alloy**, since LabDog already deploys it to managed
+hosts via the bundled `alloy-install` action. The endpoint serves standard
+Prometheus text exposition, so any compatible scraper works — point it at the
+same URL. The alert rules and dashboard are ordinary Prometheus/Grafana
+artifacts and apply either way.
 
 Full reference: [`docs/metrics-export.md`](../../metrics-export.md).
 
@@ -39,14 +45,17 @@ proxy may be serving the SPA fallback page instead).
 > before exposing LabDog to an untrusted network — see
 > [`docs/security-hardening.md`](../../security-hardening.md).
 
-**2. Point Prometheus at it.** Copy the `scrape_configs` block from
-[`prometheus.yml`](prometheus.yml), replacing the target host. Reload Prometheus
-and confirm the target is `UP` under Status → Targets.
+**2. Point Alloy at it.** Copy the `prometheus.scrape` block from
+[`labdog.alloy`](labdog.alloy) into your Alloy config, replacing the target host
+and pointing `forward_to` at the `remote_write` component you already have.
+Reload Alloy and confirm the target is up on its `/-/targets` page (or in
+Mimir, once the series land).
 
-**3. Load the alerts.** Drop [`labdog-alerts.yml`](labdog-alerts.yml) next to
-your Prometheus config and reference it under `rule_files:`. Review the
-thresholds first — they are tuned for a small fleet, and
-`LabDogHostsOutOfSync` will be noisy if you routinely leave hosts drifted.
+**3. Load the alerts.** [`labdog-alerts.yml`](labdog-alerts.yml) is a standard
+Prometheus rule group — load it into the Mimir ruler, or reference it under
+`rule_files:` if you run Prometheus. Review the thresholds first: they are tuned
+for a small fleet, and `LabDogHostsOutOfSync` will be noisy if you routinely
+leave hosts drifted.
 
 **4. Import the dashboard.** In Grafana: **Dashboards → New → Import → Upload
 JSON file**, choose [`labdog-overview.json`](labdog-overview.json), then pick

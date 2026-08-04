@@ -29,7 +29,7 @@ The format follows [Keep a Changelog]; LabDog follows
   The **Integrations → Grafana** page now shows both directions explicitly —
   *Metrics in* (the existing Mimir/Loki backends LabDog queries for host
   CPU/memory/disk) and *Metrics out* (a new card with the scrape URL, status,
-  and a copy-paste `prometheus.yml` snippet).
+  and a copy-paste Grafana Alloy scrape snippet).
 
   Ships a ready-made Grafana dashboard, 14 example alerting rules, and a scrape
   config in `docs/examples/prometheus/`, documented in
