@@ -8,9 +8,8 @@
 #
 # Environment:
 #   LABDOG_PLAYBOOKS_REPO  upstream URL (default: github
-#                          open-labdog/labdog-playbooks). Override e.g.
-#                          to gitlab.example.internal/operator/labdog-playbooks
-#                          while github mirror is stale (see BUG-46).
+#                          open-labdog/labdog-playbooks). Override to
+#                          build against a fork or an internal mirror.
 #   LABDOG_PLAYBOOKS_REF   git ref -- tag, branch, or commit SHA. No
 #                          default; must be set. Read from the repo-root
 #                          LABDOG_PLAYBOOKS_REF file in calling contexts.

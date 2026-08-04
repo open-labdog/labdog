@@ -5,7 +5,7 @@ Background: a single corrupt row (e.g. an enum value that's no longer
 in the Python enum after a schema simplification) made
 ``select(Host)`` → ``scalars().all()`` raise ``LookupError``, which
 500'd the UI's hosts-summary endpoint — so 16 rows in the DB but
-zero visible in the UI on the 192.0.2.5 deployment. The helper
+zero visible in the UI on the reporting deployment. The helper
 falls back to per-row materialisation when the bulk path fails,
 skips and logs rows that can't be loaded, and returns the survivors.
 """

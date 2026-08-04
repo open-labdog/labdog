@@ -36,7 +36,7 @@ def test_no_space_left_translated():
         events=[
             _unreachable_event(
                 "Task failed: mkdir: cannot create directory "
-                "'/home/builder/.ansible/tmp/...': No space left on device"
+                "'/home/ansible/.ansible/tmp/...': No space left on device"
             )
         ]
     )
