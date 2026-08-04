@@ -94,11 +94,10 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
-- Internal hostnames, a username, a home-directory path and a LAN subnet were
-  removed from the repository and purged from git history, along with a
-  committed virtualenv, `__pycache__` and agent scratch directories. **All
-  commit SHAs before this release changed**, and the repository is roughly 75%
-  smaller. Existing clones should be re-cloned rather than pulled.
+- Repository history was rewritten to drop accidentally committed local
+  artifacts and stale references. **Every commit SHA before this release
+  changed**, and the repository is roughly 75% smaller as a result. Existing
+  clones should be re-cloned rather than pulled.
 
 ## [0.7.0] — 2026-07-24
 
