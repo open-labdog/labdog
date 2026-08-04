@@ -80,6 +80,53 @@ that the alloy-install action stamps. A few deliberate deferrals:
 
 ---
 
+## Drift check — make enabling it discoverable
+
+**Context:** `Host.drift_check_enabled` defaults to `False`, and
+`check_all_drift` only walks hosts where it is `True`. So on a fresh
+install the periodic sweep runs every 30 minutes and does nothing,
+indefinitely, with no indication anywhere that drift checking is off.
+Found on a real deployment: 17 hosts, all with drift checking disabled,
+where the operator reasonably assumed it was running.
+
+The cost is not just the missing checks — it silently empties every
+downstream surface. `drift_samples` stays empty, so the dashboard's
+drift-trend chart shows its "collecting history" state forever, and the
+exporter emits no `labdog_drift_*` families at all (they are absent
+rather than zero, because `module` is a free-text column and cannot be
+zero-filled). All three look like bugs and none of them are.
+
+- [ ] **Surface the fleet-wide state.** Nothing tells you "0 of 17 hosts
+      have drift checking enabled". The Fleet Overview already has
+      `Never Checked` as a passive count — make it, or a sibling tile,
+      say *why* and link to the fix. The data is already there
+      (`labdog_hosts_drift_check_enabled` / `hosts_never_drift_checked`
+      exist precisely because this was invisible).
+
+- [ ] **Explain the two flags.** `Host.drift_check_enabled` and
+      `HostModuleStatus.drift_check_enabled` are independent, set from
+      three unrelated places — the bulk toggle on the Hosts list, the
+      Enabled/Disabled button on Host → Overview, and a per-module
+      "Enable Drift Check" action on each module tab (backed by three
+      different route prefixes: `/api/drift`, `/api/hosts-mgmt`,
+      `/api/cron`). Nothing states how host-level and module-level
+      interact, or which one a given control writes.
+
+- [ ] **Make the empty states diagnostic rather than passive.** The
+      drift-trend chart should distinguish "no checks are configured"
+      from "checks are running, no drift found yet" — currently both
+      render the same "collecting history" message. Same for the
+      per-module drift panels.
+
+- [ ] **Decide the default.** Whether new hosts should opt in
+      automatically is a genuine product call, not an oversight:
+      flipping it to `True` means LabDog starts SSHing to every newly
+      added host on a timer without being asked. If it stays `False`,
+      the onboarding flow should prompt for it explicitly rather than
+      leaving it to be discovered.
+
+---
+
 ## Metrics export — follow-ups
 
 **Context:** the opt-in Prometheus `/metrics` endpoint shipped (see
