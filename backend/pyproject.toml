@@ -25,17 +25,19 @@ dependencies = [
     "redis>=5.2",
     "ansible-runner>=2.4",
     "ansible-core>=2.18",
-    # cryptography>=49 fixes CVE-2026-34073 (private-key leak) and
-    # CVE-2026-39892 (buffer overflow).
-    "cryptography>=49",
+    # cryptography>=50 adds CVE-2026-69247 on top of the >=49 floor, which
+    # covered CVE-2026-34073 (private-key leak) and CVE-2026-39892 (buffer
+    # overflow).
+    "cryptography>=50",
     "fastapi-users[sqlalchemy]>=15",
     "slowapi>=0.1.9",
-    # gitpython>=3.1.56 clears the path-traversal / RCE / command-injection
-    # / env-exfiltration advisories fixed across 3.1.49–3.1.56, incl. the
+    # gitpython>=3.1.57 clears the path-traversal / RCE / command-injection
+    # / env-exfiltration advisories fixed across 3.1.49–3.1.57, incl. the
     # 3.1.53/3.1.54/3.1.55 batch GHSA-3rp5-jjmw-4wv2, GHSA-fjr4-x663-mwxc,
     # GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3, GHSA-94p4-4cq8-9g67 (env-var
-    # exfiltration) — flagged HIGH by pip-audit + trivy.
-    "gitpython>=3.1.56",
+    # exfiltration) and GHSA-3f7w-8rr8-f37f in 3.1.57 — flagged HIGH by
+    # pip-audit + trivy.
+    "gitpython>=3.1.57",
     # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
     # traversal; LabDog is a client, so not directly exposed, but kept current).
     "asyncssh>=2.23.1",
