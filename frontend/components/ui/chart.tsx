@@ -59,6 +59,23 @@ function ChartContainer({ config, className, children, style, ...props }: ChartC
 /** Re-export of recharts' `Tooltip` — no behavior change, just a stable import path. */
 const ChartTooltip = Tooltip
 
+/**
+ * Tooltip cursor presets.
+ *
+ * Recharts' default cursor is built for light backgrounds and is `#ccc` in
+ * both cases, which reads as near-white on our slate panels. On a bar chart
+ * it is a filled `Rectangle` sized to the hovered category band — so with
+ * only one or two buckets it covers most of the plot area and the panel
+ * appears to turn white on hover.
+ *
+ * Recharts renders a different element per chart type, so the shape of the
+ * override differs: bar charts want `fill`, line/area charts want `stroke`.
+ * A single preset can't serve both — passing only `fill` to a line chart
+ * silently removes its cursor.
+ */
+const CHART_CURSOR_BAR = { fill: "rgba(148, 163, 184, 0.12)" } as const
+const CHART_CURSOR_LINE = { stroke: "rgba(148, 163, 184, 0.45)", strokeWidth: 1 } as const
+
 interface ChartTooltipContentProps<TPoint = Record<string, unknown>> {
   /** Injected by recharts when used as `<Tooltip content={<ChartTooltipContent .../>} />`. */
   active?: boolean
@@ -102,4 +119,10 @@ function ChartTooltipContent<TPoint = Record<string, unknown>>({
   )
 }
 
-export { ChartContainer, ChartTooltip, ChartTooltipContent }
+export {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  CHART_CURSOR_BAR,
+  CHART_CURSOR_LINE,
+}

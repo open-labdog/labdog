@@ -7,7 +7,7 @@ import { apiFetch } from "@/lib/api"
 import type { DriftTrendPoint, DriftTrendSeries } from "@/lib/types"
 import { useDelayedLoading } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, CHART_CURSOR_BAR, type ChartConfig } from "@/components/ui/chart"
 import { PanelShell, PanelHeader, PanelFootnote, PANEL_BODY_HEIGHT } from "@/components/dashboard/panel-shell"
 import { cn } from "@/lib/utils"
 
@@ -102,6 +102,7 @@ export function DriftTrendChart() {
                 tickLine={false}
               />
               <ChartTooltip
+                cursor={CHART_CURSOR_BAR}
                 content={<ChartTooltipContent<DriftTrendPoint> renderLabel={renderLabel} renderBody={renderBody} />}
               />
               <Bar

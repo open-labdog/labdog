@@ -8,7 +8,7 @@ import { apiFetch } from "@/lib/api"
 import type { Granularity, SyncRateSeries } from "@/lib/types"
 import { useDelayedLoading } from "@/lib/utils"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
+import { ChartContainer, ChartTooltip, ChartTooltipContent, CHART_CURSOR_BAR, CHART_CURSOR_LINE, type ChartConfig } from "@/components/ui/chart"
 import { PanelShell, PanelHeader, PanelFootnote, PANEL_BODY_HEIGHT } from "@/components/dashboard/panel-shell"
 import { cn } from "@/lib/utils"
 
@@ -130,6 +130,7 @@ export function SyncSuccessChart() {
                 tickLine={false}
               />
               <ChartTooltip
+                cursor={CHART_CURSOR_BAR}
                 content={<ChartTooltipContent<ChartPoint> renderLabel={renderLabel} renderBody={renderBody} />}
               />
               <Bar dataKey="rate" fill="#22c55e" radius={[3, 3, 0, 0]} isAnimationActive={false} />
@@ -166,6 +167,7 @@ export function SyncSuccessChart() {
                 tickLine={false}
               />
               <ChartTooltip
+                cursor={CHART_CURSOR_LINE}
                 content={<ChartTooltipContent<ChartPoint> renderLabel={renderLabel} renderBody={renderBody} />}
               />
               <Area
