@@ -299,8 +299,49 @@ action_key_label = false
 something upstream (or your browser) is showing the SPA fallback. Check
 `[metrics] enabled` and that LabDog was restarted after the change.
 
-**`/metrics` returns 404 with an empty body.** Working as designed — the feature
-is off. Enable it as above.
+**`/metrics` returns `{"detail":"Metrics exporter is disabled"}`.** The endpoint
+is present and reachable; the feature is simply off. That JSON body (rather than
+an HTML page) confirms your build *has* the exporter — see below if you believe
+you enabled it.
+
+**I set `LABDOG_METRICS__ENABLED=true` but it's still disabled.** Two things to
+check, in this order:
+
+1. **Does the service actually receive the variable?** For `.deb` / `.rpm`
+   installs the systemd unit passes only `PATH` and `LABDOG_CONFIG` and has no
+   `EnvironmentFile`, so a variable exported in your shell — or set with
+   `sudo LABDOG_METRICS__ENABLED=true systemctl restart labdog` — is **not**
+   inherited by the service. Either set it on the unit:
+
+   ```bash
+   sudo systemctl edit labdog     # adds a drop-in
+   ```
+   ```ini
+   [Service]
+   Environment=LABDOG_METRICS__ENABLED=true
+   ```
+
+   or, more simply, use the config file (recommended — it's the documented
+   surface and survives unit changes):
+
+   ```toml
+   # /etc/labdog/labdog.toml
+   [metrics]
+   enabled = true
+   ```
+
+   Note that an existing `/etc/labdog/labdog.toml` is a package conffile and is
+   **not** rewritten on upgrade, so it will not gain the `[metrics]` block
+   automatically — add it by hand. For Docker, put the variable in the
+   container's `environment:` / `env_file:`, not the host shell.
+
+2. **Restart LabDog.** Settings are read once at process start, so changing the
+   environment or the config file has no effect on a running instance.
+
+```bash
+sudo systemctl restart labdog
+curl -i http://localhost:8000/metrics | head -3
+```
 
 **Target is `DOWN` with a 429.** Rate limiting shouldn't apply to `/metrics`, so
 this usually means a proxy in front of LabDog is doing its own limiting.
