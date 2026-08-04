@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
@@ -176,6 +177,18 @@ class AgentLoop:
     def _elapsed(self) -> float:
         return time.monotonic() - self._started
 
+    async def _cancelled(self) -> bool:
+        """Whether an operator cancelled this session since the last check.
+
+        Read straight from the table rather than the ORM object: the cancel
+        arrives on a different connection, and this session's identity map
+        still holds the value written at the start of the run.
+        """
+        result = await self.db.execute(
+            select(AISession.status).where(AISession.id == self.session.id)
+        )
+        return result.scalar_one_or_none() == "cancelled"
+
     def _cap_hit(self) -> str | None:
         if self.session.iterations >= self.caps.max_iterations:
             return f"iteration limit ({self.caps.max_iterations})"
@@ -291,7 +304,10 @@ class AgentLoop:
         session = self.session
         session.status = "running"
         session.started_at = session.started_at or datetime.now(UTC)
-        await self.db.flush()
+        # Commit rather than flush: holding the row lock for the whole run
+        # would block an operator's Cancel instead of applying it, and would
+        # lose the transcript if the worker died mid-session.
+        await self.db.commit()
 
         ctx = ToolContext(
             db=self.db,
@@ -311,6 +327,10 @@ class AgentLoop:
         stopped_by = ""
 
         while True:
+            if await self._cancelled():
+                await self._emit("status", {"status": "cancelled"})
+                return LoopOutcome("cancelled", "", session.iterations, "cancelled by operator")
+
             if cap := self._cap_hit():
                 stopped_by = cap
                 break
@@ -361,6 +381,7 @@ class AgentLoop:
                 await service.finish_session(
                     self.db, session, status="failed", error=str(exc)
                 )
+                await self.db.commit()
                 await self._emit("error", {"message": str(exc)})
                 return LoopOutcome("failed", "", session.iterations, str(exc))
 
@@ -382,6 +403,7 @@ class AgentLoop:
                 final_text = text
                 if turn_end and turn_end.stop_reason == "max_tokens":
                     stopped_by = "the model's per-turn output limit"
+                await self.db.commit()
                 break
 
             for call in tool_calls:
@@ -396,6 +418,11 @@ class AgentLoop:
                 if cap := self._cap_hit():
                     stopped_by = cap
                     break
+
+            # Land the turn before the next provider call: the transcript is
+            # what a reconnecting UI reads, and what a resumed session would
+            # replay if the worker died here.
+            await self.db.commit()
             if stopped_by:
                 break
 
@@ -407,7 +434,15 @@ class AgentLoop:
         if stopped_by:
             report = f"{report}\n\n---\n_Stopped early: {stopped_by}._"
 
+        # A cancel that landed during the final turn wins over the outcome:
+        # the operator asked for this to stop, and reporting "succeeded"
+        # would misrepresent what happened.
+        if await self._cancelled():
+            await self._emit("status", {"status": "cancelled"})
+            return LoopOutcome("cancelled", report, session.iterations, "cancelled by operator")
+
         await service.finish_session(self.db, session, status=status, report=report)
+        await self.db.commit()
         await self._emit("status", {"status": status, "stopped_by": stopped_by})
         return LoopOutcome(status, report, session.iterations, stopped_by)
 

@@ -8,10 +8,10 @@ every cap — with no network and no model.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.ai.loop import AgentLoop, LoopCaps
-from app.ai.models import AIMessage, AIToolCall, AIUsageDay
+from app.ai.models import AIMessage, AISession, AIToolCall, AIUsageDay
 from tests.ai.fake_provider import FakeProvider, ScriptedTurn, call
 
 
@@ -285,6 +285,51 @@ class TestCaps:
 
         assert outcome.report
         assert "Stopped early" in outcome.report
+
+
+class TestCancellation:
+    async def test_a_cancel_stops_the_loop(self, db, ai_provider, make_session):
+        """Cancel is read from the table, not the in-memory session row.
+
+        The cancel arrives on a different connection, so a loop that trusted
+        its own ORM object would run to completion regardless.
+        """
+        session = await make_session()
+
+        # Script enough turns that the loop would keep going on its own.
+        turns = [ScriptedTurn(tool_calls=[call("list_hosts", f"c{i}")]) for i in range(5)]
+        fake = FakeProvider(turns)
+
+        loop = AgentLoop(db, session, ai_provider, LoopCaps(), provider=fake)
+
+        # Simulate the cancel endpoint's write landing after the first turn.
+        original = loop._run_tool
+
+        async def cancel_after_first(cancel_call, ctx):
+            result = await original(cancel_call, ctx)
+            await db.execute(
+                update(AISession).where(AISession.id == session.id).values(status="cancelled")
+            )
+            return result
+
+        loop._run_tool = cancel_after_first
+        outcome = await loop.run()
+
+        assert outcome.status == "cancelled"
+        assert session.iterations < 5
+
+    async def test_a_completed_session_is_not_marked_cancelled(
+        self, db, ai_provider, make_session
+    ):
+        session = await make_session()
+        loop = AgentLoop(
+            db,
+            session,
+            ai_provider,
+            LoopCaps(),
+            provider=FakeProvider([ScriptedTurn(text="Done.")]),
+        )
+        assert (await loop.run()).status == "succeeded"
 
 
 class TestStreaming:
