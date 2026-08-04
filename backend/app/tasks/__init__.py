@@ -41,6 +41,7 @@ celery_app.conf.update(
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
         "app.tasks.facts.*": {"queue": "long_running"},
+        "app.tasks.ai_task.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
         "scans.check_scheduled": {"queue": "default"},
@@ -129,4 +130,5 @@ celery_app.conf.include = [
     "app.tasks.sync_sweeper",
     "app.tasks.action_sweeper",
     "app.tasks.audit_retention",
+    "app.tasks.ai_task",
 ]
