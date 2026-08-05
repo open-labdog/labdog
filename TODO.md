@@ -189,6 +189,61 @@ deliberately scoped out of that PR.
 
 ---
 
+## AI integration — remaining phases
+
+**Context:** Phase 1 shipped the AI subsystem: three provider backends
+behind one streaming interface (OpenAI-compatible / Anthropic Messages /
+Claude CLI), a default-deny command classifier, the read-only tool set
+(hosts, facts, SSH, Mimir), the agent loop with iteration/command/token/
+wall-clock caps, cost accounting with enforced daily and monthly budgets,
+the `/assistant` and `/ai-providers` pages, and `ai.*` settings that all
+default closed. See `git log --grep "feat(ai)"`.
+
+Four phases remain, each independently useful:
+
+- **Scheduled AI tasks.** Register `_builtin.ai_task` in
+  `app/actions/builtins.py` and a per-host wrapper in
+  `app/tasks/ai_task.py`, routed via `PER_HOST_TASK_FOR_BUILTIN` in
+  `app/tasks/action_orchestrator.py`. That inherits `ScheduledAction`
+  cron dispatch, the run history, per-host advisory locking, and the
+  action-run SSE stream without new infrastructure — a nightly health
+  check becomes a scheduled action like any other. Needs the remaining
+  read-only tools too: Mimir `query_range`, Loki LogQL (the client has
+  neither today), action history, and Proxmox status/backup checks.
+- **Approvals and write autonomy.** The `approval` autonomy level is
+  accepted and currently behaves as read-only. Making it real needs an
+  `AIApprovalRequest` table and a resumable loop: on hitting a gate,
+  persist the cursor to `AISession.resume_state`, park the session, and
+  **return from the Celery task** rather than blocking a worker on human
+  think-time; `POST /api/ai/approvals/{id}` then re-dispatches a
+  `resume_session` task. The parked session must also release its host
+  advisory lock, or one pending approval wedges that host's queue.
+  Mutating commands should take a Proxmox snapshot first, reusing
+  `app/workflows/steps/snapshot.py`.
+- **Grafana alert intake.** An `AlertEvent` table plus two producers: a
+  `POST /api/webhooks/grafana-alerts` receiver following the HMAC-verify
+  → `send_task` → return-immediately shape of the existing GitOps
+  webhooks, and a RedBeat poller against the default Mimir instance's
+  Alertmanager API as a fallback for when Grafana cannot reach LabDog.
+  Both dedupe on the alert fingerprint. Eligible alerts spawn a
+  read-only investigation session under a configurable severity policy.
+- **AI verify step.** `app/workflows/steps/ai_verify.py` still shells out
+  to `claude -p` and is effectively dead — its callers
+  (`action_host.py`, `action_group.py`) pass `verification_prompt=None`.
+  Rewrite it onto the provider abstraction and add `ai_verify_prompt` /
+  `ai_verify_fail_closed` to `ActionManifest`, threading the prompt
+  through to those call sites. Default fail-open; let a manifest opt into
+  fail-closed for critical upgrades.
+
+**Known gaps in what shipped:** the `approval` level is accepted but not
+yet enforced as a distinct behaviour (it refuses like read-only); the
+Claude CLI backend is single-shot only, so it cannot drive a tool-using
+investigation; and the DB-backed tests under `tests/ai/` need
+testcontainers, so they were verified by review and by the 123
+non-DB tests rather than executed locally.
+
+---
+
 ## Dependency & supply-chain follow-ups (2026-07 code audit)
 
 **Context:** The 2026-07 code audit's security, correctness, and cleanup

@@ -40,6 +40,11 @@ _EXTERNAL_MODELS = {
     "ActionResolution": "app.packs.models",
     "ActionRegistrySnapshot": "app.packs.models",
     "PackSourceType": "app.packs.models",
+    "AIProvider": "app.ai.models",
+    "AISession": "app.ai.models",
+    "AIMessage": "app.ai.models",
+    "AIToolCall": "app.ai.models",
+    "AIUsageDay": "app.ai.models",
 }
 
 
@@ -109,4 +114,9 @@ __all__ = [
     "ActionResolution",
     "ActionRegistrySnapshot",
     "PackSourceType",
+    "AIProvider",
+    "AISession",
+    "AIMessage",
+    "AIToolCall",
+    "AIUsageDay",
 ]

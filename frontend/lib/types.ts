@@ -987,3 +987,116 @@ export interface ModuleDiff {
   error: string | null
   changes: DiffChange[]
 }
+
+// --- AI ---------------------------------------------------------------
+
+export type AIProviderType = "openai_compat" | "anthropic" | "claude_cli"
+export type AIAutonomyLevel = "read_only" | "approval" | "full_auto"
+export type AISessionStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+
+export interface AIProvider {
+  id: number
+  name: string
+  provider_type: AIProviderType
+  base_url: string | null
+  model: string
+  has_api_key: boolean
+  verify_ssl: boolean
+  ca_cert_fingerprint: string | null
+  max_tokens: number
+  temperature: number
+  is_default: boolean
+  allow_cloud_egress: boolean
+  /** True when using this provider transmits host data off the network. */
+  sends_data_offsite: boolean
+  input_cost_per_mtok: number
+  output_cost_per_mtok: number
+  monthly_budget_usd: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AIProviderTestResult {
+  ok: boolean
+  message: string
+}
+
+export interface AIMessage {
+  id: number
+  seq: number
+  role: "system" | "user" | "assistant" | "tool"
+  content: string
+  tool_calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> | null
+  tool_call_id: string | null
+  created_at: string
+}
+
+export interface AIToolCall {
+  id: number
+  tool_name: string
+  arguments: Record<string, unknown> | null
+  classification: "read_only" | "mutating" | "denied" | "unknown"
+  status: string
+  target_host_id: number | null
+  result_summary: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface AISession {
+  id: number
+  provider_id: number | null
+  mode: string
+  title: string | null
+  mission: string
+  autonomy_level: AIAutonomyLevel
+  status: AISessionStatus
+  target_host_ids: number[] | null
+  action_run_id: number | null
+  iterations: number
+  prompt_tokens: number
+  completion_tokens: number
+  cost_usd: number
+  /** True when the backend could not report usage, so cost_usd is a floor. */
+  cost_unknown: boolean
+  command_count: number
+  report_markdown: string | null
+  error_message: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export interface AISessionDetail extends AISession {
+  messages: AIMessage[]
+  tool_calls: AIToolCall[]
+}
+
+export interface AIUsageDay {
+  usage_date: string
+  provider_id: number | null
+  provider_name: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  cost_usd: number
+  turn_count: number
+}
+
+export interface AIUsageSummary {
+  day_spend: number
+  month_spend: number
+  /** 0 means unlimited. */
+  day_limit: number
+  month_limit: number
+  warn_pct: number
+  exceeded: boolean
+  reason: string
+  days: AIUsageDay[]
+}

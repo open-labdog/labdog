@@ -86,6 +86,85 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 168,
         "description": "Max age in hours before orphaned Proxmox snapshots are cleaned up",
     },
+    # --- AI subsystem -----------------------------------------------------
+    # Defaults are deliberately closed: AI is off until an operator turns it
+    # on, and cloud providers stay blocked until separately allowed, so
+    # installing a release never starts sending host data anywhere.
+    "ai.enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Master switch for AI features (1 = on, 0 = off). When off, chat "
+            "sessions, scheduled AI tasks, and AI verification are all skipped."
+        ),
+    },
+    "ai.allow_cloud_providers": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Permit AI providers that send host data outside your network "
+            "(1 = allow, 0 = local endpoints only). A provider must also have "
+            "its own egress flag set."
+        ),
+    },
+    "ai.budget_daily_usd": {
+        "type": "float",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 10000.0,
+        "description": (
+            "Maximum AI spend per day in USD (0 = unlimited). Sessions are "
+            "refused once reached, and a running session stops at the next step."
+        ),
+    },
+    "ai.budget_monthly_usd": {
+        "type": "float",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 100000.0,
+        "description": "Maximum AI spend per calendar month in USD (0 = unlimited)",
+    },
+    "ai.budget_warn_pct": {
+        "type": "int",
+        "default": 80,
+        "min": 0,
+        "max": 100,
+        "description": (
+            "Warn in the UI once this percentage of any AI budget is spent (0 = never warn)"
+        ),
+    },
+    "ai.max_iterations": {
+        "type": "int",
+        "default": 15,
+        "min": 1,
+        "max": 100,
+        "description": "Maximum model turns in a single AI session",
+    },
+    "ai.max_commands": {
+        "type": "int",
+        "default": 20,
+        "min": 1,
+        "max": 200,
+        "description": "Maximum shell commands an AI session may run across all hosts",
+    },
+    "ai.max_tokens_total": {
+        "type": "int",
+        "default": 200000,
+        "min": 1000,
+        "max": 5000000,
+        "description": "Maximum tokens (prompt + completion) in a single AI session",
+    },
+    "ai.wall_clock_seconds": {
+        "type": "int",
+        "default": 900,
+        "min": 30,
+        "max": 21600,
+        "description": "Maximum wall-clock seconds an AI session may run for",
+    },
 }
 
 # In-process cache: {key: (value, timestamp)}

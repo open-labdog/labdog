@@ -8,8 +8,8 @@ The sidebar is always visible on desktop (collapses on mobile). It has three sec
 
 | Section | Items |
 |---------|-------|
-| **Manage** | Dashboard, Hosts, Groups, Schedules |
-| **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox, Grafana |
+| **Manage** | Dashboard, Hosts, Groups, Schedules, Assistant |
+| **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox, Grafana, AI Providers |
 | **Admin** | Users, Audit Log, Settings |
 
 Your email, a **Change Password** link, and a **Log Out** button sit at the bottom of the sidebar.
@@ -35,12 +35,14 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [CA Certificates](groups.md#ca-certificates) | Deploy trusted CA certificates into hosts' system trust store (per group or per host) |
 | [Syncing changes](groups.md#syncing-changes) | Preview-then-apply syncs — per module or all modules at once, per host or per group — with live progress in the global sync tray (v0.2.0+ all syncs route through one per-host orchestrator with PostgreSQL serialisation) |
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions |
+| [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Proxmox](settings.md#proxmox-settings) | Connect Proxmox VE nodes (TLS verification, per-node CA certificate) and discover host↔VM mappings for snapshot/rollback |
 | [Grafana](metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
+| [AI Providers](assistant.md#ai-providers) | Connect a local or hosted LLM, set per-token pricing, and cap spend with daily/monthly budgets |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
 | [Settings](settings.md) | Operational tuning — log level, timeouts, drift interval |
