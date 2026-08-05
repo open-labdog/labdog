@@ -105,4 +105,111 @@ async def _query_mimir(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     return ToolResult(body, summary=f"{len(series)} series")
 
 
+@tool(
+    name="query_mimir_range",
+    description=(
+        "Run a PromQL query over a time window and return how each series "
+        "moved: first and last value, minimum, maximum, and the number of "
+        "sample points. Use this for 'when did this change', 'is it "
+        "trending', or 'was it already like this before the upgrade' — "
+        "questions an instant query cannot answer. Only the summary is "
+        "returned, not every sample, so a wide window is inexpensive."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "promql": {"type": "string", "description": "The PromQL expression."},
+            "minutes": {
+                "type": "integer",
+                "description": "How far back to look, in minutes. Defaults to 60.",
+            },
+            "step": {
+                "type": "string",
+                "description": "Sample interval, e.g. 60s or 5m. Defaults to 60s.",
+            },
+        },
+        "required": ["promql"],
+        "additionalProperties": False,
+    },
+    classification="read_only",
+)
+async def _query_mimir_range(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
+    from datetime import UTC, datetime, timedelta
+
+    promql = (args.get("promql") or "").strip()
+    if not promql:
+        return ToolResult("promql must not be empty.", ok=False)
+
+    try:
+        minutes = max(1, min(int(args.get("minutes") or 60), 60 * 24 * 30))
+    except (TypeError, ValueError):
+        minutes = 60
+    step = str(args.get("step") or "60s")
+
+    instance = await get_default_instance(ctx.db, "mimir")
+    if instance is None:
+        return ToolResult(
+            "No default Mimir instance is registered in LabDog, so metrics are unavailable.",
+            ok=False,
+            summary="no mimir instance",
+        )
+
+    token: str | None = None
+    if instance.encrypted_token:
+        try:
+            token = decrypt_ssh_key(instance.encrypted_token, get_master_key())
+        except Exception:
+            logger.warning("ai: could not decrypt Mimir token for instance %s", instance.id)
+
+    client = PrometheusClient(
+        query_url=derive_query_url(instance.url, instance.kind),
+        org_id=instance.org_id,
+        token=token,
+        verify_ssl=instance.verify_ssl,
+        ca_cert_pem=instance.ca_cert_pem,
+        auth_type=instance.auth_type,
+        username=instance.username,
+    )
+
+    end = datetime.now(UTC)
+    start = end - timedelta(minutes=minutes)
+    try:
+        series = await client.query_range(promql, start, end, step=step)
+    except PrometheusError as exc:
+        return ToolResult(f"The metrics query failed: {exc}", ok=False, summary="query failed")
+
+    if not series:
+        return ToolResult(
+            f"The query returned no series over the last {minutes} minutes.\n\nquery: {promql}",
+            summary="0 series",
+        )
+
+    # Summarised rather than dumped: every sample of a 24h window at 60s
+    # is 1440 numbers per series, which would cost far more than it tells.
+    lines = []
+    for entry in series[:MAX_SERIES]:
+        labels = dict(entry.get("metric", {}))
+        name = labels.pop("__name__", "value")
+        label_text = ",".join(f"{k}={v}" for k, v in sorted(labels.items()))
+        points = entry.get("values") or []
+        numbers = []
+        for _ts, raw in points:
+            try:
+                numbers.append(float(raw))
+            except (TypeError, ValueError):
+                continue
+        if not numbers:
+            continue
+        lines.append(
+            f"{name}{{{label_text}}} first={numbers[0]:g} last={numbers[-1]:g} "
+            f"min={min(numbers):g} max={max(numbers):g} points={len(numbers)}"
+        )
+
+    body = "\n".join(lines) or "Series matched but carried no numeric samples."
+    if len(series) > MAX_SERIES:
+        body += f"\n\n... and {len(series) - MAX_SERIES} more series (narrow the query)"
+    return ToolResult(body, summary=f"{len(series)} series over {minutes}m")
+
+
 QUERY_MIMIR = _query_mimir
+QUERY_MIMIR_RANGE = _query_mimir_range

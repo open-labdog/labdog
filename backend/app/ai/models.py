@@ -132,6 +132,14 @@ class AISession(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued", index=True)
     # Host allowlist — the model may not touch anything outside it.
     target_host_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    # Tool allowlist. NULL means every registered tool. Naming a subset
+    # bounds both spend and blast radius with one control: a scheduled log
+    # sweep restricted to query_loki cannot open an SSH session at all, and
+    # cannot spend what an unbounded journalctl would.
+    allowed_tools: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
+    # Action keys this session may invoke as remediation. Empty or NULL
+    # means it may not change anything through the action system.
+    allowed_action_keys: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
     action_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -218,6 +226,13 @@ class AIToolCall(Base):
     # "proposed" | "approved" | "rejected" | "executed" | "blocked" | "error"
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
     result_summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Size of the result fed back to the model. Recorded exactly, in
+    # characters, rather than as an estimated token count: characters are
+    # what we actually know, and the ratio is near-constant, so this is
+    # enough to compare what a tool costs. It is the only way to answer
+    # "is reading logs via Loki cheaper than via SSH" with data instead of
+    # intuition — the answer depends on the query and is worth measuring.
+    result_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Proxmox snapshot taken before this call, when it was mutating.
     snapshot_name: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     started_at: Mapped[datetime] = mapped_column(
