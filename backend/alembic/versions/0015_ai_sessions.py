@@ -110,9 +110,7 @@ def upgrade() -> None:
         sa.Column("message_seq", sa.Integer(), nullable=True),
         sa.Column("tool_name", sa.String(length=64), nullable=False),
         sa.Column("arguments", postgresql.JSONB(), nullable=True),
-        sa.Column(
-            "classification", sa.String(length=16), nullable=False, server_default="unknown"
-        ),
+        sa.Column("classification", sa.String(length=16), nullable=False, server_default="unknown"),
         sa.Column("target_host_id", sa.Integer(), nullable=True),
         sa.Column("approval_id", sa.Integer(), nullable=True),
         sa.Column("status", sa.String(length=16), nullable=False, server_default="proposed"),

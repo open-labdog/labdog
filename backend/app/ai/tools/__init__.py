@@ -17,8 +17,7 @@ from app.ai.tools.ssh import RUN_SSH_COMMAND
 
 #: Every tool available in phase 1, keyed by the name the model calls.
 TOOL_REGISTRY: dict[str, ToolHandler] = {
-    tool.spec.name: tool
-    for tool in (LIST_HOSTS, GET_HOST_FACTS, RUN_SSH_COMMAND, QUERY_MIMIR)
+    tool.spec.name: tool for tool in (LIST_HOSTS, GET_HOST_FACTS, RUN_SSH_COMMAND, QUERY_MIMIR)
 }
 
 

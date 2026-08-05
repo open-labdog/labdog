@@ -42,9 +42,7 @@ class FakeProvider:
 
     provider_type = "fake"
 
-    def __init__(
-        self, turns: Sequence[ScriptedTurn], *, supports_tools: bool = True
-    ) -> None:
+    def __init__(self, turns: Sequence[ScriptedTurn], *, supports_tools: bool = True) -> None:
         self._turns = list(turns)
         self.supports_tools = supports_tools
         #: Every (messages, tools) pair the loop sent, for assertions.
@@ -82,9 +80,7 @@ class FakeProvider:
             completion_tokens=turn.completion_tokens,
             unknown=turn.usage_unknown,
         )
-        yield TurnEnd(
-            stop_reason=turn.stop_reason, wants_tools=bool(turn.tool_calls)
-        )
+        yield TurnEnd(stop_reason=turn.stop_reason, wants_tools=bool(turn.tool_calls))
 
     async def test_connection(self) -> str:
         return "fake provider"

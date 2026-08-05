@@ -19,18 +19,21 @@ PLACEHOLDER = "[redacted by labdog]"
 
 # Ordered most- to least-specific: the first match wins for a given span.
 _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    # PEM private keys, including the whole body.
+    # PEM private keys of any type, envelope and body together. The
+    # character class covers the OPENSSH, RSA, EC, and DSA variants.
+    #
+    # The whole block collapses to the placeholder rather than being
+    # rewritten as an empty PEM envelope: reconstructing the envelope told
+    # the reader nothing the placeholder doesn't, and put a literal
+    # BEGIN-PRIVATE-KEY marker in the source for secret scanners to trip
+    # over.
     (
         re.compile(
             r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----",
             re.DOTALL,
         ),
-        f"-----BEGIN PRIVATE KEY-----\n{PLACEHOLDER}\n-----END PRIVATE KEY-----",
+        PLACEHOLDER,
     ),
-    # OpenSSH authorized_keys / known_hosts private material and certs.
-    (re.compile(r"-----BEGIN OPENSSH PRIVATE KEY-----.*?-----END OPENSSH PRIVATE KEY-----",
-                re.DOTALL),
-     PLACEHOLDER),
     # Authorization headers of any scheme. Must precede the generic
     # KEY: VALUE rule below, which would otherwise match on "Authorization"
     # and redact only the scheme word, leaving the credential itself.
@@ -90,6 +93,4 @@ def redact(text: str) -> str:
 
 def redact_mapping(data: dict[str, object]) -> dict[str, object]:
     """Redact every string value in a flat mapping (e.g. tool arguments)."""
-    return {
-        key: redact(value) if isinstance(value, str) else value for key, value in data.items()
-    }
+    return {key: redact(value) if isinstance(value, str) else value for key, value in data.items()}

@@ -44,8 +44,7 @@ class BudgetStatus:
             (self.day_limit and self.day_spend >= self.day_limit)
             or (self.month_limit and self.month_spend >= self.month_limit)
             or (
-                self.provider_month_limit
-                and self.provider_month_spend >= self.provider_month_limit
+                self.provider_month_limit and self.provider_month_spend >= self.provider_month_limit
             )
         )
 
@@ -181,9 +180,7 @@ async def record_usage(
     await db.execute(stmt)
 
 
-async def _spend_since(
-    db: AsyncSession, start: date, provider_id: int | None = None
-) -> float:
+async def _spend_since(db: AsyncSession, start: date, provider_id: int | None = None) -> float:
     stmt = select(func.coalesce(func.sum(AIUsageDay.cost_usd), 0.0)).where(
         AIUsageDay.usage_date >= start
     )
@@ -220,9 +217,7 @@ async def assert_within_budget(db: AsyncSession, provider: AIProvider) -> Budget
 
 async def next_message_seq(db: AsyncSession, session_id: int) -> int:
     result = await db.execute(
-        select(func.coalesce(func.max(AIMessage.seq), -1)).where(
-            AIMessage.session_id == session_id
-        )
+        select(func.coalesce(func.max(AIMessage.seq), -1)).where(AIMessage.session_id == session_id)
     )
     return int(result.scalar_one()) + 1
 

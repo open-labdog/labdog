@@ -242,9 +242,7 @@ class AnthropicProvider:
             )
 
         yield Usage(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens)
-        yield TurnEnd(
-            stop_reason=stop_reason, wants_tools=wants_tools or stop_reason == "tool_use"
-        )
+        yield TurnEnd(stop_reason=stop_reason, wants_tools=wants_tools or stop_reason == "tool_use")
 
     async def test_connection(self) -> str:
         """Send a one-token message; returns a short human-readable result."""

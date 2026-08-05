@@ -149,9 +149,7 @@ async def update_provider(
 
     # Tri-state: absent keeps, "" clears, a value replaces.
     if api_key is not None:
-        provider.encrypted_api_key = (
-            encrypt_ssh_key(api_key, get_master_key()) if api_key else None
-        )
+        provider.encrypted_api_key = encrypt_ssh_key(api_key, get_master_key()) if api_key else None
 
     if data.get("is_default"):
         await _unset_other_defaults(db, provider.id)
@@ -303,9 +301,7 @@ async def get_session(
     messages = (
         (
             await db.execute(
-                select(AIMessage)
-                .where(AIMessage.session_id == session_id)
-                .order_by(AIMessage.seq)
+                select(AIMessage).where(AIMessage.session_id == session_id).order_by(AIMessage.seq)
             )
         )
         .scalars()
@@ -458,16 +454,13 @@ async def get_usage(
     since = (datetime.now(UTC) - timedelta(days=days)).date()
 
     rows = (
-        (
-            await db.execute(
-                select(AIUsageDay, AIProvider.name)
-                .join(AIProvider, AIProvider.id == AIUsageDay.provider_id, isouter=True)
-                .where(AIUsageDay.usage_date >= since)
-                .order_by(AIUsageDay.usage_date)
-            )
+        await db.execute(
+            select(AIUsageDay, AIProvider.name)
+            .join(AIProvider, AIProvider.id == AIUsageDay.provider_id, isouter=True)
+            .where(AIUsageDay.usage_date >= since)
+            .order_by(AIUsageDay.usage_date)
         )
-        .all()
-    )
+    ).all()
 
     status = await service.get_budget_status(db, None)
     return AIUsageSummary(

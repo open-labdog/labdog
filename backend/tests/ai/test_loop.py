@@ -160,9 +160,7 @@ class TestBasicFlow:
 
 
 class TestUsageAccounting:
-    async def test_tokens_and_cost_land_on_the_session(
-        self, db, paid_provider, make_session
-    ):
+    async def test_tokens_and_cost_land_on_the_session(self, db, paid_provider, make_session):
         session = await make_session(provider=paid_provider)
         await _run(
             db,
@@ -175,9 +173,7 @@ class TestUsageAccounting:
         # 1M in at $5/M + 100k out at $25/M
         assert session.cost_usd == pytest.approx(5.0 + 2.5)
 
-    async def test_usage_rolls_into_the_daily_ledger(
-        self, db, paid_provider, make_session
-    ):
+    async def test_usage_rolls_into_the_daily_ledger(self, db, paid_provider, make_session):
         session = await make_session(provider=paid_provider)
         await _run(
             db,
@@ -186,11 +182,7 @@ class TestUsageAccounting:
             [ScriptedTurn(text="Done.", prompt_tokens=1_000_000, completion_tokens=0)],
         )
         row = (
-            (
-                await db.execute(
-                    select(AIUsageDay).where(AIUsageDay.provider_id == paid_provider.id)
-                )
-            )
+            (await db.execute(select(AIUsageDay).where(AIUsageDay.provider_id == paid_provider.id)))
             .scalars()
             .one()
         )
@@ -213,11 +205,7 @@ class TestUsageAccounting:
             ],
         )
         row = (
-            (
-                await db.execute(
-                    select(AIUsageDay).where(AIUsageDay.provider_id == paid_provider.id)
-                )
-            )
+            (await db.execute(select(AIUsageDay).where(AIUsageDay.provider_id == paid_provider.id)))
             .scalars()
             .one()
         )
@@ -234,9 +222,7 @@ class TestUsageAccounting:
         )
         assert session.cost_usd == 0.0
 
-    async def test_unreported_usage_marks_cost_as_a_floor(
-        self, db, paid_provider, make_session
-    ):
+    async def test_unreported_usage_marks_cost_as_a_floor(self, db, paid_provider, make_session):
         session = await make_session(provider=paid_provider)
         await _run(
             db,
@@ -248,9 +234,7 @@ class TestUsageAccounting:
 
 
 class TestCaps:
-    async def test_iteration_cap_stops_the_loop(
-        self, db, ai_provider, make_session, small_caps
-    ):
+    async def test_iteration_cap_stops_the_loop(self, db, ai_provider, make_session, small_caps):
         """A model that never stops calling tools is stopped for it."""
         session = await make_session()
         turns = [ScriptedTurn(tool_calls=[call("list_hosts", f"c{i}")]) for i in range(10)]
@@ -318,9 +302,7 @@ class TestCancellation:
         assert outcome.status == "cancelled"
         assert session.iterations < 5
 
-    async def test_a_completed_session_is_not_marked_cancelled(
-        self, db, ai_provider, make_session
-    ):
+    async def test_a_completed_session_is_not_marked_cancelled(self, db, ai_provider, make_session):
         session = await make_session()
         loop = AgentLoop(
             db,
@@ -333,9 +315,7 @@ class TestCancellation:
 
 
 class TestStreaming:
-    async def test_text_and_tool_events_are_published(
-        self, db, ai_provider, make_session
-    ):
+    async def test_text_and_tool_events_are_published(self, db, ai_provider, make_session):
         events: list[tuple[str, dict]] = []
         session = await make_session()
         await _run(
@@ -351,9 +331,7 @@ class TestStreaming:
         assert "text" in kinds
         assert kinds[-1] == "status"
 
-    async def test_a_broken_stream_does_not_abort_the_run(
-        self, db, ai_provider, make_session
-    ):
+    async def test_a_broken_stream_does_not_abort_the_run(self, db, ai_provider, make_session):
         """The transcript is the source of truth; SSE is best-effort."""
 
         async def exploding_publish(event, payload):  # noqa: ANN001

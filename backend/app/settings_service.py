@@ -134,8 +134,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 0,
         "max": 100,
         "description": (
-            "Warn in the UI once this percentage of any AI budget is spent "
-            "(0 = never warn)"
+            "Warn in the UI once this percentage of any AI budget is spent (0 = never warn)"
         ),
     },
     "ai.max_iterations": {

@@ -55,4 +55,14 @@ regexes = [
     # and superseded by the rebranded LABDOG_* env vars in dev/labdog.toml.
     '''BARRICADE_SECURITY__SECRET_KEY''',
     '''BARRICADE_SECURITY__ENCRYPTION_KEY''',
+    # app/ai/redaction.py replaces PEM private keys with a placeholder. An
+    # early revision rebuilt an empty PEM envelope around it, so the
+    # BEGIN-PRIVATE-KEY marker appears in that commit's diff and gitleaks
+    # (which scans full history) flags it forever. The current code emits
+    # only the placeholder, but the historical commit cannot be un-written
+    # without a force-push. Matching on the placeholder token is safe by
+    # construction: it is the string that *replaces* a secret, so anything
+    # containing it is redacted output, never a credential.
+    '''\{PLACEHOLDER\}''',
+    '''redacted by labdog''',
 ]

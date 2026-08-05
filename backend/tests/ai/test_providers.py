@@ -162,9 +162,7 @@ class TestOpenAICompat:
         assert next(e for e in events if isinstance(e, Usage)).unknown is True
 
     async def test_api_key_is_sent_as_bearer(self, monkeypatch):
-        provider = OpenAICompatProvider(
-            "http://localhost:11434/v1", "llama3", api_key="secret-key"
-        )
+        provider = OpenAICompatProvider("http://localhost:11434/v1", "llama3", api_key="secret-key")
         body = _sse({"choices": [{"delta": {}, "finish_reason": "stop"}]})
         _, captured = await _collect(provider, monkeypatch, body)
         assert captured["headers"]["authorization"] == "Bearer secret-key"

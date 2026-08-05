@@ -59,9 +59,7 @@ async def _list_hosts(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     ),
     parameters={
         "type": "object",
-        "properties": {
-            "host_id": {"type": "integer", "description": "Host id from list_hosts."}
-        },
+        "properties": {"host_id": {"type": "integer", "description": "Host id from list_hosts."}},
         "required": ["host_id"],
         "additionalProperties": False,
     },
@@ -79,15 +77,11 @@ async def _get_host_facts(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             summary="out of scope",
         )
 
-    host = (
-        await ctx.db.execute(select(Host).where(Host.id == host_id))
-    ).scalar_one_or_none()
+    host = (await ctx.db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
     if host is None:
         return ToolResult(f"No host with id {host_id}.", ok=False)
 
-    collected = (
-        host.os_facts_collected_at.isoformat() if host.os_facts_collected_at else "never"
-    )
+    collected = host.os_facts_collected_at.isoformat() if host.os_facts_collected_at else "never"
     facts = [
         f"hostname: {host.hostname}",
         f"ip_address: {host.ip_address}",

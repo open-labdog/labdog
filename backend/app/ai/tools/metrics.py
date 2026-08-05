@@ -39,7 +39,7 @@ MAX_SERIES = 25
         "properties": {
             "promql": {
                 "type": "string",
-                "description": "The PromQL expression, e.g. up{labdog_host_id=\"3\"}",
+                "description": 'The PromQL expression, e.g. up{labdog_host_id="3"}',
             }
         },
         "required": ["promql"],
@@ -81,9 +81,7 @@ async def _query_mimir(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     try:
         series = await client.query(promql)
     except PrometheusError as exc:
-        return ToolResult(
-            f"The metrics query failed: {exc}", ok=False, summary="query failed"
-        )
+        return ToolResult(f"The metrics query failed: {exc}", ok=False, summary="query failed")
 
     if not series:
         return ToolResult(

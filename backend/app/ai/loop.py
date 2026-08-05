@@ -347,8 +347,7 @@ class AgentLoop:
                     "budget_warning",
                     {
                         "message": (
-                            f"AI spend is at {budget.warn_fraction() * 100:.0f}% "
-                            f"of budget."
+                            f"AI spend is at {budget.warn_fraction() * 100:.0f}% of budget."
                         ),
                         "day_spend": budget.day_spend,
                         "month_spend": budget.month_spend,
@@ -378,9 +377,7 @@ class AgentLoop:
                         turn_end = event
             except LLMProviderError as exc:
                 logger.warning("ai session %s: provider error: %s", session.id, exc)
-                await service.finish_session(
-                    self.db, session, status="failed", error=str(exc)
-                )
+                await service.finish_session(self.db, session, status="failed", error=str(exc))
                 await self.db.commit()
                 await self._emit("error", {"message": str(exc)})
                 return LoopOutcome("failed", "", session.iterations, str(exc))
@@ -482,9 +479,7 @@ class AgentLoop:
             return ""
         text = "".join(chunks).strip()
         if text:
-            await service.append_message(
-                self.db, self.session.id, role="assistant", content=text
-            )
+            await service.append_message(self.db, self.session.id, role="assistant", content=text)
         return text
 
 

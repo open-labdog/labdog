@@ -21,7 +21,17 @@ logger = logging.getLogger(__name__)
 
 # Hosts that never leave the operator's own network. Anything else is
 # treated as off-site for the purposes of the egress policy.
-_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+#
+# These are compared against a URL's host, never bound to — the unspecified
+# address is here because a provider URL may legitimately carry it, and a
+# request to it goes to the local machine. nosec silences bandit's B104,
+# which cannot tell a comparison from a bind.
+_LOCAL_HOSTNAMES = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "0.0.0.0",  # nosec B104 - compared against, not bound
+}
 
 
 def decrypt_api_key(provider: AIProvider) -> str | None:

@@ -144,9 +144,7 @@ class TestBudgetGate:
 
 
 class TestMidRunEnforcement:
-    async def test_a_run_stops_when_it_crosses_the_budget(
-        self, db, paid_provider, make_session
-    ):
+    async def test_a_run_stops_when_it_crosses_the_budget(self, db, paid_provider, make_session):
         """Crossing the limit partway through ends the run, not just new ones."""
         await _set(db, "ai.budget_daily_usd", "5.0")
         session = await make_session(provider=paid_provider)

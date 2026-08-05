@@ -129,9 +129,7 @@ class AISession(Base):
     title: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     mission: Mapped[str] = mapped_column(Text, nullable=False)
     autonomy_level: Mapped[str] = mapped_column(String(16), nullable=False, default="read_only")
-    status: Mapped[str] = mapped_column(
-        String(24), nullable=False, default="queued", index=True
-    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="queued", index=True)
     # Host allowlist — the model may not touch anything outside it.
     target_host_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=None)
     action_run_id: Mapped[int | None] = mapped_column(
