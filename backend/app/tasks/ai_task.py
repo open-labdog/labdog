@@ -222,6 +222,38 @@ async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool
         return outcome.status == "succeeded", outcome.report
 
 
+#: Matches the cap ``app.tasks.action_host`` puts on playbook output.
+MAX_OUTPUT_BYTES = 1_000_000
+
+
+async def _store_report(host_run_id: int, report: str, session_id: int | None = None) -> None:
+    """Write an AI report into the ActionHostRun the UI renders.
+
+    Failures here are logged and swallowed: losing the rendered copy of a
+    report that is already safe in ``ai_sessions`` must not turn a
+    successful check into a failed one.
+    """
+    if not report:
+        return
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun
+
+    body = report[:MAX_OUTPUT_BYTES]
+    if session_id is not None:
+        body = f"{body}\n\n---\nAI session {session_id}"
+    try:
+        async with task_session() as db:
+            host_run = (
+                await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
+            ).scalar_one_or_none()
+            if host_run is not None:
+                host_run.output = body
+                await db.commit()
+    except Exception:
+        logger.exception("ai_task: could not store report on host_run %s", host_run_id)
+
+
 async def _run_builtin_ai_task_async(action_run_id: int, host_run_id: int) -> None:
     from sqlalchemy import select
 
@@ -234,6 +266,9 @@ async def _run_builtin_ai_task_async(action_run_id: int, host_run_id: int) -> No
 
     succeeded = False
     detail = ""
+    # Bound before the try: the finally clause reads it, and session
+    # creation can itself raise.
+    session_id: int | None = None
     try:
         async with task_session() as db:
             run = (
@@ -255,6 +290,11 @@ async def _run_builtin_ai_task_async(action_run_id: int, host_run_id: int) -> No
         logger.exception("ai_task: builtin ai_task failed for host_run %s", host_run_id)
         detail = str(exc)
     finally:
+        # The findings are the whole point of the run, so they belong in
+        # the row the run-detail view already reads. Without this the
+        # report is only reachable through the AI session API, and a
+        # scheduled check looks like it produced nothing.
+        await _store_report(host_run_id, detail, session_id)
         await _finish_host_run(
             host_run_id,
             succeeded=succeeded,
@@ -355,6 +395,12 @@ async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
         for host_run in host_runs:
             host_run.status = "succeeded" if succeeded else "failed"
             host_run.finished_at = finished
+            # One session covered the whole group, so every member's row
+            # carries the same report — the investigation reached one
+            # conclusion, and splitting it per host would invent detail
+            # the run does not have.
+            if detail:
+                host_run.output = f"{detail[:MAX_OUTPUT_BYTES]}\n\n---\nAI session {session_id}"
             if not succeeded:
                 host_run.error_message = (detail or "AI check failed")[:2000]
         run = (
