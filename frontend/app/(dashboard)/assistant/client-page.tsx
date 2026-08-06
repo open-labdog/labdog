@@ -24,6 +24,12 @@ import type {
   Host,
 } from "@/lib/types"
 
+const AUTONOMY_LABEL: Record<AIAutonomyLevel, string> = {
+  read_only: "Read-only",
+  approval: "Approval required",
+  full_auto: "Full auto",
+}
+
 const AUTONOMY_HELP: Record<AIAutonomyLevel, string> = {
   read_only:
     "The assistant may only run commands that read state. Anything that would change a host is refused.",
@@ -303,12 +309,19 @@ export default function AssistantPage() {
                   onValueChange={(v) => setAutonomy(v as AIAutonomyLevel)}
                 >
                   <SelectTrigger className="mt-1">
-                    <SelectValue />
+                    {/* base-ui renders the raw value unless given a
+                        formatter, so without this the field reads
+                        "read_only" rather than "Read-only". */}
+                    <SelectValue>
+                      {(v: AIAutonomyLevel) => AUTONOMY_LABEL[v] ?? v}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="read_only">Read-only</SelectItem>
-                    <SelectItem value="approval">Approval required</SelectItem>
-                    <SelectItem value="full_auto">Full auto</SelectItem>
+                    {(Object.keys(AUTONOMY_LABEL) as AIAutonomyLevel[]).map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {AUTONOMY_LABEL[level]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <p className="mt-1 text-xs text-slate-400">{AUTONOMY_HELP[autonomy]}</p>
