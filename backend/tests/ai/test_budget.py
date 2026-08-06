@@ -46,7 +46,7 @@ async def _spend(db, provider_id: int, cost: float) -> None:
             provider_id=provider_id,
             prompt_tokens=1000,
             completion_tokens=1000,
-            cost_usd=cost,
+            cost=cost,
             turn_count=1,
         )
     )
@@ -102,42 +102,42 @@ class TestEgressPolicy:
 
 class TestBudgetGate:
     async def test_daily_budget_blocks_a_new_session(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "10.0")
+        await _set(db, "ai.budget_daily", "10.0")
         await _spend(db, paid_provider.id, 10.5)
         with pytest.raises(BudgetExceededError, match="Daily"):
             await service.assert_within_budget(db, paid_provider)
 
     async def test_monthly_budget_blocks_a_new_session(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "0")
-        await _set(db, "ai.budget_monthly_usd", "20.0")
+        await _set(db, "ai.budget_daily", "0")
+        await _set(db, "ai.budget_monthly", "20.0")
         await _spend(db, paid_provider.id, 25.0)
         with pytest.raises(BudgetExceededError, match="Monthly"):
             await service.assert_within_budget(db, paid_provider)
 
     async def test_per_provider_budget_blocks(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "0")
-        await _set(db, "ai.budget_monthly_usd", "0")
-        paid_provider.monthly_budget_usd = 5.0
+        await _set(db, "ai.budget_daily", "0")
+        await _set(db, "ai.budget_monthly", "0")
+        paid_provider.monthly_budget = 5.0
         await _spend(db, paid_provider.id, 6.0)
         with pytest.raises(BudgetExceededError, match="provider"):
             await service.assert_within_budget(db, paid_provider)
 
     async def test_spend_below_limit_is_allowed(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "10.0")
+        await _set(db, "ai.budget_daily", "10.0")
         await _spend(db, paid_provider.id, 2.0)
         status = await service.assert_within_budget(db, paid_provider)
         assert status.day_spend == pytest.approx(2.0)
 
     async def test_zero_limit_means_unlimited(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "0")
-        await _set(db, "ai.budget_monthly_usd", "0")
+        await _set(db, "ai.budget_daily", "0")
+        await _set(db, "ai.budget_monthly", "0")
         await _spend(db, paid_provider.id, 9999.0)
         status = await service.assert_within_budget(db, paid_provider)
         assert not status.exceeded
 
     async def test_free_local_provider_ignores_usd_budgets(self, db, ai_provider):
         """A self-hosted model costs nothing, so a USD cap never trips."""
-        await _set(db, "ai.budget_daily_usd", "0.01")
+        await _set(db, "ai.budget_daily", "0.01")
         await _spend(db, ai_provider.id, 0.0)
         status = await service.assert_within_budget(db, ai_provider)
         assert not status.exceeded
@@ -146,7 +146,7 @@ class TestBudgetGate:
 class TestMidRunEnforcement:
     async def test_a_run_stops_when_it_crosses_the_budget(self, db, paid_provider, make_session):
         """Crossing the limit partway through ends the run, not just new ones."""
-        await _set(db, "ai.budget_daily_usd", "5.0")
+        await _set(db, "ai.budget_daily", "5.0")
         session = await make_session(provider=paid_provider)
 
         # Each turn bills 1M input tokens = $5, so the first turn exhausts it.
@@ -171,7 +171,7 @@ class TestMidRunEnforcement:
         assert session.iterations < 5
 
     async def test_a_run_within_budget_completes(self, db, paid_provider, make_session):
-        await _set(db, "ai.budget_daily_usd", "100.0")
+        await _set(db, "ai.budget_daily", "100.0")
         session = await make_session(provider=paid_provider)
         loop = AgentLoop(
             db,
@@ -187,15 +187,15 @@ class TestMidRunEnforcement:
 
 class TestBudgetStatus:
     async def test_warn_fraction_reports_the_worst_limit(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "10.0")
-        await _set(db, "ai.budget_monthly_usd", "1000.0")
+        await _set(db, "ai.budget_daily", "10.0")
+        await _set(db, "ai.budget_monthly", "1000.0")
         await _spend(db, paid_provider.id, 9.0)
         status = await service.get_budget_status(db, paid_provider)
         # 90% of the daily limit dominates 0.9% of the monthly one.
         assert status.warn_fraction() == pytest.approx(0.9)
 
     async def test_reason_is_empty_when_within_budget(self, db, paid_provider):
-        await _set(db, "ai.budget_daily_usd", "10.0")
+        await _set(db, "ai.budget_daily", "10.0")
         await _spend(db, paid_provider.id, 1.0)
         status = await service.get_budget_status(db, paid_provider)
         assert status.reason == ""

@@ -221,7 +221,7 @@ class AgentLoop:
         )
         self.session.prompt_tokens += usage.prompt_tokens
         self.session.completion_tokens += usage.completion_tokens
-        self.session.cost_usd += cost
+        self.session.cost += cost
         if usage.unknown:
             self.session.cost_unknown = True
         await service.record_usage(
@@ -229,7 +229,7 @@ class AgentLoop:
             provider_id=self.provider_row.id,
             prompt_tokens=usage.prompt_tokens,
             completion_tokens=usage.completion_tokens,
-            cost_usd=cost,
+            cost=cost,
         )
         await self.db.flush()
 

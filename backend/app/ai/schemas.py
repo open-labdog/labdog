@@ -50,7 +50,7 @@ class AIProviderCreate(BaseModel):
     allow_cloud_egress: bool = False
     input_cost_per_mtok: float = Field(default=0.0, ge=0.0)
     output_cost_per_mtok: float = Field(default=0.0, ge=0.0)
-    monthly_budget_usd: float = Field(default=0.0, ge=0.0)
+    monthly_budget: float = Field(default=0.0, ge=0.0)
     enabled: bool = True
 
     @field_validator("base_url")
@@ -81,7 +81,7 @@ class AIProviderUpdate(BaseModel):
     allow_cloud_egress: bool | None = None
     input_cost_per_mtok: float | None = Field(default=None, ge=0.0)
     output_cost_per_mtok: float | None = Field(default=None, ge=0.0)
-    monthly_budget_usd: float | None = Field(default=None, ge=0.0)
+    monthly_budget: float | None = Field(default=None, ge=0.0)
     enabled: bool | None = None
 
     @field_validator("base_url")
@@ -117,7 +117,7 @@ class AIProviderResponse(BaseModel):
     sends_data_offsite: bool
     input_cost_per_mtok: float
     output_cost_per_mtok: float
-    monthly_budget_usd: float
+    monthly_budget: float
     enabled: bool
     created_at: datetime
     updated_at: datetime
@@ -146,7 +146,7 @@ def provider_to_response(provider: AIProvider) -> AIProviderResponse:
         sends_data_offsite=sends_data_offsite(provider),
         input_cost_per_mtok=provider.input_cost_per_mtok,
         output_cost_per_mtok=provider.output_cost_per_mtok,
-        monthly_budget_usd=provider.monthly_budget_usd,
+        monthly_budget=provider.monthly_budget,
         enabled=provider.enabled,
         created_at=provider.created_at,
         updated_at=provider.updated_at,
@@ -216,7 +216,7 @@ class AISessionResponse(BaseModel):
     iterations: int
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost: float
     cost_unknown: bool
     command_count: int
     report_markdown: str | None
@@ -244,7 +244,7 @@ class AIUsageDayResponse(BaseModel):
     provider_name: str | None
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost: float
     turn_count: int
 
 
@@ -258,4 +258,8 @@ class AIUsageSummary(BaseModel):
     warn_pct: int
     exceeded: bool
     reason: str
+    # How to label the figures above. Sent from the server so the currency
+    # lives in one place rather than being guessed per component; purely a
+    # display unit, since no conversion happens anywhere.
+    currency: str = "USD"
     days: list[AIUsageDayResponse] = Field(default_factory=list)

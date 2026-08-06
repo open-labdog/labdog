@@ -111,22 +111,39 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "its own egress flag set."
         ),
     },
-    "ai.budget_daily_usd": {
+    "ai.currency": {
+        "type": "string",
+        "default": "USD",
+        # Constrained so a typo can't quietly produce an unformattable label.
+        # The list is the common homelab set rather than every ISO code;
+        # extend it here if yours is missing.
+        "choices": ["USD", "EUR", "GBP", "SEK", "NOK", "DKK", "CHF", "CAD", "AUD"],
+        "description": (
+            "Currency used to display AI costs and budgets. Formatting only — "
+            "LabDog never converts between currencies, so this relabels the "
+            "figures rather than recalculating them. Enter provider rates in "
+            "the same currency you choose here."
+        ),
+    },
+    "ai.budget_daily": {
         "type": "float",
         "default": 0.0,
         "min": 0.0,
         "max": 10000.0,
         "description": (
-            "Maximum AI spend per day in USD (0 = unlimited). Sessions are "
-            "refused once reached, and a running session stops at the next step."
+            "Maximum AI spend per day, in the ai.currency unit (0 = unlimited). "
+            "Sessions are refused once reached, and a running session stops at "
+            "the next step."
         ),
     },
-    "ai.budget_monthly_usd": {
+    "ai.budget_monthly": {
         "type": "float",
         "default": 0.0,
         "min": 0.0,
         "max": 100000.0,
-        "description": "Maximum AI spend per calendar month in USD (0 = unlimited)",
+        "description": (
+            "Maximum AI spend per calendar month, in the ai.currency unit (0 = unlimited)"
+        ),
     },
     "ai.budget_warn_pct": {
         "type": "int",

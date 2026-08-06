@@ -174,8 +174,25 @@ never sends anything anywhere until you decide it should.
 
 Enter the provider's rates per million tokens by hand — an
 OpenAI-compatible endpoint has no way to report its own pricing. Leave both
-at `0` for a self-hosted model, which makes the USD budgets a no-op for it
+at `0` for a self-hosted model, which makes the money budgets a no-op for it
 while the token and iteration caps still apply.
+
+Set `ai.currency` under [Settings](settings.md) to the currency you actually
+pay in — euro, pound, krona, and the other common ones are all available.
+**It is a label, not a conversion.** LabDog stores whatever number you type
+and never applies an exchange rate, so switching the setting relabels your
+existing figures rather than recalculating them. Enter every provider's rates
+in the currency you picked.
+
+Each provider type offers suggested models as one-click presets. Anthropic
+presets fill in their published rates; local Ollama presets fill in `0`,
+which is the true cost of a model you host yourself. A preset for a paid
+hosted model deliberately leaves the rate fields alone rather than guessing —
+a stale figure that looks authoritative is worse than a blank one.
+
+Every field with a small **i** beside it explains itself when clicked,
+including what separates input from output cost and how the per-provider cap
+relates to the global budgets.
 
 The **Usage and budget** panel shows spend today and this month against
 your limits, plus a per-day breakdown.

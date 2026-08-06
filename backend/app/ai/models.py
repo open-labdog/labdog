@@ -61,7 +61,7 @@ class AIProvider(Base):
 
     Pricing is operator-entered because OpenAI-compatible endpoints have
     no way to report their own rates. Leaving it at 0 is correct for
-    self-hosted models and makes the USD budgets a no-op for them —
+    self-hosted models and makes the money budgets a no-op for them —
     the token and iteration caps still apply.
     """
 
@@ -88,12 +88,15 @@ class AIProvider(Base):
     # Whether this endpoint may receive host data that leaves the network.
     # Gated additionally by the global ai.allow_cloud_providers setting.
     allow_cloud_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # USD per million tokens, operator-entered. 0 == free/self-hosted.
+    # Money per million tokens, operator-entered, in whatever currency
+    # ai.currency names. LabDog never converts, so the unit is simply
+    # whatever the operator typed. 0 == free/self-hosted.
     input_cost_per_mtok: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     output_cost_per_mtok: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    # Optional per-provider monthly ceiling in USD; 0 == unlimited. Useful
+    # Optional per-provider monthly ceiling, same unit as the rates
+    # above; 0 == unlimited. Useful
     # when a free local provider and a paid cloud one are both configured.
-    monthly_budget_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    monthly_budget: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
@@ -148,8 +151,8 @@ class AISession(Base):
     iterations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-    # True when the backend could not report token usage, so cost_usd is a
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # True when the backend could not report token usage, so cost is a
     # floor rather than an estimate.
     cost_unknown: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     command_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -264,7 +267,7 @@ class AIUsageDay(Base):
     )
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     turn_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

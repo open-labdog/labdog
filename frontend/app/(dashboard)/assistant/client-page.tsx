@@ -265,8 +265,8 @@ export default function AssistantPage() {
                   <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
                     {s.status}
                   </Badge>
-                  {s.cost_usd > 0 && (
-                    <span className="text-slate-400">${s.cost_usd.toFixed(3)}</span>
+                  {s.cost > 0 && (
+                    <span className="text-slate-400">${s.cost.toFixed(3)}</span>
                   )}
                 </span>
               </button>
@@ -285,7 +285,7 @@ export default function AssistantPage() {
                 <Badge variant="outline">{session.autonomy_level}</Badge>
                 <span className="text-xs text-slate-400">
                   {session.iterations} turns · {session.command_count} commands ·{" "}
-                  {session.cost_unknown ? "cost not reported" : `$${session.cost_usd.toFixed(4)}`}
+                  {session.cost_unknown ? "cost not reported" : `$${session.cost.toFixed(4)}`}
                 </span>
               </div>
 

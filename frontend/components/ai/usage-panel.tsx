@@ -5,16 +5,40 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { AIUsageSummary } from "@/lib/types"
 
+/**
+ * Format an amount in the operator's chosen currency.
+ *
+ * Intl handles the symbol, its placement, and the separators, which differ
+ * by currency and locale — "1 234,56 €" is as correct for a euro user as
+ * "$1,234.56" is for a dollar one. Falls back to appending the code if the
+ * setting holds something Intl does not recognise, so a typo degrades to a
+ * readable number rather than throwing.
+ */
+function money(amount: number, currency: string, digits = 2): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    }).format(amount)
+  } catch {
+    return `${amount.toFixed(digits)} ${currency}`
+  }
+}
+
 function Meter({
   label,
   spend,
   limit,
   warnPct,
+  currency,
 }: {
   label: string
   spend: number
   limit: number
   warnPct: number
+  currency: string
 }) {
   // A zero limit means unlimited, so there is no bar to draw — showing an
   // empty progress bar would imply a cap that does not exist.
@@ -23,7 +47,9 @@ function Meter({
       <div>
         <div className="flex items-baseline justify-between">
           <span className="text-xs text-slate-400">{label}</span>
-          <span className="font-mono text-sm text-white">${spend.toFixed(2)}</span>
+          <span className="font-mono text-sm text-white">
+            {money(spend, currency)}
+          </span>
         </div>
         <p className="mt-1 text-xs text-slate-400">No limit set</p>
       </div>
@@ -40,8 +66,10 @@ function Meter({
       <div className="flex items-baseline justify-between">
         <span className="text-xs text-slate-400">{label}</span>
         <span className="font-mono text-sm text-white">
-          ${spend.toFixed(2)}{" "}
-          <span className="text-xs text-slate-400">of ${limit.toFixed(2)}</span>
+          {money(spend, currency)}{" "}
+          <span className="text-xs text-slate-400">
+            of {money(limit, currency)}
+          </span>
         </span>
       </div>
       <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-800">
@@ -63,7 +91,10 @@ export function UsagePanel() {
   }
   if (!data) return null
 
-  const maxCost = Math.max(...data.days.map((d) => d.cost_usd), 0.0001)
+  const maxCost = Math.max(...data.days.map((d) => d.cost), 0.0001)
+  // Server-provided so every figure on the page agrees; it is a display
+  // unit only, never a conversion.
+  const currency = data.currency || "USD"
   const totalTokens = data.days.reduce(
     (sum, d) => sum + d.prompt_tokens + d.completion_tokens,
     0
@@ -90,12 +121,14 @@ export function UsagePanel() {
           spend={data.day_spend}
           limit={data.day_limit}
           warnPct={data.warn_pct}
+          currency={currency}
         />
         <Meter
           label="This month"
           spend={data.month_spend}
           limit={data.month_limit}
           warnPct={data.warn_pct}
+          currency={currency}
         />
       </div>
 
@@ -107,8 +140,8 @@ export function UsagePanel() {
               <div
                 key={`${day.usage_date}-${day.provider_id}`}
                 className="group relative flex-1 rounded-t bg-blue-600/70 hover:bg-blue-500"
-                style={{ height: `${Math.max((day.cost_usd / maxCost) * 100, 2)}%` }}
-                title={`${day.usage_date}: $${day.cost_usd.toFixed(4)} (${day.turn_count} turns${
+                style={{ height: `${Math.max((day.cost / maxCost) * 100, 2)}%` }}
+                title={`${day.usage_date}: ${money(day.cost, currency, 4)} (${day.turn_count} turns${
                   day.provider_name ? `, ${day.provider_name}` : ""
                 })`}
               />

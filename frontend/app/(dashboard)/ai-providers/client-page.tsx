@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -31,7 +32,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { MODEL_PRESETS, type ModelPreset } from "@/lib/ai-presets"
 import { apiFetch, ApiError } from "@/lib/api"
+import { cn } from "@/lib/utils"
 import type { AIProvider, AIProviderTestResult, AIProviderType } from "@/lib/types"
 
 const TYPE_LABEL: Record<AIProviderType, string> = {
@@ -57,7 +60,7 @@ interface FormState {
   max_tokens: string
   input_cost_per_mtok: string
   output_cost_per_mtok: string
-  monthly_budget_usd: string
+  monthly_budget: string
   is_default: boolean
   allow_cloud_egress: boolean
   verify_ssl: boolean
@@ -72,7 +75,7 @@ const EMPTY_FORM: FormState = {
   max_tokens: "8192",
   input_cost_per_mtok: "0",
   output_cost_per_mtok: "0",
-  monthly_budget_usd: "0",
+  monthly_budget: "0",
   is_default: false,
   allow_cloud_egress: false,
   verify_ssl: true,
@@ -90,6 +93,38 @@ export default function AIProvidersPage() {
     queryKey: ["ai-providers"],
     queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"),
   })
+
+  // The display currency comes from the server (ai.currency) so the label on
+  // every money field agrees with the usage panel. It is a unit, not a
+  // conversion — rates are stored exactly as typed.
+  const { data: usage } = useQuery<{ currency: string }>({
+    queryKey: ["ai-usage", "currency"],
+    queryFn: () => apiFetch<{ currency: string }>("/api/ai/usage"),
+    staleTime: 300_000,
+  })
+  const currency = usage?.currency ?? "USD"
+
+  const presets = MODEL_PRESETS[form.provider_type] ?? []
+
+  /**
+   * Fill in a suggested model, and its rates when we know them.
+   *
+   * A preset without rates leaves the cost fields untouched rather than
+   * zeroing them: zero is a claim that the model is free, and writing that for
+   * a paid hosted model would silently disable the budgets.
+   */
+  function applyPreset(preset: ModelPreset) {
+    setForm((prev) => ({
+      ...prev,
+      model: preset.id,
+      ...(preset.input !== undefined
+        ? { input_cost_per_mtok: String(preset.input) }
+        : {}),
+      ...(preset.output !== undefined
+        ? { output_cost_per_mtok: String(preset.output) }
+        : {}),
+    }))
+  }
 
   function openCreate() {
     setEditing(null)
@@ -110,7 +145,7 @@ export default function AIProvidersPage() {
       max_tokens: String(provider.max_tokens),
       input_cost_per_mtok: String(provider.input_cost_per_mtok),
       output_cost_per_mtok: String(provider.output_cost_per_mtok),
-      monthly_budget_usd: String(provider.monthly_budget_usd),
+      monthly_budget: String(provider.monthly_budget),
       is_default: provider.is_default,
       allow_cloud_egress: provider.allow_cloud_egress,
       verify_ssl: provider.verify_ssl,
@@ -129,7 +164,7 @@ export default function AIProvidersPage() {
         max_tokens: Number(form.max_tokens),
         input_cost_per_mtok: Number(form.input_cost_per_mtok),
         output_cost_per_mtok: Number(form.output_cost_per_mtok),
-        monthly_budget_usd: Number(form.monthly_budget_usd),
+        monthly_budget: Number(form.monthly_budget),
         is_default: form.is_default,
         allow_cloud_egress: form.allow_cloud_egress,
         verify_ssl: form.verify_ssl,
@@ -236,7 +271,15 @@ export default function AIProvidersPage() {
               )}
 
               <div>
-                <Label htmlFor="model">Model</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="model">Model</Label>
+                  <InfoPopover title="Model">
+                    The model identifier sent to the provider — for Ollama the
+                    tag you pulled, for a hosted API the published model id.
+                    Pick a suggestion below to fill this in, or type any name
+                    the endpoint serves.
+                  </InfoPopover>
+                </div>
                 <Input
                   id="model"
                   value={form.model}
@@ -245,6 +288,26 @@ export default function AIProvidersPage() {
                     form.provider_type === "anthropic" ? "claude-opus-5" : "llama3.1:8b"
                   }
                 />
+                {presets.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {presets.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        title={preset.hint}
+                        onClick={() => applyPreset(preset)}
+                        className={cn(
+                          "rounded-md px-2 py-1 text-xs transition-colors",
+                          form.model === preset.id
+                            ? "bg-slate-700 text-white"
+                            : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
+                        )}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {form.provider_type !== "claude_cli" && (
@@ -266,7 +329,16 @@ export default function AIProvidersPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="input_cost">Input $/M tokens</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="input_cost">Input {currency}/M tokens</Label>
+                    <InfoPopover title="Input cost per million tokens">
+                      What the provider charges for the tokens you send it —
+                      the prompt, the conversation so far, and every tool
+                      result read back on each turn. This is usually the larger
+                      share of an investigation&apos;s cost, because the
+                      transcript is re-sent every turn.
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="input_cost"
                     value={form.input_cost_per_mtok}
@@ -276,7 +348,16 @@ export default function AIProvidersPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="output_cost">Output $/M tokens</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="output_cost">Output {currency}/M tokens</Label>
+                    <InfoPopover title="Output cost per million tokens">
+                      What the provider charges for the tokens it generates —
+                      the assistant&apos;s replies and the commands it decides
+                      to run. Usually several times the input rate per token,
+                      but far fewer tokens, so it is often the smaller half of
+                      the bill.
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="output_cost"
                     value={form.output_cost_per_mtok}
@@ -288,13 +369,23 @@ export default function AIProvidersPage() {
               </div>
               <p className="-mt-2 text-xs text-slate-400">
                 Rates are entered by hand — an OpenAI-compatible endpoint cannot
-                report its own pricing. Leave both at 0 for a self-hosted model,
-                which makes the USD budgets a no-op for it.
+                report its own pricing. Enter them in {currency}; LabDog never
+                converts between currencies. Leave both at 0 for a self-hosted
+                model, which makes the money budgets a no-op for it.
               </p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label htmlFor="max_tokens">Max tokens per turn</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="max_tokens">Max tokens per turn</Label>
+                    <InfoPopover title="Max tokens per turn">
+                      The ceiling on a single reply. It bounds one message, not
+                      a whole session — the session caps under Settings do
+                      that. Too low and long answers get cut off mid-sentence;
+                      the model must also fit any commands it wants to run
+                      inside this budget.
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="max_tokens"
                     value={form.max_tokens}
@@ -302,12 +393,22 @@ export default function AIProvidersPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="monthly_budget">Monthly cap (USD)</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="monthly_budget">Monthly cap ({currency})</Label>
+                    <InfoPopover title="Monthly cap">
+                      A ceiling for this provider alone, on top of the global
+                      daily and monthly budgets in Settings. Useful when a free
+                      local model and a paid one are both configured and you
+                      want to bound only the paid one. 0 means no per-provider
+                      limit. Priced at 0? Then this never triggers — the token
+                      and iteration caps still apply.
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="monthly_budget"
-                    value={form.monthly_budget_usd}
+                    value={form.monthly_budget}
                     onChange={(e) =>
-                      setForm({ ...form, monthly_budget_usd: e.target.value })
+                      setForm({ ...form, monthly_budget: e.target.value })
                     }
                   />
                 </div>

@@ -171,7 +171,7 @@ class TestUsageAccounting:
         assert session.prompt_tokens == 1_000_000
         assert session.completion_tokens == 100_000
         # 1M in at $5/M + 100k out at $25/M
-        assert session.cost_usd == pytest.approx(5.0 + 2.5)
+        assert session.cost == pytest.approx(5.0 + 2.5)
 
     async def test_usage_rolls_into_the_daily_ledger(self, db, paid_provider, make_session):
         session = await make_session(provider=paid_provider)
@@ -187,7 +187,7 @@ class TestUsageAccounting:
             .one()
         )
         assert row.prompt_tokens == 1_000_000
-        assert row.cost_usd == pytest.approx(5.0)
+        assert row.cost == pytest.approx(5.0)
         assert row.turn_count == 1
 
     async def test_ledger_accumulates_across_turns(self, db, paid_provider, make_session):
@@ -220,7 +220,7 @@ class TestUsageAccounting:
             ai_provider,
             [ScriptedTurn(text="Done.", prompt_tokens=999_999, completion_tokens=999_999)],
         )
-        assert session.cost_usd == 0.0
+        assert session.cost == 0.0
 
     async def test_unreported_usage_marks_cost_as_a_floor(self, db, paid_provider, make_session):
         session = await make_session(provider=paid_provider)
