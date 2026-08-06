@@ -88,6 +88,18 @@ async def create_provider(
             detail="An OpenAI-compatible provider needs a base URL, e.g. http://localhost:11434/v1",
         )
 
+    # The Anthropic API always authenticates, so a keyless provider is
+    # guaranteed to fail — and it fails at first use, as a 401 from inside a
+    # session, rather than here where the operator can see the cause.
+    if payload.provider_type == "anthropic" and not payload.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "An Anthropic provider needs an API key. Create one in the "
+                "Claude Console at platform.claude.com under API keys."
+            ),
+        )
+
     provider = AIProvider(
         name=payload.name,
         provider_type=payload.provider_type,
@@ -146,6 +158,12 @@ async def update_provider(
     for field, value in data.items():
         if value is not None:
             setattr(provider, field, value)
+
+    if api_key == "" and provider.provider_type == "anthropic":
+        raise HTTPException(
+            status_code=400,
+            detail="An Anthropic provider needs an API key; it cannot be cleared.",
+        )
 
     # Tri-state: absent keeps, "" clears, a value replaces.
     if api_key is not None:

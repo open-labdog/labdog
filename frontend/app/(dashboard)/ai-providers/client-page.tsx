@@ -387,7 +387,23 @@ export default function AIProvidersPage() {
                     {form.provider_type === "claude_cli"
                       ? "Subscription token"
                       : "API key"}
+                    {form.provider_type === "anthropic" && (
+                      <span className="ml-1 font-normal text-slate-400">
+                        (required)
+                      </span>
+                    )}
                   </Label>
+                  {form.provider_type === "anthropic" && (
+                    <InfoPopover title="API key">
+                      Create one in the Claude Console at{" "}
+                      <span className="font-mono">platform.claude.com</span> under
+                      API keys. It starts with{" "}
+                      <span className="font-mono">sk-ant-</span> and is billed per
+                      token. A Pro or Max subscription does not cover API usage —
+                      to spend against a subscription instead, use the Claude CLI
+                      provider type.
+                    </InfoPopover>
+                  )}
                   {form.provider_type === "claude_cli" && (
                     <InfoPopover title="Subscription token">
                       Run <span className="font-mono">claude setup-token</span>{" "}
@@ -411,7 +427,9 @@ export default function AIProvidersPage() {
                       ? "Stored — leave blank to keep it"
                       : form.provider_type === "claude_cli"
                         ? "From `claude setup-token` — blank uses the host's own login"
-                        : "Leave blank for an unauthenticated local server"
+                        : form.provider_type === "anthropic"
+                          ? "sk-ant-… from platform.claude.com (required)"
+                          : "Leave blank for an unauthenticated local server"
                   }
                 />
                 {form.provider_type === "claude_cli" && (

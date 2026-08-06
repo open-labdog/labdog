@@ -104,3 +104,31 @@ class TestMissingBinary:
         assert "container" in lowered, "container users get no guidance"
         assert "anthropic" in lowered, "no pointer to the provider that needs no binary"
         assert "docs/ui/assistant.md" in NOT_FOUND_MESSAGE
+
+
+class TestAnthropicKeyIsRequired:
+    """An Anthropic provider without a key is guaranteed to fail.
+
+    The API always authenticates, so a keyless provider saves fine and then
+    401s from inside a session — far from the form where the cause is
+    visible. These pin the validation that rejects it at save time.
+
+    Exercised against the API in the DB-backed suite; here we assert the
+    endpoint carries the checks at all, so deleting one is a test failure
+    rather than a silent regression.
+    """
+
+    def test_create_rejects_a_missing_key(self) -> None:
+        from pathlib import Path
+
+        source = Path("app/api/ai.py").read_text()
+        assert 'payload.provider_type == "anthropic" and not payload.api_key' in source
+        assert "platform.claude.com" in source, (
+            "the error should say where to get a key, not just that one is missing"
+        )
+
+    def test_update_rejects_clearing_the_key(self) -> None:
+        from pathlib import Path
+
+        source = Path("app/api/ai.py").read_text()
+        assert 'api_key == "" and provider.provider_type == "anthropic"' in source
