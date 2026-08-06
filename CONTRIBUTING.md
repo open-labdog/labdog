@@ -39,6 +39,14 @@ pytest tests/ --ignore=tests/integration -q
 # Backend integration — requires Docker
 pytest tests/integration -m integration
 
+# Backend lint + format (still in backend/, ruff comes from .[dev]).
+# `ruff format --check` is a separate CI gate from `ruff check`, so a
+# tree that lints clean can still fail on formatting. Editors with the
+# Ruff extension format on save and never hit this; run it by hand if
+# yours doesn't.
+ruff check .
+ruff format --check .   # --diff shows what it would change
+
 # Frontend type-check + lint
 cd frontend
 npx tsc --noEmit
