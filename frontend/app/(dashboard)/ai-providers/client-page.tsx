@@ -203,7 +203,12 @@ export default function AIProvidersPage() {
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    {/* base-ui renders the raw value unless given a
+                        formatter, so without this the field reads
+                        "openai_compat" rather than "OpenAI-compatible". */}
+                    <SelectValue>
+                      {(v: AIProviderType) => TYPE_LABEL[v] ?? v}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {(Object.keys(TYPE_LABEL) as AIProviderType[]).map((t) => (

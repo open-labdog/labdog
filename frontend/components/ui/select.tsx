@@ -47,7 +47,16 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            "z-50 max-h-60 min-w-[8rem] overflow-y-auto rounded-lg bg-background p-1 text-sm ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // z-[60], not z-50: a Select inside a Dialog portals to
+            // <body> as a sibling of the dialog's own backdrop and popup,
+            // which are both z-50. At equal z-index the winner is decided
+            // by DOM order, and the select loses — it renders *behind*
+            // the backdrop, which is `bg-black/10` with a backdrop blur,
+            // so the dropdown appears as a dim smudge beside the field
+            // rather than not opening at all. Sitting one layer above the
+            // dialog is correct in any case: a dropdown belongs on top of
+            // the surface that owns it. Tooltips stay above at z-[100].
+            "z-[60] max-h-60 min-w-[8rem] overflow-y-auto rounded-lg bg-background p-1 text-sm ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className
           )}
         >
