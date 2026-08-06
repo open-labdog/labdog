@@ -87,3 +87,20 @@ class TestProviderWiring:
         environment, which is not."""
         provider = ClaudeCLIProvider(model="claude-opus-5", oauth_token="sekrit")
         assert "sekrit" not in " ".join(provider._argv("hello"))
+
+
+class TestMissingBinary:
+    """The message an operator sees when the CLI is not installed.
+
+    The fix differs completely by deployment shape — a system-wide package
+    install for a host, a derived image for a container — so a bare "not
+    found" leaves a container user with nowhere to go.
+    """
+
+    def test_message_covers_both_deployment_shapes(self) -> None:
+        from app.ai.providers.claude_cli import NOT_FOUND_MESSAGE
+
+        lowered = NOT_FOUND_MESSAGE.lower()
+        assert "container" in lowered, "container users get no guidance"
+        assert "anthropic" in lowered, "no pointer to the provider that needs no binary"
+        assert "docs/ui/assistant.md" in NOT_FOUND_MESSAGE

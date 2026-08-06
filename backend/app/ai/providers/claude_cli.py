@@ -59,6 +59,19 @@ OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # nosec B105 - env var name, not a 
 #: environment rather than let an unrelated variable override the intent.
 OVERRIDING_CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
+#: Raised when the binary is absent. Names the two deployment shapes
+#: because the fix differs entirely between them: a package install for a
+#: host deployment, a derived image for a container — where the official
+#: image ships no `claude` and no way to fetch one.
+NOT_FOUND_MESSAGE = (
+    f"The {CLI_BINARY!r} CLI was not found on PATH for the LabDog service user. "
+    "On a package install, install it system-wide (a per-user install under a "
+    "home directory is not visible to the service). In a container, the "
+    "official image does not include it — extend the image, or use an "
+    "Anthropic provider instead, which needs no binary and can also run tools. "
+    "See docs/ui/assistant.md."
+)
+
 
 def build_cli_env(oauth_token: str | None, base: dict[str, str] | None = None) -> dict[str, str]:
     """The environment for a ``claude`` subprocess.
@@ -162,9 +175,7 @@ class ClaudeCLIProvider:
                 env=self.env,
             )
         except FileNotFoundError as exc:
-            raise LLMProviderError(
-                f"The {CLI_BINARY!r} CLI is not installed on the LabDog host"
-            ) from exc
+            raise LLMProviderError(NOT_FOUND_MESSAGE) from exc
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -191,9 +202,7 @@ class ClaudeCLIProvider:
     async def test_connection(self) -> str:
         path = shutil.which(CLI_BINARY)
         if not path:
-            raise LLMProviderError(
-                f"The {CLI_BINARY!r} CLI is not on PATH for the LabDog service user"
-            )
+            raise LLMProviderError(NOT_FOUND_MESSAGE)
         try:
             proc = await asyncio.create_subprocess_exec(
                 CLI_BINARY,

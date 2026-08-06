@@ -203,6 +203,46 @@ whatever the host is already authenticated as.
 Renew once a year by running `claude setup-token` again and editing the
 provider.
 
+#### Running LabDog in a container
+
+The official image does **not** include the `claude` binary, and has no
+`curl`, `gnupg`, or Node to fetch it with. The CLI backend therefore does
+not work in a container as shipped — LabDog reports `The 'claude' CLI is
+not on PATH for the LabDog service user` and the provider test fails.
+
+**Most container deployments should use the Anthropic provider instead.**
+It needs no image change, and it can run tools, so it can drive assistant
+sessions and scheduled checks that the CLI backend cannot. The only thing
+you give up is subscription billing.
+
+If subscription billing is what you are after, extend the image:
+
+```dockerfile
+FROM openlabdog/labdog:latest
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+         -o /etc/apt/keyrings/claude-code.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] \
+https://downloads.claude.ai/claude-code/apt/stable stable main" \
+         > /etc/apt/sources.list.d/claude-code.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends claude-code \
+    && rm -rf /var/lib/apt/lists/*
+USER labdog
+```
+
+The token still goes in the provider form — it is stored in the database,
+not in the image, so the derived image holds no secret and rebuilding it
+does not disturb your credentials.
+
+Two things to weigh before taking this route. You now own an image that
+must be rebuilt against each LabDog release, and the CLI adds roughly
+220 MB to it. Both are real costs for a backend that can only write
+reports and verify verdicts.
+
 > **Why LabDog strips `ANTHROPIC_API_KEY`.** The CLI resolves credentials
 > in a fixed order, and `ANTHROPIC_API_KEY` outranks the subscription
 > token. If that variable were present in LabDog's environment — quite
