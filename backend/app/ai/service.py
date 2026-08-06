@@ -134,7 +134,11 @@ async def resolve_provider(db: AsyncSession, provider_id: int | None) -> AIProvi
 
 
 def estimate_cost(provider: AIProvider, prompt_tokens: int, completion_tokens: int) -> float:
-    """USD for one turn, from the operator-entered per-million rates."""
+    """Cost of one turn, from the operator-entered per-million rates.
+
+    Unit-agnostic: the result is in whatever currency the operator
+    entered the rates in. No conversion happens anywhere in LabDog.
+    """
     return (
         prompt_tokens * provider.input_cost_per_mtok
         + completion_tokens * provider.output_cost_per_mtok
@@ -147,7 +151,7 @@ async def record_usage(
     provider_id: int | None,
     prompt_tokens: int,
     completion_tokens: int,
-    cost_usd: float,
+    cost: float,
 ) -> None:
     """Add one turn's usage to the daily ledger.
 
@@ -162,7 +166,7 @@ async def record_usage(
             provider_id=provider_id,
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
-            cost_usd=cost_usd,
+            cost=cost,
             turn_count=1,
             updated_at=datetime.now(UTC),
         )
@@ -171,7 +175,7 @@ async def record_usage(
             set_={
                 "prompt_tokens": AIUsageDay.prompt_tokens + prompt_tokens,
                 "completion_tokens": AIUsageDay.completion_tokens + completion_tokens,
-                "cost_usd": AIUsageDay.cost_usd + cost_usd,
+                "cost": AIUsageDay.cost + cost,
                 "turn_count": AIUsageDay.turn_count + 1,
                 "updated_at": datetime.now(UTC),
             },
@@ -181,7 +185,7 @@ async def record_usage(
 
 
 async def _spend_since(db: AsyncSession, start: date, provider_id: int | None = None) -> float:
-    stmt = select(func.coalesce(func.sum(AIUsageDay.cost_usd), 0.0)).where(
+    stmt = select(func.coalesce(func.sum(AIUsageDay.cost), 0.0)).where(
         AIUsageDay.usage_date >= start
     )
     if provider_id is not None:
@@ -198,12 +202,12 @@ async def get_budget_status(db: AsyncSession, provider: AIProvider | None) -> Bu
     return BudgetStatus(
         day_spend=await _spend_since(db, today),
         month_spend=await _spend_since(db, month_start),
-        day_limit=float(await get_setting_typed("ai.budget_daily_usd", db) or 0.0),
-        month_limit=float(await get_setting_typed("ai.budget_monthly_usd", db) or 0.0),
+        day_limit=float(await get_setting_typed("ai.budget_daily", db) or 0.0),
+        month_limit=float(await get_setting_typed("ai.budget_monthly", db) or 0.0),
         provider_month_spend=(
             await _spend_since(db, month_start, provider_id) if provider_id else 0.0
         ),
-        provider_month_limit=float(provider.monthly_budget_usd) if provider else 0.0,
+        provider_month_limit=float(provider.monthly_budget) if provider else 0.0,
     )
 
 

@@ -101,7 +101,7 @@ async def create_provider(
         allow_cloud_egress=payload.allow_cloud_egress,
         input_cost_per_mtok=payload.input_cost_per_mtok,
         output_cost_per_mtok=payload.output_cost_per_mtok,
-        monthly_budget_usd=payload.monthly_budget_usd,
+        monthly_budget=payload.monthly_budget,
         enabled=payload.enabled,
     )
     db.add(provider)
@@ -471,6 +471,7 @@ async def get_usage(
         warn_pct=int(await get_setting_typed("ai.budget_warn_pct", db)),
         exceeded=status.exceeded,
         reason=status.reason,
+        currency=str(await get_setting_typed("ai.currency", db) or "USD"),
         days=[
             AIUsageDayResponse(
                 usage_date=usage.usage_date,
@@ -478,7 +479,7 @@ async def get_usage(
                 provider_name=provider_name,
                 prompt_tokens=usage.prompt_tokens,
                 completion_tokens=usage.completion_tokens,
-                cost_usd=usage.cost_usd,
+                cost=usage.cost,
                 turn_count=usage.turn_count,
             )
             for usage, provider_name in rows

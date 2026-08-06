@@ -1017,7 +1017,7 @@ export interface AIProvider {
   sends_data_offsite: boolean
   input_cost_per_mtok: number
   output_cost_per_mtok: number
-  monthly_budget_usd: number
+  monthly_budget: number
   enabled: boolean
   created_at: string
   updated_at: string
@@ -1063,8 +1063,8 @@ export interface AISession {
   iterations: number
   prompt_tokens: number
   completion_tokens: number
-  cost_usd: number
-  /** True when the backend could not report usage, so cost_usd is a floor. */
+  cost: number
+  /** True when the backend could not report usage, so cost is a floor. */
   cost_unknown: boolean
   command_count: number
   report_markdown: string | null
@@ -1085,7 +1085,7 @@ export interface AIUsageDay {
   provider_name: string | null
   prompt_tokens: number
   completion_tokens: number
-  cost_usd: number
+  cost: number
   turn_count: number
 }
 
@@ -1098,5 +1098,11 @@ export interface AIUsageSummary {
   warn_pct: number
   exceeded: boolean
   reason: string
+  /**
+   * ISO currency code for every amount above (the `ai.currency` setting).
+   * A display unit only — LabDog stores rates exactly as entered and never
+   * converts, so changing it relabels figures rather than recalculating them.
+   */
+  currency: string
   days: AIUsageDay[]
 }
