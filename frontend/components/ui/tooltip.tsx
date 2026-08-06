@@ -16,8 +16,13 @@ function Tooltip({ content, children, side = "top" }: TooltipProps) {
         {children}
       </TooltipPrimitive.Trigger>
       <TooltipPrimitive.Portal>
-        <TooltipPrimitive.Positioner side={side}>
-          <TooltipPrimitive.Popup className="bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-3 py-1.5 text-xs shadow-lg z-[100]">
+        {/* z-index on the Positioner, not the Popup — see the note in
+            select.tsx. The Positioner is `position: fixed` and so
+            establishes a stacking context, which traps any z-index set on
+            the popup inside it. Not currently visibly broken (no tooltip
+            sits over a dialog today) but it is the same defect. */}
+        <TooltipPrimitive.Positioner side={side} className="z-[100]">
+          <TooltipPrimitive.Popup className="bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-3 py-1.5 text-xs shadow-lg">
             {content}
           </TooltipPrimitive.Popup>
         </TooltipPrimitive.Positioner>
