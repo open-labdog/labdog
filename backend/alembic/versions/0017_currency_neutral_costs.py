@@ -35,7 +35,7 @@ _SETTING_RENAMES = (
 
 def upgrade() -> None:
     op.alter_column("ai_providers", "monthly_budget_usd", new_column_name="monthly_budget")
-    op.alter_column("ai_sessions", "estimated_cost_usd", new_column_name="estimated_cost")
+    op.alter_column("ai_sessions", "cost_usd", new_column_name="cost")
     op.alter_column("ai_usage_days", "cost_usd", new_column_name="cost")
 
     # Operator-set values live in app_settings rows keyed by name, so the
@@ -57,5 +57,5 @@ def downgrade() -> None:
             )
         )
     op.alter_column("ai_usage_days", "cost", new_column_name="cost_usd")
-    op.alter_column("ai_sessions", "estimated_cost", new_column_name="estimated_cost_usd")
+    op.alter_column("ai_sessions", "cost", new_column_name="cost_usd")
     op.alter_column("ai_providers", "monthly_budget", new_column_name="monthly_budget_usd")
