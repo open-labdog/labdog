@@ -201,15 +201,17 @@ default closed. See `git log --grep "feat(ai)"`.
 
 Four phases remain, each independently useful:
 
-- **Scheduled AI tasks.** Register `_builtin.ai_task` in
-  `app/actions/builtins.py` and a per-host wrapper in
-  `app/tasks/ai_task.py`, routed via `PER_HOST_TASK_FOR_BUILTIN` in
-  `app/tasks/action_orchestrator.py`. That inherits `ScheduledAction`
-  cron dispatch, the run history, per-host advisory locking, and the
-  action-run SSE stream without new infrastructure — a nightly health
-  check becomes a scheduled action like any other. Needs the remaining
-  read-only tools too: Mimir `query_range`, Loki LogQL (the client has
-  neither today), action history, and Proxmox status/backup checks.
+- **Scheduled AI remediation.** Read-only scheduling shipped: both
+  built-in actions, Loki LogQL and Mimir range querying, per-session tool
+  allowlists, and per-tool cost recording. What remains is letting a
+  check *fix* what it finds, via the `allowed_action_keys` column that
+  landed unused. Permission should be granted per actionpack rather than
+  per shell command — packs are already named, vetted, idempotent, and
+  carry the snapshot/verify/rollback envelope, where a command-pattern
+  allowlist would re-create the classifier's problem in a weaker form.
+  Two read-only tools are also still missing: action history (what
+  LabDog recently did to a host, which is exactly the context a
+  post-upgrade check wants) and Proxmox status/backup checks.
 - **Approvals and write autonomy.** The `approval` autonomy level is
   accepted and currently behaves as read-only. Making it real needs an
   `AIApprovalRequest` table and a resumable loop: on hitting a gate,

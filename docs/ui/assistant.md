@@ -37,6 +37,58 @@ Good prompts are specific about the question, not the method:
 
 ---
 
+## Running checks on a schedule
+
+The assistant also runs unattended. Two actions appear in the normal
+action list, so you schedule them from [Schedules](scheduled-actions.md)
+exactly like any other action — same cron, same run history, same
+per-host queueing.
+
+| Action | Scope |
+|--------|-------|
+| **AI check (per host)** | One session per target host, that host alone in scope. Right for "check each of these". |
+| **AI check (whole group)** | One session with every group member in scope at once. Right for "compare these" or "which one is the odd one out" — per-host sessions cannot see each other, so they cannot answer that. |
+
+Both take the same parameters:
+
+- **What to investigate** — the mission, in plain language.
+- **Autonomy** — as above; leave it at read-only unless you would be
+  comfortable with the check acting unattended at 3am.
+- **AI provider** — `0` uses the default. A recurring check is a good
+  place to pick a local model, since it runs every night whether or not
+  anything is wrong.
+- **Permitted tools** — comma-separated, or blank for all of them.
+
+That last one is the main cost control. Naming a subset bounds what the
+check can spend *and* what it can reach: a log sweep limited to
+`query_loki` cannot open an SSH session at all. `list_hosts` and
+`get_host_facts` are always available, since without an inventory the
+assistant cannot find the host ids the other tools need.
+
+The report appears in the run detail like any other action's output.
+
+### Which tool is cheaper
+
+Every tool result is re-read on each later turn, so a large one is paid
+for repeatedly rather than once. Reading logs through Loki and reading
+them over SSH are not simply cheaper or dearer than one another — it
+depends on the question:
+
+- **Counting or comparing** — much cheaper through Loki. A
+  `count_over_time` query has Loki do the work and returns a few numbers,
+  where the SSH equivalent ships thousands of log lines into the context
+  so the model can count them itself.
+- **The same question across several hosts** — cheaper through Loki, as
+  one query rather than one session per host.
+- **Reading specific error text** — about even. `journalctl -n 50` is
+  bounded by construction.
+
+You do not have to take that on trust. Every tool call records how much
+text it returned, so after a week of real runs you can see which tools
+are actually consuming your budget.
+
+---
+
 ## Autonomy levels
 
 | Level | What it may do |
