@@ -52,12 +52,23 @@ have been given.
 
 How to work:
 - Start by finding out what is in scope with list_hosts.
-- Prefer metrics (query_mimir) and cached facts over shelling in, then use \
-run_ssh_command for anything live.
-- Run specific, bounded commands. Use --since and -n with journalctl, and \
-grep or head to narrow anything that could be large.
 - Base every claim on something a tool actually returned. If you did not \
 verify something, say so rather than assuming.
+
+Choosing a tool. Each result is read back in full on every later turn, so \
+a large one is paid for repeatedly, not once. Narrow first, then look \
+closely:
+- Counting, comparing, or "which one is worst" — aggregate at the source. \
+count_over_time in query_loki, or query_mimir_range, answer these with a \
+handful of numbers. Pulling raw lines and counting them yourself is the \
+same answer for a hundred times the cost.
+- The same question across several hosts — one query_loki or query_mimir \
+call spans them all, where run_ssh_command needs a separate call per host.
+- Reading a specific file, or checking live state that is not shipped to \
+Loki or Mimir — run_ssh_command, bounded. Use --since and -n with \
+journalctl and grep or head on anything that could be large.
+- Not every tool is offered in every session. Work with what you have; if \
+something you need is missing, say so in your findings.
 
 What you may change:
 - This session's autonomy level is {autonomy}. {autonomy_note}
@@ -160,6 +171,9 @@ class AgentLoop:
         self.caps = caps
         # Injectable so tests can drive the loop with a scripted provider.
         self.provider = provider or build_provider(provider_row)
+        # Resolved once: the same list gates what the provider is offered
+        # and what the loop will actually execute.
+        self._handlers = tools_for_session(session.autonomy_level, session.allowed_tools)
         # Async callable taking (event_type, payload) — the SSE bridge.
         self._publish = publish
         self._started = time.monotonic()
@@ -234,14 +248,25 @@ class AgentLoop:
         )
         self.db.add(record)
 
-        if handler is None:
-            record.status = "error"
-            record.result_summary = "unknown tool"
+        # The allowlist is re-checked here, not just when building the tool
+        # specs. A model can call a name it was never offered, and this is
+        # the only place that actually gates execution.
+        permitted = {h.spec.name for h in self._handlers}
+
+        if handler is None or call.name not in permitted:
+            record.status = "blocked" if handler is not None else "error"
+            record.result_summary = (
+                "tool not permitted for this session" if handler is not None else "unknown tool"
+            )
             record.finished_at = datetime.now(UTC)
             await self.db.flush()
-            return f"There is no tool called {call.name!r}. Available tools: " + ", ".join(
-                sorted(TOOL_REGISTRY)
-            )
+            available = ", ".join(sorted(permitted))
+            if handler is not None:
+                return (
+                    f"The {call.name} tool is not available to this session. "
+                    f"You may use: {available}"
+                )
+            return f"There is no tool called {call.name!r}. Available tools: {available}"
 
         await self._emit(
             "tool_call",
@@ -261,6 +286,9 @@ class AgentLoop:
         record.classification = result.classification or handler.classification
         record.target_host_id = result.target_host_id
         record.result_summary = (result.summary or result.content)[:1000]
+        # What this call actually cost in context. Recorded per call so the
+        # relative expense of tools is observable rather than assumed.
+        record.result_chars = len(result.content)
         record.finished_at = datetime.now(UTC)
         record.status = (
             "executed"
@@ -317,11 +345,7 @@ class AgentLoop:
             action_run_id=session.action_run_id,
             user_id=session.created_by_user_id,
         )
-        specs = (
-            [handler.spec for handler in tools_for_session(session.autonomy_level)]
-            if self.provider.supports_tools
-            else []
-        )
+        specs = [h.spec for h in self._handlers] if self.provider.supports_tools else []
 
         final_text = ""
         stopped_by = ""

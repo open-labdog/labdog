@@ -1,13 +1,19 @@
-"""Async Prometheus-compatible (Mimir) query client using httpx.
+"""Async query client for the Grafana-stack backends, using httpx.
 
-Only the instant-query API is needed — LabDog renders single current
-values, never time series. Secrets (bearer token) are never logged.
-TLS handling mirrors :class:`app.proxmox.client.ProxmoxClient`.
+Two consumers with different needs share it. The host page renders single
+current values, which is what :meth:`PrometheusClient.query` is for. The
+AI tools additionally ask "how did this change" and "what do the logs
+say", which need the range APIs — :meth:`query_range` for Mimir and
+:meth:`query_loki_range` for Loki.
+
+Secrets (bearer token) are never logged. TLS handling mirrors
+:class:`app.proxmox.client.ProxmoxClient`.
 """
 
 from __future__ import annotations
 
 import ssl
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -112,6 +118,89 @@ class PrometheusClient:
         if body.get("status") != "success":
             raise PrometheusError(str(body.get("error", "query failed")))
         return body.get("data", {}).get("result", [])
+
+    async def _get_json(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
+        """GET a JSON endpoint under ``query_url`` with the usual error mapping."""
+        url = f"{self.query_url}{path}"
+        try:
+            async with self._get_client() as client:
+                resp = await client.get(url, params=params)
+        except httpx.HTTPError as exc:
+            raise PrometheusError(f"Request failed: {exc}") from exc
+        if resp.status_code in (401, 403):
+            raise PrometheusError("Authentication failed", resp.status_code)
+        if resp.status_code >= 400:
+            raise PrometheusError(f"Query API returned HTTP {resp.status_code}", resp.status_code)
+        try:
+            body = resp.json()
+        except Exception as exc:
+            raise PrometheusError(f"Invalid JSON from query API: {exc}") from exc
+        if body.get("status") not in (None, "success"):
+            raise PrometheusError(str(body.get("error", "query failed")))
+        return body
+
+    async def query_range(
+        self,
+        promql: str,
+        start: datetime,
+        end: datetime,
+        step: str = "60s",
+    ) -> list[dict[str, Any]]:
+        """Run a range query, returning the ``result`` array.
+
+        Each element is ``{"metric": {...}, "values": [[<ts>, "<val>"], ...]}``.
+        Used for "how did this change over time" questions, which an instant
+        query cannot answer.
+        """
+        body = await self._get_json(
+            "/api/v1/query_range",
+            {
+                "query": promql,
+                "start": start.timestamp(),
+                "end": end.timestamp(),
+                "step": step,
+            },
+        )
+        return body.get("data", {}).get("result", [])
+
+    async def query_loki_range(
+        self,
+        logql: str,
+        start: datetime,
+        end: datetime,
+        limit: int = 100,
+        direction: str = "backward",
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Run a LogQL query against Loki.
+
+        Returns ``(result_type, result)``. Loki answers two shapes from the
+        same endpoint and the caller has to branch on which it got:
+
+        * ``streams`` — a log-selector query. ``result`` entries carry
+          ``stream`` labels and a ``values`` list of ``[ns_timestamp, line]``.
+        * ``matrix`` — a metric query (``count_over_time``, ``rate``, …).
+          ``result`` looks like Prometheus range output.
+
+        The distinction matters for cost as much as parsing: a ``streams``
+        query ships raw log lines, while a ``matrix`` query has Loki do the
+        counting server-side and returns a handful of numbers.
+
+        ``direction`` defaults to ``backward`` so that a truncated result is
+        the *most recent* ``limit`` lines rather than the oldest, which is
+        almost always what an investigation wants.
+        """
+        body = await self._get_json(
+            "/api/v1/query_range",
+            {
+                "query": logql,
+                "start": int(start.timestamp() * 1_000_000_000),
+                "end": int(end.timestamp() * 1_000_000_000),
+                "limit": limit,
+                "direction": direction,
+            },
+        )
+        data = body.get("data", {})
+        return data.get("resultType", "streams"), data.get("result", [])
 
     async def get_ok(self, path: str) -> None:
         """GET ``{query_url}{path}`` and raise :class:`PrometheusError` unless
