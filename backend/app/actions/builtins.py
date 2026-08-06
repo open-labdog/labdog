@@ -180,14 +180,6 @@ AI_TASK = ActionDefinition(
     supports_fleet=False,
     parameters=_AI_PARAMETERS,
     pack_name=BUILTIN_PACK_NAME,
-    # The orchestrator sizes each child's Celery limit from this, and that
-    # limit overrides the task's own decorator. Left unset it would fall
-    # back to the global ansible.playbook_timeout (300s by default), which
-    # is below the AI wall-clock cap — the worker would be hard-killed
-    # mid-session and the run orphaned in "running". Covers the default
-    # ai.wall_clock_seconds of 900 with wide margin; raise it if you raise
-    # that setting past an hour.
-    playbook_timeout_seconds=3600,
 )
 
 
@@ -215,14 +207,6 @@ AI_TASK_GROUP = ActionDefinition(
     supports_fleet=False,
     parameters=_AI_PARAMETERS,
     pack_name=BUILTIN_PACK_NAME,
-    # The orchestrator sizes each child's Celery limit from this, and that
-    # limit overrides the task's own decorator. Left unset it would fall
-    # back to the global ansible.playbook_timeout (300s by default), which
-    # is below the AI wall-clock cap — the worker would be hard-killed
-    # mid-session and the run orphaned in "running". Covers the default
-    # ai.wall_clock_seconds of 900 with wide margin; raise it if you raise
-    # that setting past an hour.
-    playbook_timeout_seconds=3600,
 )
 
 
