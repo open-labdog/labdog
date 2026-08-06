@@ -356,7 +356,11 @@ export default function AIProvidersPage() {
                   value={form.model}
                   onChange={(e) => setForm({ ...form, model: e.target.value })}
                   placeholder={
-                    form.provider_type === "anthropic" ? "claude-opus-5" : "llama3.1:8b"
+                    form.provider_type === "anthropic"
+                      ? "claude-opus-5"
+                      : form.provider_type === "claude_cli"
+                        ? "Blank — uses the CLI's own default model"
+                        : "llama3.1:8b"
                   }
                 />
                 {presets.length > 0 && (
@@ -444,6 +448,26 @@ export default function AIProvidersPage() {
                 )}
               </div>
 
+              {/*
+                Every field below is inert for the CLI backend, and one of
+                them is actively misleading: the CLI reports no token usage,
+                so recorded spend is always zero and a Monthly cap can never
+                fire. An operator who set one would believe they were capped
+                when they were not. The CLI also has no max-tokens flag, so
+                that field does nothing either. Hidden rather than disabled —
+                a greyed-out budget still reads as a budget.
+              */}
+              {form.provider_type === "claude_cli" ? (
+                <p className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+                  Cost and token settings do not apply to this backend. A
+                  subscription is billed flat rather than per token, and the CLI
+                  reports no usage, so LabDog cannot track spend for it — the
+                  money budgets under Settings will not act on it either. The
+                  per-session iteration, command, and wall-clock caps still
+                  apply.
+                </p>
+              ) : (
+              <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -530,6 +554,8 @@ export default function AIProvidersPage() {
                   />
                 </div>
               </div>
+              </>
+              )}
 
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input
