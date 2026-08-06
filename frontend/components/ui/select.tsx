@@ -43,20 +43,44 @@ function SelectContent({
 }: SelectPrimitive.Positioner.Props & { className?: string }) {
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner {...props}>
+      {/*
+        The z-index belongs on the Positioner, not the Popup inside it.
+
+        A Select portals to <body>, where it is a sibling of a Dialog's
+        backdrop and popup (both z-50). The Positioner is `position:
+        fixed`, and a fixed-position element always establishes a stacking
+        context — so any z-index on the Popup is resolved *inside* that
+        context and cannot lift it past anything outside. The Positioner
+        itself then competes at `z-index: auto` and loses to the dialog,
+        leaving the dropdown behind a `bg-black/10` blurred backdrop: it
+        looks like a dim smudge next to the field rather than a menu.
+
+        Raising the Positioner is what actually moves the subtree.
+        Tooltips remain above at z-[100].
+      */}
+      {/*
+        `alignItemWithTrigger` defaults to true, which overlaps the popup
+        on the trigger so the *selected* item lines up with the trigger's
+        text — native-macOS behaviour. In a form that means picking the
+        second option makes the list cover the field above, which reads as
+        a misplaced menu rather than an intentional one. Off gives the
+        ordinary web behaviour: the list opens below the trigger.
+
+        `sideOffset` matches the gap the other popovers use.
+      */}
+      <SelectPrimitive.Positioner
+        className="z-[60]"
+        alignItemWithTrigger={false}
+        sideOffset={4}
+        {...props}
+      >
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            // z-[60], not z-50: a Select inside a Dialog portals to
-            // <body> as a sibling of the dialog's own backdrop and popup,
-            // which are both z-50. At equal z-index the winner is decided
-            // by DOM order, and the select loses — it renders *behind*
-            // the backdrop, which is `bg-black/10` with a backdrop blur,
-            // so the dropdown appears as a dim smudge beside the field
-            // rather than not opening at all. Sitting one layer above the
-            // dialog is correct in any case: a dropdown belongs on top of
-            // the surface that owns it. Tooltips stay above at z-[100].
-            "z-[60] max-h-60 min-w-[8rem] overflow-y-auto rounded-lg bg-background p-1 text-sm ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+            // Match the trigger's width rather than the content's, so the
+            // menu lines up with the field instead of shrinking to fit the
+            // longest label. --anchor-width is set by the positioner.
+            "max-h-60 w-[var(--anchor-width)] min-w-[8rem] overflow-y-auto rounded-lg bg-background p-1 text-sm ring-1 ring-foreground/10 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className
           )}
         >
