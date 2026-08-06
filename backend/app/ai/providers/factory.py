@@ -110,6 +110,11 @@ def build_provider(provider: AIProvider) -> LLMProvider:
         )
 
     if provider.provider_type == "claude_cli":
-        return ClaudeCLIProvider(model=provider.model or None)
+        # The encrypted secret column carries a subscription OAuth token here
+        # (from `claude setup-token`) rather than an API key, so it reuses the
+        # same AES-256-GCM storage, redaction, and key rotation as every other
+        # LabDog credential. Blank means "use whatever the host is already
+        # authenticated with".
+        return ClaudeCLIProvider(model=provider.model or None, oauth_token=api_key)
 
     raise LLMProviderError(f"Unknown provider type {provider.provider_type!r}")

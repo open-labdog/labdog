@@ -48,7 +48,19 @@ const TYPE_HELP: Record<AIProviderType, string> = {
     "Any server speaking the OpenAI chat-completions API — Ollama, vLLM, LM Studio, OpenRouter, or OpenAI itself.",
   anthropic: "The Anthropic Messages API. Leave the base URL blank for the public API.",
   claude_cli:
-    "The Claude Code CLI installed on the LabDog host. Single-shot only: it can write reports but cannot run tools.",
+    "The Claude Code CLI installed on the LabDog host. Authenticates with your Claude subscription rather than metered API billing.",
+}
+
+/**
+ * A capability limit, not a tip — shown prominently when the type is chosen.
+ *
+ * Picking the CLI backend for the assistant looks fine until a session starts
+ * and refuses to run a single command. Saying so at selection time is the
+ * difference between an informed choice and a surprise.
+ */
+const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
+  claude_cli:
+    "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
 }
 
 interface FormState {
@@ -256,6 +268,11 @@ export default function AIProvidersPage() {
                 <p className="mt-1 text-xs text-slate-400">
                   {TYPE_HELP[form.provider_type]}
                 </p>
+                {TYPE_LIMITATION[form.provider_type] && (
+                  <p className="mt-2 rounded-md border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                    {TYPE_LIMITATION[form.provider_type]}
+                  </p>
+                )}
               </div>
 
               {form.provider_type !== "claude_cli" && (
@@ -310,22 +327,50 @@ export default function AIProvidersPage() {
                 )}
               </div>
 
-              {form.provider_type !== "claude_cli" && (
-                <div>
-                  <Label htmlFor="api_key">API key</Label>
-                  <Input
-                    id="api_key"
-                    type="password"
-                    value={form.api_key}
-                    onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                    placeholder={
-                      editing?.has_api_key
-                        ? "Stored — leave blank to keep it"
-                        : "Leave blank for an unauthenticated local server"
-                    }
-                  />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="api_key">
+                    {form.provider_type === "claude_cli"
+                      ? "Subscription token"
+                      : "API key"}
+                  </Label>
+                  {form.provider_type === "claude_cli" && (
+                    <InfoPopover title="Subscription token">
+                      Run <span className="font-mono">claude setup-token</span>{" "}
+                      on your own machine — it opens a browser, authenticates
+                      against your Claude subscription, and prints a token
+                      valid for a year. Paste it here rather than on the
+                      server: it is stored encrypted, like every other LabDog
+                      credential, and injected only into the CLI process.
+                      Leave blank to use whatever the host is already logged
+                      in as.
+                    </InfoPopover>
+                  )}
                 </div>
-              )}
+                <Input
+                  id="api_key"
+                  type="password"
+                  value={form.api_key}
+                  onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                  placeholder={
+                    editing?.has_api_key
+                      ? "Stored — leave blank to keep it"
+                      : form.provider_type === "claude_cli"
+                        ? "From `claude setup-token` — blank uses the host's own login"
+                        : "Leave blank for an unauthenticated local server"
+                  }
+                />
+                {form.provider_type === "claude_cli" && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Billed to your Claude subscription rather than API credits.
+                    LabDog removes{" "}
+                    <span className="font-mono">ANTHROPIC_API_KEY</span> from the
+                    CLI&apos;s environment when a token is set, since it would
+                    otherwise take precedence and quietly bill the API account
+                    instead.
+                  </p>
+                )}
+              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

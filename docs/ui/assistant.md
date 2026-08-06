@@ -157,7 +157,60 @@ Three kinds of provider are supported:
 |------|---------|
 | **OpenAI-compatible** | Ollama, vLLM, LM Studio, OpenRouter, OpenAI — anything speaking the chat-completions API. Needs a base URL such as `http://localhost:11434/v1`. |
 | **Anthropic** | The Anthropic Messages API. Leave the base URL blank for the public API. |
-| **Claude CLI** | The `claude` binary installed on the LabDog host. Single-shot: it can write reports but cannot run tools, so it cannot drive an investigation. |
+| **Claude CLI** | The `claude` binary installed on the LabDog host, billed to your Claude subscription instead of API credits. Single-shot: it can write reports and verify verdicts but cannot run tools, so it cannot drive an investigation. |
+
+### Using the Claude CLI with a subscription
+
+The CLI backend bills your Claude Pro/Max/Team subscription rather than
+metered API usage, which is worth having for something that runs nightly.
+Setting it up takes three steps.
+
+**1. Install it where the service can see it.** LabDog runs as the
+`labdog` system user with `ProtectHome=true`, so anything under a home
+directory is invisible to it — a per-user install will not be found. Use
+the apt repository, which puts the binary on the system path:
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+  -o /etc/apt/keyrings/claude-code.asc
+gpg --show-keys /etc/apt/keyrings/claude-code.asc   # 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE
+echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] \
+https://downloads.claude.ai/claude-code/apt/stable stable main" \
+  | sudo tee /etc/apt/sources.list.d/claude-code.list
+sudo apt update && sudo apt install claude-code
+```
+
+Updates then arrive through `apt upgrade` like any other package — which
+is exactly what LabDog's own package module manages, so it can keep its
+AI backend patched alongside everything else.
+
+**2. Mint a token on your own machine, not the server.** The server has no
+browser and the service user cannot log in:
+
+```bash
+claude setup-token
+```
+
+This opens a browser, authenticates against your subscription, and prints
+a token valid for one year. It is not saved anywhere — copy it.
+
+**3. Paste it into the provider's Subscription token field.** It is stored
+encrypted at rest exactly like an API key, never returned by the API, and
+injected only into the CLI process. Leaving the field blank falls back to
+whatever the host is already authenticated as.
+
+Renew once a year by running `claude setup-token` again and editing the
+provider.
+
+> **Why LabDog strips `ANTHROPIC_API_KEY`.** The CLI resolves credentials
+> in a fixed order, and `ANTHROPIC_API_KEY` outranks the subscription
+> token. If that variable were present in LabDog's environment — quite
+> likely, since the Anthropic provider wants one — the CLI would bill your
+> API account instead, silently and with no difference in output. When a
+> subscription token is configured, LabDog removes `ANTHROPIC_API_KEY` and
+> `ANTHROPIC_AUTH_TOKEN` from the CLI's environment so you get the billing
+> you asked for.
 
 API keys are encrypted at rest and never returned by the API. Editing a
 provider and leaving the key field blank keeps the stored key.

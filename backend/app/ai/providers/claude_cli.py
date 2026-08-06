@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator
 
@@ -44,6 +45,39 @@ logger = logging.getLogger(__name__)
 CLI_BINARY = "claude"
 DEFAULT_TIMEOUT_SECONDS = 300
 
+#: Env var the CLI reads a subscription OAuth token from, as minted by
+#: ``claude setup-token``. This is the variable's *name*, not a token —
+#: bandit's B105 matches on the identifier ending in _TOKEN and cannot tell
+#: the difference.
+OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # nosec B105 - env var name, not a secret
+
+#: Credentials that outrank ``CLAUDE_CODE_OAUTH_TOKEN`` in the CLI's own
+#: precedence order. If either is present in the environment the CLI bills
+#: the API account instead of the subscription — silently, with no error
+#: and no output difference. An operator who configured a subscription
+#: token asked for subscription billing, so we remove these from the child
+#: environment rather than let an unrelated variable override the intent.
+OVERRIDING_CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def build_cli_env(oauth_token: str | None, base: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for a ``claude`` subprocess.
+
+    With a token: inject it and drop the two variables that would silently
+    take precedence over it.
+
+    Without one: pass the environment through untouched, so a host where
+    the CLI is already logged in — or where the operator deliberately set
+    ``ANTHROPIC_API_KEY`` — keeps working exactly as before.
+    """
+    env = dict(os.environ if base is None else base)
+    if not oauth_token:
+        return env
+    env[OAUTH_TOKEN_ENV] = oauth_token
+    for name in OVERRIDING_CREDENTIAL_ENV:
+        env.pop(name, None)
+    return env
+
 
 class ClaudeCLIProvider:
     """Single-shot Claude Code CLI backend.
@@ -60,9 +94,18 @@ class ClaudeCLIProvider:
         self,
         model: str | None = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        oauth_token: str | None = None,
     ) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
+        # A one-year subscription token from ``claude setup-token``, stored
+        # encrypted like every other LabDog credential. None means "use
+        # whatever the host is already authenticated with".
+        self.oauth_token = oauth_token
+
+    @property
+    def env(self) -> dict[str, str]:
+        return build_cli_env(self.oauth_token)
 
     def _argv(self, prompt: str) -> list[str]:
         argv = [CLI_BINARY, "-p", prompt]
@@ -116,6 +159,7 @@ class ClaudeCLIProvider:
                 *self._argv(prompt),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self.env,
             )
         except FileNotFoundError as exc:
             raise LLMProviderError(
@@ -156,6 +200,7 @@ class ClaudeCLIProvider:
                 "--version",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self.env,
             )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
         except (FileNotFoundError, TimeoutError) as exc:
