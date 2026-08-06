@@ -63,6 +63,19 @@ const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
     "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
 }
 
+/**
+ * Base URL each provider type starts with.
+ *
+ * Anthropic is blank on purpose: the client falls back to the public API,
+ * and a URL here is only for proxies. The CLI has no HTTP endpoint at all
+ * and hides the field.
+ */
+const BASE_URL_DEFAULT: Record<AIProviderType, string> = {
+  openai_compat: "http://localhost:11434/v1",
+  anthropic: "",
+  claude_cli: "",
+}
+
 interface FormState {
   name: string
   provider_type: AIProviderType
@@ -117,6 +130,31 @@ export default function AIProvidersPage() {
   const currency = usage?.currency ?? "USD"
 
   const presets = MODEL_PRESETS[form.provider_type] ?? []
+
+  /**
+   * Switch provider type, moving the base URL to that type's default.
+   *
+   * The types disagree about what a base URL even means: an
+   * OpenAI-compatible server needs one, while Anthropic wants it blank
+   * unless you are proxying. Carrying the previous type's value across is
+   * worse than useless — a leftover Ollama URL on an Anthropic provider
+   * looks like a filled-in field and sends Anthropic-format requests to
+   * Ollama, which fails in a way that points nowhere near the cause.
+   *
+   * A value the operator actually typed is preserved: only an untouched
+   * default is replaced.
+   */
+  function changeType(next: AIProviderType) {
+    setForm((prev) => {
+      const untouched =
+        !prev.base_url.trim() || prev.base_url === BASE_URL_DEFAULT[prev.provider_type]
+      return {
+        ...prev,
+        provider_type: next,
+        base_url: untouched ? BASE_URL_DEFAULT[next] : prev.base_url,
+      }
+    })
+  }
 
   /**
    * Fill in a suggested model, and its rates when we know them.
@@ -245,9 +283,7 @@ export default function AIProvidersPage() {
                 <Label>Type</Label>
                 <Select
                   value={form.provider_type}
-                  onValueChange={(v) =>
-                    setForm({ ...form, provider_type: v as AIProviderType })
-                  }
+                  onValueChange={(v) => v && changeType(v as AIProviderType)}
                 >
                   <SelectTrigger>
                     {/* base-ui renders the raw value unless given a
@@ -277,12 +313,30 @@ export default function AIProvidersPage() {
 
               {form.provider_type !== "claude_cli" && (
                 <div>
-                  <Label htmlFor="base_url">Base URL</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="base_url">
+                      Base URL
+                      {form.provider_type === "anthropic" && (
+                        <span className="ml-1 font-normal text-slate-400">
+                          (optional)
+                        </span>
+                      )}
+                    </Label>
+                    <InfoPopover title="Base URL">
+                      {form.provider_type === "anthropic"
+                        ? "Leave blank to use the public Anthropic API. Set it only if you route through a proxy or gateway that speaks the Messages API."
+                        : "Where your OpenAI-compatible server listens, including the version path — Ollama uses http://localhost:11434/v1 by default."}
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="base_url"
                     value={form.base_url}
                     onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                    placeholder="http://localhost:11434/v1"
+                    placeholder={
+                      form.provider_type === "anthropic"
+                        ? "Blank — uses https://api.anthropic.com"
+                        : "http://localhost:11434/v1"
+                    }
                   />
                 </div>
               )}
