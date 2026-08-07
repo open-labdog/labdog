@@ -252,26 +252,58 @@ class ClaudeCLIProvider:
         yield Usage(prompt_tokens=0, completion_tokens=0, unknown=True)
         yield TurnEnd(stop_reason="end_turn")
 
-    async def test_connection(self) -> str:
-        path = shutil.which(CLI_BINARY)
-        if not path:
-            raise LLMProviderError(NOT_FOUND_MESSAGE)
-        self._ensure_config_dir()
+    async def _run(self, argv: list[str], timeout: int) -> tuple[int, str, str]:
+        """Run the CLI once, returning (returncode, stdout, stderr)."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                CLI_BINARY,
-                "--version",
+                *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=self.env,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except (FileNotFoundError, TimeoutError) as exc:
-            raise LLMProviderError(f"Could not run {CLI_BINARY} --version") from exc
-        if proc.returncode != 0:
-            raise LLMProviderError(stderr.decode(errors="replace").strip()[:300] or "CLI error")
-        version = stdout.decode(errors="replace").strip()
-        return f"Found {path} ({version}); single-shot mode, no tool calls"
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except FileNotFoundError as exc:
+            raise LLMProviderError(NOT_FOUND_MESSAGE) from exc
+        except TimeoutError as exc:
+            raise LLMProviderError(
+                f"The {CLI_BINARY} CLI did not respond within {timeout}s"
+            ) from exc
+        return (
+            proc.returncode or 0,
+            stdout.decode(errors="replace").strip(),
+            stderr.decode(errors="replace").strip(),
+        )
+
+    async def test_connection(self) -> str:
+        """Prove the CLI is present *and* that the credential works.
+
+        This used to run ``--version`` alone, which authenticates against
+        nothing: a provider holding a completely invalid token still tested
+        green, and the first sign of trouble was a failed session. A test
+        that cannot fail for the most likely reason is worse than no test,
+        because it actively vouches for the thing that is broken.
+
+        So it also sends the smallest possible real prompt. That costs one
+        trivial round-trip against the account, which is the same bargain
+        every other provider's test already makes.
+        """
+        path = shutil.which(CLI_BINARY)
+        if not path:
+            raise LLMProviderError(NOT_FOUND_MESSAGE)
+        self._ensure_config_dir()
+
+        code, version, stderr = await self._run([CLI_BINARY, "--version"], timeout=30)
+        if code != 0:
+            raise LLMProviderError(stderr[:300] or "CLI error")
+
+        code, out, stderr = await self._run(self._argv("Reply with the single word: ok"), 60)
+        if code != 0:
+            # -p mode reports auth failures on stdout with stderr empty.
+            detail = stderr or out
+            raise LLMProviderError(
+                f"{CLI_BINARY} {version} is installed, but authentication failed: {detail[:300]}"
+            )
+        return f"Found {path} ({version}); authenticated; single-shot mode, no tool calls"
 
 
 async def cli_supports_stream_json() -> bool:

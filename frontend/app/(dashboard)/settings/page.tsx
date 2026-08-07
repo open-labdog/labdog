@@ -31,9 +31,28 @@ interface AppSetting {
  * out of the UI that way, including `ai.enabled` — which the AI subsystem
  * tells operators to go and enable, in a page that never showed it.
  */
-const CATEGORIES: Record<string, { label: string; keys: string[] }> = {
+interface Category {
+  label: string
+  keys: string[]
+  /**
+   * Present only on categories long enough to earn a disclosure. `pinnedKey`
+   * renders above the fold and never collapses; the rest go behind the
+   * chevron.
+   *
+   * Pinning is the point, not a nicety. `ai.enabled` is what the AI
+   * subsystem's own error message tells operators to come here and change,
+   * and AI ships off, so a card that collapsed by default would hide the
+   * switch at exactly the moment someone was sent to find it. Making the
+   * row structurally exempt is a stronger guarantee than choosing a good
+   * default — the same reasoning as the uncategorised fallback below.
+   */
+  collapsible?: { pinnedKey: string }
+}
+
+const CATEGORIES: Record<string, Category> = {
   ai: {
     label: "AI",
+    collapsible: { pinnedKey: "ai.enabled" },
     keys: [
       "ai.enabled",
       "ai.allow_cloud_providers",

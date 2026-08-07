@@ -215,6 +215,90 @@ class TestFailureDetail:
         assert "partial output" not in message
 
 
+class TestConnectionActuallyAuthenticates:
+    """`Test` has to be able to fail for the reason it usually fails.
+
+    It used to run `claude --version` and nothing else, which authenticates
+    against nothing. A provider holding a completely invalid token reported
+    "Found /usr/local/bin/claude (2.1.220); single-shot mode" in green, and
+    the first sign of trouble was a session dying with a 401 — with the
+    green test standing behind the broken credential.
+    """
+
+    def test_it_sends_a_real_prompt(self) -> None:
+        import inspect
+
+        from app.ai.providers.claude_cli import ClaudeCLIProvider
+
+        source = inspect.getsource(ClaudeCLIProvider.test_connection)
+        assert "_argv(" in source, (
+            "test_connection must make an authenticated call, not just --version"
+        )
+
+    def test_the_failure_message_distinguishes_auth_from_a_missing_binary(self) -> None:
+        import inspect
+
+        from app.ai.providers.claude_cli import ClaudeCLIProvider
+
+        source = inspect.getsource(ClaudeCLIProvider.test_connection)
+        assert "authentication failed" in source
+
+
+class TestSubscriptionTokenFormat:
+    """Guards the field against the wrong secret being pasted into it.
+
+    Seen in practice: a 92-character non-Anthropic secret stored happily,
+    then `401 Invalid bearer token` at session time, with the provider test
+    still green.
+    """
+
+    def test_the_check_exists_and_names_the_command(self) -> None:
+        from pathlib import Path
+
+        source = Path("app/api/ai.py").read_text()
+        assert "SUBSCRIPTION_TOKEN_PREFIX" in source
+        assert "claude setup-token" in source, (
+            "the error should say how to get a real token, not just reject one"
+        )
+
+    def test_it_is_applied_on_both_create_and_update(self) -> None:
+        from pathlib import Path
+
+        source = Path("app/api/ai.py").read_text()
+        assert source.count("_check_subscription_token(") >= 3, (
+            "expected the helper plus a call on create and on update"
+        )
+
+    def test_a_blank_token_is_still_allowed(self) -> None:
+        """Blank means 'use the host's own login' and must keep working."""
+        from app.api.ai import _check_subscription_token
+
+        _check_subscription_token("claude_cli", None)
+        _check_subscription_token("claude_cli", "")
+
+    def test_a_real_looking_token_passes(self) -> None:
+        from app.api.ai import _check_subscription_token
+
+        _check_subscription_token("claude_cli", "sk-ant-oat01-abc123")
+
+    def test_another_providers_key_is_not_checked(self) -> None:
+        """Only the CLI field carries a subscription token; an Anthropic API
+        key must not be measured against this prefix."""
+        from app.api.ai import _check_subscription_token
+
+        _check_subscription_token("anthropic", "sk-ant-api03-whatever")
+
+    def test_a_wrong_secret_is_rejected(self) -> None:
+        from fastapi import HTTPException
+
+        from app.api.ai import _check_subscription_token
+
+        with pytest.raises(HTTPException) as err:
+            _check_subscription_token("claude_cli", "Nj4pvdSQwzI2jZsomethingelse")
+        assert err.value.status_code == 400
+        assert "setup-token" in str(err.value.detail)
+
+
 class TestMissingBinary:
     """The message an operator sees when the CLI is not installed.
 

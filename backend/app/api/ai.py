@@ -63,6 +63,37 @@ async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
     await db.execute(stmt)
 
 
+#: What `claude setup-token` emits. Checked at save time because the field
+#: sits next to several other credential fields in the UI and accepts any
+#: string: pasting the wrong secret stores something guaranteed to 401, and
+#: without this the first sign of it is a failed session.
+#:
+#: Kept to a prefix test rather than a full format match — if Anthropic
+#: lengthens or re-shapes the token this still passes, and it only has to
+#: catch the case of a credential that plainly is not one of these.
+SUBSCRIPTION_TOKEN_PREFIX = "sk-ant-oat"  # nosec B105 - prefix, not a secret
+
+
+def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
+    """Reject a CLI subscription token that is obviously not one.
+
+    A blank value is fine and means "use whatever the host is logged in as".
+    """
+    if provider_type != "claude_cli" or not api_key:
+        return
+    if api_key.startswith(SUBSCRIPTION_TOKEN_PREFIX):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"That does not look like a Claude subscription token — they begin "
+            f"with {SUBSCRIPTION_TOKEN_PREFIX!r}. Run 'claude setup-token' on "
+            f"your own machine and paste the value it prints. An Anthropic API "
+            f"key will not work here; use an Anthropic provider for that."
+        ),
+    )
+
+
 @router.get("/providers", response_model=list[AIProviderResponse])
 async def list_providers(
     _: User = Depends(current_active_user),
@@ -99,6 +130,8 @@ async def create_provider(
                 "Claude Console at platform.claude.com under API keys."
             ),
         )
+
+    _check_subscription_token(payload.provider_type, payload.api_key)
 
     provider = AIProvider(
         name=payload.name,
@@ -163,6 +196,8 @@ async def update_provider(
             status_code=400,
             detail="An Anthropic provider needs an API key; it cannot be cleared.",
         )
+
+    _check_subscription_token(provider.provider_type, api_key)
 
     # Tri-state: absent keeps, "" clears, a value replaces.
     if api_key is not None:
