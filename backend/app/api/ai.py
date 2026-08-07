@@ -291,6 +291,9 @@ async def create_session(
     """Create a chat session and dispatch it to a worker."""
     try:
         provider = await service.resolve_provider(db, payload.provider_id)
+        # A chat session is an investigation by definition, so a backend
+        # with no tools cannot serve one — it would answer from imagination.
+        service.assert_can_investigate(provider)
         await service.assert_within_budget(db, provider)
     except AIDisabledError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

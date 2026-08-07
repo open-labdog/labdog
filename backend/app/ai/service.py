@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.models import AIMessage, AIProvider, AISession, AIUsageDay
-from app.ai.providers.factory import sends_data_offsite
+from app.ai.providers.factory import sends_data_offsite, supports_tools
 from app.settings_service import get_setting_typed
 
 logger = logging.getLogger(__name__)
@@ -136,6 +136,34 @@ async def resolve_provider(db: AsyncSession, provider_id: int | None) -> AIProvi
                 f"Enable ai.allow_cloud_providers in Settings to permit that."
             )
     return provider
+
+
+def assert_can_investigate(provider: AIProvider) -> None:
+    """Refuse an investigation on a backend that cannot run tools.
+
+    Withholding the tools is not enough on its own, and the failure this
+    prevents was observed live. A single-shot backend was given the normal
+    agent system prompt — which instructs it to "start by finding out what
+    is in scope with list_hosts" and to "base every claim on something a
+    tool actually returned" — and no tools to do it with. It followed the
+    instruction, the CLI rendered the absent result as the word
+    ``undefined``, and the model supplied the rest from imagination: a
+    host that does not exist, on a subnet one character away from the real
+    one, with plausible roles and notes. The session was recorded as
+    succeeded.
+
+    Fabricated infrastructure reported as fact is the worst thing this
+    feature can do, so a session that cannot verify anything must not
+    start at all.
+    """
+    if supports_tools(provider):
+        return
+    raise AIDisabledError(
+        f"Provider {provider.name!r} cannot run tools, so it cannot look anything "
+        f"up — an investigation using it would be guesswork presented as fact. "
+        f"Choose an OpenAI-compatible or Anthropic provider for assistant "
+        f"sessions."
+    )
 
 
 def estimate_cost(provider: AIProvider, prompt_tokens: int, completion_tokens: int) -> float:
