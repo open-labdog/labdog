@@ -58,6 +58,19 @@ const TYPE_HELP: Record<AIProviderType, string> = {
  * and refuses to run a single command. Saying so at selection time is the
  * difference between an informed choice and a surprise.
  */
+/**
+ * A suggested name per type.
+ *
+ * A single placeholder cannot serve all three: "ollama-local" suggested on a
+ * Claude CLI provider is exactly the kind of leftover that makes a form look
+ * like it was not built for the option you picked.
+ */
+const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
+  openai_compat: "ollama-local",
+  anthropic: "claude-api",
+  claude_cli: "claude-cli",
+}
+
 const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
   claude_cli:
     "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
@@ -275,7 +288,7 @@ export default function AIProvidersPage() {
                   id="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="ollama-local"
+                  placeholder={NAME_PLACEHOLDER[form.provider_type]}
                 />
               </div>
 
@@ -439,11 +452,16 @@ export default function AIProvidersPage() {
                 {form.provider_type === "claude_cli" && (
                   <p className="mt-1 text-xs text-slate-400">
                     Billed to your Claude subscription rather than API credits.
-                    LabDog removes{" "}
-                    <span className="font-mono">ANTHROPIC_API_KEY</span> from the
-                    CLI&apos;s environment when a token is set, since it would
-                    otherwise take precedence and quietly bill the API account
-                    instead.
+                    Two things outrank this token in the CLI&apos;s own
+                    credential order, and both would quietly authenticate as a
+                    different account: the{" "}
+                    <span className="font-mono">ANTHROPIC_API_KEY</span> and{" "}
+                    <span className="font-mono">ANTHROPIC_AUTH_TOKEN</span>{" "}
+                    environment variables, and a login left on disk by{" "}
+                    <span className="font-mono">claude login</span>. When a
+                    token is set LabDog removes both variables and points the
+                    CLI at its own config directory, so neither can shadow what
+                    you enter here.
                   </p>
                 )}
               </div>
