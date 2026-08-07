@@ -52,13 +52,6 @@ const TYPE_HELP: Record<AIProviderType, string> = {
 }
 
 /**
- * A capability limit, not a tip — shown prominently when the type is chosen.
- *
- * Picking the CLI backend for the assistant looks fine until a session starts
- * and refuses to run a single command. Saying so at selection time is the
- * difference between an informed choice and a surprise.
- */
-/**
  * A suggested name per type.
  *
  * A single placeholder cannot serve all three: "ollama-local" suggested on a
@@ -71,6 +64,26 @@ const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
   claude_cli: "claude-cli",
 }
 
+/**
+ * Types that reach Anthropic no matter how they are configured, so the
+ * egress warning can be shown without re-deriving the backend's
+ * is_local_endpoint() URL logic here — duplicating that in the browser is
+ * how the two drift apart.
+ *
+ * An openai_compat provider is judged by its base URL instead, which is
+ * usually a local Ollama, so it gets no warning. If one is pointed at a
+ * hosted endpoint the refusal names the setting, and the provider list
+ * flags it as off-network.
+ */
+const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>(["anthropic", "claude_cli"])
+
+/**
+ * A capability limit, not a tip — shown prominently when the type is chosen.
+ *
+ * Picking the CLI backend for the assistant looks fine until a session starts
+ * and refuses to run a single command. Saying so at selection time is the
+ * difference between an informed choice and a surprise.
+ */
 const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
   claude_cli:
     "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
@@ -100,7 +113,6 @@ interface FormState {
   output_cost_per_mtok: string
   monthly_budget: string
   is_default: boolean
-  allow_cloud_egress: boolean
   verify_ssl: boolean
 }
 
@@ -115,7 +127,6 @@ const EMPTY_FORM: FormState = {
   output_cost_per_mtok: "0",
   monthly_budget: "0",
   is_default: false,
-  allow_cloud_egress: false,
   verify_ssl: true,
 }
 
@@ -210,7 +221,6 @@ export default function AIProvidersPage() {
       output_cost_per_mtok: String(provider.output_cost_per_mtok),
       monthly_budget: String(provider.monthly_budget),
       is_default: provider.is_default,
-      allow_cloud_egress: provider.allow_cloud_egress,
       verify_ssl: provider.verify_ssl,
     })
     setError(null)
@@ -229,7 +239,6 @@ export default function AIProvidersPage() {
         output_cost_per_mtok: Number(form.output_cost_per_mtok),
         monthly_budget: Number(form.monthly_budget),
         is_default: form.is_default,
-        allow_cloud_egress: form.allow_cloud_egress,
         verify_ssl: form.verify_ssl,
       }
       // Omitting the key on edit keeps the stored one; sending "" clears it.
@@ -584,24 +593,18 @@ export default function AIProvidersPage() {
                 Use as the default provider
               </label>
 
-              <label className="flex items-start gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={form.allow_cloud_egress}
-                  onChange={(e) =>
-                    setForm({ ...form, allow_cloud_egress: e.target.checked })
-                  }
-                />
-                <span>
-                  Allow this provider to receive host data off my network
-                  <span className="block text-xs text-slate-400">
-                    Required for any hosted provider, and only takes effect when{" "}
-                    <span className="font-mono">ai.allow_cloud_providers</span> is
-                    also on.
-                  </span>
-                </span>
-              </label>
+              {ALWAYS_SENDS_OFFSITE.has(form.provider_type) && (
+                <p className="rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-400">
+                  This provider sends host data off your network. It stays
+                  blocked until{" "}
+                  <span className="font-mono">ai.allow_cloud_providers</span> is
+                  enabled in{" "}
+                  <a href="/settings" className="underline underline-offset-4">
+                    Settings
+                  </a>
+                  , which is off by default.
+                </p>
+              )}
 
               {error && <p className="text-sm text-red-400">{error}</p>}
             </div>

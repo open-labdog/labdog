@@ -110,7 +110,6 @@ async def create_provider(
         max_tokens=payload.max_tokens,
         temperature=payload.temperature,
         is_default=payload.is_default,
-        allow_cloud_egress=payload.allow_cloud_egress,
         input_cost_per_mtok=payload.input_cost_per_mtok,
         output_cost_per_mtok=payload.output_cost_per_mtok,
         monthly_budget=payload.monthly_budget,

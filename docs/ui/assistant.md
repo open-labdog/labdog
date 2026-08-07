@@ -264,11 +264,18 @@ provider and leaving the key field blank keeps the stored key.
 
 ### Data egress
 
-Each provider shows whether using it sends host data off your network.
-A provider that does is blocked twice over: it needs its own **Allow this
-provider to receive host data off my network** checkbox *and* the global
-`ai.allow_cloud_providers` setting. Both default to off, so a fresh install
-never sends anything anywhere until you decide it should.
+Each provider shows whether using it sends host data off your network. A
+provider that does stays blocked until `ai.allow_cloud_providers` is
+enabled in Settings. It is off by default, so a fresh install never sends
+anything anywhere until you decide it should.
+
+One switch covers the whole instance, deliberately. A provider added
+months from now cannot start sending data off-network on its own — it
+still waits on a policy decision you made once, on purpose.
+
+Note that the Claude CLI counts as off-network. The binary runs locally,
+but it is an authenticated client talking to Anthropic, so the data still
+leaves; it is gated exactly like a hosted API.
 
 ### Pricing and budgets
 

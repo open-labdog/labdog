@@ -124,11 +124,16 @@ async def resolve_provider(db: AsyncSession, provider_id: int | None) -> AIProvi
             )
 
     if sends_data_offsite(provider):
-        allow_cloud = int(await get_setting_typed("ai.allow_cloud_providers", db))
-        if not allow_cloud or not provider.allow_cloud_egress:
+        # One gate, deliberately. This used to also require a per-provider
+        # `allow_cloud_egress` flag, but the two were set by the same operator
+        # in the same session and the second only ever surfaced as a refusal
+        # long after the box had been ticked. Per-provider granularity also
+        # bought little: once any provider may egress, host data leaves the
+        # network, and blocking a second one changes nothing about that.
+        if not int(await get_setting_typed("ai.allow_cloud_providers", db)):
             raise AIDisabledError(
-                f"Provider {provider.name!r} sends host data off your network, and "
-                f"cloud AI providers are not permitted by the current settings."
+                f"Provider {provider.name!r} sends host data off your network. "
+                f"Enable ai.allow_cloud_providers in Settings to permit that."
             )
     return provider
 
