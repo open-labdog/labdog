@@ -165,10 +165,12 @@ The CLI backend bills your Claude Pro/Max/Team subscription rather than
 metered API usage, which is worth having for something that runs nightly.
 Setting it up takes three steps.
 
-**1. Install it where the service can see it.** LabDog runs as the
-`labdog` system user with `ProtectHome=true`, so anything under a home
-directory is invisible to it — a per-user install will not be found. Use
-the apt repository, which puts the binary on the system path:
+**1. Install it where the service can see it.** *Container deploys can
+skip this step — the official image bundles the binary.* On a package
+install, LabDog runs as the `labdog` system user with `ProtectHome=true`,
+so anything under a home directory is invisible to it and a per-user
+install will not be found. Use the apt repository, which puts the binary
+on the system path:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -205,70 +207,57 @@ provider.
 
 #### Running LabDog in a container
 
-The official image does **not** include the `claude` binary, and has no
-`curl`, `gnupg`, or Node to fetch it with. The CLI backend therefore does
-not work in a container as shipped — LabDog reports `The 'claude' CLI is
-not on PATH for the LabDog service user` and the provider test fails.
+The official image bundles the `claude` binary, so there is nothing to
+install. Paste your token into the provider form and it works.
 
-**Most container deployments should use the Anthropic provider instead.**
-It needs no image change, and it can run tools, so it can drive assistant
-sessions and scheduled checks that the CLI backend cannot. The only thing
-you give up is subscription billing.
+The image is correspondingly larger — the CLI is about 123 MB on disk,
+against roughly 130 MB compressed for the rest of LabDog, so expect the
+pull to be a little over half again as big as it used to be. That is the
+cost of the CLI backend being available without an image of your own.
 
-If subscription billing is what you are after, there are two ways to get
-the binary into the container. Both work: the `claude-code` package is a
-single file (`/usr/bin/claude`) that depends only on glibc ≥ 2.17, which
-every LabDog base image satisfies, and the repo publishes amd64 and arm64.
+The binary is installed from Anthropic's apt repository during the build,
+so its signature is verified by the repository key, and it is refreshed on
+every image build rather than pinned — a stale copy of a network-facing
+binary is a liability with no upside.
 
-**Option A — mount the binary from the container host.** Install
-`claude-code` on the host from the same apt repo (or extract
-`/usr/bin/claude` from the `.deb` with `dpkg-deb -x`), then run the stock
-image with:
+Two things follow from LabDog owning the process:
 
-```
--v /usr/bin/claude:/usr/local/bin/claude:ro
-```
+- **The token never lives in the image.** It is stored encrypted in the
+  database and injected into the CLI's environment at spawn time, so
+  rebuilding or replacing the image does not disturb your credentials.
+- **The CLI's state is isolated to `/var/lib/labdog/claude-cli`,** not
+  `$HOME`. Mount a volume at `/var/lib/labdog` — you already need one for
+  action packs — and the CLI's session state persists with everything
+  else. See the credential-precedence note below for why the location
+  matters.
 
-No image to maintain; updates arrive through the host's package manager.
-The binary executes against the container's own libraries, so the host
-distribution does not matter — it only needs to hold the file.
+If you would rather not carry the binary at all, use an Anthropic
+provider: no binary, and it can run tools, so it can drive assistant
+sessions and scheduled checks the CLI backend cannot. The only thing you
+give up is subscription billing.
 
-**Option B — extend the image:**
-
-```dockerfile
-FROM openlabdog/labdog:latest
-USER root
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
-    && install -d -m 0755 /etc/apt/keyrings \
-    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
-         -o /etc/apt/keyrings/claude-code.asc \
-    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] \
-https://downloads.claude.ai/claude-code/apt/stable stable main" \
-         > /etc/apt/sources.list.d/claude-code.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends claude-code \
-    && rm -rf /var/lib/apt/lists/*
-USER labdog
-```
-
-You now own an image that must be rebuilt against each LabDog release,
-and the CLI adds roughly 230 MB to it.
-
-Either way, the token still goes in the provider form — it is stored in
-the database, not in the image, so neither route ever holds a secret. The
-CLI needs no login state in the container: it reads the token LabDog
-injects into its environment, and it tolerates a read-only home, so even
-`--read-only` deployments work.
-
-> **Why LabDog strips `ANTHROPIC_API_KEY`.** The CLI resolves credentials
-> in a fixed order, and `ANTHROPIC_API_KEY` outranks the subscription
-> token. If that variable were present in LabDog's environment — quite
-> likely, since the Anthropic provider wants one — the CLI would bill your
-> API account instead, silently and with no difference in output. When a
-> subscription token is configured, LabDog removes `ANTHROPIC_API_KEY` and
-> `ANTHROPIC_AUTH_TOKEN` from the CLI's environment so you get the billing
-> you asked for.
+> **Why LabDog controls the CLI's credentials and config directory.** The
+> CLI resolves credentials in a fixed order, and the subscription token
+> sits low in it. Two things outrank it, both of which fail the same way:
+> the wrong account is used, silently, with no error and no difference in
+> the output. The only symptom is the invoice.
+>
+> `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` outrank it from the
+> environment — quite likely to be present, since the Anthropic provider
+> wants one. LabDog removes both from the CLI's environment whenever a
+> subscription token is configured.
+>
+> A stored login also outranks it from disk. If anyone has ever run
+> `claude login` as the LabDog service user, the credentials file it wrote
+> wins over the token you pasted into the form. LabDog therefore points the
+> CLI at `/var/lib/labdog/claude-cli` via `CLAUDE_CONFIG_DIR`, a directory
+> it owns, so no interactive session can leave a login where it would
+> shadow your configuration.
+>
+> Both apply only when a subscription token is configured. Leave the field
+> blank and nothing is touched — that case is an operator who authenticated
+> the CLI on the host deliberately, and isolating it would break the only
+> credential such a setup has.
 
 API keys are encrypted at rest and never returned by the API. Editing a
 provider and leaving the key field blank keeps the stored key.

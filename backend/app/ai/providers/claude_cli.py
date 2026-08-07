@@ -59,34 +59,58 @@ OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # nosec B105 - env var name, not a 
 #: environment rather than let an unrelated variable override the intent.
 OVERRIDING_CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
-#: Raised when the binary is absent. Names the two deployment shapes
-#: because the fix differs entirely between them: a package install for a
-#: host deployment, a derived image for a container — where the official
-#: image ships no `claude` and no way to fetch one.
+#: The environment is only half of the precedence problem. A credentials
+#: file left by an interactive ``claude login`` *also* outranks
+#: ``CLAUDE_CODE_OAUTH_TOKEN`` — verified against claude 2.1.220, where a
+#: stored login wins and the configured token is ignored with no warning
+#: and no difference in the output. So when a token is configured LabDog
+#: also points the CLI at a directory LabDog owns, where no interactive
+#: session can leave a login behind to shadow it.
+#:
+#: ``/var/lib/labdog`` is already LabDog's state root — listed in the
+#: systemd unit's ``ReadWritePaths`` and the documented persistent-volume
+#: mount for container deploys — so the CLI's state travels with the rest
+#: of it and needs no extra configuration on either deployment shape.
+CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+DEFAULT_CONFIG_DIR = "/var/lib/labdog/claude-cli"
+
+#: Raised when the binary is absent. Names both deployment shapes because
+#: the cause differs entirely between them: on a package install the
+#: operator supplies the binary, whereas the official container image
+#: bundles it — so a container hitting this is on a custom image or one
+#: built before the CLI was added, which is a different fix.
 NOT_FOUND_MESSAGE = (
     f"The {CLI_BINARY!r} CLI was not found on PATH for the LabDog service user. "
     "On a package install, install it system-wide (a per-user install under a "
-    "home directory is not visible to the service). In a container, the "
-    "official image does not include it — mount the binary in, extend the "
-    "image, or use an Anthropic provider instead, which needs no binary and "
+    "home directory is not visible to the service). In a container, the official "
+    "image bundles it, so check whether you are on a custom image or one built "
+    "before it was added. Either way, an Anthropic provider needs no binary and "
     "can also run tools. See docs/ui/assistant.md."
 )
 
 
-def build_cli_env(oauth_token: str | None, base: dict[str, str] | None = None) -> dict[str, str]:
+def build_cli_env(
+    oauth_token: str | None,
+    base: dict[str, str] | None = None,
+    config_dir: str = DEFAULT_CONFIG_DIR,
+) -> dict[str, str]:
     """The environment for a ``claude`` subprocess.
 
-    With a token: inject it and drop the two variables that would silently
-    take precedence over it.
+    With a token: inject it, drop the two variables that would silently
+    take precedence over it, and isolate the config directory so a stored
+    login cannot do the same thing from disk.
 
-    Without one: pass the environment through untouched, so a host where
-    the CLI is already logged in — or where the operator deliberately set
-    ``ANTHROPIC_API_KEY`` — keeps working exactly as before.
+    Without one: pass the environment through untouched. That case is an
+    operator who authenticated the CLI on the host and wants LabDog to use
+    it, so neither the credential variables nor the config directory may be
+    disturbed — isolating the config directory here would break exactly the
+    setup it is meant to serve.
     """
     env = dict(os.environ if base is None else base)
     if not oauth_token:
         return env
     env[OAUTH_TOKEN_ENV] = oauth_token
+    env[CONFIG_DIR_ENV] = config_dir
     for name in OVERRIDING_CREDENTIAL_ENV:
         env.pop(name, None)
     return env
@@ -108,6 +132,7 @@ class ClaudeCLIProvider:
         model: str | None = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         oauth_token: str | None = None,
+        config_dir: str = DEFAULT_CONFIG_DIR,
     ) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -115,10 +140,32 @@ class ClaudeCLIProvider:
         # encrypted like every other LabDog credential. None means "use
         # whatever the host is already authenticated with".
         self.oauth_token = oauth_token
+        self.config_dir = config_dir
 
     @property
     def env(self) -> dict[str, str]:
-        return build_cli_env(self.oauth_token)
+        return build_cli_env(self.oauth_token, config_dir=self.config_dir)
+
+    def _ensure_config_dir(self) -> None:
+        """Create the isolated config directory, best effort.
+
+        Only relevant when a token is configured — that is the only case
+        where the directory is used at all. The CLI runs fine without it
+        (a missing directory just means no persisted state), so a failure
+        here must not stop a session from starting; it is logged and left
+        alone.
+        """
+        if not self.oauth_token:
+            return
+        try:
+            os.makedirs(self.config_dir, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "Could not create the Claude CLI config directory %s (%s); "
+                "the CLI will run without persisted state.",
+                self.config_dir,
+                exc,
+            )
 
     def _argv(self, prompt: str) -> list[str]:
         argv = [CLI_BINARY, "-p", prompt]
@@ -165,6 +212,7 @@ class ClaudeCLIProvider:
             )
 
         prompt = self._flatten(messages)
+        self._ensure_config_dir()
         try:
             # exec, never shell: the prompt is model- and operator-supplied
             # text and must never reach a shell interpreter.
@@ -208,6 +256,7 @@ class ClaudeCLIProvider:
         path = shutil.which(CLI_BINARY)
         if not path:
             raise LLMProviderError(NOT_FOUND_MESSAGE)
+        self._ensure_config_dir()
         try:
             proc = await asyncio.create_subprocess_exec(
                 CLI_BINARY,

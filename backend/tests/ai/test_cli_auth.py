@@ -20,6 +20,8 @@ import pytest
 
 from app.ai.providers.base import LLMProviderError
 from app.ai.providers.claude_cli import (
+    CONFIG_DIR_ENV,
+    DEFAULT_CONFIG_DIR,
     OAUTH_TOKEN_ENV,
     OVERRIDING_CREDENTIAL_ENV,
     ClaudeCLIProvider,
@@ -72,6 +74,69 @@ class TestPrecedenceTrap:
         who deliberately authenticates the CLI that way."""
         env = build_cli_env(None, base={"ANTHROPIC_API_KEY": "sk-ant-api-key"})
         assert env["ANTHROPIC_API_KEY"] == "sk-ant-api-key"
+
+
+class TestStoredCredentialTrap:
+    """A credentials file outranks the token too, not just the env vars.
+
+    Verified against claude 2.1.220: with a bogus `CLAUDE_CODE_OAUTH_TOKEN`
+    and a HOME containing no login, the CLI used the token and returned 401.
+    With the *same* bogus token and a HOME containing a real
+    `.claude/.credentials.json`, it succeeded — the stored login won and the
+    configured token was ignored, with no warning and no visible difference
+    in the output. Identical failure signature to the env-var trap: LabDog
+    would silently authenticate as somebody else's account.
+
+    `CLAUDE_CONFIG_DIR` is what closes it; pointing it at an empty directory
+    restored the 401.
+    """
+
+    def test_config_dir_is_isolated_when_a_token_is_configured(self) -> None:
+        env = build_cli_env("tok", base={})
+        assert env[CONFIG_DIR_ENV] == DEFAULT_CONFIG_DIR
+
+    def test_isolation_overrides_an_inherited_config_dir(self) -> None:
+        """An inherited value pointing at a home with a login would reopen
+        the trap, so LabDog's value has to win."""
+        env = build_cli_env("tok", base={CONFIG_DIR_ENV: "/home/someone/.claude"})
+        assert env[CONFIG_DIR_ENV] == DEFAULT_CONFIG_DIR
+
+    def test_config_dir_is_untouched_when_no_token_is_configured(self) -> None:
+        """Without a token the intended setup *is* the host's own login, so
+        isolating the config directory would break the only thing that case
+        can use to authenticate."""
+        base = {CONFIG_DIR_ENV: "/home/labdog/.claude"}
+        assert build_cli_env(None, base=base) == base
+        assert CONFIG_DIR_ENV not in build_cli_env(None, base={})
+
+    def test_the_isolated_directory_lives_under_labdog_state(self) -> None:
+        """It has to be somewhere both deployment shapes can write:
+        `ReadWritePaths` in the systemd unit, and the documented volume
+        mount in a container. Anywhere else and one of the two breaks."""
+        assert DEFAULT_CONFIG_DIR.startswith("/var/lib/labdog/")
+
+
+class TestConfigDirCreation:
+    def test_directory_is_created_when_a_token_is_configured(self, tmp_path) -> None:
+        target = tmp_path / "claude-cli"
+        ClaudeCLIProvider(oauth_token="tok", config_dir=str(target))._ensure_config_dir()
+        assert target.is_dir()
+
+    def test_nothing_is_created_without_a_token(self, tmp_path) -> None:
+        """That case never uses the directory — creating it would litter the
+        filesystem of every operator using a host login."""
+        target = tmp_path / "claude-cli"
+        ClaudeCLIProvider(config_dir=str(target))._ensure_config_dir()
+        assert not target.exists()
+
+    def test_a_failure_to_create_does_not_raise(self, tmp_path) -> None:
+        """A read-only filesystem must not stop a session from starting —
+        the CLI runs fine without persisted state."""
+        blocked = tmp_path / "file-in-the-way"
+        blocked.write_text("not a directory")
+        ClaudeCLIProvider(
+            oauth_token="tok", config_dir=str(blocked / "nested")
+        )._ensure_config_dir()
 
 
 class TestProviderWiring:
@@ -153,9 +218,10 @@ class TestFailureDetail:
 class TestMissingBinary:
     """The message an operator sees when the CLI is not installed.
 
-    The fix differs completely by deployment shape — a system-wide package
-    install for a host, a derived image for a container — so a bare "not
-    found" leaves a container user with nowhere to go.
+    The cause differs by deployment shape — a package install expects the
+    operator to supply the binary, while the official image bundles it, so
+    a container hitting this is on a custom or outdated image. A bare "not
+    found" sends a container user looking in the wrong place entirely.
     """
 
     def test_message_covers_both_deployment_shapes(self) -> None:
@@ -165,6 +231,15 @@ class TestMissingBinary:
         assert "container" in lowered, "container users get no guidance"
         assert "anthropic" in lowered, "no pointer to the provider that needs no binary"
         assert "docs/ui/assistant.md" in NOT_FOUND_MESSAGE
+
+    def test_message_does_not_claim_the_image_lacks_the_binary(self) -> None:
+        """It did lack it until the CLI was added to the Dockerfile. Leaving
+        that claim in place would send operators to build a derived image
+        they no longer need."""
+        from app.ai.providers.claude_cli import NOT_FOUND_MESSAGE
+
+        assert "does not include" not in NOT_FOUND_MESSAGE.lower()
+        assert "extend the image" not in NOT_FOUND_MESSAGE.lower()
 
 
 class TestAnthropicKeyIsRequired:

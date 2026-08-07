@@ -48,7 +48,7 @@ const TYPE_HELP: Record<AIProviderType, string> = {
     "Any server speaking the OpenAI chat-completions API — Ollama, vLLM, LM Studio, OpenRouter, or OpenAI itself.",
   anthropic: "The Anthropic Messages API. Leave the base URL blank for the public API.",
   claude_cli:
-    "The Claude Code CLI installed on the LabDog host. Authenticates with your Claude subscription rather than metered API billing.",
+    "The Claude Code CLI. Bundled in the LabDog container image; on a package install you install it yourself. Authenticates with your Claude subscription rather than metered API billing.",
 }
 
 /**
