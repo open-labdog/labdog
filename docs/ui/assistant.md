@@ -215,7 +215,25 @@ It needs no image change, and it can run tools, so it can drive assistant
 sessions and scheduled checks that the CLI backend cannot. The only thing
 you give up is subscription billing.
 
-If subscription billing is what you are after, extend the image:
+If subscription billing is what you are after, there are two ways to get
+the binary into the container. Both work: the `claude-code` package is a
+single file (`/usr/bin/claude`) that depends only on glibc ≥ 2.17, which
+every LabDog base image satisfies, and the repo publishes amd64 and arm64.
+
+**Option A — mount the binary from the container host.** Install
+`claude-code` on the host from the same apt repo (or extract
+`/usr/bin/claude` from the `.deb` with `dpkg-deb -x`), then run the stock
+image with:
+
+```
+-v /usr/bin/claude:/usr/local/bin/claude:ro
+```
+
+No image to maintain; updates arrive through the host's package manager.
+The binary executes against the container's own libraries, so the host
+distribution does not matter — it only needs to hold the file.
+
+**Option B — extend the image:**
 
 ```dockerfile
 FROM openlabdog/labdog:latest
@@ -234,14 +252,14 @@ https://downloads.claude.ai/claude-code/apt/stable stable main" \
 USER labdog
 ```
 
-The token still goes in the provider form — it is stored in the database,
-not in the image, so the derived image holds no secret and rebuilding it
-does not disturb your credentials.
+You now own an image that must be rebuilt against each LabDog release,
+and the CLI adds roughly 230 MB to it.
 
-Two things to weigh before taking this route. You now own an image that
-must be rebuilt against each LabDog release, and the CLI adds roughly
-220 MB to it. Both are real costs for a backend that can only write
-reports and verify verdicts.
+Either way, the token still goes in the provider form — it is stored in
+the database, not in the image, so neither route ever holds a secret. The
+CLI needs no login state in the container: it reads the token LabDog
+injects into its environment, and it tolerates a read-only home, so even
+`--read-only` deployments work.
 
 > **Why LabDog strips `ANTHROPIC_API_KEY`.** The CLI resolves credentials
 > in a fixed order, and `ANTHROPIC_API_KEY` outranks the subscription

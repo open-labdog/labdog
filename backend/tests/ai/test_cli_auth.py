@@ -13,6 +13,12 @@ subprocess, and nothing that outranks it survives alongside it.
 
 from __future__ import annotations
 
+import asyncio
+from unittest.mock import AsyncMock
+
+import pytest
+
+from app.ai.providers.base import LLMProviderError
 from app.ai.providers.claude_cli import (
     OAUTH_TOKEN_ENV,
     OVERRIDING_CREDENTIAL_ENV,
@@ -87,6 +93,61 @@ class TestProviderWiring:
         environment, which is not."""
         provider = ClaudeCLIProvider(model="claude-opus-5", oauth_token="sekrit")
         assert "sekrit" not in " ".join(provider._argv("hello"))
+
+
+class TestFailureDetail:
+    """What the operator sees when the CLI exits non-zero.
+
+    Verified against claude 2.1.220: in ``-p`` mode the CLI prints errors —
+    including ``Failed to authenticate. API Error: 401`` for a bad token —
+    to *stdout* and exits 1 with stderr empty. An error built from stderr
+    alone reads "claude exited 1:" with nothing after the colon, which is
+    useless at exactly the moment the operator mistypes a token.
+    """
+
+    @staticmethod
+    def _fake_exec(returncode: int, stdout: bytes, stderr: bytes):
+        proc = AsyncMock()
+        proc.returncode = returncode
+        proc.communicate = AsyncMock(return_value=(stdout, stderr))
+        return AsyncMock(return_value=proc)
+
+    async def _stream(self, monkeypatch, *, stdout: bytes, stderr: bytes) -> str:
+        monkeypatch.setattr(
+            asyncio,
+            "create_subprocess_exec",
+            self._fake_exec(1, stdout, stderr),
+        )
+        provider = ClaudeCLIProvider()
+        from app.ai.providers.base import NormalizedMessage
+
+        with pytest.raises(LLMProviderError) as err:
+            async for _ in provider.stream_turn(
+                [NormalizedMessage(role="user", content="hi")],
+                [],
+                max_tokens=100,
+                temperature=0.0,
+            ):
+                pass
+        return str(err.value)
+
+    async def test_stdout_is_used_when_stderr_is_empty(self, monkeypatch) -> None:
+        message = await self._stream(
+            monkeypatch,
+            stdout=b"Failed to authenticate. API Error: 401 OAuth access token is invalid.\n",
+            stderr=b"",
+        )
+        assert "401" in message
+        assert "authenticate" in message
+
+    async def test_stderr_still_wins_when_present(self, monkeypatch) -> None:
+        message = await self._stream(
+            monkeypatch,
+            stdout=b"partial output before the crash",
+            stderr=b"segfault details",
+        )
+        assert "segfault details" in message
+        assert "partial output" not in message
 
 
 class TestMissingBinary:

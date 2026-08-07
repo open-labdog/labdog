@@ -67,9 +67,9 @@ NOT_FOUND_MESSAGE = (
     f"The {CLI_BINARY!r} CLI was not found on PATH for the LabDog service user. "
     "On a package install, install it system-wide (a per-user install under a "
     "home directory is not visible to the service). In a container, the "
-    "official image does not include it — extend the image, or use an "
-    "Anthropic provider instead, which needs no binary and can also run tools. "
-    "See docs/ui/assistant.md."
+    "official image does not include it — mount the binary in, extend the "
+    "image, or use an Anthropic provider instead, which needs no binary and "
+    "can also run tools. See docs/ui/assistant.md."
 )
 
 
@@ -189,8 +189,13 @@ class ClaudeCLIProvider:
             ) from None
 
         if proc.returncode != 0:
-            detail = stderr.decode(errors="replace").strip()[:500]
-            raise LLMProviderError(f"{CLI_BINARY} exited {proc.returncode}: {detail}")
+            # In -p mode the CLI prints errors — auth failures included — to
+            # stdout and leaves stderr empty, so stderr alone would surface
+            # "exited 1:" with nothing after the colon.
+            detail = (
+                stderr.decode(errors="replace").strip() or stdout.decode(errors="replace").strip()
+            )
+            raise LLMProviderError(f"{CLI_BINARY} exited {proc.returncode}: {detail[:500]}")
 
         text = stdout.decode(errors="replace").strip()
         if text:
