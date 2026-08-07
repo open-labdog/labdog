@@ -194,16 +194,42 @@ browser and the service user cannot log in:
 claude setup-token
 ```
 
-This opens a browser, authenticates against your subscription, and prints
-a token valid for one year. It is not saved anywhere — copy it.
+The exchange puts **three** different strings in front of you, and only
+the last one belongs in LabDog. They are easy to mix up, so in order:
 
-**3. Paste it into the provider's Subscription token field.** It is stored
-encrypted at rest exactly like an API key, never returned by the API, and
-injected only into the CLI process. Leaving the field blank falls back to
-whatever the host is already authenticated as.
+| # | What you see | What it is | Where it goes |
+|---|---|---|---|
+| 1 | `https://claude.com/cai/oauth/authorize?…` | The authorization **URL** | Open it in a browser |
+| 2 | `bfBNeAU0…#DQYiwPwb…` | The authorization **code** | Back into the waiting terminal |
+| 3 | `sk-ant-oat01-…` | The **token** | The provider form |
+
+So: `setup-token` prints the URL and waits. Open it, approve the request,
+and the callback page shows you a code — paste that back at the terminal
+prompt, exactly as shown, including the `#…` part (that segment is the
+`state` value, and the CLI checks it matches). The command then prints the
+token, which is the only one of the three LabDog ever sees.
+
+Two things that catch people out. **It must be the same terminal session**
+— the URL carries a `code_challenge` whose matching verifier exists only
+in the process that printed it, so a reopened terminal means starting
+over. And **the URL must be one unbroken line**; if your terminal wrapped
+it, the copied challenge will not match.
+
+**3. Paste the token into the provider's Subscription token field.** It
+starts `sk-ant-oat01-` — LabDog rejects anything that does not, because
+the alternative is storing a credential that is guaranteed to fail and
+only saying so at the first session. It is stored encrypted at rest
+exactly like an API key, never returned by the API, and injected only
+into the CLI process. Leaving the field blank falls back to whatever the
+host is already authenticated as.
+
+Then press **Test**. It runs the binary *and* makes one small
+authenticated call, so a green result means the token genuinely works —
+not merely that `claude` is installed.
 
 Renew once a year by running `claude setup-token` again and editing the
-provider.
+provider. Doing so also invalidates the previous token, which is the
+fastest way to retire one you think has leaked.
 
 #### Running LabDog in a container
 

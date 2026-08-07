@@ -433,13 +433,27 @@ export default function AIProvidersPage() {
                   {form.provider_type === "claude_cli" && (
                     <InfoPopover title="Subscription token">
                       Run <span className="font-mono">claude setup-token</span>{" "}
-                      on your own machine — it opens a browser, authenticates
-                      against your Claude subscription, and prints a token
-                      valid for a year. Paste it here rather than on the
-                      server: it is stored encrypted, like every other LabDog
-                      credential, and injected only into the CLI process.
-                      Leave blank to use whatever the host is already logged
-                      in as.
+                      on your own machine, not the server. It shows you three
+                      strings in turn, and only the last belongs here:
+                      <span className="mt-2 block">
+                        1. an <strong>authorize URL</strong> — open it in a
+                        browser
+                      </span>
+                      <span className="block">
+                        2. an <strong>authorization code</strong> — paste it
+                        back at the terminal prompt
+                      </span>
+                      <span className="block">
+                        3. the <strong>token</strong>, starting{" "}
+                        <span className="font-mono">sk-ant-oat01-</span> — that
+                        is this field
+                      </span>
+                      <span className="mt-2 block">
+                        It is stored encrypted, like every other LabDog
+                        credential, and injected only into the CLI process.
+                        Leave blank to use whatever the host is already logged
+                        in as.
+                      </span>
                     </InfoPopover>
                   )}
                 </div>
@@ -452,7 +466,7 @@ export default function AIProvidersPage() {
                     editing?.has_api_key
                       ? "Stored — leave blank to keep it"
                       : form.provider_type === "claude_cli"
-                        ? "From `claude setup-token` — blank uses the host's own login"
+                        ? "sk-ant-oat01-… from `claude setup-token` — blank uses the host's own login"
                         : form.provider_type === "anthropic"
                           ? "sk-ant-… from platform.claude.com (required)"
                           : "Leave blank for an unauthenticated local server"
