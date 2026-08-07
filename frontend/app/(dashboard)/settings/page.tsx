@@ -20,8 +20,33 @@ interface AppSetting {
   updated_at: string | null
 }
 
-// Group settings by category
+/**
+ * Curated grouping: gives a category a real label and a deliberate field
+ * order. It is *not* an allow-list — anything the API returns that no
+ * category claims is rendered below under its key prefix.
+ *
+ * That fallback matters. This map used to be the only way a setting could
+ * appear, so adding one to the backend left it unreachable until somebody
+ * remembered to list it here as well. Twelve of twenty settings had drifted
+ * out of the UI that way, including `ai.enabled` — which the AI subsystem
+ * tells operators to go and enable, in a page that never showed it.
+ */
 const CATEGORIES: Record<string, { label: string; keys: string[] }> = {
+  ai: {
+    label: "AI",
+    keys: [
+      "ai.enabled",
+      "ai.allow_cloud_providers",
+      "ai.currency",
+      "ai.budget_daily",
+      "ai.budget_monthly",
+      "ai.budget_warn_pct",
+      "ai.max_iterations",
+      "ai.max_commands",
+      "ai.max_tokens_total",
+      "ai.wall_clock_seconds",
+    ],
+  },
   drift: {
     label: "Drift Detection",
     keys: ["drift.check_interval_minutes"],
@@ -34,6 +59,14 @@ const CATEGORIES: Record<string, { label: string; keys: string[] }> = {
     label: "Ansible",
     keys: ["ansible.playbook_timeout"],
   },
+  actions: {
+    label: "Actions",
+    keys: ["actions.preflight_enabled"],
+  },
+  workflow: {
+    label: "Workflows",
+    keys: ["workflow.snapshot_max_age_hours"],
+  },
   discovery: {
     label: "Discovery",
     keys: ["discovery.scan_timeout", "discovery.max_concurrent"],
@@ -42,6 +75,24 @@ const CATEGORIES: Record<string, { label: string; keys: string[] }> = {
     label: "Logging",
     keys: ["logging.level", "logging.audit_retention_days"],
   },
+}
+
+const CATEGORISED_KEYS = new Set(
+  Object.values(CATEGORIES).flatMap((c) => c.keys)
+)
+
+/** Title-case a bare key prefix for an uncurated group heading. */
+function prefixLabel(prefix: string): string {
+  return prefix.charAt(0).toUpperCase() + prefix.slice(1).replace(/_/g, " ")
+}
+
+/**
+ * An int constrained to 0..1 is a boolean wearing a number's clothes.
+ * Rendering it as a spinner asks the operator to type `1` to turn a master
+ * switch on, and leaves them guessing which of 0 and 1 means on.
+ */
+function isToggle(s: AppSetting): boolean {
+  return s.value_type === "int" && s.min === 0 && s.max === 1
 }
 
 export default function SettingsPage() {
@@ -56,6 +107,15 @@ export default function SettingsPage() {
   })
 
   const settingsMap = new Map(settings?.map(s => [s.key, s]) ?? [])
+
+  // Everything the API returned that no category claims, grouped by key
+  // prefix so it still arrives under a heading rather than in a heap.
+  const uncategorised = (settings ?? []).filter(s => !CATEGORISED_KEYS.has(s.key))
+  const extraGroups = uncategorised.reduce<Record<string, string[]>>((acc, s) => {
+    const prefix = s.key.split(".")[0]
+    ;(acc[prefix] ??= []).push(s.key)
+    return acc
+  }, {})
 
   const handleSave = async (key: string) => {
     const value = editedValues[key]
@@ -88,7 +148,13 @@ export default function SettingsPage() {
     const currentValue = editedValues[setting.key] ?? setting.value
     const isEdited = setting.key in editedValues && editedValues[setting.key] !== setting.value
 
-    if (setting.choices) {
+    if (setting.choices || isToggle(setting)) {
+      const options = setting.choices
+        ? setting.choices.map(c => ({ value: c, label: c }))
+        : [
+            { value: "0", label: "Off" },
+            { value: "1", label: "On" },
+          ]
       return (
         <div className="flex items-center gap-2">
           <select
@@ -96,8 +162,8 @@ export default function SettingsPage() {
             value={currentValue}
             onChange={e => setEditedValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
           >
-            {setting.choices.map(c => (
-              <option key={c} value={c}>{c}</option>
+            {options.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
           {isEdited && (
@@ -132,6 +198,28 @@ export default function SettingsPage() {
     )
   }
 
+  const renderRow = (key: string) => {
+    const setting = settingsMap.get(key)
+    if (!setting) return null
+    return (
+      <div key={key} className="flex items-start justify-between gap-8">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white">{setting.description}</p>
+          <p className="text-xs text-slate-500 mt-0.5 font-mono">{setting.key}</p>
+          {setting.min != null && setting.max != null && !isToggle(setting) && (
+            <p className="text-xs text-slate-600 mt-0.5">
+              Range: {setting.min} &ndash; {setting.max} (default: {setting.default})
+            </p>
+          )}
+          {errors[key] && (
+            <p className="text-xs text-red-400 mt-1">{errors[key]}</p>
+          )}
+        </div>
+        <div className="flex-shrink-0">{renderInput(setting)}</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Breadcrumb items={[{ label: "Settings" }]} />
@@ -144,36 +232,25 @@ export default function SettingsPage() {
 
       {isLoading && <p className="text-slate-500">Loading settings...</p>}
 
-      {settings && Object.entries(CATEGORIES).map(([catKey, cat]) => (
-        <div key={catKey} className="rounded-lg border border-slate-700 bg-slate-900 p-5">
-          <h2 className="text-lg font-semibold text-white mb-4">{cat.label}</h2>
-          <div className="space-y-5">
-            {cat.keys.map(key => {
-              const setting = settingsMap.get(key)
-              if (!setting) return null
-              return (
-                <div key={key} className="flex items-start justify-between gap-8">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white">{setting.description}</p>
-                    <p className="text-xs text-slate-500 mt-0.5 font-mono">{setting.key}</p>
-                    {setting.min != null && setting.max != null && (
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Range: {setting.min} &ndash; {setting.max} (default: {setting.default})
-                      </p>
-                    )}
-                    {errors[key] && (
-                      <p className="text-xs text-red-400 mt-1">{errors[key]}</p>
-                    )}
-                  </div>
-                  <div className="flex-shrink-0">
-                    {renderInput(setting)}
-                  </div>
-                </div>
-              )
-            })}
+      {settings &&
+        Object.entries(CATEGORIES)
+          // A category whose keys the backend does not define would
+          // otherwise render as an empty titled card.
+          .filter(([, cat]) => cat.keys.some(k => settingsMap.has(k)))
+          .map(([catKey, cat]) => (
+            <div key={catKey} className="rounded-lg border border-slate-700 bg-slate-900 p-5">
+              <h2 className="text-lg font-semibold text-white mb-4">{cat.label}</h2>
+              <div className="space-y-5">{cat.keys.map(renderRow)}</div>
+            </div>
+          ))}
+
+      {settings &&
+        Object.entries(extraGroups).map(([prefix, keys]) => (
+          <div key={prefix} className="rounded-lg border border-slate-700 bg-slate-900 p-5">
+            <h2 className="text-lg font-semibold text-white mb-4">{prefixLabel(prefix)}</h2>
+            <div className="space-y-5">{keys.map(renderRow)}</div>
           </div>
-        </div>
-      ))}
+        ))}
     </div>
   )
 }
