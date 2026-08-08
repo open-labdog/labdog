@@ -990,7 +990,11 @@ export interface ModuleDiff {
 
 // --- AI ---------------------------------------------------------------
 
-export type AIProviderType = "openai_compat" | "anthropic" | "claude_cli"
+export type AIProviderType =
+  | "openai_compat"
+  | "anthropic"
+  | "claude_cli"
+  | "claude_agent"
 export type AIAutonomyLevel = "read_only" | "approval" | "full_auto"
 export type AISessionStatus =
   | "queued"
@@ -1012,6 +1016,13 @@ export interface AIProvider {
   max_tokens: number
   temperature: number
   is_default: boolean
+  /**
+   * True when this backend can execute tool calls. A backend that cannot
+   * has no way to look anything up, so it cannot drive an investigation.
+   * Comes from the server so the UI never has to guess it from
+   * provider_type.
+   */
+  supports_tools: boolean
   /** True when using this provider transmits host data off the network. */
   sends_data_offsite: boolean
   input_cost_per_mtok: number

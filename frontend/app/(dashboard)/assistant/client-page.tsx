@@ -199,12 +199,16 @@ export default function AssistantPage() {
   const enabled = (providers ?? []).filter((p) => p.enabled)
   const hasProvider = enabled.length > 0
 
-  // A single-shot backend cannot run tools, so it cannot investigate; the
-  // API refuses such a session outright. Offering it here would only sell
-  // the operator a guaranteed failure, so it is listed as unavailable
-  // instead of being selectable.
-  const usable = enabled.filter((p) => p.provider_type !== "claude_cli")
-  const toolless = enabled.filter((p) => p.provider_type === "claude_cli")
+  // A backend that cannot run tools cannot investigate; the API refuses
+  // such a session outright. Offering it here would only sell the operator
+  // a guaranteed failure, so it is listed as unavailable instead of being
+  // selectable.
+  //
+  // Read from the server's own capability flag rather than matched against
+  // a provider_type: the backend decides what can run tools, and a list of
+  // type names here would be a second copy of that answer to keep in step.
+  const usable = enabled.filter((p) => p.supports_tools)
+  const toolless = enabled.filter((p) => !p.supports_tools)
   const canInvestigate = usable.length > 0
 
   const defaultProvider = usable.find((p) => p.is_default)

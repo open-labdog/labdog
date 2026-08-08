@@ -40,27 +40,44 @@ import type { AIProvider, AIProviderTestResult, AIProviderType } from "@/lib/typ
 const TYPE_LABEL: Record<AIProviderType, string> = {
   openai_compat: "OpenAI-compatible",
   anthropic: "Anthropic",
-  claude_cli: "Claude CLI",
+  claude_agent: "Claude Code (agentic)",
+  claude_cli: "Claude Code (single-shot)",
 }
 
 const TYPE_HELP: Record<AIProviderType, string> = {
   openai_compat:
     "Any server speaking the OpenAI chat-completions API — Ollama, vLLM, LM Studio, OpenRouter, or OpenAI itself.",
   anthropic: "The Anthropic Messages API. Leave the base URL blank for the public API.",
+  claude_agent:
+    "Claude Code driven through the Claude Agent SDK. Runs tools, so it can drive assistant sessions and scheduled checks — billed against your Claude subscription rather than per token. Bundled in the LabDog container image.",
   claude_cli:
-    "The Claude Code CLI. Bundled in the LabDog container image; on a package install you install it yourself. Authenticates with your Claude subscription rather than metered API billing.",
+    "Claude Code called once per prompt. Cannot run tools. Kept for AI verify steps and written reports; for anything that has to look something up, pick the agentic option above.",
+}
+
+/**
+ * Backends that drive Claude Code rather than an HTTP API.
+ *
+ * Both authenticate with a subscription token from `claude setup-token`,
+ * neither has a base URL, and neither is billed per token — so the form
+ * treats them alike everywhere except capability.
+ */
+const CLAUDE_CODE_TYPES = new Set<AIProviderType>(["claude_cli", "claude_agent"])
+
+function isClaudeCode(type: AIProviderType): boolean {
+  return CLAUDE_CODE_TYPES.has(type)
 }
 
 /**
  * A suggested name per type.
  *
- * A single placeholder cannot serve all three: "ollama-local" suggested on a
- * Claude CLI provider is exactly the kind of leftover that makes a form look
- * like it was not built for the option you picked.
+ * A single placeholder cannot serve all of them: "ollama-local" suggested on
+ * a Claude Code provider is exactly the kind of leftover that makes a form
+ * look like it was not built for the option you picked.
  */
 const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
   openai_compat: "ollama-local",
   anthropic: "claude-api",
+  claude_agent: "claude-subscription",
   claude_cli: "claude-cli",
 }
 
@@ -75,7 +92,11 @@ const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
  * hosted endpoint the refusal names the setting, and the provider list
  * flags it as off-network.
  */
-const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>(["anthropic", "claude_cli"])
+const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>([
+  "anthropic",
+  "claude_cli",
+  "claude_agent",
+])
 
 /**
  * What the Pricing column says.
@@ -90,7 +111,7 @@ const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>(["anthropic", "claude_cli"]
  * which the row already tells us — genuinely costs nothing per token.
  */
 function pricingLabel(provider: AIProvider, currency: string): string {
-  if (provider.provider_type === "claude_cli") return "subscription"
+  if (isClaudeCode(provider.provider_type)) return "subscription"
   const { input_cost_per_mtok: input, output_cost_per_mtok: output } = provider
   if (input === 0 && output === 0) {
     return provider.sends_data_offsite ? "rates not set" : "free"
@@ -107,7 +128,7 @@ function pricingLabel(provider: AIProvider, currency: string): string {
  */
 const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
   claude_cli:
-    "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
+    "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports. For subscription billing that can also investigate, pick Claude Code (agentic) instead.",
 }
 
 /**
@@ -120,6 +141,7 @@ const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
 const BASE_URL_DEFAULT: Record<AIProviderType, string> = {
   openai_compat: "http://localhost:11434/v1",
   anthropic: "",
+  claude_agent: "",
   claude_cli: "",
 }
 
@@ -354,7 +376,7 @@ export default function AIProvidersPage() {
                 )}
               </div>
 
-              {form.provider_type !== "claude_cli" && (
+              {!isClaudeCode(form.provider_type) && (
                 <div>
                   <div className="flex items-center gap-1.5">
                     <Label htmlFor="base_url">
@@ -401,8 +423,8 @@ export default function AIProvidersPage() {
                   placeholder={
                     form.provider_type === "anthropic"
                       ? "claude-opus-5"
-                      : form.provider_type === "claude_cli"
-                        ? "Blank — uses the CLI's own default model"
+                      : isClaudeCode(form.provider_type)
+                        ? "Blank — uses Claude Code's own default model"
                         : "llama3.1:8b"
                   }
                 />
@@ -431,7 +453,7 @@ export default function AIProvidersPage() {
               <div>
                 <div className="flex items-center gap-1.5">
                   <Label htmlFor="api_key">
-                    {form.provider_type === "claude_cli"
+                    {isClaudeCode(form.provider_type)
                       ? "Subscription token"
                       : "API key"}
                     {form.provider_type === "anthropic" && (
@@ -451,7 +473,7 @@ export default function AIProvidersPage() {
                       provider type.
                     </InfoPopover>
                   )}
-                  {form.provider_type === "claude_cli" && (
+                  {isClaudeCode(form.provider_type) && (
                     <InfoPopover title="Subscription token">
                       Run <span className="font-mono">claude setup-token</span>{" "}
                       on your own machine, not the server. It shows you three
@@ -486,47 +508,49 @@ export default function AIProvidersPage() {
                   placeholder={
                     editing?.has_api_key
                       ? "Stored — leave blank to keep it"
-                      : form.provider_type === "claude_cli"
+                      : isClaudeCode(form.provider_type)
                         ? "sk-ant-oat01-… from `claude setup-token` — blank uses the host's own login"
                         : form.provider_type === "anthropic"
                           ? "sk-ant-… from platform.claude.com (required)"
                           : "Leave blank for an unauthenticated local server"
                   }
                 />
-                {form.provider_type === "claude_cli" && (
+                {isClaudeCode(form.provider_type) && (
                   <p className="mt-1 text-xs text-slate-400">
                     Billed to your Claude subscription rather than API credits.
-                    Two things outrank this token in the CLI&apos;s own
+                    Two things outrank this token in Claude Code&apos;s own
                     credential order, and both would quietly authenticate as a
                     different account: the{" "}
                     <span className="font-mono">ANTHROPIC_API_KEY</span> and{" "}
                     <span className="font-mono">ANTHROPIC_AUTH_TOKEN</span>{" "}
                     environment variables, and a login left on disk by{" "}
                     <span className="font-mono">claude login</span>. When a
-                    token is set LabDog removes both variables and points the
-                    CLI at its own config directory, so neither can shadow what
-                    you enter here.
+                    token is set LabDog neutralises both variables and points
+                    Claude Code at its own config directory, so neither can
+                    shadow what you enter here.
                   </p>
                 )}
               </div>
 
               {/*
-                Every field below is inert for the CLI backend, and one of
-                them is actively misleading: the CLI reports no token usage,
-                so recorded spend is always zero and a Monthly cap can never
-                fire. An operator who set one would believe they were capped
-                when they were not. The CLI also has no max-tokens flag, so
-                that field does nothing either. Hidden rather than disabled —
-                a greyed-out budget still reads as a budget.
+                Every field below is inert on a subscription, and a Monthly
+                cap is actively misleading there: it can never fire, so an
+                operator who set one would believe they were capped when they
+                were not. Hidden rather than disabled — a greyed-out budget
+                still reads as a budget.
+
+                The two backends reach that state differently. The single-shot
+                CLI reports no usage at all, so recorded spend stays zero. The
+                agentic backend does report tokens, so the token and iteration
+                caps work normally — but the money is still flat-rate, so a
+                USD figure would be fiction either way.
               */}
-              {form.provider_type === "claude_cli" ? (
+              {isClaudeCode(form.provider_type) ? (
                 <p className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-                  Cost and token settings do not apply to this backend. A
-                  subscription is billed flat rather than per token, and the CLI
-                  reports no usage, so LabDog cannot track spend for it — the
-                  money budgets under Settings will not act on it either. The
-                  per-session iteration, command, and wall-clock caps still
-                  apply.
+                  Cost settings do not apply to a subscription: it is billed
+                  flat rather than per token, so the money budgets under
+                  Settings will not act on this provider. The per-session
+                  iteration, command, and wall-clock caps still apply.
                 </p>
               ) : (
               <>
