@@ -101,6 +101,17 @@ AUTONOMY_NOTES = {
 }
 
 
+#: Session modes whose whole purpose is to find something out, and which
+#: are therefore worthless — worse than worthless, since the output reads
+#: as fact — on a backend that cannot run a single tool.
+#:
+#: ``verify`` is deliberately absent: a verify step is handed the evidence
+#: in its prompt and returns a verdict on it, so it has nothing to look up
+#: and a single-shot backend serves it fine. That is the case the CLI
+#: backend exists for.
+INVESTIGATIVE_MODES = frozenset({"chat", "scheduled", "alert_investigation"})
+
+
 @dataclass
 class LoopCaps:
     max_iterations: int = 15
@@ -330,6 +341,26 @@ class AgentLoop:
     async def run(self) -> LoopOutcome:
         """Iterate until the model is done or a cap stops it."""
         session = self.session
+
+        # Withholding the tools from a backend that cannot use them is not
+        # the same as refusing the work. The system prompt still tells the
+        # model to start with list_hosts and to base every claim on a tool
+        # result; handed no tools, it answers from imagination and the run
+        # is recorded as a success. Refuse instead — the API blocks this at
+        # creation, and this covers the paths that do not go through it,
+        # such as scheduled runs.
+        if session.mode in INVESTIGATIVE_MODES and not self.provider.supports_tools:
+            message = (
+                f"This session needs tools to verify anything, and the "
+                f"{self.provider.provider_type!r} backend cannot run them. "
+                f"Nothing was run; no findings are available."
+            )
+            session.status = "failed"
+            session.error_message = message
+            await self.db.commit()
+            await self._emit("status", {"status": "failed", "error": message})
+            return LoopOutcome("failed", "", 0, message)
+
         session.status = "running"
         session.started_at = session.started_at or datetime.now(UTC)
         # Commit rather than flush: holding the row lock for the whole run

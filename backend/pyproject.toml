@@ -31,13 +31,16 @@ dependencies = [
     "cryptography>=50",
     "fastapi-users[sqlalchemy]>=15",
     "slowapi>=0.1.9",
-    # gitpython>=3.1.57 clears the path-traversal / RCE / command-injection
-    # / env-exfiltration advisories fixed across 3.1.49–3.1.57, incl. the
+    # gitpython>=3.1.58 clears the path-traversal / RCE / command-injection
+    # / env-exfiltration advisories fixed across 3.1.49–3.1.58, incl. the
     # 3.1.53/3.1.54/3.1.55 batch GHSA-3rp5-jjmw-4wv2, GHSA-fjr4-x663-mwxc,
     # GHSA-6p8h-3wgx-97gf, GHSA-r9mr-m37c-5fr3, GHSA-94p4-4cq8-9g67 (env-var
-    # exfiltration) and GHSA-3f7w-8rr8-f37f in 3.1.57 — flagged HIGH by
-    # pip-audit + trivy.
-    "gitpython>=3.1.57",
+    # exfiltration), GHSA-3f7w-8rr8-f37f in 3.1.57, and the five-advisory
+    # 3.1.58 batch GHSA-9rj7-rf2p-w77r, GHSA-4gmw-gg2m-w46p,
+    # GHSA-hh9p-6wh2-4mfc, GHSA-wvpp-8hx9-p66j, GHSA-jm78-9fvv-mhgr —
+    # unguarded option forwarding in IndexFile.from_tree/reset/merge_tree,
+    # which allows arbitrary file writes. Flagged HIGH by pip-audit + trivy.
+    "gitpython>=3.1.58",
     # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
     # traversal; LabDog is a client, so not directly exposed, but kept current).
     "asyncssh>=2.23.1",

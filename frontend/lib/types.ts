@@ -1012,7 +1012,6 @@ export interface AIProvider {
   max_tokens: number
   temperature: number
   is_default: boolean
-  allow_cloud_egress: boolean
   /** True when using this provider transmits host data off the network. */
   sends_data_offsite: boolean
   input_cost_per_mtok: number

@@ -86,13 +86,28 @@ class TestEgressPolicy:
         provider = await service.resolve_provider(db, paid_provider.id)
         assert provider.id == paid_provider.id
 
-    async def test_provider_flag_alone_is_not_enough(self, db, paid_provider):
-        """Both the global policy and the per-provider flag must agree."""
+    async def test_global_policy_alone_decides(self, db, paid_provider):
+        """The global setting is the only egress gate.
+
+        There used to be a per-provider `allow_cloud_egress` flag as well,
+        and both had to agree. It was dropped in 0019: the same operator set
+        both in the same sitting, and the second gate only ever announced
+        itself as a refusal at session time, long after the box was ticked.
+        """
         await _set(db, "ai.enabled", "1")
         await _set(db, "ai.allow_cloud_providers", "0")
-        assert paid_provider.allow_cloud_egress is True
         with pytest.raises(AIDisabledError):
             await service.resolve_provider(db, paid_provider.id)
+
+    async def test_the_refusal_names_the_setting_to_change(self, db, paid_provider):
+        """A refusal that does not say which switch to flip is what sent an
+        operator hunting through the UI for a per-provider checkbox that no
+        longer exists."""
+        await _set(db, "ai.enabled", "1")
+        await _set(db, "ai.allow_cloud_providers", "0")
+        with pytest.raises(AIDisabledError) as err:
+            await service.resolve_provider(db, paid_provider.id)
+        assert "ai.allow_cloud_providers" in str(err.value)
 
     async def test_local_provider_is_unaffected(self, db, ai_provider):
         await _set(db, "ai.enabled", "1")

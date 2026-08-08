@@ -47,7 +47,6 @@ class AIProviderCreate(BaseModel):
     max_tokens: int = Field(default=8192, ge=256, le=200_000)
     temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     is_default: bool = False
-    allow_cloud_egress: bool = False
     input_cost_per_mtok: float = Field(default=0.0, ge=0.0)
     output_cost_per_mtok: float = Field(default=0.0, ge=0.0)
     monthly_budget: float = Field(default=0.0, ge=0.0)
@@ -78,7 +77,6 @@ class AIProviderUpdate(BaseModel):
     max_tokens: int | None = Field(default=None, ge=256, le=200_000)
     temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     is_default: bool | None = None
-    allow_cloud_egress: bool | None = None
     input_cost_per_mtok: float | None = Field(default=None, ge=0.0)
     output_cost_per_mtok: float | None = Field(default=None, ge=0.0)
     monthly_budget: float | None = Field(default=None, ge=0.0)
@@ -113,7 +111,6 @@ class AIProviderResponse(BaseModel):
     max_tokens: int
     temperature: float
     is_default: bool
-    allow_cloud_egress: bool
     sends_data_offsite: bool
     input_cost_per_mtok: float
     output_cost_per_mtok: float
@@ -142,7 +139,6 @@ def provider_to_response(provider: AIProvider) -> AIProviderResponse:
         max_tokens=provider.max_tokens,
         temperature=provider.temperature,
         is_default=provider.is_default,
-        allow_cloud_egress=provider.allow_cloud_egress,
         sends_data_offsite=sends_data_offsite(provider),
         input_cost_per_mtok=provider.input_cost_per_mtok,
         output_cost_per_mtok=provider.output_cost_per_mtok,

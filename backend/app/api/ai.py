@@ -63,6 +63,37 @@ async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
     await db.execute(stmt)
 
 
+#: What `claude setup-token` emits. Checked at save time because the field
+#: sits next to several other credential fields in the UI and accepts any
+#: string: pasting the wrong secret stores something guaranteed to 401, and
+#: without this the first sign of it is a failed session.
+#:
+#: Kept to a prefix test rather than a full format match — if Anthropic
+#: lengthens or re-shapes the token this still passes, and it only has to
+#: catch the case of a credential that plainly is not one of these.
+SUBSCRIPTION_TOKEN_PREFIX = "sk-ant-oat"  # nosec B105 - prefix, not a secret
+
+
+def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
+    """Reject a CLI subscription token that is obviously not one.
+
+    A blank value is fine and means "use whatever the host is logged in as".
+    """
+    if provider_type != "claude_cli" or not api_key:
+        return
+    if api_key.startswith(SUBSCRIPTION_TOKEN_PREFIX):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"That does not look like a Claude subscription token — they begin "
+            f"with {SUBSCRIPTION_TOKEN_PREFIX!r}. Run 'claude setup-token' on "
+            f"your own machine and paste the value it prints. An Anthropic API "
+            f"key will not work here; use an Anthropic provider for that."
+        ),
+    )
+
+
 @router.get("/providers", response_model=list[AIProviderResponse])
 async def list_providers(
     _: User = Depends(current_active_user),
@@ -88,6 +119,20 @@ async def create_provider(
             detail="An OpenAI-compatible provider needs a base URL, e.g. http://localhost:11434/v1",
         )
 
+    # The Anthropic API always authenticates, so a keyless provider is
+    # guaranteed to fail — and it fails at first use, as a 401 from inside a
+    # session, rather than here where the operator can see the cause.
+    if payload.provider_type == "anthropic" and not payload.api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "An Anthropic provider needs an API key. Create one in the "
+                "Claude Console at platform.claude.com under API keys."
+            ),
+        )
+
+    _check_subscription_token(payload.provider_type, payload.api_key)
+
     provider = AIProvider(
         name=payload.name,
         provider_type=payload.provider_type,
@@ -98,7 +143,6 @@ async def create_provider(
         max_tokens=payload.max_tokens,
         temperature=payload.temperature,
         is_default=payload.is_default,
-        allow_cloud_egress=payload.allow_cloud_egress,
         input_cost_per_mtok=payload.input_cost_per_mtok,
         output_cost_per_mtok=payload.output_cost_per_mtok,
         monthly_budget=payload.monthly_budget,
@@ -146,6 +190,14 @@ async def update_provider(
     for field, value in data.items():
         if value is not None:
             setattr(provider, field, value)
+
+    if api_key == "" and provider.provider_type == "anthropic":
+        raise HTTPException(
+            status_code=400,
+            detail="An Anthropic provider needs an API key; it cannot be cleared.",
+        )
+
+    _check_subscription_token(provider.provider_type, api_key)
 
     # Tri-state: absent keeps, "" clears, a value replaces.
     if api_key is not None:
@@ -239,6 +291,9 @@ async def create_session(
     """Create a chat session and dispatch it to a worker."""
     try:
         provider = await service.resolve_provider(db, payload.provider_id)
+        # A chat session is an investigation by definition, so a backend
+        # with no tools cannot serve one — it would answer from imagination.
+        service.assert_can_investigate(provider)
         await service.assert_within_budget(db, provider)
     except AIDisabledError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

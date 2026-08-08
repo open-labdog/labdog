@@ -82,6 +82,28 @@ def sends_data_offsite(provider: AIProvider) -> bool:
     return not is_local_endpoint(provider.base_url)
 
 
+#: Backend class per stored ``provider_type``. Keeps capability questions
+#: answerable without decrypting a credential just to read a class
+#: attribute, and keeps the classes the single source of truth for them.
+_PROVIDER_CLASSES: dict[str, type] = {
+    "openai_compat": OpenAICompatProvider,
+    "anthropic": AnthropicProvider,
+    "claude_cli": ClaudeCLIProvider,
+}
+
+
+def supports_tools(provider: AIProvider) -> bool:
+    """Whether this backend can execute tool calls.
+
+    A backend that cannot is unusable for investigation: it has no way to
+    look anything up, so anything it says about a host is invention. An
+    unknown type is treated as incapable, which fails toward refusing a
+    session rather than running one whose output cannot be trusted.
+    """
+    cls = _PROVIDER_CLASSES.get(provider.provider_type)
+    return bool(cls is not None and getattr(cls, "supports_tools", False))
+
+
 def build_provider(provider: AIProvider) -> LLMProvider:
     """Instantiate the backend described by a stored provider row."""
     api_key = decrypt_api_key(provider)
@@ -110,6 +132,11 @@ def build_provider(provider: AIProvider) -> LLMProvider:
         )
 
     if provider.provider_type == "claude_cli":
-        return ClaudeCLIProvider(model=provider.model or None)
+        # The encrypted secret column carries a subscription OAuth token here
+        # (from `claude setup-token`) rather than an API key, so it reuses the
+        # same AES-256-GCM storage, redaction, and key rotation as every other
+        # LabDog credential. Blank means "use whatever the host is already
+        # authenticated with".
+        return ClaudeCLIProvider(model=provider.model or None, oauth_token=api_key)
 
     raise LLMProviderError(f"Unknown provider type {provider.provider_type!r}")
