@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.ai.models import AIProvider, AISession
 from app.proxmox.schemas import _ca_cert_fingerprint, _validate_ca_cert_pem
 
-ProviderType = Literal["openai_compat", "anthropic", "claude_cli"]
+ProviderType = Literal["openai_compat", "anthropic", "claude_cli", "claude_agent"]
 AutonomyLevel = Literal["read_only", "approval", "full_auto"]
 SessionMode = Literal["chat", "scheduled", "verify", "alert_investigation"]
 

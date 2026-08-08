@@ -73,13 +73,18 @@ async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
 #: catch the case of a credential that plainly is not one of these.
 SUBSCRIPTION_TOKEN_PREFIX = "sk-ant-oat"  # nosec B105 - prefix, not a secret
 
+#: Backends whose credential is a Claude subscription token from
+#: ``claude setup-token``, not an API key. Both drive Claude Code, so both
+#: reject an API key pasted into the same field.
+SUBSCRIPTION_PROVIDER_TYPES = frozenset({"claude_cli", "claude_agent"})
+
 
 def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
-    """Reject a CLI subscription token that is obviously not one.
+    """Reject a subscription token that is obviously not one.
 
     A blank value is fine and means "use whatever the host is logged in as".
     """
-    if provider_type != "claude_cli" or not api_key:
+    if provider_type not in SUBSCRIPTION_PROVIDER_TYPES or not api_key:
         return
     if api_key.startswith(SUBSCRIPTION_TOKEN_PREFIX):
         return

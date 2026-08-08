@@ -236,15 +236,20 @@ fastest way to retire one you think has leaked.
 The official image bundles the `claude` binary, so there is nothing to
 install. Paste your token into the provider form and it works.
 
-The image is correspondingly larger — the CLI is about 123 MB on disk,
-against roughly 130 MB compressed for the rest of LabDog, so expect the
-pull to be a little over half again as big as it used to be. That is the
-cost of the CLI backend being available without an image of your own.
+The image is correspondingly larger — the binary is around 130 MB on
+disk, against roughly the same again for the rest of LabDog, so expect
+the pull to be about twice what it was before Claude Code was included.
+That is the cost of the Claude Code backends working without an image of
+your own.
 
-The binary is installed from Anthropic's apt repository during the build,
-so its signature is verified by the repository key, and it is refreshed on
-every image build rather than pinned — a stale copy of a network-facing
-binary is a liability with no upside.
+The binary arrives as part of the Claude Agent SDK, the Python package
+that drives the **Claude Code (agentic)** backend. The SDK ships a copy of
+Claude Code built against the version it expects and prefers it over
+anything on `PATH`, so the two are always in step. Its version is pinned
+transitively by `uv.lock`, which means a Claude Code upgrade is a
+dependency bump you can see in a diff rather than whatever happened to be
+current on build day. The single-shot **Claude Code CLI** backend uses the
+same binary through a symlink, so the image carries one copy, not two.
 
 Two things follow from LabDog owning the process:
 

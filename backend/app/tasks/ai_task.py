@@ -3,7 +3,8 @@
 Runs on the ``long_running`` queue: a session with a 900s wall-clock cap
 plus provider latency comfortably exceeds the default task time limit.
 
-Three entry points, all driving the same :class:`AgentLoop`:
+Three entry points, all driving whichever runner the provider calls for —
+see :func:`build_runner`:
 
 * ``run_chat_session`` — an ad-hoc session from the assistant page.
 * ``run_builtin_ai_task`` — one host, dispatched by the action
@@ -24,7 +25,8 @@ import asyncio
 import logging
 
 from app.ai.loop import AgentLoop, LoopCaps, redis_publisher
-from app.ai.models import AISession
+from app.ai.models import AIProvider, AISession
+from app.ai.providers.factory import runs_on_agent_sdk
 from app.ai.service import (
     AIDisabledError,
     BudgetExceededError,
@@ -38,6 +40,32 @@ from app.tasks import celery_app
 logger = logging.getLogger(__name__)
 
 SESSION_CHANNEL = "ai.session.{id}"
+
+
+def build_runner(db, session: AISession, provider_row: AIProvider, caps: LoopCaps, publish):
+    """Pick the runner this provider needs.
+
+    Both drive the session to a :class:`~app.ai.loop.LoopOutcome` and
+    write the same rows, so callers do not care which they get. They
+    differ in who owns the agent loop: ``AgentLoop`` calls an HTTP
+    provider one turn at a time, while ``AgentSDKRunner`` hands the loop
+    to Claude Code — the only way to authenticate a subscription.
+
+    The import is deferred because the Agent SDK is an optional extra;
+    a package install without it must still be able to run the HTTP
+    backends.
+    """
+    if not runs_on_agent_sdk(provider_row):
+        return AgentLoop(db, session, provider_row, caps, publish=publish)
+
+    from app.ai.agent_sdk import UNAVAILABLE_MESSAGE, sdk_available
+
+    if not sdk_available():
+        raise AIDisabledError(UNAVAILABLE_MESSAGE)
+
+    from app.ai.agent_sdk.runner import AgentSDKRunner
+
+    return AgentSDKRunner(db, session, provider_row, caps, publish=publish)
 
 
 def _redis_client():
@@ -75,7 +103,7 @@ async def _run_session_async(session_id: int) -> dict:
             return {"session_id": session_id, "status": "failed", "error": str(exc)}
 
         caps = await LoopCaps.from_settings(db)
-        loop = AgentLoop(db, session, provider_row, caps, publish=publish)
+        loop = build_runner(db, session, provider_row, caps, publish)
 
         try:
             outcome = await loop.run()
@@ -204,7 +232,7 @@ async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool
             return False, str(exc)
 
         caps = await LoopCaps.from_settings(db)
-        loop = AgentLoop(db, session, provider_row, caps, publish=publish)
+        loop = build_runner(db, session, provider_row, caps, publish)
         try:
             outcome = await loop.run()
             await db.commit()
