@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import shutil
 from collections.abc import AsyncIterator
 
@@ -44,6 +45,76 @@ logger = logging.getLogger(__name__)
 CLI_BINARY = "claude"
 DEFAULT_TIMEOUT_SECONDS = 300
 
+#: Env var the CLI reads a subscription OAuth token from, as minted by
+#: ``claude setup-token``. This is the variable's *name*, not a token —
+#: bandit's B105 matches on the identifier ending in _TOKEN and cannot tell
+#: the difference.
+OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"  # nosec B105 - env var name, not a secret
+
+#: Credentials that outrank ``CLAUDE_CODE_OAUTH_TOKEN`` in the CLI's own
+#: precedence order. If either is present in the environment the CLI bills
+#: the API account instead of the subscription — silently, with no error
+#: and no output difference. An operator who configured a subscription
+#: token asked for subscription billing, so we remove these from the child
+#: environment rather than let an unrelated variable override the intent.
+OVERRIDING_CREDENTIAL_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+#: The environment is only half of the precedence problem. A credentials
+#: file left by an interactive ``claude login`` *also* outranks
+#: ``CLAUDE_CODE_OAUTH_TOKEN`` — verified against claude 2.1.220, where a
+#: stored login wins and the configured token is ignored with no warning
+#: and no difference in the output. So when a token is configured LabDog
+#: also points the CLI at a directory LabDog owns, where no interactive
+#: session can leave a login behind to shadow it.
+#:
+#: ``/var/lib/labdog`` is already LabDog's state root — listed in the
+#: systemd unit's ``ReadWritePaths`` and the documented persistent-volume
+#: mount for container deploys — so the CLI's state travels with the rest
+#: of it and needs no extra configuration on either deployment shape.
+CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR"
+DEFAULT_CONFIG_DIR = "/var/lib/labdog/claude-cli"
+
+#: Raised when the binary is absent. Names both deployment shapes because
+#: the cause differs entirely between them: on a package install the
+#: operator supplies the binary, whereas the official container image
+#: bundles it — so a container hitting this is on a custom image or one
+#: built before the CLI was added, which is a different fix.
+NOT_FOUND_MESSAGE = (
+    f"The {CLI_BINARY!r} CLI was not found on PATH for the LabDog service user. "
+    "On a package install, install it system-wide (a per-user install under a "
+    "home directory is not visible to the service). In a container, the official "
+    "image bundles it, so check whether you are on a custom image or one built "
+    "before it was added. Either way, an Anthropic provider needs no binary and "
+    "can also run tools. See docs/ui/assistant.md."
+)
+
+
+def build_cli_env(
+    oauth_token: str | None,
+    base: dict[str, str] | None = None,
+    config_dir: str = DEFAULT_CONFIG_DIR,
+) -> dict[str, str]:
+    """The environment for a ``claude`` subprocess.
+
+    With a token: inject it, drop the two variables that would silently
+    take precedence over it, and isolate the config directory so a stored
+    login cannot do the same thing from disk.
+
+    Without one: pass the environment through untouched. That case is an
+    operator who authenticated the CLI on the host and wants LabDog to use
+    it, so neither the credential variables nor the config directory may be
+    disturbed — isolating the config directory here would break exactly the
+    setup it is meant to serve.
+    """
+    env = dict(os.environ if base is None else base)
+    if not oauth_token:
+        return env
+    env[OAUTH_TOKEN_ENV] = oauth_token
+    env[CONFIG_DIR_ENV] = config_dir
+    for name in OVERRIDING_CREDENTIAL_ENV:
+        env.pop(name, None)
+    return env
+
 
 class ClaudeCLIProvider:
     """Single-shot Claude Code CLI backend.
@@ -60,9 +131,41 @@ class ClaudeCLIProvider:
         self,
         model: str | None = None,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        oauth_token: str | None = None,
+        config_dir: str = DEFAULT_CONFIG_DIR,
     ) -> None:
         self.model = model
         self.timeout_seconds = timeout_seconds
+        # A one-year subscription token from ``claude setup-token``, stored
+        # encrypted like every other LabDog credential. None means "use
+        # whatever the host is already authenticated with".
+        self.oauth_token = oauth_token
+        self.config_dir = config_dir
+
+    @property
+    def env(self) -> dict[str, str]:
+        return build_cli_env(self.oauth_token, config_dir=self.config_dir)
+
+    def _ensure_config_dir(self) -> None:
+        """Create the isolated config directory, best effort.
+
+        Only relevant when a token is configured — that is the only case
+        where the directory is used at all. The CLI runs fine without it
+        (a missing directory just means no persisted state), so a failure
+        here must not stop a session from starting; it is logged and left
+        alone.
+        """
+        if not self.oauth_token:
+            return
+        try:
+            os.makedirs(self.config_dir, exist_ok=True)
+        except OSError as exc:
+            logger.warning(
+                "Could not create the Claude CLI config directory %s (%s); "
+                "the CLI will run without persisted state.",
+                self.config_dir,
+                exc,
+            )
 
     def _argv(self, prompt: str) -> list[str]:
         argv = [CLI_BINARY, "-p", prompt]
@@ -109,6 +212,7 @@ class ClaudeCLIProvider:
             )
 
         prompt = self._flatten(messages)
+        self._ensure_config_dir()
         try:
             # exec, never shell: the prompt is model- and operator-supplied
             # text and must never reach a shell interpreter.
@@ -116,11 +220,10 @@ class ClaudeCLIProvider:
                 *self._argv(prompt),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self.env,
             )
         except FileNotFoundError as exc:
-            raise LLMProviderError(
-                f"The {CLI_BINARY!r} CLI is not installed on the LabDog host"
-            ) from exc
+            raise LLMProviderError(NOT_FOUND_MESSAGE) from exc
 
         try:
             stdout, stderr = await asyncio.wait_for(
@@ -134,8 +237,13 @@ class ClaudeCLIProvider:
             ) from None
 
         if proc.returncode != 0:
-            detail = stderr.decode(errors="replace").strip()[:500]
-            raise LLMProviderError(f"{CLI_BINARY} exited {proc.returncode}: {detail}")
+            # In -p mode the CLI prints errors — auth failures included — to
+            # stdout and leaves stderr empty, so stderr alone would surface
+            # "exited 1:" with nothing after the colon.
+            detail = (
+                stderr.decode(errors="replace").strip() or stdout.decode(errors="replace").strip()
+            )
+            raise LLMProviderError(f"{CLI_BINARY} exited {proc.returncode}: {detail[:500]}")
 
         text = stdout.decode(errors="replace").strip()
         if text:
@@ -144,26 +252,58 @@ class ClaudeCLIProvider:
         yield Usage(prompt_tokens=0, completion_tokens=0, unknown=True)
         yield TurnEnd(stop_reason="end_turn")
 
-    async def test_connection(self) -> str:
-        path = shutil.which(CLI_BINARY)
-        if not path:
-            raise LLMProviderError(
-                f"The {CLI_BINARY!r} CLI is not on PATH for the LabDog service user"
-            )
+    async def _run(self, argv: list[str], timeout: int) -> tuple[int, str, str]:
+        """Run the CLI once, returning (returncode, stdout, stderr)."""
         try:
             proc = await asyncio.create_subprocess_exec(
-                CLI_BINARY,
-                "--version",
+                *argv,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=self.env,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
-        except (FileNotFoundError, TimeoutError) as exc:
-            raise LLMProviderError(f"Could not run {CLI_BINARY} --version") from exc
-        if proc.returncode != 0:
-            raise LLMProviderError(stderr.decode(errors="replace").strip()[:300] or "CLI error")
-        version = stdout.decode(errors="replace").strip()
-        return f"Found {path} ({version}); single-shot mode, no tool calls"
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        except FileNotFoundError as exc:
+            raise LLMProviderError(NOT_FOUND_MESSAGE) from exc
+        except TimeoutError as exc:
+            raise LLMProviderError(
+                f"The {CLI_BINARY} CLI did not respond within {timeout}s"
+            ) from exc
+        return (
+            proc.returncode or 0,
+            stdout.decode(errors="replace").strip(),
+            stderr.decode(errors="replace").strip(),
+        )
+
+    async def test_connection(self) -> str:
+        """Prove the CLI is present *and* that the credential works.
+
+        This used to run ``--version`` alone, which authenticates against
+        nothing: a provider holding a completely invalid token still tested
+        green, and the first sign of trouble was a failed session. A test
+        that cannot fail for the most likely reason is worse than no test,
+        because it actively vouches for the thing that is broken.
+
+        So it also sends the smallest possible real prompt. That costs one
+        trivial round-trip against the account, which is the same bargain
+        every other provider's test already makes.
+        """
+        path = shutil.which(CLI_BINARY)
+        if not path:
+            raise LLMProviderError(NOT_FOUND_MESSAGE)
+        self._ensure_config_dir()
+
+        code, version, stderr = await self._run([CLI_BINARY, "--version"], timeout=30)
+        if code != 0:
+            raise LLMProviderError(stderr[:300] or "CLI error")
+
+        code, out, stderr = await self._run(self._argv("Reply with the single word: ok"), 60)
+        if code != 0:
+            # -p mode reports auth failures on stdout with stderr empty.
+            detail = stderr or out
+            raise LLMProviderError(
+                f"{CLI_BINARY} {version} is installed, but authentication failed: {detail[:300]}"
+            )
+        return f"Found {path} ({version}); authenticated; single-shot mode, no tool calls"
 
 
 async def cli_supports_stream_json() -> bool:

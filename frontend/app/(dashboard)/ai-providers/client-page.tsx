@@ -48,7 +48,79 @@ const TYPE_HELP: Record<AIProviderType, string> = {
     "Any server speaking the OpenAI chat-completions API — Ollama, vLLM, LM Studio, OpenRouter, or OpenAI itself.",
   anthropic: "The Anthropic Messages API. Leave the base URL blank for the public API.",
   claude_cli:
-    "The Claude Code CLI installed on the LabDog host. Single-shot only: it can write reports but cannot run tools.",
+    "The Claude Code CLI. Bundled in the LabDog container image; on a package install you install it yourself. Authenticates with your Claude subscription rather than metered API billing.",
+}
+
+/**
+ * A suggested name per type.
+ *
+ * A single placeholder cannot serve all three: "ollama-local" suggested on a
+ * Claude CLI provider is exactly the kind of leftover that makes a form look
+ * like it was not built for the option you picked.
+ */
+const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
+  openai_compat: "ollama-local",
+  anthropic: "claude-api",
+  claude_cli: "claude-cli",
+}
+
+/**
+ * Types that reach Anthropic no matter how they are configured, so the
+ * egress warning can be shown without re-deriving the backend's
+ * is_local_endpoint() URL logic here — duplicating that in the browser is
+ * how the two drift apart.
+ *
+ * An openai_compat provider is judged by its base URL instead, which is
+ * usually a local Ollama, so it gets no warning. If one is pointed at a
+ * hosted endpoint the refusal names the setting, and the provider list
+ * flags it as off-network.
+ */
+const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>(["anthropic", "claude_cli"])
+
+/**
+ * What the Pricing column says.
+ *
+ * Zero rates used to render as "free", which was wrong in two different
+ * directions. A subscription-billed CLI provider is not free — it is
+ * simply not metered per token, and LabDog cannot see the cost. A hosted
+ * provider left at zero is not free either; nobody entered its rates, and
+ * the consequence is that the money budgets silently do nothing.
+ *
+ * Only a local endpoint — one that does not send data off the network,
+ * which the row already tells us — genuinely costs nothing per token.
+ */
+function pricingLabel(provider: AIProvider, currency: string): string {
+  if (provider.provider_type === "claude_cli") return "subscription"
+  const { input_cost_per_mtok: input, output_cost_per_mtok: output } = provider
+  if (input === 0 && output === 0) {
+    return provider.sends_data_offsite ? "rates not set" : "free"
+  }
+  return `${input} in / ${output} out per M ${currency}`
+}
+
+/**
+ * A capability limit, not a tip — shown prominently when the type is chosen.
+ *
+ * Picking the CLI backend for the assistant looks fine until a session starts
+ * and refuses to run a single command. Saying so at selection time is the
+ * difference between an informed choice and a surprise.
+ */
+const TYPE_LIMITATION: Partial<Record<AIProviderType, string>> = {
+  claude_cli:
+    "Single-shot only — it cannot run tools, so it cannot drive an investigation. Use it for AI verify steps and written reports; pick an OpenAI-compatible or Anthropic provider for assistant sessions and scheduled checks.",
+}
+
+/**
+ * Base URL each provider type starts with.
+ *
+ * Anthropic is blank on purpose: the client falls back to the public API,
+ * and a URL here is only for proxies. The CLI has no HTTP endpoint at all
+ * and hides the field.
+ */
+const BASE_URL_DEFAULT: Record<AIProviderType, string> = {
+  openai_compat: "http://localhost:11434/v1",
+  anthropic: "",
+  claude_cli: "",
 }
 
 interface FormState {
@@ -62,7 +134,6 @@ interface FormState {
   output_cost_per_mtok: string
   monthly_budget: string
   is_default: boolean
-  allow_cloud_egress: boolean
   verify_ssl: boolean
 }
 
@@ -77,7 +148,6 @@ const EMPTY_FORM: FormState = {
   output_cost_per_mtok: "0",
   monthly_budget: "0",
   is_default: false,
-  allow_cloud_egress: false,
   verify_ssl: true,
 }
 
@@ -105,6 +175,31 @@ export default function AIProvidersPage() {
   const currency = usage?.currency ?? "USD"
 
   const presets = MODEL_PRESETS[form.provider_type] ?? []
+
+  /**
+   * Switch provider type, moving the base URL to that type's default.
+   *
+   * The types disagree about what a base URL even means: an
+   * OpenAI-compatible server needs one, while Anthropic wants it blank
+   * unless you are proxying. Carrying the previous type's value across is
+   * worse than useless — a leftover Ollama URL on an Anthropic provider
+   * looks like a filled-in field and sends Anthropic-format requests to
+   * Ollama, which fails in a way that points nowhere near the cause.
+   *
+   * A value the operator actually typed is preserved: only an untouched
+   * default is replaced.
+   */
+  function changeType(next: AIProviderType) {
+    setForm((prev) => {
+      const untouched =
+        !prev.base_url.trim() || prev.base_url === BASE_URL_DEFAULT[prev.provider_type]
+      return {
+        ...prev,
+        provider_type: next,
+        base_url: untouched ? BASE_URL_DEFAULT[next] : prev.base_url,
+      }
+    })
+  }
 
   /**
    * Fill in a suggested model, and its rates when we know them.
@@ -147,7 +242,6 @@ export default function AIProvidersPage() {
       output_cost_per_mtok: String(provider.output_cost_per_mtok),
       monthly_budget: String(provider.monthly_budget),
       is_default: provider.is_default,
-      allow_cloud_egress: provider.allow_cloud_egress,
       verify_ssl: provider.verify_ssl,
     })
     setError(null)
@@ -166,7 +260,6 @@ export default function AIProvidersPage() {
         output_cost_per_mtok: Number(form.output_cost_per_mtok),
         monthly_budget: Number(form.monthly_budget),
         is_default: form.is_default,
-        allow_cloud_egress: form.allow_cloud_egress,
         verify_ssl: form.verify_ssl,
       }
       // Omitting the key on edit keeps the stored one; sending "" clears it.
@@ -225,7 +318,7 @@ export default function AIProvidersPage() {
                   id="name"
                   value={form.name}
                   onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="ollama-local"
+                  placeholder={NAME_PLACEHOLDER[form.provider_type]}
                 />
               </div>
 
@@ -233,9 +326,7 @@ export default function AIProvidersPage() {
                 <Label>Type</Label>
                 <Select
                   value={form.provider_type}
-                  onValueChange={(v) =>
-                    setForm({ ...form, provider_type: v as AIProviderType })
-                  }
+                  onValueChange={(v) => v && changeType(v as AIProviderType)}
                 >
                   <SelectTrigger>
                     {/* base-ui renders the raw value unless given a
@@ -256,16 +347,39 @@ export default function AIProvidersPage() {
                 <p className="mt-1 text-xs text-slate-400">
                   {TYPE_HELP[form.provider_type]}
                 </p>
+                {TYPE_LIMITATION[form.provider_type] && (
+                  <p className="mt-2 rounded-md border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
+                    {TYPE_LIMITATION[form.provider_type]}
+                  </p>
+                )}
               </div>
 
               {form.provider_type !== "claude_cli" && (
                 <div>
-                  <Label htmlFor="base_url">Base URL</Label>
+                  <div className="flex items-center gap-1.5">
+                    <Label htmlFor="base_url">
+                      Base URL
+                      {form.provider_type === "anthropic" && (
+                        <span className="ml-1 font-normal text-slate-400">
+                          (optional)
+                        </span>
+                      )}
+                    </Label>
+                    <InfoPopover title="Base URL">
+                      {form.provider_type === "anthropic"
+                        ? "Leave blank to use the public Anthropic API. Set it only if you route through a proxy or gateway that speaks the Messages API."
+                        : "Where your OpenAI-compatible server listens, including the version path — Ollama uses http://localhost:11434/v1 by default."}
+                    </InfoPopover>
+                  </div>
                   <Input
                     id="base_url"
                     value={form.base_url}
                     onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                    placeholder="http://localhost:11434/v1"
+                    placeholder={
+                      form.provider_type === "anthropic"
+                        ? "Blank — uses https://api.anthropic.com"
+                        : "http://localhost:11434/v1"
+                    }
                   />
                 </div>
               )}
@@ -285,7 +399,11 @@ export default function AIProvidersPage() {
                   value={form.model}
                   onChange={(e) => setForm({ ...form, model: e.target.value })}
                   placeholder={
-                    form.provider_type === "anthropic" ? "claude-opus-5" : "llama3.1:8b"
+                    form.provider_type === "anthropic"
+                      ? "claude-opus-5"
+                      : form.provider_type === "claude_cli"
+                        ? "Blank — uses the CLI's own default model"
+                        : "llama3.1:8b"
                   }
                 />
                 {presets.length > 0 && (
@@ -310,23 +428,108 @@ export default function AIProvidersPage() {
                 )}
               </div>
 
-              {form.provider_type !== "claude_cli" && (
-                <div>
-                  <Label htmlFor="api_key">API key</Label>
-                  <Input
-                    id="api_key"
-                    type="password"
-                    value={form.api_key}
-                    onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                    placeholder={
-                      editing?.has_api_key
-                        ? "Stored — leave blank to keep it"
-                        : "Leave blank for an unauthenticated local server"
-                    }
-                  />
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="api_key">
+                    {form.provider_type === "claude_cli"
+                      ? "Subscription token"
+                      : "API key"}
+                    {form.provider_type === "anthropic" && (
+                      <span className="ml-1 font-normal text-slate-400">
+                        (required)
+                      </span>
+                    )}
+                  </Label>
+                  {form.provider_type === "anthropic" && (
+                    <InfoPopover title="API key">
+                      Create one in the Claude Console at{" "}
+                      <span className="font-mono">platform.claude.com</span> under
+                      API keys. It starts with{" "}
+                      <span className="font-mono">sk-ant-</span> and is billed per
+                      token. A Pro or Max subscription does not cover API usage —
+                      to spend against a subscription instead, use the Claude CLI
+                      provider type.
+                    </InfoPopover>
+                  )}
+                  {form.provider_type === "claude_cli" && (
+                    <InfoPopover title="Subscription token">
+                      Run <span className="font-mono">claude setup-token</span>{" "}
+                      on your own machine, not the server. It shows you three
+                      strings in turn, and only the last belongs here:
+                      <span className="mt-2 block">
+                        1. an <strong>authorize URL</strong> — open it in a
+                        browser
+                      </span>
+                      <span className="block">
+                        2. an <strong>authorization code</strong> — paste it
+                        back at the terminal prompt
+                      </span>
+                      <span className="block">
+                        3. the <strong>token</strong>, starting{" "}
+                        <span className="font-mono">sk-ant-oat01-</span> — that
+                        is this field
+                      </span>
+                      <span className="mt-2 block">
+                        It is stored encrypted, like every other LabDog
+                        credential, and injected only into the CLI process.
+                        Leave blank to use whatever the host is already logged
+                        in as.
+                      </span>
+                    </InfoPopover>
+                  )}
                 </div>
-              )}
+                <Input
+                  id="api_key"
+                  type="password"
+                  value={form.api_key}
+                  onChange={(e) => setForm({ ...form, api_key: e.target.value })}
+                  placeholder={
+                    editing?.has_api_key
+                      ? "Stored — leave blank to keep it"
+                      : form.provider_type === "claude_cli"
+                        ? "sk-ant-oat01-… from `claude setup-token` — blank uses the host's own login"
+                        : form.provider_type === "anthropic"
+                          ? "sk-ant-… from platform.claude.com (required)"
+                          : "Leave blank for an unauthenticated local server"
+                  }
+                />
+                {form.provider_type === "claude_cli" && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Billed to your Claude subscription rather than API credits.
+                    Two things outrank this token in the CLI&apos;s own
+                    credential order, and both would quietly authenticate as a
+                    different account: the{" "}
+                    <span className="font-mono">ANTHROPIC_API_KEY</span> and{" "}
+                    <span className="font-mono">ANTHROPIC_AUTH_TOKEN</span>{" "}
+                    environment variables, and a login left on disk by{" "}
+                    <span className="font-mono">claude login</span>. When a
+                    token is set LabDog removes both variables and points the
+                    CLI at its own config directory, so neither can shadow what
+                    you enter here.
+                  </p>
+                )}
+              </div>
 
+              {/*
+                Every field below is inert for the CLI backend, and one of
+                them is actively misleading: the CLI reports no token usage,
+                so recorded spend is always zero and a Monthly cap can never
+                fire. An operator who set one would believe they were capped
+                when they were not. The CLI also has no max-tokens flag, so
+                that field does nothing either. Hidden rather than disabled —
+                a greyed-out budget still reads as a budget.
+              */}
+              {form.provider_type === "claude_cli" ? (
+                <p className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+                  Cost and token settings do not apply to this backend. A
+                  subscription is billed flat rather than per token, and the CLI
+                  reports no usage, so LabDog cannot track spend for it — the
+                  money budgets under Settings will not act on it either. The
+                  per-session iteration, command, and wall-clock caps still
+                  apply.
+                </p>
+              ) : (
+              <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center gap-1.5">
@@ -413,6 +616,8 @@ export default function AIProvidersPage() {
                   />
                 </div>
               </div>
+              </>
+              )}
 
               <label className="flex items-center gap-2 text-sm text-slate-300">
                 <input
@@ -423,24 +628,18 @@ export default function AIProvidersPage() {
                 Use as the default provider
               </label>
 
-              <label className="flex items-start gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={form.allow_cloud_egress}
-                  onChange={(e) =>
-                    setForm({ ...form, allow_cloud_egress: e.target.checked })
-                  }
-                />
-                <span>
-                  Allow this provider to receive host data off my network
-                  <span className="block text-xs text-slate-400">
-                    Required for any hosted provider, and only takes effect when{" "}
-                    <span className="font-mono">ai.allow_cloud_providers</span> is
-                    also on.
-                  </span>
-                </span>
-              </label>
+              {ALWAYS_SENDS_OFFSITE.has(form.provider_type) && (
+                <p className="rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-400">
+                  This provider sends host data off your network. It stays
+                  blocked until{" "}
+                  <span className="font-mono">ai.allow_cloud_providers</span> is
+                  enabled in{" "}
+                  <a href="/settings" className="underline underline-offset-4">
+                    Settings
+                  </a>
+                  , which is off by default.
+                </p>
+              )}
 
               {error && <p className="text-sm text-red-400">{error}</p>}
             </div>
@@ -515,15 +714,7 @@ export default function AIProvidersPage() {
                       {provider.model}
                     </TableCell>
                     <TableCell className="text-xs text-slate-400">
-                      {provider.input_cost_per_mtok === 0 &&
-                      provider.output_cost_per_mtok === 0 ? (
-                        "free"
-                      ) : (
-                        <>
-                          ${provider.input_cost_per_mtok} in / $
-                          {provider.output_cost_per_mtok} out per M
-                        </>
-                      )}
+                      {pricingLabel(provider, currency)}
                     </TableCell>
                     <TableCell>
                       {provider.sends_data_offsite ? (

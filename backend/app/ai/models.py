@@ -85,9 +85,6 @@ class AIProvider(Base):
     max_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=4096)
     temperature: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # Whether this endpoint may receive host data that leaves the network.
-    # Gated additionally by the global ai.allow_cloud_providers setting.
-    allow_cloud_egress: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Money per million tokens, operator-entered, in whatever currency
     # ai.currency names. LabDog never converts, so the unit is simply
     # whatever the operator typed. 0 == free/self-hosted.

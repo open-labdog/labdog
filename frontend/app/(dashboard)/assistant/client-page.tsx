@@ -24,6 +24,14 @@ import type {
   Host,
 } from "@/lib/types"
 
+/**
+ * Sentinel for "no explicit choice — let the backend pick its default".
+ *
+ * A Select needs a string value, and the empty string is what base-ui
+ * treats as nothing selected, so the absence has to be spelled.
+ */
+const DEFAULT_PROVIDER = "__default__"
+
 const AUTONOMY_LABEL: Record<AIAutonomyLevel, string> = {
   read_only: "Read-only",
   approval: "Approval required",
@@ -55,6 +63,8 @@ export default function AssistantPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [mission, setMission] = useState("")
   const [autonomy, setAutonomy] = useState<AIAutonomyLevel>("read_only")
+  // null means "let the backend pick its default provider".
+  const [providerId, setProviderId] = useState<number | null>(null)
   const [targetHosts, setTargetHosts] = useState<number[]>([])
   // Keyed by session so switching sessions cannot show the previous one's
   // partial text, without needing a synchronous reset inside the effect.
@@ -155,6 +165,7 @@ export default function AssistantPage() {
       mission: string
       autonomy_level: AIAutonomyLevel
       target_host_ids: number[]
+      provider_id: number | null
     }) => apiFetch<AISession>("/api/ai/sessions", { method: "POST", json: body }),
     onSuccess: (created) => {
       setMission("")
@@ -185,7 +196,21 @@ export default function AssistantPage() {
     },
   })
 
-  const hasProvider = (providers ?? []).some((p) => p.enabled)
+  const enabled = (providers ?? []).filter((p) => p.enabled)
+  const hasProvider = enabled.length > 0
+
+  // A single-shot backend cannot run tools, so it cannot investigate; the
+  // API refuses such a session outright. Offering it here would only sell
+  // the operator a guaranteed failure, so it is listed as unavailable
+  // instead of being selectable.
+  const usable = enabled.filter((p) => p.provider_type !== "claude_cli")
+  const toolless = enabled.filter((p) => p.provider_type === "claude_cli")
+  const canInvestigate = usable.length > 0
+
+  const defaultProvider = usable.find((p) => p.is_default)
+  const defaultProviderLabel = defaultProvider
+    ? `Default (${defaultProvider.name})`
+    : "Default"
 
   function submit() {
     if (!mission.trim()) return
@@ -196,6 +221,7 @@ export default function AssistantPage() {
         mission,
         autonomy_level: autonomy,
         target_host_ids: targetHosts,
+        provider_id: providerId,
       })
     }
   }
@@ -225,7 +251,27 @@ export default function AssistantPage() {
           <a href="/ai-providers" className="underline underline-offset-4">
             Integrations → AI Providers
           </a>{" "}
-          and enable <span className="font-mono">ai.enabled</span> in Settings.
+          and enable <span className="font-mono">ai.enabled</span> in{" "}
+          <a href="/settings" className="underline underline-offset-4">
+            Settings
+          </a>
+          .
+        </div>
+      )}
+
+      {/* Distinct from having no provider at all: one exists, it just
+          cannot run tools, so it cannot investigate. Without this the
+          composer would sit there enabled and every attempt would be
+          refused by the API with no explanation on screen. */}
+      {hasProvider && !canInvestigate && (
+        <div className="rounded-lg border border-amber-700 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+          The only configured provider is a single-shot backend, which cannot
+          run tools and so cannot investigate anything. Add an
+          OpenAI-compatible or Anthropic provider under{" "}
+          <a href="/ai-providers" className="underline underline-offset-4">
+            Integrations → AI Providers
+          </a>{" "}
+          to use the assistant.
         </div>
       )}
 
@@ -303,6 +349,48 @@ export default function AssistantPage() {
           ) : (
             <div className="space-y-4 rounded-lg border border-slate-700 bg-slate-900 p-4">
               <div>
+                <Label className="text-slate-400">Provider</Label>
+                <Select
+                  value={providerId === null ? DEFAULT_PROVIDER : String(providerId)}
+                  onValueChange={(v) =>
+                    setProviderId(v === DEFAULT_PROVIDER ? null : Number(v))
+                  }
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue>
+                      {(v: string) =>
+                        v === DEFAULT_PROVIDER
+                          ? defaultProviderLabel
+                          : (usable.find((p) => String(p.id) === v)?.name ?? v)
+                      }
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={DEFAULT_PROVIDER}>
+                      {defaultProviderLabel}
+                    </SelectItem>
+                    {usable.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {/* A backend with no tools cannot look anything up, so a
+                    session on one is refused rather than answered from
+                    imagination. Saying so here beats letting the operator
+                    discover it as a failed session. */}
+                {toolless.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {toolless.map((p) => p.name).join(", ")}{" "}
+                    {toolless.length === 1 ? "is" : "are"} not listed — a
+                    single-shot backend cannot run tools, so it cannot
+                    investigate anything.
+                  </p>
+                )}
+              </div>
+
+              <div>
                 <Label className="text-slate-400">Autonomy</Label>
                 <Select
                   value={autonomy}
@@ -368,7 +456,7 @@ export default function AssistantPage() {
                   ? "Ask a follow-up…"
                   : "e.g. Check whether any service failed to start after the last reboot on node-1."
               }
-              disabled={isRunning || !hasProvider}
+              disabled={isRunning || !canInvestigate}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit()
               }}
@@ -384,7 +472,7 @@ export default function AssistantPage() {
                 disabled={
                   !mission.trim() ||
                   isRunning ||
-                  !hasProvider ||
+                  !canInvestigate ||
                   startSession.isPending ||
                   sendFollowUp.isPending
                 }

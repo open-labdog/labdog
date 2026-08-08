@@ -36,7 +36,6 @@ async def paid_provider(db):
         provider_type="anthropic",
         model="claude-opus-5",
         max_tokens=4096,
-        allow_cloud_egress=True,
         input_cost_per_mtok=5.0,
         output_cost_per_mtok=25.0,
         enabled=True,

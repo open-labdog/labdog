@@ -47,6 +47,39 @@ COPY scripts/fetch-bundled-pack.sh /usr/local/bin/fetch-bundled-pack
 RUN chmod +x /usr/local/bin/fetch-bundled-pack \
     && /usr/local/bin/fetch-bundled-pack /bundle
 
+# ── Stage 2c: Fetch the Claude Code CLI ───────────────────────────────
+# The `claude_cli` AI provider shells out to this binary. Installing it
+# via Anthropic's apt repo (rather than curl'ing the .deb) means the
+# repository key actually verifies the package signature, and it keeps
+# curl/gnupg out of the runtime image — only the resulting binary is
+# copied forward.
+#
+# The package is a single self-contained file at /usr/bin/claude whose
+# only shared-library dependency is glibc >= 2.17, so it runs on the
+# runtime stage unmodified.
+#
+# Deliberately unpinned, matching the `apt-get upgrade -y` policy in the
+# runtime stage: this is a leaf binary with no LabDog-visible API beyond
+# the argv flags the provider passes, and a stale one is a security
+# liability with no upside. BUILD_DATE is referenced for the same reason
+# it is in the runtime stage — without a per-build input, BuildKit's
+# `cache-from: type=gha` would keep serving whichever version was current
+# when the cache was populated, forever.
+FROM python:3.12-slim AS claude-cli-fetcher
+ARG BUILD_DATE=""
+RUN echo "claude-code refresh @ ${BUILD_DATE}" \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg ca-certificates \
+    && install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+         -o /etc/apt/keyrings/claude-code.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] \
+https://downloads.claude.ai/claude-code/apt/stable stable main" \
+         > /etc/apt/sources.list.d/claude-code.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends claude-code \
+    && rm -rf /var/lib/apt/lists/*
+
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
 FROM python:3.12-slim
 WORKDIR /app
@@ -72,7 +105,7 @@ RUN echo "apt security refresh @ ${BUILD_DATE}" \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 labdog \
-    && mkdir -p /var/lib/labdog/packs \
+    && mkdir -p /var/lib/labdog/packs /var/lib/labdog/claude-cli \
     && chown -R labdog:labdog /var/lib/labdog
 
 # Python packages from builder
@@ -83,6 +116,18 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # (e.g. GHSA-82j2-j2ch-gfr8) that we'd otherwise need to track in
 # .trivyignore for a binary that's never actually invoked at runtime.
 RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx
+
+# Claude Code CLI for the `claude_cli` AI provider (see stage 2c). One
+# file, no runtime dependencies beyond glibc. LabDog points the CLI at
+# /var/lib/labdog/claude-cli via CLAUDE_CONFIG_DIR rather than letting it
+# use $HOME, so a stored login can never shadow the token configured in
+# the UI — see app/ai/providers/claude_cli.py.
+#
+# Copied *after* the backend-builder stage, which lands its whole
+# /usr/local/bin here: COPY merges rather than replaces, so ordering it
+# earlier would survive only for as long as that stage never ships a file
+# by this name.
+COPY --from=claude-cli-fetcher /usr/bin/claude /usr/local/bin/claude
 
 # Backend source (app + alembic). ``backend/app/ansible`` is excluded
 # from the in-repo copy via .dockerignore so the build-time clone
