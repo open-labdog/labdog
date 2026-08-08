@@ -78,6 +78,27 @@ const NAME_PLACEHOLDER: Record<AIProviderType, string> = {
 const ALWAYS_SENDS_OFFSITE = new Set<AIProviderType>(["anthropic", "claude_cli"])
 
 /**
+ * What the Pricing column says.
+ *
+ * Zero rates used to render as "free", which was wrong in two different
+ * directions. A subscription-billed CLI provider is not free — it is
+ * simply not metered per token, and LabDog cannot see the cost. A hosted
+ * provider left at zero is not free either; nobody entered its rates, and
+ * the consequence is that the money budgets silently do nothing.
+ *
+ * Only a local endpoint — one that does not send data off the network,
+ * which the row already tells us — genuinely costs nothing per token.
+ */
+function pricingLabel(provider: AIProvider, currency: string): string {
+  if (provider.provider_type === "claude_cli") return "subscription"
+  const { input_cost_per_mtok: input, output_cost_per_mtok: output } = provider
+  if (input === 0 && output === 0) {
+    return provider.sends_data_offsite ? "rates not set" : "free"
+  }
+  return `${input} in / ${output} out per M ${currency}`
+}
+
+/**
  * A capability limit, not a tip — shown prominently when the type is chosen.
  *
  * Picking the CLI backend for the assistant looks fine until a session starts
@@ -693,15 +714,7 @@ export default function AIProvidersPage() {
                       {provider.model}
                     </TableCell>
                     <TableCell className="text-xs text-slate-400">
-                      {provider.input_cost_per_mtok === 0 &&
-                      provider.output_cost_per_mtok === 0 ? (
-                        "free"
-                      ) : (
-                        <>
-                          ${provider.input_cost_per_mtok} in / $
-                          {provider.output_cost_per_mtok} out per M
-                        </>
-                      )}
+                      {pricingLabel(provider, currency)}
                     </TableCell>
                     <TableCell>
                       {provider.sends_data_offsite ? (
