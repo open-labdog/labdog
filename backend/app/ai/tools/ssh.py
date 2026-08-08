@@ -91,6 +91,10 @@ def _truncate(text: str) -> str:
     },
     # The ceiling: an individual call is re-classified from its arguments.
     classification="mutating",
+    # The same re-classification, available before the call is dispatched.
+    # A caller that gates on permission ahead of execution — the Agent SDK
+    # does — would otherwise see only the ceiling and refuse every read.
+    preclassify=lambda args: classify_command(str(args.get("command") or "")),
 )
 async def _run_ssh_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     host_id = args.get("host_id")
