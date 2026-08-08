@@ -247,7 +247,11 @@ jobs:
           uv lock --check
           # Install the exact locked versions (reproducible), then the project
           # itself without re-resolving deps.
-          uv export --frozen --no-emit-project --extra dev --format requirements-txt -o /tmp/req.txt
+          # --extra agent pulls the Claude Agent SDK. It is optional at
+          # runtime, but the tests that pin the SDK backend's lockdown
+          # posture skip without it — and a safety test that silently
+          # skips is worse than no test.
+          uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
           uv pip install --system -r /tmp/req.txt
           uv pip install --system --no-deps .
       - name: Fetch bundled action pack
