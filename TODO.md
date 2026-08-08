@@ -238,11 +238,38 @@ Four phases remain, each independently useful:
   fail-closed for critical upgrades.
 
 **Known gaps in what shipped:** the `approval` level is accepted but not
-yet enforced as a distinct behaviour (it refuses like read-only); the
-Claude CLI backend is single-shot only, so it cannot drive a tool-using
-investigation; and the DB-backed tests under `tests/ai/` need
-testcontainers, so they were verified by review and by the 123
-non-DB tests rather than executed locally.
+yet enforced as a distinct behaviour (it refuses like read-only, though
+the SDK gate now distinguishes "needs approval" from "refused" so phase 3
+has the seam it needs); and the DB-backed tests under `tests/ai/` need
+testcontainers, so they were verified by review and by the non-DB tests
+rather than executed locally.
+
+Subscription-billed sessions that can *use tools* are no longer a gap.
+The `claude_agent` backend drives Claude Code through Anthropic's Claude
+Agent SDK, which supplies the bidirectional stream-json transport this
+file used to list as work to do. See `plans/agent-sdk.md` for what was
+verified against the real binary. Follow-ups it leaves open:
+
+- [ ] **Confirm the terms.** That SDK-driven headless use on a
+  subscription is sanctioned, and that billing lands on the subscription
+  rather than API credit. `claude setup-token` exists for automation, but
+  read the fine print before relying on it.
+- [ ] **Stream partial text.** The runner emits one SSE `text` event per
+  completed assistant message. `include_partial_messages` would give
+  token-by-token streaming, which is what the chat page wants.
+- [ ] **Persist resume state across restarts.** `resume` relies on the
+  CLI's own session files under `CLAUDE_CONFIG_DIR`, so parking a session
+  across a container restart needs that path on a volume.
+  `ClaudeAgentOptions.session_store` accepts a custom store, so
+  Postgres-backed sessions are possible if the volume proves fragile.
+- [ ] **Surface rate-limit state.** `RateLimitInfo` carries utilisation
+  and reset time. On a subscription the money budget is meaningless but
+  quota is not, so that is what the usage panel should show for these
+  providers.
+- [ ] **Decide whether `claude_cli` survives.** The SDK backend does
+  everything it does, including single-shot. Keeping both means two
+  subprocess backends; merging them is a migration plus a UI change.
+  Phase 5 (`ai_verify`) is the natural moment to choose.
 
 ---
 
