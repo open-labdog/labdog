@@ -39,7 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
 from app.ai.agent_sdk.bridge import NO_BUILTIN_TOOLS, build_tool_server, local_tool_name
-from app.ai.agent_sdk.environment import build_sdk_env
+from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
 from app.ai.agent_sdk.gate import decide
 from app.ai.loop import LoopCaps, LoopOutcome, build_system_prompt
 from app.ai.models import AIProvider, AISession, AIToolCall
@@ -303,7 +303,7 @@ class AgentSDKRunner:
             model=self.provider_row.model or None,
             max_turns=self.caps.max_iterations,
             env=build_sdk_env(decrypt_api_key(self.provider_row), SESSION_STATE_DIR),
-            cwd=SESSION_STATE_DIR,
+            cwd=ensure_state_dir(SESSION_STATE_DIR),
             resume=resume,
         )
 

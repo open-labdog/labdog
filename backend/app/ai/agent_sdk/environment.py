@@ -24,6 +24,7 @@ than inline in the runner.
 
 from __future__ import annotations
 
+import logging
 import os
 
 from app.ai.providers.claude_cli import (
@@ -33,10 +34,40 @@ from app.ai.providers.claude_cli import (
     OVERRIDING_CREDENTIAL_ENV,
 )
 
+logger = logging.getLogger(__name__)
+
 #: Value used to neutralise an inherited credential variable. Empty rather
 #: than a placeholder: the CLI tests these for presence, and any non-empty
 #: string would be tried as a credential and fail authentication.
 _NEUTRALISED = ""
+
+
+def ensure_state_dir(path: str = DEFAULT_CONFIG_DIR) -> str | None:
+    """Make sure Claude Code has a directory to run in, if we can.
+
+    The SDK refuses to spawn at all when ``cwd`` does not exist —
+    ``CLIConnectionError: Working directory does not exist`` — which is
+    what an operator saw when the Test button was first wired up outside a
+    container. The image creates this path, but a package install or a dev
+    checkout has no reason to, so it cannot be assumed.
+
+    Returns the path when usable and ``None`` when not, so the caller can
+    omit ``cwd`` and let Claude Code inherit the process's own working
+    directory. That fallback is safe here precisely because sessions run
+    with ``setting_sources=[]``: nothing is loaded from the working
+    directory, so it only has to exist.
+    """
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError as exc:
+        logger.warning(
+            "claude code state dir %s is unavailable (%s); falling back to the "
+            "process working directory",
+            path,
+            exc,
+        )
+        return None
+    return path if os.path.isdir(path) else None
 
 
 def build_sdk_env(

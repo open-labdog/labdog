@@ -135,10 +135,15 @@ def build_provider(provider: AIProvider) -> LLMProvider:
     ``AgentSDKRunner``.
     """
     if runs_on_agent_sdk(provider):
+        # Phrased for whoever ends up reading it. An earlier version named
+        # the two runner classes and called itself a routing bug, which was
+        # accurate for a developer and useless to the operator who saw it
+        # in the providers table when the Test button reached here.
         raise LLMProviderError(
-            f"Provider {provider.name!r} is driven by the Claude Agent SDK, which owns "
-            "the agent loop itself. Sessions for it run through AgentSDKRunner, not "
-            "AgentLoop; this call is a routing bug."
+            f"Provider {provider.name!r} runs through Claude Code, which handles the "
+            "conversation itself, so LabDog cannot drive it one turn at a time. This "
+            "is an internal routing error rather than a problem with your settings — "
+            "please report it."
         )
 
     api_key = decrypt_api_key(provider)

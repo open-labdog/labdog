@@ -18,7 +18,7 @@ matters — the session would run, and bill, as the wrong account.
 
 from __future__ import annotations
 
-from app.ai.agent_sdk.environment import build_sdk_env
+from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
 from app.ai.providers.claude_cli import (
     CONFIG_DIR_ENV,
     DEFAULT_CONFIG_DIR,
@@ -72,6 +72,42 @@ class TestWithAToken:
         env = build_sdk_env(TOKEN, inherited={"PATH": "/usr/bin", "SECRET": "x"})
         assert "PATH" not in env
         assert "SECRET" not in env
+
+
+class TestStateDir:
+    """Reported from a running instance: the Test button died with
+    ``CLIConnectionError: Working directory does not exist``. The SDK
+    refuses to spawn at all when ``cwd`` is missing, and only the container
+    image creates this path — a package install or a dev checkout has no
+    reason to."""
+
+    def test_it_creates_a_missing_directory(self, tmp_path) -> None:
+        target = tmp_path / "claude-cli"
+        assert not target.exists()
+        assert ensure_state_dir(str(target)) == str(target)
+        assert target.is_dir()
+
+    def test_an_existing_directory_is_returned_unchanged(self, tmp_path) -> None:
+        target = tmp_path / "already-there"
+        target.mkdir()
+        assert ensure_state_dir(str(target)) == str(target)
+
+    def test_it_returns_none_when_it_cannot_create_one(self, tmp_path) -> None:
+        """None tells the caller to omit cwd and inherit the process's own
+        working directory, which is safe because sessions load nothing from
+        it (setting_sources=[]). Raising here would make an unwritable
+        state directory fatal to a backend that would otherwise work."""
+        blocker = tmp_path / "not-a-dir"
+        blocker.write_text("this is a file")
+        assert ensure_state_dir(str(blocker / "child")) is None
+
+    def test_it_does_not_raise_on_a_permission_error(self, tmp_path) -> None:
+        locked = tmp_path / "locked"
+        locked.mkdir(mode=0o500)
+        try:
+            assert ensure_state_dir(str(locked / "child")) is None
+        finally:
+            locked.chmod(0o700)
 
 
 class TestWithoutAToken:

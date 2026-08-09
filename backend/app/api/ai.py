@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import service
 from app.ai.models import AIMessage, AIProvider, AISession, AIToolCall, AIUsageDay
 from app.ai.providers.base import LLMProviderError
-from app.ai.providers.factory import build_provider
+from app.ai.providers.factory import build_provider, runs_on_agent_sdk
 from app.ai.schemas import (
     AIProviderCreate,
     AIProviderResponse,
@@ -260,8 +260,16 @@ async def test_provider(
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider not found")
     try:
-        backend = build_provider(provider)
-        message = await backend.test_connection()
+        if runs_on_agent_sdk(provider):
+            # No LLMProvider exists for these — the SDK owns the loop — so
+            # they carry their own probe rather than going through
+            # build_provider(), which refuses them by design.
+            from app.ai.agent_sdk.probe import test_connection as probe_agent_sdk
+
+            message = await probe_agent_sdk(provider)
+        else:
+            backend = build_provider(provider)
+            message = await backend.test_connection()
     except LLMProviderError as exc:
         return AIProviderTestResponse(ok=False, message=str(exc))
     except Exception as exc:
