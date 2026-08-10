@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 
 from app.ai.loop import AgentLoop, LoopCaps, redis_publisher
 from app.ai.models import AIProvider, AISession
@@ -68,6 +69,38 @@ def build_runner(db, session: AISession, provider_row: AIProvider, caps: LoopCap
     return AgentSDKRunner(db, session, provider_row, caps, publish=publish)
 
 
+async def _force_fail(db, session_id: int, error: str) -> None:
+    """Last-resort "this run is over" write.
+
+    Deliberately a Core UPDATE rather than ``finish_session``. The ORM path
+    flushes the mapper, which resolves foreign keys — and when *that* is
+    what failed, the failure handler fails identically and the session is
+    left in ``queued`` forever, with the UI showing "Working…" against a
+    task that died. Observed: one session sat queued for 28 hours because
+    its own error handler raised the error it was trying to record.
+
+    So this touches one row, by primary key, through the narrowest
+    mechanism available, and swallows what it cannot fix: a session whose
+    status is wrong is worse than one whose error text is missing.
+    """
+    from sqlalchemy import update
+
+    try:
+        await db.rollback()
+        await db.execute(
+            update(AISession.__table__)
+            .where(AISession.__table__.c.id == session_id)
+            .values(
+                status="failed",
+                error_message=error[:2000],
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("ai_task: could not mark session %s failed", session_id)
+
+
 def _redis_client():
     import redis
 
@@ -110,12 +143,7 @@ async def _run_session_async(session_id: int) -> dict:
             await db.commit()
         except Exception as exc:
             logger.exception("ai_task: session %s failed", session_id)
-            await db.rollback()
-            # Re-fetch: the failed transaction rolled back the in-memory row.
-            session = await db.get(AISession, session_id)
-            if session is not None:
-                await finish_session(db, session, status="failed", error=str(exc)[:2000])
-                await db.commit()
+            await _force_fail(db, session_id, str(exc))
             await publish("error", {"message": str(exc)})
             await publish("status", {"status": "failed"})
             redis_client.close()
@@ -238,11 +266,7 @@ async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool
             await db.commit()
         except Exception as exc:
             logger.exception("ai_task: action session %s failed", session_id)
-            await db.rollback()
-            session = await db.get(AISession, session_id)
-            if session is not None:
-                await finish_session(db, session, status="failed", error=str(exc)[:2000])
-                await db.commit()
+            await _force_fail(db, session_id, str(exc))
             redis_client.close()
             return False, str(exc)
 

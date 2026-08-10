@@ -1,7 +1,7 @@
 import logging
 
 from celery import Celery
-from celery.signals import worker_ready
+from celery.signals import worker_process_init, worker_ready
 
 from app.config import settings
 
@@ -51,6 +51,39 @@ celery_app.conf.update(
     task_time_limit=1800,
     task_soft_time_limit=1500,
 )
+
+
+@worker_process_init.connect
+def _register_all_models(**_kwargs):
+    """Put every model on ``Base.metadata`` before any task runs.
+
+    Without this, which tables a worker knows about depends on which task
+    modules Celery happened to import — and therefore on which task runs
+    first. That produced a bug with a genuinely confusing shape: the first
+    AI session after a restart failed with
+
+        NoReferencedTableError: Foreign key associated with column
+        'ai_sessions.action_run_id' could not find table 'action_runs'
+
+    while later ones succeeded, because by then some action task had run in
+    the same process and imported ``action_runs`` as a side effect. A
+    restart brought it back. Registration is not something to leave to
+    import order.
+
+    Runs per pool child rather than once in the parent: prefork children
+    inherit the parent's imports, but the solo and threads pools have no
+    parent to inherit from, and a re-import in an already-populated
+    process is a no-op.
+    """
+    try:
+        from app.models import import_all_models
+
+        import_all_models()
+    except Exception:
+        # A worker that starts with incomplete metadata is still more
+        # useful than one that refuses to start; the failure is loud in
+        # the log and the affected flush will say which table is missing.
+        logger.exception("model registration on worker start failed")
 
 
 @worker_ready.connect
