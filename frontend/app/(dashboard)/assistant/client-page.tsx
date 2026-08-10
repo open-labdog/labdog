@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+
+import { Trash2 } from "lucide-react"
 
 import { ChatTranscript } from "@/components/ai/chat-transcript"
 import { Badge } from "@/components/ui/badge"
@@ -58,6 +60,30 @@ const STATUS_STYLE: Record<string, string> = {
 
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"])
 
+/**
+ * Statuses where the owning Celery task has stopped.
+ *
+ * Mirrors TERMINAL_STATES in app/api/ai.py, which refuses to delete a
+ * session that is still live — the run owns the row and is writing to it.
+ * Disabling the button here means the operator learns that from the UI
+ * rather than from a 409.
+ */
+const TERMINAL_STATES = new Set(["succeeded", "failed", "cancelled"])
+
+/**
+ * How a session's host scope reads in one line.
+ *
+ * An empty list is not "no hosts" — it is a session created without a
+ * target, which the tools treat as "refuse rather than roam". Saying "no
+ * hosts" would suggest nothing was investigated; "no host selected" says
+ * what the operator actually did.
+ */
+function describeScope(names: string[]): string {
+  if (names.length === 0) return "no host selected"
+  if (names.length <= 2) return names.join(", ")
+  return `${names[0]}, ${names[1]} +${names.length - 2} more`
+}
+
 export default function AssistantPage() {
   const queryClient = useQueryClient()
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -86,6 +112,32 @@ export default function AssistantPage() {
     queryKey: ["ai-sessions"],
     queryFn: () => apiFetch<AISession[]>("/api/ai/sessions"),
     refetchInterval: 10_000,
+  })
+
+  /**
+   * Host ids -> names, for showing a session's scope.
+   *
+   * A session stores ids, and an id tells an operator nothing about which
+   * machine an investigation touched. The hosts query is already loaded
+   * here for the target picker, so this needs no extra request.
+   */
+  const hostNames = useMemo(() => {
+    const byId = new Map<number, string>()
+    for (const h of hosts ?? []) byId.set(h.id, h.hostname)
+    return (ids: number[] | null | undefined): string[] =>
+      (ids ?? []).map((id) => byId.get(id) ?? `host ${id}`)
+  }, [hosts])
+
+  const deleteSession = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/ai/sessions/${id}`, { method: "DELETE" }),
+    onSuccess: (_data, id) => {
+      if (id === selectedId) setSelectedId(null)
+      queryClient.invalidateQueries({ queryKey: ["ai-sessions"] })
+      setError(null)
+    },
+    onError: (e: unknown) =>
+      setError(e instanceof ApiError ? e.message : "Could not delete the session."),
   })
 
   const { data: session } = useQuery<AISessionDetail>({
@@ -300,27 +352,60 @@ export default function AssistantPage() {
                 No sessions yet.
               </p>
             )}
-            {(sessions ?? []).map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setSelectedId(s.id)}
-                className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
-                  s.id === selectedId
-                    ? "bg-slate-800 text-white"
-                    : "text-slate-300 hover:bg-slate-800"
-                }`}
-              >
-                <span className="line-clamp-2">{s.title ?? s.mission}</span>
-                <span className="mt-1 flex items-center gap-2">
-                  <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
-                    {s.status}
-                  </Badge>
-                  {s.cost > 0 && (
-                    <span className="text-slate-400">${s.cost.toFixed(3)}</span>
-                  )}
-                </span>
-              </button>
-            ))}
+            {(sessions ?? []).map((s) => {
+              const scope = hostNames(s.target_host_ids)
+              const running = !TERMINAL_STATES.has(s.status)
+              return (
+                <div
+                  key={s.id}
+                  className={`group flex items-start gap-1 rounded-md transition-colors ${
+                    s.id === selectedId ? "bg-slate-800" : "hover:bg-slate-800"
+                  }`}
+                >
+                  <button
+                    onClick={() => setSelectedId(s.id)}
+                    className={`min-w-0 flex-1 px-2 py-2 text-left text-xs ${
+                      s.id === selectedId ? "text-white" : "text-slate-300"
+                    }`}
+                  >
+                    <span className="line-clamp-2">{s.title ?? s.mission}</span>
+                    <span className="mt-1 flex flex-wrap items-center gap-2">
+                      <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
+                        {s.status}
+                      </Badge>
+                      <span className="truncate text-slate-400">{describeScope(scope)}</span>
+                      {s.cost > 0 && (
+                        <span className="text-slate-400">${s.cost.toFixed(3)}</span>
+                      )}
+                    </span>
+                  </button>
+                  {/* Kept out of the way until hover: the list is for
+                      picking a session, not for managing one. */}
+                  <button
+                    aria-label={`Delete session: ${s.title ?? s.mission}`}
+                    title={
+                      running
+                        ? "Cancel this session before deleting it"
+                        : "Delete this session and its transcript"
+                    }
+                    disabled={running || deleteSession.isPending}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          "Delete this session and its transcript? Recorded spend is " +
+                            "kept in the usage totals."
+                        )
+                      ) {
+                        deleteSession.mutate(s.id)
+                      }
+                    }}
+                    className="mt-2 mr-1 rounded px-1 py-0.5 text-slate-500 opacity-0 transition group-hover:opacity-100 hover:text-red-400 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none disabled:cursor-not-allowed disabled:hover:text-slate-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
 
@@ -333,6 +418,7 @@ export default function AssistantPage() {
                   {session.status}
                 </Badge>
                 <Badge variant="outline">{session.autonomy_level}</Badge>
+                <Badge variant="outline">{describeScope(hostNames(session.target_host_ids))}</Badge>
                 <span className="text-xs text-slate-400">
                   {session.iterations} turns · {session.command_count} commands ·{" "}
                   {session.cost_unknown ? "cost not reported" : `$${session.cost.toFixed(4)}`}

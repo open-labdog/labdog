@@ -457,6 +457,58 @@ async def cancel_session(
     return session_to_response(session)
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a session and its transcript.
+
+    Refused while the session is still live. A running session is owned by
+    a Celery task that is actively writing to it, and deleting the row out
+    from under it turns a working run into a confusing crash. Cancel first,
+    then delete.
+
+    Spend is unaffected: the daily ledger in ``ai_usage_days`` is keyed by
+    date and provider, not by session, precisely so that accounting
+    survives housekeeping like this. Messages and tool calls go with the
+    session via ON DELETE CASCADE.
+    """
+    session = await db.get(AISession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status not in TERMINAL_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This session is {session.status}. Cancel it before deleting, so the "
+                "run that owns it can stop cleanly."
+            ),
+        )
+
+    # The transcript is about to be unrecoverable, so what it was goes in
+    # the audit trail — a deleted investigation should not be invisible.
+    await log_action(
+        db,
+        action="ai_session_deleted",
+        entity_type="ai_session",
+        entity_id=session.id,
+        user_id=user.id,
+        before_state={
+            "mission": session.mission[:500],
+            "status": session.status,
+            "mode": session.mode,
+            "iterations": session.iterations,
+            "command_count": session.command_count,
+            "target_host_ids": list(session.target_host_ids or []),
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+        },
+    )
+    await db.delete(session)
+    await db.commit()
+
+
 @router.get("/sessions/{session_id}/stream")
 async def stream_session(
     session_id: int,
