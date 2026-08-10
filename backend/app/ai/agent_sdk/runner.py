@@ -61,6 +61,7 @@ from app.ai.providers.base import Usage
 from app.ai.providers.claude_cli import DEFAULT_CONFIG_DIR
 from app.ai.providers.factory import decrypt_api_key
 from app.ai.redaction import redact
+from app.ai.snapshots import snapshot_if_mutating
 from app.ai.tools import ToolContext, ToolHandler, ToolResult, tools_for_session
 from app.audit.logger import log_action
 from app.settings_service import get_setting_typed
@@ -267,6 +268,25 @@ class AgentSDKRunner:
             )
             self.db.add(record)
             await self.db.flush()
+
+            # Re-derived rather than carried over from the permission
+            # callback: `verdict_for` is pure, and threading state between
+            # two points in the SDK's own call stack would be one more
+            # thing to get wrong under concurrent tool dispatch.
+            snapshot_name, refusal = await snapshot_if_mutating(
+                self.db,
+                classification=handler.verdict_for(arguments).classification,
+                arguments=arguments,
+                session_id=self.session.id,
+                label=str(arguments.get("command") or name),
+            )
+            if refusal:
+                record.status = "blocked"
+                record.result_summary = refusal[:1000]
+                record.finished_at = datetime.now(UTC)
+                await self.db.commit()
+                return ToolResult(refusal, ok=False)
+            record.snapshot_name = snapshot_name
 
             await self._emit("tool_call", {"name": name, "arguments": arguments})
 

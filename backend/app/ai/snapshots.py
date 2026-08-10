@@ -38,6 +38,41 @@ class SnapshotFailed(Exception):
     """A snapshot was expected for this host and could not be taken."""
 
 
+async def snapshot_if_mutating(
+    db: AsyncSession,
+    *,
+    classification: str,
+    arguments: dict,
+    session_id: int,
+    label: str = "",
+) -> tuple[str | None, str | None]:
+    """Snapshot before a ``full_auto`` write, if this call is one.
+
+    Returns ``(snapshot_name, refusal)``. A non-empty ``refusal`` means
+    the caller must not run the command and should hand that text back to
+    the model instead.
+
+    Separate from :func:`snapshot_before_change` so the in-line path can
+    stay a two-line call in the middle of a tool runner, and so the "is
+    this even a write?" question is answered in one place rather than
+    once per runner.
+    """
+    if classification != "mutating":
+        return None, None
+    host_id = arguments.get("host_id")
+    if not isinstance(host_id, int):
+        return None, None
+    try:
+        return (
+            await snapshot_before_change(
+                db, host_id=host_id, session_id=session_id, label=label
+            ),
+            None,
+        )
+    except SnapshotFailed as exc:
+        return None, str(exc)
+
+
 async def snapshot_before_change(
     db: AsyncSession,
     *,

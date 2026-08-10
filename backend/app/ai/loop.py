@@ -40,6 +40,7 @@ from app.ai.providers.base import (
 )
 from app.ai.providers.factory import build_provider
 from app.ai.redaction import redact
+from app.ai.snapshots import snapshot_if_mutating
 from app.ai.tools import TOOL_REGISTRY, ToolContext, tools_for_session
 from app.audit.logger import log_action
 from app.settings_service import get_setting_typed
@@ -316,6 +317,24 @@ class AgentLoop:
                 },
             )
             return approvals.PARKED_RESULT
+
+        # full_auto reaches here with a write the operator never sees, so
+        # the rollback point has to be taken now rather than asked for
+        # afterwards.
+        snapshot_name, refusal = await snapshot_if_mutating(
+            self.db,
+            classification=decision.classification,
+            arguments=call.arguments,
+            session_id=self.session.id,
+            label=str(call.arguments.get("command") or call.name),
+        )
+        if refusal:
+            record.status = "blocked"
+            record.result_summary = refusal[:1000]
+            record.finished_at = datetime.now(UTC)
+            await self.db.flush()
+            return refusal
+        record.snapshot_name = snapshot_name
 
         await self._emit(
             "tool_call",
