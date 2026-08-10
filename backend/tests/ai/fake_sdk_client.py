@@ -34,13 +34,15 @@ def result(
     usage: dict | None | Any = _UNSET,
     is_error: bool = False,
     result_text: str | None = None,
+    subtype: str = "success",
+    num_turns: int = 1,
 ) -> ResultMessage:
     return ResultMessage(
-        subtype="success",
+        subtype=subtype,
         duration_ms=1,
         duration_api_ms=1,
         is_error=is_error,
-        num_turns=1,
+        num_turns=num_turns,
         session_id=session_id,
         total_cost_usd=0.0,
         usage={"input_tokens": 10, "output_tokens": 5} if usage is _UNSET else usage,

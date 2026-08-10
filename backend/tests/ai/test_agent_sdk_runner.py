@@ -296,3 +296,91 @@ class TestRefusalsAreRecorded:
 
 class _FakeContext:
     tool_use_id = "toolu_fake"
+
+
+class TestTruncationIsNotSuccess:
+    """Observed in production. A session hit the turn limit mid-sweep and
+    the report shown to the operator was the model's last half-finished
+    sentence — "All docker containers are up and healthy. Now let me check
+    network/connectivity and CPU details to round out the picture." —
+    badged succeeded, with no indication it had been cut off.
+
+    That is the fabrication failure in different clothes: incomplete work
+    presented as a conclusion. The old guard only recorded a stop reason
+    when there was *no* text, so a run truncated after saying something
+    looked exactly like one that finished.
+    """
+
+    async def test_hitting_the_turn_limit_is_recorded(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Now let me check the network."), result(subtype="error_max_turns")],
+        )
+
+        assert outcome.stopped_by, "a truncated run must say why it stopped"
+        assert "turn limit" in outcome.stopped_by
+
+    async def test_the_report_says_it_stopped_early(self, db, ai_provider, make_session) -> None:
+        """The operator has to be able to tell a conclusion from an
+        interruption without reading the transcript."""
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Now let me check the network."), result(subtype="error_max_turns")],
+        )
+
+        assert "Stopped early" in outcome.report
+
+    async def test_text_does_not_mask_truncation(self, db, ai_provider, make_session) -> None:
+        """The exact regression: the run produced text *and* was cut off."""
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Some findings so far."), result(subtype="error_max_turns")],
+        )
+
+        assert outcome.stopped_by != ""
+
+    async def test_a_clean_finish_is_not_flagged(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db, session, ai_provider, [assistant("nginx is healthy."), result()]
+        )
+
+        assert outcome.stopped_by == ""
+        assert "Stopped early" not in outcome.report
+        assert outcome.status == "succeeded"
+
+    async def test_turns_are_counted_the_way_the_cap_counts_them(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """Counting assistant messages reported 41 turns for a run capped
+        at 15, which makes the cap look broken. The SDK's own count is the
+        one the cap is compared against."""
+        session = await make_session()
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("a"), assistant("b"), assistant("c"), result(num_turns=7)],
+        )
+
+        assert session.iterations == 7
+
+    async def test_a_provider_error_is_recorded_too(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("partial"), result(is_error=True, result_text="overloaded")],
+        )
+
+        assert outcome.stopped_by != ""

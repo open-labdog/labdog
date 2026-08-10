@@ -294,14 +294,22 @@ class AgentSDKRunner:
 
     # -- the run ----------------------------------------------------------
 
-    def _build_options(self) -> Any:
+    def _build_options(self, *, with_tools: bool = True, max_turns: int | None = None) -> Any:
+        """Options for one exchange.
+
+        ``with_tools=False`` builds the wrap-up variant: no MCP server at
+        all, so the model cannot answer a request for a summary by going
+        and looking something else up.
+        """
         from claude_agent_sdk import ClaudeAgentOptions
 
-        server = build_tool_server(self._handlers, self._execute_tool)
+        servers = (
+            {"labdog": build_tool_server(self._handlers, self._execute_tool)} if with_tools else {}
+        )
         resume = (self.session.resume_state or {}).get("sdk_session_id")
 
         return ClaudeAgentOptions(
-            mcp_servers={"labdog": server},
+            mcp_servers=servers,
             # Only the tools LabDog built. Omitting this hands the model
             # Bash, Read, Write and Edit inside LabDog's container.
             tools=NO_BUILTIN_TOOLS,
@@ -317,11 +325,83 @@ class AgentSDKRunner:
             can_use_tool=self._can_use_tool,
             system_prompt=build_system_prompt(self.session.autonomy_level),
             model=self.provider_row.model or None,
-            max_turns=self.caps.max_iterations,
+            max_turns=max_turns or self.caps.max_iterations,
             env=build_sdk_env(decrypt_api_key(self.provider_row), SESSION_STATE_DIR),
             cwd=ensure_state_dir(SESSION_STATE_DIR),
             resume=resume,
         )
+
+    def _stop_reason(self, message: Any) -> str:
+        """Why the SDK ended the exchange, in words, or "" if it just finished.
+
+        Read from ``subtype`` rather than ``is_error`` alone. A run that
+        hits the turn limit *after* producing some text is still truncated,
+        and the earlier version only recorded a stop reason when there was
+        no text at all — so a session that was cut off mid-investigation
+        was badged succeeded, and its last half-finished sentence ("Now let
+        me check network and CPU details") was shown to the operator as the
+        report. That is the fabrication failure wearing different clothes:
+        incomplete work presented as a conclusion.
+        """
+        subtype = (getattr(message, "subtype", "") or "").strip()
+        if subtype == "error_max_turns":
+            return f"the turn limit ({self.caps.max_iterations})"
+        if subtype.startswith("error"):
+            detail = str(getattr(message, "result", "") or "").strip()
+            return detail or subtype.replace("_", " ")
+        if getattr(message, "is_error", False):
+            status = getattr(message, "api_error_status", None)
+            detail = str(getattr(message, "result", "") or "").strip()
+            if status:
+                return f"a provider error (HTTP {status})"
+            return detail or "the backend reported an error"
+        return ""
+
+    async def _summarise_partial(self) -> str:
+        """Ask for a conclusion when the run was cut short.
+
+        Without this the report is whatever the model happened to be
+        saying when it ran out of turns, which reads as a finding rather
+        than as an interrupted thought. One extra turn with no tools
+        attached is a cheap way to salvage work already paid for — the
+        same trade AgentLoop makes for the same reason.
+        """
+        from claude_agent_sdk import AssistantMessage, TextBlock
+
+        factory = self._client_factory
+        if factory is None:
+            from claude_agent_sdk import ClaudeSDKClient
+
+            factory = ClaudeSDKClient
+
+        prompt = (
+            f"You have reached this session's limit ({self._stopped_by}) and cannot "
+            f"run any further tools. Summarise what you established, what remains "
+            f"unverified, and what you would do next. Do not call any tools."
+        )
+        text: list[str] = []
+        try:
+            async with asyncio.timeout(self.caps.wall_clock_seconds):
+                async with factory(
+                    options=self._build_options(with_tools=False, max_turns=1)
+                ) as client:
+                    await client.query(prompt)
+                    async for message in client.receive_response():
+                        if isinstance(message, AssistantMessage):
+                            text.append(
+                                "".join(b.text for b in message.content if isinstance(b, TextBlock))
+                            )
+        except Exception:
+            # Best effort. A failed wrap-up must not turn a truncated run
+            # into a failed one — the transcript is still there.
+            logger.warning(
+                "ai session %s: wrap-up after %s failed",
+                self.session.id,
+                self._stopped_by,
+                exc_info=True,
+            )
+            return ""
+        return "".join(text).strip()
 
     async def run(self) -> LoopOutcome:
         """Drive the session to completion."""
@@ -366,6 +446,20 @@ class AgentSDKRunner:
         if await self._cancelled():
             await self._emit("status", {"status": "cancelled"})
             return LoopOutcome("cancelled", final_text, session.iterations, "cancelled by operator")
+
+        # A truncated run's last message is whatever the model was saying
+        # when it ran out of turns — mid-sentence, mid-investigation, and
+        # indistinguishable from a conclusion once it is sitting in the
+        # report pane. Ask for a real one instead.
+        if self._stopped_by:
+            if wrapped := await self._summarise_partial():
+                final_text = wrapped
+                await self._emit("text", {"text": wrapped})
+                async with self._db_lock:
+                    await service.append_message(
+                        self.db, session.id, role="assistant", content=wrapped
+                    )
+                    await self.db.commit()
 
         status = "succeeded" if final_text else "failed"
         report = final_text or f"The session stopped early: {self._stopped_by or 'no output'}."
@@ -422,10 +516,12 @@ class AgentSDKRunner:
                     # this run and resume it in a later process.
                     async with self._db_lock:
                         session.resume_state = {"sdk_session_id": message.session_id}
-                        if message.is_error and not final_text:
-                            self._stopped_by = str(
-                                message.result or "the backend reported an error"
-                            )
+                        # The SDK counts turns against max_turns; counting
+                        # assistant messages here instead reported 41 for a
+                        # run capped at 15, which makes the cap look broken.
+                        if message.num_turns:
+                            session.iterations = message.num_turns
+                        self._stopped_by = self._stop_reason(message) or self._stopped_by
                         await self.db.commit()
 
         return final_text
