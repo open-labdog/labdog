@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.providers.base import ToolSpec
-from app.ai.safety import Classification
+from app.ai.safety import Classification, Verdict
 
 
 @dataclass
@@ -55,6 +55,10 @@ class ToolResult:
 
 ToolRunner = Callable[[ToolContext, dict[str, Any]], Awaitable[ToolResult]]
 
+#: Decides a call's real classification from its arguments alone, without
+#: running it or touching the database.
+Preclassifier = Callable[[dict[str, Any]], Verdict]
+
 
 @dataclass(frozen=True)
 class ToolHandler:
@@ -64,6 +68,25 @@ class ToolHandler:
     #: ``ToolResult.classification``.
     classification: Classification
     run: ToolRunner
+    #: Set when the ceiling alone would misjudge a call. ``run_ssh_command``
+    #: is nominally ``mutating``, but most calls are a ``journalctl`` read —
+    #: gating them all as writes would make a read-only session useless.
+    #:
+    #: Needed because the Agent SDK decides permission *before* dispatching
+    #: the call, so ``ToolResult.classification`` comes too late there. Kept
+    #: as data on the handler rather than a name check in the gate, so the
+    #: rule travels with the tool that owns it.
+    preclassify: Preclassifier | None = None
+
+    def verdict_for(self, arguments: dict[str, Any]) -> Verdict:
+        """This call's classification, refined by arguments where possible."""
+        if self.preclassify is not None:
+            return self.preclassify(arguments)
+        return Verdict(
+            self.classification,
+            f"{self.spec.name} is classified {self.classification}",
+            "",
+        )
 
 
 def tool(
@@ -71,6 +94,7 @@ def tool(
     description: str,
     parameters: dict[str, Any],
     classification: Classification,
+    preclassify: Preclassifier | None = None,
 ) -> Callable[[ToolRunner], ToolHandler]:
     """Decorator turning an async function into a registered handler."""
 
@@ -79,6 +103,7 @@ def tool(
             spec=ToolSpec(name=name, description=description, parameters=parameters),
             classification=classification,
             run=func,
+            preclassify=preclassify,
         )
 
     return wrap

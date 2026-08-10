@@ -50,6 +50,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The Claude Agent SDK drives Claude Code as a subprocess, which is the
+# only way to run agentic sessions against a Claude subscription rather
+# than metered API credit. Deliberately optional: its wheel is
+# platform-specific and ships a ~131 MB Claude Code binary, which has no
+# business inside the .deb/.rpm artefacts. The container image installs
+# this extra; package installs do not, and app.ai.agent_sdk guards the
+# import so a missing SDK reads as "provider unavailable" rather than
+# breaking startup.
+agent = [
+    "claude-agent-sdk>=0.2.134",
+]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",

@@ -33,9 +33,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
-# Provider backends. "claude_cli" shells out to the locally installed
-# Claude Code CLI and therefore carries no API key of its own.
-PROVIDER_TYPES = ("openai_compat", "anthropic", "claude_cli")
+# Provider backends. The two Claude Code ones both authenticate with a
+# subscription token rather than an API key, and differ in who runs the
+# agent loop: "claude_cli" shells out once per prompt and cannot call
+# tools, while "claude_agent" drives Claude Code through the Claude Agent
+# SDK, which runs the loop itself and calls LabDog's tools over an
+# in-process MCP server.
+PROVIDER_TYPES = ("openai_compat", "anthropic", "claude_cli", "claude_agent")
 
 # How much the model is allowed to do without a human in the loop.
 AUTONOMY_LEVELS = ("read_only", "approval", "full_auto")

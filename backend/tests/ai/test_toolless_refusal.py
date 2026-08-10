@@ -42,6 +42,17 @@ class TestCapabilityLookup:
     def test_the_http_backends_can(self, provider_type: str) -> None:
         assert supports_tools(_provider(provider_type)) is True
 
+    def test_the_agent_sdk_backend_can(self) -> None:
+        """The whole point of the SDK backend: same subscription billing as
+        the single-shot CLI, but it serves LabDog's tools over an
+        in-process MCP server, so it can actually investigate."""
+        assert supports_tools(_provider("claude_agent")) is True
+
+    def test_the_two_claude_code_backends_disagree_about_tools(self) -> None:
+        """Guards the distinction the provider picker is built on. If these
+        ever match, one of the two entries in the UI is lying."""
+        assert supports_tools(_provider("claude_agent")) != supports_tools(_provider("claude_cli"))
+
     def test_an_unknown_type_is_assumed_incapable(self) -> None:
         """Fails toward refusing a session rather than running one whose
         output cannot be trusted."""
@@ -56,6 +67,37 @@ class TestCapabilityLookup:
 
         assert _PROVIDER_CLASSES["claude_cli"] is ClaudeCLIProvider
         assert supports_tools(_provider("claude_cli")) is ClaudeCLIProvider.supports_tools
+
+
+class TestEgress:
+    """Claude Code runs locally, but it is an authenticated client talking
+    to Anthropic — the host data still leaves the network."""
+
+    @pytest.mark.parametrize("provider_type", ["claude_cli", "claude_agent"])
+    def test_both_claude_code_backends_send_data_offsite(self, provider_type: str) -> None:
+        from app.ai.providers.factory import sends_data_offsite
+
+        assert sends_data_offsite(_provider(provider_type)) is True
+
+
+class TestRouting:
+    def test_the_sdk_backend_is_not_built_as_an_llm_provider(self) -> None:
+        """It owns the agent loop, so it has no single turn to stream.
+        Reaching build_provider with one means a caller routed the session
+        to AgentLoop instead of AgentSDKRunner."""
+        from app.ai.providers.base import LLMProviderError
+        from app.ai.providers.factory import build_provider, runs_on_agent_sdk
+
+        provider = _provider("claude_agent")
+        assert runs_on_agent_sdk(provider) is True
+        with pytest.raises(LLMProviderError):
+            build_provider(provider)
+
+    @pytest.mark.parametrize("provider_type", ["openai_compat", "anthropic", "claude_cli"])
+    def test_the_loop_backed_types_are_not_routed_to_the_sdk(self, provider_type: str) -> None:
+        from app.ai.providers.factory import runs_on_agent_sdk
+
+        assert runs_on_agent_sdk(_provider(provider_type)) is False
 
 
 class TestInvestigationIsRefused:

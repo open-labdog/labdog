@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.ai.models import AIProvider, AISession
 from app.proxmox.schemas import _ca_cert_fingerprint, _validate_ca_cert_pem
 
-ProviderType = Literal["openai_compat", "anthropic", "claude_cli"]
+ProviderType = Literal["openai_compat", "anthropic", "claude_cli", "claude_agent"]
 AutonomyLevel = Literal["read_only", "approval", "full_auto"]
 SessionMode = Literal["chat", "scheduled", "verify", "alert_investigation"]
 
@@ -111,6 +111,10 @@ class AIProviderResponse(BaseModel):
     max_tokens: int
     temperature: float
     is_default: bool
+    # Whether this backend can execute tool calls. Sent so the UI does not
+    # have to re-derive capability from a provider_type it would then have
+    # to keep in step with the backend by hand.
+    supports_tools: bool
     sends_data_offsite: bool
     input_cost_per_mtok: float
     output_cost_per_mtok: float
@@ -123,7 +127,7 @@ class AIProviderResponse(BaseModel):
 def provider_to_response(provider: AIProvider) -> AIProviderResponse:
     # Imported here: factory pulls in the provider backends, which the
     # schema module itself has no need for.
-    from app.ai.providers.factory import sends_data_offsite
+    from app.ai.providers.factory import sends_data_offsite, supports_tools
 
     return AIProviderResponse(
         id=provider.id,
@@ -139,6 +143,7 @@ def provider_to_response(provider: AIProvider) -> AIProviderResponse:
         max_tokens=provider.max_tokens,
         temperature=provider.temperature,
         is_default=provider.is_default,
+        supports_tools=supports_tools(provider),
         sends_data_offsite=sends_data_offsite(provider),
         input_cost_per_mtok=provider.input_cost_per_mtok,
         output_cost_per_mtok=provider.output_cost_per_mtok,

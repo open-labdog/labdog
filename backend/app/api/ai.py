@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import service
 from app.ai.models import AIMessage, AIProvider, AISession, AIToolCall, AIUsageDay
 from app.ai.providers.base import LLMProviderError
-from app.ai.providers.factory import build_provider
+from app.ai.providers.factory import build_provider, runs_on_agent_sdk
 from app.ai.schemas import (
     AIProviderCreate,
     AIProviderResponse,
@@ -73,13 +73,18 @@ async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
 #: catch the case of a credential that plainly is not one of these.
 SUBSCRIPTION_TOKEN_PREFIX = "sk-ant-oat"  # nosec B105 - prefix, not a secret
 
+#: Backends whose credential is a Claude subscription token from
+#: ``claude setup-token``, not an API key. Both drive Claude Code, so both
+#: reject an API key pasted into the same field.
+SUBSCRIPTION_PROVIDER_TYPES = frozenset({"claude_cli", "claude_agent"})
+
 
 def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
-    """Reject a CLI subscription token that is obviously not one.
+    """Reject a subscription token that is obviously not one.
 
     A blank value is fine and means "use whatever the host is logged in as".
     """
-    if provider_type != "claude_cli" or not api_key:
+    if provider_type not in SUBSCRIPTION_PROVIDER_TYPES or not api_key:
         return
     if api_key.startswith(SUBSCRIPTION_TOKEN_PREFIX):
         return
@@ -255,8 +260,16 @@ async def test_provider(
     if provider is None:
         raise HTTPException(status_code=404, detail="Provider not found")
     try:
-        backend = build_provider(provider)
-        message = await backend.test_connection()
+        if runs_on_agent_sdk(provider):
+            # No LLMProvider exists for these — the SDK owns the loop — so
+            # they carry their own probe rather than going through
+            # build_provider(), which refuses them by design.
+            from app.ai.agent_sdk.probe import test_connection as probe_agent_sdk
+
+            message = await probe_agent_sdk(provider)
+        else:
+            backend = build_provider(provider)
+            message = await backend.test_connection()
     except LLMProviderError as exc:
         return AIProviderTestResponse(ok=False, message=str(exc))
     except Exception as exc:
@@ -442,6 +455,58 @@ async def cancel_session(
     await db.commit()
     await db.refresh(session)
     return session_to_response(session)
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_session(
+    session_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a session and its transcript.
+
+    Refused while the session is still live. A running session is owned by
+    a Celery task that is actively writing to it, and deleting the row out
+    from under it turns a working run into a confusing crash. Cancel first,
+    then delete.
+
+    Spend is unaffected: the daily ledger in ``ai_usage_days`` is keyed by
+    date and provider, not by session, precisely so that accounting
+    survives housekeeping like this. Messages and tool calls go with the
+    session via ON DELETE CASCADE.
+    """
+    session = await db.get(AISession, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if session.status not in TERMINAL_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This session is {session.status}. Cancel it before deleting, so the "
+                "run that owns it can stop cleanly."
+            ),
+        )
+
+    # The transcript is about to be unrecoverable, so what it was goes in
+    # the audit trail — a deleted investigation should not be invisible.
+    await log_action(
+        db,
+        action="ai_session_deleted",
+        entity_type="ai_session",
+        entity_id=session.id,
+        user_id=user.id,
+        before_state={
+            "mission": session.mission[:500],
+            "status": session.status,
+            "mode": session.mode,
+            "iterations": session.iterations,
+            "command_count": session.command_count,
+            "target_host_ids": list(session.target_host_ids or []),
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+        },
+    )
+    await db.delete(session)
+    await db.commit()
 
 
 @router.get("/sessions/{session_id}/stream")

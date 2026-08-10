@@ -73,11 +73,29 @@ def is_local_endpoint(base_url: str | None) -> bool:
     return False
 
 
+#: Backends driven by the Claude Agent SDK rather than by
+#: :class:`~app.ai.loop.AgentLoop`.
+#:
+#: These are deliberately absent from :data:`_PROVIDER_CLASSES`: the SDK
+#: owns the agent loop, so there is no single turn for them to stream and
+#: nothing that could implement ``LLMProvider``. Capability questions still
+#: have to be answerable, which is what this set is for. Named here rather
+#: than imported from ``app.ai.agent_sdk`` so that asking "can this
+#: provider run tools?" does not drag the optional SDK — or the tool
+#: registry — into a process that only wanted to render a settings page.
+SDK_BACKED_TYPES = frozenset({"claude_agent"})
+
+
+def runs_on_agent_sdk(provider: AIProvider) -> bool:
+    """Whether this provider's sessions are driven by the Agent SDK."""
+    return provider.provider_type in SDK_BACKED_TYPES
+
+
 def sends_data_offsite(provider: AIProvider) -> bool:
     """True when using this provider transmits host data off the network."""
-    if provider.provider_type == "claude_cli":
-        # The CLI runs locally, but it is an authenticated client that talks
-        # to Anthropic — the data still leaves.
+    if provider.provider_type == "claude_cli" or runs_on_agent_sdk(provider):
+        # Claude Code runs locally, but it is an authenticated client that
+        # talks to Anthropic — the data still leaves.
         return True
     return not is_local_endpoint(provider.base_url)
 
@@ -100,12 +118,34 @@ def supports_tools(provider: AIProvider) -> bool:
     unknown type is treated as incapable, which fails toward refusing a
     session rather than running one whose output cannot be trusted.
     """
+    if runs_on_agent_sdk(provider):
+        # The SDK runs LabDog's tools as an in-process MCP server. This is
+        # the capability the single-shot CLI backend never had.
+        return True
     cls = _PROVIDER_CLASSES.get(provider.provider_type)
     return bool(cls is not None and getattr(cls, "supports_tools", False))
 
 
 def build_provider(provider: AIProvider) -> LLMProvider:
-    """Instantiate the backend described by a stored provider row."""
+    """Instantiate the backend described by a stored provider row.
+
+    Raises for SDK-backed types. They have no per-turn interface to
+    return, and reaching here with one means a caller routed a session to
+    ``AgentLoop`` that :func:`runs_on_agent_sdk` should have sent to
+    ``AgentSDKRunner``.
+    """
+    if runs_on_agent_sdk(provider):
+        # Phrased for whoever ends up reading it. An earlier version named
+        # the two runner classes and called itself a routing bug, which was
+        # accurate for a developer and useless to the operator who saw it
+        # in the providers table when the Test button reached here.
+        raise LLMProviderError(
+            f"Provider {provider.name!r} runs through Claude Code, which handles the "
+            "conversation itself, so LabDog cannot drive it one turn at a time. This "
+            "is an internal routing error rather than a problem with your settings — "
+            "please report it."
+        )
+
     api_key = decrypt_api_key(provider)
 
     if provider.provider_type == "openai_compat":

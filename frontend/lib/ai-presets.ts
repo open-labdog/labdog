@@ -81,15 +81,16 @@ const OPENAI_COMPAT_PRESETS: ModelPreset[] = [
   },
 ]
 
-// The CLI takes the same model identifiers through --model, so the same
+// Both Claude Code backends take the same model identifiers, so the same
 // suggestions apply. Rates are dropped: a subscription is billed flat, and
-// the cost fields are hidden for this type anyway.
-const CLAUDE_CLI_PRESETS: ModelPreset[] = ANTHROPIC_PRESETS.map(
+// the cost fields are hidden for these types anyway.
+const CLAUDE_CODE_PRESETS: ModelPreset[] = ANTHROPIC_PRESETS.map(
   ({ id, label, hint }) => ({ id, label, hint })
 )
 
 export const MODEL_PRESETS: Record<AIProviderType, ModelPreset[]> = {
   anthropic: ANTHROPIC_PRESETS,
   openai_compat: OPENAI_COMPAT_PRESETS,
-  claude_cli: CLAUDE_CLI_PRESETS,
+  claude_cli: CLAUDE_CODE_PRESETS,
+  claude_agent: CLAUDE_CODE_PRESETS,
 }

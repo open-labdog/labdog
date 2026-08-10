@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 
 import { ToolCallBadge } from "@/components/ai/tool-call-badge"
+import { Markdown } from "@/components/ui/markdown"
 import type { AIMessage, AIToolCall } from "@/lib/types"
 
 interface Props {
@@ -15,6 +16,11 @@ interface Props {
 
 /**
  * Renders the conversation.
+ *
+ * Assistant turns are markdown — reports arrive with headings, bold and
+ * tables — so they go through the markdown renderer. User turns stay
+ * plain text: an operator typing asterisks means asterisks, and there is
+ * no reason to give their own input a second interpretation pass.
  *
  * Tool results are shown as the badge of the call that produced them
  * rather than as their own turn: the raw result is often thousands of
@@ -65,11 +71,7 @@ export function ChatTranscript({ messages, toolCalls, liveText, isRunning }: Pro
 
           return (
             <div key={message.id} className="space-y-2">
-              {message.content && (
-                <div className="text-sm whitespace-pre-wrap text-slate-300">
-                  {message.content}
-                </div>
-              )}
+              {message.content && <Markdown>{message.content}</Markdown>}
               {calls.map((call) => (
                 <ToolCallBadge key={call.id} call={call} />
               ))}
@@ -77,9 +79,7 @@ export function ChatTranscript({ messages, toolCalls, liveText, isRunning }: Pro
           )
         })}
 
-      {liveText && (
-        <div className="text-sm whitespace-pre-wrap text-slate-300">{liveText}</div>
-      )}
+      {liveText && <Markdown>{liveText}</Markdown>}
 
       {isRunning && !liveText && (
         <div className="text-sm text-slate-400">Working…</div>
