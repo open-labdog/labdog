@@ -227,9 +227,38 @@ class AISessionResponse(BaseModel):
     finished_at: datetime | None
 
 
+class AIApprovalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    session_id: int
+    tool_name: str
+    #: The exact line the operator is deciding on. Stored, not derived, so
+    #: what is shown and what would run cannot disagree.
+    command_preview: str
+    target_host_id: int | None
+    summary: str
+    classification: str
+    reason: str
+    status: str
+    decision_note: str | None
+    decided_by_user_id: int | None
+    created_at: datetime
+    expires_at: datetime | None
+    decided_at: datetime | None
+
+
+class AIApprovalDecision(BaseModel):
+    approve: bool
+    #: Shown to the model on resume. A rejection with a reason teaches it
+    #: something; one without simply blocks.
+    note: str | None = Field(default=None, max_length=2000)
+
+
 class AISessionDetail(AISessionResponse):
     messages: list[AIMessageResponse] = Field(default_factory=list)
     tool_calls: list[AIToolCallResponse] = Field(default_factory=list)
+    approvals: list[AIApprovalResponse] = Field(default_factory=list)
 
 
 def session_to_response(session: AISession) -> AISessionResponse:

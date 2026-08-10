@@ -51,12 +51,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import service
+from app.ai import approvals, service
 from app.ai.agent_sdk.bridge import NO_BUILTIN_TOOLS, build_tool_server, local_tool_name
 from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
-from app.ai.agent_sdk.gate import decide
+from app.ai.gate import decide
 from app.ai.loop import LoopCaps, LoopOutcome, build_system_prompt
-from app.ai.models import AIProvider, AISession, AIToolCall
+from app.ai.models import AIApprovalRequest, AIProvider, AISession, AIToolCall
 from app.ai.providers.base import Usage
 from app.ai.providers.claude_cli import DEFAULT_CONFIG_DIR
 from app.ai.providers.factory import decrypt_api_key
@@ -85,12 +85,17 @@ class AgentSDKRunner:
         *,
         publish: Any = None,
         client_factory: Any = None,
+        prompt: str | None = None,
     ) -> None:
         self.db = db
         self.session = session
         self.provider_row = provider_row
         self.caps = caps
         self._publish = publish
+        # What to send. Normally the mission; on resume, the operator's
+        # decision, with ``resume_state`` restoring the rest of the
+        # conversation from the CLI's own session file.
+        self._prompt = prompt
         # Injectable so tests can drive a scripted client instead of
         # spawning the real binary.
         self._client_factory = client_factory
@@ -106,6 +111,11 @@ class AgentSDKRunner:
         # id for a tool name is that call's.
         self._tool_use_ids: dict[str, str] = {}
         self._stopped_by = ""
+        # Set when a call needs an operator's decision. The SDK has no way
+        # to suspend a turn, so the gate refuses the call and this flag
+        # tells the driver to stop the exchange rather than let the model
+        # go looking for another route to the same change.
+        self._parked: AIApprovalRequest | None = None
 
     # -- plumbing ---------------------------------------------------------
 
@@ -172,8 +182,9 @@ class AgentSDKRunner:
         """
         from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
 
+        name = local_tool_name(tool_name)
         verdict = decide(
-            tool_name,
+            name,
             arguments or {},
             permitted=self._permitted,
             autonomy_level=self.session.autonomy_level,
@@ -182,13 +193,39 @@ class AgentSDKRunner:
         if verdict.allowed:
             tool_use_id = getattr(context, "tool_use_id", None)
             if tool_use_id:
-                self._tool_use_ids[local_tool_name(tool_name)] = tool_use_id
+                self._tool_use_ids[name] = tool_use_id
             return PermissionResultAllow()
+
+        # Refused only because nobody has said yes yet. Park the session
+        # rather than answering "no": the run ends here, the worker is
+        # freed, and a decision restarts it.
+        if verdict.needs_approval and verdict.verdict is not None:
+            async with self._db_lock:
+                approval = await approvals.park(
+                    self.db,
+                    self.session,
+                    tool_name=name,
+                    arguments=arguments or {},
+                    verdict=verdict.verdict,
+                )
+                await self.db.commit()
+            self._parked = approval
+            await self._emit(
+                "approval_required",
+                {
+                    "approval_id": approval.id,
+                    "tool_name": approval.tool_name,
+                    "command_preview": approval.command_preview,
+                    "target_host_id": approval.target_host_id,
+                    "reason": approval.reason,
+                    "summary": approval.summary,
+                },
+            )
+            return PermissionResultDeny(message=approvals.PARKED_RESULT)
 
         # A refused call is part of the record. Without this the transcript
         # shows the model changing the subject for no visible reason.
         async with self._db_lock:
-            name = local_tool_name(tool_name)
             self.db.add(
                 AIToolCall(
                     session_id=self.session.id,
@@ -447,6 +484,22 @@ class AgentSDKRunner:
             await self._emit("status", {"status": "cancelled"})
             return LoopOutcome("cancelled", final_text, session.iterations, "cancelled by operator")
 
+        # Parked, not finished: no report, no finished_at, and deliberately
+        # no wrap-up turn. The investigation is not over — it is waiting on
+        # a person — and summarising it now would present an interrupted
+        # run as a conclusion.
+        if self._parked is not None:
+            async with self._db_lock:
+                session.status = "waiting_approval"
+                await self.db.commit()
+            await self._emit("status", {"status": "waiting_approval"})
+            return LoopOutcome(
+                "waiting_approval",
+                final_text,
+                session.iterations,
+                "waiting for operator approval",
+            )
+
         # A truncated run's last message is whatever the model was saying
         # when it ran out of turns — mid-sentence, mid-investigation, and
         # indistinguishable from a conclusion once it is sitting in the
@@ -473,7 +526,7 @@ class AgentSDKRunner:
 
     async def _exchange(self) -> str:
         """One prompt in, the assistant's final text out."""
-        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+        from claude_agent_sdk import AssistantMessage, ResultMessage, SystemMessage, TextBlock
 
         session = self.session
         options = self._build_options()
@@ -485,9 +538,19 @@ class AgentSDKRunner:
 
         final_text = ""
         async with factory(options=options) as client:
-            await client.query(session.mission)
+            await client.query(self._prompt or session.mission)
 
             async for message in client.receive_response():
+                if isinstance(message, SystemMessage):
+                    # The CLI announces its session id in the `init`
+                    # message, before any tool runs. Taking it here rather
+                    # than only from the ResultMessage is what makes an
+                    # approval survivable: parking interrupts the exchange,
+                    # and an interrupted exchange is exactly the case where
+                    # a final result may never arrive.
+                    await self._remember_sdk_session(message)
+                    continue
+
                 if isinstance(message, AssistantMessage):
                     text = "".join(
                         block.text for block in message.content if isinstance(block, TextBlock)
@@ -502,6 +565,15 @@ class AgentSDKRunner:
                             )
                             await self.db.commit()
 
+                    if self._parked is not None:
+                        # The gate already refused the call. Stopping here
+                        # too is what makes it a pause rather than a no:
+                        # left running, the model would spend the rest of
+                        # its turns working around the refusal, and an
+                        # operator approving thirty seconds later would
+                        # find the session had moved on without them.
+                        await client.interrupt()
+                        break
                     if await self._cancelled():
                         await client.interrupt()
                         break
@@ -512,9 +584,9 @@ class AgentSDKRunner:
 
                 elif isinstance(message, ResultMessage):
                     await self._record_usage(message.usage)
-                    # Keep the CLI's own session id so an approval can park
-                    # this run and resume it in a later process.
                     async with self._db_lock:
+                        # Keep the CLI's own session id so an approval can
+                        # park this run and resume it in a later process.
                         session.resume_state = {"sdk_session_id": message.session_id}
                         # The SDK counts turns against max_turns; counting
                         # assistant messages here instead reported 41 for a
@@ -525,6 +597,26 @@ class AgentSDKRunner:
                         await self.db.commit()
 
         return final_text
+
+    async def _remember_sdk_session(self, message: Any) -> None:
+        """Persist the CLI's session id as soon as it is known.
+
+        Tolerant of shape: the SDK exposes ``session_id`` as an attribute
+        on some system messages and only inside ``data`` on the generic
+        ones, and an id LabDog fails to record is a session it cannot
+        resume.
+        """
+        data = getattr(message, "data", None)
+        sdk_session_id = getattr(message, "session_id", None) or (
+            data.get("session_id") if isinstance(data, dict) else None
+        )
+        if not sdk_session_id:
+            return
+        if (self.session.resume_state or {}).get("sdk_session_id") == sdk_session_id:
+            return
+        async with self._db_lock:
+            self.session.resume_state = {"sdk_session_id": sdk_session_id}
+            await self.db.commit()
 
     async def _budget_hit(self) -> str | None:
         """Re-check spend between turns, and warn before it bites.

@@ -107,8 +107,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 1,
         "description": (
             "Permit AI providers that send host data outside your network "
-            "(1 = allow, 0 = local endpoints only). A provider must also have "
-            "its own egress flag set."
+            "(1 = allow, 0 = local endpoints only)."
         ),
     },
     "ai.currency": {
@@ -181,6 +180,28 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 30,
         "max": 21600,
         "description": "Maximum wall-clock seconds an AI session may run for",
+    },
+    "ai.approval_expiry_hours": {
+        "type": "int",
+        "default": 24,
+        "min": 1,
+        "max": 720,
+        "description": (
+            "How long an approval request waits for a decision before it "
+            "expires. The session is then told the change was not approved "
+            "and resumes without it, rather than sitting parked forever."
+        ),
+    },
+    "ai.snapshot_before_mutating": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Take a Proxmox snapshot before the AI runs a command that "
+            "changes a host (1 = on, 0 = off). Hosts with no VM mapping are "
+            "unaffected. When on, a snapshot that fails blocks the command."
+        ),
     },
 }
 

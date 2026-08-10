@@ -53,6 +53,7 @@ _EXTERNAL_MODELS = {
     "AISession": "app.ai.models",
     "AIMessage": "app.ai.models",
     "AIToolCall": "app.ai.models",
+    "AIApprovalRequest": "app.ai.models",
     "AIUsageDay": "app.ai.models",
 }
 

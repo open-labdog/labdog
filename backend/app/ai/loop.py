@@ -25,8 +25,9 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.ai import service
-from app.ai.models import AIProvider, AISession, AIToolCall
+from app.ai import approvals, service
+from app.ai.gate import decide
+from app.ai.models import AIApprovalRequest, AIProvider, AISession, AIToolCall
 from app.ai.providers.base import (
     LLMProvider,
     LLMProviderError,
@@ -185,9 +186,12 @@ class AgentLoop:
         # Resolved once: the same list gates what the provider is offered
         # and what the loop will actually execute.
         self._handlers = tools_for_session(session.autonomy_level, session.allowed_tools)
+        self._permitted = {h.spec.name: h for h in self._handlers}
         # Async callable taking (event_type, payload) — the SSE bridge.
         self._publish = publish
         self._started = time.monotonic()
+        # Set when a call needs an operator's decision, which ends the run.
+        self._parked: AIApprovalRequest | None = None
 
     async def _emit(self, event: str, payload: dict) -> None:
         if self._publish is None:
@@ -262,7 +266,7 @@ class AgentLoop:
         # The allowlist is re-checked here, not just when building the tool
         # specs. A model can call a name it was never offered, and this is
         # the only place that actually gates execution.
-        permitted = {h.spec.name for h in self._handlers}
+        permitted = set(self._permitted)
 
         if handler is None or call.name not in permitted:
             record.status = "blocked" if handler is not None else "error"
@@ -278,6 +282,40 @@ class AgentLoop:
                     f"You may use: {available}"
                 )
             return f"There is no tool called {call.name!r}. Available tools: {available}"
+
+        # Autonomy is decided here, before the call runs, using the same
+        # function the SDK runner's permission callback uses. It used to be
+        # decided inside ``tools/ssh.py`` — which still checks, as the last
+        # thing before a socket opens — but that is too late to *pause* a
+        # session, because by then the command is already running.
+        decision = decide(
+            call.name,
+            call.arguments,
+            permitted=self._permitted,
+            autonomy_level=self.session.autonomy_level,
+        )
+        if decision.needs_approval and decision.verdict is not None:
+            self._parked = await approvals.park(
+                self.db,
+                self.session,
+                tool_name=call.name,
+                arguments=call.arguments,
+                verdict=decision.verdict,
+                record=record,
+            )
+            await self.db.commit()
+            await self._emit(
+                "approval_required",
+                {
+                    "approval_id": self._parked.id,
+                    "tool_name": self._parked.tool_name,
+                    "command_preview": self._parked.command_preview,
+                    "target_host_id": self._parked.target_host_id,
+                    "reason": self._parked.reason,
+                    "summary": self._parked.summary,
+                },
+            )
+            return approvals.PARKED_RESULT
 
         await self._emit(
             "tool_call",
@@ -458,7 +496,7 @@ class AgentLoop:
                 await self.db.commit()
                 break
 
-            for call in tool_calls:
+            for index, call in enumerate(tool_calls):
                 content = await self._run_tool(call, ctx)
                 await service.append_message(
                     self.db,
@@ -467,6 +505,22 @@ class AgentLoop:
                     content=content,
                     tool_call_id=call.id,
                 )
+                if self._parked is not None:
+                    # Every remaining call in this turn still needs a
+                    # result. Both wire formats reject a tool call with no
+                    # matching result, so a transcript persisted with a
+                    # dangling one could not be replayed on resume — and
+                    # would fail at the provider, looking like an outage
+                    # rather than a bug here.
+                    for skipped in tool_calls[index + 1 :]:
+                        await service.append_message(
+                            self.db,
+                            session.id,
+                            role="tool",
+                            content=approvals.SKIPPED_RESULT,
+                            tool_call_id=skipped.id,
+                        )
+                    break
                 if cap := self._cap_hit():
                     stopped_by = cap
                     break
@@ -475,6 +529,14 @@ class AgentLoop:
             # what a reconnecting UI reads, and what a resumed session would
             # replay if the worker died here.
             await self.db.commit()
+            if self._parked is not None:
+                await self._emit("status", {"status": "waiting_approval"})
+                return LoopOutcome(
+                    "waiting_approval",
+                    "",
+                    session.iterations,
+                    "waiting for operator approval",
+                )
             if stopped_by:
                 break
 

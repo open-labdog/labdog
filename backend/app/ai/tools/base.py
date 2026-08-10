@@ -30,6 +30,12 @@ class ToolContext:
     #: Set when the session is driven by an ActionRun, for audit linkage.
     action_run_id: int | None = None
     user_id: int | None = None
+    #: True only when an operator has approved *this exact call*. Lifts the
+    #: autonomy gate for it and nothing else — the denylist still applies,
+    #: because a command that is never allowed does not become allowable by
+    #: someone clicking approve. Set exclusively by
+    #: :func:`app.ai.approvals.execute_approved`.
+    preapproved: bool = False
 
 
 @dataclass

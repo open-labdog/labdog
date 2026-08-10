@@ -18,10 +18,19 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import service
-from app.ai.models import AIMessage, AIProvider, AISession, AIToolCall, AIUsageDay
+from app.ai.models import (
+    AIApprovalRequest,
+    AIMessage,
+    AIProvider,
+    AISession,
+    AIToolCall,
+    AIUsageDay,
+)
 from app.ai.providers.base import LLMProviderError
 from app.ai.providers.factory import build_provider, runs_on_agent_sdk
 from app.ai.schemas import (
+    AIApprovalDecision,
+    AIApprovalResponse,
     AIProviderCreate,
     AIProviderResponse,
     AIProviderTestResponse,
@@ -387,11 +396,24 @@ async def get_session(
         .all()
     )
 
+    requests = (
+        (
+            await db.execute(
+                select(AIApprovalRequest)
+                .where(AIApprovalRequest.session_id == session_id)
+                .order_by(AIApprovalRequest.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     detail = AISessionDetail.model_validate(session)
     # The system prompt is scaffolding, not conversation — showing it in the
     # transcript would bury the actual exchange.
     detail.messages = [m for m in messages if m.role != "system"]
     detail.tool_calls = list(tool_calls)
+    detail.approvals = [AIApprovalResponse.model_validate(a) for a in requests]
     return detail
 
 
@@ -445,6 +467,22 @@ async def cancel_session(
         return session_to_response(session)
     session.status = "cancelled"
     session.finished_at = datetime.now(UTC)
+    # A cancelled session will never act on a pending request, so leaving
+    # one open would park it in the approvals queue forever, inviting a
+    # click that silently does nothing. Recorded as expired rather than
+    # rejected: nobody weighed the command and said no to it.
+    await db.execute(
+        update(AIApprovalRequest)
+        .where(
+            AIApprovalRequest.session_id == session_id,
+            AIApprovalRequest.status == "pending",
+        )
+        .values(
+            status="expired",
+            decided_at=datetime.now(UTC),
+            decision_note="The session was cancelled before anyone decided.",
+        )
+    )
     await log_action(
         db,
         action="ai_session_cancelled",
@@ -507,6 +545,101 @@ async def delete_session(
     )
     await db.delete(session)
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Approvals
+# ---------------------------------------------------------------------------
+
+
+@router.get("/approvals", response_model=list[AIApprovalResponse])
+async def list_approvals(
+    status: str = "pending",
+    limit: int = 50,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approval requests, newest first — pending ones by default.
+
+    A queue rather than a per-session lookup because a parked session is
+    invisible otherwise: nothing else on the assistant page tells an
+    operator that a scheduled run stopped overnight waiting for them.
+    """
+    stmt = select(AIApprovalRequest).order_by(AIApprovalRequest.id.desc())
+    if status != "all":
+        stmt = stmt.where(AIApprovalRequest.status == status)
+    result = await db.execute(stmt.limit(min(limit, 200)))
+    return [AIApprovalResponse.model_validate(a) for a in result.scalars().all()]
+
+
+@router.post("/approvals/{approval_id}", response_model=AIApprovalResponse)
+async def decide_approval(
+    approval_id: int,
+    payload: AIApprovalDecision,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve or reject a paused command, and resume the session.
+
+    Deciding twice is refused rather than ignored. The first decision may
+    already have run a command on a host, and a second request that
+    quietly returned 200 would leave the operator believing their latest
+    click was the one that counted.
+    """
+    approval = await db.get(AIApprovalRequest, approval_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="Approval request not found")
+    if approval.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"This request was already {approval.status}"
+                + (f" at {approval.decided_at:%Y-%m-%d %H:%M UTC}." if approval.decided_at else ".")
+            ),
+        )
+
+    session = await db.get(AISession, approval.session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="The session this belongs to is gone")
+    if session.status != "waiting_approval":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"The session is {session.status}, so this request can no longer be "
+                f"acted on. Nothing was run."
+            ),
+        )
+
+    approval.status = "approved" if payload.approve else "rejected"
+    approval.decision_note = (payload.note or "").strip() or None
+    approval.decided_by_user_id = user.id
+    approval.decided_at = datetime.now(UTC)
+
+    # Audited on both branches. An approval is a human authorising a change
+    # to a host, which is exactly what the audit trail is for; a rejection
+    # is the record that someone looked and said no.
+    await log_action(
+        db,
+        action="ai_approval_approved" if payload.approve else "ai_approval_rejected",
+        entity_type="ai_session",
+        entity_id=session.id,
+        user_id=user.id,
+        after_state={
+            "approval_id": approval.id,
+            "tool_name": approval.tool_name,
+            "command": approval.command_preview[:1000],
+            "target_host_id": approval.target_host_id,
+            "classification": approval.classification,
+            "note": approval.decision_note,
+        },
+    )
+    await db.commit()
+    await db.refresh(approval)
+
+    from app.tasks import celery_app
+
+    celery_app.send_task("app.tasks.ai_task.resume_session", kwargs={"session_id": session.id})
+    return AIApprovalResponse.model_validate(approval)
 
 
 @router.get("/sessions/{session_id}/stream")
