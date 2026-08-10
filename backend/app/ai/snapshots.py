@@ -64,9 +64,7 @@ async def snapshot_if_mutating(
         return None, None
     try:
         return (
-            await snapshot_before_change(
-                db, host_id=host_id, session_id=session_id, label=label
-            ),
+            await snapshot_before_change(db, host_id=host_id, session_id=session_id, label=label),
             None,
         )
     except SnapshotFailed as exc:

@@ -83,9 +83,7 @@ async def _expire_stale_approvals() -> dict:
         await db.commit()
 
     for session_id in resumed:
-        celery_app.send_task(
-            "app.tasks.ai_task.resume_session", kwargs={"session_id": session_id}
-        )
+        celery_app.send_task("app.tasks.ai_task.resume_session", kwargs={"session_id": session_id})
 
     if stale:
         logger.info(

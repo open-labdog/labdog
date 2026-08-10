@@ -13,6 +13,8 @@ the provider, presenting as a backend outage rather than as a bug here.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -379,6 +381,21 @@ class TestTheQueue:
         assert [a["id"] for a in resp.json()["approvals"]] == [approval.id]
 
 
+@contextmanager
+def _ssh_runs(fake_run):
+    """Swap what ``run_ssh_command`` actually does.
+
+    ``ToolHandler`` is a frozen dataclass, so its ``run`` cannot be
+    patched in place — ``replace`` builds a new handler and the registry
+    entry is swapped for the duration. That frozenness is deliberate: a
+    handler's classification and runner travel together and neither
+    should be mutable at runtime.
+    """
+    handler = TOOL_REGISTRY["run_ssh_command"]
+    with patch.dict(TOOL_REGISTRY, {"run_ssh_command": replace(handler, run=fake_run)}):
+        yield
+
+
 class TestExecutingWhatWasApproved:
     async def test_it_runs_the_stored_arguments(self, db, make_session) -> None:
         """Not whatever the model asks for next. Approval is for these
@@ -396,7 +413,7 @@ class TestExecutingWhatWasApproved:
             seen["preapproved"] = ctx.preapproved
             return ToolResult("exit status: 0", ok=True, target_host_id=args["host_id"])
 
-        with patch.object(TOOL_REGISTRY["run_ssh_command"], "run", fake_run):
+        with _ssh_runs(fake_run):
             result = await approvals.execute_approved(db, session, approval)
 
         assert result.ok is True
@@ -413,7 +430,7 @@ class TestExecutingWhatWasApproved:
 
             return ToolResult("exit status: 0", ok=True, target_host_id=args["host_id"])
 
-        with patch.object(TOOL_REGISTRY["run_ssh_command"], "run", fake_run):
+        with _ssh_runs(fake_run):
             await approvals.execute_approved(db, session, approval)
 
         record = (
@@ -446,7 +463,7 @@ class TestExecutingWhatWasApproved:
 
         with (
             patch("app.ai.approvals.snapshot_before_change", boom),
-            patch.object(TOOL_REGISTRY["run_ssh_command"], "run", fake_run),
+            _ssh_runs(fake_run),
         ):
             result = await approvals.execute_approved(db, session, approval)
 
