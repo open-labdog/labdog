@@ -94,7 +94,7 @@ are actually consuming your budget.
 | Level | What it may do |
 |-------|----------------|
 | **Read-only** (default) | Only commands that report state. Anything that would change a host is refused and reported back. |
-| **Approval required** | Reads run immediately; changes wait for your approval. The approval workflow ships in a later release — until then this behaves like read-only. |
+| **Approval required** | Reads run immediately. A change pauses the session and waits for you — see [Approving a change](#approving-a-change). |
 | **Full auto** | May change hosts on its own. |
 
 A command's classification comes from parsing the command, not from what
@@ -107,6 +107,51 @@ destroy data or take a host off the network — `rm -rf /`, `mkfs`, writing
 directly to a block device, piping a download into a shell, flushing the
 whole firewall ruleset — are blocked outright. There is no setting that
 permits them.
+
+---
+
+<a id="approving-a-change"></a>
+
+## Approving a change
+
+At the **Approval required** level, a command that would change a host does
+not run. The session pauses, and a card appears in the transcript showing:
+
+- **the exact command**, as it would be run;
+- **why LabDog classified it as a change** — this comes from parsing the
+  command, not from the assistant;
+- **what the assistant says it is for** — its own stated reason, shown
+  separately because it is a claim, not a verdict.
+
+Approving runs that command and nothing else. LabDog executes it directly
+from what you approved, so the assistant cannot substitute something
+different afterwards. Rejecting takes a note, which is passed back to the
+assistant — a rejection with a reason usually produces a better suggestion,
+where a bare "no" produces the same one again.
+
+Either way the session then continues, writes up what it found, and
+finishes.
+
+A few things worth knowing:
+
+- **Nothing is queued behind you.** The session stops entirely while it
+  waits, so no worker and no host lock is held. A check scheduled at 3am
+  can wait until you look at it in the morning.
+- **A snapshot is taken first** where the host maps to a Proxmox VM, so
+  the change can be rolled back. If the snapshot cannot be taken, the
+  command does not run — you are told why, and can re-approve knowing
+  there is no rollback point. Turn this off with
+  `ai.snapshot_before_mutating` if you do not want it.
+- **Requests expire.** After `ai.approval_expiry_hours` (default 24) an
+  undecided request lapses, the change does not happen, and the session
+  finishes with a report rather than sitting parked forever.
+- **Cancelling the session** cancels the request with it.
+- **The denylist still applies.** A command on it never becomes a
+  question, so there is nothing to approve — it is refused outright.
+
+Sessions waiting on you are listed in a banner at the top of the Assistant
+page, so a scheduled run that paused overnight is not buried in the session
+list.
 
 ---
 
@@ -142,6 +187,17 @@ it reaches whichever of these comes first:
 A session stopped by a limit still produces a report: the assistant spends
 one final turn summarising what it established and what remains unverified,
 so the work is not wasted.
+
+Time spent waiting for an approval does not count against any of these. The
+session is not running while it waits, and the clock restarts when you
+decide.
+
+Two further settings apply only to approvals:
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `ai.approval_expiry_hours` | 24 | How long a request waits before lapsing |
+| `ai.snapshot_before_mutating` | 1 | Snapshot a host's VM before changing it |
 
 ---
 

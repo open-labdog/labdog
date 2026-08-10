@@ -186,6 +186,12 @@ class AIToolCallResponse(BaseModel):
     status: str
     target_host_id: int | None
     result_summary: str | None
+    #: Links a proposed call to the request an operator has to decide, so
+    #: the transcript can show the decision where the call happened rather
+    #: than in a separate list.
+    approval_id: int | None
+    #: The rollback point taken before this call, when there was one.
+    snapshot_name: str | None
     started_at: datetime
     finished_at: datetime | None
 

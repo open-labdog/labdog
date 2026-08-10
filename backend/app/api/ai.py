@@ -432,6 +432,17 @@ async def send_message(
         raise HTTPException(
             status_code=409, detail="The session is still working; wait for it to finish"
         )
+    if session.status == "waiting_approval":
+        # Accepting a turn here would re-dispatch the session and leave the
+        # pending request stranded: nothing would ever act on it, and the
+        # command the operator was asked about would silently never run.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This session is waiting for your decision on a command. "
+                "Approve or reject it, and the session continues from there."
+            ),
+        )
 
     try:
         provider = await service.resolve_provider(db, session.provider_id)

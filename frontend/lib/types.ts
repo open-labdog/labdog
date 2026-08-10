@@ -1056,6 +1056,10 @@ export interface AIToolCall {
   status: string
   target_host_id: number | null
   result_summary: string | null
+  /** Set when this call is waiting on, or was settled by, an approval. */
+  approval_id: number | null
+  /** The rollback point taken before this call, when there was one. */
+  snapshot_name: string | null
   started_at: string
   finished_at: string | null
 }
@@ -1084,9 +1088,36 @@ export interface AISession {
   finished_at: string | null
 }
 
+export type AIApprovalStatus = "pending" | "approved" | "rejected" | "expired"
+
+export interface AIApprovalRequest {
+  id: number
+  session_id: number
+  tool_name: string
+  /**
+   * The exact line being decided on. Comes from the server rather than
+   * being rebuilt from `arguments` here: what is shown and what would run
+   * must not be able to disagree.
+   */
+  command_preview: string
+  target_host_id: number | null
+  /** The model's own stated reason. Advisory — it never affects the verdict. */
+  summary: string
+  classification: "read_only" | "mutating" | "denied" | "unknown"
+  /** Why the classifier called this a write. */
+  reason: string
+  status: AIApprovalStatus
+  decision_note: string | null
+  decided_by_user_id: number | null
+  created_at: string
+  expires_at: string | null
+  decided_at: string | null
+}
+
 export interface AISessionDetail extends AISession {
   messages: AIMessage[]
   tool_calls: AIToolCall[]
+  approvals: AIApprovalRequest[]
 }
 
 export interface AIUsageDay {
