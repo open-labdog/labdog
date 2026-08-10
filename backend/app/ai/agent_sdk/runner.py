@@ -17,9 +17,23 @@ wall clock is enforced from outside, as a timeout on the whole exchange.
 
 *Tools run inside the SDK's call stack*, so the ``AIToolCall`` row, the
 audit entry and the SSE events are written by :meth:`_execute_tool` rather
-than by the driver. They are serialised behind a lock: the model can
-request several tools in one turn, and one ``AsyncSession`` cannot serve
-two of them at once.
+than by the driver.
+
+**Every** database touch in this class therefore holds ``_db_lock`` —
+including the driver's own, which is the part that is easy to miss. The
+SDK dispatches tool callbacks concurrently with the message stream, so
+``_execute_tool`` and the loop in :meth:`_exchange` interleave on one
+``AsyncSession``, and a session cannot serve two operations at once.
+Locking only the tool side was not enough, and the way it failed was
+indirect: a tool's ``Session.add()`` landed mid-flush (SQLAlchemy warns,
+then carries on), the next query died with asyncpg's *another operation
+is in progress*, and what reached the operator was the third-order
+symptom — ``This session is in 'prepared' state`` — from the error
+handler trying to record the failure on a transaction that was already
+unusable.
+
+The one exception is :meth:`run` outside its ``_exchange`` call: no
+client exists there, so no callback can fire.
 
 *Refusals are decided before dispatch* by :meth:`_can_use_tool`, which is
 the only place autonomy is enforced on this path. A refusal still gets an
@@ -112,9 +126,10 @@ class AgentSDKRunner:
         different connection and this session's identity map still holds
         the value written when the run started.
         """
-        result = await self.db.execute(
-            select(AISession.status).where(AISession.id == self.session.id)
-        )
+        async with self._db_lock:
+            result = await self.db.execute(
+                select(AISession.status).where(AISession.id == self.session.id)
+            )
         return result.scalar_one_or_none() == "cancelled"
 
     async def _record_usage(self, usage: dict | None) -> None:
@@ -134,17 +149,18 @@ class AgentSDKRunner:
         completion = int(usage.get("output_tokens") or 0)
         event = Usage(prompt_tokens=prompt, completion_tokens=completion)
         cost = service.estimate_cost(self.provider_row, prompt, completion)
-        self.session.prompt_tokens += event.prompt_tokens
-        self.session.completion_tokens += event.completion_tokens
-        self.session.cost += cost
-        await service.record_usage(
-            self.db,
-            provider_id=self.provider_row.id,
-            prompt_tokens=event.prompt_tokens,
-            completion_tokens=event.completion_tokens,
-            cost=cost,
-        )
-        await self.db.flush()
+        async with self._db_lock:
+            self.session.prompt_tokens += event.prompt_tokens
+            self.session.completion_tokens += event.completion_tokens
+            self.session.cost += cost
+            await service.record_usage(
+                self.db,
+                provider_id=self.provider_row.id,
+                prompt_tokens=event.prompt_tokens,
+                completion_tokens=event.completion_tokens,
+                cost=cost,
+            )
+            await self.db.flush()
 
     # -- permission gate --------------------------------------------------
 
@@ -386,10 +402,11 @@ class AgentSDKRunner:
                     if text:
                         final_text = text
                         await self._emit("text", {"text": text})
-                        await service.append_message(
-                            self.db, session.id, role="assistant", content=text
-                        )
-                        await self.db.commit()
+                        async with self._db_lock:
+                            await service.append_message(
+                                self.db, session.id, role="assistant", content=text
+                            )
+                            await self.db.commit()
 
                     if await self._cancelled():
                         await client.interrupt()
@@ -403,10 +420,13 @@ class AgentSDKRunner:
                     await self._record_usage(message.usage)
                     # Keep the CLI's own session id so an approval can park
                     # this run and resume it in a later process.
-                    session.resume_state = {"sdk_session_id": message.session_id}
-                    if message.is_error and not final_text:
-                        self._stopped_by = str(message.result or "the backend reported an error")
-                    await self.db.commit()
+                    async with self._db_lock:
+                        session.resume_state = {"sdk_session_id": message.session_id}
+                        if message.is_error and not final_text:
+                            self._stopped_by = str(
+                                message.result or "the backend reported an error"
+                            )
+                        await self.db.commit()
 
         return final_text
 
@@ -416,10 +436,11 @@ class AgentSDKRunner:
         A long run can cross the limit partway through, so the check at
         the start of :meth:`run` is not sufficient on its own.
         """
-        budget = await service.get_budget_status(self.db, self.provider_row)
+        async with self._db_lock:
+            budget = await service.get_budget_status(self.db, self.provider_row)
+            warn_pct = int(await get_setting_typed("ai.budget_warn_pct", self.db))
         if budget.exceeded:
             return budget.reason
-        warn_pct = int(await get_setting_typed("ai.budget_warn_pct", self.db))
         if warn_pct and budget.warn_fraction() * 100 >= warn_pct:
             await self._emit(
                 "budget_warning",
