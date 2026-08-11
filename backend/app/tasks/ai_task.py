@@ -43,7 +43,15 @@ logger = logging.getLogger(__name__)
 SESSION_CHANNEL = "ai.session.{id}"
 
 
-def build_runner(db, session: AISession, provider_row: AIProvider, caps: LoopCaps, publish):
+def build_runner(
+    db,
+    session: AISession,
+    provider_row: AIProvider,
+    caps: LoopCaps,
+    publish,
+    *,
+    prompt: str | None = None,
+):
     """Pick the runner this provider needs.
 
     Both drive the session to a :class:`~app.ai.loop.LoopOutcome` and
@@ -51,6 +59,10 @@ def build_runner(db, session: AISession, provider_row: AIProvider, caps: LoopCap
     differ in who owns the agent loop: ``AgentLoop`` calls an HTTP
     provider one turn at a time, while ``AgentSDKRunner`` hands the loop
     to Claude Code — the only way to authenticate a subscription.
+
+    ``prompt`` overrides what is sent, and only the SDK runner takes it:
+    ``AgentLoop`` replays the stored transcript, so a resumed session
+    picks the new turn up from there without being told twice.
 
     The import is deferred because the Agent SDK is an optional extra;
     a package install without it must still be able to run the HTTP
@@ -66,7 +78,7 @@ def build_runner(db, session: AISession, provider_row: AIProvider, caps: LoopCap
 
     from app.ai.agent_sdk.runner import AgentSDKRunner
 
-    return AgentSDKRunner(db, session, provider_row, caps, publish=publish)
+    return AgentSDKRunner(db, session, provider_row, caps, publish=publish, prompt=prompt)
 
 
 async def _force_fail(db, session_id: int, error: str) -> None:
@@ -173,6 +185,118 @@ def run_chat_session(session_id: int) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Resuming after an approval
+# ---------------------------------------------------------------------------
+
+
+async def _resume_session_async(session_id: int) -> dict:
+    """Pick a parked session up once its approval has been decided.
+
+    A separate entry point rather than a branch inside
+    :func:`_run_session_async`, because the two differ in what happens
+    *before* the runner starts: this one may run a command on a host,
+    which is the whole point of the approval, and has to do that exactly
+    once no matter how many times a decision is dispatched.
+    """
+    from app.ai import approvals, service
+
+    async with task_session() as db:
+        session = await db.get(AISession, session_id)
+        if session is None:
+            return {"session_id": session_id, "status": "missing"}
+        if session.status != "waiting_approval":
+            # Cancelled while parked, or already resumed. Either way the
+            # command must not run a second time.
+            return {"session_id": session_id, "status": session.status}
+
+        approval = await approvals.latest_for_session(db, session_id)
+        if approval is None or approval.status == "pending":
+            logger.warning("ai_task: session %s has no decided approval to resume", session_id)
+            return {"session_id": session_id, "status": "waiting_approval"}
+
+        redis_client = _redis_client()
+        publish = redis_publisher(redis_client, SESSION_CHANNEL.format(id=session_id))
+
+        try:
+            provider_row = await resolve_provider(db, session.provider_id)
+            await assert_within_budget(db, provider_row)
+        except (AIDisabledError, BudgetExceededError) as exc:
+            await finish_session(db, session, status="failed", error=str(exc))
+            await db.commit()
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        result = None
+        if approval.status == "approved":
+            await publish(
+                "tool_call",
+                {"name": approval.tool_name, "arguments": approval.arguments or {}},
+            )
+            result = await approvals.execute_approved(db, session, approval)
+            await db.commit()
+            await publish(
+                "tool_result",
+                {
+                    "name": approval.tool_name,
+                    "ok": result.ok,
+                    "classification": approval.classification,
+                    "summary": (result.summary or result.content)[:1000],
+                },
+            )
+
+        prompt = approvals.resume_prompt(approval, result)
+        if not (session.resume_state or {}).get("sdk_session_id"):
+            # Nothing to resume from, so the model would be told the
+            # outcome of a request it has no memory of making. Only the
+            # Agent SDK path can reach this — AgentLoop replays the stored
+            # transcript and needs no restatement — and it reaches it when
+            # a session parked before the CLI announced its session id.
+            prompt = f"Your mission was:\n\n{session.mission}\n\n{prompt}"
+
+        # Written to the transcript on both paths, so the UI shows the
+        # decision in sequence rather than as an unexplained gap.
+        await service.append_message(db, session_id, role="user", content=prompt)
+        session.status = "running"
+        session.error_message = None
+        await db.commit()
+
+        caps = await LoopCaps.from_settings(db)
+        runner = build_runner(db, session, provider_row, caps, publish, prompt=prompt)
+
+        try:
+            outcome = await runner.run()
+            await db.commit()
+        except Exception as exc:
+            logger.exception("ai_task: resuming session %s failed", session_id)
+            await _force_fail(db, session_id, str(exc))
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        redis_client.close()
+        return {
+            "session_id": session_id,
+            "status": outcome.status,
+            "iterations": outcome.iterations,
+            "stopped_by": outcome.stopped_by,
+        }
+
+
+@celery_app.task(
+    name="app.tasks.ai_task.resume_session",
+    queue="long_running",
+    soft_time_limit=7200,
+    time_limit=7500,
+)
+def resume_session(session_id: int) -> dict:
+    """Continue a session whose approval request has been decided."""
+    return asyncio.run(_resume_session_async(session_id))
+
+
+# ---------------------------------------------------------------------------
 # Built-in action wrappers
 # ---------------------------------------------------------------------------
 
@@ -271,7 +395,33 @@ async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool
             return False, str(exc)
 
         redis_client.close()
+
+        # A session that parked is not a failed check. It ran, it found
+        # something, and it is now waiting on a person — so the *action*
+        # is over and its host run has to end, releasing the per-host
+        # lock. Leaving it running would hold that lock for however long
+        # the operator takes to look, wedging every sync and action queued
+        # behind it on that host. The remediation, when approved, runs
+        # outside the action's lifecycle.
+        if outcome.status == "waiting_approval":
+            return True, _parked_report(session_id, outcome.report)
+
         return outcome.status == "succeeded", outcome.report
+
+
+def _parked_report(session_id: int, partial: str) -> str:
+    """What the action run shows when its session stopped for approval.
+
+    Worded so nobody reads the green badge as "the change was made". The
+    check succeeded; the change has not happened and may never.
+    """
+    body = partial.strip()
+    notice = (
+        "**Waiting for approval.** This check found something it wants to "
+        f"change and has paused. Nothing has been changed. Open AI session "
+        f"{session_id} to see the command and approve or reject it."
+    )
+    return f"{body}\n\n---\n{notice}" if body else notice
 
 
 #: Matches the cap ``app.tasks.action_host`` puts on playbook output.

@@ -1056,6 +1056,13 @@ export interface AIToolCall {
   status: string
   target_host_id: number | null
   result_summary: string | null
+  /** Set when this call is waiting on, or was settled by, an approval. */
+  approval_id: number | null
+  /** The rollback point taken before this call, when there was one. */
+  snapshot_name: string | null
+  /** Set once retention removed it. The name stays — "there was a rollback
+   * point and it expired" is different from "there never was one". */
+  snapshot_pruned_at: string | null
   started_at: string
   finished_at: string | null
 }
@@ -1069,6 +1076,8 @@ export interface AISession {
   autonomy_level: AIAutonomyLevel
   status: AISessionStatus
   target_host_ids: number[] | null
+  /** True when this session opted out of pre-change snapshots. */
+  skip_snapshots: boolean
   action_run_id: number | null
   iterations: number
   prompt_tokens: number
@@ -1084,9 +1093,43 @@ export interface AISession {
   finished_at: string | null
 }
 
+export type AIApprovalStatus = "pending" | "approved" | "rejected" | "expired"
+
+export interface AIApprovalRequest {
+  id: number
+  session_id: number
+  tool_name: string
+  /**
+   * The exact line being decided on. Comes from the server rather than
+   * being rebuilt from `arguments` here: what is shown and what would run
+   * must not be able to disagree.
+   */
+  command_preview: string
+  target_host_id: number | null
+  /** The model's own stated reason. Advisory — it never affects the verdict. */
+  summary: string
+  classification: "read_only" | "mutating" | "denied" | "unknown"
+  /** Why the classifier called this a write. */
+  reason: string
+  status: AIApprovalStatus
+  decision_note: string | null
+  decided_by_user_id: number | null
+  created_at: string
+  expires_at: string | null
+  decided_at: string | null
+  /**
+   * Whether approving this produces a rollback point. False when the
+   * host has no VM mapping, the session opted out, or snapshots are off
+   * instance-wide — all cases the operator should know about *before*
+   * authorising a change, not after.
+   */
+  snapshot_expected: boolean
+}
+
 export interface AISessionDetail extends AISession {
   messages: AIMessage[]
   tool_calls: AIToolCall[]
+  approvals: AIApprovalRequest[]
 }
 
 export interface AIUsageDay {

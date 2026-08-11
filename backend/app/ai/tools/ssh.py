@@ -126,7 +126,13 @@ async def _run_ssh_command(ctx: ToolContext, args: dict[str, Any]) -> ToolResult
     verdict = classify_command(command)
 
     # Gate 3: is that permitted here?
-    allowed, reason = is_allowed(verdict, ctx.autonomy_level)
+    #
+    # An operator-approved call is evaluated as though the session were
+    # full_auto rather than skipping the gate: `is_allowed` still refuses a
+    # denied verdict at that level, so approving something cannot promote it
+    # past the denylist. The narrower reading matters because this is the
+    # last check before a socket opens.
+    allowed, reason = is_allowed(verdict, "full_auto" if ctx.preapproved else ctx.autonomy_level)
     if not allowed:
         logger.info(
             "ai session %s: refused command on host %s (%s)",

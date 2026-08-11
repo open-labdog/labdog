@@ -2,13 +2,18 @@
 
 import { useEffect, useRef } from "react"
 
+import { ApprovalCard } from "@/components/ai/approval-card"
 import { ToolCallBadge } from "@/components/ai/tool-call-badge"
 import { Markdown } from "@/components/ui/markdown"
-import type { AIMessage, AIToolCall } from "@/lib/types"
+import type { AIApprovalRequest, AIMessage, AIToolCall } from "@/lib/types"
 
 interface Props {
   messages: AIMessage[]
   toolCalls: AIToolCall[]
+  approvals?: AIApprovalRequest[]
+  hostNameFor?: (hostId: number | null) => string | undefined
+  onDecideApproval?: (approvalId: number, approve: boolean, note: string) => void
+  decidingApproval?: boolean
   /** Text streaming in for the turn that has not been persisted yet. */
   liveText?: string
   isRunning?: boolean
@@ -27,7 +32,16 @@ interface Props {
  * lines of log output, and the operator wants to see what was run and
  * what it concluded, not re-read the log the model already read.
  */
-export function ChatTranscript({ messages, toolCalls, liveText, isRunning }: Props) {
+export function ChatTranscript({
+  messages,
+  toolCalls,
+  approvals = [],
+  hostNameFor,
+  onDecideApproval,
+  decidingApproval,
+  liveText,
+  isRunning,
+}: Props) {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -42,6 +56,30 @@ export function ChatTranscript({ messages, toolCalls, liveText, isRunning }: Pro
   }
   // Tool calls are consumed in order as we walk the assistant turns.
   const consumed = new Set<number>()
+
+  const approvalById = new Map(approvals.map((a) => [a.id, a]))
+  // Anything the walk below does not place gets appended at the end, so a
+  // pending request can never be invisible because of a matching quirk —
+  // an approval the operator cannot see is one they cannot act on, and the
+  // session stays parked forever.
+  const placed = new Set<number>()
+
+  const renderCall = (call: AIToolCall) => {
+    const approval = call.approval_id ? approvalById.get(call.approval_id) : undefined
+    if (!approval) {
+      return <ToolCallBadge key={call.id} call={call} />
+    }
+    placed.add(approval.id)
+    return (
+      <ApprovalCard
+        key={`approval-${approval.id}`}
+        approval={approval}
+        hostName={hostNameFor?.(approval.target_host_id)}
+        pending={decidingApproval}
+        onDecide={(approve, note) => onDecideApproval?.(approval.id, approve, note)}
+      />
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -72,12 +110,22 @@ export function ChatTranscript({ messages, toolCalls, liveText, isRunning }: Pro
           return (
             <div key={message.id} className="space-y-2">
               {message.content && <Markdown>{message.content}</Markdown>}
-              {calls.map((call) => (
-                <ToolCallBadge key={call.id} call={call} />
-              ))}
+              {calls.map(renderCall)}
             </div>
           )
         })}
+
+      {approvals
+        .filter((a) => !placed.has(a.id))
+        .map((approval) => (
+          <ApprovalCard
+            key={`approval-${approval.id}`}
+            approval={approval}
+            hostName={hostNameFor?.(approval.target_host_id)}
+            pending={decidingApproval}
+            onDecide={(approve, note) => onDecideApproval?.(approval.id, approve, note)}
+          />
+        ))}
 
       {liveText && <Markdown>{liveText}</Markdown>}
 

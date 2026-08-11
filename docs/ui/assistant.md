@@ -94,7 +94,7 @@ are actually consuming your budget.
 | Level | What it may do |
 |-------|----------------|
 | **Read-only** (default) | Only commands that report state. Anything that would change a host is refused and reported back. |
-| **Approval required** | Reads run immediately; changes wait for your approval. The approval workflow ships in a later release — until then this behaves like read-only. |
+| **Approval required** | Reads run immediately. A change pauses the session and waits for you — see [Approving a change](#approving-a-change). |
 | **Full auto** | May change hosts on its own. |
 
 A command's classification comes from parsing the command, not from what
@@ -107,6 +107,99 @@ destroy data or take a host off the network — `rm -rf /`, `mkfs`, writing
 directly to a block device, piping a download into a shell, flushing the
 whole firewall ruleset — are blocked outright. There is no setting that
 permits them.
+
+---
+
+<a id="approving-a-change"></a>
+
+## Approving a change
+
+At the **Approval required** level, a command that would change a host does
+not run. The session pauses, and a card appears in the transcript showing:
+
+- **the exact command**, as it would be run;
+- **why LabDog classified it as a change** — this comes from parsing the
+  command, not from the assistant;
+- **what the assistant says it is for** — its own stated reason, shown
+  separately because it is a claim, not a verdict.
+
+Approving runs that command and nothing else. LabDog executes it directly
+from what you approved, so the assistant cannot substitute something
+different afterwards. Rejecting takes a note, which is passed back to the
+assistant — a rejection with a reason usually produces a better suggestion,
+where a bare "no" produces the same one again.
+
+Either way the session then continues, writes up what it found, and
+finishes.
+
+A few things worth knowing:
+
+- **Nothing is queued behind you.** The session stops entirely while it
+  waits, so no worker and no host lock is held. A check scheduled at 3am
+  can wait until you look at it in the morning.
+- **A snapshot is taken first** where the host maps to a Proxmox VM, so
+  the change can be rolled back — see [Snapshots](#snapshots). The
+  approval card tells you whether one will be taken *before* you decide,
+  because a host with no VM mapping gets no rollback point and that is
+  part of what you are approving. If a snapshot is expected and fails,
+  the command does not run.
+- **Requests expire.** After `ai.approval_expiry_hours` (default 24) an
+  undecided request lapses, the change does not happen, and the session
+  finishes with a report rather than sitting parked forever.
+- **Cancelling the session** cancels the request with it.
+- **The denylist still applies.** A command on it never becomes a
+  question, so there is nothing to approve — it is refused outright.
+
+Sessions waiting on you are listed in a banner at the top of the Assistant
+page, so a scheduled run that paused overnight is not buried in the session
+list.
+
+---
+
+<a id="snapshots"></a>
+
+## Snapshots
+
+Before the assistant changes a host that maps to a Proxmox VM, LabDog
+takes a snapshot. It applies to both **Approval required** and **Full
+auto** — the second is where it matters most, since nobody was watching.
+
+They are named `labdog-ai-<session>-<timestamp>`, distinct from the
+`labdog-<run>-<timestamp>` an action pack takes, because the two have
+different lifetimes and you need to know which is which before deleting
+one by hand.
+
+**They are not deleted when the session succeeds.** An action pack removes
+its own snapshot once its verify step passes; an AI session has no verify
+step, and the snapshot is there so *you* can undo the change after reading
+what it did. Deleting it on success would throw away the thing it was
+taken for.
+
+So they expire instead, on `ai.snapshot_retention_days` (default 7; set 0
+to keep them indefinitely). A daily sweep removes those past the window.
+The record of the snapshot stays in the session transcript afterwards, so
+"there was a rollback point and it has expired" stays distinguishable from
+"there never was one".
+
+Two ways to turn them off:
+
+| | Effect |
+|---|---|
+| `ai.snapshot_before_mutating` = 0 | Instance-wide. No session takes one. |
+| **Skip snapshots** on a new session | That session only. |
+
+They compose by agreement, not override: a snapshot is taken only when the
+instance setting is on *and* the session has not opted out, so switching
+them off instance-wide cannot be undone per session.
+
+Hosts with no VM mapping — bare metal, unmapped containers — are changed
+without a snapshot either way. That is deliberate: refusing them would
+make write autonomy useless on exactly the hosts most likely to need it.
+
+One gap to know about: deleting a session removes the record of any
+snapshot it took, so the sweep can no longer find it. The names are
+recorded in the audit entry for the deletion, and the `labdog-ai-` prefix
+makes strays identifiable in the Proxmox UI.
 
 ---
 
@@ -142,6 +235,17 @@ it reaches whichever of these comes first:
 A session stopped by a limit still produces a report: the assistant spends
 one final turn summarising what it established and what remains unverified,
 so the work is not wasted.
+
+Time spent waiting for an approval does not count against any of these. The
+session is not running while it waits, and the clock restarts when you
+decide.
+
+Two further settings apply only to approvals:
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `ai.approval_expiry_hours` | 24 | How long a request waits before lapsing |
+| `ai.snapshot_before_mutating` | 1 | Snapshot a host's VM before changing it |
 
 ---
 

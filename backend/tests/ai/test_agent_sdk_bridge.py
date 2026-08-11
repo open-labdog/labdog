@@ -17,6 +17,7 @@ from app.ai.agent_sdk.bridge import (
     MCP_SERVER_NAME,
     NO_BUILTIN_TOOLS,
     build_tool_server,
+    local_tool_name,
     qualified_tool_name,
 )
 from app.ai.tools import TOOL_REGISTRY, ToolHandler, ToolResult
@@ -40,6 +41,14 @@ class TestLockdownPosture:
 class TestNaming:
     def test_the_server_name_forms_the_tool_prefix(self) -> None:
         assert qualified_tool_name("x") == f"mcp__{MCP_SERVER_NAME}__x"
+
+    def test_round_trip(self) -> None:
+        assert local_tool_name(qualified_tool_name("list_hosts")) == "list_hosts"
+
+    def test_an_unqualified_name_passes_through(self) -> None:
+        """The permission callback gets qualified names; logs and tests
+        carry both, and the gate only accepts the local form."""
+        assert local_tool_name("list_hosts") == "list_hosts"
 
 
 async def _never_called(handler: ToolHandler, args: dict) -> ToolResult:  # pragma: no cover

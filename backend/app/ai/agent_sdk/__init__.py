@@ -37,7 +37,7 @@ from app.ai.agent_sdk.bridge import (
     local_tool_name,
     qualified_tool_name,
 )
-from app.ai.agent_sdk.gate import GateDecision, decide
+from app.ai.gate import GateDecision, decide
 
 #: Why an SDK-backed provider cannot run, phrased for an operator who is
 #: looking at a provider that tests red.

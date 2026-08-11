@@ -55,6 +55,8 @@ SESSION_STATUSES = (
     "cancelled",
 )
 
+APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired")
+
 
 class AIProvider(Base):
     """A configured LLM endpoint.
@@ -147,6 +149,13 @@ class AISession(Base):
     action_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Opt out of the pre-change Proxmox snapshot for this session only.
+    #
+    # Composes with ``ai.snapshot_before_mutating`` by agreement, not
+    # override: a snapshot is taken only when the instance setting is on
+    # *and* this is false. Neither can force one against the other, so
+    # turning snapshots off globally cannot be undone per session.
+    skip_snapshots: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Set in phase 4; the FK is added with the alert_events table.
     alert_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     iterations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -225,8 +234,9 @@ class AIToolCall(Base):
     target_host_id: Mapped[int | None] = mapped_column(
         ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True, default=None
     )
-    # FK added in phase 3 alongside ai_approval_requests.
-    approval_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
+    approval_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_approval_requests.id", ondelete="SET NULL"), nullable=True, default=None
+    )
     # "proposed" | "approved" | "rejected" | "executed" | "blocked" | "error"
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed")
     result_summary: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
@@ -239,10 +249,75 @@ class AIToolCall(Base):
     result_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Proxmox snapshot taken before this call, when it was mutating.
     snapshot_name: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    # When the retention sweep removed that snapshot. The name is kept
+    # afterwards: it is the record of what protected this change, and an
+    # operator reading the transcript later should be able to tell "there
+    # was a rollback point, it has since expired" from "there never was
+    # one" — which is the difference that decides what they do next.
+    snapshot_pruned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
     finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+
+
+class AIApprovalRequest(Base):
+    """One mutating call, paused until an operator decides.
+
+    The row is the whole of the session's parked state that a human needs
+    to see: what was asked for, on which host, and why the classifier
+    thought it was a write. The session's own conversational state lives
+    where it already lived — the transcript for ``AgentLoop``, the CLI's
+    session file for ``AgentSDKRunner`` — so nothing here needs to
+    reconstruct a loop.
+
+    ``command_preview`` is stored rather than re-derived from
+    ``arguments`` at render time. What the operator approved has to be
+    exactly what runs, and a preview computed twice is a preview that can
+    differ twice.
+    """
+
+    __tablename__ = "ai_approval_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int] = mapped_column(
+        ForeignKey("ai_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tool_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # The exact call to run on approval. Never rebuilt from the model's
+    # later output: approval is for these arguments, not for the intent
+    # behind them.
+    arguments: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    target_host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    # The model's own stated reason, from the tool's `purpose` argument.
+    # Advisory: it explains intent, it never affects the classification.
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    command_preview: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Why the classifier called this a write, verbatim from the Verdict.
+    classification: Mapped[str] = mapped_column(String(16), nullable=False, default="mutating")
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)
+    decided_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    # The operator's own note, shown to the model on resume. A rejection
+    # with a reason teaches; one without just blocks.
+    decision_note: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    # An abandoned gate must not park a session forever. Reaped, not
+    # merely displayed as stale — see app.tasks.ai_approvals.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None, index=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
 

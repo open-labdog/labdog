@@ -19,6 +19,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { API_BASE, apiFetch, ApiError } from "@/lib/api"
 import type {
+  AIApprovalRequest,
   AIAutonomyLevel,
   AIProvider,
   AISession,
@@ -44,7 +45,7 @@ const AUTONOMY_HELP: Record<AIAutonomyLevel, string> = {
   read_only:
     "The assistant may only run commands that read state. Anything that would change a host is refused.",
   approval:
-    "Reads run immediately; changes wait for your approval. Approvals arrive in a later release — for now this behaves like read-only.",
+    "Reads run immediately. Anything that would change a host pauses the session and waits for you to approve or reject it.",
   full_auto:
     "The assistant may change hosts on its own. A denylist of destructive commands still applies.",
 }
@@ -58,15 +59,17 @@ const STATUS_STYLE: Record<string, string> = {
   waiting_approval: "bg-amber-600 text-white",
 }
 
-const TERMINAL = new Set(["succeeded", "failed", "cancelled"])
-
 /**
- * Statuses where the owning Celery task has stopped.
+ * Statuses where the owning Celery task has stopped for good.
  *
  * Mirrors TERMINAL_STATES in app/api/ai.py, which refuses to delete a
  * session that is still live — the run owns the row and is writing to it.
  * Disabling the button here means the operator learns that from the UI
  * rather than from a 409.
+ *
+ * `waiting_approval` is deliberately absent. No task is running, but the
+ * session is not over either: a decision restarts it. Deleting it is
+ * refused for the same reason cancelling it is offered.
  */
 const TERMINAL_STATES = new Set(["succeeded", "failed", "cancelled"])
 
@@ -89,6 +92,7 @@ export default function AssistantPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [mission, setMission] = useState("")
   const [autonomy, setAutonomy] = useState<AIAutonomyLevel>("read_only")
+  const [skipSnapshots, setSkipSnapshots] = useState(false)
   // null means "let the backend pick its default provider".
   const [providerId, setProviderId] = useState<number | null>(null)
   const [targetHosts, setTargetHosts] = useState<number[]>([])
@@ -140,13 +144,38 @@ export default function AssistantPage() {
       setError(e instanceof ApiError ? e.message : "Could not delete the session."),
   })
 
+  /**
+   * Every request still waiting on a person, across all sessions.
+   *
+   * Polled rather than pushed: the SSE stream belongs to one session, and
+   * the case this exists for is precisely the one where the operator has
+   * that session closed — a scheduled run that parked overnight.
+   */
+  const { data: pendingApprovals } = useQuery<AIApprovalRequest[]>({
+    queryKey: ["ai-approvals"],
+    queryFn: () => apiFetch<AIApprovalRequest[]>("/api/ai/approvals?status=pending"),
+    refetchInterval: 30_000,
+  })
+
   const { data: session } = useQuery<AISessionDetail>({
     queryKey: ["ai-session", selectedId],
     queryFn: () => apiFetch<AISessionDetail>(`/api/ai/sessions/${selectedId}`),
     enabled: selectedId !== null,
   })
 
-  const isRunning = session ? !TERMINAL.has(session.status) : false
+  // Parked is not working. The distinction drives the whole screen: no
+  // "Working…", no SSE subscription (nothing will publish), and the
+  // composer stays usable so the operator is not locked out of a session
+  // that is waiting on them.
+  const isParked = session?.status === "waiting_approval"
+  const isRunning = session ? !TERMINAL_STATES.has(session.status) && !isParked : false
+
+  // The banner only covers what is not already on screen; the open
+  // session shows its own card inline, and repeating it there would read
+  // as two separate requests.
+  const waitingElsewhere = (pendingApprovals ?? []).filter(
+    (a) => a.session_id !== selectedId
+  )
 
   // One SSE subscription per running session. Live text is buffered here and
   // discarded when the turn lands in the transcript, so a reconnect or a
@@ -181,6 +210,12 @@ export default function AssistantPage() {
     }
     source.addEventListener("tool_call", refresh)
     source.addEventListener("tool_result", refresh)
+    // The session has just parked. Re-read it so the card appears without
+    // waiting for the status event that follows.
+    source.addEventListener("approval_required", () => {
+      refresh()
+      queryClient.invalidateQueries({ queryKey: ["ai-approvals"] })
+    })
 
     source.addEventListener("budget_warning", (event) => {
       const data = JSON.parse((event as MessageEvent).data)
@@ -203,6 +238,7 @@ export default function AssistantPage() {
       queryClient.invalidateQueries({ queryKey: ["ai-session", sessionId] })
       queryClient.invalidateQueries({ queryKey: ["ai-sessions"] })
       queryClient.invalidateQueries({ queryKey: ["ai-usage"] })
+      queryClient.invalidateQueries({ queryKey: ["ai-approvals"] })
       source.close()
     })
 
@@ -218,6 +254,7 @@ export default function AssistantPage() {
       autonomy_level: AIAutonomyLevel
       target_host_ids: number[]
       provider_id: number | null
+      skip_snapshots: boolean
     }) => apiFetch<AISession>("/api/ai/sessions", { method: "POST", json: body }),
     onSuccess: (created) => {
       setMission("")
@@ -230,6 +267,35 @@ export default function AssistantPage() {
         err instanceof ApiError ? err.message : "Could not start the session."
       )
     },
+  })
+
+  const decideApproval = useMutation({
+    mutationFn: ({
+      approvalId,
+      approve,
+      note,
+    }: {
+      approvalId: number
+      approve: boolean
+      note: string
+    }) =>
+      apiFetch(`/api/ai/approvals/${approvalId}`, {
+        method: "POST",
+        json: { approve, note: note || null },
+      }),
+    onSuccess: () => {
+      setError(null)
+      // The session goes back to running and the worker takes over, so
+      // both the detail and the list need re-reading. The SSE effect
+      // re-subscribes off the status change.
+      queryClient.invalidateQueries({ queryKey: ["ai-session", selectedId] })
+      queryClient.invalidateQueries({ queryKey: ["ai-sessions"] })
+      queryClient.invalidateQueries({ queryKey: ["ai-approvals"] })
+    },
+    onError: (err: unknown) =>
+      setError(
+        err instanceof ApiError ? err.message : "Could not record that decision."
+      ),
   })
 
   const sendFollowUp = useMutation({
@@ -278,6 +344,9 @@ export default function AssistantPage() {
         autonomy_level: autonomy,
         target_host_ids: targetHosts,
         provider_id: providerId,
+        // Meaningless on a read-only session, and sending it would store a
+        // flag the operator never actually chose.
+        skip_snapshots: autonomy === "read_only" ? false : skipSnapshots,
       })
     }
   }
@@ -300,6 +369,34 @@ export default function AssistantPage() {
           </p>
         </div>
       </div>
+
+      {/* A scheduled run that parked overnight is otherwise invisible:
+          nothing on this page is open on it, and the session list is long.
+          Named and clickable, because "you have 2 pending approvals" that
+          does not say which is a notification the operator has to go and
+          decode. */}
+      {waitingElsewhere.length > 0 && (
+        <div className="rounded-lg border border-amber-600 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          <span className="font-medium">
+            {waitingElsewhere.length === 1
+              ? "A session is waiting for your decision"
+              : `${waitingElsewhere.length} sessions are waiting for your decision`}
+            :
+          </span>{" "}
+          {waitingElsewhere.map((a, i) => (
+            <span key={a.id}>
+              {i > 0 && ", "}
+              <button
+                type="button"
+                onClick={() => setSelectedId(a.session_id)}
+                className="font-mono underline underline-offset-4 hover:text-amber-100"
+              >
+                {a.command_preview.slice(0, 60)}
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
 
       {!hasProvider && (
         <div className="rounded-lg border border-amber-700 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
@@ -428,6 +525,12 @@ export default function AssistantPage() {
               <ChatTranscript
                 messages={session.messages}
                 toolCalls={session.tool_calls}
+                approvals={session.approvals}
+                hostNameFor={(id) => (id === null ? undefined : hostNames([id])[0])}
+                onDecideApproval={(approvalId, approve, note) =>
+                  decideApproval.mutate({ approvalId, approve, note })
+                }
+                decidingApproval={decideApproval.isPending}
                 liveText={liveText}
                 isRunning={isRunning}
               />
@@ -505,6 +608,28 @@ export default function AssistantPage() {
                 <p className="mt-1 text-xs text-slate-400">{AUTONOMY_HELP[autonomy]}</p>
               </div>
 
+              {/* Only shown above read-only, where there is a change to
+                  snapshot. Offering it on a session that cannot change
+                  anything would be a control with no effect. */}
+              {autonomy !== "read_only" && (
+                <div>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={skipSnapshots}
+                      onChange={(e) => setSkipSnapshots(e.target.checked)}
+                    />
+                    <span>Skip snapshots</span>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {skipSnapshots
+                      ? "Changes will be made with no rollback point. Faster, and undoing anything is then your problem."
+                      : "A Proxmox snapshot is taken before each change, on hosts that map to a VM, so it can be rolled back."}
+                  </p>
+                </div>
+              )}
+
               <div>
                 <Label className="text-slate-400">
                   Hosts in scope
@@ -542,11 +667,13 @@ export default function AssistantPage() {
               onChange={(e) => setMission(e.target.value)}
               rows={3}
               placeholder={
-                session
-                  ? "Ask a follow-up…"
-                  : "e.g. Check whether any service failed to start after the last reboot on node-1."
+                isParked
+                  ? "Decide on the pending command above to continue this session."
+                  : session
+                    ? "Ask a follow-up…"
+                    : "e.g. Check whether any service failed to start after the last reboot on node-1."
               }
-              disabled={isRunning || !canInvestigate}
+              disabled={isRunning || isParked || !canInvestigate}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit()
               }}
@@ -562,12 +689,19 @@ export default function AssistantPage() {
                 disabled={
                   !mission.trim() ||
                   isRunning ||
+                  isParked ||
                   !canInvestigate ||
                   startSession.isPending ||
                   sendFollowUp.isPending
                 }
               >
-                {isRunning ? "Working…" : session ? "Send" : "Start session"}
+                {isRunning
+                  ? "Working…"
+                  : isParked
+                    ? "Waiting for you"
+                    : session
+                      ? "Send"
+                      : "Start session"}
               </Button>
             </div>
           </div>

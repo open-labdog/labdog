@@ -199,29 +199,47 @@ wall-clock caps, cost accounting with enforced daily and monthly budgets,
 the `/assistant` and `/ai-providers` pages, and `ai.*` settings that all
 default closed. See `git log --grep "feat(ai)"`.
 
-Four phases remain, each independently useful:
+Phase 2 shipped scheduling (both built-in actions, Loki LogQL and Mimir
+range querying, per-session tool allowlists, per-tool cost recording) and
+phase 3 shipped approvals: the `AIApprovalRequest` table, park-and-resume
+across both runners, snapshot-before-mutating, the expiry reaper, and the
+approval UI. See `git log --grep "approval"`.
 
-- **Scheduled AI remediation.** Read-only scheduling shipped: both
-  built-in actions, Loki LogQL and Mimir range querying, per-session tool
-  allowlists, and per-tool cost recording. What remains is letting a
-  check *fix* what it finds, via the `allowed_action_keys` column that
-  landed unused. Permission should be granted per actionpack rather than
-  per shell command — packs are already named, vetted, idempotent, and
-  carry the snapshot/verify/rollback envelope, where a command-pattern
-  allowlist would re-create the classifier's problem in a weaker form.
-  Two read-only tools are also still missing: action history (what
-  LabDog recently did to a host, which is exactly the context a
-  post-upgrade check wants) and Proxmox status/backup checks.
-- **Approvals and write autonomy.** The `approval` autonomy level is
-  accepted and currently behaves as read-only. Making it real needs an
-  `AIApprovalRequest` table and a resumable loop: on hitting a gate,
-  persist the cursor to `AISession.resume_state`, park the session, and
-  **return from the Celery task** rather than blocking a worker on human
-  think-time; `POST /api/ai/approvals/{id}` then re-dispatches a
-  `resume_session` task. The parked session must also release its host
-  advisory lock, or one pending approval wedges that host's queue.
-  Mutating commands should take a Proxmox snapshot first, reusing
-  `app/workflows/steps/snapshot.py`.
+Two phases remain, each independently useful, plus one item carried over
+from phase 3:
+
+- **Remediation through the action system (`propose_action`).** Approvals
+  shipped, so the model can now change a host — but only by running a
+  shell command. The `allowed_action_keys` column is still unused. A
+  `propose_action` tool would let it ask for a named, vetted, idempotent
+  actionpack instead, which already carries the snapshot/verify/rollback
+  envelope. Two things have to be designed before it is written, and
+  neither is obvious from the API it would copy
+  (`POST /api/actions/runs`):
+  - **It must not wait inside a session that owns a host lock.** A
+    session driven by `_builtin.ai_task` holds that host's advisory lock.
+    An action run it dispatches for the same host would defer as
+    `pending` waiting for the lock the caller is holding, and a tool that
+    waits for the result would hang until the task's own time limit.
+    Refusing when `ToolContext.action_run_id` is set is the obvious
+    guard, but that rules the tool out of exactly the scheduled runs it
+    is most useful in — so the real answer is probably handing the lock
+    over rather than refusing.
+  - **Waiting at all is a problem for cancellation.** `AgentSDKRunner`
+    holds `_db_lock` for the whole of `_execute_tool`, so a tool that
+    polls for minutes blocks the driver's cancel and cap checks for that
+    long. Either the poll needs its own session, or the tool dispatches
+    and a separate read-only "what happened to run N" tool reports back.
+  - Skip the AI's own snapshot for this tool — the action envelope
+    already takes one, and both firing would leave two snapshots per
+    change.
+
+  Permission should be granted per actionpack rather than per shell
+  command: packs are already named, vetted and idempotent, where a
+  command-pattern allowlist would re-create the classifier's problem in a
+  weaker form. Two read-only tools are missing alongside it: action
+  history (what LabDog recently did to a host, which is exactly the
+  context a post-upgrade check wants) and Proxmox status/backup checks.
 - **Grafana alert intake.** An `AlertEvent` table plus two producers: a
   `POST /api/webhooks/grafana-alerts` receiver following the HMAC-verify
   → `send_task` → return-immediately shape of the existing GitOps
@@ -237,18 +255,21 @@ Four phases remain, each independently useful:
   through to those call sites. Default fail-open; let a manifest opt into
   fail-closed for critical upgrades.
 
-**Known gaps in what shipped:** the `approval` level is accepted but not
-yet enforced as a distinct behaviour (it refuses like read-only, though
-the SDK gate now distinguishes "needs approval" from "refused" so phase 3
-has the seam it needs); and the DB-backed tests under `tests/ai/` need
-testcontainers, so they were verified by review and by the non-DB tests
-rather than executed locally.
+**Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
+testcontainers, so on a machine without Docker they are verified by review
+and by CI rather than executed locally.
 
 Subscription-billed sessions that can *use tools* are no longer a gap.
 The `claude_agent` backend drives Claude Code through Anthropic's Claude
 Agent SDK, which supplies the bidirectional stream-json transport this
-file used to list as work to do. See `plans/agent-sdk.md` for what was
-verified against the real binary. Follow-ups it leaves open:
+file used to list as work to do. What was verified against the real
+binary — that built-in tools are exposed unless `tools=[]` is passed,
+that a populated `allowed_tools` shadows the permission callback, and
+that `ClaudeAgentOptions.env` overlays rather than replaces the
+environment — is recorded in the commit messages and in the module
+docstrings under `backend/app/ai/agent_sdk/`; the branch-scoped plan file
+it originally lived in was deleted before the PR, as `plans/` always is.
+Follow-ups it leaves open:
 
 - [ ] **Confirm the terms.** That SDK-driven headless use on a
   subscription is sanctioned, and that billing lands on the subscription
