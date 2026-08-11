@@ -31,13 +31,30 @@ EVIDENCE = [
 
 
 def _fake(*replies: str, tool_calls=None):
-    """A provider that answers with ``replies``, one per turn."""
-    turns = [ScriptedTurn(text=reply, tool_calls=list(tool_calls or [])) for reply in replies]
+    """A provider that answers with ``replies``, one per turn.
+
+    ``tool_calls`` attaches to the **first** turn only. Attaching them to
+    every turn models a model that asks for the same tool forever, which
+    never reaches a final answer — the loop runs the scripted turns out
+    and reports the fake's "no further scripted turns" filler as the
+    verdict, which is a confusing way to find out the helper was wrong.
+    """
+    turns = [ScriptedTurn(text=reply) for reply in replies]
+    if tool_calls:
+        turns[0] = ScriptedTurn(text=replies[0], tool_calls=list(tool_calls))
     return FakeProvider(turns)
 
 
 async def _set(db, key: str, value: str) -> None:
-    """Write a setting and drop the in-process cache, which has a 60s TTL."""
+    """Write a setting and drop the in-process cache.
+
+    The cache has a 60s TTL and lives in the process, not the database,
+    so it outlives the savepoint each test is rolled back to. That makes
+    "leave it at the default" unreliable under random ordering: a test
+    that ran earlier will have cached whatever *it* set. Every test here
+    states the value it needs in both directions rather than relying on
+    a default — the same reason ``tests/ai/test_budget.py`` does.
+    """
     existing = (
         await db.execute(select(AppSetting).where(AppSetting.key == key))
     ).scalar_one_or_none()
@@ -65,8 +82,22 @@ async def _verify(db, fake, *, fail_closed: bool = False, **kwargs):
 
 @pytest.fixture
 async def ai_on(db):
-    """The kill switch, on. Sessions are refused without it."""
+    """The kill switch on, and the budgets unlimited.
+
+    The budgets are stated for the same reason as the kill switch: the
+    budget test below caches a 1-cent daily limit that outlives its own
+    rollback, and a later test inheriting it would fail for a reason
+    nothing in its body mentions.
+    """
     await _set(db, "ai.enabled", "1")
+    await _set(db, "ai.budget_daily", "0")
+    await _set(db, "ai.budget_monthly", "0")
+
+
+@pytest.fixture
+async def ai_off(db):
+    """The kill switch, off — stated rather than assumed. See ``_set``."""
+    await _set(db, "ai.enabled", "0")
 
 
 class TestReachingAVerdict:
@@ -194,8 +225,10 @@ class TestItCannotGoLookingAround:
 
 
 class TestNotReachingAVerdict:
-    async def test_ai_switched_off_is_inconclusive_not_a_pass(self, db, ai_provider) -> None:
-        """``ai.enabled`` defaults to 0. The old step returned a pass
+    async def test_ai_switched_off_is_inconclusive_not_a_pass(
+        self, db, ai_provider, ai_off
+    ) -> None:
+        """``ai.enabled`` is off by default. The old step returned a pass
         here, which meant a fail-closed action could be let through by a
         setting nobody had touched."""
         outcome = await _verify(db, _fake("PASS — fine."), fail_closed=True)
@@ -203,12 +236,12 @@ class TestNotReachingAVerdict:
         assert outcome.passed is False
         assert outcome.session_id is None
 
-    async def test_the_same_case_still_passes_an_open_action(self, db, ai_provider) -> None:
+    async def test_the_same_case_still_passes_an_open_action(self, db, ai_provider, ai_off) -> None:
         outcome = await _verify(db, _fake("PASS — fine."))
         assert outcome.passed is True
 
     async def test_no_session_row_is_written_for_a_run_that_cannot_start(
-        self, db, ai_provider
+        self, db, ai_provider, ai_off
     ) -> None:
         before = len((await db.execute(select(AISession.id))).scalars().all())
         await _verify(db, _fake("PASS — fine."))
