@@ -119,6 +119,38 @@ function pricingLabel(provider: AIProvider, currency: string): string {
   return `${input} in / ${output} out per M ${currency}`
 }
 
+/** Inside this window, the expiry stops being trivia and becomes a task. */
+const CREDENTIAL_WARN_DAYS = 30
+
+function daysUntilExpiry(provider: AIProvider): number | null {
+  if (!provider.credential_expires_at) return null
+  const ms = new Date(provider.credential_expires_at).getTime() - Date.now()
+  return Math.floor(ms / 86_400_000)
+}
+
+function isCredentialUrgent(provider: AIProvider): boolean {
+  const days = daysUntilExpiry(provider)
+  return days !== null && days <= CREDENTIAL_WARN_DAYS
+}
+
+/**
+ * When a subscription token runs out.
+ *
+ * `claude setup-token` mints a one-year token, and Anthropic's own docs
+ * warn that an unattended session "stops making progress once the
+ * credential expires and can't recover". LabDog's scheduled checks are
+ * exactly that, so the first sign of an expired token would otherwise be
+ * nightly runs quietly failing. API-key providers get nothing here —
+ * their keys do not expire on a schedule.
+ */
+function describeCredentialExpiry(provider: AIProvider): string | null {
+  const days = daysUntilExpiry(provider)
+  if (days === null) return null
+  if (days < 0) return "token expired — run claude setup-token again"
+  if (days <= CREDENTIAL_WARN_DAYS) return `token expires in ${days} day${days === 1 ? "" : "s"}`
+  return `token expires in ${Math.round(days / 30)} months`
+}
+
 /**
  * A capability limit, not a tip — shown prominently when the type is chosen.
  *
@@ -497,6 +529,15 @@ export default function AIProvidersPage() {
                         Leave blank to use whatever the host is already logged
                         in as.
                       </span>
+                      <span className="mt-2 block">
+                        The token lasts a year, and sessions count against
+                        your plan&apos;s usage limits — the same ones the
+                        Claude apps use. Anthropic&apos;s terms allow this for
+                        your own use but not for routing other people&apos;s
+                        requests through your plan, so use your own token on
+                        your own instance; pick an API-key provider if you are
+                        running LabDog for someone else.
+                      </span>
                     </InfoPopover>
                   )}
                 </div>
@@ -736,6 +777,15 @@ export default function AIProvidersPage() {
                     </TableCell>
                     <TableCell className="font-mono text-xs text-slate-300">
                       {provider.model}
+                      {describeCredentialExpiry(provider) && (
+                        <span
+                          className={`mt-1 block font-sans ${
+                            isCredentialUrgent(provider) ? "text-amber-400" : "text-slate-500"
+                          }`}
+                        >
+                          {describeCredentialExpiry(provider)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-slate-400">
                       {pricingLabel(provider, currency)}

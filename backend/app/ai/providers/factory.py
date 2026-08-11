@@ -91,6 +91,20 @@ def runs_on_agent_sdk(provider: AIProvider) -> bool:
     return provider.provider_type in SDK_BACKED_TYPES
 
 
+#: Backends whose stored credential is a Claude subscription token from
+#: ``claude setup-token`` rather than an API key. Both drive Claude Code.
+#:
+#: The distinction is not cosmetic: such a token lasts one year, so it has
+#: an expiry an API key does not, and it authenticates a *plan* whose usage
+#: limits are shared with the Claude apps rather than metered separately.
+SUBSCRIPTION_BACKED_TYPES = frozenset({"claude_cli", "claude_agent"})
+
+
+def uses_subscription(provider: AIProvider) -> bool:
+    """Whether this provider authenticates a Claude plan rather than a key."""
+    return provider.provider_type in SUBSCRIPTION_BACKED_TYPES
+
+
 def sends_data_offsite(provider: AIProvider) -> bool:
     """True when using this provider transmits host data off the network."""
     if provider.provider_type == "claude_cli" or runs_on_agent_sdk(provider):

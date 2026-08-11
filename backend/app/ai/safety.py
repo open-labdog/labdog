@@ -586,11 +586,24 @@ def classify_command(command: str) -> Verdict:
         "mutating": 2,
         "denied": 3,
     }
-    worst = Verdict("read_only", "No command segments found", "")
+    # Seeded with None rather than a read_only placeholder. A placeholder
+    # can only be displaced by something *more* severe, so a command whose
+    # segments are all read-only never replaced it: every allowed command
+    # came back explaining itself as "No command segments found", with an
+    # empty segment — and `Verdict.segment` is what the audit record is
+    # supposed to name. The classification was right throughout; only the
+    # account of it was wrong, which is why nothing caught it.
+    #
+    # Strictly-greater is kept deliberately, so the *first* most-dangerous
+    # segment still wins. Relaxing it to >= would be a one-character change
+    # that silently reattributes a pipeline's verdict to a later segment.
+    worst: Verdict | None = None
     for segment in _segments(command):
         verdict = _classify_segment(segment)
-        if severity[verdict.classification] > severity[worst.classification]:
+        if worst is None or severity[verdict.classification] > severity[worst.classification]:
             worst = verdict
+    if worst is None:
+        return Verdict("unknown", "No command segments found", "")
     return worst
 
 

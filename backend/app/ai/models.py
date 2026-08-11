@@ -85,6 +85,14 @@ class AIProvider(Base):
     encrypted_api_key: Mapped[bytes | None] = mapped_column(
         LargeBinary, nullable=True, default=None
     )
+    # When the stored credential was last written. Only meaningful for the
+    # subscription backends: `claude setup-token` mints a token that lasts
+    # one year, and an expired one stops an unattended session dead with no
+    # warning beforehand. `updated_at` cannot stand in for this — it moves
+    # whenever any field is edited.
+    credential_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     verify_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Plaintext PEM CA certificate (NOT encrypted — CA certs are public).
     ca_cert_pem: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)

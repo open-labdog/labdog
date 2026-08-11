@@ -269,12 +269,22 @@ that `ClaudeAgentOptions.env` overlays rather than replaces the
 environment — is recorded in the commit messages and in the module
 docstrings under `backend/app/ai/agent_sdk/`; the branch-scoped plan file
 it originally lived in was deleted before the PR, as `plans/` always is.
+
+The terms question this list used to carry is answered. `claude
+setup-token` is documented for "CI pipelines, scripts, or other
+environments where interactive browser login isn't available", the token
+"authenticates with your Claude subscription and requires a Pro, Max,
+Team, or Enterprise plan", and plan limits are shared across Claude and
+Claude Code rather than metered separately. The constraint worth knowing
+is in the consumer terms rather than the docs: subscription OAuth is for
+ordinary use of Anthropic's own applications, and routing requests
+through a plan's credentials *on behalf of other people* is not
+permitted. Own instance, own token, own hosts is inside that; running
+LabDog for someone else on your plan is not, and that is now said in the
+provider form and in `docs/ui/assistant.md`.
+
 Follow-ups it leaves open:
 
-- [ ] **Confirm the terms.** That SDK-driven headless use on a
-  subscription is sanctioned, and that billing lands on the subscription
-  rather than API credit. `claude setup-token` exists for automation, but
-  read the fine print before relying on it.
 - [ ] **Stream partial text.** The runner emits one SSE `text` event per
   completed assistant message. `include_partial_messages` would give
   token-by-token streaming, which is what the chat page wants.

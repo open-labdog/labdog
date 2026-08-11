@@ -20,6 +20,16 @@ it authenticated normally and answered.
 This is the same precedence trap the single-shot backend closed, wearing
 a different hat, so it is kept somewhere it can be tested directly rather
 than inline in the runner.
+
+The precedence was found empirically, before it was found in writing.
+Anthropic documents the order — cloud-provider credentials, then
+``ANTHROPIC_AUTH_TOKEN``, then ``ANTHROPIC_API_KEY``, then
+``apiKeyHelper``, and only then ``CLAUDE_CODE_OAUTH_TOKEN`` — which puts
+the configured subscription token *last*. So an API key that happens to
+be in the container's environment does not merely conflict: it wins, and
+the session bills API credit instead of the subscription the operator
+chose. That is the concrete cost of getting this wrong, and it is why
+blanking these is load-bearing rather than tidy.
 """
 
 from __future__ import annotations

@@ -27,7 +27,11 @@ from app.ai.models import (
     AIUsageDay,
 )
 from app.ai.providers.base import LLMProviderError
-from app.ai.providers.factory import build_provider, runs_on_agent_sdk
+from app.ai.providers.factory import (
+    SUBSCRIPTION_BACKED_TYPES,
+    build_provider,
+    runs_on_agent_sdk,
+)
 from app.ai.schemas import (
     AIApprovalDecision,
     AIApprovalResponse,
@@ -82,18 +86,13 @@ async def _unset_other_defaults(db: AsyncSession, keep_id: int | None) -> None:
 #: catch the case of a credential that plainly is not one of these.
 SUBSCRIPTION_TOKEN_PREFIX = "sk-ant-oat"  # nosec B105 - prefix, not a secret
 
-#: Backends whose credential is a Claude subscription token from
-#: ``claude setup-token``, not an API key. Both drive Claude Code, so both
-#: reject an API key pasted into the same field.
-SUBSCRIPTION_PROVIDER_TYPES = frozenset({"claude_cli", "claude_agent"})
-
 
 def _check_subscription_token(provider_type: str, api_key: str | None) -> None:
     """Reject a subscription token that is obviously not one.
 
     A blank value is fine and means "use whatever the host is logged in as".
     """
-    if provider_type not in SUBSCRIPTION_PROVIDER_TYPES or not api_key:
+    if provider_type not in SUBSCRIPTION_BACKED_TYPES or not api_key:
         return
     if api_key.startswith(SUBSCRIPTION_TOKEN_PREFIX):
         return
@@ -167,6 +166,7 @@ async def create_provider(
 
     if payload.api_key:
         provider.encrypted_api_key = encrypt_ssh_key(payload.api_key, get_master_key())
+        provider.credential_set_at = datetime.now(UTC)
     if payload.is_default:
         await _unset_other_defaults(db, provider.id)
 
@@ -216,6 +216,9 @@ async def update_provider(
     # Tri-state: absent keeps, "" clears, a value replaces.
     if api_key is not None:
         provider.encrypted_api_key = encrypt_ssh_key(api_key, get_master_key()) if api_key else None
+        # Cleared with the key, so an emptied provider does not keep
+        # reporting an expiry for a credential it no longer holds.
+        provider.credential_set_at = datetime.now(UTC) if api_key else None
 
     if data.get("is_default"):
         await _unset_other_defaults(db, provider.id)
