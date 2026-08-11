@@ -149,6 +149,13 @@ class AISession(Base):
     action_run_id: Mapped[int | None] = mapped_column(
         ForeignKey("action_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    # Opt out of the pre-change Proxmox snapshot for this session only.
+    #
+    # Composes with ``ai.snapshot_before_mutating`` by agreement, not
+    # override: a snapshot is taken only when the instance setting is on
+    # *and* this is false. Neither can force one against the other, so
+    # turning snapshots off globally cannot be undone per session.
+    skip_snapshots: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Set in phase 4; the FK is added with the alert_events table.
     alert_event_id: Mapped[int | None] = mapped_column(Integer, nullable=True, default=None)
     iterations: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -242,6 +249,14 @@ class AIToolCall(Base):
     result_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     # Proxmox snapshot taken before this call, when it was mutating.
     snapshot_name: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    # When the retention sweep removed that snapshot. The name is kept
+    # afterwards: it is the record of what protected this change, and an
+    # operator reading the transcript later should be able to tell "there
+    # was a rollback point, it has since expired" from "there never was
+    # one" — which is the difference that decides what they do next.
+    snapshot_pruned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

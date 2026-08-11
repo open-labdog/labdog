@@ -327,6 +327,7 @@ class AgentLoop:
             arguments=call.arguments,
             session_id=self.session.id,
             label=str(call.arguments.get("command") or call.name),
+            skip=self.session.skip_snapshots,
         )
         if refusal:
             record.status = "blocked"

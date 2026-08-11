@@ -330,6 +330,7 @@ async def create_session(
         autonomy_level=payload.autonomy_level,
         status="queued",
         target_host_ids=payload.target_host_ids or [],
+        skip_snapshots=payload.skip_snapshots,
         created_by_user_id=user.id,
     )
     db.add(session)
@@ -413,7 +414,7 @@ async def get_session(
     # transcript would bury the actual exchange.
     detail.messages = [m for m in messages if m.role != "system"]
     detail.tool_calls = list(tool_calls)
-    detail.approvals = [AIApprovalResponse.model_validate(a) for a in requests]
+    detail.approvals = await _with_snapshot_expectation(db, list(requests))
     return detail
 
 
@@ -536,6 +537,25 @@ async def delete_session(
             ),
         )
 
+    # Any snapshot this session took is about to lose the row that records
+    # it, which is the only thing the retention sweep works from. Naming
+    # them here is what stops them becoming invisible as well as orphaned —
+    # they are still on the hypervisor, and someone has to be able to find
+    # out that they exist.
+    orphaned = (
+        (
+            await db.execute(
+                select(AIToolCall.snapshot_name).where(
+                    AIToolCall.session_id == session_id,
+                    AIToolCall.snapshot_name.is_not(None),
+                    AIToolCall.snapshot_pruned_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
     # The transcript is about to be unrecoverable, so what it was goes in
     # the audit trail — a deleted investigation should not be invisible.
     await log_action(
@@ -545,6 +565,7 @@ async def delete_session(
         entity_id=session.id,
         user_id=user.id,
         before_state={
+            "snapshots_left_behind": list(orphaned),
             "mission": session.mission[:500],
             "status": session.status,
             "mode": session.mode,
@@ -561,6 +582,52 @@ async def delete_session(
 # ---------------------------------------------------------------------------
 # Approvals
 # ---------------------------------------------------------------------------
+
+
+async def _with_snapshot_expectation(
+    db: AsyncSession, requests: list[AIApprovalRequest]
+) -> list[AIApprovalResponse]:
+    """Answer "will this be undoable?" for each request.
+
+    The operator is authorising a change to a host, and whether a rollback
+    point will exist is part of what they are deciding — a host with no VM
+    mapping gets no snapshot, and saying nothing would let them approve
+    under an assumption LabDog knows to be false.
+
+    Resolved in two queries rather than per row: the queue endpoint can
+    return up to 200.
+    """
+    if not requests:
+        return []
+
+    enabled = bool(int(await get_setting_typed("ai.snapshot_before_mutating", db)))
+    session_ids = {r.session_id for r in requests}
+    host_ids = {r.target_host_id for r in requests if r.target_host_id is not None}
+
+    opted_out: set[int] = set()
+    if enabled and session_ids:
+        rows = await db.execute(
+            select(AISession.id).where(
+                AISession.id.in_(session_ids), AISession.skip_snapshots.is_(True)
+            )
+        )
+        opted_out = set(rows.scalars().all())
+
+    mapped: set[int] = set()
+    if enabled and host_ids:
+        from app.proxmox.vm_mapping import VMMapping
+
+        rows = await db.execute(select(VMMapping.host_id).where(VMMapping.host_id.in_(host_ids)))
+        mapped = set(rows.scalars().all())
+
+    out: list[AIApprovalResponse] = []
+    for request in requests:
+        response = AIApprovalResponse.model_validate(request)
+        response.snapshot_expected = bool(
+            enabled and request.session_id not in opted_out and request.target_host_id in mapped
+        )
+        out.append(response)
+    return out
 
 
 @router.get("/approvals", response_model=list[AIApprovalResponse])
@@ -580,7 +647,7 @@ async def list_approvals(
     if status != "all":
         stmt = stmt.where(AIApprovalRequest.status == status)
     result = await db.execute(stmt.limit(min(limit, 200)))
-    return [AIApprovalResponse.model_validate(a) for a in result.scalars().all()]
+    return await _with_snapshot_expectation(db, list(result.scalars().all()))
 
 
 @router.post("/approvals/{approval_id}", response_model=AIApprovalResponse)

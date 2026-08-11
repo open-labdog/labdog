@@ -1060,6 +1060,9 @@ export interface AIToolCall {
   approval_id: number | null
   /** The rollback point taken before this call, when there was one. */
   snapshot_name: string | null
+  /** Set once retention removed it. The name stays — "there was a rollback
+   * point and it expired" is different from "there never was one". */
+  snapshot_pruned_at: string | null
   started_at: string
   finished_at: string | null
 }
@@ -1073,6 +1076,8 @@ export interface AISession {
   autonomy_level: AIAutonomyLevel
   status: AISessionStatus
   target_host_ids: number[] | null
+  /** True when this session opted out of pre-change snapshots. */
+  skip_snapshots: boolean
   action_run_id: number | null
   iterations: number
   prompt_tokens: number
@@ -1112,6 +1117,13 @@ export interface AIApprovalRequest {
   created_at: string
   expires_at: string | null
   decided_at: string | null
+  /**
+   * Whether approving this produces a rollback point. False when the
+   * host has no VM mapping, the session opted out, or snapshots are off
+   * instance-wide — all cases the operator should know about *before*
+   * authorising a change, not after.
+   */
+  snapshot_expected: boolean
 }
 
 export interface AISessionDetail extends AISession {

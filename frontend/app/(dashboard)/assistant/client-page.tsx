@@ -92,6 +92,7 @@ export default function AssistantPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [mission, setMission] = useState("")
   const [autonomy, setAutonomy] = useState<AIAutonomyLevel>("read_only")
+  const [skipSnapshots, setSkipSnapshots] = useState(false)
   // null means "let the backend pick its default provider".
   const [providerId, setProviderId] = useState<number | null>(null)
   const [targetHosts, setTargetHosts] = useState<number[]>([])
@@ -253,6 +254,7 @@ export default function AssistantPage() {
       autonomy_level: AIAutonomyLevel
       target_host_ids: number[]
       provider_id: number | null
+      skip_snapshots: boolean
     }) => apiFetch<AISession>("/api/ai/sessions", { method: "POST", json: body }),
     onSuccess: (created) => {
       setMission("")
@@ -342,6 +344,9 @@ export default function AssistantPage() {
         autonomy_level: autonomy,
         target_host_ids: targetHosts,
         provider_id: providerId,
+        // Meaningless on a read-only session, and sending it would store a
+        // flag the operator never actually chose.
+        skip_snapshots: autonomy === "read_only" ? false : skipSnapshots,
       })
     }
   }
@@ -602,6 +607,28 @@ export default function AssistantPage() {
                 </Select>
                 <p className="mt-1 text-xs text-slate-400">{AUTONOMY_HELP[autonomy]}</p>
               </div>
+
+              {/* Only shown above read-only, where there is a change to
+                  snapshot. Offering it on a session that cannot change
+                  anything would be a control with no effect. */}
+              {autonomy !== "read_only" && (
+                <div>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input
+                      type="checkbox"
+                      className="mt-0.5"
+                      checked={skipSnapshots}
+                      onChange={(e) => setSkipSnapshots(e.target.checked)}
+                    />
+                    <span>Skip snapshots</span>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-400">
+                    {skipSnapshots
+                      ? "Changes will be made with no rollback point. Faster, and undoing anything is then your problem."
+                      : "A Proxmox snapshot is taken before each change, on hosts that map to a VM, so it can be rolled back."}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <Label className="text-slate-400">

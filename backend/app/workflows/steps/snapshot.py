@@ -14,6 +14,7 @@ async def create_snapshot(
     run_id: int,
     vm_type: str = "qemu",
     action_key: str = "",
+    name_prefix: str = "labdog",
 ) -> str:
     """Create a pre-update VM snapshot and wait for the task to complete.
 
@@ -27,6 +28,13 @@ async def create_snapshot(
         vmid: VM identifier.
         run_id: Parent :class:`~app.workflows.models.WorkflowRun` ID, used as
             part of the snapshot name.
+        name_prefix: Leading segment of the snapshot name. AI sessions pass
+            ``"labdog-ai"`` so that a snapshot the agent took is
+            distinguishable from an action run's at a glance in the Proxmox
+            UI — they have different lifetimes (an action deletes its own on
+            success; an agent's is kept for a retention window so a human can
+            still undo the change) and telling them apart matters when
+            deciding what is safe to remove by hand.
 
     Returns:
         The snapshot name string (e.g. ``"labdog-42-1711234567"``).
@@ -35,7 +43,7 @@ async def create_snapshot(
         :class:`~app.proxmox.client.ProxmoxError`: If the Proxmox task fails
             or times out.
     """
-    name = f"labdog-{run_id}-{int(time.time())}"
+    name = f"{name_prefix}-{run_id}-{int(time.time())}"
     logger.info(
         "snapshot: creating snapshot %r for vmid %d on %s",
         name,

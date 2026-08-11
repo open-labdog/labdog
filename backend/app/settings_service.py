@@ -192,6 +192,18 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "and resumes without it, rather than sitting parked forever."
         ),
     },
+    "ai.snapshot_retention_days": {
+        "type": "int",
+        "default": 7,
+        "min": 0,
+        "max": 365,
+        "description": (
+            "How long to keep a snapshot the AI took before changing a host "
+            "(0 = keep forever). They are not deleted when the session "
+            "succeeds, because the point of them is that you can undo the "
+            "change afterwards — this is how long 'afterwards' lasts."
+        ),
+    },
     "ai.snapshot_before_mutating": {
         "type": "int",
         "default": 1,

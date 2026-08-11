@@ -76,6 +76,18 @@ export function ApprovalCard({ approval, hostName, onDecide, pending }: Props) {
           {approval.summary}
         </p>
       )}
+
+      {/* Whether this can be undone is part of what is being decided, so
+          it is stated before the buttons rather than discovered after. */}
+      <p
+        className={`mt-2 text-xs ${
+          approval.snapshot_expected ? "text-slate-400" : "text-amber-300"
+        }`}
+      >
+        {approval.snapshot_expected
+          ? "A snapshot will be taken first, so this can be rolled back."
+          : "No snapshot will be taken — this host has no Proxmox VM mapping, or snapshots are switched off. There will be no rollback point."}
+      </p>
       {expires && (
         <p className="mt-1 text-xs text-slate-500">
           Expires {expires.toLocaleString()} — after that it is treated as not

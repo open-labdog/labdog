@@ -189,6 +189,7 @@ async def execute_approved(
                 host_id=approval.target_host_id,
                 session_id=session.id,
                 label=approval.command_preview,
+                skip=session.skip_snapshots,
             )
         except SnapshotFailed as exc:
             # Refusing here rather than proceeding without a net. The

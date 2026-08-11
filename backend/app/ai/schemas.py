@@ -168,6 +168,9 @@ class AISessionCreate(BaseModel):
     provider_id: int | None = None
     autonomy_level: AutonomyLevel = "read_only"
     target_host_ids: list[int] = Field(default_factory=list)
+    #: Skip the pre-change Proxmox snapshot for this session. Only has an
+    #: effect above read_only, where there is a change to snapshot.
+    skip_snapshots: bool = False
 
 
 class AISessionMessageRequest(BaseModel):
@@ -192,6 +195,10 @@ class AIToolCallResponse(BaseModel):
     approval_id: int | None
     #: The rollback point taken before this call, when there was one.
     snapshot_name: str | None
+    #: Set once the retention sweep removed it. The name above stays,
+    #: because "there was a rollback point and it expired" is a
+    #: different thing to know than "there never was one".
+    snapshot_pruned_at: datetime | None
     started_at: datetime
     finished_at: datetime | None
 
@@ -219,6 +226,7 @@ class AISessionResponse(BaseModel):
     autonomy_level: str
     status: str
     target_host_ids: list | None
+    skip_snapshots: bool
     action_run_id: int | None
     iterations: int
     prompt_tokens: int
@@ -252,6 +260,12 @@ class AIApprovalResponse(BaseModel):
     created_at: datetime
     expires_at: datetime | None
     decided_at: datetime | None
+    #: Whether approving this will produce a rollback point. Computed
+    #: at read time from the instance setting, the session's opt-out
+    #: and whether the host maps to a VM at all — the operator is
+    #: authorising a change, and whether it can be undone is part of
+    #: what they are deciding.
+    snapshot_expected: bool = False
 
 
 class AIApprovalDecision(BaseModel):

@@ -279,6 +279,7 @@ class AgentSDKRunner:
                 arguments=arguments,
                 session_id=self.session.id,
                 label=str(arguments.get("command") or name),
+                skip=self.session.skip_snapshots,
             )
             if refusal:
                 record.status = "blocked"
