@@ -55,20 +55,31 @@ async def run_verification(
                         {"name": str, "expected": str, "installed": bool, "ok": bool},
                         ...,
                     ],
-                    "load": float,
-                    "disk_pct": int,
+                    "load": float | None,
+                    "disk_pct": int | None,
                     "journal_errors": str,
                 },
                 "ai_result": {"passed": bool, "output": str} | None,
             }
 
+        ``load`` and ``disk_pct`` are ``None`` when the reading could not be
+        taken, which callers must not conflate with 0.
+
         ``passed`` is ``True`` only when every hard check succeeds AND (if AI
-        verification was requested) the AI also returns PASS.
+        verification was requested) the AI also returns PASS. The load and
+        disk readings do not affect it — they are context for the AI verdict
+        and for the operator, not thresholds.
     """
     service_results: list[dict[str, Any]] = []
     package_results: list[dict[str, Any]] = []
-    load_avg: float = 0.0
-    disk_pct: int = 0
+    # None means "not collected", which is not the same as zero. These
+    # used to default to 0.0 and 0 with their read errors swallowed below,
+    # so a host whose load and disk checks had both failed was described
+    # to the AI verifier as load 0.00 and disk 0% — the healthiest
+    # possible host. The journal read already got this right, substituting
+    # an explicit error string; these two now match it.
+    load_avg: float | None = None
+    disk_pct: int | None = None
     journal_errors: str = ""
     unmanaged_services: list[str] = []
     ai_result: dict[str, Any] | None = None
@@ -112,8 +123,10 @@ async def run_verification(
             "hard_checks": {
                 "services": [],
                 "packages": [],
-                "load": 0.0,
-                "disk_pct": 0,
+                # Nothing was collected, so nothing is reported. Zeros here
+                # would describe an unreachable host as an idle healthy one.
+                "load": None,
+                "disk_pct": None,
                 "journal_errors": f"SSH connection failed: {exc}",
             },
             "ai_result": None,
@@ -187,6 +200,8 @@ async def run_verification(
             if load_avg > _LOAD_WARN_THRESHOLD:
                 logger.warning("verify: high load average %.2f on %s", load_avg, host.ip_address)
         except Exception as exc:
+            # load_avg stays None, and is reported as unavailable rather
+            # than as a number nobody measured.
             logger.warning("verify: load average check failed on %s: %s", host.ip_address, exc)
 
         # ------------------------------------------------------------------
@@ -198,6 +213,7 @@ async def run_verification(
             if disk_pct > _DISK_WARN_THRESHOLD:
                 logger.warning("verify: disk usage %d%% on %s", disk_pct, host.ip_address)
         except Exception as exc:
+            # disk_pct stays None. See the load average note above.
             logger.warning("verify: disk check failed on %s: %s", host.ip_address, exc)
 
         # ------------------------------------------------------------------
