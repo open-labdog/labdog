@@ -19,6 +19,9 @@ async def run_verification(
     effective_packages: list[Any],
     verification_prompt: str | None,
     db: Any,
+    *,
+    ai_fail_closed: bool = False,
+    action_run_id: int | None = None,
 ) -> dict[str, Any]:
     """Verify system health after a host update via SSH hard checks.
 
@@ -28,9 +31,10 @@ async def run_verification(
     Basic system health (load average and disk usage) is always collected.
     Recent journal errors are gathered as additional context.
 
-    When all hard checks pass and ``verification_prompt`` is provided, the
-    function delegates to :func:`~app.workflows.steps.ai_verify.run_ai_verification`
-    for an AI-assisted assessment.
+    When all hard checks pass, and either ``verification_prompt`` was
+    supplied *or* the journal had errors to explain, the function delegates
+    to :func:`~app.workflows.steps.ai_verify.run_ai_verification` for an
+    AI-assisted assessment of everything collected above.
 
     Args:
         host: Host ORM object exposing ``hostname``, ``ip_address``,
@@ -41,8 +45,18 @@ async def run_verification(
         effective_packages: List of effective package rule objects, each with
             ``package_name`` and ``desired_state`` attributes.
         verification_prompt: Optional free-text instructions for AI
-            verification.  ``None`` or empty string disables AI verification.
+            verification, supplied by the action's manifest
+            (``ai_verify_prompt``).  ``None`` still allows AI verification
+            to run when journal errors were found — see below.
         db: Active async SQLAlchemy session used for TOFU key persistence.
+            The AI step does not use it; it opens its own, because
+            ``action_group`` verifies hosts concurrently and has none to
+            lend.
+        ai_fail_closed: What an INCONCLUSIVE AI verdict resolves to.
+            Defaults to open, which is the behaviour every existing
+            manifest was written against.
+        action_run_id: Links the AI session back to the run that caused
+            it, so a verdict is traceable from the run detail page.
 
     Returns:
         A dict of the form::
@@ -59,16 +73,21 @@ async def run_verification(
                     "disk_pct": int | None,
                     "journal_errors": str,
                 },
-                "ai_result": {"passed": bool, "output": str} | None,
+                "ai_result": {
+                    "passed": bool,
+                    "verdict": "pass" | "fail" | "inconclusive",
+                    "output": str,
+                    "session_id": int | None,
+                } | None,
             }
 
         ``load`` and ``disk_pct`` are ``None`` when the reading could not be
         taken, which callers must not conflate with 0.
 
         ``passed`` is ``True`` only when every hard check succeeds AND (if AI
-        verification was requested) the AI also returns PASS. The load and
-        disk readings do not affect it — they are context for the AI verdict
-        and for the operator, not thresholds.
+        verification was requested) the AI verdict resolves to a pass. The
+        load and disk readings do not affect it — they are context for the
+        AI verdict and for the operator, not thresholds.
     """
     service_results: list[dict[str, Any]] = []
     package_results: list[dict[str, Any]] = []
@@ -272,26 +291,40 @@ async def run_verification(
     # ------------------------------------------------------------------
     # AI verification (when hard checks pass and prompt or journal errors exist)
     # ------------------------------------------------------------------
+    # The journal-error trigger is not a leftover: it is how a host that
+    # logged something ugly gets looked at even when nobody configured a
+    # prompt for this action. It stays gated behind ai.enabled (off by
+    # default) and a configured provider, so it cannot bill anyone who
+    # has not opted in.
     should_run_ai = hard_passed and (verification_prompt or journal_errors)
     if should_run_ai:
         from app.workflows.steps.ai_verify import run_ai_verification
 
-        prompt = verification_prompt or (
-            "Analyze the following system journal errors and determine if any "
-            "indicate a critical issue that needs attention."
-        )
         system_state: dict[str, Any] = {
             "host_hostname": getattr(host, "hostname", host.ip_address),
             "host_ip": host.ip_address,
             "hard_checks": hard_checks,
         }
         try:
-            ai_result = run_ai_verification(system_state, prompt)
+            ai_result = await run_ai_verification(
+                system_state,
+                verification_prompt or "",
+                fail_closed=ai_fail_closed,
+                host_id=getattr(host, "id", None),
+                action_run_id=action_run_id,
+            )
         except Exception as exc:
+            # run_ai_verification does not raise — every failure inside it
+            # is already an inconclusive verdict decided by the policy. If
+            # something got past it anyway, the same rule applies here
+            # rather than a hardcoded pass, so a fail-closed action cannot
+            # be let through by a bug in the verifier.
             logger.warning("verify: AI verification raised an exception: %s", exc)
             ai_result = {
-                "passed": True,
-                "output": f"AI verification error (treated as pass): {exc}",
+                "passed": not ai_fail_closed,
+                "verdict": "inconclusive",
+                "output": f"AI verification errored before reaching a verdict: {exc}",
+                "session_id": None,
             }
 
     overall_passed = hard_passed and (ai_result is None or ai_result.get("passed", True))
@@ -300,7 +333,7 @@ async def run_verification(
         "verify: host %s — hard=%s ai=%s overall=%s",
         host.ip_address,
         hard_passed,
-        ai_result.get("passed") if ai_result else "n/a",
+        ai_result.get("verdict") if ai_result else "n/a",
         overall_passed,
     )
 

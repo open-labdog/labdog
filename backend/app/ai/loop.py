@@ -186,7 +186,9 @@ class AgentLoop:
         self.provider = provider or build_provider(provider_row)
         # Resolved once: the same list gates what the provider is offered
         # and what the loop will actually execute.
-        self._handlers = tools_for_session(session.autonomy_level, session.allowed_tools)
+        self._handlers = tools_for_session(
+            session.autonomy_level, session.allowed_tools, mode=session.mode
+        )
         self._permitted = {h.spec.name: h for h in self._handlers}
         # Async callable taking (event_type, payload) — the SSE bridge.
         self._publish = publish
@@ -276,13 +278,17 @@ class AgentLoop:
             )
             record.finished_at = datetime.now(UTC)
             await self.db.flush()
-            available = ", ".join(sorted(permitted))
+            # A verify session has no tools at all, and "You may use: "
+            # with nothing after it reads like the list failed to render
+            # rather than like a deliberate restriction.
+            available = (
+                f"You may use: {', '.join(sorted(permitted))}"
+                if permitted
+                else "This session has no tools. Answer from the evidence you were given."
+            )
             if handler is not None:
-                return (
-                    f"The {call.name} tool is not available to this session. "
-                    f"You may use: {available}"
-                )
-            return f"There is no tool called {call.name!r}. Available tools: {available}"
+                return f"The {call.name} tool is not available to this session. {available}"
+            return f"There is no tool called {call.name!r}. {available}"
 
         # Autonomy is decided here, before the call runs, using the same
         # function the SDK runner's permission callback uses. It used to be
