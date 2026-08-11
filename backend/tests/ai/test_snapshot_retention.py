@@ -278,6 +278,12 @@ class TestTheBypass:
     ) -> None:
         from app.ai.models import AISession
 
+        # The kill switch defaults closed, so a session cannot be created
+        # through the API without it. Every other test in this file builds
+        # sessions directly and never meets the gate.
+        await set_setting(db, "ai.enabled", "1")
+        await db.commit()
+
         with patch("app.tasks.celery_app.send_task"):
             resp = await superuser_client.post(
                 "/api/ai/sessions",
@@ -293,12 +299,16 @@ class TestTheBypass:
         session = await db.get(AISession, resp.json()["id"])
         assert session.skip_snapshots is True
 
-    async def test_it_defaults_to_taking_them(self, superuser_client, ai_provider) -> None:
+    async def test_it_defaults_to_taking_them(self, superuser_client, db, ai_provider) -> None:
+        await set_setting(db, "ai.enabled", "1")
+        await db.commit()
+
         with patch("app.tasks.celery_app.send_task"):
             resp = await superuser_client.post(
                 "/api/ai/sessions",
                 json={"mission": "Look around.", "provider_id": ai_provider.id},
             )
+        assert resp.status_code == 201
         assert resp.json()["skip_snapshots"] is False
 
 
