@@ -154,3 +154,49 @@ class TestAutonomyGate:
         """There is no setting at which `rm -rf /` runs."""
         allowed, _ = is_allowed(classify_command("rm -rf /"), level)
         assert not allowed
+
+
+class TestTheVerdictExplainsItself:
+    """A verdict carries a reason and the segment that produced it.
+
+    Both are documented as the audit record of *why* a command was
+    classified the way it was, and for every command that was actually
+    allowed to run they were wrong: `classify_command` seeded its result
+    with a read_only placeholder that only something more severe could
+    displace, so an all-read-only command always came back as "No command
+    segments found" with an empty segment.
+
+    Nothing caught it because nothing surfaces the reason for a permitted
+    call — the refusal paths use it, the allow paths discard it. It would
+    have surfaced the first time anyone rendered "why was this allowed".
+    """
+
+    def test_a_read_names_the_command_that_produced_the_verdict(self) -> None:
+        verdict = classify_command("journalctl -u ssh -n 5")
+        assert verdict.classification == "read_only"
+        assert verdict.segment == "journalctl -u ssh -n 5"
+        assert "journalctl" in verdict.reason
+        assert "No command segments" not in verdict.reason
+
+    def test_a_write_names_the_segment_that_made_it_a_write(self) -> None:
+        verdict = classify_command("df -h && systemctl restart nginx")
+        assert verdict.segment == "systemctl restart nginx"
+
+    def test_the_first_worst_segment_wins_not_the_last(self) -> None:
+        """Strictly-greater comparison, deliberately. Relaxing it to >=
+        would be a one-character change that silently reattributes a
+        pipeline's verdict to a later segment of equal severity."""
+        verdict = classify_command("systemctl restart alpha; systemctl restart beta")
+        assert verdict.segment == "systemctl restart alpha"
+
+    def test_equal_severity_reads_report_the_first_segment(self) -> None:
+        verdict = classify_command("cat /etc/hosts | grep foo")
+        assert verdict.segment == "cat /etc/hosts"
+
+    def test_a_command_of_only_separators_is_not_allowed(self) -> None:
+        """Default-deny. Nothing parseable came out of it, so LabDog does
+        not get to call it read-only — which is what the placeholder used
+        to make it."""
+        verdict = classify_command(";;;")
+        assert verdict.classification == "unknown"
+        assert not is_allowed(verdict, "read_only")[0]
