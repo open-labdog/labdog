@@ -1025,6 +1025,14 @@ export interface AIProvider {
   supports_tools: boolean
   /** True when using this provider transmits host data off the network. */
   sends_data_offsite: boolean
+  /** True when this backend authenticates a Claude plan rather than an API key. */
+  uses_subscription: boolean
+  /**
+   * When the stored credential stops working, for backends whose credential
+   * expires. `claude setup-token` mints a one-year token; API-key providers
+   * get null because their keys do not expire on a schedule.
+   */
+  credential_expires_at: string | null
   input_cost_per_mtok: number
   output_cost_per_mtok: number
   monthly_budget: number

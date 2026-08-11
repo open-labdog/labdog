@@ -8,7 +8,7 @@ non-blank value replaces it.
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlparse
 
@@ -116,6 +116,14 @@ class AIProviderResponse(BaseModel):
     # to keep in step with the backend by hand.
     supports_tools: bool
     sends_data_offsite: bool
+    #: True when this backend authenticates a Claude subscription rather
+    #: than an API key, which is what makes the expiry below apply.
+    uses_subscription: bool
+    #: When the stored credential stops working, for backends whose
+    #: credential expires. `claude setup-token` mints a one-year token, and
+    #: an expired one stops a scheduled session dead — so this is computed
+    #: and surfaced rather than left for the operator to remember.
+    credential_expires_at: datetime | None
     input_cost_per_mtok: float
     output_cost_per_mtok: float
     monthly_budget: float
@@ -124,10 +132,31 @@ class AIProviderResponse(BaseModel):
     updated_at: datetime
 
 
+#: How long a token from `claude setup-token` lasts, per Anthropic's
+#: documentation. Not readable from the token itself, so it is assumed
+#: from the documented lifetime — an estimate that is useful precisely
+#: because the alternative is no warning at all.
+SUBSCRIPTION_TOKEN_LIFETIME = timedelta(days=365)
+
+
+def credential_expiry(provider: AIProvider) -> datetime | None:
+    """When this provider's stored credential stops working, if it does.
+
+    API keys do not expire on a schedule, so only the subscription
+    backends get a date. ``None`` also covers a provider with no stored
+    credential and one whose credential predates this being recorded.
+    """
+    from app.ai.providers.factory import uses_subscription
+
+    if not uses_subscription(provider) or provider.credential_set_at is None:
+        return None
+    return provider.credential_set_at + SUBSCRIPTION_TOKEN_LIFETIME
+
+
 def provider_to_response(provider: AIProvider) -> AIProviderResponse:
     # Imported here: factory pulls in the provider backends, which the
     # schema module itself has no need for.
-    from app.ai.providers.factory import sends_data_offsite, supports_tools
+    from app.ai.providers.factory import sends_data_offsite, supports_tools, uses_subscription
 
     return AIProviderResponse(
         id=provider.id,
@@ -145,6 +174,8 @@ def provider_to_response(provider: AIProvider) -> AIProviderResponse:
         is_default=provider.is_default,
         supports_tools=supports_tools(provider),
         sends_data_offsite=sends_data_offsite(provider),
+        uses_subscription=uses_subscription(provider),
+        credential_expires_at=credential_expiry(provider),
         input_cost_per_mtok=provider.input_cost_per_mtok,
         output_cost_per_mtok=provider.output_cost_per_mtok,
         monthly_budget=provider.monthly_budget,

@@ -333,12 +333,35 @@ not merely that `claude` is installed.
 
 Renew once a year by running `claude setup-token` again and editing the
 provider. Doing so also invalidates the previous token, which is the
-fastest way to retire one you think has leaked.
+fastest way to retire one you think has leaked. The provider list shows
+how long the current one has left and turns amber in the last month —
+worth heeding, because an expired token stops a *scheduled* check with no
+warning, and nothing else would tell you until the reports stopped.
+
+#### What the subscription covers
+
+Sessions on these backends count against your plan's usage limits — the
+same ones the Claude apps use, not a separate meter. API credits are a
+distinct thing you would have to opt into.
+
+Anthropic's terms describe subscription OAuth as being for ordinary use
+of Claude Code and other Anthropic applications, and they do not permit
+routing requests through a plan's credentials on behalf of other people.
+Running LabDog on your own machines with your own token is squarely
+inside that. Running an instance *for someone else* on your plan is not —
+use an API-key provider there.
 
 #### Running LabDog in a container
 
 The official image bundles the `claude` binary, so there is nothing to
 install. Paste your token into the provider form and it works.
+
+Mount a volume at `/var/lib/labdog/claude-cli`. Claude Code keeps its own
+session files there, and a session paused waiting for your approval
+resumes from them — a pause that can last a day. Without the volume,
+upgrading the image mid-approval loses everything the assistant
+established before it stopped. See
+[the reference deployment](../production-deploy.md).
 
 The image is correspondingly larger — the binary is around 130 MB on
 disk, against roughly the same again for the rest of LabDog, so expect
