@@ -134,6 +134,43 @@ def test_manifest_defaults_have_no_verify():
     assert m.playbook_timeout_seconds is None
 
 
+def test_manifest_accepts_ai_verify_fields():
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "playbook.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+            "ai_verify_prompt": "Confirm the kernel booted the new version.",
+            "ai_verify_fail_closed": True,
+        }
+    )
+    assert m.ai_verify_prompt == "Confirm the kernel booted the new version."
+    assert m.ai_verify_fail_closed is True
+
+
+def test_manifest_defaults_to_no_ai_verify_and_fail_open():
+    """Fail-open is the behaviour every existing manifest was written
+    against: a verdict nobody can read is not evidence that anything is
+    wrong, and a failed verification can restore a snapshot."""
+    m = ActionManifest.model_validate(
+        {
+            "key": "demo",
+            "name": "Demo",
+            "description": "d",
+            "icon": "Box",
+            "playbook": "playbook.yml",
+            "version": "1.0",
+            "estimated_duration": "1 min",
+        }
+    )
+    assert m.ai_verify_prompt is None
+    assert m.ai_verify_fail_closed is False
+
+
 def test_manifest_accepts_playbook_timeout_seconds():
     m = ActionManifest.model_validate(
         {
@@ -223,6 +260,26 @@ def test_load_pack_threads_playbook_timeout(tmp_path: Path):
     defns = load_pack(pack)
     assert len(defns) == 1
     assert defns[0].playbook_timeout_seconds == 5400
+
+
+def test_load_pack_threads_ai_verify_fields(tmp_path: Path):
+    """These two reach ``run_verification`` at the call sites that used
+    to pass ``None``, so a pack declaring them is what makes the AI
+    verify step run with a real question."""
+    manifest_body = (
+        SIMPLE_MANIFEST
+        + "ai_verify_prompt: Confirm nginx came back up.\n"
+        + "ai_verify_fail_closed: true\n"
+    )
+    _write_pack(
+        tmp_path,
+        "av",
+        actions={"demo": {"manifest.yml": manifest_body, "playbook.yml": SIMPLE_PLAYBOOK}},
+    )
+    defns = load_pack(Pack(name="av", path=tmp_path / "av"))
+    assert len(defns) == 1
+    assert defns[0].ai_verify_prompt == "Confirm nginx came back up."
+    assert defns[0].ai_verify_fail_closed is True
 
 
 def test_load_pack_resolves_verify_playbook(tmp_path: Path):

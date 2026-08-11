@@ -109,6 +109,8 @@ def _manifest_to_definition(
         roles_paths=roles_paths,
         verify_playbook_path=verify_playbook_path,
         verify_timeout_seconds=manifest.verify_timeout_seconds,
+        ai_verify_prompt=manifest.ai_verify_prompt,
+        ai_verify_fail_closed=manifest.ai_verify_fail_closed,
         metrics_backend=(
             manifest.metrics_backend.model_dump(exclude_none=True)
             if manifest.metrics_backend

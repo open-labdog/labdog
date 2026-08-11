@@ -408,6 +408,11 @@ playbook_timeout_seconds: 1800  # optional; floor for the main playbook's
                              # setting). Omit to use the global setting alone.
                              # Set it for long actions (e.g. package upgrades)
                              # the short global default can't accommodate.
+ai_verify_prompt: >-         # optional; what the AI verify step should confirm
+  Confirm the host booted the new kernel and nothing in the journal
+  indicates a driver problem.
+ai_verify_fail_closed: false # optional; whether an INCONCLUSIVE AI verdict
+                             # fails the action. See "AI verification" below.
 parameters:                  # passed as --extra-vars at run time
   - key: my_param
     label: My parameter
@@ -539,6 +544,62 @@ under [`verify/`](https://github.com/open-labdog/labdog-playbooks/tree/main/veri
 inside the action directory) and pass overrides through manifest
 parameters. The bundled `linux-upgrade` action in that repo uses
 `verify/post-upgrade.yml` and is the reference implementation.
+
+### AI verification
+
+The built-in check answers a fixed question: is every desired service
+running and every desired package installed? Plenty of breakage passes
+that and still looks wrong to anyone reading the logs. `ai_verify_prompt`
+lets you ask the wider question in words.
+
+```yaml
+# actions/kernel-upgrade/manifest.yml
+key: kernel-upgrade
+destructive: true
+playbook: playbook.yml
+ai_verify_prompt: >
+  Confirm the host booted the new kernel and that nothing in the
+  journal indicates a driver or filesystem problem.
+ai_verify_fail_closed: true             # default false
+```
+
+LabDog collects the evidence itself — managed services, managed
+packages, load average, root filesystem usage, and error-priority
+journal entries from the last ten minutes — renders it into the prompt,
+and asks your configured AI provider one question about it. The model
+gets **no tools**: it cannot run commands or open connections, so the
+only thing it can reason from is the evidence LabDog gathered. Readings
+that could not be taken are marked `UNAVAILABLE` rather than left blank,
+so a failed check cannot be mistaken for a healthy one.
+
+The reply's first word must be `PASS`, `FAIL`, or `INCONCLUSIVE`.
+
+| Verdict | `ai_verify_fail_closed: false` (default) | `ai_verify_fail_closed: true` |
+| --- | --- | --- |
+| `PASS` | passes | passes |
+| `FAIL` | fails, and rolls back if auto-rollback is on | same |
+| `INCONCLUSIVE` | passes | fails |
+
+`INCONCLUSIVE` also covers every case where no verdict was obtained at
+all: AI switched off, no provider configured, the budget spent, the
+backend erroring. Set `ai_verify_fail_closed: true` when an
+unverifiable outcome is itself unacceptable — a firmware or kernel
+upgrade you would rather revert than leave in an unknown state. A stated
+`PASS` or `FAIL` is honoured either way; the flag only decides the
+middle.
+
+**When it fires:** the same gate as the built-in check, plus
+`ai.enabled` and a configured provider. It runs *instead of* nothing —
+i.e. alongside the built-in SSH check, only when that check passed — and
+is skipped entirely when the manifest declares a `verify_playbook`,
+since a pack shipping its own verify playbook is already answering this
+question in code. It also runs without a prompt when the host logged
+errors during the change, asking the generic version of the question.
+
+Each verdict runs as a real AI session: it appears under **Assistant**
+with its full transcript, counts against your AI budget, and is linked
+from the action run. If AI is disabled or no provider is configured, the
+step is skipped and the action's own result stands.
 
 ### Post-run reconciliation: sync and register
 

@@ -314,6 +314,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             action_roles_paths: tuple = action.roles_paths
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            action_ai_verify_prompt: str | None = action.ai_verify_prompt
+            action_ai_verify_fail_closed: bool = action.ai_verify_fail_closed
             action_playbook_timeout: int | None = action.playbook_timeout_seconds
             action_metrics_backend: dict | None = action.metrics_backend
             # Run-time toggles mirrored from ScheduledAction at dispatch time.
@@ -747,15 +749,30 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                             ssh_key_path,
                             effective_services,
                             effective_packages,
-                            None,  # no AI prompt for ad-hoc actions
+                            action_ai_verify_prompt,
                             db,
+                            ai_fail_closed=action_ai_verify_fail_closed,
+                            action_run_id=action_run_id,
                         )
                     verification_passed = bool(verify_result.get("passed"))
+                    ai_result = verify_result.get("ai_result")
                     _log_step(
                         f"[verify] passed={verification_passed} "
                         f"services_ok={verify_result.get('services_ok')} "
                         f"packages_ok={verify_result.get('packages_ok')}"
                     )
+                    if ai_result:
+                        # The verdict is logged separately from `passed`
+                        # because they can legitimately differ: an
+                        # inconclusive verdict under the default policy is
+                        # a pass, and the run log is where an operator
+                        # would look to find that out.
+                        _log_step(
+                            f"[verify] ai verdict={ai_result.get('verdict')} "
+                            f"session={ai_result.get('session_id')}"
+                        )
+                        step_log.append("=== AI verification ===")
+                        step_log.append(str(ai_result.get("output") or ""))
                     if not verification_passed:
                         verification_error = f"Post-run verification failed: {verify_result}"
                 except Exception as exc:

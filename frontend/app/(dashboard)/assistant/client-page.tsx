@@ -60,6 +60,20 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 /**
+ * How a session that the operator did not start is labelled.
+ *
+ * `chat` is absent on purpose: a session you opened from this page needs
+ * no explanation. The others arrive on their own — a scheduled check, or
+ * a verify step an action ran after changing a host — and a list of
+ * sessions nobody remembers starting is confusing without this.
+ */
+const MODE_LABEL: Record<string, string> = {
+  scheduled: "scheduled",
+  verify: "verify",
+  alert_investigation: "alert",
+}
+
+/**
  * Statuses where the owning Celery task has stopped for good.
  *
  * Mirrors TERMINAL_STATES in app/api/ai.py, which refuses to delete a
@@ -470,6 +484,11 @@ export default function AssistantPage() {
                       <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
                         {s.status}
                       </Badge>
+                      {MODE_LABEL[s.mode] && (
+                        <Badge className="bg-slate-700 text-slate-200">
+                          {MODE_LABEL[s.mode]}
+                        </Badge>
+                      )}
                       <span className="truncate text-slate-400">{describeScope(scope)}</span>
                       {s.cost > 0 && (
                         <span className="text-slate-400">${s.cost.toFixed(3)}</span>

@@ -220,6 +220,37 @@ the host allowlist bounds what can be read at all.
 
 ---
 
+## Verify sessions
+
+Sessions you did not start will appear in the list, labelled **verify**.
+These come from actions whose manifest sets `ai_verify_prompt` — see
+[Actions](./actions.md#ai-verification). After a destructive action on a
+snapshotted host, LabDog collects the host's state, hands it to the model
+as evidence, and asks one question: did this leave the host healthy? The
+answer is `PASS`, `FAIL`, or `INCONCLUSIVE`, and a `FAIL` can restore the
+pre-change snapshot.
+
+They are not investigations, and they behave differently from the
+sessions you start:
+
+- **No tools.** A verify session cannot run commands or open connections.
+  Everything it judges is in its prompt, gathered by LabDog before the
+  session started. That is deliberate: a session deciding whether to
+  restore a snapshot should not also be reaching into the host it is
+  deciding about.
+- **Any backend works.** Because there is nothing to look up, a
+  single-shot backend answers a verify question perfectly well — unlike
+  an investigation, which is refused on a backend that cannot run tools.
+- **They count against your budget** like any other session, and their
+  full transcript is here if you want to see what a verdict was reached
+  from.
+
+A verdict of `INCONCLUSIVE` normally passes the action, on the grounds
+that an answer nobody can read is not evidence anything is wrong. An
+action's manifest can reverse that with `ai_verify_fail_closed`.
+
+---
+
 ## Limits
 
 Every session is bounded. It ends when the assistant is finished, or when

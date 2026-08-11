@@ -205,8 +205,15 @@ phase 3 shipped approvals: the `AIApprovalRequest` table, park-and-resume
 across both runners, snapshot-before-mutating, the expiry reaper, and the
 approval UI. See `git log --grep "approval"`.
 
-Two phases remain, each independently useful, plus one item carried over
-from phase 3:
+Phase 5 shipped the AI verify step: `app/ai/verdict.py` (PASS / FAIL /
+INCONCLUSIVE with a per-manifest fail-closed policy), `app/ai/evidence.py`
+(the evidence pack — readings that are a value or an explicit absence,
+with provenance), `app/ai/verify.py` (a toolless `AISession(mode="verify")`
+with its own system prompt), and `ai_verify_prompt` /
+`ai_verify_fail_closed` on `ActionManifest`, threaded to the two call
+sites that used to pass `None`. See `git log --grep "verify"`.
+
+One phase remains, plus one item carried over from phase 3:
 
 - **Remediation through the action system (`propose_action`).** Approvals
   shipped, so the model can now change a host — but only by running a
@@ -247,13 +254,6 @@ from phase 3:
   Alertmanager API as a fallback for when Grafana cannot reach LabDog.
   Both dedupe on the alert fingerprint. Eligible alerts spawn a
   read-only investigation session under a configurable severity policy.
-- **AI verify step.** `app/workflows/steps/ai_verify.py` still shells out
-  to `claude -p` and is effectively dead — its callers
-  (`action_host.py`, `action_group.py`) pass `verification_prompt=None`.
-  Rewrite it onto the provider abstraction and add `ai_verify_prompt` /
-  `ai_verify_fail_closed` to `ActionManifest`, threading the prompt
-  through to those call sites. Default fail-open; let a manifest opt into
-  fail-closed for critical upgrades.
 
 **Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
 testcontainers, so on a machine without Docker they are verified by review
@@ -297,10 +297,11 @@ Follow-ups it leaves open:
   and reset time. On a subscription the money budget is meaningless but
   quota is not, so that is what the usage panel should show for these
   providers.
-- [ ] **Decide whether `claude_cli` survives.** The SDK backend does
-  everything it does, including single-shot. Keeping both means two
-  subprocess backends; merging them is a migration plus a UI change.
-  Phase 5 (`ai_verify`) is the natural moment to choose.
+- [ ] **Persist a verify session's evidence pack.** The rendered pack is
+  in the session's first user turn, which is enough to read back but not
+  to query — "which verifications ran with an unavailable disk reading"
+  needs the `EvidenceItem` list stored structurally. Worth doing when
+  there is a second evidence producer, not before.
 
 ---
 
