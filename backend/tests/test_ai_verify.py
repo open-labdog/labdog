@@ -11,6 +11,7 @@ the adaptation, not the agent.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +19,36 @@ import pytest
 from app.ai.evidence import UNAVAILABLE
 from app.ai.verdict import FAILED, INCONCLUSIVE, PASSED, VerifyOutcome
 from app.workflows.steps.ai_verify import evidence_from_state, run_ai_verification
+
+
+def _fake_ssh():
+    """Stand in for ``ssh_connect_host``, returning healthy readings.
+
+    ``run_verification`` opens one connection and runs every check over
+    it, so the checks have to succeed for the AI step to be reached at
+    all — it only runs when the hard checks pass.
+    """
+
+    class _Result:
+        def __init__(self, stdout: str) -> None:
+            self.stdout = stdout
+            self.exit_status = 0
+
+    class _Conn:
+        async def run(self, command: str, check: bool = False):  # noqa: ARG002, FBT001, FBT002
+            if "loadavg" in command:
+                return _Result("0.42 0.30 0.25 1/200 1234")
+            if command.startswith("df"):
+                return _Result("37%")
+            if "journalctl" in command:
+                return _Result("Aug 11 12:00:00 h kernel: something looked odd")
+            return _Result("")
+
+    @asynccontextmanager
+    async def _cm(*args, **kwargs):  # noqa: ANN002, ANN003, ARG001
+        yield _Conn()
+
+    return _cm
 
 
 def _state(**hard) -> dict:
@@ -178,3 +209,54 @@ class TestWhatItPassesDown:
         labels = {item.label for item in spy.kwargs["evidence"]}
         assert "System load (1 minute)" in labels
         assert any(not item.available for item in spy.kwargs["evidence"])
+
+
+class TestADryRunDoesNotBuyAVerdict:
+    """A preview must not open a billed AI session.
+
+    Neither the snapshot nor the verify gate in ``action_host`` consults
+    ``dry_run``, so a preview of a destructive action on a VM-mapped host
+    reaches ``run_verification`` exactly like a real one. Check mode means
+    the change never happened — so an AI verdict there describes the host
+    as it already was, costs real money, and reads in the run detail like
+    a verdict on a change that did happen.
+    """
+
+    async def _verify(self, *, dry_run: bool, prompt: str | None = "Confirm nginx.", **kw):
+        from app.workflows.steps import verify as verify_step
+
+        calls: list[dict] = []
+
+        async def _spy(system_state, verification_prompt, **kwargs):  # noqa: ANN001
+            calls.append(kwargs)
+            return {"passed": True, "verdict": PASSED, "output": "PASS", "session_id": 1}
+
+        host = SimpleNamespace(id=1, hostname="h", ip_address="10.0.0.9")
+        with (
+            patch.object(verify_step, "ssh_connect_host", _fake_ssh()),
+            patch("app.workflows.steps.ai_verify.run_ai_verification", _spy),
+        ):
+            result = await verify_step.run_verification(
+                host, "/tmp/key", [], [], prompt, None, dry_run=dry_run, **kw
+            )
+        return result, calls
+
+    async def test_a_dry_run_skips_ai_verification(self) -> None:
+        result, calls = await self._verify(dry_run=True)
+        assert calls == []
+        assert result["ai_result"] is None
+        assert result["passed"] is True
+
+    async def test_a_real_run_still_gets_one(self) -> None:
+        """The guard is one condition wide — it must not disable the
+        feature it is protecting."""
+        result, calls = await self._verify(dry_run=False)
+        assert len(calls) == 1
+        assert result["ai_result"] is not None
+
+    async def test_a_dry_run_skips_it_even_with_journal_errors(self) -> None:
+        """The other trigger. Suppressing only the manifest prompt would
+        leave a preview billing whenever the host happened to log an
+        error in the last ten minutes."""
+        _, calls = await self._verify(dry_run=True, prompt=None)
+        assert calls == []

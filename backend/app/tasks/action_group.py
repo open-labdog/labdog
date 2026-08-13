@@ -175,6 +175,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
+    from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
@@ -485,7 +486,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             ]
         )
 
-        dry_run = parameters.pop("__dry_run", False)
+        dry_run = parameters.pop(DRY_RUN_PARAM, False)
         extra_vars: dict | None = dict(parameters) if parameters else None
         if dry_run:
             extra_vars = extra_vars or {}
@@ -575,6 +576,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 ai_verify_prompt=action_ai_verify_prompt,
                 ai_verify_fail_closed=action_ai_verify_fail_closed,
                 action_run_id=action_run_id,
+                dry_run=dry_run,
             )
 
         # ------------------------------------------------------------------ #
@@ -916,6 +918,7 @@ async def _verify_all(
     ai_verify_prompt: str | None = None,
     ai_verify_fail_closed: bool = False,
     action_run_id: int | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Verify every host that succeeded the playbook and was snapshotted.
 
@@ -1044,6 +1047,7 @@ async def _verify_all(
                     None,
                     ai_fail_closed=ai_verify_fail_closed,
                     action_run_id=action_run_id,
+                    dry_run=dry_run,
                 )
                 ctx.verify_passed = bool(verify_result.get("passed"))
                 ctx.step_log.append(
@@ -1298,8 +1302,10 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         # run failure. Failures here are logged but never affect the
         # action's terminal status -- the action itself already
         # completed.
+        from app.actions.validation import DRY_RUN_PARAM  # noqa: PLC0415
+
         run_parameters = run.parameters or {}
-        dry_run = bool(run_parameters.get("__dry_run", False))
+        dry_run = bool(run_parameters.get(DRY_RUN_PARAM, False))
         if run.status not in ("cancelled", "failed") and not dry_run and succeeded > 0:
             from app.actions.registry import ACTION_REGISTRY
 

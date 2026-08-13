@@ -20,6 +20,19 @@ from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.actions.types import ActionDefinition, ActionParameter
 
+#: Key under which a dry run is carried inside ``ActionRun.parameters``.
+#:
+#: Not an action parameter, and never accepted from a client: the API sets
+#: it from ``RunCreateBody.dry_run`` and strips any inbound copy. It lives
+#: in the parameters blob because that is the only per-run payload the
+#: Celery tasks receive — ``ActionRun`` has no column of its own for it.
+#:
+#: The double underscore keeps it out of the namespace a manifest would
+#: plausibly use, and the models built by :func:`build_param_model` reject
+#: it like any other undeclared key, which is what makes stripping it at
+#: the boundary necessary rather than optional.
+DRY_RUN_PARAM = "__dry_run"
+
 _PYDANTIC_TYPE: dict[str, type] = {
     "string": str,
     "int": int,

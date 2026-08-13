@@ -22,6 +22,7 @@ async def run_verification(
     *,
     ai_fail_closed: bool = False,
     action_run_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Verify system health after a host update via SSH hard checks.
 
@@ -57,6 +58,12 @@ async def run_verification(
             manifest was written against.
         action_run_id: Links the AI session back to the run that caused
             it, so a verdict is traceable from the run detail page.
+        dry_run: Suppresses AI verification. The SSH checks still run —
+            they are free and they are what a preview is for — but a
+            check-mode run changed nothing, so an AI verdict on it would
+            describe the host as it already was while costing real money
+            and reading, in the run detail, exactly like a verdict on a
+            change that happened.
 
     Returns:
         A dict of the form::
@@ -296,7 +303,12 @@ async def run_verification(
     # prompt for this action. It stays gated behind ai.enabled (off by
     # default) and a configured provider, so it cannot bill anyone who
     # has not opted in.
-    should_run_ai = hard_passed and (verification_prompt or journal_errors)
+    # ``not dry_run`` is load-bearing rather than tidy. Neither the
+    # snapshot nor the verify gate in ``action_host`` consults dry_run, so
+    # a preview of a destructive action on a VM-mapped host already
+    # reaches here — and without this it would open a billed AI session to
+    # judge a host that check mode deliberately left untouched.
+    should_run_ai = hard_passed and not dry_run and (verification_prompt or journal_errors)
     if should_run_ai:
         from app.workflows.steps.ai_verify import run_ai_verification
 
