@@ -576,6 +576,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 ai_verify_prompt=action_ai_verify_prompt,
                 ai_verify_fail_closed=action_ai_verify_fail_closed,
                 action_run_id=action_run_id,
+                dry_run=dry_run,
             )
 
         # ------------------------------------------------------------------ #
@@ -917,6 +918,7 @@ async def _verify_all(
     ai_verify_prompt: str | None = None,
     ai_verify_fail_closed: bool = False,
     action_run_id: int | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Verify every host that succeeded the playbook and was snapshotted.
 
@@ -1045,6 +1047,7 @@ async def _verify_all(
                     None,
                     ai_fail_closed=ai_verify_fail_closed,
                     action_run_id=action_run_id,
+                    dry_run=dry_run,
                 )
                 ctx.verify_passed = bool(verify_result.get("passed"))
                 ctx.step_log.append(

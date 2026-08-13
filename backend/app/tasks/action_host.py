@@ -754,6 +754,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                             db,
                             ai_fail_closed=action_ai_verify_fail_closed,
                             action_run_id=action_run_id,
+                            dry_run=dry_run,
                         )
                     verification_passed = bool(verify_result.get("passed"))
                     ai_result = verify_result.get("ai_result")
