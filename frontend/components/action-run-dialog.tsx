@@ -137,8 +137,11 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           return
         }
       }
-      if (dryRun) resolvedParams.__dry_run = true
-
+      // `parameters` carries only what the manifest declares. The API
+      // validates it against that schema and rejects anything else, so a
+      // `__dry_run` key smuggled in here failed every preview with
+      // "Extra inputs are not permitted". `dry_run` below is the real
+      // channel; the API puts it where the Celery task reads it.
       const body: Record<string, unknown> = {
         action_key: action.key,
         parameters: resolvedParams,

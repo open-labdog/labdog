@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
-from app.actions.validation import build_param_model
+from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
@@ -167,10 +167,23 @@ async def create_run(
 
     # Validate parameters against the action's manifest schema. Catches
     # missing-required, type-mismatch, and unknown-key errors uniformly.
+    #
+    # ``DRY_RUN_PARAM`` is stripped first, and re-added below from
+    # ``body.dry_run``. It is not an action parameter — it is how the flag
+    # reaches the Celery task, which receives only ``ActionRun.parameters``
+    # — so validating it against the manifest rejected every dry run with
+    # "Extra inputs are not permitted". Accepting it from the client here
+    # would leave the operator able to set it without asking for a dry run,
+    # so it is discarded rather than honoured (BUG-53).
+    submitted = {k: v for k, v in (body.parameters or {}).items() if k != DRY_RUN_PARAM}
     try:
-        build_param_model(action).model_validate(body.parameters)
+        build_param_model(action).model_validate(submitted)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+    stored_parameters = dict(submitted)
+    if body.dry_run:
+        stored_parameters[DRY_RUN_PARAM] = True
 
     # Validate that the target host/group actually exists
     if body.host_id is not None:
@@ -214,7 +227,7 @@ async def create_run(
         action_version=action.version,
         host_id=body.host_id,
         group_id=body.group_id,
-        parameters=body.parameters,
+        parameters=stored_parameters,
         parallelism=body.parallelism,
         status="queued",
         triggered_by_user_id=user.id,

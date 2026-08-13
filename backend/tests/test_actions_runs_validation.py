@@ -116,3 +116,95 @@ async def test_supports_fleet_exposed_in_actions_listing(superuser_client, db):
     assert rows["_builtin.sync"]["supports_fleet"] is False
     # Pack-supplied actions default to False.
     assert rows["linux-upgrade"]["supports_fleet"] is False
+
+
+# ---------------------------------------------------------------------------
+# BUG-53 — dry run
+# ---------------------------------------------------------------------------
+#
+# The Preview (dry-run) button failed for every action with "Extra inputs
+# are not permitted". The dialog put `__dry_run` inside `parameters`, and
+# `parameters` is validated against the action's manifest schema with
+# `extra="forbid"` — so the flag was rejected before the Celery task that
+# pops it ever ran. There was no test on this path at all, which is how it
+# shipped.
+#
+# `_builtin.collect_state` is used deliberately: it declares no parameters,
+# so its param model is empty and rejects *any* extra key. That makes it
+# both the tightest case and one that does not depend on the bundled pack
+# being present.
+
+
+async def test_a_dry_run_is_accepted(superuser_client, db, stub_celery_dispatch):
+    """The regression. This returned 422 before the fix."""
+    host = await create_host(db)
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={
+            "action_key": "_builtin.collect_state",
+            "host_id": host.id,
+            "parameters": {},
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+
+
+async def test_a_dry_run_reaches_the_task(superuser_client, db, stub_celery_dispatch):
+    """`dry_run` on the request body has to land in the stored parameters:
+    the Celery task is handed `ActionRun.parameters` and nothing else, so
+    a flag that stops at the API is a flag the run never sees."""
+    host = await create_host(db)
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={
+            "action_key": "_builtin.collect_state",
+            "host_id": host.id,
+            "dry_run": True,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["parameters"] == {"__dry_run": True}
+
+
+async def test_a_normal_run_carries_no_dry_run_flag(superuser_client, db, stub_celery_dispatch):
+    host = await create_host(db)
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={"action_key": "_builtin.collect_state", "host_id": host.id},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["parameters"] == {}
+
+
+async def test_a_client_supplied_dry_run_key_is_ignored(superuser_client, db, stub_celery_dispatch):
+    """Stripping it is not the same as honouring it. `dry_run` is the
+    documented field; a parameter that quietly turned a real run into a
+    no-op would be worse than the 422 this replaces."""
+    host = await create_host(db)
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={
+            "action_key": "_builtin.collect_state",
+            "host_id": host.id,
+            "parameters": {"__dry_run": True},
+            "dry_run": False,
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["parameters"] == {}
+
+
+async def test_other_unknown_keys_are_still_rejected(superuser_client, db, stub_celery_dispatch):
+    """The strip is one key wide. `extra="forbid"` still catches an
+    operator's typo, which is what it is there for."""
+    host = await create_host(db)
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={
+            "action_key": "_builtin.collect_state",
+            "host_id": host.id,
+            "parameters": {"__dry_runn": True},
+        },
+    )
+    assert resp.status_code == 422

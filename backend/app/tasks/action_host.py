@@ -123,6 +123,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
+    from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.inventory import generate_inventory
     from app.ansible_runtime.runner import run_ansible
     from app.config import settings
@@ -473,7 +474,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             host_ip, host_port, ssh_key_path, ssh_user=ssh_user, hostname=host_hostname
         )
 
-        dry_run = parameters.pop("__dry_run", False)
+        dry_run = parameters.pop(DRY_RUN_PARAM, False)
         extra_vars: dict | None = dict(parameters) if parameters else None
         if dry_run:
             extra_vars = extra_vars or {}
