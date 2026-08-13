@@ -19,6 +19,23 @@ Two modes, chosen by probing the installed CLI once:
   is too old to round-trip tool results. The factory marks the provider
   ``supports_tools = False`` and the loop restricts it to reports and
   verify verdicts.
+
+**Why this backend still exists alongside ``claude_agent``.** The Agent
+SDK does everything this does and more, so the two looked redundant, and
+the open question was whether to retire this one. The answer is no, for a
+reason that has nothing to do with capability: ``claude-agent-sdk`` is an
+optional extra. Its wheel is platform-specific and carries a ~131 MB
+Claude Code binary, so the ``.deb`` / ``.rpm`` / ``.tar.gz`` artefacts do
+not install it — only the container image does. Retiring this backend
+would leave every package install with no way to authenticate a Claude
+subscription at all, which is the one thing neither API-key backend can
+do.
+
+The verify step added in phase 5 also gives ``supports_tools = False`` a
+job rather than a limitation: a verify session is toolless by design (see
+:mod:`app.ai.verify`), so a single-shot backend serves it exactly, and
+this is the case that motivated keeping the distinction visible in the
+provider list.
 """
 
 from __future__ import annotations

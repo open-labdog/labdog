@@ -37,9 +37,23 @@ TOOL_REGISTRY: dict[str, ToolHandler] = {
 #: narrower one.
 ALWAYS_ALLOWED = frozenset({"list_hosts", "get_host_facts"})
 
+#: Session modes that get no tools at all, allowlist or not.
+#:
+#: A verify session is handed its evidence in the prompt and answers one
+#: question about it, so there is nothing for a tool to fetch. The reason
+#: to enforce that rather than merely expect it is what a verify verdict
+#: does: a FAIL can restore a pre-change snapshot, discarding the change
+#: and everything since. A session deciding that must not also be opening
+#: SSH connections to the host it is deciding about.
+#:
+#: This cannot be expressed as ``allowed_tools=[]`` — an empty allowlist
+#: still yields ``ALWAYS_ALLOWED`` by design, which is right for a
+#: narrowed investigation and wrong here.
+TOOLLESS_MODES = frozenset({"verify"})
+
 
 def tools_for_session(
-    autonomy_level: str, allowed_tools: list[str] | None = None
+    autonomy_level: str, allowed_tools: list[str] | None = None, *, mode: str = "chat"
 ) -> list[ToolHandler]:
     """The handlers a session may see.
 
@@ -49,7 +63,11 @@ def tools_for_session(
     would just leave the model unable to read anything.
 
     ``allowed_tools`` does filter it. ``None`` means no restriction.
+
+    ``mode`` can remove everything: see :data:`TOOLLESS_MODES`.
     """
+    if mode in TOOLLESS_MODES:
+        return []
     if allowed_tools is None:
         return list(TOOL_REGISTRY.values())
     permitted = set(allowed_tools) | ALWAYS_ALLOWED
@@ -69,6 +87,7 @@ def unknown_tool_names(allowed_tools: list[str] | None) -> list[str]:
 
 __all__ = [
     "ALWAYS_ALLOWED",
+    "TOOLLESS_MODES",
     "TOOL_REGISTRY",
     "ToolContext",
     "ToolHandler",

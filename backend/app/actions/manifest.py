@@ -109,6 +109,35 @@ class ActionManifest(BaseModel):
             "unset."
         ),
     )
+    ai_verify_prompt: str | None = Field(
+        default=None,
+        description=(
+            "What the AI verify step should confirm after this action, in "
+            "plain language -- e.g. 'Confirm the kernel booted the new "
+            "version and no service failed to start.' LabDog collects the "
+            "evidence (services, packages, load, disk, recent errors) and "
+            "asks the configured AI provider to answer PASS, FAIL, or "
+            "INCONCLUSIVE about it. Only fires for destructive actions on "
+            "hosts with a Proxmox VM mapping, and only when no "
+            "verify_playbook is declared -- a pack that ships its own "
+            "verify playbook is already answering this question in code. "
+            "Requires ai.enabled and a configured provider; without them "
+            "the step is skipped."
+        ),
+    )
+    ai_verify_fail_closed: bool = Field(
+        default=False,
+        description=(
+            "What an INCONCLUSIVE AI verdict means for this action. False "
+            "(the default) treats it as a pass: a verdict nobody can read "
+            "is not evidence that anything is wrong, and a failed "
+            "verification can restore a pre-change snapshot. Set True for "
+            "an action where an unverifiable outcome is itself "
+            "unacceptable -- a firmware or kernel upgrade you would rather "
+            "roll back than leave in an unknown state. A stated PASS or "
+            "FAIL is honoured either way; this only decides the middle."
+        ),
+    )
     metrics_backend: MetricsBackendMapping | None = Field(
         default=None,
         description=(

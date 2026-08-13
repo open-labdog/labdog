@@ -1,149 +1,180 @@
-"""Reading a PASS/FAIL verdict, and reporting what could not be measured.
+"""The AI verify step: what it shows the model, and what it reports back.
 
-A FAIL here reverts a VM: ``action_host`` treats a failed verification as
-a failed run, and a failed run with a snapshot and auto-rollback enabled
-restores it. So the parser is a safety control, and it had two ways to
-get the answer wrong that nothing tested.
+The step's own job is narrow — adapt what the SSH collector gathered into
+an evidence pack, and render the decided verdict for the run log. The
+session behaviour behind it is covered in ``tests/ai/test_verify_session``.
 
-Neither of these is a hypothetical. The first case below is how a model
-answers "is this host healthy?" when the answer is yes.
+No database: the session is stubbed, because what is under test here is
+the adaptation, not the agent.
 """
 
 from __future__ import annotations
 
-import subprocess
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
 
-from app.workflows.steps.ai_verify import UNAVAILABLE, parse_verdict, run_ai_verification
+from app.ai.evidence import UNAVAILABLE
+from app.ai.verdict import FAILED, INCONCLUSIVE, PASSED, VerifyOutcome
+from app.workflows.steps.ai_verify import evidence_from_state, run_ai_verification
 
 
-class TestReadingTheVerdict:
-    @pytest.mark.parametrize(
-        "reply",
-        [
-            "PASS",
-            "PASS - all services came back up.",
-            "pass: nothing to report",
-            "PASS\n\nDetail follows.",
-            "\n  PASS — leading blank line and whitespace",
-        ],
-    )
-    def test_a_pass_is_read_as_a_pass(self, reply: str) -> None:
-        assert parse_verdict(reply) is True
-
-    @pytest.mark.parametrize(
-        "reply",
-        [
-            "FAIL",
-            "FAIL: nginx did not restart.",
-            "fail — disk is full",
-        ],
-    )
-    def test_a_fail_is_read_as_a_fail(self, reply: str) -> None:
-        assert parse_verdict(reply) is False
-
-    def test_an_english_pass_is_not_read_as_a_failure(self) -> None:
-        """The bug this file exists for. The old parser searched the whole
-        reply for substrings: "PASS" was absent, "FAIL" matched inside
-        *failed*, and a healthy host was rolled back."""
-        assert parse_verdict("Everything looks fine; nothing failed.") is None
-
-    @pytest.mark.parametrize(
-        "reply",
-        [
-            "FAILED to find any problems — the host is healthy.",
-            "No checks failed.",
-            "The upgrade did not FAIL.",
-        ],
-    )
-    def test_the_word_fail_in_prose_is_not_a_verdict(self, reply: str) -> None:
-        assert parse_verdict(reply) is None
-
-    def test_a_verdict_buried_below_the_first_line_is_not_read(self) -> None:
-        """Strict by design. The prompt asks for the verdict first, so a
-        reply that buries it did not follow the contract — and guessing at
-        one is exactly how a pass became a rollback."""
-        assert parse_verdict("Here is my analysis.\nPASS") is None
-
-    def test_an_empty_reply_has_no_verdict(self) -> None:
-        assert parse_verdict("") is None
-        assert parse_verdict("   \n\n  ") is None
+def _state(**hard) -> dict:
+    """One ``run_verification`` result, with sensible readings unless
+    overridden."""
+    checks = {
+        "services": [{"name": "nginx", "expected": "active", "actual": "active", "ok": True}],
+        "packages": [{"name": "nginx", "expected": "latest", "installed": True, "ok": True}],
+        "load": 0.42,
+        "disk_pct": 37,
+        "journal_errors": "",
+    }
+    checks.update(hard)
+    return {"host_hostname": "jellyfin", "host_ip": "10.0.0.9", "hard_checks": checks}
 
 
-class TestWhatAnUnreadableVerdictDoes:
-    """It passes — and says so. Rolling a host back because nobody could
-    read the answer would be inventing a failure."""
+def _rendered(**hard) -> str:
+    from app.ai.evidence import render
 
-    def _run(self, stdout: str, stderr: str = ""):
-        completed = subprocess.CompletedProcess(
-            args=["claude"], returncode=0, stdout=stdout, stderr=stderr
+    return render(evidence_from_state(_state(**hard)))
+
+
+class TestWhatTheModelIsShown:
+    def test_service_state_reaches_the_prompt(self) -> None:
+        assert "nginx" in _rendered()
+
+    def test_a_failed_service_is_marked_not_ok(self) -> None:
+        text = _rendered(
+            services=[{"name": "nginx", "expected": "active", "actual": "failed", "ok": False}]
         )
-        with patch("subprocess.run", return_value=completed):
-            return run_ai_verification({"hard_checks": {}}, "check it")
+        assert "NOT OK" in text
 
-    def test_it_passes(self) -> None:
-        assert self._run("Everything looks fine; nothing failed.")["passed"] is True
-
-    def test_the_output_says_the_verdict_was_unreadable(self) -> None:
-        """Otherwise the run detail shows a pass with no indication that
-        nothing was actually decided."""
-        result = self._run("Everything looks fine; nothing failed.")
-        assert "no readable PASS/FAIL verdict" in result["output"]
-        assert "nothing failed" in result["output"], "the reply itself should survive"
-
-    def test_stderr_is_shown_when_there_is_no_stdout(self) -> None:
-        """A CLI that failed leaves its reason on stderr. Without this the
-        operator sees a pass and an empty explanation."""
-        result = self._run("", stderr="Error: credit balance too low")
-        assert "credit balance too low" in result["output"]
-
-    def test_a_real_fail_still_fails(self) -> None:
-        assert self._run("FAIL: nginx is not running")["passed"] is False
-
-
-class TestUnavailableReadings:
-    def _prompt_for(self, hard_checks: dict) -> str:
-        completed = subprocess.CompletedProcess(
-            args=["claude"], returncode=0, stdout="PASS", stderr=""
+    def test_a_missing_package_is_marked(self) -> None:
+        text = _rendered(
+            packages=[{"name": "nginx", "expected": "latest", "installed": False, "ok": False}]
         )
-        with patch("subprocess.run", return_value=completed) as run:
-            run_ai_verification({"hard_checks": hard_checks}, "check it")
-        return run.call_args.args[0][2]
+        assert "NOT INSTALLED" in text
 
-    def test_a_missing_reading_is_marked_not_zeroed(self) -> None:
-        """The collector reports None when a read failed. Rendering that as
-        0 would describe a host whose checks all failed as the healthiest
-        possible host."""
-        prompt = self._prompt_for({"load": None, "disk_pct": None})
-        assert prompt.count(UNAVAILABLE) == 2
-        assert "System load: 0" not in prompt
-        assert "Disk usage: 0" not in prompt
-
-    def test_a_real_zero_is_still_reported_as_zero(self) -> None:
-        """An idle host really does have a load of 0.0, and that has to
-        stay distinguishable from a failed read."""
-        prompt = self._prompt_for({"load": 0.0, "disk_pct": 12})
-        assert "System load: 0.0" in prompt
-        assert UNAVAILABLE not in prompt
-
-    def test_the_prompt_warns_that_unavailable_is_not_healthy(self) -> None:
-        prompt = self._prompt_for({"load": None, "disk_pct": 40})
-        assert "means the check" in prompt
+    def test_every_reading_carries_its_source(self) -> None:
+        text = _rendered()
+        assert "cat /proc/loadavg" in text
+        assert "journalctl" in text
 
 
-class TestTheFailOpenPaths:
-    def test_a_missing_cli_passes(self) -> None:
-        with patch("subprocess.run", side_effect=FileNotFoundError):
-            result = run_ai_verification({"hard_checks": {}}, "check it")
-        assert result["passed"] is True
-        assert "not available" in result["output"]
+class TestAGapIsNotAHealthyReading:
+    def test_an_unread_load_average_is_marked_unavailable(self) -> None:
+        """It used to default to 0.00, which describes a host whose
+        checks all failed as the healthiest possible host."""
+        text = _rendered(load=None)
+        assert UNAVAILABLE in text
+        assert "could not be read" in text
 
-    def test_a_timeout_passes(self) -> None:
-        with patch(
-            "subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=120)
-        ):
-            result = run_ai_verification({"hard_checks": {}}, "check it")
-        assert result["passed"] is True
-        assert "timed out" in result["output"]
+    def test_an_unread_disk_is_marked_unavailable(self) -> None:
+        assert UNAVAILABLE in _rendered(disk_pct=None)
+
+    def test_a_real_zero_load_is_still_a_reading(self) -> None:
+        text = _rendered(load=0.0)
+        assert "0.0" in text
+        assert UNAVAILABLE not in text
+
+    def test_a_real_zero_disk_is_still_a_reading(self) -> None:
+        assert UNAVAILABLE not in _rendered(disk_pct=0)
+
+    def test_an_empty_journal_says_it_was_read(self) -> None:
+        """ "No errors" and "we never looked" must not render the same."""
+        text = _rendered(journal_errors="")
+        assert "the journal was read" in text
+        assert UNAVAILABLE not in text
+
+    def test_a_host_with_nothing_managed_says_so(self) -> None:
+        text = _rendered(services=[], packages=[])
+        assert "no services are managed" in text
+        assert "no packages are managed" in text
+        assert UNAVAILABLE not in text
+
+
+def _stub_session(outcome: VerifyOutcome):
+    """Patch out the session, leaving the step's own logic under test."""
+
+    @asynccontextmanager
+    async def _no_db():
+        yield None
+
+    async def _run(db, **kwargs):  # noqa: ANN001
+        _run.kwargs = kwargs
+        return outcome
+
+    return (
+        patch("app.db.task_session", _no_db),
+        patch("app.ai.verify.run_verify_session", _run),
+        _run,
+    )
+
+
+class TestWhatItReportsBack:
+    async def test_a_pass_is_reported_plainly(self) -> None:
+        outcome = VerifyOutcome(PASSED, True, "PASS — nginx is up.", session_id=7)
+        cm_db, cm_run, _ = _stub_session(outcome)
+        with cm_db, cm_run:
+            result = await run_ai_verification(_state(), "Confirm nginx.")
+        assert result == {
+            "passed": True,
+            "verdict": PASSED,
+            "output": "PASS — nginx is up.",
+            "session_id": 7,
+        }
+
+    async def test_a_fail_is_reported_as_a_failure(self) -> None:
+        cm_db, cm_run, _ = _stub_session(VerifyOutcome(FAILED, False, "FAIL — nginx is down."))
+        with cm_db, cm_run:
+            result = await run_ai_verification(_state(), "Confirm nginx.")
+        assert result["passed"] is False
+        assert result["verdict"] == FAILED
+
+    @pytest.mark.parametrize(
+        ("fail_closed", "passed", "wording"),
+        [(False, True, "treated as a pass"), (True, False, "failing this verification")],
+    )
+    async def test_an_inconclusive_verdict_says_which_way_it_resolved(
+        self, fail_closed: bool, passed: bool, wording: str
+    ) -> None:
+        """The line an operator needs when a rollback happened on a reply
+        that looked like it was arguing for a pass — or when a suspicious
+        host was let through on a reply nobody could read."""
+        outcome = VerifyOutcome(INCONCLUSIVE, passed, "Could not tell.")
+        cm_db, cm_run, _ = _stub_session(outcome)
+        with cm_db, cm_run:
+            result = await run_ai_verification(_state(), "x", fail_closed=fail_closed)
+        assert result["passed"] is passed
+        assert wording in result["output"]
+        assert "Could not tell." in result["output"]
+
+    async def test_a_conclusive_verdict_does_not_lecture_about_policy(self) -> None:
+        cm_db, cm_run, _ = _stub_session(VerifyOutcome(PASSED, True, "PASS — fine."))
+        with cm_db, cm_run:
+            result = await run_ai_verification(_state(), "x", fail_closed=True)
+        assert "fail_closed" not in result["output"]
+
+
+class TestWhatItPassesDown:
+    async def test_the_policy_and_the_links_are_forwarded(self) -> None:
+        cm_db, cm_run, spy = _stub_session(VerifyOutcome(PASSED, True, "PASS — fine."))
+        with cm_db, cm_run:
+            await run_ai_verification(
+                _state(), "Confirm nginx.", fail_closed=True, host_id=3, action_run_id=99
+            )
+        assert spy.kwargs["fail_closed"] is True
+        assert spy.kwargs["host_id"] == 3
+        assert spy.kwargs["action_run_id"] == 99
+        assert spy.kwargs["instructions"] == "Confirm nginx."
+        assert spy.kwargs["hostname"] == "jellyfin"
+        assert spy.kwargs["ip"] == "10.0.0.9"
+
+    async def test_the_evidence_it_built_is_what_gets_sent(self) -> None:
+        cm_db, cm_run, spy = _stub_session(VerifyOutcome(PASSED, True, "PASS — fine."))
+        with cm_db, cm_run:
+            await run_ai_verification(_state(load=None), "x")
+        labels = {item.label for item in spy.kwargs["evidence"]}
+        assert "System load (1 minute)" in labels
+        assert any(not item.available for item in spy.kwargs["evidence"])

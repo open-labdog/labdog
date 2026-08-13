@@ -101,7 +101,7 @@ class AgentSDKRunner:
         # spawning the real binary.
         self._client_factory = client_factory
         self._handlers: list[ToolHandler] = tools_for_session(
-            session.autonomy_level, session.allowed_tools
+            session.autonomy_level, session.allowed_tools, mode=session.mode
         )
         self._permitted = {h.spec.name: h for h in self._handlers}
         # One database session cannot serve two concurrent tool calls, and
@@ -117,6 +117,8 @@ class AgentSDKRunner:
         # tells the driver to stop the exchange rather than let the model
         # go looking for another route to the same change.
         self._parked: AIApprovalRequest | None = None
+        # Loaded from the transcript in run(); see _load_system_prompt.
+        self._system_prompt = ""
 
     # -- plumbing ---------------------------------------------------------
 
@@ -361,8 +363,14 @@ class AgentSDKRunner:
         """
         from claude_agent_sdk import ClaudeAgentOptions
 
+        # No handlers means no server, not an empty one: a verify session
+        # is toolless by design (see TOOLLESS_MODES), and advertising an
+        # MCP server with nothing in it invites the model to go looking
+        # for what it should have.
         servers = (
-            {"labdog": build_tool_server(self._handlers, self._execute_tool)} if with_tools else {}
+            {"labdog": build_tool_server(self._handlers, self._execute_tool)}
+            if with_tools and self._handlers
+            else {}
         )
         resume = (self.session.resume_state or {}).get("sdk_session_id")
 
@@ -381,13 +389,42 @@ class AgentSDKRunner:
             # the gate below.
             allowed_tools=[],
             can_use_tool=self._can_use_tool,
-            system_prompt=build_system_prompt(self.session.autonomy_level),
+            system_prompt=self._system_prompt or build_system_prompt(self.session.autonomy_level),
             model=self.provider_row.model or None,
             max_turns=max_turns or self.caps.max_iterations,
             env=build_sdk_env(decrypt_api_key(self.provider_row), SESSION_STATE_DIR),
             cwd=ensure_state_dir(SESSION_STATE_DIR),
             resume=resume,
         )
+
+    async def _load_system_prompt(self) -> str:
+        """The system prompt this session was created with.
+
+        Read from the transcript rather than rebuilt. Every creator
+        already writes it as the first message, so rebuilding it here
+        made the same prompt exist in two places that could disagree —
+        and they would have: a verify session carries its own prompt
+        (:mod:`app.ai.verify`), and this path would have handed it the
+        chat agent's instead. That prompt tells the model to "start by
+        finding out what is in scope with list_hosts" and to base every
+        claim on a tool result, to a session that has no tools, which is
+        precisely the fabrication ``assert_can_investigate`` exists to
+        prevent.
+
+        Falls back to the chat prompt when there is no system row, which
+        should not happen but is survivable: an odd prompt beats a
+        session that cannot start.
+        """
+        async with self._db_lock:
+            rows = await service.load_transcript(self.db, self.session.id)
+        for row in rows:
+            if row.role == "system" and row.content:
+                return row.content
+        logger.warning(
+            "ai session %s: no system message in the transcript; using the default prompt",
+            self.session.id,
+        )
+        return ""
 
     def _stop_reason(self, message: Any) -> str:
         """Why the SDK ended the exchange, in words, or "" if it just finished.
@@ -477,6 +514,8 @@ class AgentSDKRunner:
         # Commit rather than flush: holding the row lock for the whole run
         # would block an operator's Cancel instead of applying it.
         await self.db.commit()
+
+        self._system_prompt = await self._load_system_prompt()
 
         self._ctx = ToolContext(
             db=self.db,
