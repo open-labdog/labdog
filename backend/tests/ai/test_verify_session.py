@@ -281,3 +281,29 @@ class TestThePromptItself:
         text = build_prompt(hostname="jellyfin", ip="10.0.0.9", instructions="x", evidence=EVIDENCE)
         assert "jellyfin" in text
         assert "10.0.0.9" in text
+
+
+class TestThePromptAccountsForTheChangeItself:
+    """The evidence window is the window the action just ran in.
+
+    A model shown ten minutes of journal errors cannot tell "this error
+    is a consequence of the change working" from "this error means the
+    change broke something". Observed live: a probe action logged one
+    error-priority entry, the verify step failed the host, and the
+    snapshot was restored — reverting a run that had succeeded.
+
+    Manifest authors can say this in `ai_verify_prompt`, but relying on
+    every author getting it right leaves the default wrong, so the
+    system prompt says it too.
+    """
+
+    def test_it_says_the_change_causes_some_of_the_noise(self) -> None:
+        assert "caused by it doing its work" in SYSTEM_PROMPT
+
+    def test_it_asks_for_the_state_now_not_the_history(self) -> None:
+        assert "as it stands now" in SYSTEM_PROMPT
+
+    def test_it_still_fails_something_that_is_broken_now(self) -> None:
+        """The guidance must not read as "ignore errors" — a service
+        that is still failing is still a failure."""
+        assert "still failing is not" in SYSTEM_PROMPT
