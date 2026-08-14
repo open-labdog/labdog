@@ -1,19 +1,32 @@
 import type { Metadata } from 'next'
-import { DM_Sans, JetBrains_Mono } from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
 import { Providers } from './providers'
 import { AppShell } from '@/components/app-shell'
 
-const dmSans = DM_Sans({
+// Served from the repo rather than fetched from Google at build time.
+// `next/font/google` downloads the font while compiling, which made every
+// production build depend on reaching fonts.gstatic.com — and when it
+// could not, Turbopack failed with a dozen `Can't resolve
+// '@vercel/turbopack-next/internal/font/google/font'` errors that name
+// neither the network nor the font. CI hit it, and a build that fails for
+// reasons unrelated to the diff teaches you to re-run without reading.
+//
+// Both files are the *variable* latin-subset builds, so one file covers
+// the whole weight range instead of one per weight — 68 kB for both.
+// See app/fonts/README.md for licensing and how to update them.
+const dmSans = localFont({
+  src: './fonts/dm-sans.woff2',
   variable: '--font-sans',
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: '400 700',
+  display: 'swap',
 })
 
-const jetbrainsMono = JetBrains_Mono({
+const jetbrainsMono = localFont({
+  src: './fonts/jetbrains-mono.woff2',
   variable: '--font-mono',
-  subsets: ['latin'],
-  weight: ['400', '500'],
+  weight: '400 500',
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
