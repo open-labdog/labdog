@@ -12,6 +12,84 @@ _LOAD_WARN_THRESHOLD = 10.0
 _DISK_WARN_THRESHOLD = 95
 
 
+#: One round trip that answers both privilege questions. ``sudo -n``
+#: never prompts, so a host that would ask for a password fails it
+#: immediately rather than hanging the verify step.
+_PRIVILEGE_PROBE = "id -u; sudo -n true 2>/dev/null && echo SUDO || echo NOSUDO"
+
+_NO_JOURNAL_ACCESS = (
+    "LabDog connects to this host as an unprivileged user with no "
+    "passwordless sudo, so it can only see that user's own journal, not the "
+    "system's. Grant the SSH user sudo, or connect as root, for LabDog to "
+    "read this."
+)
+
+
+async def _read_journal_errors(conn: Any, host_ip: str) -> tuple[str | None, str]:
+    """Recent error-priority journal entries, or why they are unknown.
+
+    Returns ``(entries, reason)``. ``entries`` is ``None`` when the journal
+    could not be read; ``reason`` says why, and is empty otherwise.
+
+    **The privilege check is the point of this function.** ``journalctl``
+    run by a user outside ``adm``/``systemd-journal`` prints only that
+    user's own journal and **exits 0** — so the previous version recorded
+    an empty string, indistinguishable from a genuinely quiet host. LabDog
+    also passed ``-q``, which suppresses journalctl's own "you are not
+    seeing messages from other users and the system" hint, discarding the
+    one clue that anything was wrong.
+
+    Observed live: a host that had just logged an error-priority entry
+    reported no errors, and the AI verify step told the operator "the
+    journal was successfully read ... and contained no error-priority
+    entries" before passing it. An unreadable check presented as a clean
+    one is the failure this whole step exists to avoid, so it is now
+    reported as unknown instead.
+
+    Sudo rather than a group: adding the SSH user to ``systemd-journal``
+    works, but it is not something an operator would know to do, and a
+    silent under-read is exactly what we are trying to stop happening by
+    default.
+    """
+    try:
+        probe = await conn.run(_PRIVILEGE_PROBE, check=False)
+        lines = (probe.stdout or "").split()
+        is_root = bool(lines) and lines[0] == "0"
+        has_sudo = "SUDO" in lines
+    except Exception as exc:
+        logger.warning("verify: journal privilege probe failed on %s: %s", host_ip, exc)
+        return None, f"the journal privilege check failed: {exc}"
+
+    if is_root:
+        prefix = ""
+    elif has_sudo:
+        prefix = "sudo -n "
+    else:
+        logger.warning(
+            "verify: cannot read the system journal on %s — unprivileged SSH user, no sudo",
+            host_ip,
+        )
+        return None, _NO_JOURNAL_ACCESS
+
+    try:
+        result = await conn.run(
+            f"{prefix}journalctl --since '10 minutes ago' -p err --no-pager -q",
+            check=False,
+        )
+    except Exception as exc:
+        logger.warning("verify: journal check failed on %s: %s", host_ip, exc)
+        return None, f"the journal could not be read: {exc}"
+
+    # A non-zero exit means the read did not happen. Returning its empty
+    # stdout as "no errors" is the same lie in a different coat.
+    if getattr(result, "exit_status", 0) not in (0, None):
+        detail = (result.stderr or "").strip() or f"journalctl exited {result.exit_status}"
+        logger.warning("verify: journal read failed on %s: %s", host_ip, detail)
+        return None, f"the journal could not be read: {detail}"
+
+    return (result.stdout or "").strip(), ""
+
+
 async def run_verification(
     host: Any,
     ssh_key_path: str,
@@ -78,7 +156,8 @@ async def run_verification(
                     ],
                     "load": float | None,
                     "disk_pct": int | None,
-                    "journal_errors": str,
+                    "journal_errors": str | None,
+                    "journal_error_reason": str,
                 },
                 "ai_result": {
                     "passed": bool,
@@ -89,7 +168,10 @@ async def run_verification(
             }
 
         ``load`` and ``disk_pct`` are ``None`` when the reading could not be
-        taken, which callers must not conflate with 0.
+        taken, which callers must not conflate with 0. ``journal_errors``
+        follows the same rule — ``None`` means the journal could not be
+        read and ``journal_error_reason`` says why, which callers must not
+        conflate with the empty string a genuinely quiet host produces.
 
         ``passed`` is ``True`` only when every hard check succeeds AND (if AI
         verification was requested) the AI verdict resolves to a pass. The
@@ -106,7 +188,10 @@ async def run_verification(
     # an explicit error string; these two now match it.
     load_avg: float | None = None
     disk_pct: int | None = None
-    journal_errors: str = ""
+    # ``None`` means the journal could not be read, which is not the same
+    # as a host with nothing to report — see :func:`_read_journal_errors`.
+    journal_errors: str | None = ""
+    journal_error_reason: str = ""
     unmanaged_services: list[str] = []
     ai_result: dict[str, Any] | None = None
 
@@ -153,7 +238,10 @@ async def run_verification(
                 # would describe an unreachable host as an idle healthy one.
                 "load": None,
                 "disk_pct": None,
-                "journal_errors": f"SSH connection failed: {exc}",
+                # None, not the error text: a reason rendered where the
+                # entries belong reads like something the journal said.
+                "journal_errors": None,
+                "journal_error_reason": f"the SSH connection failed: {exc}",
             },
             "ai_result": None,
         }
@@ -245,15 +333,7 @@ async def run_verification(
         # ------------------------------------------------------------------
         # Journal errors (last 10 minutes, error priority and above)
         # ------------------------------------------------------------------
-        try:
-            journal_result = await conn.run(
-                "journalctl --since '10 minutes ago' -p err --no-pager -q",
-                check=False,
-            )
-            journal_errors = journal_result.stdout.strip()
-        except Exception as exc:
-            logger.warning("verify: journal check failed on %s: %s", host.ip_address, exc)
-            journal_errors = f"journal read error: {exc}"
+        journal_errors, journal_error_reason = await _read_journal_errors(conn, host.ip_address)
 
         # ------------------------------------------------------------------
         # Unmanaged service detection
@@ -292,6 +372,7 @@ async def run_verification(
         "load": load_avg,
         "disk_pct": disk_pct,
         "journal_errors": journal_errors,
+        "journal_error_reason": journal_error_reason,
         "unmanaged_services": unmanaged_services,
     }
 

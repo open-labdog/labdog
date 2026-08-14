@@ -260,3 +260,111 @@ class TestADryRunDoesNotBuyAVerdict:
         error in the last ten minutes."""
         _, calls = await self._verify(dry_run=True, prompt=None)
         assert calls == []
+
+
+class TestAnUnreadableJournalIsNotAQuietOne:
+    """The bug this class exists for was observed in production.
+
+    LabDog connects to most hosts as an unprivileged user. ``journalctl``
+    run by such a user prints only that user's own journal and **exits 0**,
+    so a host that had just logged an error-priority entry reported none.
+    The evidence rendered that as "the journal was read and had no
+    error-priority entries", and the model repeated it back as proof of
+    health and passed the host.
+    """
+
+    def test_an_unreadable_journal_is_marked_unavailable(self) -> None:
+        text = _rendered(journal_errors=None, journal_error_reason="no sudo, unprivileged user")
+        assert UNAVAILABLE in text
+        assert "no sudo, unprivileged user" in text
+
+    def test_it_does_not_claim_the_journal_was_read(self) -> None:
+        """The exact phrasing that misled a verdict."""
+        text = _rendered(journal_errors=None, journal_error_reason="x")
+        assert "had no error-priority entries" not in text
+
+    def test_a_genuinely_quiet_journal_still_reads_as_quiet(self) -> None:
+        """The guard must not turn every clean host into an unknown one."""
+        text = _rendered(journal_errors="")
+        assert UNAVAILABLE not in text
+        assert "had no error-priority entries" in text
+
+    def test_real_entries_are_shown(self) -> None:
+        text = _rendered(journal_errors="Aug 14 14:02:35 jellyfin labdog-example[1]: simulated")
+        assert "simulated" in text
+        assert UNAVAILABLE not in text
+
+    def test_a_missing_reason_still_marks_it_unavailable(self) -> None:
+        """A reason nobody set must not silently become a reading."""
+        assert UNAVAILABLE in _rendered(journal_errors=None)
+
+
+class TestTheJournalPrivilegeProbe:
+    """Which command the collector chooses, and when it gives up.
+
+    Sudo rather than group membership is deliberate: adding the SSH user
+    to ``systemd-journal`` also works, but it is not something an operator
+    would know to do, and the failure when they don't is silent.
+    """
+
+    @staticmethod
+    def _conn(*, uid: str, sudo_ok: bool, journal: str = "", rc: int = 0, stderr: str = ""):
+        class _Result:
+            def __init__(self, stdout: str, exit_status: int = 0, err: str = "") -> None:
+                self.stdout = stdout
+                self.exit_status = exit_status
+                self.stderr = err
+
+        class _Conn:
+            def __init__(self) -> None:
+                self.commands: list[str] = []
+
+            async def run(self, command: str, check: bool = False):  # noqa: ARG002, FBT001, FBT002
+                self.commands.append(command)
+                if command.startswith("id -u"):
+                    return _Result(f"{uid}\n{'SUDO' if sudo_ok else 'NOSUDO'}\n")
+                return _Result(journal, rc, stderr)
+
+        return _Conn()
+
+    async def _read(self, conn):  # noqa: ANN001
+        from app.workflows.steps.verify import _read_journal_errors
+
+        return await _read_journal_errors(conn, "10.0.0.9")
+
+    async def test_root_reads_it_directly(self) -> None:
+        conn = self._conn(uid="0", sudo_ok=False, journal="boom")
+        entries, reason = await self._read(conn)
+        assert entries == "boom"
+        assert reason == ""
+        assert not any(c.startswith("sudo") for c in conn.commands[1:])
+
+    async def test_an_unprivileged_user_with_sudo_uses_it(self) -> None:
+        conn = self._conn(uid="1000", sudo_ok=True, journal="boom")
+        entries, _ = await self._read(conn)
+        assert entries == "boom"
+        assert conn.commands[1].startswith("sudo -n journalctl")
+
+    async def test_an_unprivileged_user_without_sudo_reports_unknown(self) -> None:
+        """Not an empty string. This is the production failure: the read
+        would have succeeded, seen only its own journal, and exited 0."""
+        conn = self._conn(uid="1000", sudo_ok=False, journal="")
+        entries, reason = await self._read(conn)
+        assert entries is None
+        assert "sudo" in reason
+        # It must not even attempt the read it cannot trust.
+        assert len(conn.commands) == 1
+
+    async def test_a_failed_read_is_unknown_not_quiet(self) -> None:
+        """journalctl exiting non-zero with empty stdout is the same lie
+        in a different coat."""
+        conn = self._conn(uid="0", sudo_ok=False, journal="", rc=1, stderr="No journal files")
+        entries, reason = await self._read(conn)
+        assert entries is None
+        assert "No journal files" in reason
+
+    async def test_a_quiet_privileged_host_is_still_quiet(self) -> None:
+        conn = self._conn(uid="0", sudo_ok=False, journal="")
+        entries, reason = await self._read(conn)
+        assert entries == ""
+        assert reason == ""
