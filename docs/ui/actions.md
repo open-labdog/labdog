@@ -580,6 +580,45 @@ SSH user has neither, the reading is reported as `UNAVAILABLE` with the
 reason — you will see it in the evidence and in the verdict, rather than
 getting a `PASS` that was reached by not looking.
 
+### Writing the prompt
+
+The evidence includes every error-priority journal entry from the last
+ten minutes — **which is the window your action just ran in**. The model
+cannot tell "this error is a consequence of the change working" from
+"this error means the change broke something", so an action whose own
+work logs errors can fail its own verification and be rolled back.
+
+That is not hypothetical. A package upgrade restarts services, and
+services routinely log errors while restarting. Left unaddressed, a
+successful `linux-upgrade` can revert itself because systemd logged a
+unit failure mid-restart.
+
+So say what the action is expected to produce:
+
+```yaml
+ai_verify_prompt: >-
+  This action upgrades packages and restarts the affected services.
+  Services logging errors *while restarting* is expected and is not a
+  fault. Judge the host as it stands now: fail only if a service is
+  still failing, a package did not install, or the journal shows a
+  problem that is not explained by the restart.
+```
+
+Three rules of thumb:
+
+- **Name the action's own footprint.** Whatever it writes, restarts, or
+  logs, say so, and say it is expected.
+- **Ask about state, not history.** "Is nginx active" is a fact about
+  now. "Did anything log an error" is a fact about a window that
+  includes your own change.
+- **Say what a failure would look like**, concretely. A prompt that only
+  asks "is this host healthy?" invites the model to treat any anomaly as
+  disqualifying, and there is always an anomaly.
+
+This matters most with `ai_verify_fail_closed: true`, where the action
+you were least willing to leave unverified is also the one most likely
+to be reverted by its own log noise.
+
 The reply's first word must be `PASS`, `FAIL`, or `INCONCLUSIVE`.
 
 | Verdict | `ai_verify_fail_closed: false` (default) | `ai_verify_fail_closed: true` |

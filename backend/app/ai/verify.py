@@ -56,6 +56,12 @@ answer.
 - INCONCLUSIVE is a real answer, not a failure to decide. Use it when \
 the readings you were given do not cover the question asked. Do not \
 guess, and do not report a problem you cannot point at in the evidence.
+- The recent log entries cover the window the change itself ran in, so \
+some of them were caused by it doing its work — services restarting, \
+units reloading, a package manager replacing files. Those are expected \
+and are not faults on their own. Judge the host as it stands now: a \
+service that logged an error while restarting and is running now is \
+healthy; one that is still failing is not.
 - Do not infer a fault from the fact that you were asked. Most \
 verifications pass.
 """
