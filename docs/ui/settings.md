@@ -69,6 +69,52 @@ The Settings page controls operational behaviour that can be tuned without resta
 
 ---
 
+### AI
+
+Every one of these defaults closed. LabDog does nothing with an LLM until
+`ai.enabled` is turned on **and** a provider is configured on the
+[AI Providers](assistant.md#ai-providers) page. See the
+[Assistant guide](assistant.md) for what the feature actually does.
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| AI Enabled | `ai.enabled` | `0` (off) | 0 – 1 | Master switch. While off, chat sessions, scheduled AI checks, and AI verification are all skipped. |
+| Allow Cloud Providers | `ai.allow_cloud_providers` | `0` (off) | 0 – 1 | Permit providers that send host data outside your network. While off, only local endpoints and the Claude CLI may run. |
+| Currency | `ai.currency` | `USD` | USD EUR GBP SEK NOK DKK CHF CAD AUD | Label for costs and budgets. **Formatting only** — LabDog never converts between currencies, so enter provider rates in the same unit you pick here. |
+
+**Spend limits.** Checked before a session starts *and* between steps, so a
+long run that crosses a limit stops rather than finishing on credit.
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Daily Budget | `ai.budget_daily` | `0` (unlimited) | 0 – 10000 | Maximum spend per day, in the `ai.currency` unit. |
+| Monthly Budget | `ai.budget_monthly` | `0` (unlimited) | 0 – 100000 | Maximum spend per calendar month. |
+| Budget Warning | `ai.budget_warn_pct` | `80` | 0 – 100 % | Warn in the UI once this share of any budget is spent (0 = never). |
+
+A local model priced at zero is unaffected by the money budgets — the
+per-session caps below still apply.
+
+**Per-session caps.** Bound one session's blast radius and cost. Whichever is
+reached first ends the run, and the assistant spends a final turn summarising
+what it established, so the work is not wasted.
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Max Iterations | `ai.max_iterations` | `15` | 1 – 100 | Model turns in one session. |
+| Max Commands | `ai.max_commands` | `20` | 1 – 200 | Shell commands across all hosts in one session. |
+| Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
+| Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
+
+**Changes and approvals.**
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Snapshot Before Change | `ai.snapshot_before_mutating` | `1` (on) | 0 – 1 | Take a Proxmox snapshot before the assistant runs a command that changes a host. Hosts with no VM mapping are unaffected. While on, a snapshot that **fails blocks the command**. |
+| Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
+| Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
+
+---
+
 ## Resetting a Setting
 
 Every setting shows its current value alongside the default. Click **Reset to default** on any row to revert that setting to its built-in default value.

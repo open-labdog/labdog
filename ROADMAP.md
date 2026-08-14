@@ -24,6 +24,11 @@ Currently bundled:
 - `linux-upgrade` — apt/dnf system package upgrade with optional reboot
 - `linux-os-upgrade` — Debian major-version upgrade (e.g. 12 → 13)
   with NIC-rename safety
+- `example` / `example-ai-verify` — harmless probes that exercise the
+  full snapshot → run → verify → rollback lifecycle without changing
+  anything. The first decides success with a verify playbook, the
+  second with LabDog's AI verify step, so the two demonstrate the
+  alternatives side by side.
 - `k8s-upgrade` — `kubeadm`-based drain-upgrade-uncordon runbook
   dispatched against a labdog group containing every cluster node.
   The playbook self-discovers control-plane vs worker by probing each
@@ -40,6 +45,34 @@ Currently bundled:
   live host metrics appear on the host Overview tab with no free-text
   endpoint entry. Remaining follow-ups (per-host metrics backend
   routing, Loki log surfacing) are tracked in [TODO.md](TODO.md).
+
+---
+
+## Agentic administration
+
+The largest thing LabDog has shipped, and the one most worth stating
+plainly: an LLM can now investigate hosts, and — when you allow it —
+change them.
+
+**Shipped.** Provider connections (OpenAI-compatible, Anthropic, Claude
+CLI, Claude Agent SDK), the agent loop with a default-deny command
+classifier, read-only investigation from a chat page, scheduled
+unattended checks, approval-gated changes that park without holding a
+worker or a host lock, snapshot-before-change, full-auto for operators
+who want it, cost accounting with enforced budgets, and AI verification
+of destructive actions. See [`docs/ui/assistant.md`](docs/ui/assistant.md).
+
+**Next.** Alert-driven investigation — a Grafana webhook receiver and an
+Alertmanager poller, deduplicated on fingerprint, spawning a read-only
+session under a severity policy. Tracked in [TODO.md](TODO.md), along
+with `propose_action`, which would let the assistant ask for a named,
+vetted actionpack rather than a raw shell command.
+
+**The honest limit.** A verify step judges evidence LabDog collected in a
+ten-minute window that includes the action's own work, so it can mistake
+a change's own log noise for a fault. Prompt wording mitigates it;
+narrowing the window to before the action started is the real fix and is
+not built. Nothing here is a substitute for reading what it did.
 
 ---
 

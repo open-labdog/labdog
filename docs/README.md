@@ -40,9 +40,10 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, CA certs) and preview-then-apply syncing |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
 | [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Schedules — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
-| [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |
+| [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs, bring-your-own playbooks, and AI verification of destructive runs |
+| [ui/assistant.md](./ui/assistant.md) | The AI assistant — connecting a provider, autonomy levels, approving a change, snapshots, spend limits |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
-| [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
+| [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning, AI kill switch and budgets) |
 
 ### Configuration Examples
 
@@ -76,6 +77,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
 - **Trying to reason about multi-group hosts?** → [examples/precedence/README.md](./examples/precedence/README.md)
 - **Want to add or override action playbooks?** → [ui/actions.md](./ui/actions.md) and [examples/action-packs/README.md](./examples/action-packs/README.md)
+- **Connecting an LLM?** → [ui/assistant.md](./ui/assistant.md) — it is off by default, and the page covers autonomy levels and spend limits before it covers how to turn it on
 - **Running LabDog in production?** → [backup-restore.md](./backup-restore.md) before users start entering credentials
 
 ### Authoritative sources

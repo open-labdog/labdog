@@ -7,6 +7,168 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-14
+
+The AI release. LabDog can now hand an investigation to a language model,
+let it change hosts under supervision you choose, and use it to decide
+whether a destructive action left a host healthy. **Every part of it is
+off by default** and stays off until you set `ai.enabled` and configure a
+provider.
+
+### Added
+
+- **AI assistant.** A chat page at `/assistant` where you describe what
+  you want checked and watch the model work through LabDog's own tools.
+  It cannot run anything LabDog does not offer it: each command is parsed
+  by a **default-deny classifier**, bounded by a per-session **host
+  allowlist**, redacted for credentials before it enters the transcript,
+  and recorded.
+
+  **Four provider backends.** OpenAI-compatible endpoints (Ollama, vLLM,
+  OpenRouter, OpenAI), the Anthropic Messages API, the Claude Code CLI,
+  and the Claude Agent SDK. The last two authenticate a **Claude
+  subscription** rather than metered API credit — the SDK backend can run
+  tools, the CLI backend is single-shot and serves reports and verify
+  verdicts. Credentials are encrypted at rest with the same AES-256-GCM
+  key as every other secret and participate in key rotation.
+
+  **Three autonomy levels.** Read-only (the default) refuses anything
+  that would change a host. Approval-required pauses on a change and
+  waits for you. Full-auto acts unattended. A **denylist applies at every
+  level** — `rm -rf /`, `mkfs`, writing to block devices, piping a
+  download into a shell, flushing the firewall — with no setting that
+  permits them.
+
+  **Spend is bounded and enforced, not merely reported.** Daily and
+  monthly budgets, per-provider monthly caps, and per-session limits on
+  iterations, commands, tokens, and wall-clock time. Budgets are checked
+  before a session starts *and* between steps, so a long run that crosses
+  a limit stops rather than finishing on credit. Costs are recorded in
+  whichever currency you configure; LabDog never converts between them.
+
+- **Scheduled AI checks.** Two built-in actions — **AI check (per host)**
+  and **AI check (whole group)** — appear in the normal action list, so
+  they inherit cron scheduling, run history, cancellation, and the
+  per-host queue from machinery that already existed. The group variant
+  puts every member in scope at once, which is what "compare these" and
+  "which one is the odd one out" need; per-host sessions cannot see each
+  other.
+
+  A **per-session tool allowlist** is the main cost control: a nightly
+  log sweep restricted to `query_loki` cannot open an SSH session at all,
+  and cannot spend what an unbounded `journalctl` would. Each tool call
+  records how much text it returned, so which tools consume your budget
+  is observable rather than assumed.
+
+- **Approval-gated changes.** At the approval level, a command that would
+  change a host does not run. The session **stops entirely** — no worker
+  held, no host lock held — so a check scheduled at 3am can wait until
+  morning without wedging every sync queued behind it. Approving runs
+  exactly what you approved; LabDog executes it from the stored record
+  rather than asking the model again. Rejecting takes a note that is
+  passed back, because a rejection with a reason usually produces a
+  better suggestion than a bare no.
+
+  The approval card shows the command, **why LabDog classified it as a
+  change** (from parsing, not from the model's claim), and the model's
+  own stated purpose — kept visually separate because it is a claim, not
+  a verdict. Undecided requests expire after
+  `ai.approval_expiry_hours` and the session finishes with a report.
+
+- **Snapshot before an AI change.** Hosts mapped to a Proxmox VM get a
+  snapshot before the assistant modifies them, at both the approval and
+  full-auto levels. They are named `labdog-ai-<session>-<timestamp>`,
+  distinct from an action pack's `labdog-<run>-<timestamp>`, and are
+  **deliberately not deleted on success** — the point of them is that you
+  can undo the change after reading what it did. A retention sweep
+  removes them after `ai.snapshot_retention_days`.
+
+- **AI verification of destructive actions.** A manifest can set
+  `ai_verify_prompt` to ask, in words, whether an action left the host
+  healthy. LabDog collects the evidence itself — managed services and
+  packages, load, disk, recent error-priority journal entries — renders
+  it into the prompt, and asks one question. **The model gets no tools**:
+  everything it judges was gathered before the session started, so a
+  verdict that can restore a snapshot cannot also go reaching into the
+  host it is deciding about.
+
+  The verdict is **PASS, FAIL, or INCONCLUSIVE**. `ai_verify_fail_closed`
+  decides only what INCONCLUSIVE resolves to — a stated PASS or FAIL is
+  honoured either way — and defaults to open, which is the behaviour
+  every existing manifest was written against.
+
+  Readings that could not be taken are marked `UNAVAILABLE` rather than
+  left blank, so a check that failed cannot be mistaken for a healthy
+  one. Each verdict runs as a real session, visible under **Assistant**
+  with its transcript, counted against your budget, and linked from the
+  action run.
+
+### Changed
+
+- **`/metrics`, the audit log, and the settings page** gained AI
+  coverage: `ai.*` settings are documented in
+  [`docs/ui/settings.md`](docs/ui/settings.md), every executed AI command
+  writes an `AuditLog` row against its host, and every *attempt* —
+  including blocked, refused, and parked ones — writes a tool-call record
+  visible in the session transcript.
+- **Fonts are served from the repo** instead of fetched from Google at
+  build time. `next/font/google` downloaded them while compiling, which
+  made every production build depend on reaching `fonts.gstatic.com` and
+  produced failures naming neither the network nor the font.
+
+### Fixed
+
+- **An English pass no longer rolls a host back.** The AI verify step
+  searched its whole reply for the substrings `PASS` and `FAIL`, so
+  *"Everything looks fine; nothing failed."* — how a model answers "is
+  this host healthy?" when the answer is yes — matched `FAIL` inside
+  *failed* and reverted the host. The verdict is now read from the first
+  line only, anchored and word-bounded.
+- **An unreadable journal is no longer reported as a quiet one**
+  (BUG-54). `journalctl` run by an unprivileged user prints only that
+  user's own entries and **exits 0**, so LabDog — which connects as an
+  ordinary user on most hosts — recorded no errors on a host that had
+  them, and the verify step told the operator the journal "was
+  successfully read" and passed. LabDog now reads as root, or through
+  `sudo -n`, and reports `UNAVAILABLE` with a reason when it can do
+  neither.
+- **Preview (dry-run) works again** (BUG-53). The run dialog carried the
+  flag inside `parameters`, which the API validates against the action's
+  manifest with `extra="forbid"`, so every preview was rejected with
+  *"Extra inputs are not permitted"* before reaching the code that
+  consumes it. The server now sets the flag itself from the request
+  field, which had existed and been read nowhere.
+- **A dry run no longer buys an AI verdict.** Neither the snapshot nor
+  the verify gate consults `dry_run`, so repairing Preview would have
+  made previewing a destructive action open a billed session judging a
+  host that check mode deliberately left unchanged.
+- **A change is less likely to be rolled back by its own log noise.** The
+  evidence window is the window the action ran in, so it contains
+  whatever the action itself logged — a restarted service, a package
+  manager replacing files. The verify prompt now says so and asks for the
+  host's state as it stands, while keeping "still failing now" a failure.
+- **Verdicts explain what they judged.** The command classifier seeded
+  its result with a placeholder that only greater severity could
+  displace, so every allowed command reported an empty segment and "no
+  command segments found" as its reason.
+- **Subscription tokens warn before they expire.** `claude setup-token`
+  mints a one-year credential, and an unattended session cannot recover
+  once it lapses; provider rows now record when the credential was
+  written and show the expiry, amber inside 30 days.
+
+### Known limitations
+
+- **AI verify judges a window that includes the action's own work.**
+  Prompt wording mitigates this and the shipped default accounts for it,
+  but narrowing the window to before the action started is the real fix
+  and is not built. Read the reasoning, not just the verdict.
+- **Any signed-in user can start a session and approve its changes.**
+  There is no separate AI permission and no second-person approval — see
+  [`docs/security-hardening.md`](docs/security-hardening.md).
+- **The classifier parses commands rather than executing them
+  symbolically**, so a sufficiently creative shell construction could be
+  classified wrongly. Read-only is the default for that reason.
+
 ## [0.8.0] — 2026-08-04
 
 ### Added
@@ -1057,7 +1219,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3

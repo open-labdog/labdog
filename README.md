@@ -49,6 +49,27 @@ Declare state per host or per group. Everything goes through Ansible. Same rule 
 - Protected service deny-list (sshd, systemd-\*)
 - Priority-based merge with host-level overrides
 
+**AI assistant** &nbsp;*(off by default)*
+
+Connect a local or hosted LLM and hand it an investigation. It works through
+LabDog's own tools — every command it runs is classified by a default-deny
+parser, bounded by a host allowlist, redacted, and written to the audit log.
+
+- **Three autonomy levels** — read-only, approval-required, or full-auto. A
+  change at the approval level pauses the session without holding a worker or
+  a host lock, so a check scheduled at 3am can wait until morning.
+- **Snapshot before change** — hosts mapped to a Proxmox VM get a rollback
+  point before the assistant touches them.
+- **Spend control** — daily and monthly budgets, per-provider caps, and
+  per-session iteration/command/token/wall-clock limits, all enforced mid-run.
+- **AI verification** — a destructive action can ask an LLM whether it left
+  the host healthy, judged on evidence LabDog collected rather than anything
+  the model went looking for.
+
+Runs against OpenAI-compatible endpoints (Ollama, vLLM, OpenRouter), the
+Anthropic API, or a Claude subscription. See the
+[assistant guide](https://open-labdog.github.io/labdog/ui/assistant/).
+
 **Extensibility**
 
 - **GitOps** — webhook-driven sync from any Git repo (see the [YAML schema](https://open-labdog.github.io/labdog/examples/gitops/))
@@ -88,7 +109,7 @@ All technical content lives under **[the documentation site](https://open-labdog
 
 - **Concepts** — [how config is applied](https://open-labdog.github.io/labdog/#how-configuration-is-applied) · [precedence (worked examples)](https://open-labdog.github.io/labdog/examples/precedence/)
 - **Operations** — [installation](https://open-labdog.github.io/labdog/#installation) · [local development](https://open-labdog.github.io/labdog/#local-development) · [API reference](https://open-labdog.github.io/labdog/#api-endpoints)
-- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
+- **Guides** — [GitOps](https://open-labdog.github.io/labdog/examples/gitops/) · [Actions & packs](https://open-labdog.github.io/labdog/ui/actions/) · [example packs](https://open-labdog.github.io/labdog/examples/action-packs/) · [Scheduled actions](https://open-labdog.github.io/labdog/ui/scheduled-actions/) · [AI assistant](https://open-labdog.github.io/labdog/ui/assistant/) · [Live host metrics](https://open-labdog.github.io/labdog/ui/metrics/) · [Metrics export](https://open-labdog.github.io/labdog/metrics-export/)
 
 ## 🐛 Found a bug?
 
