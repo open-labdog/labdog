@@ -67,7 +67,26 @@ def evidence_from_state(system_state: dict[str, Any]) -> list[EvidenceItem]:
     hard = system_state.get("hard_checks") or {}
     services = hard.get("services") or []
     packages = hard.get("packages") or []
-    journal = (hard.get("journal_errors") or "").strip()
+
+    # ``None`` and ``""`` mean opposite things here and the difference has
+    # already cost a wrong verdict: an unprivileged SSH user reading the
+    # journal sees only its own entries and exits 0, so a host that had
+    # just logged a real error reported nothing, and this rendered it as
+    # "the journal was read and had no error-priority entries" — which the
+    # model then repeated to the operator as evidence of health.
+    journal = hard.get("journal_errors")
+    if journal is None:
+        journal_item = EvidenceItem.missing(
+            "Errors logged in the last 10 minutes",
+            hard.get("journal_error_reason") or "the journal could not be read",
+            source="ssh: journalctl --since '10 minutes ago' -p err",
+        )
+    else:
+        journal_item = EvidenceItem.reading(
+            "Errors logged in the last 10 minutes",
+            journal.strip() or "(none — the journal was read and had no error-priority entries)",
+            source="ssh: journalctl --since '10 minutes ago' -p err",
+        )
 
     return [
         EvidenceItem.reading(
@@ -92,11 +111,7 @@ def evidence_from_state(system_state: dict[str, Any]) -> list[EvidenceItem]:
             source="ssh: df --output=pcent /",
             reason="disk usage could not be read over SSH",
         ),
-        EvidenceItem.reading(
-            "Errors logged in the last 10 minutes",
-            journal or "(none — the journal was read and had no error-priority entries)",
-            source="ssh: journalctl --since '10 minutes ago' -p err",
-        ),
+        journal_item,
     ]
 
 

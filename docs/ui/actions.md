@@ -572,6 +572,14 @@ only thing it can reason from is the evidence LabDog gathered. Readings
 that could not be taken are marked `UNAVAILABLE` rather than left blank,
 so a failed check cannot be mistaken for a healthy one.
 
+**Reading the journal needs privilege.** `journalctl` run by an ordinary
+user shows only that user's *own* entries and still exits successfully,
+so an unprivileged read looks exactly like a quiet host. LabDog connects
+as root where you configured it to, and otherwise uses `sudo -n`. If the
+SSH user has neither, the reading is reported as `UNAVAILABLE` with the
+reason — you will see it in the evidence and in the verdict, rather than
+getting a `PASS` that was reached by not looking.
+
 The reply's first word must be `PASS`, `FAIL`, or `INCONCLUSIVE`.
 
 | Verdict | `ai_verify_fail_closed: false` (default) | `ai_verify_fail_closed: true` |
