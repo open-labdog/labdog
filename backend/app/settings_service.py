@@ -215,6 +215,52 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "unaffected. When on, a snapshot that fails blocks the command."
         ),
     },
+    "ai.alert_intake_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Accept alerts from Grafana and Alertmanager (1 = on, 0 = off). "
+            "Recording alerts costs nothing and starts nothing — auto "
+            "investigation is a separate switch below."
+        ),
+    },
+    "ai.alertmanager_poll_minutes": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1440,
+        "description": (
+            "How often to poll the default Mimir instance's Alertmanager API "
+            "for alerts (0 = never poll; use the webhook alone). The poller "
+            "is the fallback for alerts that happened while LabDog was "
+            "unreachable — it deduplicates against the webhook, so running "
+            "both is safe."
+        ),
+    },
+    "ai.auto_investigate_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": (
+            "Start a read-only AI investigation when an eligible alert "
+            "arrives (1 = on, 0 = off). This spends money without anyone "
+            "asking, so it is off by default and bounded by the AI budgets."
+        ),
+    },
+    "ai.auto_investigate_min_severity": {
+        "type": "string",
+        "default": "critical",
+        "choices": ["info", "warning", "critical"],
+        "description": (
+            "Lowest alert severity that triggers an auto investigation. Read "
+            "from the alert's 'severity' label; an alert whose severity is "
+            "missing or not one of these is skipped and says so, rather than "
+            "being guessed either way."
+        ),
+    },
 }
 
 # In-process cache: {key: (value, timestamp)}

@@ -55,6 +55,7 @@ _EXTERNAL_MODELS = {
     "AIToolCall": "app.ai.models",
     "AIApprovalRequest": "app.ai.models",
     "AIUsageDay": "app.ai.models",
+    "AlertEvent": "app.ai.models",
 }
 
 
@@ -131,4 +132,5 @@ __all__ = [
     "AIMessage",
     "AIToolCall",
     "AIUsageDay",
+    "AlertEvent",
 ]

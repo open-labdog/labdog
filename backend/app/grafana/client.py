@@ -216,6 +216,47 @@ class PrometheusClient:
         if resp.status_code >= 400:
             raise PrometheusError(f"HTTP {resp.status_code}", resp.status_code)
 
+    async def get_alertmanager_alerts(self) -> list[Any]:
+        """Currently-known alerts from the Alertmanager v2 API.
+
+        Mimir serves Alertmanager alongside the query API on the same
+        host, under ``/alertmanager`` rather than ``/prometheus`` — so
+        the path is derived from ``query_url`` by swapping the prefix
+        rather than asking the operator for a second endpoint they would
+        have to keep in step with the first.
+
+        Returns the raw list; parsing belongs to
+        :func:`app.ai.alerts.from_alertmanager_v2`, which the webhook's
+        parser sits next to so the two shapes are compared in one place.
+        """
+        base = self.query_url.removesuffix("/prometheus")
+        url = f"{base}/alertmanager/api/v2/alerts"
+        try:
+            async with self._get_client() as client:
+                resp = await client.get(url)
+        except httpx.HTTPError as exc:
+            raise PrometheusError(f"Request failed: {exc}") from exc
+        if resp.status_code in (401, 403):
+            raise PrometheusError("Authentication failed", resp.status_code)
+        if resp.status_code == 404:
+            raise PrometheusError(
+                "No Alertmanager API at this endpoint. Mimir serves it under "
+                "/alertmanager on the same host; check the instance URL, or "
+                "leave ai.alertmanager_poll_minutes at 0 and use the webhook.",
+                404,
+            )
+        if resp.status_code >= 400:
+            raise PrometheusError(
+                f"Alertmanager API returned HTTP {resp.status_code}", resp.status_code
+            )
+        try:
+            body = resp.json()
+        except Exception as exc:
+            raise PrometheusError(f"Invalid JSON from the Alertmanager API: {exc}") from exc
+        if not isinstance(body, list):
+            raise PrometheusError("The Alertmanager API returned something that is not a list")
+        return body
+
     async def query_scalar(self, promql: str) -> tuple[float, float] | None:
         """Run ``query`` and return ``(value, timestamp)`` of the first
         result, or ``None`` when the query returned no series."""

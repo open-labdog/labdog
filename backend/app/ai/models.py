@@ -358,3 +358,106 @@ class AIUsageDay(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+#: Where an alert came from. Both producers write the same rows — the
+#: webhook is the fast path, the poller is the fallback for when Grafana
+#: cannot reach LabDog — so the source is recorded rather than inferred.
+ALERT_SOURCES = ("grafana_webhook", "alertmanager_poll")
+
+#: Alertmanager's own vocabulary, kept verbatim rather than mapped onto
+#: something LabDog-flavoured: an operator comparing LabDog against
+#: Grafana should not have to translate.
+ALERT_STATUSES = ("firing", "resolved")
+
+#: What happened to the auto-investigation policy for one alert. Recorded
+#: even when nothing ran, because "no session" has several causes and an
+#: operator asking "why didn't it look at this?" needs the answer stored
+#: rather than reconstructed from logs that may have rotated.
+INVESTIGATION_OUTCOMES = (
+    "started",
+    "skipped_disabled",
+    "skipped_severity",
+    "skipped_resolved",
+    "skipped_duplicate",
+    "skipped_budget",
+    "failed",
+)
+
+
+class AlertEvent(Base):
+    """One alert as LabDog received it, deduplicated by fingerprint.
+
+    **Dedup is on ``(fingerprint, starts_at)``, not fingerprint alone.**
+    Alertmanager's fingerprint is a hash of the alert's label set, so the
+    same rule firing for the same host produces the same fingerprint every
+    time it fires — this month and next. Keying on it alone would collapse
+    a recurrence into the original row and lose the history; keying on it
+    with ``starts_at`` treats one continuous firing as one row and a
+    genuinely new firing as a new one.
+
+    That also makes the webhook and the poller idempotent against each
+    other for free: whichever arrives second finds the row and increments
+    ``dedup_count`` instead of creating a duplicate. They are deliberately
+    both enabled — the webhook is immediate, the poller catches what a
+    LabDog that was down or unreachable would otherwise never hear about.
+
+    ``labels`` and ``annotations`` are stored whole. LabDog reads a few
+    keys out of them (``alertname``, ``severity``, ``instance``), but an
+    investigation is only as good as its context, and discarding the rest
+    to fit a schema would throw away exactly the detail that makes one
+    alert different from another.
+    """
+
+    __tablename__ = "alert_events"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", "starts_at", name="uq_alert_events_fingerprint_starts"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Alertmanager's label-set hash. Indexed on its own as well as in the
+    # unique constraint: "every firing of this rule" is the query an
+    # operator runs when deciding whether something is flapping.
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    alertname: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    # Read from labels["severity"] when present. Free text rather than an
+    # enum: Grafana lets you label an alert anything, and refusing to
+    # store "sev1" because it is not "critical" would lose the alert.
+    severity: Mapped[str | None] = mapped_column(String(32), nullable=True, default=None)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="firing", index=True)
+    labels: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    annotations: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
+    # Alertmanager's own timestamps, not LabDog's. When the alert began
+    # and ended according to the system that decided it was an alert.
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    ends_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    # How many times LabDog has been told about this same firing. 1 on
+    # creation. A high count on a short-lived alert is what flapping
+    # looks like from here.
+    dedup_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # The host this alert is about, when LabDog can work it out from the
+    # labels. NULL when it cannot — plenty of alerts are about a service
+    # or a cluster rather than a machine LabDog manages.
+    host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    investigation_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_sessions.id", ondelete="SET NULL"), nullable=True
+    )
+    # Why there is or is not a session. See INVESTIGATION_OUTCOMES.
+    investigation_outcome: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, default=None
+    )
+    # Free text for the outcome, e.g. the budget message that stopped it.
+    investigation_detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

@@ -42,6 +42,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Schedules — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
 | [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs, bring-your-own playbooks, and AI verification of destructive runs |
 | [ui/assistant.md](./ui/assistant.md) | The AI assistant — connecting a provider, autonomy levels, approving a change, snapshots, spend limits |
+| [ui/alerts.md](./ui/alerts.md) | Alert intake from Grafana and Alertmanager, deduplication, and the auto-investigation policy |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
 | [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning, AI kill switch and budgets) |
 

@@ -213,7 +213,13 @@ with its own system prompt), and `ai_verify_prompt` /
 `ai_verify_fail_closed` on `ActionManifest`, threaded to the two call
 sites that used to pass `None`. See `git log --grep "verify"`.
 
-One phase remains, plus one item carried over from phase 3:
+Phase 4 shipped alert intake: the `AlertEvent` table with
+(fingerprint, starts_at) dedup, a Grafana contact-point webhook, an
+Alertmanager poller, the auto-investigation policy with its outcome
+recorded per alert, and the `/alerts` page. See `git log --grep "alert"`.
+
+Every planned phase has now shipped. One item remains, carried over from
+phase 3:
 
 - **Remediation through the action system (`propose_action`).** Approvals
   shipped, so the model can now change a host — but only by running a
@@ -247,13 +253,6 @@ One phase remains, plus one item carried over from phase 3:
   weaker form. Two read-only tools are missing alongside it: action
   history (what LabDog recently did to a host, which is exactly the
   context a post-upgrade check wants) and Proxmox status/backup checks.
-- **Grafana alert intake.** An `AlertEvent` table plus two producers: a
-  `POST /api/webhooks/grafana-alerts` receiver following the HMAC-verify
-  → `send_task` → return-immediately shape of the existing GitOps
-  webhooks, and a RedBeat poller against the default Mimir instance's
-  Alertmanager API as a fallback for when Grafana cannot reach LabDog.
-  Both dedupe on the alert fingerprint. Eligible alerts spawn a
-  read-only investigation session under a configurable severity policy.
 
 **Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
 testcontainers, so on a machine without Docker they are verified by review

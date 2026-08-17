@@ -1167,3 +1167,36 @@ export interface AIUsageSummary {
   currency: string
   days: AIUsageDay[]
 }
+
+/** One alert as LabDog received it, deduplicated by fingerprint. */
+export interface AlertEvent {
+  id: number
+  source: "grafana_webhook" | "alertmanager_poll"
+  fingerprint: string
+  alertname: string
+  severity: string | null
+  status: "firing" | "resolved"
+  labels: Record<string, unknown> | null
+  annotations: Record<string, unknown> | null
+  starts_at: string
+  ends_at: string | null
+  /** How many times LabDog has been told about this same firing. */
+  dedup_count: number
+  host_id: number | null
+  investigation_session_id: number | null
+  /**
+   * Why there is or is not a session. "Nothing happened" has several
+   * causes and the operator should not have to guess which applied.
+   */
+  investigation_outcome:
+    | "started"
+    | "skipped_disabled"
+    | "skipped_severity"
+    | "skipped_resolved"
+    | "skipped_duplicate"
+    | "skipped_budget"
+    | "failed"
+    | null
+  investigation_detail: string | null
+  created_at: string
+}

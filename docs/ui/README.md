@@ -8,7 +8,7 @@ The sidebar is always visible on desktop (collapses on mobile). It has three sec
 
 | Section | Items |
 |---------|-------|
-| **Manage** | Dashboard, Hosts, Groups, Schedules, Assistant |
+| **Manage** | Dashboard, Hosts, Groups, Schedules, Assistant, Alerts |
 | **Integrations** | SSH Keys, Git Repos, Action Packs, Proxmox, Grafana, AI Providers |
 | **Admin** | Users, Audit Log, Settings |
 
@@ -35,6 +35,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [CA Certificates](groups.md#ca-certificates) | Deploy trusted CA certificates into hosts' system trust store (per group or per host) |
 | [Syncing changes](groups.md#syncing-changes) | Preview-then-apply syncs — per module or all modules at once, per host or per group — with live progress in the global sync tray (v0.2.0+ all syncs route through one per-host orchestrator with PostgreSQL serialisation) |
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions |
+| [Alerts](alerts.md) | Alerts received from Grafana and Alertmanager, with the AI investigation each one did or did not get |
 | [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) |
