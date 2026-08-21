@@ -19,6 +19,10 @@ clearing the session must succeed regardless of token state):
   - POST /api/auth/jwt/logout   — must not block sign-out; the middleware
                                    also clears the csrf cookie on this path.
 
+Exempt prefixes (authenticated by a credential in the request rather than
+by a session cookie, so no CSRF token exists or could exist):
+  - /api/webhooks/              — external senders; see ``_EXEMPT_PREFIXES``.
+
 WebSocket connections are transparently forwarded without inspection.
 GET/HEAD/OPTIONS requests are always allowed.
 """
@@ -51,6 +55,26 @@ _EXEMPT_PATHS = frozenset(
     }
 )
 
+# Prefixes exempted from CSRF validation.
+#
+# Every route under /api/webhooks is a machine-to-machine POST from an
+# external sender — Grafana, GitHub, GitLab, Gitea — authenticated by a
+# bearer token or an HMAC signature carried in the request itself. None of
+# them can produce a CSRF token: the double-submit cookie is issued to a
+# logged-in browser and these senders have no session and no cookie jar.
+#
+# Applying the check to them did not make them safer, it made them
+# unreachable — an unconditional 403 before authentication ever ran. CSRF
+# defends cookie-authenticated state changes against a browser being
+# tricked into making them; a request that carries its own credential and
+# is rejected without one has nothing to be tricked out of.
+#
+# Matched by prefix rather than by listing each route, so a webhook added
+# later is not silently broken the same way. This holds only while every
+# route under the prefix authenticates from the request itself — a
+# cookie-authenticated route added here would lose its CSRF protection.
+_EXEMPT_PREFIXES: tuple[str, ...] = ("/api/webhooks/",)
+
 _LOGOUT_PATH = "/api/auth/jwt/logout"
 
 
@@ -75,7 +99,7 @@ class CSRFMiddleware:
 
         if method in _GUARDED_METHODS:
             path = request.url.path
-            if path not in _EXEMPT_PATHS:
+            if path not in _EXEMPT_PATHS and not path.startswith(_EXEMPT_PREFIXES):
                 cookie_val = request.cookies.get(_CSRF_COOKIE, "")
                 header_val = request.headers.get(_CSRF_HEADER, "")
 

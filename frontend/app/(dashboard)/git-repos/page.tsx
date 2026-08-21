@@ -149,9 +149,9 @@ export default function GitReposPage() {
   const webhookUrls = useMemo(() => {
     const origin = typeof window !== "undefined" ? window.location.origin : ""
     return [
-      { label: "GitHub", url: `${origin}/webhooks/github` },
-      { label: "GitLab", url: `${origin}/webhooks/gitlab` },
-      { label: "Gitea", url: `${origin}/webhooks/gitea` },
+      { label: "GitHub", url: `${origin}/api/webhooks/github` },
+      { label: "GitLab", url: `${origin}/api/webhooks/gitlab` },
+      { label: "Gitea", url: `${origin}/api/webhooks/gitea` },
     ]
   }, [])
 

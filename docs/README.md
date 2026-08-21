@@ -549,9 +549,9 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/api/git-repos` | Manage Git repository connections |
-| `POST` | `/webhooks/github` | GitHub push webhook (HMAC-SHA256 signature) |
-| `POST` | `/webhooks/gitlab` | GitLab push webhook (X-Gitlab-Token shared secret) |
-| `POST` | `/webhooks/gitea` | Gitea push webhook (HMAC-SHA256 signature) |
+| `POST` | `/api/webhooks/github` | GitHub push webhook (HMAC-SHA256 signature) |
+| `POST` | `/api/webhooks/gitlab` | GitLab push webhook (X-Gitlab-Token shared secret) |
+| `POST` | `/api/webhooks/gitea` | Gitea push webhook (HMAC-SHA256 signature) |
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
 

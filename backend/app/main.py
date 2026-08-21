@@ -438,7 +438,11 @@ def create_app() -> FastAPI:
     app.include_router(ssh_terminal_router)
 
     app.include_router(version_router)
-    app.include_router(webhooks_router)
+    # Under /api like every other router. These endpoints authenticate with
+    # a shared secret rather than a session cookie, so they are exempted
+    # from CSRF by prefix in app.middleware.csrf — an exemption that only
+    # holds while they stay under this prefix.
+    app.include_router(webhooks_router, prefix="/api")
     # metrics_router owns the literal root path "/metrics" and MUST be
     # registered before the SPA catch-all route below
     # (`@app.api_route("/{full_path:path}", ...)`) is added — FastAPI/
