@@ -7,7 +7,7 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-## [0.9.0] — 2026-08-14
+## [0.9.0] — 2026-08-17
 
 The AI release. LabDog can now hand an investigation to a language model,
 let it change hosts under supervision you choose, and use it to decide
@@ -102,6 +102,38 @@ provider.
   one. Each verdict runs as a real session, visible under **Assistant**
   with its transcript, counted against your budget, and linked from the
   action run.
+
+- **Alert intake, and investigation on arrival.** LabDog can receive
+  alerts from a Grafana contact point (`POST /api/webhooks/grafana-alerts`,
+  gated on a shared token in `[alerts] webhook_token`) and poll an
+  Alertmanager API as a fallback, deduplicating against each other. The
+  webhook is the path that works everywhere; the poller reads *Mimir's*
+  Alertmanager, so it only sees rules evaluated by Mimir's ruler —
+  Grafana-managed rules go to Grafana's own Alertmanager and are
+  invisible to it. It defaults to off for that reason.
+
+  Dedup is on **(fingerprint, start time)**, not fingerprint alone.
+  Alertmanager's fingerprint hashes the label set, so the same rule
+  firing for the same host yields the same fingerprint every time it ever
+  fires; keying on it alone would fold next month's outage into this
+  month's row.
+
+  An eligible alert starts a **read-only** investigation, scoped to the
+  host LabDog resolved from the labels — or to no host, when it cannot,
+  because putting an investigation on the wrong machine is worse than
+  putting it on none. Eligibility is a policy: intake on, alert firing,
+  not already investigated, severity meeting
+  `ai.auto_investigate_min_severity`, AI enabled, and budget available.
+
+  **Whichever gate stopped it is recorded on the alert and shown in the
+  UI.** "Nothing happened" has six causes and each has a different fix, so
+  the row says which one applied rather than leaving an operator to
+  reconstruct it from logs. A severity LabDog does not recognise — `sev1`,
+  `P1` — meets no threshold and says so; treating it as critical would be
+  a guess, and only one kind of guess spends money unattended.
+
+  New page at `/alerts`, four `ai.*` settings, and
+  [`docs/ui/alerts.md`](docs/ui/alerts.md). All of it off by default.
 
 ### Changed
 

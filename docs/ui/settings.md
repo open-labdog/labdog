@@ -105,6 +105,18 @@ what it established, so the work is not wasted.
 | Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
 | Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
 
+**Alert intake.** Recording alerts and investigating them are separate
+switches — recording costs nothing, investigating spends money without
+anyone asking. The webhook token lives in the config file rather than
+here; see [Alerts](alerts.md).
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Alert Intake | `ai.alert_intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
+| Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
+| Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start a read-only investigation when an eligible alert arrives. |
+| Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
+
 **Changes and approvals.**
 
 | Setting | Key | Default | Range | Description |

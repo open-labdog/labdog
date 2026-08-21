@@ -344,3 +344,31 @@ class AIUsageSummary(BaseModel):
     # display unit, since no conversion happens anywhere.
     currency: str = "USD"
     days: list[AIUsageDayResponse] = Field(default_factory=list)
+
+
+# --- alerts --------------------------------------------------------------
+
+
+class AlertEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    source: str
+    fingerprint: str
+    alertname: str
+    severity: str | None
+    status: str
+    labels: dict | None
+    annotations: dict | None
+    starts_at: datetime
+    ends_at: datetime | None
+    dedup_count: int
+    host_id: int | None
+    investigation_session_id: int | None
+    #: Why there is or is not a session — see
+    #: ``app.ai.models.INVESTIGATION_OUTCOMES``. Surfaced rather than kept
+    #: internal because "nothing happened" has several causes and an
+    #: operator should not have to guess which one applied.
+    investigation_outcome: str | None
+    investigation_detail: str | None
+    created_at: datetime
