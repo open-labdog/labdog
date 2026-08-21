@@ -25,6 +25,7 @@ from app.ai.models import (
     AISession,
     AIToolCall,
     AIUsageDay,
+    AlertEvent,
 )
 from app.ai.providers.base import LLMProviderError
 from app.ai.providers.factory import (
@@ -45,6 +46,7 @@ from app.ai.schemas import (
     AISessionResponse,
     AIUsageDayResponse,
     AIUsageSummary,
+    AlertEventResponse,
     provider_to_response,
     session_to_response,
 )
@@ -819,3 +821,97 @@ async def get_usage(
             for usage, provider_name in rows
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# Alerts
+# ---------------------------------------------------------------------------
+
+
+@router.get("/alerts", response_model=list[AlertEventResponse])
+async def list_alerts(
+    limit: int = 100,
+    status: str | None = None,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recent alerts, newest first.
+
+    Ordered by ``created_at`` rather than ``starts_at``: an alert that
+    fired an hour ago but only reached LabDog now is new information to
+    the operator reading this list, and burying it an hour down would
+    hide exactly the case the poller exists to catch.
+    """
+    stmt = select(AlertEvent).order_by(AlertEvent.created_at.desc()).limit(min(limit, 500))
+    if status in ("firing", "resolved"):
+        stmt = stmt.where(AlertEvent.status == status)
+    result = await db.execute(stmt)
+    return [AlertEventResponse.model_validate(row) for row in result.scalars().all()]
+
+
+@router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse)
+async def investigate_alert_now(
+    alert_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start an investigation for one alert by hand.
+
+    The manual path deliberately skips the severity threshold — an
+    operator asking for this has already made the judgement the threshold
+    exists to automate — but not the kill switch, the provider check, or
+    the budget. Those are about whether LabDog *may* spend, which a
+    button press does not change.
+    """
+    alert = await db.get(AlertEvent, alert_id)
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    if alert.investigation_session_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This alert already has an investigation.",
+                "session_id": alert.investigation_session_id,
+            },
+        )
+
+    try:
+        provider = await service.resolve_provider(db, None)
+        service.assert_can_investigate(provider)
+        await service.assert_within_budget(db, provider)
+    except AIDisabledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BudgetExceededError as exc:
+        raise HTTPException(status_code=402, detail=str(exc)) from exc
+
+    from app.ai.loop import build_system_prompt
+    from app.tasks import celery_app
+    from app.tasks.ai_alerts import build_mission
+
+    mission = build_mission(alert)
+    session = AISession(
+        provider_id=provider.id,
+        mode="alert_investigation",
+        title=f"Alert: {alert.alertname}"[:200],
+        mission=mission,
+        autonomy_level="read_only",
+        status="queued",
+        target_host_ids=[alert.host_id] if alert.host_id else [],
+        alert_event_id=alert.id,
+        created_by_user_id=user.id,
+    )
+    db.add(session)
+    await db.flush()
+    await service.append_message(
+        db, session.id, role="system", content=build_system_prompt("read_only")
+    )
+    await service.append_message(db, session.id, role="user", content=mission)
+
+    alert.investigation_session_id = session.id
+    alert.investigation_outcome = "started"
+    alert.investigation_detail = f"started by {user.email}"
+    await db.commit()
+    await db.refresh(alert)
+
+    celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
+    return AlertEventResponse.model_validate(alert)

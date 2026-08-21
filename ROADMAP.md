@@ -62,11 +62,14 @@ worker or a host lock, snapshot-before-change, full-auto for operators
 who want it, cost accounting with enforced budgets, and AI verification
 of destructive actions. See [`docs/ui/assistant.md`](docs/ui/assistant.md).
 
-**Next.** Alert-driven investigation — a Grafana webhook receiver and an
-Alertmanager poller, deduplicated on fingerprint, spawning a read-only
-session under a severity policy. Tracked in [TODO.md](TODO.md), along
-with `propose_action`, which would let the assistant ask for a named,
-vetted actionpack rather than a raw shell command.
+Alert intake shipped alongside it: a Grafana contact-point webhook and an
+Alertmanager poller, deduplicated on (fingerprint, start time), spawning
+a read-only session under a severity policy — with whichever gate stopped
+an investigation recorded on the alert rather than left to be guessed.
+
+**Next.** `propose_action`, which would let the assistant ask for a
+named, vetted actionpack rather than a raw shell command. Two design
+problems block it, both recorded in [TODO.md](TODO.md).
 
 **The honest limit.** A verify step judges evidence LabDog collected in a
 ten-minute window that includes the action's own work, so it can mistake

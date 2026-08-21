@@ -355,6 +355,22 @@ one feature that runs commands nobody wrote in advance.
   master key as every other secret, and participate in
   [key rotation](encryption-key-rotation.md).
 
+**Alert intake** adds one unauthenticated-by-default surface and closes
+it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
+a LabDog session — it has to be, since Grafana has none — so it is gated
+on a shared bearer token in `[alerts] webhook_token`. That lives in the
+config file rather than the settings table because `/api/settings` is
+readable by any signed-in user. **An unset token refuses everything**: a
+receiver that accepted anonymous POSTs would let anyone on the network
+write rows LabDog might then spend money investigating. Restrict the path
+at the reverse proxy as well if Grafana reaches LabDog over an untrusted
+network.
+
+Alert-driven sessions are **always read-only** and there is no setting
+that raises them. An alert is a machine's opinion that something is
+wrong; acting on it unattended is a different feature with a different
+risk.
+
 **Residual risk worth naming.** The classifier parses commands rather
 than executing them symbolically, so a sufficiently creative shell
 construction could be classified wrongly. That is why read-only is the

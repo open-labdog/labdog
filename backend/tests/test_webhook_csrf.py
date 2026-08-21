@@ -43,13 +43,15 @@ async def test_csrf_middleware_does_not_block_webhooks(external_client):
     assert resp.json() == {"status": "ignored", "reason": "unknown repository"}
 
 
-@pytest.mark.parametrize("endpoint", ["github", "gitlab", "gitea"])
+@pytest.mark.parametrize("endpoint", ["github", "gitlab", "gitea", "grafana-alerts"])
 async def test_every_webhook_route_is_exempt(external_client, endpoint):
     """Every route under the prefix, not just the one that was noticed.
 
     Parametrised rather than written once because the bug was uniform:
-    all three were broken identically and for the same reason, and a
-    fourth added later would be too.
+    all of them were broken identically and for the same reason, and one
+    added later would be too. ``grafana-alerts`` is the demonstration —
+    it arrived with alert intake, after the exemption was written, and
+    needed nothing done to it because the prefix already covered it.
     """
     resp = await external_client.post(f"/api/webhooks/{endpoint}", json={})
 

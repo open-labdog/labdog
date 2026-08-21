@@ -28,6 +28,52 @@ async def get_default_instance(db: AsyncSession, kind: str) -> GrafanaInstance |
     return rows[0] if len(rows) == 1 else None
 
 
+async def get_default_client(db: AsyncSession, kind: str = "mimir"):
+    """A query client for the default instance of ``kind``, or ``None``.
+
+    Building one from a row means decrypting the token, deriving the
+    query URL, and carrying four TLS/auth fields across — five call sites
+    were each doing that by hand. New callers use this; the existing ones
+    are left alone rather than refactored under an unrelated change.
+
+    A token that will not decrypt is logged and dropped rather than
+    raised: an unauthenticated query against a backend that does not
+    require auth still works, and failing the whole poll because of it
+    would turn a misconfiguration into an outage.
+    """
+    from app.grafana.client import PrometheusClient
+    from app.grafana.schemas import derive_query_url
+
+    instance = await get_default_instance(db, kind)
+    if instance is None:
+        return None
+
+    token: str | None = None
+    if instance.encrypted_token:
+        try:
+            from app.crypto import get_master_key
+            from app.crypto.encryption import decrypt_ssh_key
+
+            token = decrypt_ssh_key(instance.encrypted_token, get_master_key())
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "grafana: could not decrypt the token for instance %s; querying without it",
+                instance.id,
+            )
+
+    return PrometheusClient(
+        query_url=derive_query_url(instance.url, instance.kind),
+        org_id=instance.org_id,
+        token=token,
+        verify_ssl=instance.verify_ssl,
+        ca_cert_pem=instance.ca_cert_pem,
+        auth_type=instance.auth_type,
+        username=instance.username,
+    )
+
+
 async def build_metrics_extra_vars(
     host_id: int,
     hostname: str,

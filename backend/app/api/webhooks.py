@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.host_group import HostGroup
@@ -205,3 +206,95 @@ async def gitea_webhook(
 
     await _dispatch_webhook(repo, after, db)
     return {"status": "accepted"}
+
+
+def _authorized(request: Request) -> bool:
+    """Constant-time check of the shared alert-webhook token.
+
+    Grafana contact points can send either an ``Authorization: Bearer``
+    header or HTTP basic auth; both are accepted, because which one is
+    available depends on the Grafana version and how the contact point
+    was created. An unset token refuses everything — see
+    :class:`app.config.AlertsConfig`.
+    """
+    expected = settings.alerts.webhook_token
+    if not expected:
+        return False
+
+    header = request.headers.get("Authorization") or ""
+    if header.startswith("Bearer "):
+        return hmac.compare_digest(expected, header[len("Bearer ") :])
+    if header.startswith("Basic "):
+        import base64
+
+        try:
+            decoded = base64.b64decode(header[len("Basic ") :]).decode()
+        except Exception:
+            return False
+        # Grafana sends user:password; the token may be either half, so
+        # that an operator can put it wherever their contact-point form
+        # makes available.
+        user, _, password = decoded.partition(":")
+        return hmac.compare_digest(expected, password) or hmac.compare_digest(expected, user)
+    return False
+
+
+@router.post("/grafana-alerts")
+async def grafana_alerts_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Receive alerts from a Grafana contact point.
+
+    Records every alert in the payload and returns immediately. Deciding
+    whether any of them is worth an AI investigation happens in a Celery
+    task, per alert — Grafana retries a webhook that does not answer
+    quickly, and doing policy work inline would turn a slow provider into
+    duplicate notifications.
+
+    Returns 200 with a count even when nothing was eligible. A webhook
+    that returns an error for "recorded, decided not to investigate"
+    teaches the sender to retry something that already succeeded.
+    """
+    from app.ai.alerts import from_grafana_webhook, record
+    from app.settings_service import get_setting_typed
+
+    if not _authorized(request):
+        raise HTTPException(status_code=401, detail="Invalid or missing webhook token")
+
+    if not int(await get_setting_typed("ai.alert_intake_enabled", db)):
+        return {"status": "ignored", "reason": "alert intake is disabled"}
+
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Body is not JSON") from None
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+
+    alerts = from_grafana_webhook(payload)
+    if not alerts:
+        # A payload LabDog could not parse into a single usable alert is
+        # worth saying out loud — silently accepting it would look like
+        # working while nothing was recorded.
+        logger.info("grafana-alerts: payload contained no usable alerts")
+        return {"status": "accepted", "recorded": 0, "investigating": 0}
+
+    new_ids: list[int] = []
+    for alert in alerts:
+        event, created = await record(db, alert, source="grafana_webhook")
+        if created and alert.is_firing:
+            new_ids.append(event.id)
+    await db.commit()
+
+    for event_id in new_ids:
+        celery_app.send_task(
+            "app.tasks.ai_alerts.investigate_alert", kwargs={"alert_event_id": event_id}
+        )
+
+    logger.info(
+        "grafana-alerts: recorded %d alert(s), %d new firing",
+        len(alerts),
+        len(new_ids),
+    )
+    return {"status": "accepted", "recorded": len(alerts), "investigating": len(new_ids)}
