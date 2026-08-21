@@ -150,6 +150,30 @@ provider.
 
 ### Fixed
 
+- **Webhooks are reachable again** (BUG-56). Every endpoint under the
+  webhooks router returned `403 CSRF token missing or invalid` before
+  its handler ran, for the entire life of the CSRF middleware. The
+  double-submit cookie is issued to a logged-in browser, and Grafana,
+  GitHub, GitLab and Gitea have no session and no cookie jar — so the
+  check could never pass and never protected anything. It is a defence
+  against a browser being tricked into a state change; a request that
+  carries its own bearer token or HMAC signature has nothing to be
+  tricked out of. The router is now exempted by prefix, so a webhook
+  added later is not silently broken the same way.
+
+  The test suite did not catch this because it caused it: the shared
+  client auto-attaches `X-CSRF-Token` to every mutating request,
+  satisfying on the sender's behalf the one condition no real sender
+  can meet. An `external_client` fixture with no cookie jar now exists
+  for anything authenticated from the request itself.
+
+  **The webhook routes have moved under `/api`** — `/api/webhooks/github`,
+  `/api/webhooks/gitlab`, `/api/webhooks/gitea` — matching every other
+  route and the URLs the documentation already gave. Normally breaking;
+  in practice nothing working breaks, because none of them worked. The
+  URLs shown on the **Git Repositories** page update themselves, but any
+  webhook configured at the old path must be repointed.
+
 - **An English pass no longer rolls a host back.** The AI verify step
   searched its whole reply for the substrings `PASS` and `FAIL`, so
   *"Everything looks fine; nothing failed."* — how a model answers "is

@@ -52,8 +52,8 @@ This directory contains:
    b. Navigate to **Manage → Groups → `<your group>`**.
    c. Click **Enable GitOps**, pick the repo and the YAML file path.
    d. Copy the webhook secret shown, then add a webhook on the git provider:
-      - URL: `https://<your-labdog-host>/webhooks/github` (or
-        `/webhooks/gitlab`, `/webhooks/gitea`)
+      - URL: `https://<your-labdog-host>/api/webhooks/github` (or
+        `/api/webhooks/gitlab`, `/api/webhooks/gitea`)
       - Content type: `application/json`
       - Secret: the one LabDog showed you
       - Events: `push` only
