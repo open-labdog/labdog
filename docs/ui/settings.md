@@ -113,7 +113,7 @@ here; see [Alerts](alerts.md).
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Alert Intake | `ai.alert_intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
-| Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API. The fallback for alerts that arrived while LabDog was unreachable; deduplicates against the webhook, so running both is safe. |
+| Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 | Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start a read-only investigation when an eligible alert arrives. |
 | Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
 

@@ -4,8 +4,11 @@ Two entry points, deliberately separate:
 
 * ``poll_alertmanager`` — the fallback producer. Asks the default Mimir
   instance's Alertmanager API what is currently firing and records it.
-  Catches everything that happened while LabDog was unreachable, which
-  the webhook by definition cannot.
+  Catches what happened while LabDog was unreachable, which the webhook
+  by definition cannot. Only meaningful when alert rules live in Mimir's
+  ruler; Grafana-managed rules go to Grafana's own Alertmanager and are
+  invisible here. Off by default for that reason — see
+  :mod:`app.ai.alerts`.
 * ``investigate_alert`` — decides whether one recorded alert is worth a
   session, and starts it if so.
 

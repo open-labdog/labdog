@@ -106,9 +106,11 @@ provider.
 - **Alert intake, and investigation on arrival.** LabDog can receive
   alerts from a Grafana contact point (`POST /api/webhooks/grafana-alerts`,
   gated on a shared token in `[alerts] webhook_token`) and poll an
-  Alertmanager API as a fallback. **Run both** — the webhook is immediate
-  but only works while LabDog is reachable; the poller catches what
-  happened while it was not, and the two deduplicate against each other.
+  Alertmanager API as a fallback, deduplicating against each other. The
+  webhook is the path that works everywhere; the poller reads *Mimir's*
+  Alertmanager, so it only sees rules evaluated by Mimir's ruler —
+  Grafana-managed rules go to Grafana's own Alertmanager and are
+  invisible to it. It defaults to off for that reason.
 
   Dedup is on **(fingerprint, start time)**, not fingerprint alone.
   Alertmanager's fingerprint hashes the label set, so the same rule

@@ -233,10 +233,11 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 1440,
         "description": (
             "How often to poll the default Mimir instance's Alertmanager API "
-            "for alerts (0 = never poll; use the webhook alone). The poller "
-            "is the fallback for alerts that happened while LabDog was "
-            "unreachable — it deduplicates against the webhook, so running "
-            "both is safe."
+            "for alerts (0 = never poll; use the webhook alone). Only "
+            "useful when your alert rules live in Mimir's ruler: "
+            "Grafana-managed rules are routed to Grafana's own "
+            "Alertmanager, which this cannot see, and the poll then "
+            "records nothing while appearing healthy."
         ),
     },
     "ai.auto_investigate_enabled": {

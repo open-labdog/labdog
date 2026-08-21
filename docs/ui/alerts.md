@@ -37,7 +37,7 @@ investigating.
 
 ---
 
-## Two ways in, and why both
+## Two ways in — and which one you need
 
 ### Grafana contact point (immediate)
 
@@ -55,17 +55,45 @@ Grafana version.
 ### Alertmanager poll (catch-up)
 
 ```
-ai.alertmanager_poll_minutes = 5     # 0 = never poll
+ai.alertmanager_poll_minutes = 5     # 0 = never poll — the default
 ```
 
 LabDog reads the Alertmanager API of your default Mimir instance — the
 same one registered under [Grafana](README.md) — so there is no second
-endpoint to configure and keep in step.
+endpoint to configure and keep in step. It derives the path by swapping
+`/prometheus` for `/alertmanager` on that instance's URL.
 
-**Run both.** The webhook is immediate but only works while LabDog is
-reachable from Grafana; the poller is slower but catches what happened
-while it was not — a restart, a network partition, an upgrade. They
+**Check whether this applies to you before turning it on.** The poller
+reads *Mimir's* Alertmanager, and that is not the only Alertmanager in a
+Grafana stack:
+
+| Where your alert rules live | Does the poller see them? |
+|---|---|
+| **Grafana-managed** (Alerting → Alert rules, the default) | **No.** Grafana evaluates these and routes them to its own built-in Alertmanager. Mimir's never hears about them. |
+| **Mimir ruler** (datasource-managed rules) | Yes |
+| Grafana configured to use Mimir's Alertmanager as an *external* one | Yes |
+
+A Grafana-managed setup is the common case, and for it the poller is not
+merely unnecessary — it is **silently useless**: the endpoint answers
+`200` with an empty list, so the poll looks healthy and records nothing,
+forever. Leave `ai.alertmanager_poll_minutes` at `0` and use the webhook
+alone.
+
+If it does apply, run both. The webhook is immediate but only works while
+LabDog is reachable from Grafana; the poller is slower but catches what
+happened while it was not — a restart, a partition, an upgrade. They
 deduplicate against each other, so there is no cost to having both.
+
+To check which case you are in, ask Mimir directly:
+
+```bash
+curl -H "X-Scope-OrgID: anonymous" \
+  https://<your-mimir>/alertmanager/api/v2/alerts
+```
+
+`404` means Mimir has no Alertmanager — webhook only. `200` with `[]`
+while something is genuinely firing in Grafana means your rules are
+Grafana-managed and it cannot see them — webhook only.
 
 ---
 
@@ -171,3 +199,10 @@ which of the six gates stopped it.
 serves Alertmanager under `/alertmanager` on the same host as its query
 API. If your deployment does not, leave `ai.alertmanager_poll_minutes` at
 `0` and use the webhook alone.
+
+**The poll runs cleanly but never records anything.** Almost always
+because your alert rules are Grafana-managed and Mimir's Alertmanager
+cannot see them — see [Alertmanager poll](#alertmanager-poll-catch-up).
+The poll cannot detect this itself: an Alertmanager with nothing routed
+to it and an Alertmanager with nothing firing return the same empty
+list.

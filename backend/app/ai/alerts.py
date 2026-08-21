@@ -1,12 +1,21 @@
 """Alert intake: one shape, two producers, one row per firing.
 
 A Grafana contact point can POST straight to LabDog, and LabDog can poll
-an Alertmanager API. **Both are enabled together on purpose.** The
-webhook is immediate but only works while LabDog is reachable from
-Grafana; the poller is slower but catches everything that happened while
-it was not — a restart, a network partition, a container that was down
-for an upgrade. Alerts that arrive by both paths must not become two
-rows, which is what the fingerprint dedup below is for.
+an Alertmanager API. The webhook is immediate but only works while LabDog
+is reachable from Grafana; the poller is slower but catches what happened
+while it was not — a restart, a partition, a container down for an
+upgrade. Where both apply they are meant to run together, and alerts
+arriving by both paths must not become two rows, which is what the
+fingerprint dedup below is for.
+
+**The poller does not apply everywhere.** It reads *Mimir's*
+Alertmanager, which only ever sees rules evaluated by Mimir's ruler.
+Grafana-managed alert rules — the default, and the common homelab case —
+are evaluated by Grafana and routed to Grafana's own built-in
+Alertmanager, which this cannot reach. Worse, it cannot tell: an
+Alertmanager with nothing routed to it and one with nothing firing both
+answer with an empty list. So the poll defaults to off, and the docs say
+how to check before turning it on.
 
 Nothing here starts an investigation. Recording an alert and deciding to
 spend money on it are separate concerns, and keeping them separate is
