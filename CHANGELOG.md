@@ -7,6 +7,38 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Eight background tasks were published to a queue nothing consumed**
+  and so never ran (BUG-58). The worker consumes `default,long_running`,
+  but Celery's built-in default queue is named `celery`, and
+  `task_default_queue` was never set — so any task no `task_routes`
+  pattern matched went to `celery` and stayed there. The broker accepted
+  it, `send_task` returned an id, and the work silently never happened.
+
+  Six of the eight were on RedBeat timers, firing into the dead queue for
+  the life of the deployment: both stale-run sweepers, all three
+  retention pruners, and approval expiry. **Two settings you can see and
+  change in the UI therefore did nothing** — `logging.audit_retention_days`
+  and `ai.snapshot_retention_days` — so audit logs, SSH transcripts and
+  AI snapshots were never pruned. Alert auto-investigation was the
+  seventh, which is how this was found: an alert recorded correctly and
+  then no session ever started.
+
+  Fixed by naming the default queue rather than adding the eight missing
+  route patterns. `task_routes` is a routing *override*, not a manifest,
+  and treating it as the complete list is what stranded these in the
+  first place — the next task added without an entry would have vanished
+  the same way.
+
+  After upgrading, the pruners run on their next tick and delete
+  everything already past its retention window in one pass. On an
+  instance that has been running a while that backlog is however much
+  accumulated since install, so check `logging.audit_retention_days` and
+  `ai.snapshot_retention_days` are set to what you actually want *before*
+  restarting — they have not been enforced until now, and the first run
+  is not reversible.
+
 ## [0.9.0] — 2026-08-17
 
 The AI release. LabDog can now hand an investigation to a language model,
