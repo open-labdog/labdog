@@ -10,6 +10,7 @@ import {
   CollapsiblePanel,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { Input } from "@/components/ui/input"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 
@@ -18,6 +19,13 @@ interface AppSetting {
   value: string
   value_type: string
   description: string
+  /**
+   * Optional long-form detail — caveats, reasoning, "only useful when"
+   * conditions. Rendered behind an info button rather than inline, so the
+   * card stays scannable. Absent on settings whose description already says
+   * everything there is to say.
+   */
+  help?: string | null
   default: string
   min?: number | null
   max?: number | null
@@ -35,6 +43,14 @@ interface AppSetting {
  * remembered to list it here as well. Twelve of twenty settings had drifted
  * out of the UI that way, including `ai.enabled` — which the AI subsystem
  * tells operators to go and enable, in a page that never showed it.
+ *
+ * The fallback is a safety net, not a substitute for listing keys here. When
+ * the approvals, snapshot and alert-intake settings shipped without being
+ * added, all seven landed in the fallback — so the page grew a second card
+ * headed "Ai", below the curated "AI" one, reading as a duplicate panel
+ * rather than as the omission it was. Add new keys to the owning category;
+ * a prefix appearing twice in the rendered page is the symptom that someone
+ * did not.
  */
 interface Category {
   label: string
@@ -62,13 +78,24 @@ const CATEGORIES: Record<string, Category> = {
       "ai.enabled",
       "ai.allow_cloud_providers",
       "ai.currency",
+      // Spend limits.
       "ai.budget_daily",
       "ai.budget_monthly",
       "ai.budget_warn_pct",
+      // Per-session caps.
       "ai.max_iterations",
       "ai.max_commands",
       "ai.max_tokens_total",
       "ai.wall_clock_seconds",
+      // Changes and approvals.
+      "ai.snapshot_before_mutating",
+      "ai.snapshot_retention_days",
+      "ai.approval_expiry_hours",
+      // Alert intake.
+      "ai.alert_intake_enabled",
+      "ai.alertmanager_poll_minutes",
+      "ai.auto_investigate_enabled",
+      "ai.auto_investigate_min_severity",
     ],
   },
   drift: {
@@ -189,6 +216,7 @@ function CategoryCard({
   label,
   count,
   hasPendingEdit,
+  uncategorised,
   pinned,
   open,
   onOpenChange,
@@ -197,6 +225,15 @@ function CategoryCard({
   label: string
   count: number
   hasPendingEdit: boolean
+  /**
+   * Marks the card as the uncategorised fallback rather than a curated
+   * category. Worth saying out loud in the UI: the heading is a bare key
+   * prefix, so a fallback card for `ai.*` renders as "Ai" directly beneath
+   * the curated "AI" — indistinguishable from a duplicate panel unless it
+   * admits what it is. Naming it turns a puzzling second card into a
+   * legible "somebody forgot to categorise these".
+   */
+  uncategorised?: boolean
   pinned?: ReactNode
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -206,6 +243,11 @@ function CategoryCard({
     <span className="flex items-center gap-2">
       {label}
       <span className="text-sm font-normal text-slate-400">({count})</span>
+      {uncategorised && (
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-normal text-slate-400 ring-1 ring-slate-700">
+          Uncategorised
+        </span>
+      )}
       {hasPendingEdit && (
         <span
           className="h-1.5 w-1.5 rounded-full bg-amber-500"
@@ -376,7 +418,16 @@ export default function SettingsPage() {
     return (
       <div key={key} className="flex items-start justify-between gap-8">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white">{setting.description}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-medium text-white">{setting.description}</p>
+            {setting.help && (
+              // Titled with the key rather than the description: the popup
+              // sits right beside the description, so repeating it wastes the
+              // heading, while the key is what an operator quotes in a config
+              // file, a bug report, or a search.
+              <InfoPopover title={setting.key}>{setting.help}</InfoPopover>
+            )}
+          </div>
           {/* FRONTEND.md reserves text-slate-500 for decorative elements;
               both of these are operative text an operator reads and quotes. */}
           <p className="text-xs text-slate-400 mt-0.5 font-mono">{setting.key}</p>
@@ -443,6 +494,7 @@ export default function SettingsPage() {
             label={prefixLabel(prefix)}
             count={keys.length}
             hasPendingEdit={keys.some(k => k in editedValues)}
+            uncategorised
             open={isOpen(prefix)}
             onOpenChange={open => setOpen(prefix, open)}
           >
