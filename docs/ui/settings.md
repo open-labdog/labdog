@@ -6,6 +6,12 @@ The Settings page controls operational behaviour that can be tuned without resta
 
 > **Note:** Infrastructure settings (database URL, TLS, secrets, rate limits) are set via environment variables or `dev/labdog.toml`. Only the settings below are managed through this page.
 
+Each row shows a one-line description. Where a setting has caveats worth
+knowing before you change it — a condition it only applies under, or a
+consequence that is not obvious — an **ⓘ** button beside the description opens
+them. The Description column below carries the same detail in full, so nothing
+is only available behind the button.
+
 ---
 
 ## Settings Reference

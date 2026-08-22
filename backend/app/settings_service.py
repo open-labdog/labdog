@@ -11,7 +11,19 @@ from app.models.app_setting import AppSetting
 
 logger = logging.getLogger(__name__)
 
-# Setting definitions: type, default, constraints, description
+# Setting definitions: type, default, constraints, description, help.
+#
+# ``description`` is the row label on the settings page and must stay short
+# enough to scan a whole card at once — roughly one line, and never more than
+# about 80 characters. ``help`` is optional and holds everything that used to
+# be crammed into the description: the caveats, the reasoning, the "only useful
+# when" conditions. The UI puts it behind an info button beside the label.
+#
+# The split exists because these two things are read at different moments. A
+# description is read while skimming for the right row; help is read once,
+# deliberately, by someone who has found the row and wants to know what it will
+# do. Merging them meant the second audience's paragraph was in the first
+# audience's way on every visit — one card had a 318-character label.
 SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "drift.check_interval_minutes": {
         "type": "int",
@@ -73,10 +85,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 1,
         "min": 0,
         "max": 1,
-        "description": (
-            "Probe SSH reachability before running an action playbook "
-            "(1 = on, 0 = off). When on, an unreachable host fails in "
-            "seconds instead of burning the full playbook timeout."
+        "description": "Probe SSH reachability before running an action playbook.",
+        "help": (
+            "When on, an unreachable host fails in seconds instead of burning the full playbook "
+            "timeout."
         ),
     },
     "workflow.snapshot_max_age_hours": {
@@ -95,9 +107,9 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": (
-            "Master switch for AI features (1 = on, 0 = off). When off, chat "
-            "sessions, scheduled AI tasks, and AI verification are all skipped."
+        "description": "Master switch for every AI feature.",
+        "help": (
+            "While off, chat sessions, scheduled AI tasks, and AI verification are all skipped."
         ),
     },
     "ai.allow_cloud_providers": {
@@ -105,10 +117,8 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": (
-            "Permit AI providers that send host data outside your network "
-            "(1 = allow, 0 = local endpoints only)."
-        ),
+        "description": "Permit AI providers that send host data outside your network.",
+        "help": "While off, only local endpoints may run.",
     },
     "ai.currency": {
         "type": "string",
@@ -117,11 +127,11 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         # The list is the common homelab set rather than every ISO code;
         # extend it here if yours is missing.
         "choices": ["USD", "EUR", "GBP", "SEK", "NOK", "DKK", "CHF", "CAD", "AUD"],
-        "description": (
-            "Currency used to display AI costs and budgets. Formatting only — "
-            "LabDog never converts between currencies, so this relabels the "
-            "figures rather than recalculating them. Enter provider rates in "
-            "the same currency you choose here."
+        "description": "Currency used to display AI costs and budgets.",
+        "help": (
+            "Formatting only — LabDog never converts between currencies, so this relabels the "
+            "figures rather than recalculating them. Enter provider rates in the same currency "
+            "you choose here."
         ),
     },
     "ai.budget_daily": {
@@ -129,11 +139,8 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0.0,
         "min": 0.0,
         "max": 10000.0,
-        "description": (
-            "Maximum AI spend per day, in the ai.currency unit (0 = unlimited). "
-            "Sessions are refused once reached, and a running session stops at "
-            "the next step."
-        ),
+        "description": "Maximum AI spend per day, in the ai.currency unit (0 = unlimited).",
+        "help": "Sessions are refused once reached, and a running session stops at the next step.",
     },
     "ai.budget_monthly": {
         "type": "float",
@@ -186,10 +193,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 24,
         "min": 1,
         "max": 720,
-        "description": (
-            "How long an approval request waits for a decision before it "
-            "expires. The session is then told the change was not approved "
-            "and resumes without it, rather than sitting parked forever."
+        "description": "How long an approval request waits before it expires.",
+        "help": (
+            "The session is then told the change was not approved and resumes without it, rather "
+            "than sitting parked forever."
         ),
     },
     "ai.snapshot_retention_days": {
@@ -197,11 +204,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 7,
         "min": 0,
         "max": 365,
-        "description": (
-            "How long to keep a snapshot the AI took before changing a host "
-            "(0 = keep forever). They are not deleted when the session "
-            "succeeds, because the point of them is that you can undo the "
-            "change afterwards — this is how long 'afterwards' lasts."
+        "description": "How long to keep snapshots the AI took before a change (0 = forever).",
+        "help": (
+            "They are not deleted when the session succeeds, because the point of them is that "
+            "you can undo the change afterwards — this is how long 'afterwards' lasts."
         ),
     },
     "ai.snapshot_before_mutating": {
@@ -209,10 +215,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 1,
         "min": 0,
         "max": 1,
-        "description": (
-            "Take a Proxmox snapshot before the AI runs a command that "
-            "changes a host (1 = on, 0 = off). Hosts with no VM mapping are "
-            "unaffected. When on, a snapshot that fails blocks the command."
+        "description": "Take a Proxmox snapshot before the AI changes a host.",
+        "help": (
+            "Hosts with no VM mapping are unaffected. When on, a snapshot that fails blocks the "
+            "command."
         ),
     },
     "ai.alert_intake_enabled": {
@@ -220,10 +226,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": (
-            "Accept alerts from Grafana and Alertmanager (1 = on, 0 = off). "
-            "Recording alerts costs nothing and starts nothing — auto "
-            "investigation is a separate switch below."
+        "description": "Accept alerts from Grafana and Alertmanager.",
+        "help": (
+            "Recording alerts costs nothing and starts nothing — auto investigation is a separate "
+            "switch below."
         ),
     },
     "ai.alertmanager_poll_minutes": {
@@ -231,12 +237,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1440,
-        "description": (
-            "How often to poll the default Mimir instance's Alertmanager API "
-            "for alerts (0 = never poll; use the webhook alone). Only "
-            "useful when your alert rules live in Mimir's ruler: "
-            "Grafana-managed rules are routed to Grafana's own "
-            "Alertmanager, which this cannot see, and the poll then "
+        "description": "How often to poll Mimir's Alertmanager API for alerts (0 = never).",
+        "help": (
+            "Only useful when your alert rules live in Mimir's ruler. Grafana-managed rules are "
+            "routed to Grafana's own Alertmanager, which this cannot see, and the poll then "
             "records nothing while appearing healthy."
         ),
     },
@@ -245,21 +249,20 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": (
-            "Start a read-only AI investigation when an eligible alert "
-            "arrives (1 = on, 0 = off). This spends money without anyone "
-            "asking, so it is off by default and bounded by the AI budgets."
+        "description": "Start a read-only AI investigation when an eligible alert arrives.",
+        "help": (
+            "This spends money without anyone asking, so it is off by default and bounded by the "
+            "AI budgets."
         ),
     },
     "ai.auto_investigate_min_severity": {
         "type": "string",
         "default": "critical",
         "choices": ["info", "warning", "critical"],
-        "description": (
-            "Lowest alert severity that triggers an auto investigation. Read "
-            "from the alert's 'severity' label; an alert whose severity is "
-            "missing or not one of these is skipped and says so, rather than "
-            "being guessed either way."
+        "description": "Lowest alert severity that triggers an auto investigation.",
+        "help": (
+            "Read from the alert's 'severity' label. An alert whose severity is missing or not "
+            "one of these is skipped and says so, rather than being guessed either way."
         ),
     },
 }
@@ -361,6 +364,7 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "value": db_row.value if db_row else str(defn["default"]),
                 "value_type": defn["type"],
                 "description": defn["description"],
+                "help": defn.get("help"),
                 "default": str(defn["default"]),
                 "min": defn.get("min"),
                 "max": defn.get("max"),
