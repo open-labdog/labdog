@@ -19,6 +19,25 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # The worker runs `-Q default,long_running`. Celery's own default queue
+    # name is "celery", so without this every task that no `task_routes`
+    # pattern matches is published to a queue nothing consumes — accepted by
+    # the broker, acknowledged to the caller, and never executed.
+    #
+    # That is not hypothetical. Eight of forty registered tasks were unrouted,
+    # six of them RedBeat-scheduled, so they fired on their timers into the
+    # dead queue for the life of the deployment: both stale-run sweepers, all
+    # three retention pruners, the approval expiry, and alert investigations.
+    # Two of those back settings an operator can see and change in the UI
+    # (`logging.audit_retention_days`, `ai.snapshot_retention_days`), which
+    # therefore did nothing.
+    #
+    # Naming the default is the fix rather than adding the eight missing
+    # patterns: `task_routes` is a routing *override*, and treating it as the
+    # complete list means the next task added without an entry vanishes the
+    # same way. See `tests/test_task_routing.py`, which asserts every
+    # registered task lands on a queue the worker actually consumes.
+    task_default_queue="default",
     task_routes={
         "app.tasks.sync.*": {"queue": "long_running"},
         "app.tasks.host_sync_orchestrator.*": {"queue": "long_running"},
