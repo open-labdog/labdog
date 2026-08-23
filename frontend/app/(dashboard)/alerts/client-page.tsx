@@ -38,6 +38,35 @@ const OUTCOME_LABEL: Record<string, string> = {
   failed: "Could not start",
 }
 
+/**
+ * What became of an investigation that did start.
+ *
+ * `investigation_outcome` is written once, when the decision to start is
+ * made, and never again — so on its own the badge reads "Investigating"
+ * forever, whatever happened next. A session that finished an hour ago, one
+ * still running, and one that failed all looked identical from this page.
+ *
+ * These supersede the "started" label once a session exists, which is the
+ * only outcome that has a life after it is recorded.
+ */
+const INVESTIGATION_LABEL: Record<string, string> = {
+  queued: "Investigation queued",
+  running: "Investigating",
+  waiting_approval: "Waiting for approval",
+  succeeded: "Investigated",
+  failed: "Investigation failed",
+  cancelled: "Investigation stopped",
+}
+
+const INVESTIGATION_STYLE: Record<string, string> = {
+  queued: "bg-slate-700 text-slate-200",
+  running: "bg-blue-600 text-white",
+  waiting_approval: "bg-amber-600 text-white",
+  succeeded: "bg-emerald-700 text-emerald-50",
+  failed: "bg-red-700 text-red-50",
+  cancelled: "bg-slate-600 text-slate-200",
+}
+
 function relative(iso: string): string {
   const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000)
   if (seconds < 60) return "just now"
@@ -161,12 +190,38 @@ export default function AlertsPage() {
               </p>
             )}
 
+            {/*
+              What the assistant concluded, on the row.
+              The alert's own summary says what fired; this says what came
+              of it, which is the question an operator scanning this page is
+              actually asking. Set apart with a rule and a quieter colour so
+              the two are not read as one sentence — one is the monitoring
+              system talking, the other is LabDog.
+            */}
+            {alert.investigation_summary && (
+              <p className="mt-2 border-l-2 border-slate-700 pl-3 text-sm text-slate-400">
+                {alert.investigation_summary}
+              </p>
+            )}
+
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              {alert.investigation_outcome && (
-                <Badge className="bg-slate-700 text-slate-200">
-                  {OUTCOME_LABEL[alert.investigation_outcome] ??
-                    alert.investigation_outcome}
+              {alert.investigation_status ? (
+                <Badge
+                  className={
+                    INVESTIGATION_STYLE[alert.investigation_status] ??
+                    "bg-slate-700 text-slate-200"
+                  }
+                >
+                  {INVESTIGATION_LABEL[alert.investigation_status] ??
+                    alert.investigation_status}
                 </Badge>
+              ) : (
+                alert.investigation_outcome && (
+                  <Badge className="bg-slate-700 text-slate-200">
+                    {OUTCOME_LABEL[alert.investigation_outcome] ??
+                      alert.investigation_outcome}
+                  </Badge>
+                )
               )}
               {alert.investigation_detail && (
                 <span className="text-slate-400">{alert.investigation_detail}</span>

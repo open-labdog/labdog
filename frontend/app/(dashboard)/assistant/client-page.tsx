@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { Trash2 } from "lucide-react"
+import { Square as SquareIcon, Trash2 } from "lucide-react"
 
 import { ChatTranscript } from "@/components/ai/chat-transcript"
 import { Badge } from "@/components/ui/badge"
@@ -145,6 +145,36 @@ export default function AssistantPage() {
     return (ids: number[] | null | undefined): string[] =>
       (ids ?? []).map((id) => byId.get(id) ?? `host ${id}`)
   }, [hosts])
+
+  /**
+   * Stop a run that is still going.
+   *
+   * The endpoint has existed since the loop learned to check for
+   * cancellation every turn; nothing in the UI ever called it, so the only
+   * way to stop a session was to wait for a cap to end it. That is a long
+   * wait on the defaults — 40 turns, or 15 minutes of wall clock — while
+   * the model keeps spending.
+   *
+   * Cancelling is a request, not a kill: the loop notices between turns,
+   * so a session mid-command finishes that command first. The button says
+   * "Stopping…" until the status changes rather than pretending it is
+   * already over.
+   */
+  const stopSession = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch(`/api/ai/sessions/${id}/cancel`, { method: "POST" }),
+    onSuccess: () => {
+      setError(null)
+      queryClient.invalidateQueries({ queryKey: ["ai-session", selectedId] })
+      queryClient.invalidateQueries({ queryKey: ["ai-sessions"] })
+      // A cancelled session expires its pending approval, so a card left
+      // on the approvals page would otherwise invite a click that does
+      // nothing.
+      queryClient.invalidateQueries({ queryKey: ["ai-approvals"] })
+    },
+    onError: (e: unknown) =>
+      setError(e instanceof ApiError ? e.message : "Could not stop the session."),
+  })
 
   const deleteSession = useMutation({
     mutationFn: (id: number) =>
@@ -539,6 +569,25 @@ export default function AssistantPage() {
                   {session.iterations} turns · {session.command_count} commands ·{" "}
                   {session.cost_unknown ? "cost not reported" : `$${session.cost.toFixed(4)}`}
                 </span>
+                {/*
+                  Pushed to the right so it does not sit among the badges:
+                  everything left of here describes the run, this acts on
+                  it. Shown for `waiting_approval` too — no task is running,
+                  but the session is not over either, and abandoning it is
+                  a reasonable answer to a request you do not want to grant.
+                */}
+                {!TERMINAL_STATES.has(session.status) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="ml-auto"
+                    disabled={stopSession.isPending}
+                    onClick={() => stopSession.mutate(session.id)}
+                  >
+                    <SquareIcon className="mr-1 h-3 w-3" aria-hidden />
+                    {stopSession.isPending ? "Stopping…" : "Stop"}
+                  </Button>
+                )}
               </div>
 
               <ChatTranscript

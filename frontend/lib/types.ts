@@ -1198,5 +1198,22 @@ export interface AlertEvent {
     | "failed"
     | null
   investigation_detail: string | null
+  /**
+   * The investigation's own status, once one exists.
+   *
+   * `investigation_outcome` records only the decision to start, so on its
+   * own it reads "Investigating" forever — a session that finished an hour
+   * ago looks identical to one still running.
+   */
+  investigation_status:
+    | "queued"
+    | "running"
+    | "waiting_approval"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | null
+  /** The assistant's conclusion — the report's opening, not the transcript. */
+  investigation_summary: string | null
   created_at: string
 }
