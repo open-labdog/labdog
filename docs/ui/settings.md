@@ -122,6 +122,44 @@ here; see [Alerts](alerts.md).
 | Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
 | Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start a read-only investigation when an eligible alert arrives. |
 | Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
+| Investigation Prompt | `ai.alert_mission_template` | built-in wording | up to 8000 characters | The prompt an alert investigation starts from. See below. |
+
+### The investigation prompt
+
+`ai.alert_mission_template` is the text an alert investigation begins with,
+and it is editable because the built-in wording has to work for an alert
+LabDog has never seen. It asks a deliberately generic question — is this
+real, and what is causing it. You know things it cannot: which alerts on
+your estate are chronically noisy, that an exporter lies during backups,
+that an answer should always name the service the host runs.
+
+It renders as a text area rather than a one-line field, with a **Reset to
+default** button that restores the shipped wording — worth knowing before
+you edit it, because the default is a paragraph nobody retypes from memory.
+
+These placeholders are filled in from the alert:
+
+| Placeholder | Expands to |
+|---|---|
+| `{alertname}` | The alert's name |
+| `{severity}` | The severity label, or `(not labelled)` |
+| `{status}` | `firing` or `resolved` |
+| `{starts_at}` | When the alert started, in ISO 8601 |
+| `{labels}` | Every label, one per line as `- key: value` |
+| `{annotations}` | Every annotation, one per line as `- key: value` |
+
+Anything else in braces is refused when you save, naming both what it did
+not recognise and what is available — a template that named a placeholder
+that does not exist would otherwise fail hours later, inside a background
+task, leaving an alert uninvestigated with nothing on screen to say why.
+Write `{{` and `}}` for a literal brace. A prompt with no placeholders at
+all is allowed: standing instructions with no alert detail are a real
+choice.
+
+You do not have to keep any particular placeholder. Dropping `{labels}`
+genuinely does deprive the model of that context — that is your call to
+make, not something the field stops you doing.
+
 
 **Changes and approvals.**
 

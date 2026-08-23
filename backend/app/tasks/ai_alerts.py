@@ -28,45 +28,19 @@ from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
 
-#: How much of the alert LabDog puts in front of the model. The whole
-#: label and annotation set, because an investigation is only as good as
-#: its context and the operator chose what to label.
-_MISSION = """\
-A monitoring alert fired and you are investigating it. Find out whether \
-it reflects a real problem on the host, and if so, what is causing it.
 
-Alert: {alertname}
-Severity: {severity}
-Status: {status}
-Started: {starts_at}
+async def build_mission(db, event) -> str:  # noqa: ANN001 - AlertEvent, AsyncSession
+    """The prompt this alert's investigation starts from.
 
-Labels:
-{labels}
+    Reads the operator's template if they have edited one; the built-in
+    wording in :mod:`app.ai.alert_mission` is the default and the
+    fallback.
+    """
+    from app.ai.alert_mission import render
+    from app.settings_service import get_setting_typed
 
-Annotations:
-{annotations}
-
-Work out what this alert is telling you, check the host it points at, \
-and report what you find. If the alert looks like a false positive or \
-has already cleared, say so plainly — that is a useful answer.
-"""
-
-
-def _render_pairs(mapping: dict | None) -> str:
-    if not mapping:
-        return "(none)"
-    return "\n".join(f"- {k}: {v}" for k, v in sorted(mapping.items()))
-
-
-def build_mission(event) -> str:  # noqa: ANN001 - AlertEvent, imported lazily
-    return _MISSION.format(
-        alertname=event.alertname,
-        severity=event.severity or "(not labelled)",
-        status=event.status,
-        starts_at=event.starts_at.isoformat() if event.starts_at else "(unknown)",
-        labels=_render_pairs(event.labels),
-        annotations=_render_pairs(event.annotations),
-    )
+    template = str(await get_setting_typed("ai.alert_mission_template", db))
+    return render(template, event)
 
 
 async def _decide_and_run(alert_event_id: int) -> dict:
@@ -127,7 +101,7 @@ async def _decide_and_run(alert_event_id: int) -> dict:
             outcome = "skipped_budget" if isinstance(exc, service.BudgetExceededError) else "failed"
             return await _finish(db, event, outcome, str(exc))
 
-        mission = build_mission(event)
+        mission = await build_mission(db, event)
         session = AISession(
             provider_id=provider.id,
             mode="alert_investigation",

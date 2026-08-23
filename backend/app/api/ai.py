@@ -956,7 +956,7 @@ async def investigate_alert_now(
     from app.tasks import celery_app
     from app.tasks.ai_alerts import build_mission
 
-    mission = build_mission(alert)
+    mission = await build_mission(db, alert)
     session = AISession(
         provider_id=provider.id,
         mode="alert_investigation",

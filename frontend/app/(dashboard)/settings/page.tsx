@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/collapsible"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 
 interface AppSetting {
@@ -30,6 +31,8 @@ interface AppSetting {
   min?: number | null
   max?: number | null
   choices?: string[] | null
+  /** Character cap for `text` settings. Absent on every other type. */
+  max_length?: number | null
   updated_at: string | null
 }
 
@@ -96,6 +99,7 @@ const CATEGORIES: Record<string, Category> = {
       "ai.alertmanager_poll_minutes",
       "ai.auto_investigate_enabled",
       "ai.auto_investigate_min_severity",
+      "ai.alert_mission_template",
     ],
   },
   drift: {
@@ -144,6 +148,16 @@ function prefixLabel(prefix: string): string {
  */
 function isToggle(s: AppSetting): boolean {
   return s.value_type === "int" && s.min === 0 && s.max === 1
+}
+
+/**
+ * A prompt is not a value — it is a paragraph, and it does not belong in
+ * the 12rem control every other row uses. Multiline settings take the full
+ * width of the card and put the editor below the label rather than beside
+ * it.
+ */
+function isMultiline(s: AppSetting): boolean {
+  return s.value_type === "text"
 }
 
 const COLLAPSE_STORAGE_KEY = "labdog:settings-collapse"
@@ -362,6 +376,75 @@ export default function SettingsPage() {
     const currentValue = editedValues[setting.key] ?? setting.value
     const isEdited = setting.key in editedValues && editedValues[setting.key] !== setting.value
 
+    if (isMultiline(setting)) {
+      const overLimit =
+        setting.max_length != null && currentValue.length > setting.max_length
+      const isDefault = currentValue === setting.default
+      return (
+        <div className="space-y-2">
+          <Textarea
+            rows={14}
+            className="w-full bg-slate-800 border-slate-700 font-mono text-xs text-white"
+            spellCheck={false}
+            value={currentValue}
+            onChange={e => setEditedValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
+          />
+          <div className="flex items-center gap-2">
+            {isEdited && (
+              <Button
+                size="sm"
+                disabled={saving[setting.key] || overLimit}
+                onClick={() => handleSave(setting.key)}
+              >
+                <SaveIcon className="w-3.5 h-3.5 mr-1" />
+                {saving[setting.key] ? "Saving..." : "Save"}
+              </Button>
+            )}
+            {/*
+              Restoring the shipped wording is otherwise unreachable: the
+              default is a paragraph nobody can retype from memory, so an
+              operator who edits one badly has no way back short of the
+              database.
+            */}
+            {!isDefault && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={saving[setting.key]}
+                onClick={() =>
+                  setEditedValues(prev => ({ ...prev, [setting.key]: setting.default }))
+                }
+              >
+                Reset to default
+              </Button>
+            )}
+            {isEdited && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  setEditedValues(prev => {
+                    const next = { ...prev }
+                    delete next[setting.key]
+                    return next
+                  })
+                }
+              >
+                Discard
+              </Button>
+            )}
+            {setting.max_length != null && (
+              <span
+                className={`ml-auto text-xs ${overLimit ? "text-red-400" : "text-slate-400"}`}
+              >
+                {currentValue.length} / {setting.max_length}
+              </span>
+            )}
+          </div>
+        </div>
+      )
+    }
+
     if (setting.choices || isToggle(setting)) {
       const options = setting.choices
         ? setting.choices.map(c => ({ value: c, label: c }))
@@ -415,8 +498,12 @@ export default function SettingsPage() {
   const renderRow = (key: string) => {
     const setting = settingsMap.get(key)
     if (!setting) return null
+    const stacked = isMultiline(setting)
     return (
-      <div key={key} className="flex items-start justify-between gap-8">
+      <div
+        key={key}
+        className={stacked ? "space-y-2" : "flex items-start justify-between gap-8"}
+      >
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <p className="text-sm font-medium text-white">{setting.description}</p>
@@ -440,7 +527,7 @@ export default function SettingsPage() {
             <p className="text-xs text-red-400 mt-1">{errors[key]}</p>
           )}
         </div>
-        <div className="flex-shrink-0">{renderInput(setting)}</div>
+        <div className={stacked ? "" : "flex-shrink-0"}>{renderInput(setting)}</div>
       </div>
     )
   }

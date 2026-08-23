@@ -128,6 +128,10 @@ An alert must clear every one of these:
 5. `ai.enabled` is on, a provider that can run tools is configured, and
    the AI budget is not spent.
 
+The prompt the session starts from is `ai.alert_mission_template` — see
+[Settings](settings.md#the-investigation-prompt) if you want to change what
+it asks.
+
 Whatever happened is recorded on the row and shown as a badge, because
 "nothing happened" has six different causes and each has a different fix:
 
