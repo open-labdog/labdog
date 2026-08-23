@@ -301,3 +301,24 @@ class TestWhatTheAlertRowSaysAboutItsInvestigation:
         from app.api.ai import _conclusion
 
         assert _conclusion(report) is None
+
+    def test_a_leading_heading_is_skipped(self) -> None:
+        """Reports vary in how they open.
+
+        Some begin with the verdict; others begin with ``## Summary`` and
+        put the verdict underneath. Taking the first paragraph blindly made
+        the second kind render as a row reading "## Summary", which tells
+        an operator nothing. Found against real reports — every fixture
+        here happened to be of the first kind.
+        """
+        from app.api.ai import _conclusion
+
+        report = "## Summary\n\n**Verdict:** the host is healthy.\n\nDetail follows."
+
+        assert _conclusion(report) == "Verdict: the host is healthy."
+
+    def test_a_report_that_is_only_headings_yields_nothing(self) -> None:
+        """Better an empty row than one quoting a heading back."""
+        from app.api.ai import _conclusion
+
+        assert _conclusion("## Summary\n\n### Detail") is None

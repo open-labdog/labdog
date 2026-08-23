@@ -57,7 +57,6 @@ from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
 from app.ai.gate import decide
 from app.ai.loop import LoopCaps, LoopOutcome, build_system_prompt
 from app.ai.models import AIApprovalRequest, AIProvider, AISession, AIToolCall
-from app.ai.providers.base import Usage
 from app.ai.providers.claude_cli import DEFAULT_CONFIG_DIR
 from app.ai.providers.factory import decrypt_api_key
 from app.ai.redaction import redact
@@ -97,6 +96,10 @@ class AgentSDKRunner:
         # for why these are separate from the session's own counters.
         self._live_prompt = 0
         self._live_completion = 0
+        # Whether this run's tokens reached the ledger. An interrupted run
+        # never gets a ResultMessage, so without this the exits that stop a
+        # run early would book nothing at all.
+        self._usage_booked = False
         self._publish = publish
         # What to send. Normally the mission; on resume, the operator's
         # decision, with ``resume_state`` restoring the rest of the
@@ -193,6 +196,54 @@ class AgentSDKRunner:
         self._live_prompt += prompt
         self._live_completion += completion
 
+    async def _book(self, prompt: int, completion: int, *, estimated: bool) -> None:
+        """Write tokens and cost onto the session and the daily ledger."""
+        cost = service.estimate_cost(self.provider_row, prompt, completion)
+        async with self._db_lock:
+            self.session.prompt_tokens += prompt
+            self.session.completion_tokens += completion
+            self.session.cost += cost
+            if estimated:
+                self.session.cost_unknown = True
+            await service.record_usage(
+                self.db,
+                provider_id=self.provider_row.id,
+                prompt_tokens=prompt,
+                completion_tokens=completion,
+                cost=cost,
+            )
+            await self.db.flush()
+        self._usage_booked = True
+
+    async def _book_estimate_if_unbooked(self) -> None:
+        """Fall back to the live estimate when no ``ResultMessage`` arrived.
+
+        Interrupting the SDK — for a cap, a cancellation, or an approval
+        gate — ends the exchange without its terminal message, and that
+        message is the only thing that books a run. So the runs which hit a
+        limit were precisely the ones missing from the usage panel: session
+        15 stopped on its token budget having spent real tokens and
+        recorded zero, and the daily ledger had no row for the day at all.
+
+        Booked as ``cost_unknown`` because this is the estimate rather than
+        the CLI's own aggregate. Understating a stopped run as free is
+        worse than booking an approximation and saying it is one.
+
+        Safe on a parked session that resumes later: the resumed run is a
+        separate SDK exchange with its own terminal message covering only
+        its own turns, so this cannot double count the earlier leg.
+        """
+        if self._usage_booked:
+            return
+        if not (self._live_prompt or self._live_completion):
+            return
+        logger.info(
+            "ai session %s: no result message; booking the live estimate of %d tokens",
+            self.session.id,
+            self._live_prompt + self._live_completion,
+        )
+        await self._book(self._live_prompt, self._live_completion, estimated=True)
+
     async def _record_usage(self, usage: dict | None) -> None:
         """Fold one result's token counts into the session and the ledger."""
         if not usage:
@@ -210,20 +261,7 @@ class AgentSDKRunner:
             prompt + completion,
             self._live_prompt + self._live_completion,
         )
-        event = Usage(prompt_tokens=prompt, completion_tokens=completion)
-        cost = service.estimate_cost(self.provider_row, prompt, completion)
-        async with self._db_lock:
-            self.session.prompt_tokens += event.prompt_tokens
-            self.session.completion_tokens += event.completion_tokens
-            self.session.cost += cost
-            await service.record_usage(
-                self.db,
-                provider_id=self.provider_row.id,
-                prompt_tokens=event.prompt_tokens,
-                completion_tokens=event.completion_tokens,
-                cost=cost,
-            )
-            await self.db.flush()
+        await self._book(prompt, completion, estimated=False)
 
     # -- permission gate --------------------------------------------------
 
@@ -591,6 +629,8 @@ class AgentSDKRunner:
             return LoopOutcome("failed", "", session.iterations, message)
 
         if await self._cancelled():
+            await self._book_estimate_if_unbooked()
+            await self.db.commit()
             await self._emit("status", {"status": "cancelled"})
             return LoopOutcome("cancelled", final_text, session.iterations, "cancelled by operator")
 
@@ -599,6 +639,7 @@ class AgentSDKRunner:
         # a person — and summarising it now would present an interrupted
         # run as a conclusion.
         if self._parked is not None:
+            await self._book_estimate_if_unbooked()
             async with self._db_lock:
                 session.status = "waiting_approval"
                 await self.db.commit()
@@ -629,6 +670,7 @@ class AgentSDKRunner:
         if self._stopped_by:
             report = f"{report}\n\n---\n_Stopped early: {self._stopped_by}._"
 
+        await self._book_estimate_if_unbooked()
         await service.finish_session(
             self.db, session, status=status, report=report, stopped_reason=self._stopped_by
         )

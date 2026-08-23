@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useSearchParams } from "next/navigation"
 
 import { Square as SquareIcon, Trash2 } from "lucide-react"
 
@@ -18,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { API_BASE, apiFetch, ApiError } from "@/lib/api"
+import { formatRelativeTime } from "@/lib/utils"
 import type {
   AIApprovalRequest,
   AIAutonomyLevel,
@@ -103,7 +105,27 @@ function describeScope(names: string[]): string {
 
 export default function AssistantPage() {
   const queryClient = useQueryClient()
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  /**
+   * Which session the page is showing.
+   *
+   * Seeded from `?session=` so a link can open one directly. The alerts
+   * page has linked here since alert intake shipped — `View investigation`
+   * pushed `/assistant?session=<id>` — but nothing read the parameter, so
+   * the button navigated to the Assistant page and selected nothing. It
+   * looked like it worked, which is the worst kind of broken link: the
+   * operator lands on a page full of identically-titled sessions and has
+   * to guess which one they asked for.
+   *
+   * Read once, as the initial value, rather than synced: after arriving,
+   * clicking a different session in the list is the operator changing
+   * their mind, and re-asserting the URL's choice over that would fight
+   * them.
+   */
+  const searchParams = useSearchParams()
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const requested = Number(searchParams.get("session"))
+    return Number.isInteger(requested) && requested > 0 ? requested : null
+  })
   const [mission, setMission] = useState("")
   const [autonomy, setAutonomy] = useState<AIAutonomyLevel>("read_only")
   const [skipSnapshots, setSkipSnapshots] = useState(false)
@@ -510,6 +532,24 @@ export default function AssistantPage() {
                     }`}
                   >
                     <span className="line-clamp-2">{s.title ?? s.mission}</span>
+                    {/*
+                      When a session is titled after what started it, several
+                      runs of the same thing are titled identically —
+                      alert investigations especially, where the title is the
+                      alert name. Four rows reading "Alert: X, succeeded,
+                      alert, jellyfin" are one row as far as the reader is
+                      concerned. The time is what tells them apart.
+
+                      Absolute time in the tooltip: "5m ago" is the right
+                      default for a list that is mostly recent, and useless
+                      for correlating against a log or a Grafana panel.
+                    */}
+                    <span
+                      className="mt-1 block text-slate-500"
+                      title={new Date(s.created_at).toLocaleString()}
+                    >
+                      {formatRelativeTime(s.created_at)}
+                    </span>
                     <span className="mt-1 flex flex-wrap items-center gap-2">
                       <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
                         {s.status}
