@@ -259,3 +259,45 @@ class TestTheRecordedAlert:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+class TestWhatTheAlertRowSaysAboutItsInvestigation:
+    """``investigation_outcome`` is written once and never revised.
+
+    It records the *decision* to start, so a row whose session finished an
+    hour ago, one still running, and one that failed all read "started" —
+    which the alerts page rendered as "Investigating" indefinitely. The
+    session's own status is what answers "and then what happened", so the
+    list resolves it rather than leaving the reader to open each alert.
+    """
+
+    def test_the_conclusion_is_the_reports_first_paragraph(self) -> None:
+        from app.api.ai import _conclusion
+
+        report = (
+            "**Verdict: false positive** — the host is healthy.\n\n"
+            "Full detail follows, which nobody needs on a list row.\n\n"
+            "- uptime 4 days\n- load 0.11\n"
+        )
+
+        assert _conclusion(report) == "Verdict: false positive — the host is healthy."
+
+    def test_a_long_conclusion_is_cut_on_a_word_and_marked(self) -> None:
+        """A hard character cut mid-word reads as the assistant trailing
+        off rather than as the UI abbreviating."""
+        from app.api.ai import _SUMMARY_CHARS, _conclusion
+
+        summary = _conclusion("word " * 200)
+
+        assert summary is not None
+        assert summary.endswith("…")
+        assert len(summary) <= _SUMMARY_CHARS + 1
+        assert not summary.rstrip("…").endswith("wor")
+
+    @pytest.mark.parametrize("report", [None, "", "   \n\n  "])
+    def test_nothing_to_quote_yields_nothing(self, report) -> None:
+        """A running session has no report yet. Returning "" would put an
+        empty quote block on the row."""
+        from app.api.ai import _conclusion
+
+        assert _conclusion(report) is None

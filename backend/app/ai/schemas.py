@@ -371,4 +371,17 @@ class AlertEventResponse(BaseModel):
     #: operator should not have to guess which one applied.
     investigation_outcome: str | None
     investigation_detail: str | None
+    #: The investigation's own status, once one exists — running,
+    #: succeeded, failed, cancelled, waiting_approval.
+    #:
+    #: ``investigation_outcome`` only records the decision to start, so on
+    #: its own it says "Investigating" forever: a session that finished an
+    #: hour ago, one still running, and one that failed all read the same
+    #: from this list. Resolved here rather than left to the reader, who
+    #: would otherwise have to open every alert to find out which.
+    investigation_status: str | None = None
+    #: The opening of the report — the assistant's conclusion, not the
+    #: whole transcript. Enough to see what it decided without leaving the
+    #: page; the link is there for the reasoning.
+    investigation_summary: str | None = None
     created_at: datetime

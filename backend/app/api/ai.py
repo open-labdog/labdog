@@ -828,6 +828,57 @@ async def get_usage(
 # ---------------------------------------------------------------------------
 
 
+#: How much of a report to put on an alert row. Long enough for a verdict
+#: ("healthy", "false positive", "the service is down"), short enough that
+#: a list of alerts stays a list.
+_SUMMARY_CHARS = 280
+
+
+def _conclusion(report: str | None) -> str | None:
+    """The first paragraph of a report, trimmed to fit a row.
+
+    Reports open with the verdict and then justify it, so the first
+    paragraph is the part an operator scanning the list needs. Truncated
+    on a word boundary with an ellipsis, so a cut is visible rather than
+    looking like the assistant stopped mid-sentence.
+    """
+    if not report:
+        return None
+    para = next((p.strip() for p in report.split("\n\n") if p.strip()), "")
+    if not para:
+        return None
+    # Markdown emphasis reads as noise once the markup is not rendered.
+    para = para.replace("**", "").replace("`", "")
+    if len(para) <= _SUMMARY_CHARS:
+        return para
+    return para[:_SUMMARY_CHARS].rsplit(" ", 1)[0] + "…"
+
+
+async def _with_investigation(db: AsyncSession, rows: list[AlertEvent]) -> list[AlertEventResponse]:
+    """Attach each alert's investigation status and conclusion.
+
+    One extra query for the whole page rather than a relationship on the
+    model: this is the only place that needs it, and a lazy-loaded
+    relationship on a list endpoint is how a hundred-row page becomes a
+    hundred queries.
+    """
+    session_ids = [r.investigation_session_id for r in rows if r.investigation_session_id]
+    sessions: dict[int, AISession] = {}
+    if session_ids:
+        found = await db.execute(select(AISession).where(AISession.id.in_(session_ids)))
+        sessions = {s.id: s for s in found.scalars().all()}
+
+    out = []
+    for row in rows:
+        response = AlertEventResponse.model_validate(row)
+        session = sessions.get(row.investigation_session_id or 0)
+        if session is not None:
+            response.investigation_status = session.status
+            response.investigation_summary = _conclusion(session.report_markdown)
+        out.append(response)
+    return out
+
+
 @router.get("/alerts", response_model=list[AlertEventResponse])
 async def list_alerts(
     limit: int = 100,
@@ -846,7 +897,7 @@ async def list_alerts(
     if status in ("firing", "resolved"):
         stmt = stmt.where(AlertEvent.status == status)
     result = await db.execute(stmt)
-    return [AlertEventResponse.model_validate(row) for row in result.scalars().all()]
+    return await _with_investigation(db, list(result.scalars().all()))
 
 
 @router.post("/alerts/{alert_id}/investigate", response_model=AlertEventResponse)
@@ -914,4 +965,7 @@ async def investigate_alert_now(
     await db.refresh(alert)
 
     celery_app.send_task("app.tasks.ai_task.run_chat_session", kwargs={"session_id": session.id})
-    return AlertEventResponse.model_validate(alert)
+    # Through the same helper as the list, so the row the caller renders
+    # immediately after clicking carries the session's status rather than
+    # an empty field that fills in on the next refetch.
+    return (await _with_investigation(db, [alert]))[0]
