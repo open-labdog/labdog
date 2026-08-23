@@ -384,3 +384,96 @@ class TestTruncationIsNotSuccess:
         )
 
         assert outcome.stopped_by != ""
+
+
+class TestTheTokenCapCanActuallyFire:
+    """Regression cover for a cap that was enforced against a value that
+    was always zero.
+
+    ``_record_usage`` ran only in the ``ResultMessage`` branch, and
+    ``ResultMessage`` is the SDK's terminal message. So the session's token
+    columns stayed at 0 for the whole run, ``_cap_hit`` compared 0 against
+    the limit every turn, and the real total arrived once there was nothing
+    left to stop. Observed in production: a session capped at 10,000 tokens
+    ran to completion having spent 111,857.
+
+    What makes these tests bite is the ``usage`` on each assistant message.
+    Without it the runner has nothing to count and every one of them passes
+    against the broken code.
+    """
+
+    async def test_a_run_over_the_cap_is_stopped(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        # 60 tokens a turn against a 100 limit: under after one, over after
+        # two. A single oversized turn would also pass on code that only
+        # ever checked once.
+        turn = {"input_tokens": 50, "output_tokens": 10}
+        outcome, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("one", turn), assistant("two", turn), assistant("three", turn), result()],
+            caps=LoopCaps(max_tokens_total=100),
+        )
+
+        assert "token budget" in (outcome.stopped_by or ""), (
+            f"the cap did not fire; stopped_by={outcome.stopped_by!r}"
+        )
+        assert fake.interrupted, "hitting the cap must interrupt the SDK, not just flag it"
+
+    async def test_cache_tokens_count_toward_the_cap(self, db, ai_provider, make_session) -> None:
+        """A cached run must not get a larger allowance than an uncached one.
+
+        Cache reads are input tokens that were really sent. Counting only
+        ``input_tokens`` would let a session with a warm cache run far past
+        a limit an identical cold one would hit.
+        """
+        session = await make_session()
+        cached = {"input_tokens": 5, "cache_read_input_tokens": 900, "output_tokens": 5}
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("one", cached), assistant("two", cached), result()],
+            caps=LoopCaps(max_tokens_total=500),
+        )
+
+        assert "token budget" in (outcome.stopped_by or "")
+
+    async def test_a_run_under_the_cap_is_left_alone(self, db, ai_provider, make_session) -> None:
+        """The other half of the contract, and the one that would catch an
+        estimate that over-counts: a cap must not fire early."""
+        session = await make_session()
+        outcome, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("one", {"input_tokens": 10, "output_tokens": 5}), result()],
+            caps=LoopCaps(max_tokens_total=100_000),
+        )
+
+        assert "token budget" not in (outcome.stopped_by or "")
+        assert not fake.interrupted
+
+    async def test_the_estimate_is_not_booked_as_spend(self, db, ai_provider, make_session) -> None:
+        """The live estimate gates the cap; ``ResultMessage`` books the run.
+
+        They come from different sources and need not agree, so folding the
+        estimate into the session's columns would make reported spend depend
+        on which message type arrived last — and would double count.
+        """
+        session = await make_session()
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("one", {"input_tokens": 500, "output_tokens": 500}),
+                assistant("two", {"input_tokens": 500, "output_tokens": 500}),
+                result(usage={"input_tokens": 10, "output_tokens": 5}),
+            ],
+            caps=LoopCaps(max_tokens_total=100_000),
+        )
+
+        assert session.prompt_tokens == 10, "the authoritative figure, not the estimate"
+        assert session.completion_tokens == 5

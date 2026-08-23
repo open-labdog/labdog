@@ -19,8 +19,16 @@ from typing import Any
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
 
-def assistant(text: str) -> AssistantMessage:
-    return AssistantMessage(content=[TextBlock(text=text)], model="fake-model")
+def assistant(text: str, usage: dict | None = None) -> AssistantMessage:
+    """One assistant turn.
+
+    ``usage`` mirrors the real per-response block the SDK copies out of
+    ``data["message"]["usage"]``. It defaults to absent because most tests
+    do not care, but it is the only way to exercise the token cap: the
+    runner's live estimate is summed from these, and a script whose turns
+    all report nothing can never reach a limit.
+    """
+    return AssistantMessage(content=[TextBlock(text=text)], model="fake-model", usage=usage)
 
 
 #: Distinguishes "caller said nothing about usage" from "the backend

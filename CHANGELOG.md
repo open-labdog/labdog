@@ -39,6 +39,28 @@ The format follows [Keep a Changelog]; LabDog follows
   restarting — they have not been enforced until now, and the first run
   is not reversible.
 
+- **`ai.max_tokens_total` did nothing on the Claude Agent SDK backend**
+  (BUG-59). Token usage was folded into the session only when the SDK's
+  `ResultMessage` arrived — its *terminal* message — so for the whole run
+  the counters the cap tests against sat at zero. The check ran every
+  turn, compared 0 against the limit, and never fired; the real figure
+  landed when there was nothing left to stop. Measured on a production
+  session: **111,857 tokens spent against a 10,000 cap.**
+
+  The runner now sums the per-response `usage` each assistant message
+  carries, giving the cap a live figure to test. That estimate gates the
+  run only — `ResultMessage` remains the sole source for the session's
+  token columns, the cost ledger and the usage panel, because the two
+  come from different sources and booking both would double count.
+
+  This mattered more than it looks. On a subscription provider every
+  price is zero, so `ai.budget_daily` and `ai.budget_monthly` can never
+  trigger, and the token cap was the only bound on how much one session
+  could spend. Sessions remain bounded by `ai.max_iterations`,
+  `ai.max_commands` and `ai.wall_clock_seconds`; there is still **no
+  limit on how many sessions may run**, which matters when an alert storm
+  can start one per alert.
+
 ## [0.9.0] — 2026-08-17
 
 The AI release. LabDog can now hand an investigation to a language model,

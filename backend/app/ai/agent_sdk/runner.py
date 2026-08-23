@@ -92,6 +92,11 @@ class AgentSDKRunner:
         self.session = session
         self.provider_row = provider_row
         self.caps = caps
+        # Running token estimate, summed from each assistant message so the
+        # token cap has something to test mid-run. See `_note_live_usage`
+        # for why these are separate from the session's own counters.
+        self._live_prompt = 0
+        self._live_completion = 0
         self._publish = publish
         # What to send. Normally the mission; on resume, the operator's
         # decision, with ``resume_state`` restoring the rest of the
@@ -145,21 +150,66 @@ class AgentSDKRunner:
             )
         return result.scalar_one_or_none() == "cancelled"
 
-    async def _record_usage(self, usage: dict | None) -> None:
-        """Fold one result's token counts into the session and the ledger."""
-        if not usage:
-            self.session.cost_unknown = True
-            return
-        # Cache reads and cache writes are input tokens that were really
-        # sent, so they count against the token cap even though they are
-        # priced differently. Undercounting here would let a cached session
-        # run past a limit an uncached one would hit.
+    @staticmethod
+    def _usage_totals(usage: dict) -> tuple[int, int]:
+        """Split one usage block into (prompt, completion).
+
+        Cache reads and cache writes are input tokens that were really
+        sent, so they count against the token cap even though they are
+        priced differently. Undercounting here would let a cached session
+        run past a limit an uncached one would hit.
+        """
         prompt = (
             int(usage.get("input_tokens") or 0)
             + int(usage.get("cache_creation_input_tokens") or 0)
             + int(usage.get("cache_read_input_tokens") or 0)
         )
-        completion = int(usage.get("output_tokens") or 0)
+        return prompt, int(usage.get("output_tokens") or 0)
+
+    def _note_live_usage(self, usage: dict | None) -> None:
+        """Accumulate a running token estimate from one assistant message.
+
+        The token cap was unenforceable without this. ``ResultMessage`` is
+        the SDK's *terminal* message, so folding usage in only there left
+        ``session.prompt_tokens`` at 0 for the entire run: ``_cap_hit``
+        compared 0 against the limit every turn, never tripped, and the
+        real figure landed when there was nothing left to stop. A run
+        capped at 10,000 tokens finished having spent 111,857.
+
+        Each ``AssistantMessage`` carries the raw per-response usage from
+        the API (``data["message"]["usage"]``), so summing them gives a
+        live signal that only ever grows.
+
+        Deliberately kept out of the session row and the ledger. This is an
+        estimate assembled from a different source than the CLI's own
+        aggregate, and the two need not agree; writing it into the columns
+        that back cost reporting would make spend figures depend on which
+        message type happened to arrive last. It bounds the run, and
+        ``ResultMessage`` remains the only thing that books it.
+        """
+        if not usage:
+            return
+        prompt, completion = self._usage_totals(usage)
+        self._live_prompt += prompt
+        self._live_completion += completion
+
+    async def _record_usage(self, usage: dict | None) -> None:
+        """Fold one result's token counts into the session and the ledger."""
+        if not usage:
+            self.session.cost_unknown = True
+            return
+        prompt, completion = self._usage_totals(usage)
+        # Both numbers, once, where they can be compared. The live estimate
+        # gates the cap while the run is in flight but is never booked, so
+        # a drift between them is invisible in the data — and a cap that
+        # fires early or late is exactly what that drift would look like to
+        # an operator.
+        logger.info(
+            "ai session %s usage: authoritative=%d live_estimate=%d",
+            self.session.id,
+            prompt + completion,
+            self._live_prompt + self._live_completion,
+        )
         event = Usage(prompt_tokens=prompt, completion_tokens=completion)
         cost = service.estimate_cost(self.provider_row, prompt, completion)
         async with self._db_lock:
@@ -612,6 +662,11 @@ class AgentSDKRunner:
                     continue
 
                 if isinstance(message, AssistantMessage):
+                    # Before the cap check below, which reads it. This turn's
+                    # tokens are already spent by the time the message
+                    # arrives, so counting them now is what lets the next
+                    # turn be refused.
+                    self._note_live_usage(getattr(message, "usage", None))
                     text = "".join(
                         block.text for block in message.content if isinstance(block, TextBlock)
                     ).strip()
@@ -709,7 +764,16 @@ class AgentSDKRunner:
         """
         if self.session.command_count >= self.caps.max_commands:
             return f"command limit ({self.caps.max_commands})"
-        total = self.session.prompt_tokens + self.session.completion_tokens
+        # Whichever source has seen more. Mid-run only the live estimate has
+        # anything in it; once `ResultMessage` books the authoritative
+        # figure the session's own counters take over. Taking the larger of
+        # the two means neither can mask the other on a resumed run, where
+        # the columns are already populated from the earlier process while
+        # the estimate restarts at zero.
+        total = max(
+            self.session.prompt_tokens + self.session.completion_tokens,
+            self._live_prompt + self._live_completion,
+        )
         if total >= self.caps.max_tokens_total:
             return f"token budget ({self.caps.max_tokens_total})"
         return None
