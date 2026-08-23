@@ -9,6 +9,20 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **"View investigation" went to the Assistant page but selected nothing.**
+  The alerts page has linked to `/assistant?session=<id>` since alert
+  intake shipped, and nothing ever read the parameter — so the button
+  navigated and left the operator on a list of sessions to guess from. The
+  parameter is now honoured.
+
+- **Sessions in the Assistant list had no timestamp**, so runs of the same
+  thing were indistinguishable: an alert investigation is titled after its
+  alert, and four firings of one rule produced four identical rows. Each
+  now shows when it started, with the absolute time on hover for
+  correlating against a log or a dashboard.
+
+### Fixed
+
 - **Eight background tasks were published to a queue nothing consumed**
   and so never ran (BUG-58). The worker consumes `default,long_running`,
   but Celery's built-in default queue is named `celery`, and
