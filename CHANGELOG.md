@@ -9,6 +9,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A run stopped by a cap or by Stop recorded no usage at all.** Tokens
+  reach the ledger only when the SDK's terminal `ResultMessage` arrives,
+  and interrupting the exchange means it never does — so the runs that hit
+  a limit, the expensive ones, were the only ones missing from the usage
+  panel. Seen the first time the token cap fired in production: the session
+  stopped on its budget having spent real tokens and reported zero, and the
+  daily ledger had no row for the day. The live estimate is now booked
+  instead, flagged `cost_unknown` because it is an approximation rather
+  than the CLI's own aggregate.
+
+- **An alert row could show `## Summary` instead of a conclusion.** The
+  alerts page quotes the opening of the investigation's report, taken as
+  its first paragraph — but reports that begin with a markdown heading put
+  the heading there instead of the verdict. Headings are now skipped.
+
 - **"View investigation" went to the Assistant page but selected nothing.**
   The alerts page has linked to `/assistant?session=<id>` since alert
   intake shipped, and nothing ever read the parameter — so the button
@@ -20,8 +35,6 @@ The format follows [Keep a Changelog]; LabDog follows
   alert, and four firings of one rule produced four identical rows. Each
   now shows when it started, with the absolute time on hover for
   correlating against a log or a dashboard.
-
-### Fixed
 
 - **Eight background tasks were published to a queue nothing consumed**
   and so never ran (BUG-58). The worker consumes `default,long_running`,

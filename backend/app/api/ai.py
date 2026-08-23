@@ -834,17 +834,34 @@ async def get_usage(
 _SUMMARY_CHARS = 280
 
 
-def _conclusion(report: str | None) -> str | None:
-    """The first paragraph of a report, trimmed to fit a row.
+def _is_heading(paragraph: str) -> bool:
+    """Whether a paragraph is only a markdown heading.
 
-    Reports open with the verdict and then justify it, so the first
-    paragraph is the part an operator scanning the list needs. Truncated
-    on a word boundary with an ellipsis, so a cut is visible rather than
-    looking like the assistant stopped mid-sentence.
+    Reports vary in how they open. Some begin with the verdict; others
+    begin with ``## Summary`` and put the verdict underneath. Taking the
+    first paragraph blindly turned the second kind into a row that said
+    "## Summary" — a heading, rendered as prose, telling the operator
+    nothing. Caught against real reports rather than the fixtures, which
+    all happened to be of the first kind.
+    """
+    return all(line.lstrip().startswith("#") for line in paragraph.splitlines() if line.strip())
+
+
+def _conclusion(report: str | None) -> str | None:
+    """The first substantive paragraph of a report, trimmed to fit a row.
+
+    Reports open with the verdict and then justify it, so the opening is
+    the part an operator scanning the list needs — but only once any
+    heading above it is skipped. Truncated on a word boundary with an
+    ellipsis, so a cut is visible rather than looking like the assistant
+    stopped mid-sentence.
     """
     if not report:
         return None
-    para = next((p.strip() for p in report.split("\n\n") if p.strip()), "")
+    para = next(
+        (p.strip() for p in report.split("\n\n") if p.strip() and not _is_heading(p.strip())),
+        "",
+    )
     if not para:
         return None
     # Markdown emphasis reads as noise once the markup is not rendered.
