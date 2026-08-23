@@ -267,6 +267,13 @@ class AISessionResponse(BaseModel):
     command_count: int
     report_markdown: str | None
     error_message: str | None
+    #: Why the run ended early, when something cut it short — a cap, a
+    #: budget, an operator. NULL when the model finished on its own.
+    #:
+    #: Needed because ``status`` cannot carry it: a capped run is still a
+    #: ``succeeded`` one, and without this it looked in every way like a
+    #: run that reached its own conclusion.
+    stopped_reason: str | None = None
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None

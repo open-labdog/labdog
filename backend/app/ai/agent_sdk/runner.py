@@ -629,7 +629,9 @@ class AgentSDKRunner:
         if self._stopped_by:
             report = f"{report}\n\n---\n_Stopped early: {self._stopped_by}._"
 
-        await service.finish_session(self.db, session, status=status, report=report)
+        await service.finish_session(
+            self.db, session, status=status, report=report, stopped_reason=self._stopped_by
+        )
         await self.db.commit()
         await self._emit("status", {"status": status, "stopped_by": self._stopped_by})
         return LoopOutcome(status, report, session.iterations, self._stopped_by)

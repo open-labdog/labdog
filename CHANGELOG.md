@@ -7,6 +7,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **A session now says why it stopped.** A run cut short by a cap finished
+  with a green `succeeded` badge, identical to one that reached its own
+  conclusion — the reason existed only in the Celery task's return value
+  and a sentence at the bottom of the report, neither of which is
+  reachable from the UI. Sessions carry a `stopped_reason`, shown as
+  "Stopped early: token budget (10000)" beside the status and as a "cut
+  short" marker in the session list.
+
+  Deliberately not folded into `error_message`: a capped run is not an
+  error. It did what it was asked until the budget it was given ran out,
+  and filing it as a failure is as misleading as calling it a clean
+  success.
+
 ### Fixed
 
 - **Eight background tasks were published to a queue nothing consumed**

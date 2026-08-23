@@ -176,6 +176,16 @@ class AISession(Base):
     command_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     report_markdown: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # Why a run ended before the model was finished — "token budget
+    # (10000)", "turn limit (40)", "cancelled by operator". Set only when
+    # something cut the run short; a session that reached its own
+    # conclusion leaves it NULL.
+    #
+    # Separate from error_message because a capped run is not an error. It
+    # did what it was asked until the budget it was given ran out, and
+    # filing that as a failure is as misleading as the green "succeeded"
+    # badge it used to get on its own.
+    stopped_reason: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
     resume_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True, default=None)
     created_by_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
