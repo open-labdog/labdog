@@ -477,3 +477,32 @@ class TestTheTokenCapCanActuallyFire:
 
         assert session.prompt_tokens == 10, "the authoritative figure, not the estimate"
         assert session.completion_tokens == 5
+
+    async def test_a_capped_run_still_books_its_tokens(self, db, ai_provider, make_session) -> None:
+        """The runs that hit a limit are the ones worth accounting for.
+
+        Interrupting the SDK ends the exchange without its ``ResultMessage``,
+        and that message was the only thing that booked a run — so hitting
+        the cap recorded zero tokens and zero cost, and the daily ledger got
+        no row at all. Seen in production the first time the cap fired: a
+        session stopped on its token budget having spent real tokens and
+        reported none.
+
+        The estimate is booked instead, flagged ``cost_unknown`` because it
+        is an approximation rather than the CLI's own aggregate.
+        """
+        session = await make_session()
+        turn = {"input_tokens": 50, "output_tokens": 10}
+        # No result() in the script: an interrupted exchange does not get one.
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("one", turn), assistant("two", turn), assistant("three", turn)],
+            caps=LoopCaps(max_tokens_total=100),
+        )
+
+        assert session.prompt_tokens + session.completion_tokens > 0, (
+            "a stopped run recorded no usage at all"
+        )
+        assert session.cost_unknown, "an estimate must be marked as one"
