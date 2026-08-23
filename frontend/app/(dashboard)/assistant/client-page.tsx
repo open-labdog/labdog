@@ -554,6 +554,16 @@ export default function AssistantPage() {
                       <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
                         {s.status}
                       </Badge>
+                      {/* Marked in the list too, not only once opened: the
+                          point of knowing is deciding which one to open. */}
+                      {s.stopped_reason && (
+                        <Badge
+                          className="bg-amber-700 text-amber-50"
+                          title={`Stopped early: ${s.stopped_reason}`}
+                        >
+                          cut short
+                        </Badge>
+                      )}
                       {MODE_LABEL[s.mode] && (
                         <Badge className="bg-slate-700 text-slate-200">
                           {MODE_LABEL[s.mode]}
@@ -603,6 +613,19 @@ export default function AssistantPage() {
                 <Badge className={STATUS_STYLE[session.status] ?? STATUS_STYLE.queued}>
                   {session.status}
                 </Badge>
+                {/*
+                  A run cut short is still "succeeded" — it did what it was
+                  asked until the budget ran out — so the status badge alone
+                  says a truncated investigation and a complete one are the
+                  same thing. They are not: one of them stopped with work
+                  left to do, and whether to raise the cap and run it again
+                  is a decision the operator can only make if they know.
+                */}
+                {session.stopped_reason && (
+                  <Badge className="bg-amber-700 text-amber-50">
+                    Stopped early: {session.stopped_reason}
+                  </Badge>
+                )}
                 <Badge variant="outline">{session.autonomy_level}</Badge>
                 <Badge variant="outline">{describeScope(hostNames(session.target_host_ids))}</Badge>
                 <span className="text-xs text-slate-400">

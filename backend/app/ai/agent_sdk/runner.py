@@ -671,7 +671,9 @@ class AgentSDKRunner:
             report = f"{report}\n\n---\n_Stopped early: {self._stopped_by}._"
 
         await self._book_estimate_if_unbooked()
-        await service.finish_session(self.db, session, status=status, report=report)
+        await service.finish_session(
+            self.db, session, status=status, report=report, stopped_reason=self._stopped_by
+        )
         await self.db.commit()
         await self._emit("status", {"status": status, "stopped_by": self._stopped_by})
         return LoopOutcome(status, report, session.iterations, self._stopped_by)

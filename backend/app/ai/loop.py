@@ -581,7 +581,9 @@ class AgentLoop:
             await self._emit("status", {"status": "cancelled"})
             return LoopOutcome("cancelled", report, session.iterations, "cancelled by operator")
 
-        await service.finish_session(self.db, session, status=status, report=report)
+        await service.finish_session(
+            self.db, session, status=status, report=report, stopped_reason=stopped_by
+        )
         await self.db.commit()
         await self._emit("status", {"status": status, "stopped_by": stopped_by})
         return LoopOutcome(status, report, session.iterations, stopped_by)

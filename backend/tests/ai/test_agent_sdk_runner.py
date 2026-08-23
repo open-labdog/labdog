@@ -506,3 +506,35 @@ class TestTheTokenCapCanActuallyFire:
             "a stopped run recorded no usage at all"
         )
         assert session.cost_unknown, "an estimate must be marked as one"
+
+
+class TestASessionSaysWhyItStopped:
+    """A truncated run used to be indistinguishable from a finished one.
+
+    `status` is "succeeded" either way — a capped run did what it was asked
+    until the budget ran out, which is not a failure — so the only trace of
+    the cap was the Celery task's return value and a sentence at the bottom
+    of the report. Neither is reachable from the UI, and the session list
+    showed nothing at all.
+    """
+
+    async def test_the_reason_is_persisted(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        turn = {"input_tokens": 50, "output_tokens": 10}
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("one", turn), assistant("two", turn), assistant("three", turn)],
+            caps=LoopCaps(max_tokens_total=100),
+        )
+
+        assert session.stopped_reason, "the session cannot say why it stopped"
+        assert "token budget" in session.stopped_reason
+
+    async def test_a_run_that_finished_leaves_it_unset(self, db, ai_provider, make_session) -> None:
+        """Otherwise every session would wear a "cut short" badge."""
+        session = await make_session()
+        await _run(db, session, ai_provider, [assistant("all done"), result()])
+
+        assert not session.stopped_reason

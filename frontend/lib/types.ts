@@ -1096,6 +1096,14 @@ export interface AISession {
   command_count: number
   report_markdown: string | null
   error_message: string | null
+  /**
+   * Why the run ended early — "token budget (10000)", "turn limit (40)",
+   * "cancelled by operator". Null when the model finished on its own.
+   *
+   * `status` cannot carry this: a capped run is still `succeeded`, so
+   * without it a truncated investigation and a complete one look the same.
+   */
+  stopped_reason: string | null
   created_at: string
   started_at: string | null
   finished_at: string | null

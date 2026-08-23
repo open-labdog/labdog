@@ -298,6 +298,7 @@ async def finish_session(
     status: str,
     report: str | None = None,
     error: str | None = None,
+    stopped_reason: str | None = None,
 ) -> None:
     session.status = status
     session.finished_at = datetime.now(UTC)
@@ -305,4 +306,6 @@ async def finish_session(
         session.report_markdown = report
     if error is not None:
         session.error_message = error
+    if stopped_reason:
+        session.stopped_reason = stopped_reason[:200]
     await db.flush()
