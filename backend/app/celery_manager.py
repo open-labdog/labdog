@@ -18,6 +18,14 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 class CeleryManager:
     """Spawn and manage a Celery worker+beat subprocess."""
 
+    #: Queues this worker consumes, in `-Q` order.
+    #:
+    #: Named rather than inlined because it is half of a contract: a task
+    #: published to a queue absent from this tuple is accepted by the broker
+    #: and never executed. `tests/test_task_routing.py` imports this to check
+    #: the other half — that every registered task routes into it.
+    QUEUES: tuple[str, ...] = ("default", "long_running")
+
     def __init__(self) -> None:
         self._process: subprocess.Popen[bytes] | None = None
 
@@ -36,7 +44,7 @@ class CeleryManager:
             f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",
             f"--concurrency={settings.celery.concurrency}",
             "-Q",
-            "default,long_running",
+            ",".join(self.QUEUES),
             f"--loglevel={settings.logging.level}",
         ]
         logger.info("Starting Celery worker+beat: %s", " ".join(cmd))

@@ -40,9 +40,11 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, CA certs) and preview-then-apply syncing |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |
 | [ui/scheduled-actions.md](./ui/scheduled-actions.md) | Schedules — cron-driven runs of any action (built-in or pack-supplied) against hosts, groups, or the fleet |
-| [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs and bring-your-own playbooks |
+| [ui/actions.md](./ui/actions.md) | Actions and Action Packs — ad-hoc playbook runs, bring-your-own playbooks, and AI verification of destructive runs |
+| [ui/assistant.md](./ui/assistant.md) | The AI assistant — connecting a provider, autonomy levels, approving a change, snapshots, spend limits |
+| [ui/alerts.md](./ui/alerts.md) | Alert intake from Grafana and Alertmanager, deduplication, and the auto-investigation policy |
 | [ui/admin.md](./ui/admin.md) | SSH Keys, Audit Log, User management |
-| [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning) |
+| [ui/settings.md](./ui/settings.md) | All settings configurable in the UI (log level, drift interval, timeouts, discovery tuning, AI kill switch and budgets) |
 
 ### Configuration Examples
 
@@ -76,6 +78,7 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 - **Looking for a specific YAML field?** → the matching file in [examples/gitops/modules/](./examples/gitops/modules/)
 - **Trying to reason about multi-group hosts?** → [examples/precedence/README.md](./examples/precedence/README.md)
 - **Want to add or override action playbooks?** → [ui/actions.md](./ui/actions.md) and [examples/action-packs/README.md](./examples/action-packs/README.md)
+- **Connecting an LLM?** → [ui/assistant.md](./ui/assistant.md) — it is off by default, and the page covers autonomy levels and spend limits before it covers how to turn it on
 - **Running LabDog in production?** → [backup-restore.md](./backup-restore.md) before users start entering credentials
 
 ### Authoritative sources
@@ -547,11 +550,36 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET/POST/PUT/DELETE` | `/api/git-repos` | Manage Git repository connections |
-| `POST` | `/webhooks/github` | GitHub push webhook (HMAC-SHA256 signature) |
-| `POST` | `/webhooks/gitlab` | GitLab push webhook (X-Gitlab-Token shared secret) |
-| `POST` | `/webhooks/gitea` | Gitea push webhook (HMAC-SHA256 signature) |
+| `POST` | `/api/webhooks/github` | GitHub push webhook (HMAC-SHA256 signature) |
+| `POST` | `/api/webhooks/gitlab` | GitLab push webhook (X-Gitlab-Token shared secret) |
+| `POST` | `/api/webhooks/gitea` | Gitea push webhook (HMAC-SHA256 signature) |
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
+
+### AI assistant
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/ai/providers` | List/register LLM providers (API key encrypted at rest) |
+| `PATCH/DELETE` | `/api/ai/providers/{id}` | Manage a provider |
+| `POST` | `/api/ai/providers/{id}/test` | Connection test |
+| `GET/POST` | `/api/ai/sessions` | List sessions / start one |
+| `GET/DELETE` | `/api/ai/sessions/{id}` | Session detail (transcript, tool calls, approvals) / delete |
+| `POST` | `/api/ai/sessions/{id}/messages` | Ask a follow-up in an existing session |
+| `POST` | `/api/ai/sessions/{id}/cancel` | Stop a running or parked session |
+| `GET` | `/api/ai/sessions/{id}/stream` | SSE stream of a session as it runs |
+| `GET` | `/api/ai/approvals` · `POST /api/ai/approvals/{id}` | List pending approvals / approve or reject one |
+| `GET` | `/api/ai/usage` | Spend and token totals against the configured budgets |
+
+See [ui/assistant.md](./ui/assistant.md) for autonomy levels, approvals, snapshots and spend limits.
+
+### Alert intake
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/webhooks/grafana-alerts` | Grafana contact-point receiver (bearer or basic auth against `[alerts] webhook_token`; an unset token refuses every request) |
+| `GET` | `/api/ai/alerts` | Alerts received, with the investigation each one did or did not get |
+| `POST` | `/api/ai/alerts/{id}/investigate` | Start an investigation by hand, bypassing only the severity threshold |
+
+See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the auto-investigation policy.
 
 ### Grafana metrics (inbound — LabDog reads host metrics)
 | Method | Path | Description |

@@ -70,6 +70,29 @@ def _registry_lookup(action_key: str):
         return None
 
 
+#: Built-in actions whose work is bounded by ``ai.wall_clock_seconds``
+#: rather than by an ansible-runner timeout.
+_AI_ACTION_KEYS = frozenset({"_builtin.ai_task", "_builtin.ai_task_group"})
+
+
+def _ai_wall_clock_floor() -> int:
+    """The AI wall-clock cap, as a floor for the per-host deadline.
+
+    The AI actions run no playbook, so ``ansible.playbook_timeout`` says
+    nothing about how long they legitimately take — their own cap does.
+    Reading the setting here rather than hardcoding a floor on the
+    ActionDefinition keeps the two from drifting: raising
+    ``ai.wall_clock_seconds`` widens the deadline automatically instead of
+    silently exceeding it.
+    """
+    from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+
+    try:
+        return int(get_setting_sync_typed("ai.wall_clock_seconds"))
+    except Exception:
+        return 900
+
+
 def per_host_deadline_seconds(action_key: str) -> int:
     """Upper bound on one host's whole envelope (snapshot → playbook →
     verify → rollback → cleanup).
@@ -77,9 +100,17 @@ def per_host_deadline_seconds(action_key: str) -> int:
     Deliberately generous: ansible-runner's own ``timeout`` always
     fires well before this, so any row still ``running`` past this age
     belongs to a dead worker, not a slow host.
+
+    The AI actions are the exception — nothing else bounds them, so their
+    floor comes from ``ai.wall_clock_seconds``. Keeping it derived rather
+    than generous matters here: this deadline is also what the action
+    sweeper uses to reap an orphaned run, and until it does, that host's
+    queue stays blocked.
     """
     action = _registry_lookup(action_key)
     floor = action.playbook_timeout_seconds if action is not None else None
+    if action_key in _AI_ACTION_KEYS:
+        floor = max(floor or 0, _ai_wall_clock_floor())
     verify = (
         action.verify_timeout_seconds if action is not None else FALLBACK_VERIFY_TIMEOUT_SECONDS
     )

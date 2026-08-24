@@ -7,11 +7,26 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
+from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
+from app.ai.alert_mission import validate_template as validate_alert_mission
 from app.models.app_setting import AppSetting
 
 logger = logging.getLogger(__name__)
 
-# Setting definitions: type, default, constraints, description
+# Setting definitions: type, default, constraints, description, help.
+#
+# ``description`` is the row label on the settings page and must stay short
+# enough to scan a whole card at once — roughly one line, and never more than
+# about 80 characters. ``help`` is optional and holds everything that used to
+# be crammed into the description: the caveats, the reasoning, the "only useful
+# when" conditions. The UI puts it behind an info button beside the label.
+#
+# The split exists because these two things are read at different moments. A
+# description is read while skimming for the right row; help is read once,
+# deliberately, by someone who has found the row and wants to know what it will
+# do. Merging them meant the second audience's paragraph was in the first
+# audience's way on every visit — one card had a 318-character label.
 SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "drift.check_interval_minutes": {
         "type": "int",
@@ -73,10 +88,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 1,
         "min": 0,
         "max": 1,
-        "description": (
-            "Probe SSH reachability before running an action playbook "
-            "(1 = on, 0 = off). When on, an unreachable host fails in "
-            "seconds instead of burning the full playbook timeout."
+        "description": "Probe SSH reachability before running an action playbook.",
+        "help": (
+            "When on, an unreachable host fails in seconds instead of burning the full playbook "
+            "timeout."
         ),
     },
     "workflow.snapshot_max_age_hours": {
@@ -85,6 +100,185 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 1,
         "max": 168,
         "description": "Max age in hours before orphaned Proxmox snapshots are cleaned up",
+    },
+    # --- AI subsystem -----------------------------------------------------
+    # Defaults are deliberately closed: AI is off until an operator turns it
+    # on, and cloud providers stay blocked until separately allowed, so
+    # installing a release never starts sending host data anywhere.
+    "ai.enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": "Master switch for every AI feature.",
+        "help": (
+            "While off, chat sessions, scheduled AI tasks, and AI verification are all skipped."
+        ),
+    },
+    "ai.allow_cloud_providers": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": "Permit AI providers that send host data outside your network.",
+        "help": "While off, only local endpoints may run.",
+    },
+    "ai.currency": {
+        "type": "string",
+        "default": "USD",
+        # Constrained so a typo can't quietly produce an unformattable label.
+        # The list is the common homelab set rather than every ISO code;
+        # extend it here if yours is missing.
+        "choices": ["USD", "EUR", "GBP", "SEK", "NOK", "DKK", "CHF", "CAD", "AUD"],
+        "description": "Currency used to display AI costs and budgets.",
+        "help": (
+            "Formatting only — LabDog never converts between currencies, so this relabels the "
+            "figures rather than recalculating them. Enter provider rates in the same currency "
+            "you choose here."
+        ),
+    },
+    "ai.budget_daily": {
+        "type": "float",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 10000.0,
+        "description": "Maximum AI spend per day, in the ai.currency unit (0 = unlimited).",
+        "help": "Sessions are refused once reached, and a running session stops at the next step.",
+    },
+    "ai.budget_monthly": {
+        "type": "float",
+        "default": 0.0,
+        "min": 0.0,
+        "max": 100000.0,
+        "description": (
+            "Maximum AI spend per calendar month, in the ai.currency unit (0 = unlimited)"
+        ),
+    },
+    "ai.budget_warn_pct": {
+        "type": "int",
+        "default": 80,
+        "min": 0,
+        "max": 100,
+        "description": (
+            "Warn in the UI once this percentage of any AI budget is spent (0 = never warn)"
+        ),
+    },
+    "ai.max_iterations": {
+        "type": "int",
+        "default": 15,
+        "min": 1,
+        "max": 100,
+        "description": "Maximum model turns in a single AI session",
+    },
+    "ai.max_commands": {
+        "type": "int",
+        "default": 20,
+        "min": 1,
+        "max": 200,
+        "description": "Maximum shell commands an AI session may run across all hosts",
+    },
+    "ai.max_tokens_total": {
+        "type": "int",
+        "default": 200000,
+        "min": 1000,
+        "max": 5000000,
+        "description": "Maximum tokens (prompt + completion) in a single AI session",
+    },
+    "ai.wall_clock_seconds": {
+        "type": "int",
+        "default": 900,
+        "min": 30,
+        "max": 21600,
+        "description": "Maximum wall-clock seconds an AI session may run for",
+    },
+    "ai.approval_expiry_hours": {
+        "type": "int",
+        "default": 24,
+        "min": 1,
+        "max": 720,
+        "description": "How long an approval request waits before it expires.",
+        "help": (
+            "The session is then told the change was not approved and resumes without it, rather "
+            "than sitting parked forever."
+        ),
+    },
+    "ai.snapshot_retention_days": {
+        "type": "int",
+        "default": 7,
+        "min": 0,
+        "max": 365,
+        "description": "How long to keep snapshots the AI took before a change (0 = forever).",
+        "help": (
+            "They are not deleted when the session succeeds, because the point of them is that "
+            "you can undo the change afterwards — this is how long 'afterwards' lasts."
+        ),
+    },
+    "ai.snapshot_before_mutating": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "Take a Proxmox snapshot before the AI changes a host.",
+        "help": (
+            "Hosts with no VM mapping are unaffected. When on, a snapshot that fails blocks the "
+            "command."
+        ),
+    },
+    "ai.alert_intake_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": "Accept alerts from Grafana and Alertmanager.",
+        "help": (
+            "Recording alerts costs nothing and starts nothing — auto investigation is a separate "
+            "switch below."
+        ),
+    },
+    "ai.alertmanager_poll_minutes": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1440,
+        "description": "How often to poll Mimir's Alertmanager API for alerts (0 = never).",
+        "help": (
+            "Only useful when your alert rules live in Mimir's ruler. Grafana-managed rules are "
+            "routed to Grafana's own Alertmanager, which this cannot see, and the poll then "
+            "records nothing while appearing healthy."
+        ),
+    },
+    "ai.auto_investigate_enabled": {
+        "type": "int",
+        "default": 0,
+        "min": 0,
+        "max": 1,
+        "description": "Start a read-only AI investigation when an eligible alert arrives.",
+        "help": (
+            "This spends money without anyone asking, so it is off by default and bounded by the "
+            "AI budgets."
+        ),
+    },
+    "ai.alert_mission_template": {
+        "type": "text",
+        "default": DEFAULT_ALERT_MISSION,
+        "max_length": 8000,
+        "validator": validate_alert_mission,
+        "description": "The prompt an alert investigation starts from.",
+        "help": (
+            "Placeholders are filled in from the alert: "
+            + ", ".join("{" + name + "} — " + what for name, what in ALERT_MISSION_FIELDS.items())
+            + ". Write {{ and }} for a literal brace. Reset restores the built-in wording."
+        ),
+    },
+    "ai.auto_investigate_min_severity": {
+        "type": "string",
+        "default": "critical",
+        "choices": ["info", "warning", "critical"],
+        "description": "Lowest alert severity that triggers an auto investigation.",
+        "help": (
+            "Read from the alert's 'severity' label. An alert whose severity is missing or not "
+            "one of these is skipped and says so, rather than being guessed either way."
+        ),
     },
 }
 
@@ -139,6 +333,23 @@ def _validate(key: str, value: str) -> str:
             raise ValueError(f"{key}: must be one of {defn['choices']}")
         return value
 
+    if vtype == "text":
+        # Length first: a multi-kilobyte prompt is prepended to every run
+        # it governs, so the cap is about spend as much as storage, and
+        # saying so beats a database error.
+        limit = defn.get("max_length", 10000)
+        if len(value) > limit:
+            raise ValueError(f"{key}: maximum length is {limit} characters")
+        # Free text a subsystem has to *parse* needs checking where the
+        # operator can see the message, not where it is used.
+        validator = defn.get("validator")
+        if validator is not None:
+            try:
+                return str(validator(value))
+            except ValueError as exc:
+                raise ValueError(f"{key}: {exc}") from exc
+        return value
+
     return value
 
 
@@ -185,10 +396,12 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "value": db_row.value if db_row else str(defn["default"]),
                 "value_type": defn["type"],
                 "description": defn["description"],
+                "help": defn.get("help"),
                 "default": str(defn["default"]),
                 "min": defn.get("min"),
                 "max": defn.get("max"),
                 "choices": defn.get("choices"),
+                "max_length": defn.get("max_length"),
                 "updated_at": db_row.updated_at.isoformat()
                 if db_row and db_row.updated_at
                 else None,

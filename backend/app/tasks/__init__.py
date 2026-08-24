@@ -1,7 +1,7 @@
 import logging
 
 from celery import Celery
-from celery.signals import worker_ready
+from celery.signals import worker_process_init, worker_ready
 
 from app.config import settings
 
@@ -19,6 +19,25 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # The worker runs `-Q default,long_running`. Celery's own default queue
+    # name is "celery", so without this every task that no `task_routes`
+    # pattern matches is published to a queue nothing consumes — accepted by
+    # the broker, acknowledged to the caller, and never executed.
+    #
+    # That is not hypothetical. Eight of forty registered tasks were unrouted,
+    # six of them RedBeat-scheduled, so they fired on their timers into the
+    # dead queue for the life of the deployment: both stale-run sweepers, all
+    # three retention pruners, the approval expiry, and alert investigations.
+    # Two of those back settings an operator can see and change in the UI
+    # (`logging.audit_retention_days`, `ai.snapshot_retention_days`), which
+    # therefore did nothing.
+    #
+    # Naming the default is the fix rather than adding the eight missing
+    # patterns: `task_routes` is a routing *override*, and treating it as the
+    # complete list means the next task added without an entry vanishes the
+    # same way. See `tests/test_task_routing.py`, which asserts every
+    # registered task lands on a queue the worker actually consumes.
+    task_default_queue="default",
     task_routes={
         "app.tasks.sync.*": {"queue": "long_running"},
         "app.tasks.host_sync_orchestrator.*": {"queue": "long_running"},
@@ -41,6 +60,7 @@ celery_app.conf.update(
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
         "app.tasks.facts.*": {"queue": "long_running"},
+        "app.tasks.ai_task.*": {"queue": "long_running"},
         "discovery.*": {"queue": "long_running"},
         "gitops.*": {"queue": "long_running"},
         "scans.check_scheduled": {"queue": "default"},
@@ -50,6 +70,39 @@ celery_app.conf.update(
     task_time_limit=1800,
     task_soft_time_limit=1500,
 )
+
+
+@worker_process_init.connect
+def _register_all_models(**_kwargs):
+    """Put every model on ``Base.metadata`` before any task runs.
+
+    Without this, which tables a worker knows about depends on which task
+    modules Celery happened to import — and therefore on which task runs
+    first. That produced a bug with a genuinely confusing shape: the first
+    AI session after a restart failed with
+
+        NoReferencedTableError: Foreign key associated with column
+        'ai_sessions.action_run_id' could not find table 'action_runs'
+
+    while later ones succeeded, because by then some action task had run in
+    the same process and imported ``action_runs`` as a side effect. A
+    restart brought it back. Registration is not something to leave to
+    import order.
+
+    Runs per pool child rather than once in the parent: prefork children
+    inherit the parent's imports, but the solo and threads pools have no
+    parent to inherit from, and a re-import in an already-populated
+    process is a no-op.
+    """
+    try:
+        from app.models import import_all_models
+
+        import_all_models()
+    except Exception:
+        # A worker that starts with incomplete metadata is still more
+        # useful than one that refuses to start; the failure is loud in
+        # the log and the affected flush will say which table is missing.
+        logger.exception("model registration on worker start failed")
 
 
 @worker_ready.connect
@@ -129,4 +182,8 @@ celery_app.conf.include = [
     "app.tasks.sync_sweeper",
     "app.tasks.action_sweeper",
     "app.tasks.audit_retention",
+    "app.tasks.ai_task",
+    "app.tasks.ai_approvals",
+    "app.tasks.ai_snapshots",
+    "app.tasks.ai_alerts",
 ]

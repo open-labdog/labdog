@@ -42,6 +42,7 @@ def _build_column_registry() -> list[tuple[Any, str, bool]]:
     Imports are deferred so this module can be imported in test environments
     that patch settings before the app module tree loads.
     """
+    from app.ai.models import AIProvider
     from app.grafana.models import GrafanaInstance
     from app.models.git_repository import GitRepository
     from app.models.ssh_key import SSHKey
@@ -52,6 +53,7 @@ def _build_column_registry() -> list[tuple[Any, str, bool]]:
         (ProxmoxNode, "encrypted_token_secret", False),
         (GitRepository, "encrypted_https_token", True),
         (GrafanaInstance, "encrypted_token", True),
+        (AIProvider, "encrypted_api_key", True),
     ]
 
 

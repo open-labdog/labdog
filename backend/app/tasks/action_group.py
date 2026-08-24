@@ -175,6 +175,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
+    from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
@@ -342,6 +343,8 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             action_destructive: bool = action.destructive
             action_verify_playbook_path = action.verify_playbook_path
             action_verify_timeout: int = action.verify_timeout_seconds
+            action_ai_verify_prompt: str | None = action.ai_verify_prompt
+            action_ai_verify_fail_closed: bool = action.ai_verify_fail_closed
             action_playbook_timeout: int | None = action.playbook_timeout_seconds
             parameters: dict = dict(run.parameters or {})
             run_snapshot_enabled: bool = bool(run.snapshot_enabled)
@@ -483,7 +486,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             ]
         )
 
-        dry_run = parameters.pop("__dry_run", False)
+        dry_run = parameters.pop(DRY_RUN_PARAM, False)
         extra_vars: dict | None = dict(parameters) if parameters else None
         if dry_run:
             extra_vars = extra_vars or {}
@@ -570,6 +573,10 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 private_data_dir,
                 channel,
                 r,
+                ai_verify_prompt=action_ai_verify_prompt,
+                ai_verify_fail_closed=action_ai_verify_fail_closed,
+                action_run_id=action_run_id,
+                dry_run=dry_run,
             )
 
         # ------------------------------------------------------------------ #
@@ -907,6 +914,11 @@ async def _verify_all(
     private_data_dir: str,
     channel: str,
     r: Any,
+    *,
+    ai_verify_prompt: str | None = None,
+    ai_verify_fail_closed: bool = False,
+    action_run_id: int | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Verify every host that succeeded the playbook and was snapshotted.
 
@@ -1017,10 +1029,11 @@ async def _verify_all(
                 ctx.verify_error = f"Verify playbook error: {exc}"
                 ctx.step_log.append(f"[verify] ERROR: {exc}")
         else:
-            # Built-in SSH/services/packages check — runs with the
-            # data preloaded above. We pass ``db=None`` (verify only
-            # uses the session in the AI-verification path, which is
-            # disabled for ad-hoc actions).
+            # Built-in SSH/services/packages check — runs with the data
+            # preloaded above. ``db=None`` is still correct: the only
+            # thing verify used a session for was the AI path, and that
+            # now opens its own, because these verifications run
+            # concurrently and one async session cannot serve them all.
             try:
                 from app.workflows.steps.verify import run_verification  # noqa: PLC0415
 
@@ -1030,8 +1043,11 @@ async def _verify_all(
                     ctx.ssh_key_path,
                     effective_services,
                     effective_packages,
-                    None,  # no AI prompt for ad-hoc actions
-                    None,  # db unused on the non-AI path
+                    ai_verify_prompt,
+                    None,
+                    ai_fail_closed=ai_verify_fail_closed,
+                    action_run_id=action_run_id,
+                    dry_run=dry_run,
                 )
                 ctx.verify_passed = bool(verify_result.get("passed"))
                 ctx.step_log.append(
@@ -1039,6 +1055,17 @@ async def _verify_all(
                     f"services_ok={verify_result.get('services_ok')} "
                     f"packages_ok={verify_result.get('packages_ok')}"
                 )
+                if ai_result := verify_result.get("ai_result"):
+                    # Logged apart from `passed` because the two can
+                    # legitimately differ: under the default policy an
+                    # inconclusive verdict is a pass, and this line is
+                    # where an operator finds that out.
+                    ctx.step_log.append(
+                        f"[verify] ai verdict={ai_result.get('verdict')} "
+                        f"session={ai_result.get('session_id')}"
+                    )
+                    ctx.step_log.append("=== AI verification ===")
+                    ctx.step_log.append(str(ai_result.get("output") or ""))
                 if not ctx.verify_passed:
                     ctx.verify_error = f"Post-run verification failed: {verify_result}"
             except Exception as exc:
@@ -1275,8 +1302,10 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         # run failure. Failures here are logged but never affect the
         # action's terminal status -- the action itself already
         # completed.
+        from app.actions.validation import DRY_RUN_PARAM  # noqa: PLC0415
+
         run_parameters = run.parameters or {}
-        dry_run = bool(run_parameters.get("__dry_run", False))
+        dry_run = bool(run_parameters.get(DRY_RUN_PARAM, False))
         if run.status not in ("cancelled", "failed") and not dry_run and succeeded > 0:
             from app.actions.registry import ACTION_REGISTRY
 

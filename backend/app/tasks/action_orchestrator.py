@@ -23,8 +23,19 @@ PER_HOST_TASK_FOR_BUILTIN: dict[str, str] = {
     "_builtin.sync": "app.tasks.builtin_dispatchers.run_builtin_sync",
     "_builtin.drift_check": "app.tasks.builtin_dispatchers.run_builtin_drift_check",
     "_builtin.collect_state": "app.tasks.builtin_dispatchers.run_builtin_collect_state",
+    # `_builtin.ai_task_group` has no entry: supports_host=False routes it
+    # down the group-dispatch path before this map is consulted.
+    "_builtin.ai_task": "app.tasks.ai_task.run_builtin_ai_task",
 }
 _DEFAULT_PER_HOST_TASK = "app.tasks.action_host.run_action_host"
+
+# Group-dispatch (``supports_host=False``) equivalents. The default group
+# task runs ansible-runner against the action's playbook, which a built-in
+# does not have, so a built-in needs its own whole-group task here.
+GROUP_TASK_FOR_BUILTIN: dict[str, str] = {
+    "_builtin.ai_task_group": "app.tasks.ai_task.run_builtin_ai_task_group",
+}
+_DEFAULT_GROUP_TASK = "app.tasks.action_group.run_action_group"
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +130,9 @@ async def _run_action_async(action_run_id: int) -> None:
                     or 1
                 )
                 group_soft = run_deadline_seconds(run_peek.action_key, member_count, parallelism=1)
+                group_task = GROUP_TASK_FOR_BUILTIN.get(run_peek.action_key, _DEFAULT_GROUP_TASK)
                 celery_app.send_task(
-                    "app.tasks.action_group.run_action_group",
+                    group_task,
                     args=[action_run_id],
                     queue="long_running",
                     soft_time_limit=group_soft,

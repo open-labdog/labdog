@@ -72,6 +72,14 @@ class ActionDefinition:
     #: destructive actions on hosts with a Proxmox VM mapping.
     verify_playbook_path: Path | None = None
     verify_timeout_seconds: int = 300
+    #: What the AI verify step should confirm after this action. ``None``
+    #: leaves it to the generic question, which still runs when the host
+    #: logged errors during the change. See ``ActionManifest``.
+    ai_verify_prompt: str | None = None
+    #: Whether an INCONCLUSIVE AI verdict fails this action. Default open:
+    #: a verdict nobody can read is not evidence that anything is wrong,
+    #: and failing verification can restore a pre-change snapshot.
+    ai_verify_fail_closed: bool = False
     #: Optional mapping of LabDog's default Grafana instance URLs onto this
     #: action's playbook var names (see ``ActionManifest.metrics_backend``).
     #: ``None`` = no injection. Stored as a plain dict to keep the dataclass

@@ -145,6 +145,8 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         { href: "/hosts/discovery", label: "Discovery" },
         { href: "/groups", label: "Groups" },
         { href: "/schedules", label: "Schedules" },
+        { href: "/assistant", label: "Assistant" },
+        { href: "/alerts", label: "Alerts" },
       ],
     },
     {
@@ -155,6 +157,7 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
         { href: "/action-packs", label: "Action Packs" },
         { href: "/hypervisors", label: "Proxmox" },
         { href: "/grafana", label: "Grafana" },
+        { href: "/ai-providers", label: "AI Providers" },
       ],
     },
     {

@@ -92,6 +92,25 @@ class MetricsConfig(BaseModel):
     action_key_label: bool = True
 
 
+class AlertsConfig(BaseModel):
+    """Inbound alert webhook.
+
+    ``webhook_token`` is the shared bearer token a Grafana contact point
+    must send. **File-level rather than a DB-backed ``AppSetting``**, for
+    the same reason as ``MetricsConfig`` above: ``/api/settings`` gates on
+    ``current_active_user``, so a token stored there could be read — and
+    rewritten — by any authenticated or XSS'd session, which is not where
+    a shared secret belongs.
+
+    Empty by default, and an empty token means the endpoint refuses
+    everything rather than accepting anything. An alert receiver that
+    silently accepted unauthenticated POSTs would let anyone on the
+    network write rows LabDog might then spend money investigating.
+    """
+
+    webhook_token: str = ""
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error", "critical"] = "info"
     format: Literal["text", "json"] = "text"
@@ -158,6 +177,7 @@ class Settings(BaseModel):
     tls: TLSConfig = TLSConfig()
     rate_limit: RateLimitConfig = RateLimitConfig()
     metrics: MetricsConfig = MetricsConfig()
+    alerts: AlertsConfig = AlertsConfig()
     logging: LoggingConfig = LoggingConfig()
     ssh: SSHConfig = SSHConfig()
     discovery: DiscoveryConfig = DiscoveryConfig()

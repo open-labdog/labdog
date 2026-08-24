@@ -12,6 +12,84 @@ _LOAD_WARN_THRESHOLD = 10.0
 _DISK_WARN_THRESHOLD = 95
 
 
+#: One round trip that answers both privilege questions. ``sudo -n``
+#: never prompts, so a host that would ask for a password fails it
+#: immediately rather than hanging the verify step.
+_PRIVILEGE_PROBE = "id -u; sudo -n true 2>/dev/null && echo SUDO || echo NOSUDO"
+
+_NO_JOURNAL_ACCESS = (
+    "LabDog connects to this host as an unprivileged user with no "
+    "passwordless sudo, so it can only see that user's own journal, not the "
+    "system's. Grant the SSH user sudo, or connect as root, for LabDog to "
+    "read this."
+)
+
+
+async def _read_journal_errors(conn: Any, host_ip: str) -> tuple[str | None, str]:
+    """Recent error-priority journal entries, or why they are unknown.
+
+    Returns ``(entries, reason)``. ``entries`` is ``None`` when the journal
+    could not be read; ``reason`` says why, and is empty otherwise.
+
+    **The privilege check is the point of this function.** ``journalctl``
+    run by a user outside ``adm``/``systemd-journal`` prints only that
+    user's own journal and **exits 0** — so the previous version recorded
+    an empty string, indistinguishable from a genuinely quiet host. LabDog
+    also passed ``-q``, which suppresses journalctl's own "you are not
+    seeing messages from other users and the system" hint, discarding the
+    one clue that anything was wrong.
+
+    Observed live: a host that had just logged an error-priority entry
+    reported no errors, and the AI verify step told the operator "the
+    journal was successfully read ... and contained no error-priority
+    entries" before passing it. An unreadable check presented as a clean
+    one is the failure this whole step exists to avoid, so it is now
+    reported as unknown instead.
+
+    Sudo rather than a group: adding the SSH user to ``systemd-journal``
+    works, but it is not something an operator would know to do, and a
+    silent under-read is exactly what we are trying to stop happening by
+    default.
+    """
+    try:
+        probe = await conn.run(_PRIVILEGE_PROBE, check=False)
+        lines = (probe.stdout or "").split()
+        is_root = bool(lines) and lines[0] == "0"
+        has_sudo = "SUDO" in lines
+    except Exception as exc:
+        logger.warning("verify: journal privilege probe failed on %s: %s", host_ip, exc)
+        return None, f"the journal privilege check failed: {exc}"
+
+    if is_root:
+        prefix = ""
+    elif has_sudo:
+        prefix = "sudo -n "
+    else:
+        logger.warning(
+            "verify: cannot read the system journal on %s — unprivileged SSH user, no sudo",
+            host_ip,
+        )
+        return None, _NO_JOURNAL_ACCESS
+
+    try:
+        result = await conn.run(
+            f"{prefix}journalctl --since '10 minutes ago' -p err --no-pager -q",
+            check=False,
+        )
+    except Exception as exc:
+        logger.warning("verify: journal check failed on %s: %s", host_ip, exc)
+        return None, f"the journal could not be read: {exc}"
+
+    # A non-zero exit means the read did not happen. Returning its empty
+    # stdout as "no errors" is the same lie in a different coat.
+    if getattr(result, "exit_status", 0) not in (0, None):
+        detail = (result.stderr or "").strip() or f"journalctl exited {result.exit_status}"
+        logger.warning("verify: journal read failed on %s: %s", host_ip, detail)
+        return None, f"the journal could not be read: {detail}"
+
+    return (result.stdout or "").strip(), ""
+
+
 async def run_verification(
     host: Any,
     ssh_key_path: str,
@@ -19,6 +97,10 @@ async def run_verification(
     effective_packages: list[Any],
     verification_prompt: str | None,
     db: Any,
+    *,
+    ai_fail_closed: bool = False,
+    action_run_id: int | None = None,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Verify system health after a host update via SSH hard checks.
 
@@ -28,9 +110,10 @@ async def run_verification(
     Basic system health (load average and disk usage) is always collected.
     Recent journal errors are gathered as additional context.
 
-    When all hard checks pass and ``verification_prompt`` is provided, the
-    function delegates to :func:`~app.workflows.steps.ai_verify.run_ai_verification`
-    for an AI-assisted assessment.
+    When all hard checks pass, and either ``verification_prompt`` was
+    supplied *or* the journal had errors to explain, the function delegates
+    to :func:`~app.workflows.steps.ai_verify.run_ai_verification` for an
+    AI-assisted assessment of everything collected above.
 
     Args:
         host: Host ORM object exposing ``hostname``, ``ip_address``,
@@ -41,8 +124,24 @@ async def run_verification(
         effective_packages: List of effective package rule objects, each with
             ``package_name`` and ``desired_state`` attributes.
         verification_prompt: Optional free-text instructions for AI
-            verification.  ``None`` or empty string disables AI verification.
+            verification, supplied by the action's manifest
+            (``ai_verify_prompt``).  ``None`` still allows AI verification
+            to run when journal errors were found — see below.
         db: Active async SQLAlchemy session used for TOFU key persistence.
+            The AI step does not use it; it opens its own, because
+            ``action_group`` verifies hosts concurrently and has none to
+            lend.
+        ai_fail_closed: What an INCONCLUSIVE AI verdict resolves to.
+            Defaults to open, which is the behaviour every existing
+            manifest was written against.
+        action_run_id: Links the AI session back to the run that caused
+            it, so a verdict is traceable from the run detail page.
+        dry_run: Suppresses AI verification. The SSH checks still run —
+            they are free and they are what a preview is for — but a
+            check-mode run changed nothing, so an AI verdict on it would
+            describe the host as it already was while costing real money
+            and reading, in the run detail, exactly like a verdict on a
+            change that happened.
 
     Returns:
         A dict of the form::
@@ -55,21 +154,44 @@ async def run_verification(
                         {"name": str, "expected": str, "installed": bool, "ok": bool},
                         ...,
                     ],
-                    "load": float,
-                    "disk_pct": int,
-                    "journal_errors": str,
+                    "load": float | None,
+                    "disk_pct": int | None,
+                    "journal_errors": str | None,
+                    "journal_error_reason": str,
                 },
-                "ai_result": {"passed": bool, "output": str} | None,
+                "ai_result": {
+                    "passed": bool,
+                    "verdict": "pass" | "fail" | "inconclusive",
+                    "output": str,
+                    "session_id": int | None,
+                } | None,
             }
 
+        ``load`` and ``disk_pct`` are ``None`` when the reading could not be
+        taken, which callers must not conflate with 0. ``journal_errors``
+        follows the same rule — ``None`` means the journal could not be
+        read and ``journal_error_reason`` says why, which callers must not
+        conflate with the empty string a genuinely quiet host produces.
+
         ``passed`` is ``True`` only when every hard check succeeds AND (if AI
-        verification was requested) the AI also returns PASS.
+        verification was requested) the AI verdict resolves to a pass. The
+        load and disk readings do not affect it — they are context for the
+        AI verdict and for the operator, not thresholds.
     """
     service_results: list[dict[str, Any]] = []
     package_results: list[dict[str, Any]] = []
-    load_avg: float = 0.0
-    disk_pct: int = 0
-    journal_errors: str = ""
+    # None means "not collected", which is not the same as zero. These
+    # used to default to 0.0 and 0 with their read errors swallowed below,
+    # so a host whose load and disk checks had both failed was described
+    # to the AI verifier as load 0.00 and disk 0% — the healthiest
+    # possible host. The journal read already got this right, substituting
+    # an explicit error string; these two now match it.
+    load_avg: float | None = None
+    disk_pct: int | None = None
+    # ``None`` means the journal could not be read, which is not the same
+    # as a host with nothing to report — see :func:`_read_journal_errors`.
+    journal_errors: str | None = ""
+    journal_error_reason: str = ""
     unmanaged_services: list[str] = []
     ai_result: dict[str, Any] | None = None
 
@@ -112,9 +234,14 @@ async def run_verification(
             "hard_checks": {
                 "services": [],
                 "packages": [],
-                "load": 0.0,
-                "disk_pct": 0,
-                "journal_errors": f"SSH connection failed: {exc}",
+                # Nothing was collected, so nothing is reported. Zeros here
+                # would describe an unreachable host as an idle healthy one.
+                "load": None,
+                "disk_pct": None,
+                # None, not the error text: a reason rendered where the
+                # entries belong reads like something the journal said.
+                "journal_errors": None,
+                "journal_error_reason": f"the SSH connection failed: {exc}",
             },
             "ai_result": None,
         }
@@ -187,6 +314,8 @@ async def run_verification(
             if load_avg > _LOAD_WARN_THRESHOLD:
                 logger.warning("verify: high load average %.2f on %s", load_avg, host.ip_address)
         except Exception as exc:
+            # load_avg stays None, and is reported as unavailable rather
+            # than as a number nobody measured.
             logger.warning("verify: load average check failed on %s: %s", host.ip_address, exc)
 
         # ------------------------------------------------------------------
@@ -198,20 +327,13 @@ async def run_verification(
             if disk_pct > _DISK_WARN_THRESHOLD:
                 logger.warning("verify: disk usage %d%% on %s", disk_pct, host.ip_address)
         except Exception as exc:
+            # disk_pct stays None. See the load average note above.
             logger.warning("verify: disk check failed on %s: %s", host.ip_address, exc)
 
         # ------------------------------------------------------------------
         # Journal errors (last 10 minutes, error priority and above)
         # ------------------------------------------------------------------
-        try:
-            journal_result = await conn.run(
-                "journalctl --since '10 minutes ago' -p err --no-pager -q",
-                check=False,
-            )
-            journal_errors = journal_result.stdout.strip()
-        except Exception as exc:
-            logger.warning("verify: journal check failed on %s: %s", host.ip_address, exc)
-            journal_errors = f"journal read error: {exc}"
+        journal_errors, journal_error_reason = await _read_journal_errors(conn, host.ip_address)
 
         # ------------------------------------------------------------------
         # Unmanaged service detection
@@ -250,32 +372,52 @@ async def run_verification(
         "load": load_avg,
         "disk_pct": disk_pct,
         "journal_errors": journal_errors,
+        "journal_error_reason": journal_error_reason,
         "unmanaged_services": unmanaged_services,
     }
 
     # ------------------------------------------------------------------
     # AI verification (when hard checks pass and prompt or journal errors exist)
     # ------------------------------------------------------------------
-    should_run_ai = hard_passed and (verification_prompt or journal_errors)
+    # The journal-error trigger is not a leftover: it is how a host that
+    # logged something ugly gets looked at even when nobody configured a
+    # prompt for this action. It stays gated behind ai.enabled (off by
+    # default) and a configured provider, so it cannot bill anyone who
+    # has not opted in.
+    # ``not dry_run`` is load-bearing rather than tidy. Neither the
+    # snapshot nor the verify gate in ``action_host`` consults dry_run, so
+    # a preview of a destructive action on a VM-mapped host already
+    # reaches here — and without this it would open a billed AI session to
+    # judge a host that check mode deliberately left untouched.
+    should_run_ai = hard_passed and not dry_run and (verification_prompt or journal_errors)
     if should_run_ai:
         from app.workflows.steps.ai_verify import run_ai_verification
 
-        prompt = verification_prompt or (
-            "Analyze the following system journal errors and determine if any "
-            "indicate a critical issue that needs attention."
-        )
         system_state: dict[str, Any] = {
             "host_hostname": getattr(host, "hostname", host.ip_address),
             "host_ip": host.ip_address,
             "hard_checks": hard_checks,
         }
         try:
-            ai_result = run_ai_verification(system_state, prompt)
+            ai_result = await run_ai_verification(
+                system_state,
+                verification_prompt or "",
+                fail_closed=ai_fail_closed,
+                host_id=getattr(host, "id", None),
+                action_run_id=action_run_id,
+            )
         except Exception as exc:
+            # run_ai_verification does not raise — every failure inside it
+            # is already an inconclusive verdict decided by the policy. If
+            # something got past it anyway, the same rule applies here
+            # rather than a hardcoded pass, so a fail-closed action cannot
+            # be let through by a bug in the verifier.
             logger.warning("verify: AI verification raised an exception: %s", exc)
             ai_result = {
-                "passed": True,
-                "output": f"AI verification error (treated as pass): {exc}",
+                "passed": not ai_fail_closed,
+                "verdict": "inconclusive",
+                "output": f"AI verification errored before reaching a verdict: {exc}",
+                "session_id": None,
             }
 
     overall_passed = hard_passed and (ai_result is None or ai_result.get("passed", True))
@@ -284,7 +426,7 @@ async def run_verification(
         "verify: host %s — hard=%s ai=%s overall=%s",
         host.ip_address,
         hard_passed,
-        ai_result.get("passed") if ai_result else "n/a",
+        ai_result.get("verdict") if ai_result else "n/a",
         overall_passed,
     )
 

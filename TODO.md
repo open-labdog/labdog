@@ -189,6 +189,134 @@ deliberately scoped out of that PR.
 
 ---
 
+## AI integration — remaining phases
+
+**Context:** Phase 1 shipped the AI subsystem: three provider backends
+behind one streaming interface (OpenAI-compatible / Anthropic Messages /
+Claude CLI), a default-deny command classifier, the read-only tool set
+(hosts, facts, SSH, Mimir), the agent loop with iteration/command/token/
+wall-clock caps, cost accounting with enforced daily and monthly budgets,
+the `/assistant` and `/ai-providers` pages, and `ai.*` settings that all
+default closed. See `git log --grep "feat(ai)"`.
+
+Phase 2 shipped scheduling (both built-in actions, Loki LogQL and Mimir
+range querying, per-session tool allowlists, per-tool cost recording) and
+phase 3 shipped approvals: the `AIApprovalRequest` table, park-and-resume
+across both runners, snapshot-before-mutating, the expiry reaper, and the
+approval UI. See `git log --grep "approval"`.
+
+Phase 5 shipped the AI verify step: `app/ai/verdict.py` (PASS / FAIL /
+INCONCLUSIVE with a per-manifest fail-closed policy), `app/ai/evidence.py`
+(the evidence pack — readings that are a value or an explicit absence,
+with provenance), `app/ai/verify.py` (a toolless `AISession(mode="verify")`
+with its own system prompt), and `ai_verify_prompt` /
+`ai_verify_fail_closed` on `ActionManifest`, threaded to the two call
+sites that used to pass `None`. See `git log --grep "verify"`.
+
+Phase 4 shipped alert intake: the `AlertEvent` table with
+(fingerprint, starts_at) dedup, a Grafana contact-point webhook, an
+Alertmanager poller, the auto-investigation policy with its outcome
+recorded per alert, and the `/alerts` page. See `git log --grep "alert"`.
+
+Every planned phase has now shipped. One item remains, carried over from
+phase 3:
+
+- **Remediation through the action system (`propose_action`).** Approvals
+  shipped, so the model can now change a host — but only by running a
+  shell command. The `allowed_action_keys` column is still unused. A
+  `propose_action` tool would let it ask for a named, vetted, idempotent
+  actionpack instead, which already carries the snapshot/verify/rollback
+  envelope. Two things have to be designed before it is written, and
+  neither is obvious from the API it would copy
+  (`POST /api/actions/runs`):
+  - **It must not wait inside a session that owns a host lock.** A
+    session driven by `_builtin.ai_task` holds that host's advisory lock.
+    An action run it dispatches for the same host would defer as
+    `pending` waiting for the lock the caller is holding, and a tool that
+    waits for the result would hang until the task's own time limit.
+    Refusing when `ToolContext.action_run_id` is set is the obvious
+    guard, but that rules the tool out of exactly the scheduled runs it
+    is most useful in — so the real answer is probably handing the lock
+    over rather than refusing.
+  - **Waiting at all is a problem for cancellation.** `AgentSDKRunner`
+    holds `_db_lock` for the whole of `_execute_tool`, so a tool that
+    polls for minutes blocks the driver's cancel and cap checks for that
+    long. Either the poll needs its own session, or the tool dispatches
+    and a separate read-only "what happened to run N" tool reports back.
+  - Skip the AI's own snapshot for this tool — the action envelope
+    already takes one, and both firing would leave two snapshots per
+    change.
+
+  Permission should be granted per actionpack rather than per shell
+  command: packs are already named, vetted and idempotent, where a
+  command-pattern allowlist would re-create the classifier's problem in a
+  weaker form. Two read-only tools are missing alongside it: action
+  history (what LabDog recently did to a host, which is exactly the
+  context a post-upgrade check wants) and Proxmox status/backup checks.
+
+**Known gaps in what shipped:** the DB-backed tests under `tests/ai/` need
+testcontainers, so on a machine without Docker they are verified by review
+and by CI rather than executed locally.
+
+Subscription-billed sessions that can *use tools* are no longer a gap.
+The `claude_agent` backend drives Claude Code through Anthropic's Claude
+Agent SDK, which supplies the bidirectional stream-json transport this
+file used to list as work to do. What was verified against the real
+binary — that built-in tools are exposed unless `tools=[]` is passed,
+that a populated `allowed_tools` shadows the permission callback, and
+that `ClaudeAgentOptions.env` overlays rather than replaces the
+environment — is recorded in the commit messages and in the module
+docstrings under `backend/app/ai/agent_sdk/`; the branch-scoped plan file
+it originally lived in was deleted before the PR, as `plans/` always is.
+
+The terms question this list used to carry is answered. `claude
+setup-token` is documented for "CI pipelines, scripts, or other
+environments where interactive browser login isn't available", the token
+"authenticates with your Claude subscription and requires a Pro, Max,
+Team, or Enterprise plan", and plan limits are shared across Claude and
+Claude Code rather than metered separately. The constraint worth knowing
+is in the consumer terms rather than the docs: subscription OAuth is for
+ordinary use of Anthropic's own applications, and routing requests
+through a plan's credentials *on behalf of other people* is not
+permitted. Own instance, own token, own hosts is inside that; running
+LabDog for someone else on your plan is not, and that is now said in the
+provider form and in `docs/ui/assistant.md`.
+
+Follow-ups it leaves open:
+
+- [ ] **Stream partial text.** The runner emits one SSE `text` event per
+  completed assistant message. `include_partial_messages` would give
+  token-by-token streaming, which is what the chat page wants.
+- [ ] **Persist resume state across restarts.** `resume` relies on the
+  CLI's own session files under `CLAUDE_CONFIG_DIR`, so parking a session
+  across a container restart needs that path on a volume.
+  `ClaudeAgentOptions.session_store` accepts a custom store, so
+  Postgres-backed sessions are possible if the volume proves fragile.
+- [ ] **Surface rate-limit state.** `RateLimitInfo` carries utilisation
+  and reset time. On a subscription the money budget is meaningless but
+  quota is not, so that is what the usage panel should show for these
+  providers.
+- [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
+  per alert — severity, dedup, budget — but nothing bounds sessions per
+  unit of time. A flapping rule produces a new `(fingerprint, starts_at)`
+  on every firing, so each one is a fresh row and a fresh session, and the
+  dedup that stops repeat notifications does not stop repeat firings. The
+  money budgets are the backstop, except on a subscription-billed provider
+  (`claude_agent`) where cost is 0 and every USD limit is therefore inert,
+  leaving only the per-session token cap — which is per session, not per
+  day. Deferred deliberately on 2026-08-23: the first answer is to design
+  the alert rules so they do not flap and route only what is worth
+  spending on. A per-hour session cap, or a cooldown keyed on alertname,
+  is the backstop if that proves insufficient.
+
+- [ ] **Persist a verify session's evidence pack.** The rendered pack is
+  in the session's first user turn, which is enough to read back but not
+  to query — "which verifications ran with an unavailable disk reading"
+  needs the `EvidenceItem` list stored structurally. Worth doing when
+  there is a second evidence producer, not before.
+
+---
+
 ## Dependency & supply-chain follow-ups (2026-07 code audit)
 
 **Context:** The 2026-07 code audit's security, correctness, and cleanup

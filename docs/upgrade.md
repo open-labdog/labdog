@@ -26,14 +26,41 @@ and how to back out cleanly when something goes wrong.
 
 ## Compatibility
 
-v0.3.0 is the current released line. The alembic migration chain is
-forward-only and covers every schema change since v0.1.0, so
-upgrading from any earlier release to the latest follows the single
-procedure below.
+The alembic migration chain is forward-only and covers every schema
+change since v0.1.0, so upgrading from any earlier release to the
+latest follows the single procedure below. The current released line
+is whatever the [latest GitHub Release](https://github.com/open-labdog/labdog/releases/latest)
+says — this page deliberately does not name a version, because a
+hardcoded one goes stale the moment it ships.
 
 Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
+
+### Upgrading to 0.9.0
+
+Nothing is required — the AI assistant is off by default and stays off
+until you set `ai.enabled` and configure a provider. The release adds
+schema for it, applied by the normal migration step below.
+
+**If you intend to enable it on Docker**, add one volume before you do:
+
+```yaml
+volumes:
+  - labdog_claude:/var/lib/labdog/claude-cli
+```
+
+This holds Claude Code's own session files, and only matters for the
+Claude CLI / Agent SDK backends. Sessions that pause for approval resume
+by their CLI session id, so without the volume an approval granted after
+a container restart has nothing left to resume — and approvals can wait
+up to `ai.approval_expiry_hours` (default 24). See
+[production-deploy.md](production-deploy.md).
+
+**If LabDog connects to your hosts as a non-root user**, check that user
+has passwordless sudo, or the verify step cannot read the system journal.
+It will report the reading as `UNAVAILABLE` rather than pretending the
+host was quiet, so nothing breaks silently — but you lose a signal.
 
 **Releases are cut from `main`.** Merging a release PR (`dev` →
 `main`) triggers `release-artifacts`, which auto-tags `vX.Y.Z` from

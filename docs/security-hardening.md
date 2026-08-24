@@ -303,6 +303,82 @@ during the same transaction as the user-row insert (see
 setup-time superuser; the registration endpoint closes after the
 first user is created.
 
+**This matters more once the AI assistant is enabled.** Any signed-in
+user can start a session, choose its autonomy level, and approve a
+change it proposes. There is no separate "may use the AI" permission and
+no second-person approval — the operator who asks for a change is the
+one who approves it. Treat enabling `ai.enabled` on a multi-user install
+as granting every user the autonomy levels you allow.
+
+---
+
+## The AI assistant
+
+Off by default, and worth understanding before turning it on: it is the
+one feature that runs commands nobody wrote in advance.
+
+**What bounds it**
+
+- **`ai.enabled`** gates every entry point — chat, scheduled checks, and
+  AI verification. Off by default.
+- **A default-deny command classifier** parses each command; anything not
+  recognised as read-only is treated as a change. The model's own claim
+  about what a command does is advisory and never downgrades the verdict.
+- **A denylist applies at every autonomy level**, including full-auto:
+  `rm -rf /`, `mkfs`, writing to block devices, piping a download into a
+  shell, flushing the whole firewall ruleset. No setting permits them.
+- **A host allowlist** — the session may only touch hosts selected when
+  it was created, so it cannot widen its own blast radius by naming
+  another host.
+- **Output redaction** strips private keys, `password=` / `token=`
+  values, bearer and JWT-shaped strings before command output enters the
+  transcript or reaches the provider.
+- **Two records, with different scopes.** Every SSH command that reaches
+  execution writes an `AuditLog` row against the target host, alongside
+  every other change LabDog makes to it. Every *attempt* — including
+  calls blocked by the allowlist, refused by the classifier, parked for
+  approval, or stopped by a failed snapshot — writes an `AIToolCall` row,
+  visible in the session transcript. So the transcript shows what the
+  model wanted to do; the host's audit log shows what actually ran.
+
+**What to decide deliberately**
+
+- **`ai.allow_cloud_providers`** (default off) is the data-egress
+  control. While off, only local endpoints and the Claude CLI may run.
+  Turning it on means host state — command output, hostnames, package
+  and service inventories — leaves your network. Redaction is a safety
+  net, not a guarantee.
+- **Autonomy level.** Read-only is the default and the only level that
+  cannot change a host. Full-auto acts unattended; the denylist and the
+  snapshot still apply, but nobody sees the change before it happens.
+- **Provider credentials** are encrypted at rest with the same AES-256-GCM
+  master key as every other secret, and participate in
+  [key rotation](encryption-key-rotation.md).
+
+**Alert intake** adds one unauthenticated-by-default surface and closes
+it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
+a LabDog session — it has to be, since Grafana has none — so it is gated
+on a shared bearer token in `[alerts] webhook_token`. That lives in the
+config file rather than the settings table because `/api/settings` is
+readable by any signed-in user. **An unset token refuses everything**: a
+receiver that accepted anonymous POSTs would let anyone on the network
+write rows LabDog might then spend money investigating. Restrict the path
+at the reverse proxy as well if Grafana reaches LabDog over an untrusted
+network.
+
+Alert-driven sessions are **always read-only** and there is no setting
+that raises them. An alert is a machine's opinion that something is
+wrong; acting on it unattended is a different feature with a different
+risk.
+
+**Residual risk worth naming.** The classifier parses commands rather
+than executing them symbolically, so a sufficiently creative shell
+construction could be classified wrongly. That is why read-only is the
+default, why the host allowlist exists, and why snapshots are taken
+before a change on any host that has a VM mapping. On a host with no
+Proxmox mapping there is no rollback point — the approval card tells you
+that before you decide.
+
 ---
 
 ## Database connection security

@@ -1,91 +1,198 @@
-"""AI verification step using the claude CLI."""
+"""AI verification step: turn collected readings into a decided verdict.
+
+This step's answer has teeth. :mod:`app.tasks.action_host` treats a
+failed verification as a failed run, and a failed run with a snapshot and
+auto-rollback restores that snapshot — discarding the change and anything
+else that happened since. So the two things that matter here are that the
+verdict is read honestly, and that the evidence behind it is described
+honestly.
+
+What this replaced shelled out to a ``claude`` binary directly. That made
+it the one AI call in LabDog with no kill switch, no budget, no cost
+accounting, no transcript, and no trace in the UI — a verdict that could
+roll a host back and leave nothing behind explaining why. It now runs as
+an ordinary :class:`~app.ai.models.AISession` in ``verify`` mode, through
+whichever provider the operator configured, and the session is linked
+from the action run.
+
+The step's own job is narrow: adapt what
+:func:`app.workflows.steps.verify.run_verification` collected into an
+evidence pack (:mod:`app.ai.evidence`), hand it over, and render the
+result. The evidence pack is the seam — a future operator-declared list
+of commands produces the same ``list[EvidenceItem]`` and nothing
+downstream changes.
+"""
+
+from __future__ import annotations
 
 import logging
-import subprocess
 from typing import Any
+
+from app.ai import verdict as verdicts
+from app.ai.evidence import EvidenceItem, summarise
 
 logger = logging.getLogger(__name__)
 
-_PROMPT_TEMPLATE = """\
-You are verifying a Linux host after a system update. Analyze the following
-data and respond with exactly PASS or FAIL followed by a brief reason.
 
-Host: {hostname} ({ip})
-Services checked: {service_results}
-Packages checked: {package_results}
-System load: {loadavg}
-Disk usage: {disk_pct}
-Recent error logs:
-{journal_errors}
-
-Additional verification instructions:
-{verification_prompt}"""
-
-
-def run_ai_verification(system_state: dict[str, Any], verification_prompt: str) -> dict[str, Any]:
-    """Invoke the claude CLI to assess post-update system state.
-
-    Builds a structured prompt from ``system_state``, runs ``claude -p``, and
-    parses the response for a PASS/FAIL verdict.  Failures to locate or run the
-    ``claude`` binary are treated as a non-fatal pass so that the overall
-    workflow is not blocked when the CLI is unavailable.
-
-    Args:
-        system_state: Dict produced by :func:`run_verification` containing
-            ``host_hostname``, ``host_ip``, ``hard_checks``, and related keys.
-        verification_prompt: Free-text instructions supplied by the operator
-            describing what should be confirmed after the update.
-
-    Returns:
-        A dict with keys:
-
-        - ``passed`` (bool): ``True`` when the AI verdict is PASS, or when AI
-          verification is unavailable / timed out.
-        - ``output`` (str): Raw stdout from the claude CLI, or a descriptive
-          fallback message.
-    """
-    hard = system_state.get("hard_checks", {})
-
-    prompt = _PROMPT_TEMPLATE.format(
-        hostname=system_state.get("host_hostname", "unknown"),
-        ip=system_state.get("host_ip", "unknown"),
-        service_results=hard.get("services", []),
-        package_results=hard.get("packages", []),
-        loadavg=hard.get("load", "unknown"),
-        disk_pct=hard.get("disk_pct", "unknown"),
-        journal_errors=hard.get("journal_errors", "(none)") or "(none)",
-        verification_prompt=verification_prompt,
+def _service_lines(results: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"- {r.get('name')}: expected {r.get('expected')}, actual {r.get('actual')}"
+        f" ({'ok' if r.get('ok') else 'NOT OK'})"
+        for r in results
     )
 
-    try:
-        result = subprocess.run(
-            ["claude", "-p", prompt],
-            capture_output=True,
-            text=True,
-            timeout=120,
+
+def _package_lines(results: list[dict[str, Any]]) -> str:
+    return "\n".join(
+        f"- {r.get('name')}: expected {r.get('expected')},"
+        f" {'installed' if r.get('installed') else 'NOT INSTALLED'}"
+        for r in results
+    )
+
+
+def evidence_from_state(system_state: dict[str, Any]) -> list[EvidenceItem]:
+    """Adapt one ``run_verification`` result into an evidence pack.
+
+    ``load`` and ``disk_pct`` arrive as ``None`` when the reading could
+    not be taken, and that distinction is the reason this adapter exists
+    rather than a format string: they used to default to 0.00 and 0%,
+    describing a host whose checks had all failed as the healthiest
+    possible host. :meth:`EvidenceItem.optional` carries the difference
+    through to the prompt.
+
+    An empty service or package list is a reading, not a gap — it means
+    the host has nothing of that kind under management — so it is
+    reported as such rather than as UNAVAILABLE.
+    """
+    hard = system_state.get("hard_checks") or {}
+    services = hard.get("services") or []
+    packages = hard.get("packages") or []
+
+    # ``None`` and ``""`` mean opposite things here and the difference has
+    # already cost a wrong verdict: an unprivileged SSH user reading the
+    # journal sees only its own entries and exits 0, so a host that had
+    # just logged a real error reported nothing, and this rendered it as
+    # "the journal was read and had no error-priority entries" — which the
+    # model then repeated to the operator as evidence of health.
+    journal = hard.get("journal_errors")
+    if journal is None:
+        journal_item = EvidenceItem.missing(
+            "Errors logged in the last 10 minutes",
+            hard.get("journal_error_reason") or "the journal could not be read",
+            source="ssh: journalctl --since '10 minutes ago' -p err",
         )
-        output = result.stdout.strip()
-        logger.debug("ai_verify: claude output: %s", output)
+    else:
+        journal_item = EvidenceItem.reading(
+            "Errors logged in the last 10 minutes",
+            journal.strip() or "(none — the journal was read and had no error-priority entries)",
+            source="ssh: journalctl --since '10 minutes ago' -p err",
+        )
 
-        upper = output.upper()
-        # Locate first occurrence of PASS or FAIL
-        pass_pos = upper.find("PASS")
-        fail_pos = upper.find("FAIL")
+    return [
+        EvidenceItem.reading(
+            "Managed services",
+            _service_lines(services) if services else "(no services are managed on this host)",
+            source="ssh: systemctl is-active <unit>",
+        ),
+        EvidenceItem.reading(
+            "Managed packages",
+            _package_lines(packages) if packages else "(no packages are managed on this host)",
+            source="ssh: dpkg-query / rpm -q",
+        ),
+        EvidenceItem.optional(
+            "System load (1 minute)",
+            hard.get("load"),
+            source="ssh: cat /proc/loadavg",
+            reason="the load average could not be read over SSH",
+        ),
+        EvidenceItem.optional(
+            "Root filesystem usage (%)",
+            hard.get("disk_pct"),
+            source="ssh: df --output=pcent /",
+            reason="disk usage could not be read over SSH",
+        ),
+        journal_item,
+    ]
 
-        if pass_pos == -1 and fail_pos == -1:
-            # No clear verdict — treat as pass but log the ambiguity
-            logger.warning("ai_verify: no PASS/FAIL found in output, treating as PASS")
-            return {"passed": True, "output": output}
 
-        if fail_pos == -1 or (pass_pos != -1 and pass_pos < fail_pos):
-            return {"passed": True, "output": output}
+async def run_ai_verification(
+    system_state: dict[str, Any],
+    verification_prompt: str,
+    *,
+    fail_closed: bool = False,
+    host_id: int | None = None,
+    action_run_id: int | None = None,
+) -> dict[str, Any]:
+    """Ask the configured provider whether this host came through healthy.
 
-        return {"passed": False, "output": output}
+    Opens its own database session. The callers cannot lend one:
+    :mod:`app.tasks.action_group` verifies its hosts concurrently and
+    passes ``db=None`` today, and one async SQLAlchemy session cannot
+    serve parallel work.
 
-    except FileNotFoundError:
-        logger.info("ai_verify: claude CLI not installed, skipping AI verification")
-        return {"passed": True, "output": "claude CLI not available, skipping AI verification"}
+    ``fail_closed`` decides only what an INCONCLUSIVE verdict resolves
+    to — see :func:`app.ai.verdict.resolve`. It defaults to open, which
+    is the behaviour every existing manifest was written against: a
+    verdict nobody can read is not evidence that anything is wrong, and
+    rolling a host back on it would be inventing a failure.
 
-    except subprocess.TimeoutExpired:
-        logger.warning("ai_verify: claude CLI timed out after 120 s, treating as pass")
-        return {"passed": True, "output": "AI verification timed out, treating as pass"}
+    Returns a dict with:
+
+    - ``passed`` (bool): what the caller acts on.
+    - ``verdict`` (str): ``pass`` | ``fail`` | ``inconclusive``, so a
+      pass that was really "we could not tell" is not displayed as a
+      clean pass.
+    - ``output`` (str): the model's reasoning, or why there isn't any.
+    - ``session_id`` (int | None): the AI session, for the transcript.
+    """
+    from app.ai.verify import run_verify_session
+    from app.db import task_session
+
+    evidence = evidence_from_state(system_state)
+    hostname = str(system_state.get("host_hostname") or "")
+    ip = str(system_state.get("host_ip") or "")
+
+    async with task_session() as db:
+        outcome = await run_verify_session(
+            db,
+            hostname=hostname,
+            ip=ip,
+            instructions=verification_prompt,
+            evidence=evidence,
+            fail_closed=fail_closed,
+            host_id=host_id,
+            action_run_id=action_run_id,
+        )
+
+    logger.info(
+        "ai_verify: %s — verdict=%s passed=%s fail_closed=%s evidence=%s",
+        hostname or ip,
+        outcome.verdict,
+        outcome.passed,
+        fail_closed,
+        summarise(evidence),
+    )
+    return {
+        "passed": outcome.passed,
+        "verdict": outcome.verdict,
+        "output": _render_output(outcome, fail_closed),
+        "session_id": outcome.session_id,
+    }
+
+
+def _render_output(outcome: verdicts.VerifyOutcome, fail_closed: bool) -> str:
+    """What the operator reads in the run log.
+
+    An inconclusive verdict says which way the policy resolved it. That
+    line is the one an operator needs when a rollback happens and the
+    reply looks like it was arguing for a pass, or when a suspicious host
+    was let through on a reply nobody could read.
+    """
+    if outcome.conclusive:
+        return outcome.detail
+    resolution = "failing this verification" if fail_closed else "treated as a pass"
+    return (
+        f"{outcome.detail}\n\n"
+        f"This action's fail_closed policy is {fail_closed}, so an inconclusive "
+        f"verdict is {resolution}."
+    )

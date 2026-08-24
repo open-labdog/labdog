@@ -21,7 +21,14 @@ COPY VERSION .
 # Install the exact locked dependency versions (reproducible builds). The app
 # package itself isn't installed — the runtime stage runs it from the copied
 # source (WORKDIR /app, `python -m app`), so only the deps need to be present.
-RUN uv export --frozen --no-emit-project --format requirements-txt -o /tmp/req.txt \
+#
+# --extra agent pulls the Claude Agent SDK, which is what drives an
+# agentic session against a Claude *subscription* rather than metered API
+# credit. It is optional in pyproject because its wheel is
+# platform-specific and carries a ~130 MB Claude Code binary that has no
+# business in the .deb/.rpm artefacts — but the container image is
+# exactly where it belongs.
+RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt -o /tmp/req.txt \
     && uv pip install --no-cache-dir --system -r /tmp/req.txt
 
 # ── Stage 2b: Fetch bundled action pack at a pinned ref ───────────────
@@ -72,7 +79,7 @@ RUN echo "apt security refresh @ ${BUILD_DATE}" \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 labdog \
-    && mkdir -p /var/lib/labdog/packs \
+    && mkdir -p /var/lib/labdog/packs /var/lib/labdog/claude-cli \
     && chown -R labdog:labdog /var/lib/labdog
 
 # Python packages from builder
@@ -83,6 +90,35 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # (e.g. GHSA-82j2-j2ch-gfr8) that we'd otherwise need to track in
 # .trivyignore for a binary that's never actually invoked at runtime.
 RUN rm -f /usr/local/bin/uv /usr/local/bin/uvx
+
+# Claude Code CLI for the `claude_cli` AI provider.
+#
+# The image used to fetch this separately from Anthropic's apt repo. It no
+# longer does: the Claude Agent SDK installed above ships its own copy at
+# a version it was built against and pins in _cli_version.py, and the SDK
+# prefers that bundled binary over anything on PATH. Fetching a second one
+# would put two ~130 MB binaries in the image and reintroduce exactly the
+# drift the SDK removes — the apt copy floats while the SDK's is pinned,
+# so the two backends could end up on different Claude Code versions.
+#
+# A symlink lets the single-shot `claude_cli` provider keep resolving
+# `claude` from PATH with no code change, while both backends stay on one
+# binary that uv.lock pins transitively.
+#
+# LabDog points the CLI at /var/lib/labdog/claude-cli via
+# CLAUDE_CONFIG_DIR rather than letting it use $HOME, so a stored login
+# can never shadow the token configured in the UI — see
+# app/ai/providers/claude_cli.py and app/ai/agent_sdk/environment.py.
+#
+# Placed *after* the backend-builder COPY, which lands its whole
+# /usr/local/bin here: COPY merges rather than replaces, so creating this
+# earlier would survive only for as long as that stage never ships a file
+# by this name.
+RUN set -eu; \
+    bundled="$(python -c 'import claude_agent_sdk,pathlib,sys; sys.stdout.write(str(pathlib.Path(claude_agent_sdk.__file__).parent/"_bundled"/"claude"))')"; \
+    test -x "$bundled" || { echo "Agent SDK shipped no bundled claude at $bundled" >&2; exit 1; }; \
+    ln -sf "$bundled" /usr/local/bin/claude; \
+    /usr/local/bin/claude --version
 
 # Backend source (app + alembic). ``backend/app/ansible`` is excluded
 # from the in-repo copy via .dockerignore so the build-time clone

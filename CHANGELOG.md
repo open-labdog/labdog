@@ -7,6 +7,366 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.9.0] — 2026-08-24
+
+The AI release. LabDog can now hand an investigation to a language model,
+let it change hosts under supervision you choose, and use it to decide
+whether a destructive action left a host healthy. **Every part of it is
+off by default** and stays off until you set `ai.enabled` and configure a
+provider.
+
+### Added
+
+- **The prompt behind an alert investigation is editable.** The wording an
+  investigation starts from is now the `ai.alert_mission_template` setting
+  rather than a constant in the source. The built-in text asks a
+  deliberately generic question because it has to work for an alert LabDog
+  has never seen; an operator knows which alerts on their estate are noisy,
+  which exporter lies during a backup, and what an answer should always
+  mention. That knowledge previously had nowhere to go.
+
+  Placeholders (`{alertname}`, `{severity}`, `{status}`, `{starts_at}`,
+  `{labels}`, `{annotations}`) are validated when the template is saved,
+  naming both the placeholder it did not recognise and the ones available.
+  The alternative is a `KeyError` raised hours later inside a Celery task,
+  leaving an alert uninvestigated with nothing on screen to say why. A
+  stored template that a later release breaks falls back to the built-in
+  wording rather than stranding the alert.
+
+  Settings gained a `text` value type for this: multiline values render as
+  a full-width text area with a character count and a **Reset to default**
+  button, because the default is a paragraph nobody retypes from memory.
+
+- **A session now says why it stopped.** A run cut short by a cap finished
+  with a green `succeeded` badge, identical to one that reached its own
+  conclusion — the reason existed only in the Celery task's return value
+  and a sentence at the bottom of the report, neither of which is
+  reachable from the UI. Sessions carry a `stopped_reason`, shown as
+  "Stopped early: token budget (10000)" beside the status and as a "cut
+  short" marker in the session list.
+
+  Deliberately not folded into `error_message`: a capped run is not an
+  error. It did what it was asked until the budget it was given ran out,
+  and filing it as a failure is as misleading as calling it a clean
+  success.
+
+- **A running session can be stopped, and an alert says what came of
+  its investigation.** The Assistant header gained a **Stop** button —
+  it interrupts the model mid-turn, keeps the transcript and whatever was
+  already established, and books the tokens spent. It works while a
+  session is parked on an approval too: nothing is running then, but the
+  session is not over either, and abandoning it is a reasonable answer to
+  a request you do not want to grant.
+
+  The alerts page previously said only whether an investigation had been
+  *started*, which stopped being the useful question the moment one had.
+  A row now carries the session's status — Investigating, Investigated,
+  Investigation failed — and quotes the opening of its conclusion, so the
+  answer is readable without opening anything. **View investigation**
+  opens that session rather than the session list.
+
+- **AI assistant.** A chat page at `/assistant` where you describe what
+  you want checked and watch the model work through LabDog's own tools.
+  It cannot run anything LabDog does not offer it: each command is parsed
+  by a **default-deny classifier**, bounded by a per-session **host
+  allowlist**, redacted for credentials before it enters the transcript,
+  and recorded.
+
+  **Four provider backends.** OpenAI-compatible endpoints (Ollama, vLLM,
+  OpenRouter, OpenAI), the Anthropic Messages API, the Claude Code CLI,
+  and the Claude Agent SDK. The last two authenticate a **Claude
+  subscription** rather than metered API credit — the SDK backend can run
+  tools, the CLI backend is single-shot and serves reports and verify
+  verdicts. Credentials are encrypted at rest with the same AES-256-GCM
+  key as every other secret and participate in key rotation.
+
+  **Three autonomy levels.** Read-only (the default) refuses anything
+  that would change a host. Approval-required pauses on a change and
+  waits for you. Full-auto acts unattended. A **denylist applies at every
+  level** — `rm -rf /`, `mkfs`, writing to block devices, piping a
+  download into a shell, flushing the firewall — with no setting that
+  permits them.
+
+  **Spend is bounded and enforced, not merely reported.** Daily and
+  monthly budgets, per-provider monthly caps, and per-session limits on
+  iterations, commands, tokens, and wall-clock time. Budgets are checked
+  before a session starts *and* between steps, so a long run that crosses
+  a limit stops rather than finishing on credit. Costs are recorded in
+  whichever currency you configure; LabDog never converts between them.
+
+- **Scheduled AI checks.** Two built-in actions — **AI check (per host)**
+  and **AI check (whole group)** — appear in the normal action list, so
+  they inherit cron scheduling, run history, cancellation, and the
+  per-host queue from machinery that already existed. The group variant
+  puts every member in scope at once, which is what "compare these" and
+  "which one is the odd one out" need; per-host sessions cannot see each
+  other.
+
+  A **per-session tool allowlist** is the main cost control: a nightly
+  log sweep restricted to `query_loki` cannot open an SSH session at all,
+  and cannot spend what an unbounded `journalctl` would. Each tool call
+  records how much text it returned, so which tools consume your budget
+  is observable rather than assumed.
+
+- **Approval-gated changes.** At the approval level, a command that would
+  change a host does not run. The session **stops entirely** — no worker
+  held, no host lock held — so a check scheduled at 3am can wait until
+  morning without wedging every sync queued behind it. Approving runs
+  exactly what you approved; LabDog executes it from the stored record
+  rather than asking the model again. Rejecting takes a note that is
+  passed back, because a rejection with a reason usually produces a
+  better suggestion than a bare no.
+
+  The approval card shows the command, **why LabDog classified it as a
+  change** (from parsing, not from the model's claim), and the model's
+  own stated purpose — kept visually separate because it is a claim, not
+  a verdict. Undecided requests expire after
+  `ai.approval_expiry_hours` and the session finishes with a report.
+
+- **Snapshot before an AI change.** Hosts mapped to a Proxmox VM get a
+  snapshot before the assistant modifies them, at both the approval and
+  full-auto levels. They are named `labdog-ai-<session>-<timestamp>`,
+  distinct from an action pack's `labdog-<run>-<timestamp>`, and are
+  **deliberately not deleted on success** — the point of them is that you
+  can undo the change after reading what it did. A retention sweep
+  removes them after `ai.snapshot_retention_days`.
+
+- **AI verification of destructive actions.** A manifest can set
+  `ai_verify_prompt` to ask, in words, whether an action left the host
+  healthy. LabDog collects the evidence itself — managed services and
+  packages, load, disk, recent error-priority journal entries — renders
+  it into the prompt, and asks one question. **The model gets no tools**:
+  everything it judges was gathered before the session started, so a
+  verdict that can restore a snapshot cannot also go reaching into the
+  host it is deciding about.
+
+  The verdict is **PASS, FAIL, or INCONCLUSIVE**. `ai_verify_fail_closed`
+  decides only what INCONCLUSIVE resolves to — a stated PASS or FAIL is
+  honoured either way — and defaults to open, which is the behaviour
+  every existing manifest was written against.
+
+  Readings that could not be taken are marked `UNAVAILABLE` rather than
+  left blank, so a check that failed cannot be mistaken for a healthy
+  one. Each verdict runs as a real session, visible under **Assistant**
+  with its transcript, counted against your budget, and linked from the
+  action run.
+
+- **Alert intake, and investigation on arrival.** LabDog can receive
+  alerts from a Grafana contact point (`POST /api/webhooks/grafana-alerts`,
+  gated on a shared token in `[alerts] webhook_token`) and poll an
+  Alertmanager API as a fallback, deduplicating against each other. The
+  webhook is the path that works everywhere; the poller reads *Mimir's*
+  Alertmanager, so it only sees rules evaluated by Mimir's ruler —
+  Grafana-managed rules go to Grafana's own Alertmanager and are
+  invisible to it. It defaults to off for that reason.
+
+  Dedup is on **(fingerprint, start time)**, not fingerprint alone.
+  Alertmanager's fingerprint hashes the label set, so the same rule
+  firing for the same host yields the same fingerprint every time it ever
+  fires; keying on it alone would fold next month's outage into this
+  month's row.
+
+  An eligible alert starts a **read-only** investigation, scoped to the
+  host LabDog resolved from the labels — or to no host, when it cannot,
+  because putting an investigation on the wrong machine is worse than
+  putting it on none. Eligibility is a policy: intake on, alert firing,
+  not already investigated, severity meeting
+  `ai.auto_investigate_min_severity`, AI enabled, and budget available.
+
+  **Whichever gate stopped it is recorded on the alert and shown in the
+  UI.** "Nothing happened" has six causes and each has a different fix, so
+  the row says which one applied rather than leaving an operator to
+  reconstruct it from logs. A severity LabDog does not recognise — `sev1`,
+  `P1` — meets no threshold and says so; treating it as critical would be
+  a guess, and only one kind of guess spends money unattended.
+
+  New page at `/alerts`, four `ai.*` settings, and
+  [`docs/ui/alerts.md`](docs/ui/alerts.md). All of it off by default.
+
+### Changed
+
+- **`/metrics`, the audit log, and the settings page** gained AI
+  coverage: `ai.*` settings are documented in
+  [`docs/ui/settings.md`](docs/ui/settings.md), every executed AI command
+  writes an `AuditLog` row against its host, and every *attempt* —
+  including blocked, refused, and parked ones — writes a tool-call record
+  visible in the session transcript.
+- **Fonts are served from the repo** instead of fetched from Google at
+  build time. `next/font/google` downloaded them while compiling, which
+  made every production build depend on reaching `fonts.gstatic.com` and
+  produced failures naming neither the network nor the font.
+
+### Fixed
+
+- **A run stopped by a cap or by Stop recorded no usage at all.** Tokens
+  reach the ledger only when the SDK's terminal `ResultMessage` arrives,
+  and interrupting the exchange means it never does — so the runs that hit
+  a limit, the expensive ones, were the only ones missing from the usage
+  panel. Seen the first time the token cap fired in production: the session
+  stopped on its budget having spent real tokens and reported zero, and the
+  daily ledger had no row for the day. The live estimate is now booked
+  instead, flagged `cost_unknown` because it is an approximation rather
+  than the CLI's own aggregate.
+
+- **An alert row could show `## Summary` instead of a conclusion.** The
+  alerts page quotes the opening of the investigation's report, taken as
+  its first paragraph — but reports that begin with a markdown heading put
+  the heading there instead of the verdict. Headings are now skipped.
+
+- **"View investigation" went to the Assistant page but selected nothing.**
+  The alerts page has linked to `/assistant?session=<id>` since alert
+  intake shipped, and nothing ever read the parameter — so the button
+  navigated and left the operator on a list of sessions to guess from. The
+  parameter is now honoured.
+
+- **Sessions in the Assistant list had no timestamp**, so runs of the same
+  thing were indistinguishable: an alert investigation is titled after its
+  alert, and four firings of one rule produced four identical rows. Each
+  now shows when it started — absolute local time to the minute, with the
+  relative age beside it and the exact ISO value on hover, in the list and
+  in the open transcript alike, so a run can be lined up against a Grafana
+  panel or a journal.
+
+  Relative time alone was tried first and was not enough: three
+  investigations run the same evening all read "23h ago", which is the
+  question the timestamp existed to answer.
+
+- **Eight background tasks were published to a queue nothing consumed**
+  and so never ran (BUG-58). The worker consumes `default,long_running`,
+  but Celery's built-in default queue is named `celery`, and
+  `task_default_queue` was never set — so any task no `task_routes`
+  pattern matched went to `celery` and stayed there. The broker accepted
+  it, `send_task` returned an id, and the work silently never happened.
+
+  Six of the eight were on RedBeat timers, firing into the dead queue for
+  the life of the deployment: both stale-run sweepers, all three
+  retention pruners, and approval expiry. **Two settings you can see and
+  change in the UI therefore did nothing** — `logging.audit_retention_days`
+  and `ai.snapshot_retention_days` — so audit logs, SSH transcripts and
+  AI snapshots were never pruned. Alert auto-investigation was the
+  seventh, which is how this was found: an alert recorded correctly and
+  then no session ever started.
+
+  Fixed by naming the default queue rather than adding the eight missing
+  route patterns. `task_routes` is a routing *override*, not a manifest,
+  and treating it as the complete list is what stranded these in the
+  first place — the next task added without an entry would have vanished
+  the same way.
+
+  After upgrading, the pruners run on their next tick and delete
+  everything already past its retention window in one pass. On an
+  instance that has been running a while that backlog is however much
+  accumulated since install, so check `logging.audit_retention_days` and
+  `ai.snapshot_retention_days` are set to what you actually want *before*
+  restarting — they have not been enforced until now, and the first run
+  is not reversible.
+
+- **`ai.max_tokens_total` did nothing on the Claude Agent SDK backend**
+  (BUG-59). Token usage was folded into the session only when the SDK's
+  `ResultMessage` arrived — its *terminal* message — so for the whole run
+  the counters the cap tests against sat at zero. The check ran every
+  turn, compared 0 against the limit, and never fired; the real figure
+  landed when there was nothing left to stop. Measured on a production
+  session: **111,857 tokens spent against a 10,000 cap.**
+
+  The runner now sums the per-response `usage` each assistant message
+  carries, giving the cap a live figure to test. That estimate gates the
+  run only — `ResultMessage` remains the sole source for the session's
+  token columns, the cost ledger and the usage panel, because the two
+  come from different sources and booking both would double count.
+
+  This mattered more than it looks. On a subscription provider every
+  price is zero, so `ai.budget_daily` and `ai.budget_monthly` can never
+  trigger, and the token cap was the only bound on how much one session
+  could spend. Sessions remain bounded by `ai.max_iterations`,
+  `ai.max_commands` and `ai.wall_clock_seconds`; there is still **no
+  limit on how many sessions may run**, which matters when an alert storm
+  can start one per alert.
+
+- **Webhooks are reachable again** (BUG-56). Every endpoint under the
+  webhooks router returned `403 CSRF token missing or invalid` before
+  its handler ran, for the entire life of the CSRF middleware. The
+  double-submit cookie is issued to a logged-in browser, and Grafana,
+  GitHub, GitLab and Gitea have no session and no cookie jar — so the
+  check could never pass and never protected anything. It is a defence
+  against a browser being tricked into a state change; a request that
+  carries its own bearer token or HMAC signature has nothing to be
+  tricked out of. The router is now exempted by prefix, so a webhook
+  added later is not silently broken the same way.
+
+  The test suite did not catch this because it caused it: the shared
+  client auto-attaches `X-CSRF-Token` to every mutating request,
+  satisfying on the sender's behalf the one condition no real sender
+  can meet. An `external_client` fixture with no cookie jar now exists
+  for anything authenticated from the request itself.
+
+  **The webhook routes have moved under `/api`** — `/api/webhooks/github`,
+  `/api/webhooks/gitlab`, `/api/webhooks/gitea` — matching every other
+  route and the URLs the documentation already gave. Normally breaking;
+  in practice nothing working breaks, because none of them worked. The
+  URLs shown on the **Git Repositories** page update themselves, but any
+  webhook configured at the old path must be repointed.
+
+- **An English pass no longer rolls a host back.** The AI verify step
+  searched its whole reply for the substrings `PASS` and `FAIL`, so
+  *"Everything looks fine; nothing failed."* — how a model answers "is
+  this host healthy?" when the answer is yes — matched `FAIL` inside
+  *failed* and reverted the host. The verdict is now read from the first
+  line only, anchored and word-bounded.
+- **An unreadable journal is no longer reported as a quiet one**
+  (BUG-54). `journalctl` run by an unprivileged user prints only that
+  user's own entries and **exits 0**, so LabDog — which connects as an
+  ordinary user on most hosts — recorded no errors on a host that had
+  them, and the verify step told the operator the journal "was
+  successfully read" and passed. LabDog now reads as root, or through
+  `sudo -n`, and reports `UNAVAILABLE` with a reason when it can do
+  neither.
+- **Preview (dry-run) works again** (BUG-53). The run dialog carried the
+  flag inside `parameters`, which the API validates against the action's
+  manifest with `extra="forbid"`, so every preview was rejected with
+  *"Extra inputs are not permitted"* before reaching the code that
+  consumes it. The server now sets the flag itself from the request
+  field, which had existed and been read nowhere.
+- **A dry run no longer buys an AI verdict.** Neither the snapshot nor
+  the verify gate consults `dry_run`, so repairing Preview would have
+  made previewing a destructive action open a billed session judging a
+  host that check mode deliberately left unchanged.
+- **A change is less likely to be rolled back by its own log noise.** The
+  evidence window is the window the action ran in, so it contains
+  whatever the action itself logged — a restarted service, a package
+  manager replacing files. The verify prompt now says so and asks for the
+  host's state as it stands, while keeping "still failing now" a failure.
+- **Verdicts explain what they judged.** The command classifier seeded
+  its result with a placeholder that only greater severity could
+  displace, so every allowed command reported an empty segment and "no
+  command segments found" as its reason.
+- **Subscription tokens warn before they expire.** `claude setup-token`
+  mints a one-year credential, and an unattended session cannot recover
+  once it lapses; provider rows now record when the credential was
+  written and show the expiry, amber inside 30 days.
+
+### Known limitations
+
+- **A token limit overshoots by one turn.** Usage is only known once a
+  turn completes, so the turn that crosses the limit has already been
+  paid for; the cap stops the next one. A 10,000-token limit stopping at
+  ~11,700 is expected. Treat the number as "stop somewhere past here"
+  rather than a hard ceiling — a tighter bound needs per-token streaming
+  accounting the backends do not expose.
+
+- **AI verify judges a window that includes the action's own work.**
+  Prompt wording mitigates this and the shipped default accounts for it,
+  but narrowing the window to before the action started is the real fix
+  and is not built. Read the reasoning, not just the verdict.
+- **Any signed-in user can start a session and approve its changes.**
+  There is no separate AI permission and no second-person approval — see
+  [`docs/security-hardening.md`](docs/security-hardening.md).
+- **The classifier parses commands rather than executing them
+  symbolically**, so a sufficiently creative shell construction could be
+  classified wrongly. Read-only is the default for that reason.
+
 ## [0.8.0] — 2026-08-04
 
 ### Added
@@ -1057,7 +1417,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/open-labdog/labdog/compare/v0.6.2...v0.6.3

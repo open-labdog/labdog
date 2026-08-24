@@ -183,6 +183,32 @@ async def client(app, db):
         yield c
 
 
+@pytest.fixture
+async def external_client(app, db):
+    """A client with no CSRF token and no cookie jar.
+
+    ``client`` above auto-attaches ``X-CSRF-Token`` to every mutating
+    request, which is right for anything a browser drives — and wrong for
+    anything a browser does not. A webhook sender has no session, no
+    cookie, and no way to obtain a token, so a test that reaches the app
+    through ``client`` proves nothing about whether that sender can.
+
+    That gap is not hypothetical: every route under /api/webhooks returned
+    an unconditional 403 in production for the life of the CSRF middleware
+    while the suite stayed green, because the harness satisfied the one
+    condition no real sender ever could. Use this fixture for anything
+    authenticated by a credential in the request itself.
+    """
+    from httpx import ASGITransport
+
+    async with httpx.AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://testserver",
+        follow_redirects=True,
+    ) as c:
+        yield c
+
+
 async def _make_superuser(app, db):
     from fastapi_users.password import PasswordHelper
 

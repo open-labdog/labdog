@@ -987,3 +987,241 @@ export interface ModuleDiff {
   error: string | null
   changes: DiffChange[]
 }
+
+// --- AI ---------------------------------------------------------------
+
+export type AIProviderType =
+  | "openai_compat"
+  | "anthropic"
+  | "claude_cli"
+  | "claude_agent"
+export type AIAutonomyLevel = "read_only" | "approval" | "full_auto"
+export type AISessionStatus =
+  | "queued"
+  | "running"
+  | "waiting_approval"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+
+export interface AIProvider {
+  id: number
+  name: string
+  provider_type: AIProviderType
+  base_url: string | null
+  model: string
+  has_api_key: boolean
+  verify_ssl: boolean
+  ca_cert_fingerprint: string | null
+  max_tokens: number
+  temperature: number
+  is_default: boolean
+  /**
+   * True when this backend can execute tool calls. A backend that cannot
+   * has no way to look anything up, so it cannot drive an investigation.
+   * Comes from the server so the UI never has to guess it from
+   * provider_type.
+   */
+  supports_tools: boolean
+  /** True when using this provider transmits host data off the network. */
+  sends_data_offsite: boolean
+  /** True when this backend authenticates a Claude plan rather than an API key. */
+  uses_subscription: boolean
+  /**
+   * When the stored credential stops working, for backends whose credential
+   * expires. `claude setup-token` mints a one-year token; API-key providers
+   * get null because their keys do not expire on a schedule.
+   */
+  credential_expires_at: string | null
+  input_cost_per_mtok: number
+  output_cost_per_mtok: number
+  monthly_budget: number
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AIProviderTestResult {
+  ok: boolean
+  message: string
+}
+
+export interface AIMessage {
+  id: number
+  seq: number
+  role: "system" | "user" | "assistant" | "tool"
+  content: string
+  tool_calls: Array<{ id: string; name: string; arguments: Record<string, unknown> }> | null
+  tool_call_id: string | null
+  created_at: string
+}
+
+export interface AIToolCall {
+  id: number
+  tool_name: string
+  arguments: Record<string, unknown> | null
+  classification: "read_only" | "mutating" | "denied" | "unknown"
+  status: string
+  target_host_id: number | null
+  result_summary: string | null
+  /** Set when this call is waiting on, or was settled by, an approval. */
+  approval_id: number | null
+  /** The rollback point taken before this call, when there was one. */
+  snapshot_name: string | null
+  /** Set once retention removed it. The name stays — "there was a rollback
+   * point and it expired" is different from "there never was one". */
+  snapshot_pruned_at: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface AISession {
+  id: number
+  provider_id: number | null
+  mode: string
+  title: string | null
+  mission: string
+  autonomy_level: AIAutonomyLevel
+  status: AISessionStatus
+  target_host_ids: number[] | null
+  /** True when this session opted out of pre-change snapshots. */
+  skip_snapshots: boolean
+  action_run_id: number | null
+  iterations: number
+  prompt_tokens: number
+  completion_tokens: number
+  cost: number
+  /** True when the backend could not report usage, so cost is a floor. */
+  cost_unknown: boolean
+  command_count: number
+  report_markdown: string | null
+  error_message: string | null
+  /**
+   * Why the run ended early — "token budget (10000)", "turn limit (40)",
+   * "cancelled by operator". Null when the model finished on its own.
+   *
+   * `status` cannot carry this: a capped run is still `succeeded`, so
+   * without it a truncated investigation and a complete one look the same.
+   */
+  stopped_reason: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export type AIApprovalStatus = "pending" | "approved" | "rejected" | "expired"
+
+export interface AIApprovalRequest {
+  id: number
+  session_id: number
+  tool_name: string
+  /**
+   * The exact line being decided on. Comes from the server rather than
+   * being rebuilt from `arguments` here: what is shown and what would run
+   * must not be able to disagree.
+   */
+  command_preview: string
+  target_host_id: number | null
+  /** The model's own stated reason. Advisory — it never affects the verdict. */
+  summary: string
+  classification: "read_only" | "mutating" | "denied" | "unknown"
+  /** Why the classifier called this a write. */
+  reason: string
+  status: AIApprovalStatus
+  decision_note: string | null
+  decided_by_user_id: number | null
+  created_at: string
+  expires_at: string | null
+  decided_at: string | null
+  /**
+   * Whether approving this produces a rollback point. False when the
+   * host has no VM mapping, the session opted out, or snapshots are off
+   * instance-wide — all cases the operator should know about *before*
+   * authorising a change, not after.
+   */
+  snapshot_expected: boolean
+}
+
+export interface AISessionDetail extends AISession {
+  messages: AIMessage[]
+  tool_calls: AIToolCall[]
+  approvals: AIApprovalRequest[]
+}
+
+export interface AIUsageDay {
+  usage_date: string
+  provider_id: number | null
+  provider_name: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  cost: number
+  turn_count: number
+}
+
+export interface AIUsageSummary {
+  day_spend: number
+  month_spend: number
+  /** 0 means unlimited. */
+  day_limit: number
+  month_limit: number
+  warn_pct: number
+  exceeded: boolean
+  reason: string
+  /**
+   * ISO currency code for every amount above (the `ai.currency` setting).
+   * A display unit only — LabDog stores rates exactly as entered and never
+   * converts, so changing it relabels figures rather than recalculating them.
+   */
+  currency: string
+  days: AIUsageDay[]
+}
+
+/** One alert as LabDog received it, deduplicated by fingerprint. */
+export interface AlertEvent {
+  id: number
+  source: "grafana_webhook" | "alertmanager_poll"
+  fingerprint: string
+  alertname: string
+  severity: string | null
+  status: "firing" | "resolved"
+  labels: Record<string, unknown> | null
+  annotations: Record<string, unknown> | null
+  starts_at: string
+  ends_at: string | null
+  /** How many times LabDog has been told about this same firing. */
+  dedup_count: number
+  host_id: number | null
+  investigation_session_id: number | null
+  /**
+   * Why there is or is not a session. "Nothing happened" has several
+   * causes and the operator should not have to guess which applied.
+   */
+  investigation_outcome:
+    | "started"
+    | "skipped_disabled"
+    | "skipped_severity"
+    | "skipped_resolved"
+    | "skipped_duplicate"
+    | "skipped_budget"
+    | "failed"
+    | null
+  investigation_detail: string | null
+  /**
+   * The investigation's own status, once one exists.
+   *
+   * `investigation_outcome` records only the decision to start, so on its
+   * own it reads "Investigating" forever — a session that finished an hour
+   * ago looks identical to one still running.
+   */
+  investigation_status:
+    | "queued"
+    | "running"
+    | "waiting_approval"
+    | "succeeded"
+    | "failed"
+    | "cancelled"
+    | null
+  /** The assistant's conclusion — the report's opening, not the transcript. */
+  investigation_summary: string | null
+  created_at: string
+}

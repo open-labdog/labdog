@@ -1,0 +1,626 @@
+"""Celery entry points for AI sessions.
+
+Runs on the ``long_running`` queue: a session with a 900s wall-clock cap
+plus provider latency comfortably exceeds the default task time limit.
+
+Three entry points, all driving whichever runner the provider calls for —
+see :func:`build_runner`:
+
+* ``run_chat_session`` — an ad-hoc session from the assistant page.
+* ``run_builtin_ai_task`` — one host, dispatched by the action
+  orchestrator for ``_builtin.ai_task``. Participates in the per-host
+  queue like any other host-writing operation.
+* ``run_builtin_ai_task_group`` — one session covering a whole group,
+  for ``_builtin.ai_task_group``.
+
+The two builtin wrappers exist so that a scheduled AI check is an
+ordinary action: it inherits cron dispatch, run history, cancellation,
+and the host lock from machinery that already exists, rather than
+growing a parallel scheduler.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import UTC, datetime
+
+from app.ai.loop import AgentLoop, LoopCaps, redis_publisher
+from app.ai.models import AIProvider, AISession
+from app.ai.providers.factory import runs_on_agent_sdk
+from app.ai.service import (
+    AIDisabledError,
+    BudgetExceededError,
+    assert_within_budget,
+    finish_session,
+    resolve_provider,
+)
+from app.db import task_session
+from app.tasks import celery_app
+
+logger = logging.getLogger(__name__)
+
+SESSION_CHANNEL = "ai.session.{id}"
+
+
+def build_runner(
+    db,
+    session: AISession,
+    provider_row: AIProvider,
+    caps: LoopCaps,
+    publish,
+    *,
+    prompt: str | None = None,
+):
+    """Pick the runner this provider needs.
+
+    Both drive the session to a :class:`~app.ai.loop.LoopOutcome` and
+    write the same rows, so callers do not care which they get. They
+    differ in who owns the agent loop: ``AgentLoop`` calls an HTTP
+    provider one turn at a time, while ``AgentSDKRunner`` hands the loop
+    to Claude Code — the only way to authenticate a subscription.
+
+    ``prompt`` overrides what is sent, and only the SDK runner takes it:
+    ``AgentLoop`` replays the stored transcript, so a resumed session
+    picks the new turn up from there without being told twice.
+
+    The import is deferred because the Agent SDK is an optional extra;
+    a package install without it must still be able to run the HTTP
+    backends.
+    """
+    if not runs_on_agent_sdk(provider_row):
+        return AgentLoop(db, session, provider_row, caps, publish=publish)
+
+    from app.ai.agent_sdk import UNAVAILABLE_MESSAGE, sdk_available
+
+    if not sdk_available():
+        raise AIDisabledError(UNAVAILABLE_MESSAGE)
+
+    from app.ai.agent_sdk.runner import AgentSDKRunner
+
+    return AgentSDKRunner(db, session, provider_row, caps, publish=publish, prompt=prompt)
+
+
+async def _force_fail(db, session_id: int, error: str) -> None:
+    """Last-resort "this run is over" write.
+
+    Deliberately a Core UPDATE rather than ``finish_session``. The ORM path
+    flushes the mapper, which resolves foreign keys — and when *that* is
+    what failed, the failure handler fails identically and the session is
+    left in ``queued`` forever, with the UI showing "Working…" against a
+    task that died. Observed: one session sat queued for 28 hours because
+    its own error handler raised the error it was trying to record.
+
+    So this touches one row, by primary key, through the narrowest
+    mechanism available, and swallows what it cannot fix: a session whose
+    status is wrong is worse than one whose error text is missing.
+    """
+    from sqlalchemy import update
+
+    try:
+        await db.rollback()
+        await db.execute(
+            update(AISession.__table__)
+            .where(AISession.__table__.c.id == session_id)
+            .values(
+                status="failed",
+                error_message=error[:2000],
+                finished_at=datetime.now(UTC),
+            )
+        )
+        await db.commit()
+    except Exception:
+        logger.exception("ai_task: could not mark session %s failed", session_id)
+
+
+def _redis_client():
+    import redis
+
+    from app.config import settings
+
+    return redis.from_url(settings.redis.url)
+
+
+async def _run_session_async(session_id: int) -> dict:
+    async with task_session() as db:
+        session = await db.get(AISession, session_id)
+        if session is None:
+            logger.warning("ai_task: session %s no longer exists", session_id)
+            return {"session_id": session_id, "status": "missing"}
+
+        # An operator may have cancelled between dispatch and pickup.
+        if session.status == "cancelled":
+            return {"session_id": session_id, "status": "cancelled"}
+
+        redis_client = _redis_client()
+        channel = SESSION_CHANNEL.format(id=session_id)
+        publish = redis_publisher(redis_client, channel)
+
+        try:
+            provider_row = await resolve_provider(db, session.provider_id)
+            await assert_within_budget(db, provider_row)
+        except (AIDisabledError, BudgetExceededError) as exc:
+            await finish_session(db, session, status="failed", error=str(exc))
+            await db.commit()
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        caps = await LoopCaps.from_settings(db)
+        loop = build_runner(db, session, provider_row, caps, publish)
+
+        try:
+            outcome = await loop.run()
+            await db.commit()
+        except Exception as exc:
+            logger.exception("ai_task: session %s failed", session_id)
+            await _force_fail(db, session_id, str(exc))
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        redis_client.close()
+        return {
+            "session_id": session_id,
+            "status": outcome.status,
+            "iterations": outcome.iterations,
+            "stopped_by": outcome.stopped_by,
+        }
+
+
+@celery_app.task(
+    name="app.tasks.ai_task.run_chat_session",
+    queue="long_running",
+    # Comfortably above the ai.wall_clock_seconds ceiling so the loop's own
+    # cap is what stops a run, not a hard kill that would orphan the session
+    # in "running".
+    soft_time_limit=7200,
+    time_limit=7500,
+)
+def run_chat_session(session_id: int) -> dict:
+    """Drive one chat session to completion."""
+    return asyncio.run(_run_session_async(session_id))
+
+
+# ---------------------------------------------------------------------------
+# Resuming after an approval
+# ---------------------------------------------------------------------------
+
+
+async def _resume_session_async(session_id: int) -> dict:
+    """Pick a parked session up once its approval has been decided.
+
+    A separate entry point rather than a branch inside
+    :func:`_run_session_async`, because the two differ in what happens
+    *before* the runner starts: this one may run a command on a host,
+    which is the whole point of the approval, and has to do that exactly
+    once no matter how many times a decision is dispatched.
+    """
+    from app.ai import approvals, service
+
+    async with task_session() as db:
+        session = await db.get(AISession, session_id)
+        if session is None:
+            return {"session_id": session_id, "status": "missing"}
+        if session.status != "waiting_approval":
+            # Cancelled while parked, or already resumed. Either way the
+            # command must not run a second time.
+            return {"session_id": session_id, "status": session.status}
+
+        approval = await approvals.latest_for_session(db, session_id)
+        if approval is None or approval.status == "pending":
+            logger.warning("ai_task: session %s has no decided approval to resume", session_id)
+            return {"session_id": session_id, "status": "waiting_approval"}
+
+        redis_client = _redis_client()
+        publish = redis_publisher(redis_client, SESSION_CHANNEL.format(id=session_id))
+
+        try:
+            provider_row = await resolve_provider(db, session.provider_id)
+            await assert_within_budget(db, provider_row)
+        except (AIDisabledError, BudgetExceededError) as exc:
+            await finish_session(db, session, status="failed", error=str(exc))
+            await db.commit()
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        result = None
+        if approval.status == "approved":
+            await publish(
+                "tool_call",
+                {"name": approval.tool_name, "arguments": approval.arguments or {}},
+            )
+            result = await approvals.execute_approved(db, session, approval)
+            await db.commit()
+            await publish(
+                "tool_result",
+                {
+                    "name": approval.tool_name,
+                    "ok": result.ok,
+                    "classification": approval.classification,
+                    "summary": (result.summary or result.content)[:1000],
+                },
+            )
+
+        prompt = approvals.resume_prompt(approval, result)
+        if not (session.resume_state or {}).get("sdk_session_id"):
+            # Nothing to resume from, so the model would be told the
+            # outcome of a request it has no memory of making. Only the
+            # Agent SDK path can reach this — AgentLoop replays the stored
+            # transcript and needs no restatement — and it reaches it when
+            # a session parked before the CLI announced its session id.
+            prompt = f"Your mission was:\n\n{session.mission}\n\n{prompt}"
+
+        # Written to the transcript on both paths, so the UI shows the
+        # decision in sequence rather than as an unexplained gap.
+        await service.append_message(db, session_id, role="user", content=prompt)
+        session.status = "running"
+        session.error_message = None
+        await db.commit()
+
+        caps = await LoopCaps.from_settings(db)
+        runner = build_runner(db, session, provider_row, caps, publish, prompt=prompt)
+
+        try:
+            outcome = await runner.run()
+            await db.commit()
+        except Exception as exc:
+            logger.exception("ai_task: resuming session %s failed", session_id)
+            await _force_fail(db, session_id, str(exc))
+            await publish("error", {"message": str(exc)})
+            await publish("status", {"status": "failed"})
+            redis_client.close()
+            return {"session_id": session_id, "status": "failed", "error": str(exc)}
+
+        redis_client.close()
+        return {
+            "session_id": session_id,
+            "status": outcome.status,
+            "iterations": outcome.iterations,
+            "stopped_by": outcome.stopped_by,
+        }
+
+
+@celery_app.task(
+    name="app.tasks.ai_task.resume_session",
+    queue="long_running",
+    soft_time_limit=7200,
+    time_limit=7500,
+)
+def resume_session(session_id: int) -> dict:
+    """Continue a session whose approval request has been decided."""
+    return asyncio.run(_resume_session_async(session_id))
+
+
+# ---------------------------------------------------------------------------
+# Built-in action wrappers
+# ---------------------------------------------------------------------------
+
+
+def _parse_allowed_tools(raw: str | None) -> list[str] | None:
+    """Turn the comma-separated action parameter into an allowlist.
+
+    Blank means "no restriction", which is ``None`` rather than an empty
+    list — an empty list would be a session that may use nothing.
+    """
+    if not raw or not raw.strip():
+        return None
+    names = [part.strip() for part in raw.split(",") if part.strip()]
+    return names or None
+
+
+async def _session_for_action(
+    db,
+    *,
+    action_run_id: int,
+    parameters: dict,
+    host_ids: list[int],
+    title: str,
+) -> AISession:
+    """Create the AISession backing one builtin action run."""
+    from app.ai import service
+    from app.ai.loop import build_system_prompt
+
+    autonomy = str(parameters.get("autonomy_level") or "read_only")
+    provider_id = parameters.get("provider_id") or None
+    # The action parameter is an int with 0 meaning "use the default",
+    # because the parameter schema has no nullable int.
+    if provider_id in (0, "0"):
+        provider_id = None
+
+    mission = str(parameters.get("mission") or "").strip()
+    session = AISession(
+        provider_id=int(provider_id) if provider_id else None,
+        mode="scheduled",
+        title=title,
+        mission=mission,
+        autonomy_level=autonomy,
+        status="queued",
+        target_host_ids=host_ids,
+        allowed_tools=_parse_allowed_tools(parameters.get("allowed_tools")),
+        action_run_id=action_run_id,
+    )
+    db.add(session)
+    await db.flush()
+    await service.append_message(
+        db, session.id, role="system", content=build_system_prompt(autonomy)
+    )
+    await service.append_message(db, session.id, role="user", content=mission)
+    return session
+
+
+async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool, str]:
+    """Drive a session created for an action run.
+
+    Returns ``(succeeded, report_or_error)``. Publishes to the *action*
+    run's channel as well as the session's own, so the existing run-detail
+    view streams an AI check with no changes.
+    """
+    async with task_session() as db:
+        session = await db.get(AISession, session_id)
+        if session is None:
+            return False, "AI session vanished before it ran"
+
+        redis_client = _redis_client()
+
+        async def publish(event: str, payload: dict) -> None:
+            import json
+
+            body = json.dumps({"event": event, **payload})
+            redis_client.publish(SESSION_CHANNEL.format(id=session_id), body)
+            redis_client.publish(f"actions.run.{action_run_id}", body)
+
+        try:
+            provider_row = await resolve_provider(db, session.provider_id)
+            await assert_within_budget(db, provider_row)
+        except (AIDisabledError, BudgetExceededError) as exc:
+            await finish_session(db, session, status="failed", error=str(exc))
+            await db.commit()
+            redis_client.close()
+            return False, str(exc)
+
+        caps = await LoopCaps.from_settings(db)
+        loop = build_runner(db, session, provider_row, caps, publish)
+        try:
+            outcome = await loop.run()
+            await db.commit()
+        except Exception as exc:
+            logger.exception("ai_task: action session %s failed", session_id)
+            await _force_fail(db, session_id, str(exc))
+            redis_client.close()
+            return False, str(exc)
+
+        redis_client.close()
+
+        # A session that parked is not a failed check. It ran, it found
+        # something, and it is now waiting on a person — so the *action*
+        # is over and its host run has to end, releasing the per-host
+        # lock. Leaving it running would hold that lock for however long
+        # the operator takes to look, wedging every sync and action queued
+        # behind it on that host. The remediation, when approved, runs
+        # outside the action's lifecycle.
+        if outcome.status == "waiting_approval":
+            return True, _parked_report(session_id, outcome.report)
+
+        return outcome.status == "succeeded", outcome.report
+
+
+def _parked_report(session_id: int, partial: str) -> str:
+    """What the action run shows when its session stopped for approval.
+
+    Worded so nobody reads the green badge as "the change was made". The
+    check succeeded; the change has not happened and may never.
+    """
+    body = partial.strip()
+    notice = (
+        "**Waiting for approval.** This check found something it wants to "
+        f"change and has paused. Nothing has been changed. Open AI session "
+        f"{session_id} to see the command and approve or reject it."
+    )
+    return f"{body}\n\n---\n{notice}" if body else notice
+
+
+#: Matches the cap ``app.tasks.action_host`` puts on playbook output.
+MAX_OUTPUT_BYTES = 1_000_000
+
+
+async def _store_report(host_run_id: int, report: str, session_id: int | None = None) -> None:
+    """Write an AI report into the ActionHostRun the UI renders.
+
+    Failures here are logged and swallowed: losing the rendered copy of a
+    report that is already safe in ``ai_sessions`` must not turn a
+    successful check into a failed one.
+    """
+    if not report:
+        return
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun
+
+    body = report[:MAX_OUTPUT_BYTES]
+    if session_id is not None:
+        body = f"{body}\n\n---\nAI session {session_id}"
+    try:
+        async with task_session() as db:
+            host_run = (
+                await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
+            ).scalar_one_or_none()
+            if host_run is not None:
+                host_run.output = body
+                await db.commit()
+    except Exception:
+        logger.exception("ai_task: could not store report on host_run %s", host_run_id)
+
+
+async def _run_builtin_ai_task_async(action_run_id: int, host_run_id: int) -> None:
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionRun
+    from app.tasks.builtin_dispatchers import _begin_host_run, _finish_host_run
+
+    host_id = await _begin_host_run(host_run_id)
+    if host_id is None:
+        return
+
+    succeeded = False
+    detail = ""
+    # Bound before the try: the finally clause reads it, and session
+    # creation can itself raise.
+    session_id: int | None = None
+    try:
+        async with task_session() as db:
+            run = (
+                await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+            ).scalar_one_or_none()
+            parameters = dict(run.parameters or {}) if run else {}
+            session = await _session_for_action(
+                db,
+                action_run_id=action_run_id,
+                parameters=parameters,
+                host_ids=[host_id],
+                title=f"Scheduled AI check (host {host_id})",
+            )
+            session_id = session.id
+            await db.commit()
+
+        succeeded, detail = await _run_action_session(session_id, action_run_id)
+    except Exception as exc:
+        logger.exception("ai_task: builtin ai_task failed for host_run %s", host_run_id)
+        detail = str(exc)
+    finally:
+        # The findings are the whole point of the run, so they belong in
+        # the row the run-detail view already reads. Without this the
+        # report is only reachable through the AI session API, and a
+        # scheduled check looks like it produced nothing.
+        await _store_report(host_run_id, detail, session_id)
+        await _finish_host_run(
+            host_run_id,
+            succeeded=succeeded,
+            error=None if succeeded else (detail or "AI check failed")[:2000],
+        )
+
+
+@celery_app.task(
+    name="app.tasks.ai_task.run_builtin_ai_task",
+    queue="long_running",
+    soft_time_limit=7200,
+    time_limit=7500,
+)
+def run_builtin_ai_task(action_run_id: int, host_run_id: int) -> dict:
+    """Run an AI investigation against one host."""
+    asyncio.run(_run_builtin_ai_task_async(action_run_id, host_run_id))
+    return {"action_run_id": action_run_id, "host_run_id": host_run_id}
+
+
+async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
+    """One session covering every member of the target group.
+
+    Owns its own ``ActionHostRun`` rows and run-state transitions, the
+    same contract ``app.tasks.action_group`` has with the orchestrator.
+    Unlike the per-host path there is one session for the whole group, so
+    every member's row takes the same outcome — the investigation either
+    reached a conclusion or it did not, and attributing that per host
+    would be inventing detail the run does not have.
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import select
+
+    from app.models.action_run import ActionHostRun, ActionRun
+    from app.models.host import HostGroupMembership
+
+    async with task_session() as db:
+        run = (
+            await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+        ).scalar_one_or_none()
+        if run is None:
+            logger.warning("ai_task: action_run %s not found", action_run_id)
+            return
+
+        member_ids = list(
+            (
+                await db.execute(
+                    select(HostGroupMembership.c.host_id).where(
+                        HostGroupMembership.c.group_id == run.group_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not member_ids:
+            run.status = "failed"
+            run.finished_at = datetime.now(UTC)
+            await db.commit()
+            return
+
+        now = datetime.now(UTC)
+        for host_id in member_ids:
+            db.add(
+                ActionHostRun(
+                    action_run_id=action_run_id,
+                    host_id=host_id,
+                    status="running",
+                    started_at=now,
+                )
+            )
+        run.status = "running"
+        run.started_at = run.started_at or now
+
+        session = await _session_for_action(
+            db,
+            action_run_id=action_run_id,
+            parameters=dict(run.parameters or {}),
+            host_ids=member_ids,
+            title=f"Scheduled AI check ({len(member_ids)} hosts)",
+        )
+        session_id = session.id
+        await db.commit()
+
+    succeeded, detail = await _run_action_session(session_id, action_run_id)
+
+    async with task_session() as db:
+        finished = datetime.now(UTC)
+        host_runs = (
+            (
+                await db.execute(
+                    select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for host_run in host_runs:
+            host_run.status = "succeeded" if succeeded else "failed"
+            host_run.finished_at = finished
+            # One session covered the whole group, so every member's row
+            # carries the same report — the investigation reached one
+            # conclusion, and splitting it per host would invent detail
+            # the run does not have.
+            if detail:
+                host_run.output = f"{detail[:MAX_OUTPUT_BYTES]}\n\n---\nAI session {session_id}"
+            if not succeeded:
+                host_run.error_message = (detail or "AI check failed")[:2000]
+        run = (
+            await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+        ).scalar_one_or_none()
+        if run is not None:
+            run.status = "succeeded" if succeeded else "failed"
+            run.finished_at = finished
+        await db.commit()
+
+
+@celery_app.task(
+    name="app.tasks.ai_task.run_builtin_ai_task_group",
+    queue="long_running",
+    soft_time_limit=7200,
+    time_limit=7500,
+)
+def run_builtin_ai_task_group(action_run_id: int) -> dict:
+    """Run one AI investigation across a whole group."""
+    asyncio.run(_run_builtin_ai_task_group_async(action_run_id))
+    return {"action_run_id": action_run_id}

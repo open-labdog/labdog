@@ -92,6 +92,12 @@ services:
       LABDOG_SERVER__FORWARDED_ALLOW_IPS: "*"
     volumes:
       - labdog_packs:/var/lib/labdog/packs
+      # Claude Code's own session files. Only needed if you use a Claude
+      # subscription provider — but then it is load-bearing: an AI session
+      # paused waiting for your approval resumes from here, and a pause can
+      # last a day. Without the volume, upgrading the image mid-approval
+      # loses everything the assistant established before it stopped.
+      - labdog_claude:/var/lib/labdog/claude-cli
       # Optional: mount a host-side TOML for non-secret tunables.
       - ./labdog.toml:/etc/labdog/labdog.toml:ro
     depends_on:
@@ -120,6 +126,7 @@ services:
 volumes:
   postgres_data:
   labdog_packs:
+  labdog_claude:
   caddy_data:
   caddy_config:
 ```
