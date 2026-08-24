@@ -556,6 +556,31 @@ Two `audit_log` rows per sync: `sync_triggered` at API entry,
 
 See [examples/gitops/README.md](./examples/gitops/README.md) for setup walkthrough and YAML examples covering every module.
 
+### AI assistant
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET/POST` | `/api/ai/providers` | List/register LLM providers (API key encrypted at rest) |
+| `PATCH/DELETE` | `/api/ai/providers/{id}` | Manage a provider |
+| `POST` | `/api/ai/providers/{id}/test` | Connection test |
+| `GET/POST` | `/api/ai/sessions` | List sessions / start one |
+| `GET/DELETE` | `/api/ai/sessions/{id}` | Session detail (transcript, tool calls, approvals) / delete |
+| `POST` | `/api/ai/sessions/{id}/messages` | Ask a follow-up in an existing session |
+| `POST` | `/api/ai/sessions/{id}/cancel` | Stop a running or parked session |
+| `GET` | `/api/ai/sessions/{id}/stream` | SSE stream of a session as it runs |
+| `GET` | `/api/ai/approvals` · `POST /api/ai/approvals/{id}` | List pending approvals / approve or reject one |
+| `GET` | `/api/ai/usage` | Spend and token totals against the configured budgets |
+
+See [ui/assistant.md](./ui/assistant.md) for autonomy levels, approvals, snapshots and spend limits.
+
+### Alert intake
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/webhooks/grafana-alerts` | Grafana contact-point receiver (bearer or basic auth against `[alerts] webhook_token`; an unset token refuses every request) |
+| `GET` | `/api/ai/alerts` | Alerts received, with the investigation each one did or did not get |
+| `POST` | `/api/ai/alerts/{id}/investigate` | Start an investigation by hand, bypassing only the severity threshold |
+
+See [ui/alerts.md](./ui/alerts.md) for the intake paths, deduplication, and the auto-investigation policy.
+
 ### Grafana metrics (inbound — LabDog reads host metrics)
 | Method | Path | Description |
 |--------|------|-------------|

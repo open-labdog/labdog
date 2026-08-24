@@ -7,6 +7,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.9.0] — 2026-08-24
+
+The AI release. LabDog can now hand an investigation to a language model,
+let it change hosts under supervision you choose, and use it to decide
+whether a destructive action left a host healthy. **Every part of it is
+off by default** and stays off until you set `ai.enabled` and configure a
+provider.
+
 ### Added
 
 - **The prompt behind an alert investigation is editable.** The wording an
@@ -42,104 +52,20 @@ The format follows [Keep a Changelog]; LabDog follows
   and filing it as a failure is as misleading as calling it a clean
   success.
 
-### Fixed
+- **A running session can be stopped, and an alert says what came of
+  its investigation.** The Assistant header gained a **Stop** button —
+  it interrupts the model mid-turn, keeps the transcript and whatever was
+  already established, and books the tokens spent. It works while a
+  session is parked on an approval too: nothing is running then, but the
+  session is not over either, and abandoning it is a reasonable answer to
+  a request you do not want to grant.
 
-- **Sessions were still impossible to tell apart in the list.** They were
-  timestamped in the previous release, but with a relative time — and three
-  investigations run the same evening all read "23h ago", which is the
-  complaint the timestamps were meant to answer. The absolute local time
-  now leads ("23 Aug 2026, 19:03") with the relative time beside it, and
-  the open transcript carries the same, so a run can be lined up against a
-  Grafana panel or a journal.
-
-- **A run stopped by a cap or by Stop recorded no usage at all.** Tokens
-  reach the ledger only when the SDK's terminal `ResultMessage` arrives,
-  and interrupting the exchange means it never does — so the runs that hit
-  a limit, the expensive ones, were the only ones missing from the usage
-  panel. Seen the first time the token cap fired in production: the session
-  stopped on its budget having spent real tokens and reported zero, and the
-  daily ledger had no row for the day. The live estimate is now booked
-  instead, flagged `cost_unknown` because it is an approximation rather
-  than the CLI's own aggregate.
-
-- **An alert row could show `## Summary` instead of a conclusion.** The
-  alerts page quotes the opening of the investigation's report, taken as
-  its first paragraph — but reports that begin with a markdown heading put
-  the heading there instead of the verdict. Headings are now skipped.
-
-- **"View investigation" went to the Assistant page but selected nothing.**
-  The alerts page has linked to `/assistant?session=<id>` since alert
-  intake shipped, and nothing ever read the parameter — so the button
-  navigated and left the operator on a list of sessions to guess from. The
-  parameter is now honoured.
-
-- **Sessions in the Assistant list had no timestamp**, so runs of the same
-  thing were indistinguishable: an alert investigation is titled after its
-  alert, and four firings of one rule produced four identical rows. Each
-  now shows when it started, with the absolute time on hover for
-  correlating against a log or a dashboard.
-
-- **Eight background tasks were published to a queue nothing consumed**
-  and so never ran (BUG-58). The worker consumes `default,long_running`,
-  but Celery's built-in default queue is named `celery`, and
-  `task_default_queue` was never set — so any task no `task_routes`
-  pattern matched went to `celery` and stayed there. The broker accepted
-  it, `send_task` returned an id, and the work silently never happened.
-
-  Six of the eight were on RedBeat timers, firing into the dead queue for
-  the life of the deployment: both stale-run sweepers, all three
-  retention pruners, and approval expiry. **Two settings you can see and
-  change in the UI therefore did nothing** — `logging.audit_retention_days`
-  and `ai.snapshot_retention_days` — so audit logs, SSH transcripts and
-  AI snapshots were never pruned. Alert auto-investigation was the
-  seventh, which is how this was found: an alert recorded correctly and
-  then no session ever started.
-
-  Fixed by naming the default queue rather than adding the eight missing
-  route patterns. `task_routes` is a routing *override*, not a manifest,
-  and treating it as the complete list is what stranded these in the
-  first place — the next task added without an entry would have vanished
-  the same way.
-
-  After upgrading, the pruners run on their next tick and delete
-  everything already past its retention window in one pass. On an
-  instance that has been running a while that backlog is however much
-  accumulated since install, so check `logging.audit_retention_days` and
-  `ai.snapshot_retention_days` are set to what you actually want *before*
-  restarting — they have not been enforced until now, and the first run
-  is not reversible.
-
-- **`ai.max_tokens_total` did nothing on the Claude Agent SDK backend**
-  (BUG-59). Token usage was folded into the session only when the SDK's
-  `ResultMessage` arrived — its *terminal* message — so for the whole run
-  the counters the cap tests against sat at zero. The check ran every
-  turn, compared 0 against the limit, and never fired; the real figure
-  landed when there was nothing left to stop. Measured on a production
-  session: **111,857 tokens spent against a 10,000 cap.**
-
-  The runner now sums the per-response `usage` each assistant message
-  carries, giving the cap a live figure to test. That estimate gates the
-  run only — `ResultMessage` remains the sole source for the session's
-  token columns, the cost ledger and the usage panel, because the two
-  come from different sources and booking both would double count.
-
-  This mattered more than it looks. On a subscription provider every
-  price is zero, so `ai.budget_daily` and `ai.budget_monthly` can never
-  trigger, and the token cap was the only bound on how much one session
-  could spend. Sessions remain bounded by `ai.max_iterations`,
-  `ai.max_commands` and `ai.wall_clock_seconds`; there is still **no
-  limit on how many sessions may run**, which matters when an alert storm
-  can start one per alert.
-
-## [0.9.0] — 2026-08-17
-
-The AI release. LabDog can now hand an investigation to a language model,
-let it change hosts under supervision you choose, and use it to decide
-whether a destructive action left a host healthy. **Every part of it is
-off by default** and stays off until you set `ai.enabled` and configure a
-provider.
-
-### Added
+  The alerts page previously said only whether an investigation had been
+  *started*, which stopped being the useful question the moment one had.
+  A row now carries the session's status — Investigating, Investigated,
+  Investigation failed — and quotes the opening of its conclusion, so the
+  answer is readable without opening anything. **View investigation**
+  opens that session rather than the session list.
 
 - **AI assistant.** A chat page at `/assistant` where you describe what
   you want checked and watch the model work through LabDog's own tools.
@@ -274,6 +200,91 @@ provider.
 
 ### Fixed
 
+- **A run stopped by a cap or by Stop recorded no usage at all.** Tokens
+  reach the ledger only when the SDK's terminal `ResultMessage` arrives,
+  and interrupting the exchange means it never does — so the runs that hit
+  a limit, the expensive ones, were the only ones missing from the usage
+  panel. Seen the first time the token cap fired in production: the session
+  stopped on its budget having spent real tokens and reported zero, and the
+  daily ledger had no row for the day. The live estimate is now booked
+  instead, flagged `cost_unknown` because it is an approximation rather
+  than the CLI's own aggregate.
+
+- **An alert row could show `## Summary` instead of a conclusion.** The
+  alerts page quotes the opening of the investigation's report, taken as
+  its first paragraph — but reports that begin with a markdown heading put
+  the heading there instead of the verdict. Headings are now skipped.
+
+- **"View investigation" went to the Assistant page but selected nothing.**
+  The alerts page has linked to `/assistant?session=<id>` since alert
+  intake shipped, and nothing ever read the parameter — so the button
+  navigated and left the operator on a list of sessions to guess from. The
+  parameter is now honoured.
+
+- **Sessions in the Assistant list had no timestamp**, so runs of the same
+  thing were indistinguishable: an alert investigation is titled after its
+  alert, and four firings of one rule produced four identical rows. Each
+  now shows when it started — absolute local time to the minute, with the
+  relative age beside it and the exact ISO value on hover, in the list and
+  in the open transcript alike, so a run can be lined up against a Grafana
+  panel or a journal.
+
+  Relative time alone was tried first and was not enough: three
+  investigations run the same evening all read "23h ago", which is the
+  question the timestamp existed to answer.
+
+- **Eight background tasks were published to a queue nothing consumed**
+  and so never ran (BUG-58). The worker consumes `default,long_running`,
+  but Celery's built-in default queue is named `celery`, and
+  `task_default_queue` was never set — so any task no `task_routes`
+  pattern matched went to `celery` and stayed there. The broker accepted
+  it, `send_task` returned an id, and the work silently never happened.
+
+  Six of the eight were on RedBeat timers, firing into the dead queue for
+  the life of the deployment: both stale-run sweepers, all three
+  retention pruners, and approval expiry. **Two settings you can see and
+  change in the UI therefore did nothing** — `logging.audit_retention_days`
+  and `ai.snapshot_retention_days` — so audit logs, SSH transcripts and
+  AI snapshots were never pruned. Alert auto-investigation was the
+  seventh, which is how this was found: an alert recorded correctly and
+  then no session ever started.
+
+  Fixed by naming the default queue rather than adding the eight missing
+  route patterns. `task_routes` is a routing *override*, not a manifest,
+  and treating it as the complete list is what stranded these in the
+  first place — the next task added without an entry would have vanished
+  the same way.
+
+  After upgrading, the pruners run on their next tick and delete
+  everything already past its retention window in one pass. On an
+  instance that has been running a while that backlog is however much
+  accumulated since install, so check `logging.audit_retention_days` and
+  `ai.snapshot_retention_days` are set to what you actually want *before*
+  restarting — they have not been enforced until now, and the first run
+  is not reversible.
+
+- **`ai.max_tokens_total` did nothing on the Claude Agent SDK backend**
+  (BUG-59). Token usage was folded into the session only when the SDK's
+  `ResultMessage` arrived — its *terminal* message — so for the whole run
+  the counters the cap tests against sat at zero. The check ran every
+  turn, compared 0 against the limit, and never fired; the real figure
+  landed when there was nothing left to stop. Measured on a production
+  session: **111,857 tokens spent against a 10,000 cap.**
+
+  The runner now sums the per-response `usage` each assistant message
+  carries, giving the cap a live figure to test. That estimate gates the
+  run only — `ResultMessage` remains the sole source for the session's
+  token columns, the cost ledger and the usage panel, because the two
+  come from different sources and booking both would double count.
+
+  This mattered more than it looks. On a subscription provider every
+  price is zero, so `ai.budget_daily` and `ai.budget_monthly` can never
+  trigger, and the token cap was the only bound on how much one session
+  could spend. Sessions remain bounded by `ai.max_iterations`,
+  `ai.max_commands` and `ai.wall_clock_seconds`; there is still **no
+  limit on how many sessions may run**, which matters when an alert storm
+  can start one per alert.
+
 - **Webhooks are reachable again** (BUG-56). Every endpoint under the
   webhooks router returned `403 CSRF token missing or invalid` before
   its handler ran, for the entire life of the CSRF middleware. The
@@ -337,6 +348,13 @@ provider.
   written and show the expiry, amber inside 30 days.
 
 ### Known limitations
+
+- **A token limit overshoots by one turn.** Usage is only known once a
+  turn completes, so the turn that crosses the limit has already been
+  paid for; the cap stops the next one. A 10,000-token limit stopping at
+  ~11,700 is expected. Treat the number as "stop somewhere past here"
+  rather than a hard ceiling — a tighter bound needs per-token streaming
+  accounting the backends do not expose.
 
 - **AI verify judges a window that includes the action's own work.**
   Prompt wording mitigates this and the shipped default accounts for it,

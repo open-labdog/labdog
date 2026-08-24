@@ -124,7 +124,15 @@ here; see [Alerts](alerts.md).
 | Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
 | Investigation Prompt | `ai.alert_mission_template` | built-in wording | up to 8000 characters | The prompt an alert investigation starts from. See below. |
 
-### The investigation prompt
+**Changes and approvals.**
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Snapshot Before Change | `ai.snapshot_before_mutating` | `1` (on) | 0 – 1 | Take a Proxmox snapshot before the assistant runs a command that changes a host. Hosts with no VM mapping are unaffected. While on, a snapshot that **fails blocks the command**. |
+| Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
+| Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
+
+#### The investigation prompt
 
 `ai.alert_mission_template` is the text an alert investigation begins with,
 and it is editable because the built-in wording has to work for an alert
@@ -160,20 +168,18 @@ You do not have to keep any particular placeholder. Dropping `{labels}`
 genuinely does deprive the model of that context — that is your call to
 make, not something the field stops you doing.
 
-
-**Changes and approvals.**
-
-| Setting | Key | Default | Range | Description |
-|---------|-----|---------|-------|-------------|
-| Snapshot Before Change | `ai.snapshot_before_mutating` | `1` (on) | 0 – 1 | Take a Proxmox snapshot before the assistant runs a command that changes a host. Hosts with no VM mapping are unaffected. While on, a snapshot that **fails blocks the command**. |
-| Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
-| Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
-
 ---
 
 ## Resetting a Setting
 
-Every setting shows its current value alongside the default. Click **Reset to default** on any row to revert that setting to its built-in default value.
+Every setting shows its current value alongside its default, so you can
+see at a glance what has been changed from the shipped configuration.
+
+Numeric and choice settings are reverted by typing or selecting the
+default shown on the row. Multiline settings — currently only the
+[investigation prompt](#the-investigation-prompt) — have an explicit
+**Reset to default** button, because their default is a paragraph nobody
+retypes from memory.
 
 ---
 

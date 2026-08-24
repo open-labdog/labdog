@@ -145,6 +145,27 @@ Whatever happened is recorded on the row and shown as a badge, because
 | **AI budget reached** | Spend limit hit; the alert is still recorded |
 | **Could not start** | AI disabled, no provider, or a provider that cannot run tools |
 
+### Reading the outcome on the row
+
+Once a session exists, the row stops reporting whether anything started
+and reports what came of it — this badge replaces the policy badge above:
+
+| On the row | Meaning |
+|---|---|
+| **Investigation queued** | Accepted, not started yet |
+| **Investigating** | The session is running |
+| **Waiting for approval** | Parked on an approval request |
+| **Investigated** | Finished, with the opening of its conclusion quoted beneath |
+| **Investigation failed** | The session errored; open it to see why |
+| **Investigation stopped** | Cancelled, by you or by a cap |
+
+The quoted text is the first real paragraph of the report — headings are
+skipped, so the row shows the verdict rather than the word `Summary`.
+
+**View investigation** opens that session's transcript directly. It is a
+deep link to the session, not merely a jump to the Assistant page, so the
+run you clicked is the one you land on.
+
 ### Severity is read, not guessed
 
 The threshold understands `info`, `warning`, and `critical`. Grafana lets
@@ -186,6 +207,32 @@ healthy machine and report that nothing is wrong.
 The model is given the alert's full label and annotation set. LabDog
 reads three keys out of them itself, but an investigation is only as good
 as its context, and you chose what to label.
+
+### The prompt it starts from
+
+`ai.alert_mission_template` in [Settings](settings.md#the-investigation-prompt)
+is the wording the session begins with. It is editable because the
+built-in text has to work for an alert LabDog has never seen, so it asks a
+deliberately generic question — is this real, and what is causing it. You
+know things it cannot: which alerts on your estate are chronically noisy,
+that an exporter lies during backups, that an answer should always name
+the service the host runs.
+
+These placeholders are filled in from the alert:
+
+| Placeholder | Expands to |
+|---|---|
+| `{alertname}` | The alert's name |
+| `{severity}` | The severity label, or `(not labelled)` |
+| `{status}` | `firing` or `resolved` |
+| `{starts_at}` | When the alert started, in ISO 8601 |
+| `{labels}` | Every label, one per line as `- key: value` |
+| `{annotations}` | Every annotation, one per line as `- key: value` |
+
+Anything else in braces is refused when you save, naming both what it did
+not recognise and what is available. Write `{{` and `}}` for a literal
+brace. Dropping a placeholder is allowed — it deprives the model of that
+context, which is your call to make.
 
 ---
 

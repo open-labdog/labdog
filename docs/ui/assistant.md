@@ -29,6 +29,24 @@ raw log output it read.
 When the session finishes you can ask follow-up questions in the same
 conversation; it keeps the full context of what it already found.
 
+**Stopping one early.** A running session has a **Stop** button in the
+header. It interrupts the model mid-turn, keeps the transcript and
+whatever the assistant had already established, and books the tokens
+spent so far. Use it when you can see from the first few commands that
+it is answering the wrong question — there is no penalty beyond the
+tokens already used.
+
+Stop also works while a session is parked waiting for an approval.
+Nothing is running then, but the session is not over either, and
+abandoning it is a reasonable answer to a request you do not want to
+grant.
+
+**Telling sessions apart.** The list shows each session's start time,
+absolute and to the minute, with the relative age beside it. Runs of the
+same scheduled check — or of the same alert — are titled identically, so
+the timestamp is what distinguishes them. Hover it for the exact ISO
+value if you are lining a run up against a Grafana panel or a journal.
+
 Good prompts are specific about the question, not the method:
 
 - *"Check whether any service failed to start after the last reboot on node-1."*
@@ -266,6 +284,32 @@ it reaches whichever of these comes first:
 A session stopped by a limit still produces a report: the assistant spends
 one final turn summarising what it established and what remains unverified,
 so the work is not wasted.
+
+**A session says when it was cut short.** It finishes with the normal
+green `succeeded` badge — it did what it was asked until the budget it was
+given ran out, and calling that a failure would be as misleading as
+calling it a clean success. So the reason appears beside the status
+instead:
+
+```
+succeeded   Stopped early: token budget (10000)
+```
+
+and as a **cut short** marker in the session list, which is what lets you
+decide which of several runs is worth reopening. If the answer looks
+truncated, that badge tells you whether it ran out of room or genuinely
+finished.
+
+**Token limits overshoot slightly.** Usage is only known once a turn
+completes, so the turn that crosses the limit has already been paid for —
+the cap stops the *next* one. A 10,000-token limit stopping at ~11,700 is
+normal. Treat the number as "stop somewhere past here" rather than a hard
+ceiling.
+
+Runs stopped this way record their usage as an **estimate** rather than
+the provider's own final accounting, which never arrives when the exchange
+is interrupted. The transcript header shows `cost not reported` for these
+instead of a figure, and the tokens still count against your budgets.
 
 Time spent waiting for an approval does not count against any of these. The
 session is not running while it waits, and the clock restarts when you
