@@ -7,6 +7,9 @@ from typing import Any
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
+from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
+from app.ai.alert_mission import validate_template as validate_alert_mission
 from app.models.app_setting import AppSetting
 
 logger = logging.getLogger(__name__)
@@ -255,6 +258,18 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "AI budgets."
         ),
     },
+    "ai.alert_mission_template": {
+        "type": "text",
+        "default": DEFAULT_ALERT_MISSION,
+        "max_length": 8000,
+        "validator": validate_alert_mission,
+        "description": "The prompt an alert investigation starts from.",
+        "help": (
+            "Placeholders are filled in from the alert: "
+            + ", ".join("{" + name + "} — " + what for name, what in ALERT_MISSION_FIELDS.items())
+            + ". Write {{ and }} for a literal brace. Reset restores the built-in wording."
+        ),
+    },
     "ai.auto_investigate_min_severity": {
         "type": "string",
         "default": "critical",
@@ -318,6 +333,23 @@ def _validate(key: str, value: str) -> str:
             raise ValueError(f"{key}: must be one of {defn['choices']}")
         return value
 
+    if vtype == "text":
+        # Length first: a multi-kilobyte prompt is prepended to every run
+        # it governs, so the cap is about spend as much as storage, and
+        # saying so beats a database error.
+        limit = defn.get("max_length", 10000)
+        if len(value) > limit:
+            raise ValueError(f"{key}: maximum length is {limit} characters")
+        # Free text a subsystem has to *parse* needs checking where the
+        # operator can see the message, not where it is used.
+        validator = defn.get("validator")
+        if validator is not None:
+            try:
+                return str(validator(value))
+            except ValueError as exc:
+                raise ValueError(f"{key}: {exc}") from exc
+        return value
+
     return value
 
 
@@ -369,6 +401,7 @@ async def get_all_settings(db: AsyncSession) -> list[dict]:
                 "min": defn.get("min"),
                 "max": defn.get("max"),
                 "choices": defn.get("choices"),
+                "max_length": defn.get("max_length"),
                 "updated_at": db_row.updated_at.isoformat()
                 if db_row and db_row.updated_at
                 else None,

@@ -9,6 +9,26 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **The prompt behind an alert investigation is editable.** The wording an
+  investigation starts from is now the `ai.alert_mission_template` setting
+  rather than a constant in the source. The built-in text asks a
+  deliberately generic question because it has to work for an alert LabDog
+  has never seen; an operator knows which alerts on their estate are noisy,
+  which exporter lies during a backup, and what an answer should always
+  mention. That knowledge previously had nowhere to go.
+
+  Placeholders (`{alertname}`, `{severity}`, `{status}`, `{starts_at}`,
+  `{labels}`, `{annotations}`) are validated when the template is saved,
+  naming both the placeholder it did not recognise and the ones available.
+  The alternative is a `KeyError` raised hours later inside a Celery task,
+  leaving an alert uninvestigated with nothing on screen to say why. A
+  stored template that a later release breaks falls back to the built-in
+  wording rather than stranding the alert.
+
+  Settings gained a `text` value type for this: multiline values render as
+  a full-width text area with a character count and a **Reset to default**
+  button, because the default is a paragraph nobody retypes from memory.
+
 - **A session now says why it stopped.** A run cut short by a cap finished
   with a green `succeeded` badge, identical to one that reached its own
   conclusion — the reason existed only in the Celery task's return value
@@ -23,6 +43,14 @@ The format follows [Keep a Changelog]; LabDog follows
   success.
 
 ### Fixed
+
+- **Sessions were still impossible to tell apart in the list.** They were
+  timestamped in the previous release, but with a relative time — and three
+  investigations run the same evening all read "23h ago", which is the
+  complaint the timestamps were meant to answer. The absolute local time
+  now leads ("23 Aug 2026, 19:03") with the relative time beside it, and
+  the open transcript carries the same, so a run can be lined up against a
+  Grafana panel or a journal.
 
 - **A run stopped by a cap or by Stop recorded no usage at all.** Tokens
   reach the ledger only when the SDK's terminal `ResultMessage` arrives,

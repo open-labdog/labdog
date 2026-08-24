@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { API_BASE, apiFetch, ApiError } from "@/lib/api"
-import { formatRelativeTime } from "@/lib/utils"
+import { formatRelativeTime, formatTimestamp } from "@/lib/utils"
 import type {
   AIApprovalRequest,
   AIAutonomyLevel,
@@ -540,15 +540,24 @@ export default function AssistantPage() {
                       alert, jellyfin" are one row as far as the reader is
                       concerned. The time is what tells them apart.
 
-                      Absolute time in the tooltip: "5m ago" is the right
-                      default for a list that is mostly recent, and useless
-                      for correlating against a log or a Grafana panel.
+                      Which is why the absolute time leads and the relative
+                      one trails it. This first shipped the other way round,
+                      with "23h ago" as the label and the real time hidden in
+                      a tooltip — and three sessions from the same evening
+                      still read identically, which was the whole complaint.
+                      "How long ago" is a coarse answer that stops
+                      distinguishing rows within an hour of each other;
+                      "19:03" never does, and is also what a Grafana panel or
+                      a log line can be lined up against.
                     */}
                     <span
-                      className="mt-1 block text-slate-500"
-                      title={new Date(s.created_at).toLocaleString()}
+                      className="mt-1 block text-slate-400"
+                      title={new Date(s.created_at).toISOString()}
                     >
-                      {formatRelativeTime(s.created_at)}
+                      {formatTimestamp(s.created_at)}{" "}
+                      <span className="text-slate-500">
+                        ({formatRelativeTime(s.created_at)})
+                      </span>
                     </span>
                     <span className="mt-1 flex flex-wrap items-center gap-2">
                       <Badge className={STATUS_STYLE[s.status] ?? STATUS_STYLE.queued}>
@@ -628,8 +637,15 @@ export default function AssistantPage() {
                 )}
                 <Badge variant="outline">{session.autonomy_level}</Badge>
                 <Badge variant="outline">{describeScope(hostNames(session.target_host_ids))}</Badge>
-                <span className="text-xs text-slate-400">
-                  {session.iterations} turns · {session.command_count} commands ·{" "}
+                {/* Same reasoning as the list: an open transcript is the
+                    thing an operator lines up against a Grafana panel or a
+                    journal, and it could not say when it ran. */}
+                <span
+                  className="text-xs text-slate-400"
+                  title={new Date(session.created_at).toISOString()}
+                >
+                  {formatTimestamp(session.created_at)} · {session.iterations} turns ·{" "}
+                  {session.command_count} commands ·{" "}
                   {session.cost_unknown ? "cost not reported" : `$${session.cost.toFixed(4)}`}
                 </span>
                 {/*
