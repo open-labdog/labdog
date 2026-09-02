@@ -55,6 +55,14 @@ async def _prune_audit_logs() -> dict:
     from app.models.audit_log import AuditLog  # noqa: PLC0415
 
     retention_days = await _get_retention_days()
+    # ``0`` means "keep forever" per the setting's own description. Without
+    # this guard the cutoff becomes *now* and the whole table is deleted.
+    if retention_days <= 0:
+        logger.info(
+            "audit_retention: retention disabled (%d) — keeping all audit_log rows",
+            retention_days,
+        )
+        return {"deleted": 0, "retention_days": retention_days, "skipped": "retention disabled"}
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
     async with task_session() as db:
@@ -84,6 +92,13 @@ async def _prune_ssh_transcripts() -> dict:
     from app.models.ssh_session_transcript import SSHSessionTranscript  # noqa: PLC0415
 
     retention_days = await _get_retention_days()
+    # See ``_prune_audit_logs`` — 0 means keep forever, not delete everything.
+    if retention_days <= 0:
+        logger.info(
+            "audit_retention: retention disabled (%d) — keeping all transcript rows",
+            retention_days,
+        )
+        return {"deleted": 0, "retention_days": retention_days, "skipped": "retention disabled"}
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
 
     async with task_session() as db:
