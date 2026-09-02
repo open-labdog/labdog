@@ -15,8 +15,27 @@ useDefault = true
 description = "Test fixtures, dev compose values, and documented placeholders"
 
 paths = [
-    '''^backend/tests/''',
-    '''^frontend/e2e/''',
+    # Scoped to the three files that actually carry fixture secrets, NOT to
+    # the whole of backend/tests/ and frontend/e2e/ as this list used to be.
+    # Those two directory globs exempted ~115 files from every rule, which is
+    # precisely where a real credential gets pasted "just to make the
+    # integration test pass" and would never be seen again. Verified with a
+    # full `gitleaks detect` run: these three files account for all 8
+    # findings the directory globs were suppressing, and frontend/e2e/
+    # produced none at all.
+    #
+    # Fixture inventory, all verified non-production:
+    #   ai/test_redaction.py  — the SECRETS table the redactor is tested
+    #                           against (hunter2, AKIAIOSFODNN7EXAMPLE,
+    #                           ghp_abcdef…, sk-ant-api03-abcdef…, a sample
+    #                           JWT) plus a fake RSA PEM whose body is the
+    #                           literal keyboard-walk "MIIEow…xY3zA4bC".
+    #   test_packs_git_auth.py — an OPENSSH PEM envelope wrapping the literal
+    #                           word "key".
+    #   conftest.py           — the test env vars set by pytest_configure.
+    '''^backend/tests/ai/test_redaction\.py$''',
+    '''^backend/tests/test_packs_git_auth\.py$''',
+    '''^backend/tests/conftest\.py$''',
     '''^labdog\.toml$''',
     # Historical-only path. The plans/ directory no longer exists in
     # the working tree, but a historical commit contains a multi-agent
@@ -47,6 +66,8 @@ regexes = [
     # literal "ci-test-encryption-key-32bytes".
     '''ci-test-encryption-key-32bytes''',
     '''Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz''',
+    # Pre-rebrand conftest value: base64 of "test-encryption-key-32bytes".
+    '''dGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz''',
     # Conftest test key (asserted in tests/conftest.py).
     '''vrPDeLMuFGehy2sYV//fyTd7EmnvOKbE2n4h7XM/8zg=''',
     # Test secret key string used by CI + tests.
