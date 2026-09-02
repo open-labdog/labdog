@@ -65,6 +65,7 @@ rows — so a dead member can't wedge the run.
 from __future__ import annotations
 
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -723,6 +724,15 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
+        # _verify_all allocates a sibling runner dir per verified host
+        # (f"{private_data_dir}-verify-{host_id}"), so removing only the base
+        # dir leaked one tree per host per run — each holding the rendered
+        # inventory and the full ansible event stream. Globbing the siblings
+        # cannot miss one and needs no bookkeeping threaded through
+        # _verify_all; private_data_dir is an mkdtemp path, so the prefix is
+        # unambiguous.
+        for verify_dir in glob.glob(f"{private_data_dir}-verify*"):
+            shutil.rmtree(verify_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
