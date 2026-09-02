@@ -260,7 +260,15 @@ export default function AssistantPage() {
     sourceRef.current = source
 
     source.addEventListener("text", (event) => {
-      const data = JSON.parse((event as MessageEvent).data)
+      // Guarded like the budget_warning and error handlers below — a
+      // truncated frame would otherwise throw inside the listener and lose
+      // the rest of the streamed turn.
+      let data: { text?: string }
+      try {
+        data = JSON.parse((event as MessageEvent).data)
+      } catch {
+        return
+      }
       setLive((prev) =>
         prev?.sessionId === sessionId
           ? { sessionId, text: prev.text + (data.text ?? "") }

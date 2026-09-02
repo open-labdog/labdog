@@ -83,7 +83,16 @@ export default function GroupCACertsPage({ embedded = false }: { embedded?: bool
     queryKey: ["group-ca-cert-runs", id],
     queryFn: () => apiFetch<CACertActionRun[]>(`/api/ca-certs/groups/${id}/runs`),
     enabled: !!id,
-    refetchInterval: 5000,
+    // Only poll while something is actually in flight, matching the predicate
+    // used by components/actions-tab.tsx. This was an unconditional 5s
+    // interval, so an idle tab kept hitting the API forever even when the
+    // run list had been terminal for weeks.
+    refetchInterval: (query) => {
+      const data = query.state.data as CACertActionRun[] | undefined
+      if (!data) return false
+      const hasActive = data.some((r) => r.status === "pending" || r.status === "running")
+      return hasActive ? 5000 : false
+    },
   })
 
   const createMutation = useApiMutation({
