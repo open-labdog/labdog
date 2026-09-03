@@ -29,6 +29,7 @@ import yaml
 from pydantic import ValidationError
 
 from app.actions.manifest import ActionManifest
+from app.actions.pack_policy import UntrustedPackContent, assert_pack_safe
 from app.actions.types import ActionDefinition, ActionParameter
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,14 @@ class Pack:
     """Database id of the matching ``ActionPack`` row, or ``None`` for
     the in-image bundled pack. Used as the natural key for the
     ``action_resolution`` and ``action_registry_snapshot`` tables."""
+
+    trusted: bool = False
+    """Whether this pack may ship content that runs on the LabDog host.
+
+    Defaults false so a caller that forgets to pass it gets the safe
+    answer. The bundled pack is constructed with ``trusted=True``: it is
+    in-image content shipped with the release, not a repository anyone
+    pointed LabDog at, so it is already as trusted as the application."""
 
     @property
     def actions_dir(self) -> Path:
@@ -182,6 +191,19 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
             "rebuild the container image (production).",
             pack.name,
             pack.actions_dir,
+        )
+        return []
+
+    # Refuse controller-side code from a pack nobody has vouched for. This
+    # is checked before any manifest is read: the risk is what the
+    # repository *contains*, not what its manifests declare.
+    try:
+        assert_pack_safe(pack.name, pack.path, pack.trusted)
+    except UntrustedPackContent as exc:
+        logger.error(
+            "pack %r refused: %s",
+            pack.name,
+            exc,
         )
         return []
 

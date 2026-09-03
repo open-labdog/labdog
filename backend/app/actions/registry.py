@@ -72,6 +72,10 @@ def _bundled_pack():
         name=BUNDLED_PACK_NAME,
         path=ANSIBLE_DIR,
         pack_id=None,
+        # In-image content shipped with the release at the SHA pinned in
+        # LABDOG_PLAYBOOKS_REF — not a repository anyone pointed LabDog at,
+        # so it is already as trusted as the application itself.
+        trusted=True,
     )
 
 
@@ -131,6 +135,7 @@ def reload_registry() -> dict[str, ActionDefinition]:
                             name=row["name"],
                             path=path,
                             pack_id=row["id"],
+                            trusted=bool(row.get("trusted", False)),
                         )
                     )
             resolutions, prior_winners = _load_resolutions_and_snapshot_sync(conn)
@@ -194,9 +199,10 @@ def _scan_db_pack_rows_sync(conn) -> list[dict]:
         select(
             ActionPack.id,
             ActionPack.name,
+            ActionPack.trusted,
         ).where(ActionPack.enabled.is_(True))
     )
-    return [{"id": r.id, "name": r.name} for r in result]
+    return [{"id": r.id, "name": r.name, "trusted": r.trusted} for r in result]
 
 
 def _load_resolutions_and_snapshot_sync(
