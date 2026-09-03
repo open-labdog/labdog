@@ -52,12 +52,44 @@ class Pack:
         return self.path / "roles"
 
 
+def _resolve_within_pack(
+    candidate: Path,
+    pack: Pack,
+    manifest_path: Path,
+    field: str,
+) -> Path:
+    """Resolve *candidate* and assert it stays inside the pack directory.
+
+    A manifest is content from a git remote or an operator-supplied
+    directory, so its paths are input rather than configuration. Without
+    this, ``playbook: ../../../../etc/labdog/labdog.toml`` resolved outside
+    the checkout and was read into the run — and because a parse failure
+    reports the offending content, the file came back out in the run output
+    shown in the UI. An arbitrary-file-read primitive from a pack repo.
+
+    ``app.packs.service.pack_root_path`` already applies the same assertion
+    to the pack root, and documents it as defence-in-depth against symlinks.
+    This is the equivalent for paths *inside* the pack, which that check
+    does not cover.
+    """
+    resolved = candidate.resolve()
+    root = pack.path.resolve()
+    if not resolved.is_relative_to(root):
+        raise ValueError(
+            f"Manifest {manifest_path} references {field} {str(candidate)!r}, "
+            f"which resolves to {resolved} and escapes the pack directory {root}."
+        )
+    return resolved
+
+
 def _manifest_to_definition(
     manifest: ActionManifest,
     manifest_path: Path,
     pack: Pack,
 ) -> ActionDefinition:
-    playbook_path = (manifest_path.parent / manifest.playbook).resolve()
+    playbook_path = _resolve_within_pack(
+        manifest_path.parent / manifest.playbook, pack, manifest_path, "playbook"
+    )
     if not playbook_path.is_file():
         raise FileNotFoundError(
             f"Manifest {manifest_path} references playbook "
@@ -73,7 +105,12 @@ def _manifest_to_definition(
     )
     verify_playbook_path: Path | None = None
     if manifest.verify_playbook is not None:
-        candidate = (manifest_path.parent / manifest.verify_playbook).resolve()
+        candidate = _resolve_within_pack(
+            manifest_path.parent / manifest.verify_playbook,
+            pack,
+            manifest_path,
+            "verify_playbook",
+        )
         if not candidate.is_file():
             raise FileNotFoundError(
                 f"Manifest {manifest_path} references verify_playbook "

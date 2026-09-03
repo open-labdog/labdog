@@ -122,6 +122,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from celery.exceptions import SoftTimeLimitExceeded
     from sqlalchemy import select
 
+    from app.actions.extra_vars import sanitize_extra_vars
     from app.actions.registry import ACTION_REGISTRY
     from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.inventory import generate_inventory
@@ -475,6 +476,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         )
 
         dry_run = parameters.pop(DRY_RUN_PARAM, False)
+        # Fail closed before these become extra-vars. Ansible evaluates
+        # extra-vars on the controller — the LabDog host — not on the
+        # target, so a template expression here is code execution here.
+        # The API rejects them too; this catches rows that did not come
+        # through that path. See app/actions/extra_vars.py.
+        sanitize_extra_vars(parameters)
         extra_vars: dict | None = dict(parameters) if parameters else None
         if dry_run:
             extra_vars = extra_vars or {}
