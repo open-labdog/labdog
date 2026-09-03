@@ -40,7 +40,12 @@ dependencies = [
     # GHSA-hh9p-6wh2-4mfc, GHSA-wvpp-8hx9-p66j, GHSA-jm78-9fvv-mhgr —
     # unguarded option forwarding in IndexFile.from_tree/reset/merge_tree,
     # which allows arbitrary file writes. Flagged HIGH by pip-audit + trivy.
-    "gitpython>=3.1.58",
+    #
+    # 3.1.59 adds PYSEC-2026-3785/3786/3787/3788. LabDog hands user-supplied
+    # repository URLs and refs to GitPython in app/gitops/git_service.py and
+    # app/packs/, so option-forwarding and argument-injection classes in this
+    # package are directly reachable rather than theoretical.
+    "gitpython>=3.1.59",
     # asyncssh>=2.23.1 clears CVE-2026-45309 (a server-role AuthorizedKeysFile
     # traversal; LabDog is a client, so not directly exposed, but kept current).
     "asyncssh>=2.23.1",
