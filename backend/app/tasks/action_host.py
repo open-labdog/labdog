@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 from datetime import UTC, datetime
+from pathlib import Path
 
 from app.tasks import celery_app
 
@@ -146,8 +147,15 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     channel = f"actions.run.{action_run_id}"
 
     private_data_dir = tempfile.mkdtemp(prefix="labdog-action-")
-    fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-action-", suffix=".key")
-    os.close(fd)
+
+    # Allocated inside the try below; None until then so the finally block can
+    # tell "never created" from "created and needs unlinking".
+    ssh_key_path: str | None = None
+
+    # Extra ansible-runner data dirs derived from private_data_dir (the verify
+    # pass creates its own). Tracked so the finally block removes every one of
+    # them, not just the base.
+    extra_data_dirs: list[str] = []
 
     # Track whether we claimed the host so the finally block knows whether
     # to release it via dispatch-next-pending. On the defer path we leave
@@ -156,6 +164,19 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     claimed_host_id: int | None = None
 
     try:
+        # Prefer tmpfs so the private key never touches disk, but fall back to
+        # the default temp dir when /dev/shm is absent (hardened container
+        # profiles, non-Linux dev machines) — the same guard
+        # host_sync_orchestrator._make_tmpfs_workspace already applies.
+        #
+        # This must also stay *inside* the try. It used to be an unguarded
+        # mkstemp(dir="/dev/shm") above it, so on such a host it raised
+        # FileNotFoundError before the try was entered: private_data_dir
+        # leaked, the ActionHostRun stayed "queued" forever, and dispatch-next
+        # never fired — wedging that host's queue.
+        key_dir = "/dev/shm" if Path("/dev/shm").is_dir() else None
+        fd, ssh_key_path = tempfile.mkstemp(dir=key_dir, prefix="labdog-action-", suffix=".key")
+        os.close(fd)
         # ------------------------------------------------------------------ #
         # Pre-flight: honour cancel token before doing any real work          #
         # ------------------------------------------------------------------ #
@@ -688,10 +709,14 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 # is appended to step_log so the UI run view shows it
                 # distinctly from the main playbook.
                 try:
+                    verify_data_dir = private_data_dir + "-verify"
+                    # Register before the call: run_ansible creates the dir, so
+                    # it must be cleaned up even if the run raises.
+                    extra_data_dirs.append(verify_data_dir)
                     verify_runner = run_ansible(
                         playbook_path=action_verify_playbook_path,
                         inventory_json=inventory_json,
-                        private_data_dir=private_data_dir + "-verify",
+                        private_data_dir=verify_data_dir,
                         extra_vars=extra_vars,
                         timeout=action_verify_timeout,
                         roles_paths=list(action_roles_paths) if action_roles_paths else None,
@@ -1093,8 +1118,16 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     action_run_id,
                 )
 
-        # CRITICAL: always remove the SSH key from tmpfs
-        if os.path.exists(ssh_key_path):
+        # CRITICAL: always remove the SSH key from tmpfs. ssh_key_path is None
+        # when mkstemp itself failed, which is why it is checked first.
+        if ssh_key_path is not None and os.path.exists(ssh_key_path):
             os.unlink(ssh_key_path)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
+        # Sibling runner dirs (the verify pass allocates its own alongside
+        # private_data_dir rather than inside it). Removing only the base dir
+        # leaked one tree per verify, each holding the rendered inventory and
+        # the full ansible event stream.
+        for extra_dir in extra_data_dirs:
+            if os.path.exists(extra_dir):
+                shutil.rmtree(extra_dir, ignore_errors=True)

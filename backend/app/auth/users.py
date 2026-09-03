@@ -70,8 +70,22 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
         check, and the INSERT all live in a single transaction.  If anything
         raises after the lock is acquired but before the commit, the whole
         transaction rolls back and no half-created user persists.
+
+        Callers pass ``safe=False`` so that the promotion below survives —
+        fastapi-users' ``safe=True`` path routes through
+        ``create_update_dict()``, which strips ``is_superuser`` /
+        ``is_active`` / ``is_verified`` and would therefore also strip the
+        flag this method just set.  Because ``safe=False`` otherwise honours
+        those fields straight from the request body, privilege flags are
+        reset from client input *first* and only then decided here.  The
+        registration endpoint refuses once any user exists, so this is
+        defence in depth rather than a live hole — but the request body must
+        never be what decides privilege.
         """
         session = self.user_db.session
+        # Neutralise anything the client put in the body before deciding.
+        user_create.is_superuser = False  # type: ignore[attr-defined]
+        user_create.is_verified = False  # type: ignore[attr-defined]
         # Advisory lock serialises concurrent registrations (same key as the
         # former on_after_register path and the auth_setup outer gate).
         await session.execute(text("SELECT pg_advisory_xact_lock(8675309)"))

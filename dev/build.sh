@@ -19,8 +19,15 @@ fi
 # Build AIO image
 echo ""
 echo "--- Building labdog ---"
+# Pass the pinned bundled-pack ref explicitly. Without this the Dockerfile's
+# in-stage default (`main`) applies, so every local build — including the one
+# deploy.sh ships — silently bundles whatever labdog-playbooks main happened to
+# be at that minute instead of the SHA committed in LABDOG_PLAYBOOKS_REF.
+LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < "${ROOT_DIR}/LABDOG_PLAYBOOKS_REF")"
+
 docker build \
   --tag "${IMAGE}:${TAG}" \
+  --build-arg LABDOG_PLAYBOOKS_REF="${LABDOG_PLAYBOOKS_REF}" \
   --file "${ROOT_DIR}/Dockerfile" \
   "${ROOT_DIR}"
 

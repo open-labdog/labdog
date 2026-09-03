@@ -188,7 +188,6 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
-                dict(message.get("headers", []))
                 extra = [
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
