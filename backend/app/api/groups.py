@@ -202,7 +202,17 @@ async def update_group(
         "category": group.category,
         "description": group.description,
     }
-    for field, value in body.model_dump(exclude_none=True).items():
+    # ``exclude_unset`` (not ``exclude_none``) so an explicit ``null`` clears a
+    # nullable column. With ``exclude_none`` there was no way to remove a
+    # description/category or stop overriding a chain policy — the field was
+    # dropped from the payload and the old value silently persisted.
+    updates = body.model_dump(exclude_unset=True)
+    # ``name`` and ``priority`` are NOT NULL on the model, so an explicit null
+    # for either is a client error rather than a clear-the-field request.
+    for non_nullable in ("name", "priority"):
+        if non_nullable in updates and updates[non_nullable] is None:
+            raise HTTPException(status_code=422, detail=f"'{non_nullable}' cannot be null")
+    for field, value in updates.items():
         setattr(group, field, value)
     await db.flush()
     await log_action(

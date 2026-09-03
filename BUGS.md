@@ -48,6 +48,39 @@ spot-checked against current HEAD before filing.
 
 _No bugs are currently open._
 
+### AI command classifier — Low
+
+- [ ] **BUG-60** `backend/app/ai/safety.py:452` — `2>&1` is classified
+      `mutating`, because the segment splitter breaks on the `&`.
+
+      **Symptom.** Any command ending in the most common redirection
+      idiom — `systemctl status sshd 2>&1`, `ls -l 2>&1` — is refused in
+      a read-only AI session and raises an approval request in an
+      approval session, despite writing nothing.
+
+      **Root cause.** `_SEGMENT_SPLIT` splits on `[;|&\n]`, so
+      `ls -l 2>&1` becomes the two segments `ls -l 2>` and `1`. The
+      second has head `1`, which is not on `READ_ONLY_HEADS`, so
+      default-deny classifies the pipeline as `mutating`. The redirect
+      rule itself is innocent here and is asserted not to fire on an fd
+      dup (`tests/ai/test_safety.py::TestRedirection`).
+
+      **Severity: Low.** Fails safe — over-classification costs an
+      approval prompt, never an unintended write. Filed because the
+      idiom is common enough that the prompts read as noise, and noisy
+      prompts are how an operator learns to approve without reading.
+
+      **Fix direction.** Teach `_segments` to recognise fd-dup
+      redirections before splitting, e.g. mask `\d*>&\d+` out of the
+      line, split, then restore. Deliberately not done alongside the
+      2026-09 classifier hardening: changing how a command is cut into
+      segments is the single edit most able to reopen the bypasses that
+      work closed, and it wants its own diff and its own review rather
+      than riding along in a security fix.
+
+      Predates the hardening — verified against `dev` at `c784afb`, not
+      introduced by it.
+
 ### Reliability — Medium
 
 - [ ] **BUG-55** `Dockerfile:160` — the app runs as container PID 1 and never
@@ -167,50 +200,25 @@ performance) of the backend, frontend, packaging and CI. Every entry was
 verified against source at `c784afb` before filing; the ones already
 fixed are absent rather than ticked, per the open-only convention.
 
-Three findings from the same pass have already landed and are not
-repeated here: the reflected XSS in the SPA dynamic-route rewrite, the
-AI command-classifier bypasses, and the quick-win batch (unauthenticated
+Findings from the same pass that have already landed are absent rather
+than listed: the reflected XSS in the SPA dynamic-route rewrite, the AI
+command-classifier bypasses, action-parameter template injection, pack
+manifest path containment, and the quick-win batch (unauthenticated
 resolver reads, registration privilege flags, `retention_days=0` wiping
 the audit log, the scheduler tick poisoning itself, two temp-dir leaks,
 the sync-tray request loop, the CSRF-less password change). Search the
-log: `git log --grep "SEC —"`.
+log: `git log --grep "SEC"`.
 
 **Note on the privilege model.** LabDog is deliberately flat — every
 authenticated user has the same permissions and `is_superuser` gates only
 user administration. That is a confirmed design decision, not a finding.
 Its consequence shapes the severities below: the AI classifier, the
 action-parameter validator and pack content policy are the *only* controls
-protecting host root from an ordinary account, so SEC-20 and SEC-21 carry
-no second line of defence.
+protecting host root from an ordinary account. Two of those three are now
+in place; SEC-21 is the one still open, which is why it is rated High
+rather than Medium — nothing sits behind it.
 
 ### Security — High
-
-- [ ] **SEC-20** `backend/app/tasks/action_host.py:478`,
-      `action_group.py:490` — action-run parameters reach Ansible as
-      unsanitised extra-vars and are Jinja-evaluated on the controller.
-
-      **Symptom.** A `string` action parameter containing
-      `{{ lookup('pipe', 'curl … | sh') }}` executes **on the LabDog host
-      itself**, as the labdog user, the moment a playbook templates the
-      value — a `msg:`, a `when:`, a `template:` src.
-
-      **Root cause.** `extra_vars = dict(parameters)` straight from the
-      `POST /api/actions/runs` body. `app/actions/validation.py:36-56`
-      validates the declared *type* only; a `string` accepts any content.
-      ansible-runner does not mark extravars `!unsafe`.
-
-      **Severity: High.** Reachable by any authenticated user, which under
-      the flat model means any account. This is the case `SECURITY.md`
-      names as serious — untrusted content gaining execution on the LabDog
-      host rather than on a target.
-
-      **Fix direction.** Reject `{{`, `{%`, `{#` in
-      `validation._annotation_for`, which all three producers (`/api/
-      actions/runs`, scheduled actions, the GitOps importer) already funnel
-      through, plus a fail-closed re-check in the task before the runner is
-      invoked. `wrap_var`/`AnsibleUnsafeText` is *not* the fix: extravars
-      are serialised to a JSON artefact before ansible-core parses them, so
-      the marker does not survive the round trip.
 
 - [ ] **SEC-21** `backend/app/actions/packs.py:127-183` — action packs are
       arbitrary controller-side code, loaded with no content policy.
@@ -258,15 +266,6 @@ no second line of defence.
       fixed.
 
 ### Security — Medium
-
-- [ ] **SEC-23** `backend/app/actions/packs.py:60,74` — `manifest.playbook`
-      is `.resolve()`d with no containment check, unlike
-      `app/packs/service.py:56-79` which does exactly that for the pack
-      subpath and documents why. A manifest with
-      `playbook: ../../../../etc/labdog/labdog.toml` resolves outside the
-      checkout; the file is then read into the run and its content surfaces
-      in the run output shown in the UI — an arbitrary-file-read primitive
-      from a pack repo. Apply the same `is_relative_to` assertion.
 
 - [ ] **SEC-24** `backend/app/hosts_mgmt/merge.py:146` — `/etc/hosts` line
       injection. `HostsEntryCreate.comment` has no validator while

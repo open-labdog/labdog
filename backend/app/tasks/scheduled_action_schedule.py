@@ -165,6 +165,16 @@ async def _check_due_async() -> dict:
 
             except Exception:
                 # Don't let one bad schedule abort the rest of the walk.
+                #
+                # The rollback is load-bearing, not tidiness: a failure part-way
+                # through (e.g. the FK violation you get when a schedule's
+                # target host has been deleted — ``scheduled_actions.target_id``
+                # is an index, not a constraint) leaves the session needing
+                # rollback. Without this, the *next* iteration's first query
+                # raises PendingRollbackError, is caught here too, and so on —
+                # so one broken row silently skipped every schedule ordered
+                # after it, on every tick, indefinitely.
+                await db.rollback()
                 logger.exception("scheduler: failed to evaluate scheduled_action %d", sa.id)
 
     return {
