@@ -37,6 +37,41 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
+## Content-Security-Policy — finish the header
+
+**Context:** the SPA placeholder XSS fix (see
+`git log --grep "SPA dynamic-route rewrite"`) deliberately left the CSP
+alone so the security fix stayed independently reviewable and free of
+conflicts with the quick-wins branch touching the same middleware. The
+allow-list in `_resolve_dynamic_route` is the control; the CSP is the
+defence-in-depth that was *not* tightened, and it is weak enough to be
+worth doing on its own.
+
+`SecurityHeadersMiddleware` in `backend/app/main.py` currently sends:
+
+    default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'
+
+- [ ] **Add the directives `default-src` does not cover.** `object-src
+      'none'`, `base-uri 'self'`, `form-action 'self'` and
+      `frame-ancestors 'none'` all fall back to nothing rather than to
+      `default-src`. `base-uri` matters most: an injected `<base>` tag
+      retargets every relative script URL on the page.
+
+- [ ] **Drop `x-xss-protection`.** Deprecated, ignored by current
+      browsers, and actively harmful on some old ones.
+
+- [ ] **Remove `script-src 'unsafe-inline'`.** This is the hard one and
+      the reason the whole item is deferred rather than done. Next's
+      static export inlines the RSC flight data as `<script>` blocks, so
+      a nonce has to be injected per response — which means the backend
+      rewriting every served HTML document, on a path that is already
+      doing one rewrite and is where the XSS lived. Hashes are the other
+      option and are stable per build, but they have to be recomputed at
+      build time and shipped with the export. Neither is a one-liner;
+      pick one deliberately rather than reaching for whichever is nearer.
+
+---
+
 ## k8s-upgrade — broaden OS support
 
 **Context:** The bundled `k8s-upgrade` action is currently apt-only;

@@ -147,3 +147,45 @@ class TestCaching:
         _rewrite_placeholder(str(target), mtime, "12345")
         _rewrite_placeholder(str(target), mtime, "12345")
         assert _rewrite_placeholder.cache_info().hits > before
+
+
+class TestTheAllowListIsTheSecurityBoundary:
+    """Pins the two design decisions the fix rests on.
+
+    Both live in docstrings today. A docstring does not fail a build, and
+    each of these is the kind of change that looks like a small
+    improvement while removing the property the fix exists for.
+    """
+
+    def test_the_permitted_segment_is_digits_only(self):
+        """Deliberately strict: every dynamic route in the app router is an
+        integer primary key ([id] / [runId]), so nothing else needs to
+        resolve server-side.
+
+        This is a tripwire, not a behaviour test. If a slug-shaped route is
+        added and someone widens the pattern to admit letters or hyphens,
+        this fails — and the docstring on ``_rewrite_placeholder`` explains
+        why widening it *also* requires adding context-correct escaping,
+        because the placeholder sits in two different quoting contexts that
+        need different escapes.
+        """
+        from app.main import _SAFE_DYNAMIC_SEGMENT
+
+        assert _SAFE_DYNAMIC_SEGMENT.pattern == r"[0-9]{1,19}"
+
+        for allowed in ("1", "42", "9" * 19):
+            assert _SAFE_DYNAMIC_SEGMENT.fullmatch(allowed)
+        for refused in ("a", "1a", "-1", "1.0", "1 2", "9" * 20, ""):
+            assert not _SAFE_DYNAMIC_SEGMENT.fullmatch(refused)
+
+    def test_the_rewrite_refuses_rather_than_escaping(self, export_dir):
+        """The chosen failure mode is "serve the SPA shell", not "escape
+        and serve anyway".
+
+        Escaping was considered and rejected: the placeholder appears
+        plain in the .txt payloads and backslash-escaped in the HTML, so a
+        single escape helper would be wrong in one of them. Returning None
+        keeps one code path instead of two subtly different ones.
+        """
+        target = export_dir / "hosts" / "placeholder" / "index.html"
+        assert _rewrite_placeholder(str(target), target.stat().st_mtime_ns, 'x"') is None
