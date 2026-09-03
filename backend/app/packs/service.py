@@ -249,6 +249,7 @@ async def load_db_packs(db: AsyncSession) -> list[Pack]:
                 name=row.name,
                 path=path,
                 pack_id=row.id,
+                trusted=row.trusted,
             )
         )
     return packs
