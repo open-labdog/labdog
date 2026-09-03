@@ -17,24 +17,24 @@ from app.tasks import action_timeouts as at
 
 
 def test_effective_timeout_setting_wins_when_higher():
-    with patch("app.settings_service.get_setting_sync_typed", return_value=3600):
+    with patch("app.settings_service.get_setting_cached_typed", return_value=3600):
         assert at.effective_playbook_timeout(1800) == 3600
 
 
 def test_effective_timeout_floor_wins_when_higher():
-    with patch("app.settings_service.get_setting_sync_typed", return_value=300):
+    with patch("app.settings_service.get_setting_cached_typed", return_value=300):
         # linux-os-upgrade's 5400 floor exceeds the setting's 3600 ceiling.
         assert at.effective_playbook_timeout(5400) == 5400
 
 
 def test_effective_timeout_no_floor_uses_setting():
-    with patch("app.settings_service.get_setting_sync_typed", return_value=300):
+    with patch("app.settings_service.get_setting_cached_typed", return_value=300):
         assert at.effective_playbook_timeout(None) == 300
 
 
 def test_effective_timeout_setting_error_falls_back():
     with patch(
-        "app.settings_service.get_setting_sync_typed",
+        "app.settings_service.get_setting_cached_typed",
         side_effect=RuntimeError("no db"),
     ):
         # Falls back to FALLBACK_TIMEOUT_SECONDS, then floored by the action.
@@ -50,7 +50,7 @@ def test_effective_timeout_setting_error_falls_back():
 def test_per_host_deadline_uses_action_verify_and_floor():
     action = SimpleNamespace(playbook_timeout_seconds=1800, verify_timeout_seconds=180)
     with (
-        patch("app.settings_service.get_setting_sync_typed", return_value=300),
+        patch("app.settings_service.get_setting_cached_typed", return_value=300),
         patch.object(at, "_registry_lookup", return_value=action),
     ):
         # max(300, 1800) + 180 + 900
@@ -59,7 +59,7 @@ def test_per_host_deadline_uses_action_verify_and_floor():
 
 def test_per_host_deadline_registry_miss_uses_fallbacks():
     with (
-        patch("app.settings_service.get_setting_sync_typed", return_value=300),
+        patch("app.settings_service.get_setting_cached_typed", return_value=300),
         patch.object(at, "_registry_lookup", return_value=None),
     ):
         # setting(300) + FALLBACK_VERIFY(300) + grace(900)

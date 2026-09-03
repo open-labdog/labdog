@@ -431,7 +431,7 @@ async def test_timeout_computed_from_module_count(db: AsyncSession, tmp_path):
     with (
         _patch_orchestrator(_all_in_sync_outcomes(), calls),
         patch(
-            "app.settings_service.get_setting_sync_typed",
+            "app.settings_service.get_setting_cached_typed",
             return_value=1,
         ),
     ):
