@@ -360,3 +360,53 @@ class TestReadOnlyCommandsStillWork:
     def test_ordinary_reads_stay_read_only(self, command):
         verdict = classify_command(command)
         assert verdict.classification == "read_only", f"{command} → {verdict.reason}"
+
+
+class TestClassificationChoicesAreDeliberate:
+    """Pins the judgement calls, so changing one is a decision, not a drift.
+
+    Each assertion below encodes a choice that a reasonable person might
+    make differently. Without these, the reasoning lives only in comments
+    and commit messages, and a later edit can quietly reverse it while the
+    suite stays green — which is exactly how a safety gate loses the
+    property it was built for.
+    """
+
+    def test_substitution_is_mutating_not_denied(self):
+        """`denied` outranks every autonomy level including full_auto, so
+        it would make `echo $(id)` unapprovable by anyone, forever.
+        `mutating` routes to the approval gate instead, which is the
+        intended cost of refusing to parse the inner command."""
+        assert classify_command("echo $(id)").classification == "mutating"
+
+    def test_parameter_expansion_is_not_treated_as_substitution(self):
+        """`${...}` expands a variable; no shell re-evaluates the result.
+
+        Rejecting it would add an approval prompt to ordinary reads without
+        closing a vector. If this test starts failing because `\\$\\{` was
+        added to _COMMAND_SUBSTITUTION, that is a deliberate widening — and
+        the friction it buys should be justified before it lands.
+        """
+        assert classify_command("ls ${HOME}").classification == "read_only"
+        assert classify_command("cat ${HOME}/.bashrc").classification == "read_only"
+
+    def test_arithmetic_expansion_is_still_caught(self):
+        """The other half of the same decision: `$((` shares the `$(`
+        prefix on purpose, because an array subscript inside arithmetic can
+        trigger command substitution."""
+        assert classify_command("echo $((1+1))").classification != "read_only"
+
+    def test_input_redirection_is_unknown_not_mutating(self):
+        """Reading a file into a command writes nothing, so calling it
+        `mutating` would be a lie in the audit record. `unknown` is the
+        honest label for "cannot see what this consumes"; both route to
+        approval, so the security outcome is identical."""
+        assert classify_command("cat < /etc/passwd").classification == "unknown"
+
+    def test_eval_and_exec_fall_through_to_default_deny(self):
+        """Not on READ_ONLY_HEADS and no longer stripped as wrappers, so
+        they take the generic "unknown head" path rather than a special
+        case. Asserted because removing them from _WRAPPERS is the whole
+        fix, and re-adding them would look like tidying."""
+        verdict = classify_command("eval ls")
+        assert verdict.classification != "read_only"
