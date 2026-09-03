@@ -7,7 +7,40 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **Ten settings that never did anything now take effect.** Every setting
+  read from a Celery task or an SSH code path silently fell back to its
+  hardcoded default. The synchronous reader built its own connection URL
+  with two `.replace()` calls, the second undoing the first, leaving a
+  `postgresql://` URL that needs a driver LabDog does not depend on — and a
+  blanket `except Exception` turned the resulting import error into "use the
+  default". Nothing warmed the shared cache in a worker either, so it could
+  not cover for it.
+
+  **Read this before upgrading.** These settings start being honoured on the
+  next restart, and some of them have never been observed to do anything, so
+  a value set long ago may not be a value anyone still wants:
+
+  | Setting | Was always | Now |
+  |---|---|---|
+  | `ansible.playbook_timeout` | 300s | your value (3 call sites) |
+  | `ssh.connect_timeout` | 10s | your value (2 call sites) |
+  | `ssh.idle_timeout_seconds` | 1800s | your value |
+  | `discovery.max_concurrent` | 100 | your value |
+  | `logging.audit_retention_days` | 90 | your value |
+  | `actions.preflight_enabled` | always on | your value |
+  | `ai.wall_clock_seconds` | 900s | your value |
+
+  Check **Settings** — or `SELECT key, value FROM app_settings` — and
+  confirm the stored values are what you want before restarting. Lowering
+  `ansible.playbook_timeout` below a slow playbook's real runtime will now
+  actually kill it; `logging.audit_retention_days` will now actually delete
+  audit rows (`0` means keep forever, and is honoured as such).
+
+  Synchronous readers now consult a process cache that is refreshed from
+  whatever database session the surrounding code already has, so no code
+  path opens its own connection or blocks an event loop to read a setting.
 
 ## [0.9.0] — 2026-08-24
 
