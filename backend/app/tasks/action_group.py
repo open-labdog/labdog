@@ -276,7 +276,20 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                             reason,
                         )
                         return
-                    # All free → record what we claimed for the finally release.
+                    # All free → claim *here*, while this transaction still
+                    # holds every member's advisory lock.
+                    #
+                    # BUG-62: this used to commit with the run still
+                    # ``queued``, and the load phase below marked it running
+                    # in a later session. In between, the group held every
+                    # member's lock and nothing recorded it: check_host_busy
+                    # matches a group run through its ActionHostRun rows, and
+                    # those are created in that later phase. A sync entering
+                    # its gate in the gap saw the host free and claimed it.
+                    # Flipping the run here, plus the membership case added
+                    # to check_host_busy, closes it from both sides.
+                    run_peek.status = "running"
+                    run_peek.started_at = datetime.now(UTC)
                     claimed_member_ids = list(member_ids_peek)
                     await db.commit()
 
@@ -334,8 +347,19 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 await db.commit()
                 return
 
+            # Already flipped under the member locks in the claim block; a
+            # cancel is the one thing that can legitimately have moved it
+            # since, and re-asserting "running" over that would run a group
+            # action the operator stopped.
+            if run.status == "cancelled":
+                logger.info(
+                    "action_group: action_run %d was cancelled after the claim — not proceeding",
+                    action_run_id,
+                )
+                return
             run.status = "running"
-            run.started_at = datetime.now(UTC)
+            if run.started_at is None:
+                run.started_at = datetime.now(UTC)
             await db.flush()
 
             # Cache action + run attributes before the session closes.
