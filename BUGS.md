@@ -349,38 +349,6 @@ content policy.
 
 ### Correctness — High
 
-- [ ] **BUG-62** `backend/app/tasks/action_host.py:186-236`,
-      `action_group.py:240-278`, `tasks/host_lock.py:494-609` — four
-      defects in the per-host serialisation protocol.
-
-      1. *The claim is split across two transactions.* The lock and busy
-         check commit, then a **new** session flips the row to `running`.
-         In that window a concurrent `run_host_sync` sees the host free and
-         claims it, so an action and a sync run against the same host at
-         once — the nftables/apt race the lock exists to prevent.
-         `host_sync_orchestrator._claim_or_defer` deliberately does not do
-         this (see its BUG-38 comment); the action paths do.
-      2. *A deferred `ActionHostRun` is never re-dispatched.* For a group
-         target with `supports_host: true` only the child row goes
-         `pending`, and `dispatch_next_pending_for_host` scans parent rows
-         only — nothing anywhere selects on `ActionHostRun.status ==
-         "pending"`. The parent finalises `succeeded` having skipped that
-         host, and the sweeper does not reclaim it because the parent is
-         terminal.
-      3. *The same pending `ActionRun` can be dispatched twice.* The
-         dispatch calls `.delay()` without transitioning the row out of
-         `pending`, and the advisory lock is keyed on the freed host only.
-         Two hosts freeing at once both match the same group run; the
-         second copy hits `uq_action_host_run`, and its `except` marks the
-         run **failed while the first is still executing it**.
-      4. *The defensive "mark failed" writes are never committed* — they
-         `flush()` inside a `task_session()` that no caller commits, so a
-         `SyncJob` whose host was deleted is re-examined forever.
-
-      **Severity: High.** (1) is a data-integrity race on real hosts; (2)
-      reports success for work that did not happen, which is worse than
-      failing.
-
 - [ ] **BUG-63** `backend/app/tasks/action_orchestrator.py:307-311` —
       `run_action` blocks in `result.join()` waiting for children published
       to the same worker's queue, with `celery.concurrency` defaulting to

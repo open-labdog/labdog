@@ -250,9 +250,21 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     reason,
                 )
                 return
-            # Free → claim by leaving the row in queued/running; the
-            # main loader below will flip it to running atomically with
-            # the rest of the run-state writes.
+            # Free → claim it *here*, inside the transaction still holding
+            # the advisory lock.
+            #
+            # BUG-62: this used to leave the row in ``queued`` and let the
+            # loader session below flip it, so the lock was released at this
+            # commit with nothing yet marking the host busy. A concurrent
+            # run_host_sync entering its own gate in that window saw
+            # check_host_busy return None and claimed the same host — an
+            # action and a sync running against one host at once, which is
+            # the apt/nftables race the lock exists to prevent.
+            # host_sync_orchestrator does not have this shape: its
+            # _claim_or_defer and _prepare_run share one session precisely
+            # so the gate and the flip commit together (see its BUG-38 note).
+            hr_row.status = "running"
+            hr_row.started_at = datetime.now(UTC)
             claimed = True
             claimed_host_id = host_id_for_lock
             await db.commit()
@@ -321,9 +333,19 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 return
 
             # Mark running
-            hr.status = "running"
-            hr.started_at = datetime.now(UTC)
-            await db.commit()
+            # Already flipped to ``running`` under the advisory lock in the
+            # claim block above. Re-check rather than re-write: a cancel
+            # landing between the two sessions is the one thing that can
+            # legitimately have moved it, and clobbering that back to
+            # ``running`` would run an action the operator cancelled.
+            if hr.status != "running":
+                logger.info(
+                    "action_host: host_run %d left 'running' after the claim "
+                    "(now %r) — not proceeding",
+                    host_run_id,
+                    hr.status,
+                )
+                return
 
             # Cache scalar values before the session closes
             host_id: int = host.id
@@ -1116,6 +1138,25 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                     "after action_run_id=%s; queue may be stuck until next op triggers it",
                     claimed_host_id,
                     action_run_id,
+                )
+
+            # Close the parent run if this was the last member outstanding.
+            #
+            # BUG-62: a member deferred behind a busy host is re-dispatched
+            # long after the orchestrator's batch join returned, so nothing
+            # else would ever aggregate. No-op unless every sibling is
+            # terminal, and idempotent if two finish at once.
+            try:
+                from app.tasks.action_orchestrator import (  # noqa: PLC0415
+                    finalise_run_if_complete,
+                )
+
+                await finalise_run_if_complete(action_run_id, r)
+            except Exception:
+                logger.exception(
+                    "action_host: could not finalise action_run %s after host_run %s",
+                    action_run_id,
+                    host_run_id,
                 )
 
         # CRITICAL: always remove the SSH key from tmpfs. ssh_key_path is None

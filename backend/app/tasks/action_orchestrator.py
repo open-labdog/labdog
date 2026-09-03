@@ -75,6 +75,93 @@ def run_action(self, action_run_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+async def finalise_run_if_complete(action_run_id: int, r=None) -> str | None:
+    """Set an ActionRun's terminal status once every member has finished.
+
+    Returns the status written, or ``None`` when the run is not finished
+    yet — a member deferred behind a busy host sits ``pending`` until
+    dispatch-next-pending re-fires it, and finalising then would report the
+    run as complete on a host it never touched.
+
+    Callable from two places on purpose. The orchestrator calls it after its
+    batch join, which is the normal path. ``action_host`` calls it when a
+    late-dispatched child finishes, which is the only thing that can close a
+    run whose last member was deferred — the orchestrator has long since
+    returned by then, and the sweeper only looks at ``running`` per-host
+    rows, so nothing else would.
+    """
+    import json  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.action_run import ActionHostRun, ActionRun  # noqa: PLC0415
+
+    async with task_session() as db:
+        host_runs = list(
+            (
+                await db.execute(
+                    select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not host_runs:
+            return None
+
+        waiting = [hr for hr in host_runs if hr.status in ("pending", "queued", "running")]
+        if waiting:
+            logger.info(
+                "action_orchestrator: action_run %d not final — %d of %d host run(s) still active",
+                action_run_id,
+                len(waiting),
+                len(host_runs),
+            )
+            return None
+
+        succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
+        failed = sum(1 for hr in host_runs if hr.status == "failed")
+        if failed == 0:
+            final_status = "succeeded"
+        elif succeeded == 0:
+            final_status = "failed"
+        else:
+            final_status = "partial"
+
+        run = (
+            await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+        ).scalar_one_or_none()
+        if run is None:
+            return None
+        if run.status == "cancelled":
+            return run.status
+        if run.status in ("succeeded", "failed", "partial"):
+            # Already closed by whichever member finished last.
+            return run.status
+        run.status = final_status
+        run.finished_at = datetime.now(UTC)
+        await db.commit()
+        written = run.status
+        logger.info(
+            "action_orchestrator: action_run %d finished — %s (%d/%d hosts succeeded)",
+            action_run_id,
+            written,
+            succeeded,
+            len(host_runs),
+        )
+
+    if r is not None:
+        try:
+            r.publish(
+                f"actions.run.{action_run_id}",
+                json.dumps({"event": "status", "status": written}),
+            )
+        except Exception:
+            logger.debug("could not publish terminal status", exc_info=True)
+    return written
+
+
 async def _run_action_async(action_run_id: int) -> None:
     """Async implementation of :func:`run_action`."""
     from sqlalchemy import select
@@ -345,51 +432,7 @@ async def _run_action_async(action_run_id: int) -> None:
     # Phase 3: aggregate final status                                     #
     # ------------------------------------------------------------------ #
     try:
-        import json
-
-        from sqlalchemy import select
-
-        from app.db import task_session
-        from app.models.action_run import ActionHostRun, ActionRun
-
-        async with task_session() as db:
-            hr_result = await db.execute(
-                select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
-            )
-            host_runs = list(hr_result.scalars().all())
-
-            succeeded = sum(1 for hr in host_runs if hr.status == "succeeded")
-            failed = sum(1 for hr in host_runs if hr.status == "failed")
-            total = len(host_runs)
-
-            if failed == 0:
-                final_status = "succeeded"
-            elif succeeded == 0:
-                final_status = "failed"
-            else:
-                final_status = "partial"
-
-            run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
-            run = run_result.scalar_one()
-            # Only overwrite status if the run was not cancelled mid-flight
-            if run.status != "cancelled":
-                run.status = final_status
-                run.finished_at = datetime.now(UTC)
-            await db.commit()
-
-            logger.info(
-                "action_orchestrator: action_run %d finished — %s (%d/%d hosts succeeded)",
-                action_run_id,
-                run.status,
-                succeeded,
-                total,
-            )
-
-        # Publish terminal event to SSE channel
-        r.publish(
-            f"actions.run.{action_run_id}",
-            json.dumps({"event": "status", "status": run.status}),
-        )
+        await finalise_run_if_complete(action_run_id, r)
 
     except Exception as exc:
         logger.exception(
