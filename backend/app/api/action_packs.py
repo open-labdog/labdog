@@ -44,6 +44,10 @@ def _audit_snapshot(pack: ActionPack) -> dict:
         "path": pack.path,
         "local_path": pack.local_path,
         "enabled": pack.enabled,
+        # Included so flipping it shows up in the audit log as a
+        # before/after pair — accepting controller-side code should be
+        # visible after the fact, not only at the moment someone clicks.
+        "trusted": pack.trusted,
     }
 
 
@@ -109,6 +113,11 @@ def _apply_update(body: ActionPackUpdate, pack: ActionPack) -> tuple[bool, bool]
         needs_resync = True
     if body.enabled is not None and body.enabled != pack.enabled:
         pack.enabled = body.enabled
+    if body.trusted is not None and body.trusted != pack.trusted:
+        pack.trusted = body.trusted
+        # Trust decides whether the loader will accept the pack's
+        # controller-side content at all, so the registry has to rescan.
+        needs_resync = True
         needs_resync = True
 
     # Enforce shape post-update: if switching to git, ensure local_path

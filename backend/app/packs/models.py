@@ -76,6 +76,14 @@ class ActionPack(Base):
 
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 
+    #: Whether this pack may ship content that runs on the LabDog host —
+    #: ansible plugin directories, or plays targeting localhost. Not a
+    #: privilege boundary (the model is flat; any user can set it), but it
+    #: makes loading controller-side code deliberate and audited rather
+    #: than a side effect of adding a repository. New packs default false;
+    #: packs that predate the check were backfilled true in alembic 0025.
+    trusted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_sync_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)

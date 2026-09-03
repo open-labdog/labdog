@@ -249,6 +249,14 @@ export interface ActionPack {
   /** Absolute filesystem path for source_type=local. Null for git. */
   local_path: string | null
   enabled: boolean
+  /**
+   * Whether this pack may ship content that runs on the LabDog host —
+   * ansible plugin directories, or plays targeting localhost. An untrusted
+   * pack containing either is refused by the loader and contributes no
+   * actions. Not a privilege boundary: the model is flat and any user can
+   * set it. It makes accepting controller-side code deliberate and audited.
+   */
+  trusted: boolean
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
   last_sync_error: string | null

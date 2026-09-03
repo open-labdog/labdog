@@ -47,6 +47,7 @@ interface PackFormState {
   path: string
   local_path: string
   enabled: boolean
+  trusted: boolean
 }
 
 const emptyForm: PackFormState = {
@@ -56,6 +57,7 @@ const emptyForm: PackFormState = {
   path: "",
   local_path: "",
   enabled: true,
+  trusted: false,
 }
 
 // Synthetic row for the always-present bundled pack. The bundled pack
@@ -214,6 +216,7 @@ export default function ActionPacksPage() {
       path: pack.path ?? "",
       local_path: pack.local_path ?? "",
       enabled: pack.enabled,
+      trusted: pack.trusted,
     })
     setFormError(null)
     setDialogOpen(true)
@@ -224,6 +227,7 @@ export default function ActionPacksPage() {
       name: state.name,
       source_type: state.source_type,
       enabled: state.enabled,
+      trusted: state.trusted,
     }
     if (state.source_type === "git") {
       p.git_repository_id = state.git_repository_id
@@ -893,6 +897,30 @@ export default function ActionPacksPage() {
                   className="rounded border-input"
                 />
                 <Label htmlFor="pack-enabled">Enabled</Label>
+              </div>
+
+              <div className="flex items-start gap-2">
+                <input
+                  id="pack-trusted"
+                  type="checkbox"
+                  checked={form.trusted}
+                  onChange={(e) =>
+                    setForm((p) => (p ? { ...p, trusted: e.target.checked } : p))
+                  }
+                  className="mt-1 rounded border-input"
+                />
+                <div>
+                  <Label htmlFor="pack-trusted">
+                    Allow content that runs on the LabDog host
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Ansible plugin directories, and plays targeting{" "}
+                    <code>localhost</code>, execute on the LabDog server itself
+                    rather than on a managed host. A pack containing either is
+                    refused unless this is set. Leave it off unless you have
+                    read the pack and intend it.
+                  </p>
+                </div>
               </div>
 
               {formError && (
