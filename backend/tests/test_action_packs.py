@@ -9,6 +9,8 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
+import pytest
+
 from app.actions.manifest import ActionManifest
 from app.actions.packs import (
     Pack,
@@ -760,3 +762,64 @@ def test_bundled_pack_exposes_expected_actions():
     # bundled-pack bump; it must not break every time the pack grows a knob.
     param_keys = {p.key for p in linux.parameters}
     assert {"auto_reboot", "reboot_timeout", "cleanup"} <= param_keys
+
+
+class TestPackPathsStayInsideThePack:
+    """SEC-23: a manifest is content from a git remote, so its paths are
+    input rather than configuration.
+
+    ``playbook`` and ``verify_playbook`` were ``.resolve()``d with no
+    containment assertion, unlike ``app.packs.service.pack_root_path``,
+    which applies exactly that to the pack root and documents it as
+    defence-in-depth against symlinks. A manifest pointing outside the
+    checkout had its target read into the run — and since a parse failure
+    reports the offending content, the file came back out in the run
+    output shown in the UI.
+    """
+
+    def test_a_playbook_outside_the_pack_is_refused(self, tmp_path: Path):
+        secret = tmp_path / "labdog.toml"
+        secret.write_text("[security]\nsecret_key = 'not-for-you'\n")
+
+        escaping = SIMPLE_MANIFEST.replace(
+            "playbook: playbook.yml", "playbook: ../../../labdog.toml"
+        )
+        _write_pack(
+            tmp_path,
+            "esc",
+            actions={"demo": {"manifest.yml": escaping, "playbook.yml": SIMPLE_PLAYBOOK}},
+        )
+        with pytest.raises(ValueError, match="escapes the pack directory"):
+            load_pack(Pack(name="esc", path=tmp_path / "esc"))
+
+    def test_a_verify_playbook_outside_the_pack_is_refused(self, tmp_path: Path):
+        (tmp_path / "outside.yml").write_text(SIMPLE_PLAYBOOK)
+
+        escaping = SIMPLE_MANIFEST + "verify_playbook: ../../../outside.yml\n"
+        _write_pack(
+            tmp_path,
+            "esc2",
+            actions={"demo": {"manifest.yml": escaping, "playbook.yml": SIMPLE_PLAYBOOK}},
+        )
+        with pytest.raises(ValueError, match="escapes the pack directory"):
+            load_pack(Pack(name="esc2", path=tmp_path / "esc2"))
+
+    def test_ordinary_relative_paths_still_load(self, tmp_path: Path):
+        """The regression half: a verify playbook beside the manifest, and
+        one in a subdirectory, are both legitimate and must keep working."""
+        manifest = SIMPLE_MANIFEST + "verify_playbook: checks/verify.yml\n"
+        _write_pack(
+            tmp_path,
+            "ok",
+            actions={
+                "demo": {
+                    "manifest.yml": manifest,
+                    "playbook.yml": SIMPLE_PLAYBOOK,
+                    "checks/verify.yml": SIMPLE_PLAYBOOK,
+                }
+            },
+        )
+        defns = load_pack(Pack(name="ok", path=tmp_path / "ok"))
+        assert len(defns) == 1
+        assert defns[0].verify_playbook_path is not None
+        assert defns[0].verify_playbook_path.name == "verify.yml"
