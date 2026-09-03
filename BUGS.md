@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-75`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-76`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -491,6 +491,40 @@ no second line of defence.
       in-request `collect-state` unrecoverable rather than merely slow.
 
 ### Correctness — Medium
+
+- [ ] **BUG-76** `backend/app/main.py:_resolve_dynamic_route` — on a route
+      with two dynamic segments, both are rewritten to the *second* value.
+
+      **Symptom.** `GET /hosts/7/actions/runs/12/` serves
+      `hosts/placeholder/actions/runs/placeholder/index.html` with **both**
+      baked-in placeholders replaced by `12`. The host id `7` does not
+      appear anywhere in the rendered flight data, so the page's `id` route
+      param is wrong — the back-link and breadcrumb on an action-run page
+      opened under a host point at run 12 as though it were the host.
+
+      **Root cause.** `_resolve_dynamic_route` assigns `dynamic_value =
+      part` each time it substitutes a placeholder, so only the last
+      substitution survives; the rewrite then replaces every
+      `"placeholder"` occurrence in the file with that single value.
+
+      **Severity: Medium.** Cosmetic-to-confusing rather than dangerous —
+      the client router still resolves the real URL, so the page fetches
+      the right data. Affects `hosts/[id]/actions/runs/[runId]` and
+      `groups/[id]/actions/runs/[runId]`.
+
+      **Pre-existing**, and specifically *not* introduced by the XSS fix —
+      verified by running both `dev` and the fix branch against the real
+      static export, which return the identical `'12'`. Found while
+      checking that the digits-only allow-list had not broken any real
+      route shape; it had not.
+
+      **Fix direction.** Return the substituted segments as an ordered
+      list rather than one value, and rewrite positionally — the export
+      nests them in path order, so the first placeholder in the file
+      corresponds to the first substituted segment. Needs a test per
+      nested route shape; the single-segment cases are already covered in
+      `tests/test_spa_fallback.py`.
+
 
 - [ ] **BUG-67** `backend/app/tasks/drift.py:147-153` — the periodic drift
       sweep bypasses the host lock entirely and is one serial loop. It
