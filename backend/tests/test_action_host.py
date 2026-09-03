@@ -410,7 +410,7 @@ async def test_preflight_disabled_skips_probe(db, fake_redis):
 
     runner = _runner(status="successful", rc=0)
     with (
-        patch("app.settings_service.get_setting_sync_typed", side_effect=_setting),
+        patch("app.settings_service.get_setting_cached_typed", side_effect=_setting),
         patch("app.tasks.action_host._preflight_reachable", side_effect=_would_fail),
         patch("app.ansible_runtime.runner.run_ansible", return_value=runner),
     ):

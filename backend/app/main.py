@@ -255,6 +255,25 @@ async def _lifespan(app: FastAPI):
     per-pack but don't prevent the app from booting — bundled actions
     are always available."""
     logger = logging.getLogger(__name__)
+
+    # Warm the settings cache before serving. The synchronous readers used
+    # by the SSH paths and the terminal's idle checker read that cache and
+    # never the database, so an unwarmed process would answer from hardcoded
+    # defaults. Kept separate from the pack sync below so a git failure
+    # cannot take the settings down with it.
+    try:
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.settings_service import refresh_settings_cache  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await refresh_settings_cache(session)
+    except Exception:
+        logger.warning(
+            "could not warm the settings cache at startup; synchronous "
+            "readers will use defaults until a session refreshes it",
+            exc_info=True,
+        )
+
     try:
         from app.actions.registry import reload_registry_async  # noqa: PLC0415
         from app.db import AsyncSessionLocal  # noqa: PLC0415

@@ -123,9 +123,9 @@ def _compute_timeout(modules_to_run: list[str]) -> int:
     computed = _TIMEOUT_BASE_SECONDS + _TIMEOUT_PER_MODULE_SECONDS * len(modules_to_run)
     floor = 0
     try:
-        from app.settings_service import get_setting_sync_typed
+        from app.settings_service import get_setting_cached_typed
 
-        floor_val = get_setting_sync_typed("ansible.playbook_timeout")
+        floor_val = get_setting_cached_typed("ansible.playbook_timeout")
         floor = int(floor_val) if floor_val is not None else 0
     except Exception:
         # Best-effort: missing setting / DB unavailable shouldn't crash

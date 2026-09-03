@@ -4,7 +4,7 @@ import logging
 import time
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
@@ -438,40 +438,73 @@ async def update_setting(key: str, value: str, user_id: int, db: AsyncSession) -
     return normalized
 
 
-def get_setting_sync(key: str) -> str:
-    """Synchronous getter for Celery tasks. Uses a one-off DB connection."""
-    from app.config import settings as app_config
+async def refresh_settings_cache(db: AsyncSession) -> None:
+    """Load every setting into the process-local cache in one query.
 
-    # Check cache first
-    if key in _cache:
-        val, ts = _cache[key]
-        if time.time() - ts < _CACHE_TTL:
-            return val
+    This is what makes the synchronous readers below correct. They used to
+    open their own connection: a URL built by ``.replace("+asyncpg",
+    "+psycopg2").replace("postgresql+psycopg2", "postgresql")``, whose second
+    replace undid the first, leaving a bare ``postgresql://`` that needs
+    psycopg2 — a driver this project does not depend on. The resulting
+    ``ModuleNotFoundError`` was swallowed by a blanket ``except Exception``
+    that returned the hardcoded default, so ten operator-visible settings
+    silently did nothing in every Celery task and SSH path. Nothing warmed
+    the cache in a worker either, so it could not save them.
 
-    try:
-        from sqlalchemy import create_engine
-
-        sync_url = app_config.database.url.replace("+asyncpg", "+psycopg2").replace(
-            "postgresql+psycopg2", "postgresql"
-        )
-        engine = create_engine(sync_url)
-        with engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT value FROM app_settings WHERE key = :key"),
-                {"key": key},
-            ).fetchone()
-        engine.dispose()
-        value = row[0] if row else get_default(key)
-    except Exception:
-        value = get_default(key)
-
-    _cache[key] = (value, time.time())
-    return value
+    Every key is written, including those with no row, so a reader never has
+    to distinguish "cached" from "absent" — a cold cache is the only state
+    that falls back to defaults, and the callers below make sure it is not
+    one for long.
+    """
+    result = await db.execute(select(AppSetting.key, AppSetting.value))
+    stored = {key: value for key, value in result.all()}
+    now = time.time()
+    for key in SETTING_DEFINITIONS:
+        _cache[key] = (stored.get(key, get_default(key)), now)
 
 
-def get_setting_sync_typed(key: str) -> int | float | str:
-    """Synchronous typed getter for Celery tasks."""
-    return _cast_value(key, get_setting_sync(key))
+def settings_cache_is_stale() -> bool:
+    """True when the cache is cold or every entry has aged past the TTL."""
+    if not _cache:
+        return True
+    return all(time.time() - ts >= _CACHE_TTL for _, ts in _cache.values())
+
+
+async def ensure_settings_cache(db: AsyncSession) -> None:
+    """Refresh the cache if it is cold or stale. Safe to call often.
+
+    Bounded to one query per ``_CACHE_TTL`` per process, so putting this on
+    a hot path (every task session) costs at most one SELECT a minute.
+    """
+    if settings_cache_is_stale():
+        await refresh_settings_cache(db)
+
+
+def get_setting_cached(key: str) -> str:
+    """Synchronous read for code that cannot await.
+
+    Reads the cache and **never** touches the database — a blocking DB round
+    trip is exactly what should not happen inside ``build_ssh_common_args``
+    or an asyncssh connect path, both of which are reached from async code.
+
+    Falls back to the default only when the cache has never been warmed,
+    which for any real code path means the process has not yet opened a
+    session. Callers that need certainty should await ``get_setting_typed``.
+    """
+    entry = _cache.get(key)
+    if entry is not None:
+        return entry[0]
+    logger.warning(
+        "settings cache cold when reading %r — falling back to the default. "
+        "Something is reading a setting before any session has been opened.",
+        key,
+    )
+    return get_default(key)
+
+
+def get_setting_cached_typed(key: str) -> int | float | str:
+    """Synchronous typed read. See :func:`get_setting_cached`."""
+    return _cast_value(key, get_setting_cached(key))
 
 
 def invalidate_cache(key: str | None = None):

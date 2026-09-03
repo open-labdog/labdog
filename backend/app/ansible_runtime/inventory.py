@@ -31,9 +31,9 @@ def build_ssh_common_args() -> str:
     never crash.
     """
     try:
-        from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+        from app.settings_service import get_setting_cached_typed  # noqa: PLC0415
 
-        connect_timeout = int(get_setting_sync_typed("ssh.connect_timeout"))
+        connect_timeout = int(get_setting_cached_typed("ssh.connect_timeout"))
     except Exception:
         connect_timeout = 10
     return (

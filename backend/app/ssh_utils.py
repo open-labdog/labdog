@@ -29,9 +29,9 @@ class HostKeyMismatchError(Exception):
 def _get_connect_timeout() -> int:
     """Read SSH connect timeout from DB settings, with fallback."""
     try:
-        from app.settings_service import get_setting_sync_typed
+        from app.settings_service import get_setting_cached_typed
 
-        return int(get_setting_sync_typed("ssh.connect_timeout"))
+        return int(get_setting_cached_typed("ssh.connect_timeout"))
     except Exception:
         return SSH_CONNECT_TIMEOUT
 

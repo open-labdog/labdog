@@ -262,8 +262,8 @@ rather than Medium — nothing sits behind it.
       **Fix direction.** Run each line through `app.ai.redaction.redact`
       before insert, and suppress capture between a `password:` /
       `passphrase:` prompt and the next newline. Retention already exists
-      in `app/tasks/audit_retention.py` and starts working once BUG-61 is
-      fixed.
+      in `app/tasks/audit_retention.py` and now works — BUG-61, which made it
+      read a hardcoded 90 days regardless of the setting, has landed.
 
 ### Security — Medium
 
@@ -370,45 +370,6 @@ rather than Medium — nothing sits behind it.
       follow redirects by default — and a documented homelab decision. Git
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
-
-### Correctness — Critical
-
-- [ ] **BUG-61** `backend/app/settings_service.py:441-469` — every
-      DB-backed setting read from a Celery task or an SSH path silently
-      falls back to its hardcoded default.
-
-      **Symptom.** Ten settings an operator can see and change in the UI do
-      nothing. Setting `ansible.playbook_timeout` to 3600 still kills the
-      playbook at 300s; `actions.preflight_enabled = 0` cannot turn
-      preflight off; `logging.audit_retention_days` never takes effect.
-
-      **Root cause.** `get_setting_sync` builds a sync URL whose second
-      `.replace()` undoes the first, yielding `postgresql://` — which needs
-      psycopg2, and psycopg2 is not in the dependency set. The resulting
-      `ModuleNotFoundError` is swallowed by a blanket `except Exception`
-      that returns `get_default(key)`. The shared `_cache` does not help:
-      nothing warms these keys in a worker.
-
-      Affected call sites: `app/ssh_utils.py:34`,
-      `ansible_runtime/inventory.py:36`, `api/ssh_terminal.py:154`,
-      `tasks/discovery.py:28`, `tasks/ca_cert_action.py:90`,
-      `tasks/action_timeouts.py:56,91`,
-      `tasks/host_sync_orchestrator.py:128`,
-      `tasks/audit_retention.py:46`, `tasks/action_host.py:440`.
-
-      **Severity: Critical** by blast radius rather than by exploitability —
-      it silently disables an entire configuration surface, and it is the
-      second instance of the failure mode `app/tasks/__init__.py:26-33`
-      already documents for queue routing.
-
-      **Fix direction.** Delete `get_setting_sync*`. Every call site is
-      inside an `async def` reachable from `asyncio.run`, so read via
-      `get_setting_typed(key, db)` on the surrounding `task_session()`;
-      thread the value into the few sync leaves as a parameter. **Fixing
-      this makes `retention_days` live**, so the `<= 0` guard added in the
-      quick-wins batch must be in place first — it is.
-
-      Release note required: ten inert settings start working on upgrade.
 
 ### Correctness — High
 

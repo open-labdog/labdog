@@ -134,7 +134,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host
     from app.models.ssh_key import SSHKey
-    from app.settings_service import get_setting_sync_typed
+    from app.settings_service import get_setting_cached_typed
     from app.tasks.action_timeouts import effective_playbook_timeout
     from app.tasks.host_lock import (
         acquire_host_lock,
@@ -459,7 +459,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         # ------------------------------------------------------------------ #
         preflight_on = True
         try:
-            preflight_on = bool(int(get_setting_sync_typed("actions.preflight_enabled")))
+            preflight_on = bool(int(get_setting_cached_typed("actions.preflight_enabled")))
         except Exception:
             preflight_on = True
         if preflight_on:
