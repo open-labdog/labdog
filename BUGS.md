@@ -214,35 +214,11 @@ authenticated user has the same permissions and `is_superuser` gates only
 user administration. That is a confirmed design decision, not a finding.
 Its consequence shapes the severities below: the AI classifier, the
 action-parameter validator and pack content policy are the *only* controls
-protecting host root from an ordinary account. Two of those three are now
-in place; SEC-21 is the one still open, which is why it is rated High
-rather than Medium — nothing sits behind it.
+protecting host root from an ordinary account. All three are now in
+place: the classifier hardening, the extra-vars validator, and the pack
+content policy.
 
 ### Security — High
-
-- [ ] **SEC-21** `backend/app/actions/packs.py:127-183` — action packs are
-      arbitrary controller-side code, loaded with no content policy.
-
-      **Symptom.** A pack repo shipping `action_plugins/`, `library/` or
-      `filter_plugins/` gets Python imported and executed by ansible-core
-      on the LabDog host; a playbook with `connection: local`,
-      `hosts: localhost` or `delegate_to: localhost` runs there too.
-
-      **Root cause.** The loader `yaml.safe_load`s the manifest and
-      validates parameter *declarations*; nothing inspects the playbook
-      body, and `run_ansible` puts pack roles on `ANSIBLE_ROLES_PATH`
-      (`app/ansible_runtime/runner.py:110-124`). Pack registration needs
-      only an authenticated session.
-
-      **Severity: High**, for the same reason as SEC-20 — no privilege
-      boundary sits behind it.
-
-      **Fix direction.** An `action_packs.trusted` column, defaulting
-      false and backfilled true so existing packs keep working, plus an
-      `assert_pack_safe` refusing plugin directories and local-execution
-      plays unless trusted. Treat the flag as a deliberate-acknowledgement
-      speed bump and an audit event, **not** as a privilege boundary —
-      under the flat model any user can set it.
 
 - [ ] **SEC-22** `backend/app/ssh_terminal/transcript.py:175` — web-terminal
       keystrokes are stored verbatim.

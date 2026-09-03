@@ -7,6 +7,30 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Security
+
+- **Action packs can no longer ship code that runs on the LabDog host
+  without being told to.** A pack is a git repository you point LabDog at,
+  and ansible-core gives a repository several ways to execute on the
+  *controller* rather than on a managed host: plugin directories it imports
+  Python from (`action_plugins/`, `library/`, `filter_plugins/`, …), and
+  plays that set `connection: local` or target `localhost`. Nothing
+  inspected any of it, so adding a pack was equivalent to granting code
+  execution as the `labdog` user.
+
+  Packs containing either are now refused, and the refusal names what it
+  found. A new **"Allow content that runs on the LabDog host"** setting per
+  pack accepts it deliberately; flipping it is recorded in the audit log.
+
+  **Existing packs are unaffected** — they are marked trusted on upgrade,
+  because a migration cannot audit pack content and silently breaking a
+  working pack is worse than preserving the status quo behind a flag you
+  can now see. Packs added from here on default to untrusted.
+
+  This is not a privilege boundary: LabDog's model is flat, so any user can
+  set the flag. It makes accepting controller-side code a deliberate,
+  audited act rather than a side effect of adding a repository.
+
 ### Fixed
 
 - **Ten settings that never did anything now take effect.** Every setting
