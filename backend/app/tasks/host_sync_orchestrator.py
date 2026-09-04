@@ -241,7 +241,13 @@ def module_filter_for(job) -> list[str] | None:
 # ---------------------------------------------------------------------------
 
 
-async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
+async def _claim_or_defer(
+    db: AsyncSession,
+    job_id: int,
+    host_id: int,
+    *,
+    exclude_action_run_id: int | None = None,
+) -> bool:
     """Single-flight gate at task entry.
 
     Returns ``True`` when no other operation (sync, host-targeted
@@ -272,6 +278,14 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     ``job_id`` is retained for log/trace surfaces; the busy check
     doesn't need it (the caller's own row is still ``pending``, not
     ``running``, so it's naturally excluded).
+
+    ``exclude_action_run_id`` is for the one caller that is *not*
+    naturally excluded: ``_builtin.sync`` runs this sync on behalf of an
+    ``ActionRun`` that the orchestrator already marked ``running`` on
+    this host. Without the exclusion that parent is its own blocker, and
+    the sync defers behind a run that is waiting for the sync — a
+    standstill nothing clears, because the only thing that would
+    re-dispatch it is another op finishing on the same host (BUG-80).
     """
     from app.models.sync_job import SyncJob
     from app.tasks.host_lock import (
@@ -281,7 +295,7 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     )
 
     await acquire_host_lock(db, host_id)
-    blocker = await check_host_busy(db, host_id)
+    blocker = await check_host_busy(db, host_id, exclude_action_run_id=exclude_action_run_id)
     if blocker is None:
         return True
 
@@ -570,6 +584,7 @@ async def _async_run(
     module_filter: list[str] | None,
     private_data_dir: str,
     ssh_key_path: str,
+    exclude_action_run_id: int | None = None,
 ) -> dict:
     """Async implementation of :func:`run_host_sync`.
 
@@ -612,7 +627,9 @@ async def _async_run(
 
     try:
         async with task_session() as db:
-            claimed = await _claim_or_defer(db, job_id, host_id)
+            claimed = await _claim_or_defer(
+                db, job_id, host_id, exclude_action_run_id=exclude_action_run_id
+            )
             if claimed:
                 modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
                     db, job_id, host_id, module_filter
