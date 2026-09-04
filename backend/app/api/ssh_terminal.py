@@ -111,6 +111,12 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             while not process.stdout.at_eof():
                 data = await process.stdout.read(65536)
                 if data:
+                    # SEC-22: host output is never stored. The writer reads it
+                    # only to notice a password prompt, so the keystrokes that
+                    # answer one are recorded as a placeholder rather than as
+                    # the secret. Before the user sees the data, so a slow
+                    # WebSocket cannot let the answer arrive first.
+                    transcript.observe_output(data)
                     await websocket.send_bytes(data)
         except Exception:
             logger.exception("ssh_to_ws error for session %s", session_id)

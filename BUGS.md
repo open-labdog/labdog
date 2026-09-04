@@ -218,29 +218,6 @@ protecting host root from an ordinary account. All three are now in
 place: the classifier hardening, the extra-vars validator, and the pack
 content policy.
 
-### Security — High
-
-- [ ] **SEC-22** `backend/app/ssh_terminal/transcript.py:175` — web-terminal
-      keystrokes are stored verbatim.
-
-      **Symptom.** Everything typed at a `sudo` prompt, a `mysql -p`, an
-      `openssl` passphrase, or any pasted token lands in plaintext in
-      `ssh_session_transcripts.command_text`, readable via
-      `GET /api/audit-log/ssh-sessions/{id}`.
-
-      **Root cause.** No redaction on the write path. Host-side echo
-      suppression never protected this — the keystrokes travel over the
-      WebSocket regardless of whether the host echoes them.
-
-      **Severity: High.** Not a privilege issue (the flat model is
-      intended); the defect is that the secret is captured at all.
-
-      **Fix direction.** Run each line through `app.ai.redaction.redact`
-      before insert, and suppress capture between a `password:` /
-      `passphrase:` prompt and the next newline. Retention already exists
-      in `app/tasks/audit_retention.py` and now works — BUG-61, which made it
-      read a hardcoded 90 days regardless of the setting, has landed.
-
 ### Security — Medium
 
 - [ ] **SEC-24** `backend/app/hosts_mgmt/merge.py:146` — `/etc/hosts` line

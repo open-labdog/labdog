@@ -36,6 +36,13 @@ paths = [
     '''^backend/tests/ai/test_redaction\.py$''',
     '''^backend/tests/test_packs_git_auth\.py$''',
     '''^backend/tests/conftest\.py$''',
+    #   test_transcript_redaction.py — asserts that a pasted private key
+    #                           is suppressed, so it must contain a literal
+    #                           BEGIN/END PEM marker for the code under test
+    #                           to match. What sits between them is the
+    #                           literal string NOTAREALKEYBODY…, not key
+    #                           material.
+    '''^backend/tests/test_transcript_redaction\.py$''',
     '''^labdog\.toml$''',
     # Historical-only path. The plans/ directory no longer exists in
     # the working tree, but a historical commit contains a multi-agent
