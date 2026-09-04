@@ -105,6 +105,11 @@ class ActionRunOut(BaseModel):
     action_version: str
     host_id: int | None
     group_id: int | None
+    #: What the run targeted, recorded at dispatch time. Survives the
+    #: target being deleted, which sets ``host_id``/``group_id`` to NULL:
+    #: ``target_label`` is then the only description of what ran.
+    target_kind: str
+    target_label: str
     #: NULL for ad-hoc runs; populated when the run was dispatched by
     #: the unified scheduler or POST /api/scheduled-actions/{id}/run-now.
     scheduled_action_id: int | None = None

@@ -17,6 +17,27 @@ from sqlalchemy.sql import func
 from app.models.base import Base
 
 
+def _default_target_kind(context) -> str:
+    """``target_kind`` inferred from the FKs of the row being inserted."""
+    params = context.get_current_parameters()
+    if params.get("host_id") is not None:
+        return "host"
+    if params.get("group_id") is not None:
+        return "group"
+    return "fleet"
+
+
+def _default_target_label(context) -> str:
+    """A last-resort label. Terse but never wrong; the dispatch sites
+    replace it with the target's real name."""
+    params = context.get_current_parameters()
+    if params.get("host_id") is not None:
+        return f"host {params['host_id']}"
+    if params.get("group_id") is not None:
+        return f"group {params['group_id']}"
+    return "All hosts"
+
+
 class ActionRun(Base):
     __tablename__ = "action_runs"
 
@@ -67,19 +88,38 @@ class ActionRun(Base):
     # to ``None`` when the run is re-dispatched and successfully claims.
     # Nullable so existing rows and non-deferred runs don't need a value.
     pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    # What this run targeted, said in the run's own columns rather than
+    # inferred from the FKs. The FKs above are ON DELETE SET NULL, so
+    # deleting a host erases the only description an ad-hoc run had of
+    # what it ran against — and under the old scope CHECK the delete
+    # failed outright rather than losing it. These two columns are what
+    # survives the delete.
+    #
+    # ``target_kind``: host | group | fleet, mirroring
+    # ScheduledAction.target_kind.
+    #
+    # Both default from the FK columns of the row being inserted, so a
+    # caller that does not set them still gets a correct — if terse —
+    # description rather than an IntegrityError. Dispatch sites go
+    # through :func:`app.actions.run_target.describe_target`, which
+    # upgrades the label to the target's actual name.
+    target_kind: Mapped[str] = mapped_column(
+        String(8), nullable=False, default=_default_target_kind
+    )
+    # The hostname or group name as it stood at dispatch time.
+    # Denormalised deliberately: once the target is gone there is nothing
+    # left to join to, which is the case this exists for.
+    target_label: Mapped[str] = mapped_column(
+        String(255), nullable=False, default=_default_target_label
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     __table_args__ = (
-        # Ad-hoc runs require exactly one of host_id/group_id. Fleet runs
-        # (both NULL) are only allowed when scheduled_action_id is set —
-        # there's no ad-hoc fleet run path through POST /api/actions/runs.
         CheckConstraint(
-            "(host_id IS NOT NULL AND group_id IS NULL) OR "
-            "(host_id IS NULL AND group_id IS NOT NULL) OR "
-            "(host_id IS NULL AND group_id IS NULL AND scheduled_action_id IS NOT NULL)",
-            name="ck_action_runs_scope",
+            "target_kind IN ('host', 'group', 'fleet')",
+            name="ck_action_runs_target_kind",
         ),
     )
 

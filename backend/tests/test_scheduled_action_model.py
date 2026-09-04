@@ -134,22 +134,23 @@ async def test_action_run_fleet_scope_allowed_when_scheduled(db):
     assert run.auto_rollback is True
 
 
-async def test_action_run_rejects_both_target_null_without_schedule(db):
-    """Ad-hoc runs (no scheduled_action_id) still require host or group."""
-    db.add(
-        ActionRun(
-            action_key="linux-upgrade",
-            action_version="1.0.0",
-            host_id=None,
-            group_id=None,
-            scheduled_action_id=None,  # not a scheduled run
-            parameters={},
-            parallelism=1,
-            status="queued",
-        )
+async def test_an_untargeted_ad_hoc_run_is_refused_at_the_api(superuser_client):
+    """Ad-hoc runs still require exactly one of host or group.
+
+    This used to be a CHECK on ``action_runs`` and is now enforced only by
+    ``POST /api/actions/runs``. The constraint had to go (BUG-65): the FKs
+    are ``ON DELETE SET NULL``, so deleting a host legitimately produces a
+    row with every target column NULL, and the CHECK made that delete fail
+    rather than making the run invalid. There is no predicate that both
+    forbids an untargeted *insert* and permits an orphaned *row*, so the
+    rule moved to the only place that can tell the two apart.
+    """
+    resp = await superuser_client.post(
+        "/api/actions/runs",
+        json={"action_key": "_builtin.collect_state"},
     )
-    with pytest.raises(IntegrityError):
-        await db.flush()
+    assert resp.status_code == 422
+    assert "host_id or group_id" in resp.text
 
 
 async def test_deleting_scheduled_action_nulls_run_fk(db):
