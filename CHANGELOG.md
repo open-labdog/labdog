@@ -9,6 +9,23 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **SSH terminal transcripts no longer capture what you type at a password
+  prompt.** Everything typed at a `sudo` prompt, a `mysql -p`, an `openssl`
+  passphrase, or any pasted key or token was stored in plain text and
+  served by the audit API. The host hiding its own echo never protected it —
+  the keystrokes cross the WebSocket either way.
+
+  A line answering a password prompt is now recorded as
+  `[password input suppressed]`, the body of a pasted private key as
+  `[private key input suppressed]`, and every row passes through the
+  redactor on its way to the database. The *fact* that a secret was entered
+  is still recorded; only the value is discarded.
+
+  Existing transcripts are not rewritten. They still hold whatever was
+  captured before this release — `logging.audit_retention_days` governs how
+  long, and that setting now actually takes effect (see below). Consider
+  whether the stored history warrants clearing.
+
 - **Action packs can no longer ship code that runs on the LabDog host
   without being told to.** A pack is a git repository you point LabDog at,
   and ansible-core gives a repository several ways to execute on the
