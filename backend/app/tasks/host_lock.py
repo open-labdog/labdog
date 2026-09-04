@@ -690,11 +690,14 @@ async def dispatch_next_pending_for_host(
             # Dispatch via the existing run_host_sync task. Import lazily
             # to avoid a circular import at module load.
             from app.tasks.host_sync_orchestrator import (
-                _filter_from_module_type,
+                module_filter_for,
                 run_host_sync,
             )
 
-            module_filter = _filter_from_module_type(sync_row.module_type)
+            # Not _filter_from_module_type: a deferred bulk sync stores
+            # module_type="bulk", which reconstructs as "every module" and
+            # would escalate a firewall-only request into a full sync.
+            module_filter = module_filter_for(sync_row)
             run_host_sync.delay(
                 job_id=sync_row.id,
                 host_id=sync_row.host_id,

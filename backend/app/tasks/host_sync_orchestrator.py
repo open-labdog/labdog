@@ -218,6 +218,24 @@ def _filter_from_module_type(module_type: str) -> list[str] | None:
     return [canonical]
 
 
+def module_filter_for(job) -> list[str] | None:
+    """The modules a stored :class:`SyncJob` was asked to apply.
+
+    Prefer the recorded list; fall back to reconstructing it from
+    ``module_type`` for rows written before ``module_filter`` existed and
+    for the per-module endpoints, which name their single module there.
+
+    Every re-dispatch path must go through this rather than
+    :func:`_filter_from_module_type` directly — that function maps
+    ``"bulk"`` to ``None``, i.e. *every* module, which silently escalates
+    a filtered bulk sync that was deferred behind a busy host.
+    """
+    stored = job.module_filter
+    if stored:
+        return list(stored)
+    return _filter_from_module_type(job.module_type)
+
+
 # ---------------------------------------------------------------------------
 # Per-host serialization (queue mechanism)
 # ---------------------------------------------------------------------------
