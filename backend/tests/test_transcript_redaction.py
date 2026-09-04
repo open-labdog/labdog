@@ -152,14 +152,14 @@ class TestRedactionCatchesSecretsTypedAsText:
         pasted = (
             b"cat > /root/.ssh/id_ed25519 <<'EOF'\r"
             b"-----BEGIN OPENSSH PRIVATE KEY-----\r"
-            b"b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\r"
-            b"QyNTUxOQAAACBlaHzGDLVdBId+nvAHUPhnyZ5USxeFtXAmo3t7yTeL8QAAAJCgphSBoKYU\r"
+            b"NOTAREALKEYBODYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\r"
+            b"NOTAREALKEYBODYBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\r"
             b"-----END OPENSSH PRIVATE KEY-----\r"
             b"EOF\r"
         )
         rows = await _rows_from(writer, typed=pasted)
 
-        assert not any("b3BlbnNzaC1rZXktdjEA" in r for r in rows), "key body was stored"
+        assert not any("NOTAREALKEYBODY" in r for r in rows), "key body was stored"
         assert _SUPPRESSED_KEY in rows
         # The markers stay: "a key was pasted here" is what an audit reader
         # needs, and a marker is not a secret.
