@@ -65,6 +65,36 @@ The format follows [Keep a Changelog]; LabDog follows
   Jobs queued before upgrading have no recorded list and still mean every
   module, which is what they were going to do anyway.
 
+- **Built-in actions actually run.** `_builtin.collect_state`,
+  `_builtin.drift_check`, `_builtin.sync` and `_builtin.ai_task` never
+  executed their work — three separate defects, stacked, each hiding the
+  next. Found by running six of them against a live instance.
+
+  First, every built-in deferred behind its own parent run. The run
+  orchestrator marks the parent "running" before dispatching, and the
+  built-in's busy-check counted that as another operation holding the
+  host. The deferral was permanent: it is only cleared when some *other*
+  operation on that host finishes, and there was none.
+
+  With that cleared, two of them crashed on `asyncio.run() cannot be
+  called from a running event loop` — they invoked another Celery task
+  in-process, and that task's body starts its own event loop inside the
+  one already running.
+
+  With that fixed, `_builtin.sync` deferred against itself again, this
+  time through its own per-host row, and reported `succeeded` having
+  synced nothing.
+
+  All three are fixed. A scheduled sync or drift check now claims its
+  host, does the work, and reports what actually happened. Nothing needs
+  reconfiguring, but if you have scheduled actions using these built-ins,
+  expect them to start doing something on the next tick — check that
+  their schedules and targets are still what you want before upgrading.
+
+  One related reporting gap remains (tracked as BUG-81): a `_builtin.sync`
+  that is genuinely deferred behind another operation still finishes as
+  `succeeded` rather than saying it was queued.
+
 - **Action runs no longer deadlock the fleet when several schedules share a
   cron minute.** The run orchestrator dispatches one task per host and then
   blocks until they finish — but it was published to the same queue and pool
