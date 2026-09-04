@@ -152,8 +152,14 @@ check_interval_minutes = 30
 
 # ── Celery (background workers) ─────────────────────────────
 [celery]
-# Number of worker processes
+# Two workers run: `work` (sync, drift, discovery, per-host action steps)
+# and `orchestrator` (action_orchestrator.run_action only). Separate pools
+# because an orchestrator blocks waiting for the children it dispatched.
+# Worker processes on the `work` pool
 concurrency = 4
+# Concurrent action runs the orchestrator worker supervises. Exceeding it
+# queues runs rather than deadlocking; each slot is a forked interpreter.
+orchestrator_concurrency = 4
 # Recycle worker after N tasks (prevents memory leaks)
 max_tasks_per_child = 100
 

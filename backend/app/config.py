@@ -136,6 +136,20 @@ class DiscoveryConfig(BaseModel):
 
 class CeleryConfig(BaseModel):
     concurrency: int = 4
+    #: Slots on the dedicated orchestrator worker. Each slot holds one
+    #: ``run_action`` sitting in ``result.join()``; the work it is waiting
+    #: for runs on the ``work`` pool, so this caps concurrent action *runs*,
+    #: not concurrent host operations.
+    #:
+    #: Exceeding it only queues orchestrators — it cannot deadlock, which
+    #: is the whole point of the separate worker — so this is a throughput
+    #: knob, not a safety one. Kept at 4 because prefork forks a full
+    #: interpreter per slot and a mostly-idle one still costs its RSS;
+    #: raise it on an install that runs many schedules on the same minute.
+    #: A thread pool would be cheaper but Celery cannot enforce
+    #: ``soft_time_limit`` on one, and the orchestrator's 12h soft limit is
+    #: what finalises a wedged run.
+    orchestrator_concurrency: int = 4
     max_tasks_per_child: int = 100
 
 
