@@ -50,6 +50,62 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A sync deferred behind a busy host no longer reapplies every module.**
+  Asking to reapply just the firewall on a host that was already syncing
+  queued the request — and when the queue drained, the queued job had lost
+  its module list and applied all seven: packages reinstalled, services
+  restarted, `/etc/hosts` rewritten. `sync_jobs` had nowhere to record which
+  modules were asked for, so the re-dispatch reconstructed "all of them"
+  from a row that only said "bulk".
+
+  The job now records its module list, and `GET /api/sync/jobs` reports it.
+  A repeat request while one is in flight also stops claiming the filter is
+  unknown and names what the queued job will actually do.
+
+  Jobs queued before upgrading have no recorded list and still mean every
+  module, which is what they were going to do anyway.
+
+- **Action runs no longer deadlock the fleet when several schedules share a
+  cron minute.** The run orchestrator dispatches one task per host and then
+  blocks until they finish — but it was published to the same queue and pool
+  as those children, four slots wide by default. Four schedules on `0 3 * * *`
+  took every slot, no child could get one, and nothing moved until the
+  orchestrator's twelve-hour limit fired and finalised four runs as `partial`
+  with zero hosts touched.
+
+  LabDog now runs two Celery workers: `work`, which does everything it did
+  before, and `orchestrator`, which runs only the run orchestrator. The pool
+  an orchestrator waits on is never the pool it occupies, so the starvation
+  is impossible rather than merely unlikely. Exceeding
+  `celery.orchestrator_concurrency` (default 4) queues runs instead.
+
+  Operationally: the process now has two Celery children instead of one, so
+  expect roughly double the worker memory. Nothing needs reconfiguring — no
+  deployment sets `-Q` itself — but a container with a tight memory limit may
+  need it raised.
+
+- **A host or group with action-run history can be deleted again.**
+  `DELETE /api/hosts/{id}` returned 500 for any host that had ever been the
+  target of an ad-hoc action run, with no way to remove it short of manual
+  SQL. `action_runs` links to its target through `ON DELETE SET NULL`
+  foreign keys, under a constraint that forbade all of them being NULL —
+  which is exactly what `SET NULL` produced when the run's only target was
+  the host being deleted.
+
+  Runs now describe their own target: `target_kind` (`host`, `group` or
+  `fleet`) and `target_label`, the hostname or group name as it stood when
+  the run was dispatched. Both survive the delete, so the run history stays
+  readable — the action-run page shows the label with "(deleted)" beside it.
+  Cascading the runs away instead would have destroyed the audit trail at
+  the moment an operator most needs it, since a run's output is often the
+  only record of what was done to a host that is being removed *because*
+  something went wrong.
+
+  Note that per-host output is a separate table and is still cascaded away
+  with the host (tracked as BUG-77): the parent run survives and says what
+  was targeted and how it ended, but the per-host transcript for the deleted
+  host does not.
+
 - **Ten settings that never did anything now take effect.** Every setting
   read from a Celery task or an SSH code path silently fell back to its
   hardcoded default. The synchronous reader built its own connection URL
