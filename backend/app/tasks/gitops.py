@@ -66,6 +66,12 @@ async def _process_webhook_async(task, repo_id: int, commit_sha: str):
                 logger.error("GitOps: failed to clone repo %s: %s", repo.name, e)
                 raise task.retry(exc=e)
 
+            # SEC-27: an SSH clone records the server's host key on first
+            # contact. Commit it now rather than riding on the import's
+            # commit, so a failed import doesn't discard the pinning and
+            # leave the next clone unverified again.
+            await db.commit()
+
             # Global YAML is optional; missing file is the common case.
             # Failures here are logged but never abort the per-group loop —
             # an operator typo in `_global.yaml` shouldn't block per-group

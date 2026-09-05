@@ -75,8 +75,12 @@ def test_ssh_materialises_key_and_cleans_up():
         assert mode == 0o600
         assert key_path.read_text().startswith("-----BEGIN")
         # TOFU for host keys — same posture as the gitops subsystem.
+        # SEC-27: accept-new against a *real* file, so the key learned
+        # here can be recorded and verified on the next sync. It used to
+        # be accept-new against /dev/null, which never verifies anything.
         assert "StrictHostKeyChecking=accept-new" in cmd
-        assert "UserKnownHostsFile=/dev/null" in cmd
+        assert "UserKnownHostsFile=/dev/null" not in cmd
+        assert ctx.known_hosts_path == str(key_path.parent / "known_hosts")
         assert "IdentitiesOnly=yes" in cmd
         assert key_bytes in ctx.redact_values
 

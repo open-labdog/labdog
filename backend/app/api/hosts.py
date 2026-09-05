@@ -524,7 +524,8 @@ async def trust_host_key(
     """Clear the stored SSH host key so the next connection re-TOFUs.
 
     Use this when a host was legitimately re-keyed (OS reinstall, key
-    rotation).  Superuser-only.  Emits an audit log row.
+    rotation).  Any authenticated user, per the flat privilege model.
+    Emits an audit log row.
     """
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()

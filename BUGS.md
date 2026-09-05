@@ -220,23 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-26** `backend/app/ansible_runtime/inventory.py:40` — the
-      Ansible path ignores LabDog's own pinned host keys. It sets
-      `StrictHostKeyChecking=accept-new` with no `UserKnownHostsFile`, so
-      playbook runs re-accept whatever key is presented, while the asyncssh
-      paths do real TOFU-with-pinning against `Host.ssh_host_key_entry`
-      (`app/ssh_utils.py:140-192`). A MITM refused by the web terminal is
-      accepted by the pipeline that pushes root-level configuration.
-
-- [ ] **SEC-27** `backend/app/packs/git_auth.py:81`,
-      `gitops/git_service.py:84` — git-over-SSH sets
-      `StrictHostKeyChecking=accept-new` *with* `UserKnownHostsFile=/dev/null`,
-      which is unconditional acceptance on every invocation: there is never
-      a first use, so there is never a mismatch. An attacker who can
-      intercept the pack repo connection serves arbitrary playbooks that
-      LabDog then runs against the fleet. Persist the git host key on
-      `GitRepository` and point the known-hosts file at it.
-
 - [ ] **SEC-28** `backend/app/schemas/git_repos.py:167` —
       `webhook_secret` is stored in plaintext and returned by the API. The
       inline comment calls it "not a credential"; it is the HMAC key the

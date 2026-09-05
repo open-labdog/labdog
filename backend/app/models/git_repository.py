@@ -1,7 +1,7 @@
 import enum
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Enum, Integer, LargeBinary, String
+from sqlalchemy import DateTime, Enum, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -39,6 +39,12 @@ class GitRepository(Base):
         nullable=True,
     )
     webhook_secret: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: SEC-27. The ``known_hosts`` line recorded the first time LabDog
+    #: reached this repository over SSH. Every later sync is verified
+    #: against it, so an intercepted connection is refused rather than
+    #: silently accepted. NULL means first contact has not happened yet
+    #: (or the operator cleared it after a legitimate server rekey).
+    ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -53,3 +59,12 @@ class GitRepository(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    @property
+    def has_pinned_host_key(self) -> bool:
+        """Whether an SSH sync has recorded this server's host key.
+
+        Read by ``GitRepoResponse`` so the API can say that syncs are
+        verified without returning the key itself.
+        """
+        return bool(self.ssh_host_key_entry)

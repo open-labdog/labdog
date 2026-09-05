@@ -33,7 +33,7 @@ _SCP_HOST_RE = re.compile(r"^git@([^:]+):")
 _BRANCH_RE = re.compile(r"^[\w./-]+$")
 
 
-def _extract_hostname(url: str) -> str | None:
+def extract_hostname(url: str) -> str | None:
     """Return the hostname from a git URL, or None if it cannot be determined.
 
     Handles three forms:
@@ -103,7 +103,7 @@ def _validate_repo_url(v: str) -> str:
     """
     if not (v.startswith(HTTPS_URL_PREFIX) or v.startswith(SSH_URL_PREFIXES)):
         raise ValueError("Repository URL must use https://, ssh://, or git@ scheme")
-    host = _extract_hostname(v)
+    host = extract_hostname(v)
     if host is None:
         raise ValueError("Repository URL does not contain a recognisable hostname")
     _check_host_blocked(host)
@@ -167,6 +167,11 @@ class GitRepoResponse(BaseModel):
     webhook_secret: str | None  # OK to return — it's for webhook validation, not a credential
     last_commit_sha: str | None
     last_sync_at: datetime | None
+    #: SEC-27. True once an SSH sync has recorded the server's host key,
+    #: after which every sync is verified against it. The key itself is
+    #: not returned — only whether one is pinned, which is what the UI
+    #: needs to offer "re-trust after a rekey".
+    has_pinned_host_key: bool
     created_at: datetime
     updated_at: datetime
     # NOTE: encrypted_https_token is NEVER included
