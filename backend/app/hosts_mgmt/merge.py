@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +24,10 @@ async def _build_host_ref_lookup(
         select(Host.id, Host.ip_address, Host.hostname).where(Host.id.in_(ref_ids))
     )
     return {row.id: (row.ip_address, row.hostname) for row in rows}
+
+
+#: Anything that would end the /etc/hosts line a comment sits on.
+_SAFE_COMMENT = re.compile(r"[\r\n\x00]")
 
 
 def _resolve_entry(entry: HostsEntry, ref_lookup: dict[int, tuple[str, str]]) -> tuple[str, str]:
@@ -144,7 +150,15 @@ def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
             parts.extend(entry.aliases)
         line = " ".join(parts)
         if entry.comment:
-            line += f"  # {entry.comment}"
+            # Second line of defence. The schema rejects newlines in a
+            # comment (SEC-24), but entries also arrive from the GitOps
+            # YAML importer, and rows written before that validator
+            # existed are still in the database. This is the point where a
+            # newline becomes a real /etc/hosts line, so strip rather than
+            # raise: a mangled comment is a cosmetic problem, and refusing
+            # to render the file would take the whole host's sync down for
+            # one bad annotation.
+            line += f"  # {_SAFE_COMMENT.sub(' ', entry.comment)}"
         lines.append(line)
 
     # Ensure trailing newline

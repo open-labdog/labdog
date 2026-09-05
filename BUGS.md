@@ -220,20 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-24** `backend/app/hosts_mgmt/merge.py:146` — `/etc/hosts` line
-      injection. `HostsEntryCreate.comment` has no validator while
-      `hostname` and `aliases` are checked against `HOSTNAME_RE`, so a
-      comment containing `\n1.2.3.4 deb.debian.org` appends a real
-      `/etc/hosts` line on every host in the group. Second vector to the
-      same place: `HostCreate.hostname` (`app/schemas/hosts.py:33`) has no
-      validator at all. Also `ssh_port` is an unbounded `int`.
-
-- [ ] **SEC-25** `backend/app/user_mgmt/constants.py:78` — sudoers
-      injection. `SUDO_FORBIDDEN_PATTERN` blocks `` [`$();|&<>] `` but not
-      `\n`, so `ALL=(ALL) NOPASSWD: /bin/true\nsomeone ALL=(ALL) NOPASSWD:
-      ALL` writes a two-line drop-in that `visudo -cf` accepts as valid,
-      granting passwordless root to an account LabDog does not manage.
-
 - [ ] **SEC-26** `backend/app/ansible_runtime/inventory.py:40` — the
       Ansible path ignores LabDog's own pinned host keys. It sets
       `StrictHostKeyChecking=accept-new` with no `UserKnownHostsFile`, so
@@ -438,17 +424,6 @@ _No bugs are currently open._
       Note that `_builtin.drift_check` — the locked path the fix should
       route through — only began working with BUG-78/79/80, so this was
       not implementable as written before that landed.
-
-- [ ] **BUG-68** `backend/app/hosts/dependents.py:124` — writes
-      `module_type="hosts_entries"` where every consumer reads
-      `"hosts_file"` (`api/hosts_drift.py`, `tasks/hosts_drift.py`,
-      `api/host_state.py`, `metrics/aggregates.py`, `_MODULE_TYPE_MAPPING`,
-      and the frontend). When a referenced host's IP changes, dependants
-      get a new invisible row marked `out_of_sync` while the row they
-      actually use still says `in_sync` and their `/etc/hosts` points at the
-      old address. The firewall half of the same loop is correct, which is
-      what makes it easy to miss. Needs a data migration for the stale rows,
-      and the module-type strings hoisted into one enum.
 
 - [ ] **BUG-69** All seven merge engines order by `HostGroup.priority`
       only, with no secondary key, and read each group's rules with an

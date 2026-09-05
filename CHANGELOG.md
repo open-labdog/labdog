@@ -83,6 +83,43 @@ The format follows [Keep a Changelog]; LabDog follows
   once; check `logging.audit_retention_days` before restarting if that
   matters to you.
 
+- **A referenced host changing its IP now actually flags its dependants.**
+  When a host referenced by an `/etc/hosts` entry changed address, LabDog
+  raised the drift flag on the dependent hosts — under a module name nothing
+  reads. The status those hosts displayed still said in sync, no drift was
+  reported, no sync was offered, and their `/etc/hosts` kept pointing at the
+  old address. The firewall half of the same code path used the right name,
+  so half the feature worked.
+
+  Upgrading repairs the existing rows rather than discarding them: a host
+  whose stale row recorded drift is marked out of sync on the row that is
+  actually read, so signals raised while the bug was live are delivered
+  now rather than lost. Expect some hosts to show `/etc/hosts` as out of
+  sync after upgrading — that is the backlog surfacing, and a sync or the
+  next drift check clears it.
+
+- **Values LabDog writes into config files can no longer add lines to them.**
+  Three fields were interpolated into generated files with nothing stopping
+  them from ending the line they sat on:
+
+  A `/etc/hosts` entry's **comment** had no validation at all, so a comment
+  containing a newline appended a second, working `/etc/hosts` line — a
+  package-mirror redirect on every host in the group, written by LabDog
+  itself and invisible in a UI that shows the comment on one line. A managed
+  **host's hostname** reaches the same file through host references and was
+  likewise unchecked. And a **sudo rule** was written into
+  `/etc/sudoers.d/<user>`, where a newline produced a two-line drop-in
+  granting passwordless root to an account LabDog does not manage —
+  `visudo -cf` validated it happily, because it is correct sudoers syntax.
+
+  All three are now rejected, at the schema and again where the file is
+  written, since entries also arrive through the GitOps YAML importer and
+  older rows predate the validators. `ssh_port` is bounded to a real port
+  range while nearby.
+
+  An existing hosts entry or sudo rule containing a newline will now be
+  refused on edit; the rendered files stay safe either way.
+
 - **A hung host no longer stalls every host behind it.** LabDog bounded how
   long it would wait to *reach* a host, but not how long a command could take
   once connected. A host that answered SSH and then hung — a wedged
