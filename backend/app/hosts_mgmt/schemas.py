@@ -9,6 +9,41 @@ HOSTNAME_RE = re.compile(
     r"^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
 )
 
+#: Characters that must never reach an ``/etc/hosts`` comment.
+#:
+#: The merge renders an entry as ``<ip> <hostname> <aliases>  # <comment>``
+#: (see ``hosts_mgmt/merge.py``). ``hostname`` and ``aliases`` were checked
+#: against HOSTNAME_RE; ``comment`` was not checked at all, so a newline in
+#: it closed the line and started a real one. A comment of
+#: ``"x\n1.2.3.4 deb.debian.org"`` appended a working /etc/hosts entry to
+#: every host in the group — a package-mirror redirect, written by LabDog
+#: itself and invisible in the UI, which renders the comment on one line
+#: (SEC-24).
+#:
+#: NUL is included because it truncates the file at the C layer rather than
+#: being written, and a carriage return alone is a line terminator to
+#: enough parsers to be worth refusing.
+_COMMENT_FORBIDDEN = re.compile(r"[\r\n\x00]")
+
+#: An /etc/hosts line has no length limit worth relying on, but an
+#: unbounded comment is a way to make the file unreadable rather than a
+#: feature anyone wants.
+_COMMENT_MAX = 128
+
+
+def _validate_comment(v: str | None) -> str | None:
+    """Reject anything in a comment that could end the line it sits on."""
+    if v is None:
+        return v
+    if _COMMENT_FORBIDDEN.search(v):
+        raise ValueError(
+            "comment may not contain newlines or NUL — it is written into "
+            "/etc/hosts on the line it annotates"
+        )
+    if len(v) > _COMMENT_MAX:
+        raise ValueError(f"comment must be {_COMMENT_MAX} characters or less")
+    return v
+
 
 class HostsEntryCreate(BaseModel):
     ip_address: str | None = None
@@ -62,6 +97,11 @@ class HostsEntryCreate(BaseModel):
                 raise ValueError(f"'{alias}' is not a valid hostname")
         return v
 
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, v: str | None) -> str | None:
+        return _validate_comment(v)
+
 
 class HostsEntryUpdate(BaseModel):
     ip_address: str | None = None
@@ -105,6 +145,11 @@ class HostsEntryUpdate(BaseModel):
             if len(alias) > 253 or not HOSTNAME_RE.match(alias):
                 raise ValueError(f"'{alias}' is not a valid hostname")
         return v
+
+    @field_validator("comment")
+    @classmethod
+    def validate_comment(cls, v: str | None) -> str | None:
+        return _validate_comment(v)
 
 
 class HostsEntryResponse(BaseModel):

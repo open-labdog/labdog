@@ -1,8 +1,9 @@
 import ipaddress
 from datetime import datetime
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
+from app.hosts_mgmt.schemas import HOSTNAME_RE
 from app.models.host import FirewallBackend, SyncStatus
 from app.schemas._shared import validate_linux_username
 
@@ -29,13 +30,41 @@ def _validate_ip_address(v: str) -> str:
     return v
 
 
+def _validate_managed_hostname(v: str | None) -> str | None:
+    """Reject a hostname that could not be one.
+
+    ``Host.hostname`` is not just a label: the hosts-file merge renders
+    referenced hosts into ``/etc/hosts`` on every host in the group, so a
+    hostname containing a newline appends a real line to that file — the
+    same injection as the entry ``comment`` (SEC-24), reached through a
+    different door. Nothing validated this field at all.
+    """
+    if v is None or v == "":
+        return None
+    if len(v) > 253:
+        raise ValueError("hostname must be 253 characters or less")
+    if not HOSTNAME_RE.match(v):
+        raise ValueError(f"'{v}' is not a valid hostname (RFC 952/1123)")
+    for label in v.split("."):
+        if len(label) > 63:
+            raise ValueError(f"hostname label '{label}' exceeds 63 characters")
+    return v
+
+
 class HostCreate(BaseModel):
     hostname: str | None = None
     ip_address: str
-    ssh_port: int = 22
+    # A port is 16 bits. Unbounded, this reached asyncssh and the Ansible
+    # inventory as-is.
+    ssh_port: int = Field(default=22, ge=1, le=65535)
     ssh_user: str = "root"
     ssh_key_id: int | None = None
     group_ids: list[int] = []
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname(cls, v: str | None) -> str | None:
+        return _validate_managed_hostname(v)
 
     @field_validator("ip_address")
     @classmethod
@@ -51,12 +80,17 @@ class HostCreate(BaseModel):
 class HostUpdate(BaseModel):
     hostname: str | None = None
     ip_address: str | None = None
-    ssh_port: int | None = None
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
     ssh_user: str | None = None
     ssh_key_id: int | None = None
     firewall_backend: FirewallBackend | None = None
     group_ids: list[int] | None = None
     drift_check_enabled: bool | None = None
+
+    @field_validator("hostname")
+    @classmethod
+    def validate_hostname(cls, v: str | None) -> str | None:
+        return _validate_managed_hostname(v)
 
     @field_validator("ip_address")
     @classmethod

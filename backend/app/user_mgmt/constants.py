@@ -74,8 +74,22 @@ PROTECTED_GROUPS: frozenset[str] = frozenset(
     }
 )
 
-# Shell metacharacters forbidden in sudo_rule
-SUDO_FORBIDDEN_PATTERN = re.compile(r"[`$();|&<>]")
+# Characters forbidden in sudo_rule.
+#
+# The generator writes ``f"{username} {sudo_rule}\n"`` into
+# ``/etc/sudoers.d/{username}`` (user_mgmt/generator.py). The shell
+# metacharacters were blocked from the start; ``\n`` was not — so a rule of
+#
+#     ALL=(ALL) NOPASSWD: /bin/true\nsomeone ALL=(ALL) NOPASSWD: ALL
+#
+# wrote a *two-line* drop-in granting passwordless root to an account
+# LabDog does not manage. ``visudo -cf`` accepts it: it is perfectly valid
+# sudoers syntax, which is exactly why the validate step never caught it
+# (SEC-25).
+#
+# \r is included because sudoers treats a bare CR as line-ending in
+# enough contexts to be worth refusing, and NUL because it truncates.
+SUDO_FORBIDDEN_PATTERN = re.compile(r"[`$();|&<>\r\n\x00]")
 
 # Valid SSH public key type prefixes
 VALID_KEY_TYPES = (

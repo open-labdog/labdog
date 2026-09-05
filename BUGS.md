@@ -220,20 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-24** `backend/app/hosts_mgmt/merge.py:146` — `/etc/hosts` line
-      injection. `HostsEntryCreate.comment` has no validator while
-      `hostname` and `aliases` are checked against `HOSTNAME_RE`, so a
-      comment containing `\n1.2.3.4 deb.debian.org` appends a real
-      `/etc/hosts` line on every host in the group. Second vector to the
-      same place: `HostCreate.hostname` (`app/schemas/hosts.py:33`) has no
-      validator at all. Also `ssh_port` is an unbounded `int`.
-
-- [ ] **SEC-25** `backend/app/user_mgmt/constants.py:78` — sudoers
-      injection. `SUDO_FORBIDDEN_PATTERN` blocks `` [`$();|&<>] `` but not
-      `\n`, so `ALL=(ALL) NOPASSWD: /bin/true\nsomeone ALL=(ALL) NOPASSWD:
-      ALL` writes a two-line drop-in that `visudo -cf` accepts as valid,
-      granting passwordless root to an account LabDog does not manage.
-
 - [ ] **SEC-26** `backend/app/ansible_runtime/inventory.py:40` — the
       Ansible path ignores LabDog's own pinned host keys. It sets
       `StrictHostKeyChecking=accept-new` with no `UserKnownHostsFile`, so
