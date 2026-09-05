@@ -65,6 +65,51 @@ The format follows [Keep a Changelog]; LabDog follows
   Jobs queued before upgrading have no recorded list and still mean every
   module, which is what they were going to do anyway.
 
+- **Daily maintenance jobs now actually fire.** Fifteen periodic schedules
+  were registered when their module was first imported, and every
+  registration reset the job's next-due time to a full interval away. Both
+  the API and the worker import those modules, so every restart pushed the
+  daily jobs back another day: on a deployment that restarts more often than
+  once a day, audit-log pruning, SSH-transcript pruning and AI snapshot
+  retention **never ran at all**. Six of the fifteen also swallowed their
+  own failures silently.
+
+  Registration now happens once, in the process that actually runs the
+  scheduler, and only rewrites an entry when the schedule genuinely changed
+  — so a restart no longer moves a job that was due in ten minutes.
+
+  On upgrade, expect the pruners to run for the first time. If your install
+  has been up for a while, the first audit-log prune may delete a lot at
+  once; check `logging.audit_retention_days` before restarting if that
+  matters to you.
+
+- **A hung host no longer stalls every host behind it.** LabDog bounded how
+  long it would wait to *reach* a host, but not how long a command could take
+  once connected. A host that answered SSH and then hung — a wedged
+  `nft list ruleset`, a stuck NFS mount, a process in D state — held the
+  caller indefinitely. The drift sweep and state collection walk hosts one at
+  a time, so a single unresponsive host silently stopped every host after it
+  from being checked at all, on every tick.
+
+  Every command now carries a deadline, bound at the connection rather than
+  at each call site, so it covers the thirty-odd places that needed it and
+  anything added later. The new **SSH command timeout** setting (default 60s)
+  controls it; the connect timeout is unchanged and still separate.
+
+- **The container healthcheck now checks something.** `/health` returned
+  `{"status": "ok"}` unconditionally — it never touched the database, Redis,
+  or the Celery workers. If a worker died the container stayed healthy
+  forever while nothing ran: no syncs, no drift checks, no scheduled actions,
+  and no signal that anything was wrong.
+
+  There are now two endpoints. `/health` and `/health/live` stay constant —
+  "is the process answering" is what a restart policy should act on.
+  `/health/ready` checks the database, Redis and the workers, and returns 503
+  naming the component that failed. The image healthcheck points at it.
+
+  If you run LabDog outside the provided image and monitor `/health`, nothing
+  changes; point at `/health/ready` to get the stronger check.
+
 - **Built-in actions actually run.** `_builtin.collect_state`,
   `_builtin.drift_check`, `_builtin.sync` and `_builtin.ai_task` never
   executed their work — three separate defects, stacked, each hiding the
