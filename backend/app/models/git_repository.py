@@ -38,7 +38,15 @@ class GitRepository(Base):
         LargeBinary,
         nullable=True,
     )
-    webhook_secret: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: SEC-28. The HMAC key inbound push webhooks are verified against.
+    #: Encrypted at rest exactly like ``encrypted_https_token`` above —
+    #: it used to sit here in plaintext and be returned by the API,
+    #: which made forging a push webhook a matter of reading a response
+    #: body. Read and written through ``app.gitops.webhook_secret``.
+    encrypted_webhook_secret: Mapped[bytes | None] = mapped_column(
+        LargeBinary,
+        nullable=True,
+    )
     #: SEC-27. The ``known_hosts`` line recorded the first time LabDog
     #: reached this repository over SSH. Every later sync is verified
     #: against it, so an intercepted connection is refused rather than
@@ -59,6 +67,15 @@ class GitRepository(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    @property
+    def has_webhook_secret(self) -> bool:
+        """Whether a webhook secret is configured.
+
+        This is what ``GitRepoResponse`` reports. The secret itself is
+        never returned — knowing one is set is all a form needs.
+        """
+        return bool(self.encrypted_webhook_secret)
 
     @property
     def has_pinned_host_key(self) -> bool:

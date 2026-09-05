@@ -125,7 +125,7 @@ class GitRepoCreate(BaseModel):
     branch: str = "main"
     ssh_key_id: int | None = None
     https_token: str | None = None  # plaintext on input, encrypted before storage
-    webhook_secret: str | None = None
+    webhook_secret: str | None = None  # plaintext on input, encrypted before storage
 
     @field_validator("url")
     @classmethod
@@ -164,7 +164,11 @@ class GitRepoResponse(BaseModel):
     branch: str
     auth_type: str  # derived server-side; reported back for UX cues
     ssh_key_id: int | None
-    webhook_secret: str | None  # OK to return — it's for webhook validation, not a credential
+    #: SEC-28. Whether a webhook secret is configured — never the
+    #: secret itself. It is the HMAC key inbound pushes are verified
+    #: against; returning it let anyone who could read a repository
+    #: forge a push webhook.
+    has_webhook_secret: bool
     last_commit_sha: str | None
     last_sync_at: datetime | None
     #: SEC-27. True once an SSH sync has recorded the server's host key,

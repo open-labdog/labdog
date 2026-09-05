@@ -143,7 +143,11 @@ export interface GitRepository {
   branch: string
   auth_type: GitAuthType
   ssh_key_id: number | null
-  webhook_secret: string | null
+  // SEC-28: the secret itself is never returned — it is the HMAC key
+  // inbound push webhooks are verified against.
+  has_webhook_secret: boolean
+  // SEC-27: true once a sync has recorded the git server's SSH host key.
+  has_pinned_host_key: boolean
   last_commit_sha: string | null
   last_sync_at: string | null
   created_at: string
