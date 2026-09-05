@@ -122,6 +122,10 @@ class SSHConfig(BaseModel):
     max_total_sessions: int = 50
     idle_timeout_seconds: int = 1800
     connect_timeout: int = 10
+    #: Fallback for the ``ssh.command_timeout`` app setting, used before the
+    #: settings cache is warm. Bounds one command on an already-open session;
+    #: the connect half is ``connect_timeout`` above.
+    command_timeout: int = 60
     default_port: int = 22
 
 

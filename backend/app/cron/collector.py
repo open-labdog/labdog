@@ -50,6 +50,8 @@ async def collect_cron_jobs(
 
 
 async def _collect_user_crontab(
+    # A BoundedConnection from app.ssh_utils in practice — it delegates
+    # every attribute except run(), which carries a deadline.
     conn: asyncssh.SSHClientConnection,
     user: str,
 ) -> list[dict]:

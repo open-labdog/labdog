@@ -15,6 +15,13 @@ if TYPE_CHECKING:
 # the "ssh.connect_timeout" app setting stored in the database.
 SSH_CONNECT_TIMEOUT = 10
 
+# Default per-command timeout in seconds, for one command on an already
+# open session. Overridden at runtime by the "ssh.command_timeout" app
+# setting. Separate from the connect timeout because they fail
+# differently: an unreachable host is a host that is down, a host that
+# hangs mid-command is a host that is up and stuck.
+SSH_COMMAND_TIMEOUT = 60
+
 
 class HostKeyMismatchError(Exception):
     """Raised when the server's host key does not match the stored key.
@@ -36,6 +43,63 @@ def _get_connect_timeout() -> int:
         return SSH_CONNECT_TIMEOUT
 
 
+def _get_command_timeout() -> int:
+    """Read the per-command timeout from DB settings, with fallback."""
+    try:
+        from app.settings_service import get_setting_cached_typed
+
+        return int(get_setting_cached_typed("ssh.command_timeout"))
+    except Exception:
+        return SSH_COMMAND_TIMEOUT
+
+
+class BoundedConnection:
+    """An ``SSHClientConnection`` whose ``run()`` always has a deadline.
+
+    ``connect_timeout`` bounds getting *to* a host. Nothing bounded what
+    happened after: a host that completes TCP and authentication and then
+    hangs — a wedged ``nft list ruleset``, a stuck NFS mount under
+    ``systemctl list-units``, a D-state process — held the caller forever.
+    Thirty of the thirty-two ``conn.run()`` call sites passed no timeout,
+    and the ones that mattered most were in the drift sweep and
+    ``collect-state``, which walk hosts in one serial loop: a single
+    unresponsive host stopped every host after it from being checked at
+    all, silently, on every tick.
+
+    A wrapper rather than a `run_checked(conn, cmd, timeout)` helper that
+    thirty call sites must remember to use. Every connection LabDog opens
+    comes from this module, so binding the deadline here covers the call
+    sites that exist and the ones written later, and there is no way to
+    opt out by forgetting. A caller that genuinely needs longer passes its
+    own ``timeout=`` and this steps aside.
+
+    Everything except ``run`` delegates untouched — notably
+    ``create_process``, which the interactive web terminal uses and which
+    must *not* have a command deadline.
+    """
+
+    __slots__ = ("_conn", "_timeout")
+
+    def __init__(self, conn: asyncssh.SSHClientConnection, timeout: int):
+        self._conn = conn
+        self._timeout = timeout
+
+    def run(self, *args, **kwargs):
+        # Not `async def`: asyncssh's run() returns an awaitable and some
+        # callers hold it before awaiting. Defaulting the kwarg and
+        # returning the original awaitable keeps that behaviour exact.
+        kwargs.setdefault("timeout", self._timeout)
+        return self._conn.run(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    @property
+    def wrapped(self) -> asyncssh.SSHClientConnection:
+        """The underlying connection, for the rare caller that needs it."""
+        return self._conn
+
+
 class _SSHConnectContext:
     """Async context manager that wraps asyncssh.connect with a hard timeout.
 
@@ -54,7 +118,7 @@ class _SSHConnectContext:
         self._timeout = timeout
         self._conn = None
 
-    async def __aenter__(self) -> asyncssh.SSHClientConnection:
+    async def __aenter__(self) -> BoundedConnection:
         self._conn = await asyncio.wait_for(
             asyncssh.connect(
                 self._host,
@@ -66,7 +130,8 @@ class _SSHConnectContext:
             ),
             timeout=self._timeout,
         )
-        return self._conn
+        # Every command on this session gets a deadline; see BoundedConnection.
+        return BoundedConnection(self._conn, _get_command_timeout())
 
     async def __aexit__(self, *exc):
         if self._conn:
@@ -137,7 +202,7 @@ class _HostSSHConnectContext:
         self._conn = None
         self._tmpfile = None
 
-    async def __aenter__(self) -> asyncssh.SSHClientConnection:
+    async def __aenter__(self) -> BoundedConnection:
         host = self._host
         ip = host.ip_address
 
@@ -191,7 +256,8 @@ class _HostSSHConnectContext:
                 if self._db is not None:
                     await self._db.commit()
 
-        return self._conn
+        # Every command on this session gets a deadline; see BoundedConnection.
+        return BoundedConnection(self._conn, _get_command_timeout())
 
     async def __aexit__(self, *exc):
         if self._conn:
@@ -248,7 +314,7 @@ def ssh_connect_host(
     )
 
 
-async def get_source_ip(conn: asyncssh.SSHClientConnection) -> str | None:
+async def get_source_ip(conn: "BoundedConnection | asyncssh.SSHClientConnection") -> str | None:
     """Determine what IP the remote host sees us connecting from.
 
     Uses SSH_CLIENT env var on the remote side, which is authoritative
