@@ -220,22 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-28** `backend/app/schemas/git_repos.py:167` —
-      `webhook_secret` is stored in plaintext and returned by the API. The
-      inline comment calls it "not a credential"; it is the HMAC key the
-      webhook verifiers compare against, so anyone who reads it can forge
-      push webhooks. It is also the only secret in the codebase not held in
-      an `encrypted_*` column. Encrypt at rest and return
-      `has_webhook_secret: bool`.
-
-- [ ] **SEC-29** `backend/app/gitops/git_service.py:100-110` — the HTTPS
-      PAT is passed on the `git` command line (`oauth2:{token}@host`), so
-      it appears in `/proc/*/cmdline` and is written into `.git/config`
-      until the `set_url` two lines later. The pack path already solved
-      this properly with `-c http.extraHeader=…` plus
-      `http.followRedirects=false` (`app/packs/git_auth.py:60-73`) — adopt
-      the same mechanism.
-
 - [ ] **SEC-30** `backend/app/auth/schemas.py:8-18` — the 12-character
       password rule exists only on the registration schema. `UserUpdate`
       has no validator, and `PATCH /api/users/me` accepts a `password`

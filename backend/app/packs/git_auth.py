@@ -3,10 +3,12 @@
 A ``GitAuthContext`` bundles everything ``git_sync._run_git`` needs to know
 about authentication for one invocation:
 
-- Extra ``git`` CLI args (before the subcommand) — used to inject
-  ``http.extraHeader`` for HTTPS PAT auth without the token ever landing
-  in ``remote.origin.url``.
-- Extra env vars — mainly ``GIT_SSH_COMMAND`` for SSH auth.
+- Extra ``git`` CLI args (before the subcommand). Nothing secret goes
+  here — see ``token_config_env``.
+- Extra env vars — ``GIT_SSH_COMMAND`` for SSH auth, and the
+  ``GIT_CONFIG_*`` triple that carries an HTTPS PAT as an
+  ``Authorization`` header without it reaching argv or
+  ``remote.origin.url``.
 - A list of secret strings to redact from any captured stderr before
   persisting to the DB.
 
@@ -106,19 +108,8 @@ def git_auth_context(
         raise ValueError("git_auth_context accepts at most one of ssh_private_key / token")
 
     if token:
-        # Token is passed inline as a git -c override so git treats it
-        # as an HTTP header on the request. remote.origin.url stays
-        # clean.
-        # followRedirects is disabled so that git never re-sends the
-        # Authorization header to a redirect target — prevents PAT
-        # exfiltration if the remote redirects to an attacker host.
         yield GitAuthContext(
-            extra_args=[
-                "-c",
-                f"http.extraHeader=Authorization: Bearer {token}",
-                "-c",
-                "http.followRedirects=false",
-            ],
+            extra_env=token_config_env(token),
             redact_values=[token],
         )
         return
@@ -167,6 +158,32 @@ def _materialised_ssh_key(private_key: str) -> Iterator[Path]:
             os.rmdir(tmpdir)
         except OSError:
             logger.warning("failed to clean SSH tmpdir %s", tmpdir, exc_info=True)
+
+
+def token_config_env(token: str) -> dict[str, str]:
+    """Environment that makes git send *token* as an HTTP header.
+
+    The token becomes an ``Authorization`` header rather than part of
+    ``remote.origin.url``, so it is never written into ``.git/config``
+    and never survives the clone.
+
+    It travels in ``GIT_CONFIG_*`` rather than on ``git -c`` (SEC-29).
+    Both keep it out of the repository config, but argv is world-readable
+    through ``/proc/<pid>/cmdline`` — any local account could read the
+    PAT off a running clone. ``/proc/<pid>/environ`` is readable only by
+    the process owner and root.
+
+    ``http.followRedirects=false`` stops git re-sending the header to a
+    redirect target, which would hand the PAT to whatever host the
+    remote points at.
+    """
+    return {
+        "GIT_CONFIG_COUNT": "2",
+        "GIT_CONFIG_KEY_0": "http.extraHeader",
+        "GIT_CONFIG_VALUE_0": f"Authorization: Bearer {token}",
+        "GIT_CONFIG_KEY_1": "http.followRedirects",
+        "GIT_CONFIG_VALUE_1": "false",
+    }
 
 
 def build_ssh_command(key_path: str, known_hosts_path: str, *, pinned: bool) -> str:
