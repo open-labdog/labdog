@@ -45,11 +45,16 @@ def redbeat(monkeypatch):
     stored: dict = {}
 
     class _Entry(_FakeEntry):
+        deleted: list = []
+
         @classmethod
         def from_key(cls, key, app=None):
             if key not in stored:
                 raise KeyError(key)
             return stored[key]
+
+        def delete(self):
+            type(self).deleted.append(self.name)
 
     monkeypatch.setattr("redbeat.RedBeatSchedulerEntry", _Entry)
     return stored, _Entry
@@ -179,13 +184,16 @@ class TestEveryModuleIsStillFound:
             "function, so register_all() will never call them"
         )
 
-    def test_register_all_reports_per_module_status(self):
+    def test_register_all_reports_per_module_status(self, redbeat):
+        # `redbeat` stubs RedBeatSchedulerEntry: two registrars call
+        # `from_key` directly (the legacy-entry cleanups), and against a
+        # real absent Redis those sit through celery's 20×1s retry.
         with patch("app.tasks.beat_registry.ensure_entry", return_value=True):
             results = register_all(celery_app)
         assert results, "no registrars were found at all"
         assert all(isinstance(v, str) for v in results.values())
 
-    def test_one_broken_module_does_not_stop_the_others(self):
+    def test_one_broken_module_does_not_stop_the_others(self, redbeat):
         """A beat process that refuses to start is worse than one missing
         a job — and this is what six modules used to hide with `pass`."""
         import app.tasks.drift as drift
