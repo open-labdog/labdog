@@ -177,9 +177,14 @@ async def _check_and_reboot_legacy(
         timeout=30,
     )
     try:
+        # Raw asyncssh here, so the deadline BoundedConnection would supply
+        # has to be passed explicitly (BUG-66).
+        from app.ssh_utils import _get_command_timeout
+
         result = await conn.run(
             "test -f /var/run/reboot-required && echo REBOOT_NEEDED || echo NO_REBOOT",
             check=False,
+            timeout=_get_command_timeout(),
         )
         output = result.stdout.strip()
     finally:

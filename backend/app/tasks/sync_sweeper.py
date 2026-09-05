@@ -147,19 +147,17 @@ def sweep_stale_syncs() -> dict:
 
 
 def _register_beat_schedule() -> None:
-    from celery.schedules import schedule
-    from redbeat import RedBeatSchedulerEntry
+    from app.tasks.beat_registry import ensure_entry
 
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="app.tasks.sync_sweeper.sweep_stale_syncs",
         task="app.tasks.sync_sweeper.sweep_stale_syncs",
-        schedule=schedule(run_every=SWEEP_FREQUENCY_SECONDS),
+        run_every_seconds=SWEEP_FREQUENCY_SECONDS,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_beat_schedule()
-except Exception:
-    pass
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

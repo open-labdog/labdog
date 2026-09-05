@@ -1,7 +1,7 @@
 import logging
 
 from celery import Celery
-from celery.signals import worker_process_init, worker_ready
+from celery.signals import beat_init, worker_process_init, worker_ready
 
 from app.config import settings
 
@@ -157,6 +157,33 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
         asyncio.run(_do_sync())
     except Exception:
         logger.exception("action-pack sync on worker_ready failed; bundled pack only")
+
+
+@beat_init.connect
+def _register_beat_schedules_on_beat_start(sender=None, **_kwargs):
+    """Register every periodic schedule, once, in the process that runs beat.
+
+    These fifteen registrations used to happen at *import*, in every
+    process that imported the module — the API included. Each one called
+    ``RedBeatSchedulerEntry.save()`` with no ``last_run_at``, which resets
+    ``due_at`` to ``now + run_every``. On a deployment that restarts more
+    often than once a day, the daily jobs therefore never fired at all:
+    audit-log pruning, SSH-transcript pruning, AI snapshot retention
+    (BUG-70).
+
+    ``beat_init`` is the right moment because it fires only in the process
+    that owns the schedule, and only after the broker is reachable — which
+    is also why six of these could stop swallowing their failures with a
+    bare ``except: pass``.
+    """
+    from app.tasks.beat_registry import register_all  # noqa: PLC0415
+
+    results = register_all(celery_app)
+    failed = sorted(k for k, v in results.items() if v != "ok")
+    if failed:
+        logger.error("beat schedule registration failed for: %s", ", ".join(failed))
+    else:
+        logger.info("registered %d periodic schedule group(s)", len(results))
 
 
 @worker_ready.connect

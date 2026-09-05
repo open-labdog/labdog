@@ -43,6 +43,26 @@ WORKER_QUEUES: dict[str, tuple[str, ...]] = {
 }
 
 
+#: The manager this process owns, or None.
+#:
+#: ``/health/ready`` needs to know whether the Celery children are alive,
+#: and the manager is created by ``app.__main__`` rather than by the
+#: FastAPI app, so there is nothing on ``app.state`` to read. Set by
+#: ``start()`` and cleared by ``stop()``.
+#:
+#: Only meaningful in the process that spawned the workers. Under
+#: ``--workers N`` uvicorn forks, and a forked child sees None — which is
+#: why the health check reports "not supervised here" rather than "down"
+#: when it is unset. A single-worker deployment, which is what the
+#: container ships, always has it.
+_active_manager: CeleryManager | None = None
+
+
+def active_manager() -> CeleryManager | None:
+    """The CeleryManager supervising this process's workers, if any."""
+    return _active_manager
+
+
 class CeleryManager:
     """Spawn and manage the Celery worker subprocesses."""
 
@@ -91,6 +111,8 @@ class CeleryManager:
 
     def start(self) -> None:
         """Spawn one Celery worker subprocess per entry in WORKER_QUEUES."""
+        global _active_manager
+        _active_manager = self
         for name, queues in WORKER_QUEUES.items():
             cmd = self._command(name, queues)
             logger.info("Starting Celery worker %r: %s", name, " ".join(cmd))
@@ -107,6 +129,9 @@ class CeleryManager:
         Terminate all of them first and only then wait: signalling serially
         would give the last worker `timeout × (n-1)` seconds less to drain.
         """
+        global _active_manager
+        if _active_manager is self:
+            _active_manager = None
         live = [(n, p) for n, p in self._processes.items() if p.poll() is None]
         for name, proc in live:
             logger.info("Stopping Celery worker %r (pid=%d) ...", name, proc.pid)

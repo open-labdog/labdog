@@ -41,6 +41,8 @@ async def collect_user_states(
 
 
 async def _collect_single_user(
+    # A BoundedConnection from app.ssh_utils in practice — it delegates
+    # every attribute except run(), which carries a deadline.
     conn: asyncssh.SSHClientConnection,
     username: str,
 ) -> dict:

@@ -326,14 +326,7 @@ content policy.
 
 ### Correctness — High
 
-- [ ] **BUG-66** ~30 of 32 `conn.run()` calls pass no `timeout`
-      (`app/ssh_utils.py:259`, `api/host_state.py` ×7,
-      `packages/collector.py` ×8, `services/collector.py` ×5,
-      `resolver/collector.py` ×3, and others). `ssh_utils` correctly bounds
-      the *connect*, so the gap is specifically post-auth: a host that
-      accepts TCP and auth but hangs on `nft list ruleset` or a stuck NFS
-      mount blocks indefinitely. This is what makes BUG-67 and the
-      in-request `collect-state` unrecoverable rather than merely slow.
+_No bugs are currently open._
 
 ### Correctness — Medium
 
@@ -430,6 +423,22 @@ content policy.
       loop being checked at all — silently, on every tick. Fan out through
       the locked `_builtin.drift_check` path instead.
 
+      **Re-rated 2026-09-05 after BUG-66.** The second half is now much
+      reduced: every command carries a deadline, so a hung host costs the
+      sweep one `ssh.command_timeout` rather than stopping it dead. The
+      first half is untouched and is the reason this stays open — the
+      sweep takes no host lock at all, so it still reads a half-applied
+      ruleset mid-sync and writes `out_of_sync` over the status the sync
+      is maintaining. Seven modules run this same unlocked loop
+      (`drift`, `cron_drift`, `hosts_drift`, `package_drift`,
+      `resolver_drift`, `service_drift`, `user_drift`), each with its own
+      inline copy of the collect-and-diff body, which is what makes the
+      fix a real refactor rather than a patch.
+
+      Note that `_builtin.drift_check` — the locked path the fix should
+      route through — only began working with BUG-78/79/80, so this was
+      not implementable as written before that landed.
+
 - [ ] **BUG-68** `backend/app/hosts/dependents.py:124` — writes
       `module_type="hosts_entries"` where every consumer reads
       `"hosts_file"` (`api/hosts_drift.py`, `tasks/hosts_drift.py`,
@@ -454,15 +463,6 @@ content policy.
       Add `.order_by(priority.desc(), id.asc())` throughout and the missing
       unique index.
 
-- [ ] **BUG-70** Ten modules register their RedBeat schedule at *import*
-      time with no `last_run_at`, so every process that imports them — the
-      worker and the FastAPI app both — rewrites `due_at` to `now +
-      run_every`. A deployment that restarts more often than once a day
-      means the daily audit-log and transcript pruning never fires, ever.
-      Six of the ten swallow the failure with a bare `except Exception:
-      pass`. Register from `beat_init`/`worker_ready` and only `save()`
-      when the entry actually differs.
-
 - [ ] **BUG-71** Blocking work on the event loop:
       `api/_repo_scan.py:81,216` runs a `subprocess.run` git clone with a
       120s timeout inside an async handler, freezing the entire single-worker
@@ -473,14 +473,6 @@ content policy.
       `tasks/host_sync_orchestrator.py:702-712` holds an open Postgres
       transaction and its asyncpg connection for the entire ansible run,
       up to 900s.
-
-- [ ] **BUG-72** `backend/app/main.py:458` — `/health` returns
-      `{"status": "ok"}` unconditionally. It never touches the database,
-      Redis, or `CeleryManager.is_alive()` — which exists and is never
-      called. **If the Celery subprocess dies, the container stays healthy
-      forever and nothing executes tasks.** Split into a constant
-      `/health/live` and a real `/health/ready`, and repoint the Dockerfile
-      and systemd unit at the latter.
 
 - [ ] **BUG-73** No index supports `check_host_busy`, which runs three
       queries per claim and sequential-scans `action_runs` and

@@ -235,23 +235,18 @@ def check_all_resolver_drift():
 
 
 def _register_resolver_drift_schedule():
-    from celery.schedules import schedule
-    from redbeat import RedBeatSchedulerEntry
-
     from app.config import settings
+    from app.tasks.beat_registry import ensure_entry
 
-    interval = schedule(run_every=settings.drift.check_interval_minutes * 60)
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="check-resolver-drift-periodic",
         task="app.tasks.resolver_drift.check_all_resolver_drift",
-        schedule=interval,
+        run_every_seconds=settings.drift.check_interval_minutes * 60,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_resolver_drift_schedule()
-except Exception:
-    # Fallback: Redis may not be available at import time (e.g., during tests)
-    pass
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

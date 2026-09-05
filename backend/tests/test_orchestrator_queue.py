@@ -86,6 +86,16 @@ class TestTheJoinCannotStarveItsChildren:
 
 
 class TestBothWorkersAreActuallyStarted:
+    @pytest.fixture(autouse=True)
+    def _no_manager_leaks(self):
+        """``start()`` publishes the manager process-globally so
+        ``/health/ready`` can find it; a test that starts one and walks
+        away leaves it visible to every later test."""
+        import app.celery_manager as cm
+
+        yield
+        cm._active_manager = None
+
     def _start(self):
         mgr = CeleryManager()
         procs = []

@@ -206,7 +206,6 @@ def _register_beat_schedule() -> None:
     """
     import asyncio as _asyncio
 
-    from celery.schedules import schedule
     from redbeat import RedBeatSchedulerEntry
 
     from app.db import task_session
@@ -226,25 +225,18 @@ def _register_beat_schedule() -> None:
             logger.debug("ai_alerts: no %s entry to remove", name)
         return
 
-    RedBeatSchedulerEntry(
+    from app.tasks.beat_registry import ensure_entry
+
+    ensure_entry(
         name=name,
         task="app.tasks.ai_alerts.poll_alertmanager",
-        schedule=schedule(run_every=minutes * 60),
+        run_every_seconds=minutes * 60,
         app=celery_app,
-    ).save()
+    )
     logger.info("ai_alerts: Alertmanager poll registered every %d minute(s)", minutes)
 
 
-try:
-    _register_beat_schedule()
-except Exception:
-    # Redis or the database may be unavailable at import time — tests, or
-    # a worker that started before its dependencies. Logged rather than
-    # swallowed: a poll that silently never registers is indistinguishable
-    # from one that is running and finding nothing, which is the worst of
-    # both. The webhook is unaffected either way.
-    logger.warning(
-        "ai_alerts: could not register the Alertmanager poll; "
-        "it will not run until this worker restarts successfully",
-        exc_info=True,
-    )
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

@@ -476,7 +476,97 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
+        """Liveness. Kept at the original path so nothing pointed here breaks.
+
+        Deliberately still a constant: this answers "is the process
+        responding", which is what a restart policy should act on.
+        Readiness is a different question and lives at /health/ready.
+        """
         return {"status": "ok"}
+
+    @app.get("/health/live")
+    async def health_live():
+        """Liveness, at the conventional path. Same answer as /health."""
+        return {"status": "ok"}
+
+    @app.get("/health/ready")
+    async def health_ready(response: Response):
+        """Readiness: can this instance actually do its job right now?
+
+        /health returned ``{"status": "ok"}`` unconditionally — it never
+        touched the database, Redis, or the Celery children.
+        ``CeleryManager.is_alive()`` existed and was never called from
+        anywhere. So if the Celery subprocess died, the container stayed
+        healthy forever while nothing executed a single task: no sync, no
+        drift check, no scheduled action, and no signal that anything was
+        wrong (BUG-72).
+
+        Returns 503 with a per-component dict when any component is down,
+        so an operator reading the failing probe learns *which* one.
+        """
+        from sqlalchemy import text as _sql_text  # noqa: PLC0415
+        from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
+
+        from app.celery_manager import active_manager  # noqa: PLC0415
+
+        components: dict[str, str] = {}
+
+        # A dedicated connection rather than one from the request pool.
+        # The question is "can I reach Postgres", and borrowing from the
+        # pool answers a different one: under load the probe would queue
+        # behind real traffic and report the database down when it is
+        # merely busy — turning a slow moment into a restart.
+        #
+        # Engine construction is inside the try: a health check that raises
+        # is a health check that returns 500 with no component detail,
+        # which is the one outcome this endpoint exists to prevent.
+        probe_engine = None
+        try:
+            probe_engine = create_async_engine(settings.database.url, pool_size=1, max_overflow=0)
+            async with probe_engine.connect() as conn:
+                await conn.execute(_sql_text("SELECT 1"))
+            components["database"] = "ok"
+        except Exception as exc:
+            logger.warning("readiness: database check failed: %s", exc)
+            components["database"] = "error"
+        finally:
+            if probe_engine is not None:
+                try:
+                    await probe_engine.dispose()
+                except Exception:  # noqa: BLE001
+                    logger.warning("readiness: probe engine dispose failed", exc_info=True)
+
+        try:
+            import redis.asyncio as _redis  # noqa: PLC0415
+
+            client = _redis.from_url(settings.redis.url)
+            try:
+                await client.ping()
+                components["redis"] = "ok"
+            finally:
+                await client.aclose()
+        except Exception as exc:
+            logger.warning("readiness: redis check failed: %s", exc)
+            components["redis"] = "error"
+
+        manager = active_manager()
+        if manager is None:
+            # Either --no-celery (a development choice, not a fault) or a
+            # forked uvicorn worker that does not own the subprocesses.
+            # Saying "down" here would fail the probe on a healthy dev run;
+            # saying "ok" would claim knowledge this process does not have.
+            components["celery"] = "not_supervised_here"
+        elif manager.is_alive():
+            components["celery"] = "ok"
+        else:
+            dead = ", ".join(manager.dead_workers()) or "unknown"
+            logger.error("readiness: celery worker(s) not running: %s", dead)
+            components["celery"] = f"error: {dead} not running"
+
+        ready = all(not v.startswith("error") for v in components.values())
+        if not ready:
+            response.status_code = 503
+        return {"status": "ready" if ready else "not_ready", "components": components}
 
     # -- Static file serving (SPA) --
     static_dir = _resolve_static_dir()

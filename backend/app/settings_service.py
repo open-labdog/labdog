@@ -42,6 +42,19 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 120,
         "description": "SSH connection timeout in seconds",
     },
+    "ssh.command_timeout": {
+        "type": "int",
+        "default": 60,
+        "min": 5,
+        "max": 900,
+        "description": "Maximum seconds a single remote command may take.",
+        "help": (
+            "Bounds each command LabDog runs over an existing SSH session — the state "
+            "collectors and reachability probes, not Ansible playbooks, which have their "
+            "own timeout. A host that accepts the connection but then hangs on one command "
+            "fails that host after this long instead of blocking every host behind it."
+        ),
+    },
     "ansible.playbook_timeout": {
         "type": "int",
         "default": 300,
