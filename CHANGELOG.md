@@ -9,6 +9,36 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Ansible runs and git syncs now verify the host they connect to.** LabDog
+  already recorded each managed host's SSH key on first contact and refused a
+  changed one — but only on its own asyncssh connections. The Ansible path,
+  which is what pushes root-level configuration, set
+  `StrictHostKeyChecking=accept-new` with no known-hosts file and re-accepted
+  whatever key was presented on every run. A man-in-the-middle the web
+  terminal refused was accepted by the pipeline that matters more.
+
+  Playbook runs now verify against the key LabDog recorded for that host. A
+  host with no recorded key yet still accepts on first contact — refusing
+  would make a brand-new host unmanageable — and the key is recorded during
+  the preflight connection, so the unverified window is one connection wide.
+  Clear a key with `POST /api/hosts/{id}/trust-host-key` after a legitimate
+  reinstall.
+
+- **Git syncs over SSH are verified too, and the repository's host key is now
+  recorded.** Both git paths combined `accept-new` with
+  `UserKnownHostsFile=/dev/null`, which reads like trust-on-first-use and is
+  in fact unconditional acceptance: every invocation started from an empty
+  file, so there was never a first use and never a mismatch. Anyone able to
+  intercept the connection to a pack repository could serve arbitrary
+  playbooks, which LabDog then runs against the fleet as root.
+
+  The first sync after upgrading records the server's key (unchanged trust
+  posture, once) and every sync after that is verified against it. **If your
+  git server is legitimately re-keyed, syncs will start failing with a
+  host-key mismatch** — that is the point; clear the recorded key with
+  `POST /api/git-repos/{id}/trust-host-key`. Changing a repository's URL to a
+  different server clears it automatically.
+
 - **SSH terminal transcripts no longer capture what you type at a password
   prompt.** Everything typed at a `sudo` prompt, a `mysql -p`, an `openssl`
   passphrase, or any pasted key or token was stored in plain text and

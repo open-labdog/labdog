@@ -42,6 +42,7 @@ def generate_ca_cert_playbook(
     ssh_key_path: str,
     ssh_port: int = 22,
     ssh_user: str = "root",
+    known_hosts_path: str | None = None,
 ) -> dict:
     """Build an Ansible playbook + inventory for CA cert deployment.
 
@@ -51,6 +52,10 @@ def generate_ca_cert_playbook(
         Effective cert list. Each entry must contain ``fingerprint_sha256``,
         ``pem_content``, ``state`` (``"present"`` or ``"absent"``), and
         ``name`` (for task labels).
+    known_hosts_path:
+        File holding this host's pinned SSH host key (SEC-26). ``None``
+        keeps the ``accept-new`` fallback for a host LabDog has not
+        recorded a key for yet.
 
     Returns
     -------
@@ -170,5 +175,7 @@ def generate_ca_cert_playbook(
         }
     ]
 
-    inventory = generate_inventory(host_ip, ssh_port, ssh_key_path, ssh_user)
+    inventory = generate_inventory(
+        host_ip, ssh_port, ssh_key_path, ssh_user, known_hosts_path=known_hosts_path
+    )
     return {"playbook": playbook, "inventory": inventory}

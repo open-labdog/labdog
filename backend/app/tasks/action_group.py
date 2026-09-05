@@ -127,6 +127,7 @@ class _HostCtx:
         "port",
         "ssh_user",
         "ssh_key_path",
+        "known_hosts_path",
         "hostname",
         "snapshot_name",
         "snapshot_error",
@@ -147,6 +148,7 @@ class _HostCtx:
         self.port: int = 22
         self.ssh_user: str = "root"
         self.ssh_key_path: str = ""
+        self.known_hosts_path: str | None = None
         self.hostname: str = ""
         self.snapshot_name: str | None = None
         self.snapshot_error: str | None = None
@@ -178,6 +180,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from app.actions.extra_vars import sanitize_extra_vars
     from app.actions.registry import ACTION_REGISTRY
     from app.actions.validation import DRY_RUN_PARAM
+    from app.ansible_runtime.known_hosts import remove_known_hosts, write_known_hosts
     from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
@@ -420,6 +423,10 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 ctx.port = host.ssh_port or 22
                 ctx.ssh_user = ssh_key.ssh_user or "root"
                 ctx.ssh_key_path = key_path
+                # SEC-26: pin this member's connections to the host key
+                # LabDog recorded over asyncssh; None until first contact,
+                # which leaves the accept-new fallback in place.
+                ctx.known_hosts_path = write_known_hosts(host.ssh_host_key_entry, key_path)
                 ctx.hostname = host.hostname
                 host_ctxs.append(ctx)
                 host_run_by_inventory_name[ctx.inv_name] = ctx
@@ -507,6 +514,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                     "port": ctx.port,
                     "ssh_user": ctx.ssh_user,
                     "ssh_key_path": ctx.ssh_key_path,
+                    "known_hosts_path": ctx.known_hosts_path,
                 }
                 for ctx in host_ctxs
             ]
@@ -751,6 +759,8 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             try:
                 if os.path.exists(key_path):
                     os.unlink(key_path)
+                # The pinned known-hosts file sits beside the key (SEC-26).
+                remove_known_hosts(key_path)
             except Exception:
                 logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
         if os.path.exists(private_data_dir):
@@ -1017,6 +1027,7 @@ async def _verify_all(
                     ctx.ssh_key_path,
                     ssh_user=ctx.ssh_user,
                     hostname=ctx.hostname,
+                    known_hosts_path=ctx.known_hosts_path,
                 )
                 verify_runner = run_ansible(
                     playbook_path=verify_playbook_path,

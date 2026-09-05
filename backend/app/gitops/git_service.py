@@ -15,6 +15,7 @@ import git  # gitpython
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
+from app.packs.git_auth import build_ssh_command
 
 
 def clone_repo(
@@ -70,6 +71,7 @@ def _clone_ssh(
 
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-", suffix=".key")
     os.close(fd)
+    known_hosts_path = f"{ssh_key_path}.known_hosts"
     try:
         master_key = get_master_key()
         private_key = decrypt_ssh_key(encrypted_ssh_key, master_key)
@@ -79,19 +81,39 @@ def _clone_ssh(
             f.write(private_key)
         os.chmod(ssh_key_path, 0o600)
 
-        ssh_cmd = (
-            f"ssh -i {ssh_key_path} "
-            "-o StrictHostKeyChecking=accept-new "
-            "-o UserKnownHostsFile=/dev/null"
-        )
-        env = {**os.environ, "GIT_SSH_COMMAND": ssh_cmd}
+        # SEC-27: verify the server against the key recorded on the
+        # repository row. This used to be accept-new *with*
+        # UserKnownHostsFile=/dev/null, which never verifies anything —
+        # every clone started from an empty file, so there was never a
+        # first use and never a mismatch. On first contact we still
+        # accept and record, so the next clone is checked.
+        pinned = bool(repo.ssh_host_key_entry and repo.ssh_host_key_entry.strip())
+        with open(known_hosts_path, "w") as f:
+            if pinned:
+                f.write(repo.ssh_host_key_entry.strip() + "\n")  # type: ignore[union-attr]
+        os.chmod(known_hosts_path, 0o600)
+
+        env = {
+            **os.environ,
+            "GIT_SSH_COMMAND": build_ssh_command(ssh_key_path, known_hosts_path, pinned=pinned),
+        }
 
         cloned = git.Repo.clone_from(repo.url, str(target_dir), branch=repo.branch, env=env)
+
+        # Trust on first use: record what the server presented so every
+        # later clone is verified against it. The caller owns the
+        # session this row belongs to and commits it.
+        if not pinned:
+            learned = Path(known_hosts_path).read_text().strip()
+            if learned:
+                repo.ssh_host_key_entry = learned
+
         return cloned, target_dir
     finally:
         # Always clean up SSH key from tmpfs
-        if os.path.exists(ssh_key_path):
-            os.unlink(ssh_key_path)
+        for path in (ssh_key_path, known_hosts_path):
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 def _clone_https(repo: GitRepository, target_dir: Path) -> tuple[git.Repo, Path]:

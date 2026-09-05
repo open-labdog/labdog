@@ -34,6 +34,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         import yaml
         from sqlalchemy import select
 
+        from app.ansible_runtime.known_hosts import write_known_hosts
         from app.ca_certs.generator import generate_ca_cert_playbook
         from app.ca_certs.merge import get_effective_ca_certs
         from app.crypto import decrypt_ssh_key, get_master_key
@@ -63,6 +64,11 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                         f.write("\n")
                 os.chmod(ssh_key_path, 0o600)
 
+                # SEC-26: pin the run to the host key LabDog recorded
+                # over asyncssh. Written beside the key so the same
+                # cleanup removes it.
+                known_hosts_path = write_known_hosts(host.ssh_host_key_entry, ssh_key_path)
+
                 effective = await get_effective_ca_certs(host_id, db)
                 certs = [c.model_dump() for c in effective]
 
@@ -72,6 +78,7 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
                     ssh_key_path,
                     host.ssh_port,
                     ssh_user=ssh_key.ssh_user,
+                    known_hosts_path=known_hosts_path,
                 )
 
                 os.makedirs(f"{private_data_dir}/project", exist_ok=True)
@@ -145,7 +152,11 @@ def run_ca_cert_action(self, job_id: int, host_id: int) -> dict:
         raise
 
     finally:
+        from app.ansible_runtime.known_hosts import remove_known_hosts
+
         if os.path.exists(ssh_key_path):
             os.unlink(ssh_key_path)
+        # The pinned known-hosts file sits beside the key (SEC-26).
+        remove_known_hosts(ssh_key_path)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)

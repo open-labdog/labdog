@@ -77,8 +77,15 @@ async def scan_repo(
     clone_dir = Path(tempfile.mkdtemp(prefix="labdog-scan-"))
     try:
         try:
-            with git_auth_context(ssh_private_key=ssh_key, token=token) as auth:
+            with git_auth_context(
+                ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
+            ) as auth:
                 head_sha = sync_remote_pack(repo.url, repo.branch, clone_dir, auth=auth)
+                # SEC-27: trust on first use, so later syncs are verified.
+                learned = auth.learned_host_key()
+                if learned:
+                    repo.ssh_host_key_entry = learned
+                    await db.commit()
         except (GitSyncError, ValueError) as exc:
             secrets = [s for s in (ssh_key, token) if s]
             scrubbed = redact(str(exc), secrets) or "clone failed"
@@ -212,8 +219,15 @@ async def activate_repo(
     clone_dir = Path(tempfile.mkdtemp(prefix="labdog-activate-"))
     try:
         try:
-            with git_auth_context(ssh_private_key=ssh_key, token=token) as auth:
+            with git_auth_context(
+                ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
+            ) as auth:
                 head_sha = sync_remote_pack(repo.url, repo.branch, clone_dir, auth=auth)
+                # SEC-27: trust on first use, so later syncs are verified.
+                learned = auth.learned_host_key()
+                if learned:
+                    repo.ssh_host_key_entry = learned
+                    await db.commit()
         except (GitSyncError, ValueError) as exc:
             secrets = [s for s in (ssh_key, token) if s]
             scrubbed = redact(str(exc), secrets) or "clone failed"

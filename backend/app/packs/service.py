@@ -160,8 +160,15 @@ async def sync_pack(
         )
 
     try:
-        with git_auth_context(ssh_private_key=ssh_key, token=token) as auth:
+        with git_auth_context(
+            ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
+        ) as auth:
             sha = sync_remote_pack(repo.url, repo.branch, path, auth=auth)
+            # SEC-27: trust on first use. Recorded here so the next sync
+            # of this repository is verified rather than trusted.
+            learned = auth.learned_host_key()
+            if learned:
+                repo.ssh_host_key_entry = learned
     except (GitSyncError, ValueError) as exc:
         secrets = [s for s in (ssh_key, token) if s]
         scrubbed = redact(str(exc), secrets)

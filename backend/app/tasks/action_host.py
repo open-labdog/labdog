@@ -52,6 +52,25 @@ def run_action_host(self, action_run_id: int, host_run_id: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
+async def _stored_host_key_entry(host_id: int) -> str | None:
+    """The SSH host key LabDog has recorded for *host_id*, if any.
+
+    Read in its own session immediately before the inventory is built:
+    preflight connects over asyncssh and records the key on first
+    contact, so the value cached when the run was loaded can already be
+    stale by the time it matters.
+    """
+    from sqlalchemy import select
+
+    from app.db import task_session
+    from app.models.host import Host
+
+    async with task_session() as db:
+        return (
+            await db.execute(select(Host.ssh_host_key_entry).where(Host.id == host_id))
+        ).scalar_one_or_none()
+
+
 async def _preflight_reachable(host_id: int, ssh_key_path: str) -> tuple[bool, str | None]:
     """Bounded SSH liveness probe run before the action playbook.
 
@@ -127,6 +146,7 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
     from app.actions.registry import ACTION_REGISTRY
     from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.inventory import generate_inventory
+    from app.ansible_runtime.known_hosts import remove_known_hosts, write_known_hosts
     from app.ansible_runtime.runner import run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
@@ -514,8 +534,18 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         # ------------------------------------------------------------------ #
         # Build inventory and extra vars                                      #
         # ------------------------------------------------------------------ #
+        # SEC-26: pin the run to the host key LabDog recorded over
+        # asyncssh. Read fresh rather than from the cached scalars above,
+        # because preflight runs in between and is what records the key on
+        # a host contacted for the first time.
+        known_hosts_path = write_known_hosts(await _stored_host_key_entry(host_id), ssh_key_path)
         inventory_json = generate_inventory(
-            host_ip, host_port, ssh_key_path, ssh_user=ssh_user, hostname=host_hostname
+            host_ip,
+            host_port,
+            ssh_key_path,
+            ssh_user=ssh_user,
+            hostname=host_hostname,
+            known_hosts_path=known_hosts_path,
         )
 
         dry_run = parameters.pop(DRY_RUN_PARAM, False)
@@ -1163,6 +1193,8 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
         # when mkstemp itself failed, which is why it is checked first.
         if ssh_key_path is not None and os.path.exists(ssh_key_path):
             os.unlink(ssh_key_path)
+        # The pinned known-hosts file sits beside the key (SEC-26).
+        remove_known_hosts(ssh_key_path)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
         # Sibling runner dirs (the verify pass allocates its own alongside
