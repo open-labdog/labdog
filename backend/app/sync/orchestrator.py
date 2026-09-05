@@ -201,6 +201,13 @@ async def orchestrate_host_sync(
     # Belt-and-braces: tighten perms in case umask suppressed mode bits.
     os.chmod(ssh_key_path, 0o600)
 
+    # SEC-26: pin the playbook run to the host key LabDog already
+    # recorded over asyncssh. Lives beside the key inside
+    # ``private_data_dir``, so the caller's tmpfs cleanup removes it.
+    from app.ansible_runtime.known_hosts import write_known_hosts
+
+    known_hosts_path = write_known_hosts(host.ssh_host_key_entry, ssh_key_path)
+
     # 4. Gather desired states + build fragments. Deferred imports keep
     # the module-level import graph small and match the existing
     # pattern in app/tasks/sync.py.
@@ -303,6 +310,7 @@ async def orchestrate_host_sync(
         ssh_key_path=ssh_key_path,
         ssh_user=ssh_key.ssh_user,
         hostname=host.hostname,
+        known_hosts_path=known_hosts_path,
     )
 
     # 7. Dispatch ansible-runner. Caller (the next-commit Celery
