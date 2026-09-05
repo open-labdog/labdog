@@ -28,7 +28,7 @@ from app.models.git_repository import GitRepository
 
 def set_webhook_secret(repo: GitRepository, secret: str | None) -> None:
     """Store *secret* on *repo*, encrypted. ``None`` clears it."""
-    if secret is None or secret == "":
+    if not secret:
         repo.encrypted_webhook_secret = None
         return
     repo.encrypted_webhook_secret = encrypt_ssh_key(secret, get_master_key())
