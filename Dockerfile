@@ -154,7 +154,13 @@ EXPOSE 8000
 # process. /api/version is a no-auth endpoint that exercises the
 # FastAPI app at a minimum. Python is used instead of curl to avoid
 # adding an extra runtime dep -- python is already in the image.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/api/version', timeout=3); sys.exit(0 if r.status == 200 else 1)" || exit 1
+# /health/ready, not /api/version: the old probe only proved that uvicorn
+# was answering. It never touched the database, Redis or the Celery
+# children, so a container whose worker had died stayed "healthy" forever
+# while nothing executed a single task (BUG-72). start-period covers
+# startup migrations and the worker boot; a 503 names the failing
+# component in its body.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4); sys.exit(0 if r.status == 200 else 1)" || exit 1
 
 CMD ["python", "-m", "app"]
