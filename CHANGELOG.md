@@ -83,6 +83,21 @@ The format follows [Keep a Changelog]; LabDog follows
   once; check `logging.audit_retention_days` before restarting if that
   matters to you.
 
+- **A referenced host changing its IP now actually flags its dependants.**
+  When a host referenced by an `/etc/hosts` entry changed address, LabDog
+  raised the drift flag on the dependent hosts — under a module name nothing
+  reads. The status those hosts displayed still said in sync, no drift was
+  reported, no sync was offered, and their `/etc/hosts` kept pointing at the
+  old address. The firewall half of the same code path used the right name,
+  so half the feature worked.
+
+  Upgrading repairs the existing rows rather than discarding them: a host
+  whose stale row recorded drift is marked out of sync on the row that is
+  actually read, so signals raised while the bug was live are delivered
+  now rather than lost. Expect some hosts to show `/etc/hosts` as out of
+  sync after upgrading — that is the backlog surfacing, and a sync or the
+  next drift check clears it.
+
 - **Values LabDog writes into config files can no longer add lines to them.**
   Three fields were interpolated into generated files with nothing stopping
   them from ending the line they sat on:

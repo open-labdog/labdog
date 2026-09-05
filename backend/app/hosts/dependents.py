@@ -17,6 +17,7 @@ from app.hosts_mgmt.models import HostsEntry
 from app.models.firewall_rule import FirewallRule
 from app.models.host import HostGroupMembership
 from app.models.host_module_status import HostModuleStatus
+from app.module_types import ModuleType
 
 
 @dataclass
@@ -121,7 +122,13 @@ async def invalidate_host_ref_dependents(db: AsyncSession, host_id: int) -> dict
     fw_hosts, he_hosts = await affected_host_ids(db, host_id)
     # A host whose merged firewall config includes this ref → firewall module dirty
     # Same for /etc/hosts.
-    for module_type, host_ids in (("firewall", fw_hosts), ("hosts_entries", he_hosts)):
+    # ModuleType, not string literals: "hosts_entries" was written here for
+    # the /etc/hosts module while every consumer reads "hosts_file", so the
+    # dirty flag landed on a row nothing looked at (BUG-68).
+    for module_type, host_ids in (
+        (ModuleType.firewall, fw_hosts),
+        (ModuleType.hosts_file, he_hosts),
+    ):
         for hid in host_ids:
             hms = await db.execute(
                 select(HostModuleStatus).where(
@@ -134,4 +141,7 @@ async def invalidate_host_ref_dependents(db: AsyncSession, host_id: int) -> dict
                 row = HostModuleStatus(host_id=hid, module_type=module_type)
                 db.add(row)
             row.sync_status = "out_of_sync"
-    return {"firewall": sorted(fw_hosts), "hosts_entries": sorted(he_hosts)}
+    return {
+        str(ModuleType.firewall): sorted(fw_hosts),
+        str(ModuleType.hosts_file): sorted(he_hosts),
+    }

@@ -425,17 +425,6 @@ _No bugs are currently open._
       route through — only began working with BUG-78/79/80, so this was
       not implementable as written before that landed.
 
-- [ ] **BUG-68** `backend/app/hosts/dependents.py:124` — writes
-      `module_type="hosts_entries"` where every consumer reads
-      `"hosts_file"` (`api/hosts_drift.py`, `tasks/hosts_drift.py`,
-      `api/host_state.py`, `metrics/aggregates.py`, `_MODULE_TYPE_MAPPING`,
-      and the frontend). When a referenced host's IP changes, dependants
-      get a new invisible row marked `out_of_sync` while the row they
-      actually use still says `in_sync` and their `/etc/hosts` points at the
-      old address. The firewall half of the same loop is correct, which is
-      what makes it easy to miss. Needs a data migration for the stale rows,
-      and the module-type strings hoisted into one enum.
-
 - [ ] **BUG-69** All seven merge engines order by `HostGroup.priority`
       only, with no secondary key, and read each group's rules with an
       unordered `SELECT`. `host_groups.priority` has no unique constraint —
