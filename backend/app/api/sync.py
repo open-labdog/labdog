@@ -226,6 +226,10 @@ class SyncJobResponse(BaseModel):
     pending_reason: str | None = None
     triggered_by_user_id: int | None
     module_type: str = "firewall"
+    #: The exact modules this job will apply. NULL on rows written before
+    #: the column existed and on per-module jobs, where ``module_type``
+    #: already says it.
+    module_filter: list[str] | None = None
     created_at: datetime
     # Per-module sub-status for the job's host (empty unless populated by the
     # read endpoints get_job / list_jobs).
@@ -481,6 +485,10 @@ async def trigger_bulk_sync(
         host_id=host_id,
         status="pending",
         module_type="bulk",
+        # Persisted, not just passed to Celery: a job deferred behind a
+        # busy host is re-dispatched from this row, and "bulk" alone
+        # reconstructs as every module (BUG-64).
+        module_filter=module_filter,
         triggered_by_user_id=user_id,
     )
     db.add(job)
@@ -509,6 +517,8 @@ async def trigger_bulk_sync(
         existing_status = (
             existing.status.value if hasattr(existing.status, "value") else str(existing.status)
         )
+        # The queued job's own filter, which the row now records (BUG-64).
+        existing_filter = list(existing.module_filter) if existing.module_filter else None
         # SEC-05 idempotent-200 audit row.
         await log_action(
             db,
@@ -525,13 +535,13 @@ async def trigger_bulk_sync(
         )
         await db.commit()
         response.status_code = 200
-        # BUG-41: existing SyncJob doesn't persist the original filter
-        # list; surface ``None`` to avoid lying about what the queued
-        # job will do.
+        # Report what the *queued* job will actually do, which is not
+        # necessarily what this request asked for. Before BUG-64 the row
+        # did not record it and this had to return None.
         return BulkSyncResponse(
             job_id=existing_id,
             status=existing_status,
-            module_filter=None,
+            module_filter=existing_filter,
         )
 
     # Fresh insert path: emit the trigger-time audit row in the same
@@ -642,6 +652,9 @@ async def trigger_group_bulk_sync(
             group_id=group_id,
             status="pending",
             module_type="bulk",
+            # See the note in trigger_bulk_sync — the row, not the Celery
+            # kwarg, is what a deferred re-dispatch reads.
+            module_filter=module_filter,
             triggered_by_user_id=user_id,
         )
         db.add(job)

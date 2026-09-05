@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-76`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-81`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -326,42 +326,6 @@ content policy.
 
 ### Correctness — High
 
-- [ ] **BUG-63** `backend/app/tasks/action_orchestrator.py:307-311` —
-      `run_action` blocks in `result.join()` waiting for children published
-      to the same worker's queue, with `celery.concurrency` defaulting to
-      4. Four schedules sharing one cron minute — `0 3 * * *` is the
-      obvious default — take all four slots, leaving none for any child.
-      Nothing progresses until `soft_time_limit=43200` fires: twelve hours
-      of a wedged fleet, then four `partial` runs with zero hosts touched.
-      Route the orchestrator to its own queue served by a second worker
-      (`CeleryManager` already owns one `Popen` lifecycle; generalising is
-      about forty lines), or replace the join with a chord — the join keeps
-      the mid-run cancel poll, which a chord would drop.
-
-- [ ] **BUG-64** `backend/app/api/sync.py:481,673`,
-      `tasks/host_lock.py:557` — a deferred bulk sync loses its
-      `module_filter` and escalates to all seven modules. `SyncJob` has no
-      column for the filter; the bulk endpoint stores the literal `"bulk"`
-      and passes the real filter only as a Celery kwarg, so on re-dispatch
-      `_filter_from_module_type("bulk")` returns `None`, meaning "every
-      module". An operator who asked to reapply *firewall* on a busy host
-      gets packages reinstalled, services restarted and `/etc/hosts`
-      rewritten when the queue drains. Add `sync_jobs.module_filter jsonb`.
-      The code half-knows: `api/sync.py:528-530` notes the same gap and
-      fixes only the API response.
-
-- [ ] **BUG-65** `backend/app/models/action_run.py:82`,
-      `alembic/versions/0001_initial_schema.py:190,903,905` — deleting a
-      host or group with ad-hoc action-run history raises a CHECK
-      violation. The FKs are `ON DELETE SET NULL` under
-      `ck_action_runs_scope`, which forbids all three target columns being
-      NULL — exactly the state `SET NULL` produces for a run that targeted
-      only that host. `DELETE /api/hosts/{id}` 500s with no way to remove
-      the host short of manual SQL. Prefer a `target_kind` + `target_label`
-      discriminator over `ON DELETE CASCADE`: cascading destroys the audit
-      trail at the moment an operator most needs it, since
-      `action_runs.output` is often the only record of what was run.
-
 - [ ] **BUG-66** ~30 of 32 `conn.run()` calls pass no `timeout`
       (`app/ssh_utils.py:259`, `api/host_state.py` ×7,
       `packages/collector.py` ×8, `services/collector.py` ×5,
@@ -372,6 +336,57 @@ content policy.
       in-request `collect-state` unrecoverable rather than merely slow.
 
 ### Correctness — Medium
+
+- [ ] **BUG-81** `backend/app/tasks/builtin_dispatchers.py:_sync_async` —
+      `_builtin.sync` reports `succeeded` when the underlying sync was
+      deferred, not run.
+
+      **Symptom.** A scheduled `_builtin.sync` whose host is genuinely
+      busy finishes as `succeeded` with the sync still queued. The
+      `SyncJob` is re-dispatched later by the host queue, so the work
+      does happen — but the action-run history says it happened at a time
+      it did not, and an operator reading the run list has no way to tell
+      a real sync from a deferred one.
+
+      **Root cause.** The `status == "deferred"` branch falls through with
+      `succeeded` unchanged, on the reasoning that a defer "is not a
+      failure either". True, but neither is it success.
+
+      **Severity: Low.** Only misreports; the sync is not lost. Split out
+      of the BUG-78/79/80 fix, which was about the path not working at
+      all — this is about what it says when it does.
+
+      **Fix direction.** `ActionHostRun` has no "deferred" terminal
+      status, so this needs either a new one or the run staying `pending`
+      with `pending_reason` set and the parent left un-finalised until the
+      queued sync completes. The second is more honest and more work.
+
+- [ ] **BUG-77** `backend/app/models/action_run.py:ActionHostRun.host_id` —
+      deleting a host still destroys its per-host action output.
+
+      **Symptom.** After BUG-65, `DELETE /api/hosts/{id}` succeeds and the
+      parent `ActionRun` survives with `target_label` intact — but every
+      `ActionHostRun` for that host is gone, and with it
+      `ActionHostRun.output`, which is where the actual transcript lives.
+      The surviving run says *what* was targeted and *that* it succeeded
+      or failed; it no longer says what happened.
+
+      **Root cause.** `ActionHostRun.host_id` is `ON DELETE CASCADE`, a
+      separate decision from the parent-level FKs BUG-65 addressed.
+
+      **Severity: Medium.** The same argument BUG-65 made against
+      cascading the parent applies here with more force, since this is the
+      table that holds the evidence. Not folded into the BUG-65 fix
+      because making `host_id` nullable ripples into `uq_action_host_run`,
+      `check_host_busy`, the whole `host_lock` claim protocol and every
+      consumer that assumes the column is set — a materially larger and
+      riskier change than the one that stopped the delete from failing.
+
+      **Fix direction.** Mirror BUG-65: `host_id` nullable + `SET NULL`,
+      an `ActionHostRun.hostname` snapshot written at dispatch, and the
+      unique constraint re-expressed so a nulled row cannot collide.
+      Audit every `host_id`-not-null assumption in `tasks/host_lock.py`
+      first.
 
 - [ ] **BUG-76** `backend/app/main.py:_resolve_dynamic_route` — on a route
       with two dynamic segments, both are rewritten to the *second* value.

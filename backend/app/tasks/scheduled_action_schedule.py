@@ -42,6 +42,7 @@ async def _check_due_async() -> dict:
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
+    from app.actions.run_target import describe_target
     from app.audit.logger import log_action
     from app.db import task_session
     from app.models.action_run import ActionRun
@@ -127,11 +128,18 @@ async def _check_due_async() -> dict:
                     skipped_orphan += 1
                     continue
 
+                run_host_id = sa.target_id if sa.target_kind == "host" else None
+                run_group_id = sa.target_id if sa.target_kind == "group" else None
+                target_kind, target_label = await describe_target(
+                    db, host_id=run_host_id, group_id=run_group_id
+                )
                 run = ActionRun(
                     action_key=sa.action_key,
                     action_version=action.version,
-                    host_id=sa.target_id if sa.target_kind == "host" else None,
-                    group_id=sa.target_id if sa.target_kind == "group" else None,
+                    host_id=run_host_id,
+                    group_id=run_group_id,
+                    target_kind=target_kind,
+                    target_label=target_label,
                     scheduled_action_id=sa.id,
                     parameters=sa.parameters,
                     parallelism=sa.batch_size,

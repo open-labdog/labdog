@@ -74,7 +74,16 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
             )
 
             await acquire_host_lock(db, host_id)
-            blocker = await check_host_busy(db, host_id)
+            # The exclusion is not optional here. The orchestrator marks the
+            # parent ActionRun ``running`` in its init phase, *before*
+            # dispatching this task, so without it every built-in finds its
+            # own parent in the running-rows scan and defers behind itself —
+            # forever, because nothing else will ever finish to re-fire the
+            # queue (BUG-78). ``action_host`` has always passed it; this path
+            # never did.
+            blocker = await check_host_busy(
+                db, host_id, exclude_action_run_id=host_run.action_run_id
+            )
             if blocker is not None:
                 reason = await format_pending_reason(db, blocker)
                 host_run.status = "pending"
@@ -221,30 +230,29 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
     succeeded = True
     error: str | None = None
     try:
-        from app.tasks.facts import collect_host_facts
+        from app.tasks.facts import _collect_host_facts_async
 
-        # Synchronously invoke the existing collector — running inside
-        # the same worker is fine because we're already on a long_running
-        # queue and the orchestrator doesn't want a fan-out grandchild.
-        result = collect_host_facts.apply(args=[host_id])
-        if result.failed():
+        # Await the collector's coroutine rather than `.apply()`-ing the
+        # Celery task around it. `.apply()` runs the task body in-process,
+        # and that body is `asyncio.run(_collect_host_facts_async(...))` —
+        # called from inside the `asyncio.run()` this function already
+        # runs under, which raises "asyncio.run() cannot be called from a
+        # running event loop" every time (BUG-79). Staying in-process is
+        # still the intent; only the wrapper was wrong.
+        await _collect_host_facts_async(host_id)
+
+        async with task_session() as db:
+            host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+            after = host.os_facts_collected_at if host else None
+        if after == before:
+            # Collector ran but didn't advance the timestamp ⇒ SSH
+            # failure (or no SSH key configured) was silently
+            # swallowed. Surface as a failed ActionHostRun.
             succeeded = False
-            error = str(result.result)
-        else:
-            async with task_session() as db:
-                host = (
-                    await db.execute(select(Host).where(Host.id == host_id))
-                ).scalar_one_or_none()
-                after = host.os_facts_collected_at if host else None
-            if after == before:
-                # Collector ran but didn't advance the timestamp ⇒ SSH
-                # failure (or no SSH key configured) was silently
-                # swallowed. Surface as a failed ActionHostRun.
-                succeeded = False
-                error = (
-                    "facts collection returned without writing — likely "
-                    "SSH error or missing SSH key (see worker logs)"
-                )
+            error = (
+                "facts collection returned without writing — likely "
+                "SSH error or missing SSH key (see worker logs)"
+            )
     except Exception as exc:  # noqa: BLE001
         succeeded = False
         error = str(exc)
@@ -356,32 +364,55 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
             job_id = job.id
             await db.commit()
 
-        from app.tasks.host_sync_orchestrator import run_host_sync
+        from app.tasks.host_sync_orchestrator import (
+            _async_run,
+            _cleanup_tmpfs,
+            _make_tmpfs_workspace,
+        )
 
-        # Apply synchronously — same worker, same thread.
-        result = run_host_sync.apply(args=[job_id, host_id, module_filter])
-        if result.failed():
-            succeeded = False
-            error = str(result.result)
+        # Await the orchestrator's coroutine, not `run_host_sync.apply()`.
+        # `.apply()` runs the task body in-process and that body is
+        # `asyncio.run(_async_run(...))`, called from inside the
+        # `asyncio.run()` this function already runs under — which raises
+        # "asyncio.run() cannot be called from a running event loop"
+        # every time (BUG-79). Same worker, same thread, as intended; the
+        # workspace setup and teardown the task wrapper owned come with
+        # it, which is why they are repeated here rather than skipped.
+        private_data_dir, ssh_key_path = _make_tmpfs_workspace()
+        try:
+            payload = await _async_run(
+                job_id=job_id,
+                host_id=host_id,
+                module_filter=module_filter,
+                private_data_dir=private_data_dir,
+                ssh_key_path=ssh_key_path,
+                # Our own parent. The orchestrator marked it ``running``
+                # on this host before dispatching us, so without the
+                # exclusion the sync defers behind the run that is
+                # waiting for the sync and neither ever moves (BUG-80).
+                exclude_action_run_id=action_run_id,
+            )
+        finally:
+            _cleanup_tmpfs(private_data_dir)
+
+        payload = payload or {}
+        status = payload.get("status")
+        if status == "success":
+            pass  # succeeded as initialised
+        elif status == "deferred":
+            # The advisory lock was held by another sync job — ours
+            # is queued behind it and the option-c dispatch-next
+            # chain will run it when the in-flight job finishes.
+            # The per-host work isn't done yet, but it's not a
+            # failure either; treat as succeeded with a note.
+            logger.info(
+                "_builtin.sync deferred (job_id=%s host_id=%s) — queued behind in-flight sync",
+                job_id,
+                host_id,
+            )
         else:
-            payload = result.result or {}
-            status = payload.get("status")
-            if status == "success":
-                pass  # succeeded as initialised
-            elif status == "deferred":
-                # The advisory lock was held by another sync job — ours
-                # is queued behind it and the option-c dispatch-next
-                # chain will run it when the in-flight job finishes.
-                # The per-host work isn't done yet, but it's not a
-                # failure either; treat as succeeded with a note.
-                logger.info(
-                    "_builtin.sync deferred (job_id=%s host_id=%s) — queued behind in-flight sync",
-                    job_id,
-                    host_id,
-                )
-            else:
-                succeeded = False
-                error = f"sync did not complete successfully (status={status!r})"
+            succeeded = False
+            error = f"sync did not complete successfully (status={status!r})"
 
         # Reflect job status back for observability (best-effort).
         async with task_session() as db:

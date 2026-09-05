@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry
+from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.auth.users import current_active_user
 from app.db import get_db
@@ -222,11 +223,16 @@ async def create_run(
         )
 
     # Create the ActionRun record
+    target_kind, target_label = await describe_target(
+        db, host_id=body.host_id, group_id=body.group_id
+    )
     run = ActionRun(
         action_key=body.action_key,
         action_version=action.version,
         host_id=body.host_id,
         group_id=body.group_id,
+        target_kind=target_kind,
+        target_label=target_label,
         parameters=stored_parameters,
         parallelism=body.parallelism,
         status="queued",

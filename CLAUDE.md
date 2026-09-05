@@ -204,6 +204,26 @@ DB-backed override pack (seeded in `alembic 0001`, points at
 in-image snapshot. Operators that prefer a private fork delete the
 seeded row and add their own.
 
+### Celery workers and queues
+
+Two workers, both children of the main process
+(`app/celery_manager.py::WORKER_QUEUES`):
+
+- **`work`** — `-Q default,long_running`, carries beat. Everything except
+  the run orchestrator: syncs, drift, discovery, and the per-host half of
+  every action run.
+- **`orchestrator`** — `-Q orchestrator`. Runs only
+  `app.tasks.action_orchestrator.run_action`.
+
+The split is load-bearing, not tidiness. `run_action` dispatches per-host
+children to `long_running` and then blocks in `result.join()` until they
+finish, so an orchestrator sharing that pool competes with the very work
+it is waiting for. Do not route anything else to `orchestrator`, and do
+not remove the `-n <name>@%h` node names — the `worker_ready` handlers use
+them to avoid doing pack sync twice. `tests/test_orchestrator_queue.py`
+asserts the separation; `tests/test_task_routing.py` asserts every task
+lands on a queue some worker consumes.
+
 ### Group-dispatch actions
 
 Most actions fan out per-host (one Celery task per target host with a

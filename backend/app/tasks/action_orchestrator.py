@@ -37,6 +37,14 @@ GROUP_TASK_FOR_BUILTIN: dict[str, str] = {
 }
 _DEFAULT_GROUP_TASK = "app.tasks.action_group.run_action_group"
 
+#: Queue the orchestrator publishes its children to.
+#:
+#: Must not be a queue the orchestrator's own worker consumes: this task
+#: blocks in ``result.join()`` until these children finish, so sharing a
+#: pool with them is a self-deadlock. ``tests/test_orchestrator_queue.py``
+#: asserts the separation rather than the names.
+CHILD_QUEUE = "long_running"
+
 
 # ---------------------------------------------------------------------------
 # Celery task entry point
@@ -46,7 +54,11 @@ _DEFAULT_GROUP_TASK = "app.tasks.action_group.run_action_group"
 @celery_app.task(
     bind=True,
     name="app.tasks.action_orchestrator.run_action",
-    queue="long_running",
+    # A queue of its own, served by its own worker: this task blocks in
+    # result.join() waiting for children it publishes to long_running, so
+    # sharing that pool means four concurrent orchestrators can starve
+    # every child of a slot. See app/celery_manager.py.
+    queue="orchestrator",
     # Override the global 1500/1800s limits: the orchestrator mostly sits
     # idle in result.join() waiting for its children, and a hard-kill
     # mid-join skips the Phase 3 aggregation, orphaning the ActionRun in
@@ -221,7 +233,7 @@ async def _run_action_async(action_run_id: int) -> None:
                 celery_app.send_task(
                     group_task,
                     args=[action_run_id],
-                    queue="long_running",
+                    queue=CHILD_QUEUE,
                     soft_time_limit=group_soft,
                     time_limit=group_soft + HARD_LIMIT_MARGIN_SECONDS,
                 )
@@ -377,7 +389,7 @@ async def _run_action_async(action_run_id: int) -> None:
                 celery_app.signature(
                     per_host_task_name,
                     args=[action_run_id, host_run_id],
-                    queue="long_running",
+                    queue=CHILD_QUEUE,
                     soft_time_limit=child_soft_limit,
                     time_limit=child_soft_limit + HARD_LIMIT_MARGIN_SECONDS,
                 )

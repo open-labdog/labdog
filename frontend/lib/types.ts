@@ -847,6 +847,11 @@ export interface ActionRun {
   action_version: string
   host_id: number | null
   group_id: number | null
+  /** What the run targeted, recorded at dispatch time. Both survive the
+   *  target being deleted, which nulls host_id/group_id — target_label is
+   *  then the only description of what the run ran against. */
+  target_kind: ScheduledActionTargetKind
+  target_label: string
   /** NULL for ad-hoc runs; populated when the run was dispatched by the
    *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
   scheduled_action_id: number | null

@@ -218,6 +218,11 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       ? `/groups/${run.group_id}?tab=actions`
       : backHref
 
+  // A fleet run legitimately has neither id; only host/group targets go
+  // null because the row was removed.
+  const targetDeleted =
+    !!run && run.target_kind !== "fleet" && run.host_id === null && run.group_id === null
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -227,6 +232,16 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
             ← {backLabel}
           </Link>
           {run && <RunStatusBadge status={run.status} reason={run.pending_reason} />}
+          {run && (
+            // The run carries its own target description, so history stays
+            // readable after the host or group it ran against is deleted —
+            // which is when the FK above goes null and the back-link above
+            // falls back to the generic route.
+            <span className="text-sm text-slate-400" title={`${run.target_kind} target`}>
+              {run.target_label}
+              {targetDeleted && <span className="ml-1 text-slate-500">(deleted)</span>}
+            </span>
+          )}
         </div>
         {run && !isTerminal && (
           <Button

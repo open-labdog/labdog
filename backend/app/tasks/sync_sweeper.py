@@ -51,9 +51,9 @@ async def _sweep_stale_syncs_async() -> dict:
     from app.models.sync_job import JobStatus, SyncJob
     from app.tasks.host_sync_orchestrator import (
         _dispatch_next_pending_for_host,
-        _filter_from_module_type,
         _finalise_run,
         _resolve_modules,
+        module_filter_for,
     )
 
     cutoff = datetime.now(UTC) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
@@ -85,7 +85,7 @@ async def _sweep_stale_syncs_async() -> dict:
             if job is None or job.status != JobStatus.running:
                 continue
 
-            module_filter = _filter_from_module_type(job.module_type)
+            module_filter = module_filter_for(job)
             seeded_modules = _resolve_modules(module_filter)
             synthesized_outcomes = {m: "error" for m in seeded_modules}
             error_message = (

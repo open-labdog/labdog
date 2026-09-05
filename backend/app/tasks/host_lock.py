@@ -185,17 +185,26 @@ async def check_host_busy(
     the lock, two callers can both see "not busy" and both proceed
     to claim — the race the lock exists to close.
 
-    ``exclude_action_run_id`` must be supplied by ``action_host`` tasks.
-    The orchestrator marks the parent ActionRun ``running`` before
+    ``exclude_action_run_id`` must be supplied by every task the
+    orchestrator dispatches — ``action_host``, the built-in dispatchers,
+    and the sync orchestrator when a built-in is driving it. The
+    orchestrator marks the parent ActionRun ``running`` before
     dispatching per-host tasks, so without the exclusion the per-host
-    task would find its own parent run in the running-rows scan and
-    incorrectly defer itself as if the host were busy.
+    task finds its own parent run in the running-rows scan and defers
+    itself as if the host were busy. That deferral is permanent: it is
+    only ever cleared by another op on the same host finishing, and
+    there is no other op.
+
+    The exclusion applies to all three scans that can surface an
+    ActionRun (2, 3 and 3b), because a parent is reachable both directly
+    by ``host_id`` and indirectly through its own ``ActionHostRun``.
 
     Args:
         db: An open async session inside the acquiring transaction.
         host_id: Host id to check.
-        exclude_action_run_id: ActionRun id to skip in the host-targeted
-            scan (pass the parent action_run_id from action_host tasks).
+        exclude_action_run_id: ActionRun id to skip in every scan
+            (pass the parent action_run_id from any task the run
+            orchestrator dispatched).
 
     Returns:
         A :class:`BlockerInfo` describing the running op holding the
@@ -235,18 +244,25 @@ async def check_host_busy(
     # 3. Group-targeted ActionHostRun running for this host (parent ActionRun
     # must also be running — finished runs may leave per-host rows around
     # but the run itself is no longer holding the host).
-    group_action_hit = (
-        await db.execute(
-            select(ActionRun.id, ActionRun.action_key)
-            .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
-            .where(
-                ActionHostRun.host_id == host_id,
-                ActionHostRun.status == "running",
-                ActionRun.status == "running",
-            )
-            .limit(1)
+    group_action_stmt = (
+        select(ActionRun.id, ActionRun.action_key)
+        .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
+        .where(
+            ActionHostRun.host_id == host_id,
+            ActionHostRun.status == "running",
+            ActionRun.status == "running",
         )
-    ).first()
+    )
+    if exclude_action_run_id is not None:
+        # The exclusion has to reach this scan too, not just the
+        # host-targeted one. ``_builtin.sync`` marks its own
+        # ActionHostRun ``running`` and *then* delegates to the sync
+        # orchestrator, so the parent run is reachable here through its
+        # own per-host row — and the sync deferred behind the run that
+        # was waiting for the sync, with nothing left to clear it
+        # (BUG-80).
+        group_action_stmt = group_action_stmt.where(ActionRun.id != exclude_action_run_id)
+    group_action_hit = (await db.execute(group_action_stmt.limit(1))).first()
     if group_action_hit is None:
         # 3b. A group-targeted run that has claimed its members but has not
         # created their ActionHostRun rows yet.
@@ -690,11 +706,14 @@ async def dispatch_next_pending_for_host(
             # Dispatch via the existing run_host_sync task. Import lazily
             # to avoid a circular import at module load.
             from app.tasks.host_sync_orchestrator import (
-                _filter_from_module_type,
+                module_filter_for,
                 run_host_sync,
             )
 
-            module_filter = _filter_from_module_type(sync_row.module_type)
+            # Not _filter_from_module_type: a deferred bulk sync stores
+            # module_type="bulk", which reconstructs as "every module" and
+            # would escalate a firewall-only request into a full sync.
+            module_filter = module_filter_for(sync_row)
             run_host_sync.delay(
                 job_id=sync_row.id,
                 host_id=sync_row.host_id,

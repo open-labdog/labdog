@@ -19,8 +19,9 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
-    # The worker runs `-Q default,long_running`. Celery's own default queue
-    # name is "celery", so without this every task that no `task_routes`
+    # The workers between them run `-Q default,long_running` and
+    # `-Q orchestrator`. Celery's own default queue name is "celery", so
+    # without this every task that no `task_routes`
     # pattern matches is published to a queue nothing consumes — accepted by
     # the broker, acknowledged to the caller, and never executed.
     #
@@ -55,7 +56,11 @@ celery_app.conf.update(
         "app.tasks.ca_cert_action.*": {"queue": "long_running"},
         "app.tasks.resolver_sync.*": {"queue": "long_running"},
         "app.tasks.resolver_drift.*": {"queue": "long_running"},
-        "app.tasks.action_orchestrator.*": {"queue": "long_running"},
+        # Its own queue, served by its own worker. run_action blocks in
+        # result.join() waiting for children it publishes to
+        # long_running; sharing that pool is a self-deadlock at
+        # concurrency=4. See app/celery_manager.py.
+        "app.tasks.action_orchestrator.*": {"queue": "orchestrator"},
         "app.tasks.action_host.*": {"queue": "long_running"},
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},
         "app.tasks.scheduled_action_schedule.*": {"queue": "long_running"},
@@ -105,6 +110,19 @@ def _register_all_models(**_kwargs):
         logger.exception("model registration on worker start failed")
 
 
+def _is_orchestrator_worker(sender) -> bool:
+    """True on the dedicated orchestrator worker.
+
+    Two workers now boot (see :mod:`app.celery_manager`), so every
+    ``worker_ready`` handler runs twice unless it says otherwise. The
+    check is negative rather than positive on purpose: a worker started
+    by hand, without the ``-n`` this relies on, does the boot work
+    redundantly instead of nobody doing it at all.
+    """
+    hostname = getattr(sender, "hostname", "") or ""
+    return hostname.split("@", 1)[0] == "orchestrator"
+
+
 @worker_ready.connect
 def _sync_packs_on_worker_start(sender=None, **_kwargs):
     """On Celery worker boot, sync every enabled action pack and rebuild
@@ -117,7 +135,12 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
     be missing from the Celery registry while FastAPI found them fine.
     Failures are logged and swallowed so a failing git remote doesn't
     prevent the worker from starting.
+
+    The orchestrator worker reloads the registry but does **not** sync:
+    two processes running `git pull` into the same pack working trees at
+    boot is a race, and the orchestrator only ever reads the registry.
     """
+    orchestrator = _is_orchestrator_worker(sender)
     try:
         import asyncio  # noqa: PLC0415
 
@@ -127,7 +150,8 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
 
         async def _do_sync():
             async with AsyncSessionLocal() as session:
-                await sync_enabled_packs(session)
+                if not orchestrator:
+                    await sync_enabled_packs(session)
                 await reload_registry_async(session)
 
         asyncio.run(_do_sync())
@@ -144,7 +168,12 @@ def _sweep_orphans_on_worker_start(sender=None, **_kwargs):
     finalisation never ran). Both sweepers are deadline-based, so
     fresh legitimate rows are untouched; genuinely orphaned ones are
     reaped now instead of waiting for the next 5-minute beat.
+
+    Enqueued from one worker only — both boot at the same moment, and two
+    copies of each sweep would race each other over the same rows.
     """
+    if _is_orchestrator_worker(sender):
+        return
     try:
         celery_app.send_task("app.tasks.sync_sweeper.sweep_stale_syncs")
         celery_app.send_task("app.tasks.action_sweeper.sweep_stale_action_runs")
