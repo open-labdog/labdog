@@ -1,26 +1,41 @@
-"""Drift-check periodic task and per-host helper.
+"""Firewall drift-check periodic task and per-host helper.
 
 ``check_all_drift`` is the RedBeat-driven sweep that runs every
-``drift.check_interval_minutes``. The per-host body has been extracted
-into ``_check_drift_for_one_host`` so the unified action dispatcher
+``drift.check_interval_minutes``. The per-host body lives in
+``_check_drift_for_one_host`` so the unified action dispatcher
 (``_builtin.drift_check``) can re-use it for one-host / one-group runs
 without duplicating the SSH + drift-detector + HostModuleStatus
 write-back logic.
+
+The sweep itself is `app.tasks.drift_sweep.sweep_module`, which is
+where the host locking and the per-host transaction boundary live
+(BUG-67). This module supplies the collect-and-diff body and nothing
+else; in particular it does not commit — its caller decides whether
+the verdict becomes durable.
 """
 
+import logging
 from datetime import UTC
 
 from app.tasks import celery_app
 
+logger = logging.getLogger(__name__)
 
-async def _check_drift_for_one_host(host, db) -> bool:
-    """Run a drift check against one host. Commits per-host.
+
+async def _check_drift_for_one_host(host, db, hms=None) -> bool:
+    """Run a firewall drift check against one host.
+
+    Writes the verdict onto ``hms`` (creating the row when *hms* is
+    ``None`` and none exists) and onto ``host``, in *db*, and does
+    **not** commit — the caller owns the transaction. The periodic
+    sweep relies on that: it discards the whole transaction when
+    another operation claims the host while this was running.
 
     Returns ``True`` if the check ran (regardless of drift outcome) and
     ``False`` if the host was skipped because its firewall_backend is
-    ``unknown``. Exceptions are caught and recorded as
-    ``host.sync_status="error"`` / ``"unknown"`` (matching the periodic
-    sweep's behaviour) — the caller does not see them.
+    ``unknown``. Unreachable hosts and unexpected errors are caught and
+    recorded as ``host.sync_status="unknown"`` / ``"error"``; the caller
+    does not see them, and they still count as having run.
     """
     import asyncio  # noqa: F401  — re-export for compatibility
     import time
@@ -79,14 +94,15 @@ async def _check_drift_for_one_host(host, db) -> bool:
             duration_ms=_duration_ms,
         )
 
-        hms = (
-            await db.execute(
-                select(HostModuleStatus).where(
-                    HostModuleStatus.host_id == host.id,
-                    HostModuleStatus.module_type == "firewall",
+        if hms is None:
+            hms = (
+                await db.execute(
+                    select(HostModuleStatus).where(
+                        HostModuleStatus.host_id == host.id,
+                        HostModuleStatus.module_type == "firewall",
+                    )
                 )
-            )
-        ).scalar_one_or_none()
+            ).scalar_one_or_none()
         if hms is None:
             hms = HostModuleStatus(host_id=host.id, module_type="firewall")
             db.add(hms)
@@ -114,45 +130,46 @@ async def _check_drift_for_one_host(host, db) -> bool:
                     ) as probe:
                         host.labdog_source_ip = await get_source_ip(probe)
             except Exception:
-                pass
-        await db.commit()
+                # Best-effort: the drift verdict is the point, the source
+                # IP is an optimisation for the next merge. Logged at
+                # debug because a host that fails this fails it on every
+                # tick, and one line per host per interval would bury the
+                # log for a value nothing is waiting on.
+                logger.debug("source-IP probe failed for host %s", host.id, exc_info=True)
         return True
     except (OSError, asyncssh.Error, TimeoutError, SSHFetchError):
         from app.models.host import SyncStatus
 
         host.sync_status = SyncStatus.unknown
         host.last_drift_check_at = datetime.now(UTC)
-        await db.commit()
         return True
     except Exception:
         from app.models.host import SyncStatus
 
+        logger.exception("firewall drift check failed for host %s", host.id)
         host.sync_status = SyncStatus.error
         host.last_drift_check_at = datetime.now(UTC)
-        await db.commit()
         return True
+
+
+async def _sweep_one(host, hms, db) -> bool:
+    """`app.tasks.drift_sweep.CheckOne` adapter for the firewall module."""
+    return await _check_drift_for_one_host(host, db, hms=hms)
 
 
 @celery_app.task(name="app.tasks.drift.check_all_drift", queue="long_running")
 def check_all_drift():
-    """Periodic task: check drift for all hosts with drift_check_enabled=True."""
+    """Periodic task: check firewall drift for every drift-enabled host.
+
+    Candidates come from ``Host.drift_check_enabled`` rather than from a
+    per-module toggle: the firewall module predates ``HostModuleStatus``
+    and still owns the host-level flag.
+    """
     import asyncio
 
-    from sqlalchemy import select
+    from app.tasks.drift_sweep import sweep_module
 
-    from app.db import task_session
-    from app.models.host import Host
-
-    async def _run():
-        async with task_session() as db:
-            result = await db.execute(select(Host).where(Host.drift_check_enabled))
-            hosts = result.scalars().all()
-            for host in hosts:
-                await _check_drift_for_one_host(host, db)
-            return len(hosts)
-
-    count = asyncio.run(_run())
-    return {"checked": count}
+    return asyncio.run(sweep_module("firewall", _sweep_one, host_gated=True))
 
 
 # Register periodic drift check via RedBeat (prevents duplicate schedules on restart)

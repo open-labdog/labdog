@@ -233,6 +233,28 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A host could show as drifted seconds after a clean sync.** The seven
+  periodic drift sweeps took no per-host lock. A sweep that landed while a
+  sync was applying that host's configuration read a half-applied state and
+  wrote `out_of_sync` over the status the sync was maintaining — and nothing
+  distinguished that stale verdict from a real one, so the usual reaction was
+  to sync again and watch it happen again.
+
+  Every sweep now goes through one shared driver that asks the same
+  "is this host claimed?" question syncs and action runs ask, skips a claimed
+  host for that tick, and — for the case a lock alone cannot cover — re-checks
+  after the collection and discards the verdict if an operation claimed the
+  host while the SSH round trip was in flight. A skipped host is checked on
+  the next interval; the operation holding it leaves the status correct on its
+  way out either way.
+
+  Six of the seven also held a single transaction open across the whole
+  sweep and committed once at the end, so a worker restart mid-sweep threw
+  away every host's result and one host's failed statement took every host
+  after it with it. Each host now gets its own transaction, and an
+  unanticipated failure is logged with its traceback instead of being
+  swallowed.
+
 - **A run page opened under a host showed the wrong id in its links.**
   `/hosts/7/actions/runs/12/` rendered with *both* route parameters set to
   `12`, so the host id was missing from the page data and the back-link and

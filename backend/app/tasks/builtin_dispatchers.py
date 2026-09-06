@@ -300,7 +300,15 @@ async def _drift_check_async(action_run_id: int, host_run_id: int) -> None:
                 # errors and writes them as host.sync_status — for our
                 # ActionHostRun status we treat skipped (firewall_backend
                 # unknown) as succeeded too, matching the periodic sweep.
+                #
+                # It stopped committing for itself with BUG-67: the
+                # periodic sweep needs to be able to throw the verdict
+                # away when another op claims the host mid-check, so the
+                # caller owns the transaction now. We already hold the
+                # host via ``_begin_host_run``, so there is nothing to
+                # re-check here — just make it durable.
                 await _check_drift_for_one_host(host, db)
+                await db.commit()
     except Exception as exc:  # noqa: BLE001
         succeeded = False
         error = str(exc)

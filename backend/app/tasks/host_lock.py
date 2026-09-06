@@ -130,6 +130,35 @@ async def acquire_host_lock(db: AsyncSession, host_id: int) -> None:
     await db.execute(text("SELECT pg_advisory_xact_lock(:h)"), {"h": host_id})
 
 
+async def try_acquire_host_lock(db: AsyncSession, host_id: int) -> bool:
+    """Take the lock on ``host_id`` if it is free right now, else give up.
+
+    Non-blocking counterpart to `acquire_host_lock`, with the same
+    transaction-level lifetime on success. Returns ``False`` — without
+    waiting — when another transaction holds the key.
+
+    For callers that must claim the host there is nothing useful to do
+    with ``False`` and they should keep using `acquire_host_lock`. It
+    exists for the periodic drift sweep, which asks the question with
+    row locks of its own already held (so waiting would be a
+    lock-ordering hazard) and for which "someone else is claiming this
+    host right now" and "this host is busy" have the same answer:
+    leave it alone this tick.
+
+    Args:
+        db: An open async session inside a transaction. The lock, if
+            taken, releases when that transaction commits/rolls back.
+        host_id: Host id to lock on. Used directly as the advisory key.
+
+    Returns:
+        ``True`` if the lock is now held by this transaction.
+    """
+    granted = (
+        await db.execute(text("SELECT pg_try_advisory_xact_lock(:h)"), {"h": host_id})
+    ).scalar()
+    return bool(granted)
+
+
 async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
     """Take advisory locks on multiple hosts in deterministic order.
 
