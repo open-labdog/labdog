@@ -233,6 +233,26 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
                 logger.warning("action_host: host_run %d missing — exiting", host_run_id)
                 return
             host_id_for_lock = hr_row.host_id
+            if host_id_for_lock is None:
+                # The host was deleted between dispatch and pickup. The
+                # row survives that now (BUG-77) and keeps whatever
+                # output it had, but there is nothing left to run
+                # against and nothing to lock on.
+                hr_row.status = "failed"
+                hr_row.error_message = "Host was deleted before this run started"
+                hr_row.finished_at = datetime.now(UTC)
+                await db.commit()
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {
+                            "event": "host_status",
+                            "host_run_id": host_run_id,
+                            "status": "failed",
+                        }
+                    ),
+                )
+                return
             await acquire_host_lock(db, host_id_for_lock)
             blocker = await check_host_busy(
                 db, host_id_for_lock, exclude_action_run_id=action_run_id
@@ -302,7 +322,27 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None: 
             run: ActionRun = run_result.scalar_one()
 
             host_result = await db.execute(select(Host).where(Host.id == hr.host_id))
-            host: Host = host_result.scalar_one()
+            host: Host | None = host_result.scalar_one_or_none()
+            if host is None:
+                # Deleted in the window between the claim above and here.
+                # ``scalar_one`` used to raise straight into the generic
+                # handler; say what happened instead, since the row and
+                # its output now outlive the host (BUG-77).
+                hr.status = "failed"
+                hr.error_message = "Host was deleted before this run started"
+                hr.finished_at = datetime.now(UTC)
+                await db.commit()
+                r.publish(
+                    channel,
+                    json.dumps(
+                        {
+                            "event": "host_status",
+                            "host_run_id": host_run_id,
+                            "status": "failed",
+                        }
+                    ),
+                )
+                return
 
             if host.ssh_key_id is None:
                 hr.status = "skipped"

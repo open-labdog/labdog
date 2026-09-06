@@ -233,6 +233,27 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Deleting a host no longer destroys its action transcripts.** The previous
+  release stopped `DELETE /api/hosts/{id}` from failing and kept the run row
+  itself, with a record of what it had targeted. It did not keep the per-host
+  rows underneath, and those are where `output` lives — the actual transcript
+  of what ran. So the surviving run said what was targeted and whether it
+  failed, and no longer said what happened, usually at the exact moment
+  someone was removing a host *because* something went wrong.
+
+  Those rows now survive the delete. Each one keeps the hostname as it stood
+  when the run was dispatched, so it still has a name to show once there is
+  nothing left to look up, and the run detail page marks it "(deleted)".
+  Reading one back is now addressed by the row rather than by host id — the
+  old `/api/actions/runs/{id}/hosts/{host_id}/output` route cannot reach a
+  run whose host is gone, so `/api/actions/runs/{id}/host-runs/{host_run_id}/output`
+  was added and the UI uses it for every row. The old route still works for
+  hosts that exist.
+
+  A run whose host is deleted while it is in flight now finishes as failed
+  with "Host was deleted before this run started" instead of raising into the
+  generic error handler.
+
 - **A host could show as drifted seconds after a clean sync.** The seven
   periodic drift sweeps took no per-host lock. A sweep that landed while a
   sync was applying that host's configuration read a half-applied state and

@@ -260,33 +260,6 @@ _No bugs are currently open._
       with `pending_reason` set and the parent left un-finalised until the
       queued sync completes. The second is more honest and more work.
 
-- [ ] **BUG-77** `backend/app/models/action_run.py:ActionHostRun.host_id` —
-      deleting a host still destroys its per-host action output.
-
-      **Symptom.** After BUG-65, `DELETE /api/hosts/{id}` succeeds and the
-      parent `ActionRun` survives with `target_label` intact — but every
-      `ActionHostRun` for that host is gone, and with it
-      `ActionHostRun.output`, which is where the actual transcript lives.
-      The surviving run says *what* was targeted and *that* it succeeded
-      or failed; it no longer says what happened.
-
-      **Root cause.** `ActionHostRun.host_id` is `ON DELETE CASCADE`, a
-      separate decision from the parent-level FKs BUG-65 addressed.
-
-      **Severity: Medium.** The same argument BUG-65 made against
-      cascading the parent applies here with more force, since this is the
-      table that holds the evidence. Not folded into the BUG-65 fix
-      because making `host_id` nullable ripples into `uq_action_host_run`,
-      `check_host_busy`, the whole `host_lock` claim protocol and every
-      consumer that assumes the column is set — a materially larger and
-      riskier change than the one that stopped the delete from failing.
-
-      **Fix direction.** Mirror BUG-65: `host_id` nullable + `SET NULL`,
-      an `ActionHostRun.hostname` snapshot written at dispatch, and the
-      unique constraint re-expressed so a nulled row cannot collide.
-      Audit every `host_id`-not-null assumption in `tasks/host_lock.py`
-      first.
-
 - [ ] **BUG-69** All seven merge engines order by `HostGroup.priority`
       only, with no secondary key, and read each group's rules with an
       unordered `SELECT`. `host_groups.priority` has no unique constraint —

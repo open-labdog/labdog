@@ -531,7 +531,7 @@ async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
     from sqlalchemy import select
 
     from app.models.action_run import ActionHostRun, ActionRun
-    from app.models.host import HostGroupMembership
+    from app.models.host import Host, HostGroupMembership
 
     async with task_session() as db:
         run = (
@@ -541,17 +541,20 @@ async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
             logger.warning("ai_task: action_run %s not found", action_run_id)
             return
 
-        member_ids = list(
-            (
-                await db.execute(
-                    select(HostGroupMembership.c.host_id).where(
-                        HostGroupMembership.c.group_id == run.group_id
-                    )
+        # (id, hostname) rather than ids alone: ``ActionHostRun.hostname``
+        # is the snapshot that keeps the report readable after the host is
+        # deleted (BUG-77).
+        members = (
+            await db.execute(
+                select(Host.id, Host.hostname)
+                .join(
+                    HostGroupMembership,
+                    HostGroupMembership.c.host_id == Host.id,
                 )
+                .where(HostGroupMembership.c.group_id == run.group_id)
             )
-            .scalars()
-            .all()
-        )
+        ).all()
+        member_ids = [row.id for row in members]
         if not member_ids:
             run.status = "failed"
             run.finished_at = datetime.now(UTC)
@@ -559,11 +562,12 @@ async def _run_builtin_ai_task_group_async(action_run_id: int) -> None:
             return
 
         now = datetime.now(UTC)
-        for host_id in member_ids:
+        for row in members:
             db.add(
                 ActionHostRun(
                     action_run_id=action_run_id,
-                    host_id=host_id,
+                    host_id=row.id,
+                    hostname=row.hostname,
                     status="running",
                     started_at=now,
                 )

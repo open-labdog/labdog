@@ -38,6 +38,15 @@ def _default_target_label(context) -> str:
     return "All hosts"
 
 
+def _default_host_label(context) -> str:
+    """A last-resort hostname. Terse but never wrong; the dispatch sites
+    replace it with the host's real name."""
+    params = context.get_current_parameters()
+    if params.get("host_id") is not None:
+        return f"host {params['host_id']}"
+    return "(unknown host)"
+
+
 class ActionRun(Base):
     __tablename__ = "action_runs"
 
@@ -131,7 +140,24 @@ class ActionHostRun(Base):
     action_run_id: Mapped[int] = mapped_column(
         ForeignKey("action_runs.id", ondelete="CASCADE"), nullable=False
     )
-    host_id: Mapped[int] = mapped_column(ForeignKey("hosts.id", ondelete="CASCADE"), nullable=False)
+    # NULL once the host is deleted. ``ON DELETE SET NULL`` rather than
+    # CASCADE because ``output`` below is the transcript of what actually
+    # ran, and destroying it at the moment a host is removed loses the
+    # record exactly when it is most likely to be wanted (BUG-77). Use
+    # ``hostname`` for display; this column is for links and for the
+    # per-host claim protocol, both of which want "no host" to mean
+    # "matches nothing".
+    host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True
+    )
+    # The host's name as it stood at dispatch. Denormalised on purpose:
+    # after the delete there is nothing left to join to, and that is the
+    # case this column exists for. Defaults to a terse-but-correct label
+    # so a caller that forgets to set it does not get an IntegrityError;
+    # the dispatch sites pass the real hostname.
+    hostname: Mapped[str] = mapped_column(
+        String(255), nullable=False, default=_default_host_label, server_default=""
+    )
     # status values: queued | pending | running | succeeded | failed | skipped | cancelled
     #
     # ``pending`` mirrors the parent ActionRun.status: Celery picked the
@@ -153,4 +179,9 @@ class ActionHostRun(Base):
     # Nullable so non-deferred rows don't need a value.
     pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
 
+    # Left as (action_run_id, host_id) through BUG-77. PostgreSQL compares
+    # NULLs as distinct in a unique constraint unless it is declared
+    # ``NULLS NOT DISTINCT``, so every row whose host has been deleted is
+    # unique by construction and two deleted hosts on the same run cannot
+    # collide.
     __table_args__ = (UniqueConstraint("action_run_id", "host_id", name="uq_action_host_run"),)

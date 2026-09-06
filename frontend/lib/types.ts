@@ -831,8 +831,12 @@ export interface ActionDefinition {
 export interface ActionHostRun {
   id: number
   action_run_id: number
-  host_id: number
-  /** Target hostname for display. NULL only if the host row was deleted. */
+  /** NULL once the target host has been deleted — the run and its
+   *  transcript outlive it. Anything keyed on this must handle null;
+   *  address the row by `id` instead. */
+  host_id: number | null
+  /** Name to display: the live host's when it still exists, otherwise
+   *  the snapshot taken at dispatch. */
   hostname: string | null
   status: string
   started_at: string | null

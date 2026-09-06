@@ -65,6 +65,19 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
             logger.warning("builtin_dispatchers: ActionHostRun %d not found", host_run_id)
             return None
         host_id = host_run.host_id
+        if host_id is None:
+            # The host was deleted between dispatch and pickup. The row
+            # outlives it now (BUG-77), so say what happened rather than
+            # trying to lock on None.
+            host_run.status = "failed"
+            host_run.error_message = "Host was deleted before this run started"
+            host_run.finished_at = datetime.now(UTC)
+            await db.commit()
+            logger.warning(
+                "builtin_dispatchers: host_run %d has no host — deleted mid-flight",
+                host_run_id,
+            )
+            return None
 
         if with_lock:
             from app.tasks.host_lock import (

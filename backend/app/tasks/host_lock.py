@@ -209,6 +209,10 @@ async def check_host_busy(
        belonging to an ActionRun with ``status='running'``
        (group-targeted action runs whose member set includes X).
 
+    Rows whose host has been deleted carry ``host_id IS NULL`` (BUG-77)
+    and match none of these scans, which is the wanted answer: a host
+    that no longer exists cannot be holding anything.
+
     Must be called inside a transaction that already holds the
     advisory lock for ``host_id`` (via `acquire_host_lock`). Without
     the lock, two callers can both see "not busy" and both proceed

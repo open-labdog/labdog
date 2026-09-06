@@ -313,7 +313,10 @@ async def get_run(
     host_runs_out: list[ActionHostRunOut] = []
     for hr, hostname in host_runs:
         hr_out = ActionHostRunOut.model_validate(hr)
-        hr_out.hostname = hostname
+        # The live name when the host is still there, the dispatch-time
+        # snapshot when it is not. The outer join yields NULL for a
+        # deleted host, which is the whole reason the snapshot exists.
+        hr_out.hostname = hostname or hr.hostname
         host_runs_out.append(hr_out)
     out.host_runs = host_runs_out
     return out
@@ -331,11 +334,45 @@ async def get_host_run_output(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return the raw Ansible output for a specific host run as plain text."""
+    """Return the raw Ansible output for a specific host run as plain text.
+
+    Addressed by *host* id, so it cannot reach a run whose host has since
+    been deleted — ``host_id`` is NULL on those rows and matches nothing.
+    Those transcripts are still kept (BUG-77); read them through
+    ``/runs/{id}/host-runs/{host_run_id}/output``, which the UI uses for
+    every row. This route stays for callers that already have a host id.
+    """
     host_run = await db.scalar(
         select(ActionHostRun).where(
             ActionHostRun.action_run_id == id,
             ActionHostRun.host_id == host_id,
+        )
+    )
+    if host_run is None:
+        raise HTTPException(status_code=404, detail="Host run not found")
+
+    from fastapi.responses import PlainTextResponse
+
+    return PlainTextResponse(content=host_run.output or "")
+
+
+@router.get("/runs/{id}/host-runs/{host_run_id}/output")
+async def get_host_run_output_by_row(
+    id: int,
+    host_run_id: int,
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return one host run's raw output, addressed by the row's own id.
+
+    The transcript outlives the host (BUG-77), so the row id is the only
+    identifier guaranteed to still resolve. ``id`` is checked against the
+    row's parent so a run id cannot be used to read another run's output.
+    """
+    host_run = await db.scalar(
+        select(ActionHostRun).where(
+            ActionHostRun.id == host_run_id,
+            ActionHostRun.action_run_id == id,
         )
     )
     if host_run is None:

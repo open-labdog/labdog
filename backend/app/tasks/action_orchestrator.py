@@ -324,11 +324,21 @@ async def _run_action_async(action_run_id: int) -> None:
                 await db.commit()
                 return
 
+            # Snapshot the names now: ``ActionHostRun.hostname`` is what
+            # the run detail page shows after a host is deleted, which is
+            # the only thing left to show at that point (BUG-77).
+            names = dict(
+                (
+                    await db.execute(select(Host.id, Host.hostname).where(Host.id.in_(host_ids)))
+                ).all()
+            )
+
             # Create ActionHostRun records
             for hid in host_ids:
                 host_run = ActionHostRun(
                     action_run_id=action_run_id,
                     host_id=hid,
+                    hostname=names.get(hid, f"host {hid}"),
                     status="queued",
                 )
                 db.add(host_run)
