@@ -220,22 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-30** `backend/app/auth/users.py:35-40` — sessions cannot be
-      revoked. The JWT is stateless, so logout, a password change and an
-      admin password reset all leave a captured cookie valid for up to
-      `session_lifetime_seconds` (24h default): the cookie is cleared in
-      the browser and nothing else happens. A `token_version` claim on
-      `users`, checked in a `JWTStrategy` subclass and bumped on logout /
-      password change / reset / deactivate, is the cheaper of the two
-      fixes; a Redis denylist needs a second store and fails open when
-      that store is unreachable. Note that rejecting a token with no
-      claim forces every session to re-authenticate once on upgrade.
-
-      (The password-policy half of this entry is fixed — the 12-character
-      rule now lives in `app/auth/password_policy.py` and is enforced by
-      `UserManager.validate_password` plus the two admin endpoints that
-      build `User` rows by hand.)
-
 - [ ] **SEC-31** `backend/app/config.py:339-370` — startup validation only
       rejects the two literal placeholder secrets. A 6-character HS256
       signing key passes; `cookie_secure=False` is never questioned against

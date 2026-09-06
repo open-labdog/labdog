@@ -9,6 +9,30 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Logging out and changing a password now actually revoke the session.**
+  The auth cookie is a stateless JWT: logging out cleared it in the browser
+  and did nothing else, so a cookie somebody had already copied stayed valid
+  for the rest of `security.session_lifetime_seconds` — 24 hours by default.
+  Changing a password did not help, which made "change your password"
+  useless as a response to a suspected compromise, the one situation it
+  exists for. Neither did an administrator resetting one.
+
+  Sessions now carry a generation number that is checked on every request
+  and bumped on logout, on a password change and on an admin password reset.
+
+  Three things to expect:
+
+  - **Everyone is logged out once when you upgrade.** Existing cookies carry
+    no generation and are rejected. Accepting them would leave exactly the
+    sessions this exists to revoke working until they expired on their own.
+  - **Logging out signs you out everywhere**, not just in the browser you
+    clicked it in. This is the documented trade-off of the cheap fix:
+    per-session revocation would need a second datastore in the request path
+    that fails open when it is unreachable.
+  - **Changing your password signs you out everywhere too**, including the
+    browser you changed it in, so you will be asked to log in again
+    immediately afterwards.
+
 - **The password policy now applies everywhere a password is set.** The
   12-character rule lived on the registration form alone, so it held on the
   one path nobody needs to use. `PATCH /api/users/me` accepts a `password`

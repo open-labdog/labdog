@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.password_policy import PasswordPolicyError, check_password
+from app.auth.token_version import bump_token_version
 from app.auth.users import current_superuser
 from app.db import get_db
 from app.models.user import User
@@ -175,4 +176,9 @@ async def reset_password(
     ph = PasswordHelper()
     user.hashed_password = ph.hash(body.password)
     await db.commit()
+    # SEC-30: an administrator resetting a password is responding to a
+    # suspected compromise more often than not. Leaving the old sessions
+    # alive would make the reset cosmetic — the attacker keeps the cookie
+    # and the legitimate user is the only one inconvenienced.
+    await bump_token_version(user)
     return {"detail": "Password updated"}
