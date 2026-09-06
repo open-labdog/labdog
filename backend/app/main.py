@@ -447,7 +447,18 @@ def create_app() -> FastAPI:
     _configure_logging()
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="LabDog", version="0.1.0", lifespan=_lifespan)
+    # SEC-34: the interactive docs enumerate every route and schema and
+    # are served unauthenticated. Off by default; `server.expose_docs`
+    # turns them back on where that is wanted (dev/labdog.toml does).
+    _docs = settings.server.expose_docs
+    app = FastAPI(
+        title="LabDog",
+        version="0.1.0",
+        lifespan=_lifespan,
+        docs_url="/docs" if _docs else None,
+        redoc_url="/redoc" if _docs else None,
+        openapi_url="/openapi.json" if _docs else None,
+    )
 
     # -- HTTPS redirect (must be outermost) --
     if settings.tls.force_https:

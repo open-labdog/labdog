@@ -12,6 +12,9 @@
 host = "0.0.0.0"
 port = 8000
 # static_dir = ""  # Path to frontend static export (empty = auto-detect)
+# Interactive API docs at /docs. Off in production (they are
+# unauthenticated and enumerate every route); on here.
+expose_docs = true
 
 [database]
 url = "postgresql+asyncpg://labdog:labdog_test_pw@localhost:5432/labdog"

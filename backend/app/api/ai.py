@@ -286,9 +286,17 @@ async def test_provider(
             message = await backend.test_connection()
     except LLMProviderError as exc:
         return AIProviderTestResponse(ok=False, message=str(exc))
-    except Exception as exc:
+    except Exception:
+        # SEC-34: the text of an unexpected exception is not a curated
+        # message. A client library raising on an auth failure has been
+        # known to quote the request it sent, credentials included, and
+        # this response goes to the browser. The detail is logged where
+        # an operator can read it; the caller gets the fact of failure.
         logger.warning("ai: provider test failed for %s", provider_id, exc_info=True)
-        return AIProviderTestResponse(ok=False, message=f"Unexpected error: {exc}")
+        return AIProviderTestResponse(
+            ok=False,
+            message="The provider test failed unexpectedly. See the LabDog logs for details.",
+        )
     return AIProviderTestResponse(ok=True, message=message)
 
 

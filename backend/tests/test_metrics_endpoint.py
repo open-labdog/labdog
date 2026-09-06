@@ -419,9 +419,14 @@ class TestValuesMatchSeededRows:
         samples = _parse_samples(resp.text)
         key = (
             "labdog_ca_cert_not_after_timestamp_seconds",
-            (("fingerprint", "deadbeef" * 8), ("name", "Test Root CA")),
+            (("name", "Test Root CA"),),
         )
         assert samples[key] == pytest.approx(not_after.timestamp())
+        # SEC-34: /metrics is unauthenticated and everything else it
+        # emits is an aggregate. A per-certificate fingerprint is an
+        # inventory of the trust LabDog manages, handed to anyone who
+        # can reach the scrape URL.
+        assert "deadbeef" not in resp.text
 
 
 # ---------------------------------------------------------------------------

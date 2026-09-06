@@ -5,13 +5,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import jwt
 import pytest
 
+from app.auth.token_version import SESSION_GENERATION_CLAIM
 from app.config import settings
 from app.ssh_terminal.session_registry import SessionRegistry
 
 
-def _make_token(user_id: int) -> str:
+def _make_token(user_id: int, generation: int | None = 0) -> str:
+    """A cookie token for *user_id*.
+
+    ``generation`` is the SEC-30 session generation the token claims;
+    pass ``None`` to mint a token from before that claim existed, which
+    must be refused.
+    """
+    payload: dict = {"sub": str(user_id), "aud": ["fastapi-users:auth"]}
+    if generation is not None:
+        payload[SESSION_GENERATION_CLAIM] = generation
     return jwt.encode(
-        {"sub": str(user_id), "aud": ["fastapi-users:auth"]},
+        payload,
         settings.security.secret_key,
         algorithm="HS256",
     )

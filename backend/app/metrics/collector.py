@@ -241,16 +241,18 @@ async def collect(db: AsyncSession) -> list[MetricFamily]:
         )
 
     # -- CA cert expiry ------------------------------------------------
+    # SEC-34: labelled by name only. The endpoint is unauthenticated, and
+    # everything else it emits is an aggregate count — a per-certificate
+    # SHA-256 fingerprint is an inventory of the trust LabDog manages,
+    # handed to anyone who can reach the scrape URL. The name is what an
+    # alert needs to say which certificate is expiring.
     families.append(
         gauge(
             "labdog_ca_cert_not_after_timestamp_seconds",
             "CA certificate expiry (notAfter), as a Unix timestamp.",
             [
-                (
-                    _labels(("name", name), ("fingerprint", fingerprint)),
-                    not_after.timestamp(),
-                )
-                for name, fingerprint, not_after in sorted(ca_cert_expiries)
+                (_labels(("name", name)), not_after.timestamp())
+                for name, _fingerprint, not_after in sorted(ca_cert_expiries)
             ],
         )
     )

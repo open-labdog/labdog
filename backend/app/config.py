@@ -39,6 +39,12 @@ class ServerConfig(BaseModel):
     static_dir: str = ""
     trusted_proxies: list[str] = []
     forwarded_allow_ips: str = "127.0.0.1"
+    #: SEC-34. ``/docs``, ``/redoc`` and ``/openapi.json`` are served
+    #: without authentication and enumerate every endpoint, its
+    #: parameters and its schemas. That is a convenience in development
+    #: and a map for anyone who reaches the port in production, so it is
+    #: off unless asked for. ``dev/labdog.toml`` turns it on.
+    expose_docs: bool = False
 
 
 class DatabaseConfig(BaseModel):
