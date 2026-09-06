@@ -9,6 +9,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **The login rate limit now throttles the attacker instead of the whole
+  install.** It keyed on the client address alone, and behind a reverse proxy
+  with `server.trusted_proxies` unset — the default — every request resolves
+  to the proxy, so one shared 5/minute bucket covered everybody. Five bad
+  passwords from anywhere locked all users out, and an attacker was throttled
+  no harder than someone with a typo.
+
+  Attempts are now counted per account: once for the pairing of client
+  address and account, and once for the account across all addresses, so both
+  a single source guessing one password and a distributed attempt on one
+  account are caught. Nothing is keyed on the address alone any more.
+
+  `server.trusted_proxies` accepts CIDR entries, which the shipped config's
+  comment already claimed and the code did not do — useful when the proxy
+  runs in a container and its address is not known when the config is
+  written. If a proxy is forwarding client addresses and `trusted_proxies` is
+  empty, LabDog now says so in the log once at startup rather than silently
+  discarding them.
+
 - **Startup now refuses to run with a signing key that can be guessed, and
   checks the encryption key before it is needed.** Validation rejected exactly
   two literal placeholder strings and nothing else, so a six-character HS256

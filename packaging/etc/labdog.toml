@@ -23,8 +23,14 @@ port = 8000
 #   - /usr/lib/labdog/frontend/out  (production)
 # Set to a path to override, or "none" to disable static serving.
 # static_dir = ""
-# Trusted reverse-proxy IPs/CIDRs — X-Forwarded-For is only
-# honoured from these sources (important for audit logs)
+# Trusted reverse-proxy IPs/CIDRs — X-Forwarded-For is only honoured
+# from these sources (important for audit logs, and for the login rate
+# limit, which keys on the client address). CIDR entries work, so a
+# containerised proxy on a dynamic address can be covered by its network:
+#   trusted_proxies = ["172.18.0.0/16"]
+# Leave empty if nothing sits in front of LabDog. If a proxy is present
+# and this is empty, LabDog logs a warning once and treats every request
+# as coming from the proxy.
 trusted_proxies = []
 # Uvicorn's --forwarded-allow-ips (comma-separated string)
 forwarded_allow_ips = "127.0.0.1"
