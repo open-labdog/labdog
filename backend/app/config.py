@@ -14,6 +14,7 @@ separators for nested keys.  E.g. LABDOG_SERVER__PORT=9000 overrides
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tomllib
 import types
@@ -22,6 +23,10 @@ from typing import Any, Literal, Union, get_args, get_origin
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, model_validator
+
+from app.key_format import decode_master_key
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Section models
@@ -47,7 +52,23 @@ class RedisConfig(BaseModel):
     url: str = "redis://localhost:6379/0"
 
 
-_INSECURE_DEFAULTS = {"change-me-in-production", "change-me-32-bytes-base64-encoded"}
+#: Placeholder values that must never reach a running instance. The
+#: first two are this file's own defaults; ``CHANGE_ME`` is what
+#: ``packaging/etc/labdog.toml`` ships, and it was **not** on this list —
+#: so a packaged install that skipped the "generate your secrets" step
+#: booted happily with a nine-character signing key that is public in
+#: this repository (SEC-31).
+_INSECURE_DEFAULTS = {
+    "change-me-in-production",
+    "change-me-32-bytes-base64-encoded",
+    "CHANGE_ME",
+}
+
+#: HS256 signing keys shorter than this are brute-forceable offline, and
+#: forging the auth cookie is forging any account. ``openssl rand
+#: -base64 32`` — what the docs already tell operators to run — produces
+#: 44 characters.
+_MIN_SECRET_KEY_LENGTH = 32
 
 
 class SecurityConfig(BaseModel):
@@ -363,6 +384,16 @@ def _validate_required(s: Settings) -> None:
             "security.secret_key is not set. "
             "Set LABDOG_SECURITY__SECRET_KEY or [security] secret_key in labdog.toml."
         )
+    elif len(s.security.secret_key) < _MIN_SECRET_KEY_LENGTH:
+        # Chained to the placeholder branch: a placeholder is also too
+        # short, and two errors about one value help nobody.
+        errors.append(
+            f"security.secret_key is only {len(s.security.secret_key)} characters. "
+            f"It signs the auth cookie, so a key short enough to brute-force "
+            f"offline is a key that forges any account, including a superuser's. "
+            f"Use at least {_MIN_SECRET_KEY_LENGTH}: openssl rand -base64 32"
+        )
+
     if s.security.encryption_key in _INSECURE_DEFAULTS:
         errors.append(
             "security.encryption_key is not set. "
@@ -370,6 +401,27 @@ def _validate_required(s: Settings) -> None:
             "and set LABDOG_SECURITY__ENCRYPTION_KEY"
             " or [security] encryption_key in labdog.toml."
         )
+    else:
+        # Checked here so a malformed key fails at boot rather than at
+        # the first host sync, hours later, as a task traceback.
+        try:
+            decode_master_key(s.security.encryption_key)
+        except ValueError as exc:
+            errors.append(f"security.encryption_key is unusable: {exc}")
+
+    # CORS: allow_credentials is hardcoded True in main.py, and Starlette
+    # answers a wildcard-with-credentials by reflecting whatever Origin
+    # the request carried. That is not "open to everyone" in the harmless
+    # sense — it is credentialed cross-origin access from any site the
+    # victim visits, with the session cookie attached.
+    if "*" in s.security.allowed_origins:
+        errors.append(
+            "security.allowed_origins contains '*' and LabDog always sends "
+            "credentials, so every origin would be reflected back as allowed — "
+            "any website a logged-in user visits could drive the API as them. "
+            "List the frontend URL(s) explicitly."
+        )
+
     if s.security.cookie_secure:
         for origin in s.security.allowed_origins:
             if _is_localhost_origin(origin):
@@ -379,6 +431,20 @@ def _validate_required(s: Settings) -> None:
                     "Localhost origins should only be used in dev (when cookie_secure=False). "
                     "Set allowed_origins to your production frontend URL(s)."
                 )
+    else:
+        # A warning, not an error. Plenty of homelabs run this over plain
+        # HTTP on a trusted LAN, and refusing to start would be wrong for
+        # them — but on a routable origin the auth cookie travels without
+        # the Secure flag, so any plaintext request leaks the session.
+        remote = [o for o in s.security.allowed_origins if not _is_localhost_origin(o)]
+        if remote:
+            logger.warning(
+                "security.cookie_secure is False but allowed_origins includes %s. "
+                "The session cookie will be sent over plain HTTP. Set cookie_secure "
+                "to true once LabDog is behind TLS.",
+                ", ".join(repr(o) for o in remote),
+            )
+
     if errors:
         raise SystemExit("FATAL: LabDog cannot start:\n  - " + "\n  - ".join(errors))
 

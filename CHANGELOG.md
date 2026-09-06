@@ -9,6 +9,30 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Startup now refuses to run with a signing key that can be guessed, and
+  checks the encryption key before it is needed.** Validation rejected exactly
+  two literal placeholder strings and nothing else, so a six-character HS256
+  key passed — and forging the auth cookie is forging any account, superuser
+  included.
+
+  `security.secret_key` must now be at least 32 characters (`openssl rand
+  -base64 32`, which the docs already tell you to run, gives 44).
+  `security.encryption_key` is decoded at startup instead of failing hours
+  later during the first host sync. `security.allowed_origins = ["*"]` is
+  refused outright: LabDog always sends credentials, so a wildcard makes
+  Starlette reflect whatever `Origin` the request carried — any site a
+  logged-in user visits could drive the API as them.
+
+  **`CHANGE_ME` — the placeholder shipped in `packaging/etc/labdog.toml` —
+  was not on the rejected list.** A `.deb` or `.rpm` install that skipped the
+  "generate your secrets" step therefore ran with a nine-character signing
+  key that is published in this repository. If that describes your install,
+  treat every account as compromised: generate real secrets, and note that
+  every session is invalidated when `secret_key` changes.
+
+  Running LabDog over plain HTTP on a trusted LAN still works. That case now
+  logs a warning about `cookie_secure`, rather than refusing to start.
+
 - **Logging out and changing a password now actually revoke the session.**
   The auth cookie is a stateless JWT: logging out cleared it in the browser
   and did nothing else, so a cookie somebody had already copied stayed valid
