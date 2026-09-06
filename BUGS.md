@@ -222,16 +222,6 @@ content policy.
 
 ### Security — Low
 
-- [ ] **SEC-34** Grouped, all low-impact: `/docs`, `/redoc` and
-      `/openapi.json` are served unauthenticated (`app/main.py:246`);
-      `app/api/ai.py:288` returns raw exception text to the client where
-      `_repo_scan.py` correctly redacts it first; `/metrics` exposes
-      CA-certificate names and fingerprints (`app/metrics/collector.py:250`)
-      where everything else it emits is an aggregate count; and the
-      terminal WebSocket calls `accept()` before authenticating, with no
-      `Origin` check — blocked today by `SameSite=lax`, so defence in depth
-      rather than a live hole.
-
 - [ ] **SEC-35** Grafana, Loki, Mimir and AI-provider base URLs are
       scheme-checked but may point at loopback, RFC1918 or 169.254.169.254
       (`app/grafana/schemas.py:16-25`, `app/ai/schemas.py:25-33`). Close to

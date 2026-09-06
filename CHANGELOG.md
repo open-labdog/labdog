@@ -9,6 +9,27 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Four smaller exposures closed.** None was a hole on its own; together they
+  were the difference between an install that tells an unauthenticated caller
+  nothing and one that hands over a route map and a certificate inventory.
+
+  - `/docs`, `/redoc` and `/openapi.json` are no longer served. They needed no
+    authentication and listed every route, parameter and schema. Set
+    `server.expose_docs = true` to bring them back; the dev config does.
+  - `POST /api/ai/providers/{id}/test` no longer returns the text of an
+    unexpected exception. A client library raising on an auth failure can
+    quote the request it sent, credentials included, and that response goes to
+    the browser. The detail is logged instead.
+  - `/metrics` no longer labels CA-certificate expiry with the certificate's
+    SHA-256 fingerprint. The endpoint is unauthenticated and everything else
+    it emits is an aggregate count; the name is what an alert needs.
+  - **The terminal WebSocket now authenticates before completing the
+    handshake, checks `Origin`, and — the one that was a live gap — honours
+    the session generation.** A token invalidated by logging out or changing a
+    password still opened a terminal, because the WebSocket path did not go
+    through the check added for that. A rejected handshake now surfaces in the
+    browser as a plain connection failure rather than a coded close.
+
 - **Firewall sync to an iptables-backend host was failing outright, and had
   been for as long as the dual-stack teardown has existed.** The teardown
   script carries a prose comment containing the word `isn't`. Ansible parses a

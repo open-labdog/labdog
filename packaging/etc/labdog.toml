@@ -34,6 +34,10 @@ port = 8000
 trusted_proxies = []
 # Uvicorn's --forwarded-allow-ips (comma-separated string)
 forwarded_allow_ips = "127.0.0.1"
+# Serve the interactive API docs at /docs, /redoc and /openapi.json.
+# They require no authentication and list every route, parameter and
+# schema, so they are off by default.
+expose_docs = false
 
 # ── Database ─────────────────────────────────────────────────
 [database]

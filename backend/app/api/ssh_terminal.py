@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.audit.logger import log_action
-from app.auth.ws_auth import get_ws_user
+from app.auth.ws_auth import check_ws_origin, get_ws_user
 from app.db import AsyncSessionLocal
 from app.models.host import Host
 from app.ssh_terminal.session_registry import registry
@@ -26,13 +26,23 @@ router = APIRouter(prefix="/api/ssh-terminal", tags=["ssh-terminal"])
 
 @router.websocket("/ws/{host_id}")
 async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
-    await websocket.accept()
+    # SEC-34: authenticate before completing the handshake. Accepting
+    # first meant an unauthenticated peer got an open socket, however
+    # briefly, on the endpoint that hands out a root shell. A close
+    # before accept is answered as an HTTP rejection, so the browser
+    # reports a plain connection failure rather than a coded close —
+    # that is the intended trade.
+    if not await check_ws_origin(websocket):
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
 
     async with AsyncSessionLocal() as db:
         try:
             user = await get_ws_user(websocket, db)
         except RuntimeError:
             return
+
+        await websocket.accept()
 
         session_id = registry.generate_session_id()
         can_register = await registry.register(
