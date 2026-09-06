@@ -108,7 +108,7 @@ fi
 """
     return {
         "name": "Remove stale LabDog iptables rules (nftables is the active backend)",
-        "ansible.builtin.shell": script.strip() + "\n",
+        "ansible.builtin.shell": {"cmd": script.strip() + "\n"},
         "ignore_errors": True,
     }
 
@@ -138,7 +138,7 @@ fi
 """
     return {
         "name": "Remove stale LabDog nftables table (iptables is the active backend)",
-        "ansible.builtin.shell": script.strip() + "\n",
+        "ansible.builtin.shell": {"cmd": script.strip() + "\n"},
         "ignore_errors": True,
     }
 

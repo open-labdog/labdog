@@ -9,6 +9,19 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Firewall sync to an iptables-backend host was failing outright, and had
+  been for as long as the dual-stack teardown has existed.** The teardown
+  script carries a prose comment containing the word `isn't`. Ansible parses a
+  shell task given as a bare string by tokenising it shell-style, and that
+  apostrophe read as an unclosed quote — so the whole playbook was rejected
+  before a single task ran. The YAML was valid, so nothing in the test suite
+  noticed; only Ansible objected, and only at run time.
+
+  Found while verifying the `/tmp` change above against a real host. The two
+  teardown scripts are now passed as a mapping, which skips that parsing
+  entirely, and a test runs every generated task through Ansible's own
+  splitter so this class of failure cannot come back quietly.
+
 - **Firewall rollback state no longer lives at guessable paths on the managed
   host.** The deadman's switch — the 60-second automatic revert that saves you
   when a new ruleset cuts off SSH — kept its backups and its revert PID at
