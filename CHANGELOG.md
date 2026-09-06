@@ -9,6 +9,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **The password policy now applies everywhere a password is set.** The
+  12-character rule lived on the registration form alone, so it held on the
+  one path nobody needs to use. `PATCH /api/users/me` accepts a `password`
+  field and had no validator — any user could set a one-character password
+  on their own account, no administrator involved — and the admin
+  create-user and reset-password endpoints hashed whatever string they were
+  given.
+
+  The rule itself is unchanged; tightening it would lock out existing
+  accounts at their next password change, which is a separate decision. Two
+  things were added that cannot lock anyone out: a 128-character ceiling (the
+  hashing cost is paid on every login attempt, on input an unauthenticated
+  caller chooses) and a refusal to set the password equal to the account's
+  own email address.
+
 - **The webhook secret is encrypted at rest and no longer returned by the
   API.** It was stored in plain text under a comment calling it "not a
   credential" — it is the HMAC key every inbound push webhook is verified
