@@ -15,6 +15,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.password_policy import PasswordPolicyError, check_password
+from app.auth.token_version import VersionedJWTStrategy, bump_token_version
 from app.config import settings
 from app.db import get_db
 from app.models.user import User
@@ -35,7 +36,13 @@ cookie_transport = CookieTransport(
 
 
 def get_jwt_strategy() -> JWTStrategy:
-    return JWTStrategy(
+    """SEC-30: the versioned strategy, so a token can be revoked.
+
+    ``VersionedJWTStrategy`` stamps ``User.token_version`` into the
+    token and checks it on every request, which is what makes logout and
+    a password change revoke sessions rather than merely forget them.
+    """
+    return VersionedJWTStrategy(
         secret=settings.security.secret_key,
         lifetime_seconds=settings.security.session_lifetime_seconds,
     )
@@ -143,6 +150,29 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[t
             samesite="lax",
         )
         logger.debug("CSRF cookie set for user %d.", user.id)
+
+    async def on_after_update(
+        self,
+        user: User,
+        update_dict: dict,
+        request: Request | None = None,
+    ) -> None:
+        """SEC-30: a password change revokes every existing session.
+
+        Reached by ``PATCH /api/users/me`` and ``PATCH /api/users/{id}``.
+        Before this, changing a password left a cookie somebody had
+        already copied valid for up to ``session_lifetime_seconds`` —
+        which makes "change your password" useless as a response to a
+        suspected compromise, the one situation it exists for.
+
+        This signs the user out of their current browser too. That is
+        the intended behaviour and worth the friction: the alternative
+        is deciding which of several indistinguishable sessions is the
+        "real" one.
+        """
+        if "password" in update_dict and update_dict["password"]:
+            await bump_token_version(user)
+            logger.info("User %d changed password — existing sessions revoked.", user.id)
 
     async def on_after_register(self, user: User, request: Request | None = None):
         logger.info("User %d (%s) registered.", user.id, user.email)
