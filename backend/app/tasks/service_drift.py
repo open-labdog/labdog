@@ -1,12 +1,26 @@
+"""Service drift check: per-host body plus the periodic sweep delegator.
+
+The sweep itself — host locking, per-host transaction boundary — lives
+in `app.tasks.drift_sweep.sweep_module` (BUG-67). This module owns the
+collect-and-diff and nothing else, and never commits: the driver
+decides whether the verdict becomes durable.
+"""
+
+import logging
 from datetime import UTC
 
 from app.tasks import celery_app
 
+logger = logging.getLogger(__name__)
 
-@celery_app.task(name="app.tasks.service_drift.check_all_service_drift", queue="long_running")
-def check_all_service_drift():
-    """Periodic task: check service drift for all hosts with service drift enabled."""
-    import asyncio
+
+async def check_service_drift_for_one_host(host, hms, db) -> bool:
+    """Collect and diff this host's services, writing the verdict to *hms*.
+
+    See `app.tasks.drift_sweep.CheckOne` for the contract. Returns
+    ``False`` when the host has no usable SSH key, in which case
+    nothing is written.
+    """
     import time
     from datetime import datetime
 
@@ -15,99 +29,81 @@ def check_all_service_drift():
 
     from app.crypto.encryption import decrypt_ssh_key
     from app.crypto.key_management import get_master_key
-    from app.db import task_session
     from app.metrics.recorder import record_drift_sample
-    from app.models.host import Host
-    from app.models.host_module_status import HostModuleStatus
     from app.models.ssh_key import SSHKey
     from app.services.collector import collect_service_states
     from app.services.diff import compute_service_diff
     from app.services.merge import get_effective_services
     from app.ssh_utils import get_source_ip, ssh_connect_host
 
-    async def _run():
-        async with task_session() as db:
-            # Get hosts with service drift enabled
-            result = await db.execute(
-                select(HostModuleStatus).where(
-                    HostModuleStatus.module_type == "service",
-                    HostModuleStatus.drift_check_enabled,
-                )
-            )
-            statuses = result.scalars().all()
+    try:
+        if not host.ssh_key_id:
+            return False
+        ssh_key = (
+            await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+        ).scalar_one_or_none()
+        if not ssh_key:
+            return False
 
-            for hms in statuses:
-                try:
-                    # Get host SSH details
-                    host_result = await db.execute(select(Host).where(Host.id == hms.host_id))
-                    host = host_result.scalar_one_or_none()
-                    if not host or not host.ssh_key_id:
-                        continue
+        private_key_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
+        desired = await get_effective_services(host.id, db)
+        service_names = [s.service_name for s in desired]
 
-                    key_result = await db.execute(
-                        select(SSHKey).where(SSHKey.id == host.ssh_key_id)
-                    )
-                    ssh_key = key_result.scalar_one_or_none()
-                    if not ssh_key:
-                        continue
+        _t0 = time.monotonic()
+        current = await collect_service_states(host, db, private_key_pem, service_names)
+        diff = compute_service_diff(current, desired)
+        _duration_ms = int((time.monotonic() - _t0) * 1000)
 
-                    private_key_pem = decrypt_ssh_key(
-                        ssh_key.encrypted_private_key, get_master_key()
-                    )
-                    desired = await get_effective_services(host.id, db)
-                    service_names = [s.service_name for s in desired]
+        hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
+        hms.last_drift_check_at = datetime.now(UTC)
+        await record_drift_sample(
+            db,
+            host_id=host.id,
+            module_type="service",
+            status=hms.sync_status,
+            policy_change_count=len(diff.services_to_update),
+            duration_ms=_duration_ms,
+        )
+        hms.collected_state = [
+            {
+                "service_name": s.service_name,
+                "active_state": s.active_state,
+                "enabled": s.enabled,
+            }
+            for s in current
+        ]
+        hms.collected_at = datetime.now(UTC)
+        hms.error_message = None
 
-                    _t0 = time.monotonic()
-                    current = await collect_service_states(host, db, private_key_pem, service_names)
-                    diff = compute_service_diff(current, desired)
-                    _duration_ms = int((time.monotonic() - _t0) * 1000)
+        if not host.labdog_source_ip:
+            try:
+                imported_key = asyncssh.import_private_key(private_key_pem)
+                async with ssh_connect_host(host, db, client_keys=[imported_key]) as probe:
+                    host.labdog_source_ip = await get_source_ip(probe)
+            except Exception:
+                logger.debug("source-IP probe failed for host %s", host.id, exc_info=True)
+        return True
+    except (OSError, asyncssh.Error, TimeoutError) as e:
+        hms.sync_status = "unknown"
+        hms.last_drift_check_at = datetime.now(UTC)
+        hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
+        return True
+    except Exception as e:
+        logger.exception("service drift check failed for host %s", host.id)
+        hms.sync_status = "error"
+        hms.last_drift_check_at = datetime.now(UTC)
+        hms.error_message = str(e)
+        return True
 
-                    hms.sync_status = "in_sync" if not diff.has_changes else "out_of_sync"
-                    hms.last_drift_check_at = datetime.now(UTC)
-                    await record_drift_sample(
-                        db,
-                        host_id=host.id,
-                        module_type="service",
-                        status=hms.sync_status,
-                        policy_change_count=len(diff.services_to_update),
-                        duration_ms=_duration_ms,
-                    )
-                    hms.collected_state = [
-                        {
-                            "service_name": s.service_name,
-                            "active_state": s.active_state,
-                            "enabled": s.enabled,
-                        }
-                        for s in current
-                    ]
-                    hms.collected_at = datetime.now(UTC)
-                    hms.error_message = None
 
-                    if not host.labdog_source_ip:
-                        try:
-                            imported_key = asyncssh.import_private_key(private_key_pem)
-                            async with ssh_connect_host(
-                                host,
-                                db,
-                                client_keys=[imported_key],
-                            ) as probe:
-                                host.labdog_source_ip = await get_source_ip(probe)
-                        except Exception:
-                            pass
-                except (OSError, asyncssh.Error, TimeoutError) as e:
-                    hms.sync_status = "unknown"
-                    hms.last_drift_check_at = datetime.now(UTC)
-                    hms.error_message = f"Host unreachable: {e or 'connection timed out'}"
-                except Exception as e:
-                    hms.sync_status = "error"
-                    hms.last_drift_check_at = datetime.now(UTC)
-                    hms.error_message = str(e)
+@celery_app.task(name="app.tasks.service_drift.check_all_service_drift", queue="long_running")
+def check_all_service_drift():
+    """Periodic task: service drift for every host with service drift enabled."""
+    import asyncio
 
-            await db.commit()
-            return len(statuses)
+    from app.tasks.drift_sweep import sweep_module
 
-    count = asyncio.run(_run())
-    return {"checked": count}
+    return asyncio.run(sweep_module("service", check_service_drift_for_one_host))
 
 
 # Register periodic service drift check via RedBeat

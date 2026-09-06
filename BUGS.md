@@ -287,30 +287,6 @@ _No bugs are currently open._
       Audit every `host_id`-not-null assumption in `tasks/host_lock.py`
       first.
 
-- [ ] **BUG-67** `backend/app/tasks/drift.py:147-153` — the periodic drift
-      sweep bypasses the host lock entirely and is one serial loop. It
-      overwrites `HostModuleStatus.sync_status` mid-playbook (a sync sets
-      `running`; the sweep lands, reads a half-applied ruleset and writes
-      `out_of_sync`), and one hung host stops every host after it in the
-      loop being checked at all — silently, on every tick. Fan out through
-      the locked `_builtin.drift_check` path instead.
-
-      **Re-rated 2026-09-05 after BUG-66.** The second half is now much
-      reduced: every command carries a deadline, so a hung host costs the
-      sweep one `ssh.command_timeout` rather than stopping it dead. The
-      first half is untouched and is the reason this stays open — the
-      sweep takes no host lock at all, so it still reads a half-applied
-      ruleset mid-sync and writes `out_of_sync` over the status the sync
-      is maintaining. Seven modules run this same unlocked loop
-      (`drift`, `cron_drift`, `hosts_drift`, `package_drift`,
-      `resolver_drift`, `service_drift`, `user_drift`), each with its own
-      inline copy of the collect-and-diff body, which is what makes the
-      fix a real refactor rather than a patch.
-
-      Note that `_builtin.drift_check` — the locked path the fix should
-      route through — only began working with BUG-78/79/80, so this was
-      not implementable as written before that landed.
-
 - [ ] **BUG-69** All seven merge engines order by `HostGroup.priority`
       only, with no secondary key, and read each group's rules with an
       unordered `SELECT`. `host_groups.priority` has no unique constraint —

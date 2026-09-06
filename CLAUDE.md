@@ -277,6 +277,15 @@ inner `run_host_sync.apply()` already participates via the sync
 orchestrator) — see the comment on `with_lock=` in
 `builtin_dispatchers.py`.
 
+The seven periodic drift sweeps participate too, but as *readers*
+rather than claimants: `app/tasks/drift_sweep.py::sweep_module` asks
+the same `check_host_busy` question, skips a claimed host for that
+tick, and re-checks after the collection so a verdict gathered before
+a claim is discarded rather than written over the running op's status.
+Each module supplies only a `check_one(host, hms, db)` body that writes
+into the session and never commits — the driver owns the transaction,
+because throwing it away is how a mid-check claim is handled.
+
 ### About / version surface
 
 `GET /api/version` is a public (no-auth) endpoint exposing
