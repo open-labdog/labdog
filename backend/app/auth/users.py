@@ -9,10 +9,12 @@ from fastapi_users.authentication import (
     CookieTransport,
     JWTStrategy,
 )
+from fastapi_users.exceptions import InvalidPasswordException
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.password_policy import PasswordPolicyError, check_password
 from app.config import settings
 from app.db import get_db
 from app.models.user import User
@@ -55,6 +57,29 @@ async def get_user_db(session: AsyncSession = Depends(get_db)):
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):  # type: ignore[type-var]  # SQLAlchemy Mapped vs fastapi-users protocol
     reset_password_token_secret = settings.security.secret_key
     verification_token_secret = settings.security.secret_key
+
+    async def validate_password(
+        self,
+        password: str,
+        user: fu_schemas.UC | User,
+    ) -> None:
+        """Enforce the password policy on every path through the manager.
+
+        SEC-30. fastapi-users calls this from ``create``, from ``_update``
+        (which is what ``PATCH /api/users/me`` and ``PATCH
+        /api/users/{id}`` reach) and from ``reset_password``. The rule
+        used to live only on the ``UserCreate`` schema, so every one of
+        those paths skipped it — a user could set a one-character
+        password on themselves.
+
+        The admin endpoints in ``app/api/admin_users.py`` build ``User``
+        rows directly and never come through here, so they call
+        ``check_password`` themselves.
+        """
+        try:
+            check_password(password, email=getattr(user, "email", None))
+        except PasswordPolicyError as exc:
+            raise InvalidPasswordException(reason=str(exc)) from exc
 
     async def create(
         self,

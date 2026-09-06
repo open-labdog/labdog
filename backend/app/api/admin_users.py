@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.password_policy import PasswordPolicyError, check_password
 from app.auth.users import current_superuser
 from app.db import get_db
 from app.models.user import User
@@ -41,6 +42,21 @@ class PasswordReset(BaseModel):
     password: str
 
 
+def _enforce_policy(password: str, email: str | None) -> None:
+    """Apply the shared password policy, as a 400.
+
+    SEC-30. The endpoints in this module hash and assign directly rather
+    than going through ``UserManager``, so they do not inherit
+    ``validate_password``. Without this an administrator could set a
+    one-character password on any account — including their own, via
+    reset — which is the same hole the self-service path had.
+    """
+    try:
+        check_password(password, email=email)
+    except PasswordPolicyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 # ── Router ───────────────────────────────────────────────────────────────────
 
 router = APIRouter(prefix="/admin/users", tags=["admin"])
@@ -64,6 +80,10 @@ async def create_user(
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # SEC-30: these endpoints build the row by hand and never reach
+    # UserManager.validate_password, so the policy is applied here.
+    _enforce_policy(body.password, body.email)
 
     ph = PasswordHelper()
     user = User(
@@ -149,6 +169,8 @@ async def reset_password(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    _enforce_policy(body.password, user.email)
 
     ph = PasswordHelper()
     user.hashed_password = ph.hash(body.password)
