@@ -1,10 +1,10 @@
 import base64
-import binascii
 import os
 
 from cryptography.exceptions import UnsupportedAlgorithm
 
 from app.config import settings
+from app.key_format import decode_master_key
 
 
 def get_master_key() -> bytes:
@@ -14,26 +14,12 @@ def get_master_key() -> bytes:
     (``+``/``/``) and url-safe (``-``/``_``) base64 alphabets, with
     or without ``=`` padding. Invalid characters are rejected with a
     clear error rather than being silently dropped.
+
+    The rules live in :mod:`app.key_format` so that
+    ``app.config`` can apply the same ones at startup (SEC-31) without
+    importing this module, which imports ``app.config``.
     """
-    raw = settings.security.encryption_key
-    # Normalise url-safe chars to standard so a single strict decode
-    # accepts either alphabet. Without validate=True, b64decode would
-    # silently drop unknown chars and produce a shorter byte string —
-    # the original BUG-45 failure mode.
-    normalised = raw.translate(_URLSAFE_TO_STANDARD)
-    padded = normalised + "=" * (-len(normalised) % 4)
-    try:
-        key = base64.b64decode(padded, validate=True)
-    except binascii.Error as e:
-        raise ValueError(
-            f"ENCRYPTION_KEY is not valid base64 (standard or url-safe, 32 bytes): {e}"
-        ) from e
-    if len(key) != 32:
-        raise ValueError(f"ENCRYPTION_KEY must decode to exactly 32 bytes, got {len(key)}")
-    return key
-
-
-_URLSAFE_TO_STANDARD = str.maketrans({"-": "+", "_": "/"})
+    return decode_master_key(settings.security.encryption_key)
 
 
 def generate_master_key() -> str:

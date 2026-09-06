@@ -220,13 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-31** `backend/app/config.py:339-370` — startup validation only
-      rejects the two literal placeholder secrets. A 6-character HS256
-      signing key passes; `cookie_secure=False` is never questioned against
-      non-loopback origins; and `allowed_origins=["*"]` with
-      `allow_credentials=True` makes Starlette *reflect* the request Origin,
-      silently granting credentialed cross-origin access from anywhere.
-
 - [ ] **SEC-32** `backend/app/main.py:118-131,339-356` — the login rate
       limit collapses to one global bucket behind a reverse proxy.
       `trusted_proxies` defaults to empty, so `_get_client_ip` returns the
