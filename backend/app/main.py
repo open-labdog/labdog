@@ -763,12 +763,12 @@ def create_app() -> FastAPI:
             # Support dynamic routes: /hosts/123/ → hosts/placeholder/index.html
             result = _resolve_dynamic_route(static_dir, full_path)
             if result:
-                resolved_file, dynamic_value = result
-                if dynamic_value:
+                resolved_file, dynamic_values = result
+                if dynamic_values:
                     content = _rewrite_placeholder(
                         str(resolved_file),
                         resolved_file.stat().st_mtime_ns,
-                        dynamic_value,
+                        dynamic_values,
                     )
                     if content is None:
                         return FileResponse(index_html)
@@ -788,8 +788,10 @@ _SAFE_DYNAMIC_SEGMENT = re.compile(r"[0-9]{1,19}")
 Digits only, because every dynamic route in the app router is an integer
 database primary key — ``actions/runs/[runId]``, ``git-repos/[id]``,
 ``groups/[id]``, ``groups/[id]/actions/runs/[runId]``, ``hosts/[id]``,
-``hosts/[id]/actions/runs/[runId]``, ``hosts/discovery/[id]`` and
-``hosts/scans/[id]``. 19 digits is int64.
+``hosts/[id]/actions/runs/[runId]``, ``hosts/discovery/[id]/pending`` and
+``hosts/scans/[id]``. 19 digits is int64. (The discovery entry read
+``hosts/discovery/[id]`` until BUG-76; the export has no page at that
+path, only under ``/pending``.)
 
 This is the security boundary for the rewrite below, and it is an
 allow-list on purpose. The segment is interpolated into a ``<script>``
@@ -802,22 +804,80 @@ on its own** — see the escaping note in ``_rewrite_placeholder``.
 """
 
 
-@lru_cache(maxsize=512)
-def _rewrite_placeholder(file_path: str, mtime_ns: int, dynamic_value: str) -> str | None:
-    """Return *file_path* with the baked-in route placeholder replaced.
+def _substitute_placeholders(content: str, values: tuple[str, ...], quote: str) -> str:
+    """Replace the baked-in placeholders in *content*, in path order.
 
-    Returns ``None`` when *dynamic_value* is not a permitted segment, which
-    the caller turns into a plain ``index.html`` response.
+    BUG-76. The export bakes the literal ``placeholder`` into the flight
+    data once per dynamic segment, in two distinct shapes, and a route
+    with two segments contains both twice:
+
+    * the path array — ``["","hosts","placeholder","actions","runs","placeholder",""]``
+    * one route-param tuple each — ``["id","placeholder","d",null]`` and
+      ``["runId","placeholder","d",null]``
+
+    Replacing every occurrence with one value made ``/hosts/7/actions/runs/12/``
+    render as though the host id were also ``12``, so the back-link and
+    breadcrumb on a run page opened under a host pointed at the run.
+
+    Each shape carries its segments in path order, so each is walked
+    separately and consumed in order. The param tuples go first: their
+    placeholders also match the plain pattern, and taking them out of the
+    way first is what keeps the two counts independent.
+
+    An occurrence past the end of *values* is left alone rather than
+    guessed at. A stale ``placeholder`` in the flight data is what the
+    unfixed code produced for every unhandled shape, and the client
+    router resolves the route regardless — a wrong id would be worse
+    than none.
+
+    *quote* is the quoting the file uses: ``"`` in the ``.txt`` payloads,
+    ``\\"`` in HTML, where the flight data is inside a JS string.
+    """
+    q = re.escape(quote)
+    # One pass, two counters. A separate pass per shape would let the
+    # second pattern pick up a param tuple the first had deliberately
+    # left alone, and replace it with the wrong value — which is how the
+    # "more placeholders than values" case failed in review.
+    pattern = re.compile(
+        rf"({q}\w+{q},{q})placeholder({q},{q}d{q})"  # ["id","placeholder","d"
+        rf"|{q}placeholder{q}(?!:)"  # a path-array element
+    )
+    # The lookahead above skips a JSON prop *key* named "placeholder"
+    # (e.g. a form input's), which is not a route value.
+    counts = {"param": 0, "path": 0}
+
+    def repl(match: re.Match[str]) -> str:
+        kind = "param" if match.group(1) is not None else "path"
+        index = counts[kind]
+        if index >= len(values):
+            return match.group(0)
+        counts[kind] = index + 1
+        value = values[index]
+        if kind == "param":
+            return f"{match.group(1)}{value}{match.group(2)}"
+        return f"{quote}{value}{quote}"
+
+    return pattern.sub(repl, content)
+
+
+@lru_cache(maxsize=512)
+def _rewrite_placeholder(
+    file_path: str, mtime_ns: int, dynamic_values: tuple[str, ...]
+) -> str | None:
+    """Return *file_path* with the baked-in route placeholders replaced.
+
+    Returns ``None`` when any value is not a permitted segment, which the
+    caller turns into a plain ``index.html`` response.
 
     Keyed on ``mtime_ns`` as well as the path so a redeployed export is not
     served from a stale entry; bounded by ``maxsize`` so the cache cannot be
     grown without limit by requesting many distinct ids.
 
-    Security: ``dynamic_value`` is re-validated here rather than trusted from
-    the caller. It reaches this function straight from the URL, and lands
-    inside the RSC flight-data ``<script>`` block of the response — so before
-    this check, ``GET /hosts/x"</script><script>alert(1)</script>/`` closed
-    the string and the script tag and executed. The CSP in
+    Security: the values are re-validated here rather than trusted from the
+    caller. They reach this function straight from the URL, and land inside
+    the RSC flight-data ``<script>`` block of the response — so before this
+    check, ``GET /hosts/x"</script><script>alert(1)</script>/`` closed the
+    string and the script tag and executed. The CSP in
     ``SecurityHeadersMiddleware`` allows ``script-src 'unsafe-inline'``, and
     the CSRF cookie is deliberately readable by JavaScript, so injected code
     could drive any authenticated mutation same-origin.
@@ -826,41 +886,32 @@ def _rewrite_placeholder(file_path: str, mtime_ns: int, dynamic_value: str) -> s
     appears in two different quoting contexts — plain ``"placeholder"`` in
     ``.txt`` payloads and backslash-escaped ``\\"placeholder\\"`` in HTML —
     which need *different* escaping, and a single escape helper applied to
-    both would be wrong in one of them. With the value constrained to digits
+    both would be wrong in one of them. With the values constrained to digits
     there is nothing to escape, so the allow-list carries the safety on its
     own. Widening ``_SAFE_DYNAMIC_SEGMENT`` therefore requires adding
     context-correct escaping at the same time.
     """
-    if not _SAFE_DYNAMIC_SEGMENT.fullmatch(dynamic_value):
+    if not dynamic_values:
+        return None
+    if not all(_SAFE_DYNAMIC_SEGMENT.fullmatch(v) for v in dynamic_values):
         return None
     content = Path(file_path).read_text(encoding="utf-8")
-    # Rewrite only the baked-in route SEGMENT value ("placeholder" as a
-    # quoted value), not a JSON prop key like {"placeholder":"..."} from a
-    # form input — that would corrupt the flight data. The route value is
-    # never immediately followed by ':', so a negative lookahead skips prop
-    # keys. HTML escapes quotes (\"), .txt uses plain quotes. Use a
-    # replacement function so backslashes in the value aren't treated as
-    # regex backreferences.
-    content = re.sub(
-        r'\\"placeholder\\"(?!:)',
-        lambda _m: f'\\"{dynamic_value}\\"',
-        content,
-    )
-    content = re.sub(
-        r'"placeholder"(?!:)',
-        lambda _m: f'"{dynamic_value}"',
-        content,
-    )
+    content = _substitute_placeholders(content, dynamic_values, '\\"')
+    content = _substitute_placeholders(content, dynamic_values, '"')
     return content
 
 
-def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str | None] | None:
+def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, tuple[str, ...]] | None:
     """Resolve a Next.js dynamic route by substituting missing path segments
     with the generateStaticParams placeholder directory.
 
-    Returns ``(resolved_file, dynamic_value)`` where *dynamic_value* is the
-    original URL segment that was substituted (e.g. ``"1"`` for
-    ``/groups/1/``), or ``None`` when no substitution was needed.
+    Returns ``(resolved_file, dynamic_values)`` where *dynamic_values* holds
+    the original URL segments that were substituted, **in path order** —
+    ``("1",)`` for ``/groups/1/`` and ``("7", "12")`` for
+    ``/hosts/7/actions/runs/12/``. Empty when no substitution was needed.
+
+    BUG-76: this used to keep a single value, so the second segment of a
+    nested route overwrote the first and both were rewritten to it.
 
     A segment that is not a permitted id (see ``_SAFE_DYNAMIC_SEGMENT``) is
     refused outright rather than substituted, so the caller falls through to
@@ -871,25 +922,25 @@ def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str 
     if not parts:
         return None
     current = static_dir
-    dynamic_value: str | None = None
+    dynamic_values: list[str] = []
     for part in parts:
         candidate = current / part
         if candidate.is_dir():
             current = candidate
         elif candidate.is_file():
-            return (candidate, dynamic_value)
+            return (candidate, tuple(dynamic_values))
         else:
             placeholder = current / "placeholder"
             if placeholder.is_dir():
                 if not _SAFE_DYNAMIC_SEGMENT.fullmatch(part):
                     return None
-                dynamic_value = part
+                dynamic_values.append(part)
                 current = placeholder
             else:
                 return None
     index = current / "index.html"
     if index.is_file():
-        return (index, dynamic_value)
+        return (index, tuple(dynamic_values))
     return None
 
 
