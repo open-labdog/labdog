@@ -233,6 +233,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A run page opened under a host showed the wrong id in its links.**
+  `/hosts/7/actions/runs/12/` rendered with *both* route parameters set to
+  `12`, so the host id was missing from the page data and the back-link and
+  breadcrumb pointed at the run as though it were the host. The pre-rendered
+  page bakes in one placeholder per dynamic segment and only one value was
+  being substituted. Affected the two nested routes,
+  `hosts/[id]/actions/runs/[runId]` and `groups/[id]/actions/runs/[runId]`.
+  The page always fetched the right data — the client router resolves the
+  real URL — so this was confusing rather than harmful.
+
 - **A sync deferred behind a busy host no longer reapplies every module.**
   Asking to reapply just the firewall on a host that was already syncing
   queued the request — and when the queue drained, the queued job had lost
