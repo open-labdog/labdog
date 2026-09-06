@@ -1,7 +1,10 @@
+import ipaddress
+import json
 import logging
 import logging.config
 import os
 import re
+import urllib.parse
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -120,17 +123,59 @@ def _configure_logging() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_trusted_proxy(ip: str, trusted: list[str]) -> bool:
+    """Whether *ip* is one of the configured proxies.
+
+    Accepts CIDR entries as well as literal addresses (SEC-32). The
+    check used to be a plain ``in`` against the list, so ``10.0.0.0/8``
+    never matched anything — which made the setting unusable in Docker,
+    where the proxy's address is assigned at container start and is not
+    known when the config is written.
+    """
+    for entry in trusted:
+        if ip == entry:
+            return True
+        try:
+            if ipaddress.ip_address(ip) in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            # A malformed entry should not break IP resolution for
+            # every request; skip it and try the next.
+            continue
+    return False
+
+
+@lru_cache(maxsize=1)
+def _warn_untrusted_forwarding() -> None:
+    """Say once that forwarded addresses are being discarded.
+
+    Cached rather than guarded by a module flag so the "only once" part
+    is the mechanism rather than a convention someone has to maintain.
+    """
+    logging.getLogger(__name__).warning(
+        "X-Forwarded-For is present but server.trusted_proxies is empty, so the "
+        "real client address is being ignored. Set trusted_proxies to your "
+        "reverse proxy's address or network."
+    )
+
+
 def _get_client_ip(request: Request) -> str:
     """Extract real client IP, respecting trusted proxies."""
     trusted = settings.server.trusted_proxies
+    forwarded = request.headers.get("x-forwarded-for", "")
     if trusted and request.client:
-        forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
             # Walk the chain from right to left, skipping trusted proxies
             chain = [ip.strip() for ip in forwarded.split(",")]
             for ip in reversed(chain):
-                if ip not in trusted:
+                if not _is_trusted_proxy(ip, trusted):
                     return ip
+    elif forwarded:
+        # A reverse proxy is forwarding the real client address and
+        # LabDog is discarding it, so every request looks like it came
+        # from the proxy — which is what collapsed the login rate limit
+        # into a single shared bucket (SEC-32).
+        _warn_untrusted_forwarding()
     if request.client:
         return request.client.host
     return "127.0.0.1"
@@ -163,6 +208,117 @@ def _build_login_limiter():
             return limiter.hit(rate, "login", key)
 
     return _LoginLimiter()
+
+
+# ---------------------------------------------------------------------------
+# Login rate-limit keying (SEC-32)
+# ---------------------------------------------------------------------------
+#
+# The limiter used to key on the client IP alone. Behind a reverse proxy
+# with ``server.trusted_proxies`` unset — the default — every request
+# resolves to the proxy's address, so the whole install shared one
+# 5/minute bucket: five bad passwords from anywhere locked everybody out,
+# and an attacker was never throttled relative to anyone else.
+#
+# Keying on the account being attacked fixes both halves. Two buckets are
+# consumed per attempt:
+#
+#   * ``(ip, identity)`` — the targeted case. One source guessing one
+#     account's password.
+#   * ``identity`` — the distributed case. Many sources guessing one
+#     account's password, which the first bucket alone would not catch.
+#
+# There is deliberately no bucket on the IP alone. That is the one this
+# change exists to remove, and behind a proxy it is the same global
+# bucket by another name.
+
+#: Paths the login limiter guards.
+_LOGIN_PATHS = frozenset({"/api/auth/jwt/login", "/api/auth/register"})
+
+#: Most a login body may be before we stop buffering it to find the
+#: account name. A real one is a couple of hundred bytes; the cap keeps
+#: an attacker from making the middleware hold arbitrary memory.
+_MAX_LOGIN_BODY = 8192
+
+#: Identities longer than this are truncated before they become part of
+#: a Redis key, so the key size stays bounded by us rather than by the
+#: caller.
+_MAX_IDENTITY = 128
+
+
+def login_rate_limit_keys(client_ip: str, identity: str | None) -> list[str]:
+    """Buckets one login attempt should consume.
+
+    Empty when the request carries no recognisable account name. Such a
+    request cannot test a password, so throttling it buys nothing — and
+    keying it on the IP would reintroduce exactly the shared bucket this
+    replaces, reachable by anyone willing to POST nonsense.
+    """
+    if not identity:
+        return []
+    return [f"ip-user:{client_ip}|{identity}", f"user:{identity}"]
+
+
+def login_identity(content_type: str, body: bytes) -> str | None:
+    """The account name a login or register body is about, normalised.
+
+    ``/api/auth/jwt/login`` is an OAuth2 password form (``username``);
+    ``/api/auth/register`` is JSON (``email``). Case and surrounding
+    whitespace are folded so that ``Alice@x.com`` and ``alice@x.com ``
+    cannot buy an attacker two separate budgets against one account.
+    """
+    if not body:
+        return None
+    raw: str | None = None
+    ctype = content_type.split(";", 1)[0].strip().lower()
+    try:
+        if ctype == "application/json":
+            payload = json.loads(body)
+            if isinstance(payload, dict):
+                value = payload.get("email") or payload.get("username")
+                raw = value if isinstance(value, str) else None
+        else:
+            # Form-encoded, which is what OAuth2PasswordRequestForm reads.
+            parsed = urllib.parse.parse_qs(body.decode("utf-8", "replace"))
+            values = parsed.get("username") or parsed.get("email") or []
+            raw = values[0] if values else None
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not raw:
+        return None
+    return raw.strip().casefold()[:_MAX_IDENTITY] or None
+
+
+async def _buffered_receive(receive):
+    """Read the request body, returning it plus a replayable ``receive``.
+
+    ASGI bodies are consumed once. To key on the account name we have to
+    look at the body before the route does, so the messages are recorded
+    and handed back verbatim — including an ``http.disconnect``, which
+    must reach the app rather than being swallowed here.
+
+    Stops at :data:`_MAX_LOGIN_BODY`; anything beyond that is left in the
+    stream for the route to read, and the identity simply comes out as
+    ``None``.
+    """
+    messages: list[dict] = []
+    total = 0
+    while True:
+        message = await receive()
+        messages.append(message)
+        if message["type"] != "http.request":
+            break
+        total += len(message.get("body", b""))
+        if not message.get("more_body", False) or total > _MAX_LOGIN_BODY:
+            break
+    body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.request")
+
+    async def replay():
+        if messages:
+            return messages.pop(0)
+        return await receive()
+
+    return (b"" if total > _MAX_LOGIN_BODY else body), replay
 
 
 # ---------------------------------------------------------------------------
@@ -365,12 +521,18 @@ def create_app() -> FastAPI:
                     await self.app(scope, receive, send)
                     return
                 request = Request(scope, receive)
-                if request.method == "POST" and request.url.path in (
-                    "/api/auth/jwt/login",
-                    "/api/auth/register",
-                ):
-                    client_ip = _get_client_ip(request)
-                    if not _login_limiter.hit(client_ip):
+                if not (request.method == "POST" and request.url.path in _LOGIN_PATHS):
+                    await self.app(scope, receive, send)
+                    return
+
+                # SEC-32: the bucket is per account, not per source
+                # address, so the body has to be read here — and then
+                # handed back intact, because ASGI bodies are read once.
+                body, receive = await _buffered_receive(receive)
+                identity = login_identity(request.headers.get("content-type", ""), body)
+                client_ip = _get_client_ip(request)
+                for key in login_rate_limit_keys(client_ip, identity):
+                    if not _login_limiter.hit(key):
                         response = Response(
                             content='{"detail":"Too many login attempts. Try again later."}',
                             status_code=429,

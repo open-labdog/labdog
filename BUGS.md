@@ -220,14 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-32** `backend/app/main.py:118-131,339-356` — the login rate
-      limit collapses to one global bucket behind a reverse proxy.
-      `trusted_proxies` defaults to empty, so `_get_client_ip` returns the
-      proxy's address for every request and the 5/min limit is shared by
-      the whole install: one attacker locks everybody out, and no
-      per-attacker throttling happens. Key on `(ip, email)` and ship a
-      sensible `trusted_proxies` default for the container.
-
 - [ ] **SEC-33** `backend/app/ansible_runtime/generator.py:115-243` — the
       firewall deadman's-switch uses fixed `/tmp` paths on the *managed*
       host (`/tmp/nftables-backup.conf`, `/tmp/nftables-revert.pid`, and
