@@ -6,6 +6,7 @@ from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
+from app.gitops.webhook_secret import set_webhook_secret
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.host_group import HostGroup
 from app.models.user import User
@@ -51,8 +52,9 @@ async def create_git_repo(
         branch=body.branch,
         auth_type=GitAuthType(auth_type),
         ssh_key_id=body.ssh_key_id if auth_type == "ssh_key" else None,
-        webhook_secret=body.webhook_secret,
     )
+    # SEC-28: encrypted at rest like the token beside it, never echoed back.
+    set_webhook_secret(repo, body.webhook_secret)
 
     if body.https_token and auth_type == "https_token":
         master_key = get_master_key()
@@ -113,6 +115,9 @@ async def update_git_repo(
 
     update_data = body.model_dump(exclude_none=True)
     token = update_data.pop("https_token", None)
+    # SEC-28: never assigned by the setattr loop below — the column is
+    # ciphertext, and an omitted value means "keep the existing secret".
+    webhook_secret = update_data.pop("webhook_secret", None)
 
     previous_url = repo.url
     for field, value in update_data.items():
@@ -147,6 +152,9 @@ async def update_git_repo(
 
     if token and auth_type == "https_token":
         repo.encrypted_https_token = encrypt_ssh_key(token, get_master_key())
+
+    if webhook_secret:
+        set_webhook_secret(repo, webhook_secret)
 
     await log_action(
         db=db,

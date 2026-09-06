@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import get_db
+from app.gitops.webhook_secret import get_webhook_secret
 from app.models.git_repository import GitRepository
 from app.models.host_group import HostGroup
 from app.tasks import celery_app
@@ -110,10 +111,13 @@ async def github_webhook(
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify signature
-    if not repo.webhook_secret:
+    # SEC-28: ciphertext on the row; decrypted only to compare against
+    # the signature on this request and never returned anywhere.
+    secret = get_webhook_secret(repo)
+    if not secret:
         raise HTTPException(status_code=401, detail="Webhook secret not configured")
     sig = request.headers.get("X-Hub-Signature-256")
-    if not _verify_github_signature(body, repo.webhook_secret, sig):
+    if not _verify_github_signature(body, secret, sig):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     # Check event type
@@ -153,10 +157,13 @@ async def gitlab_webhook(
         return {"status": "ignored", "reason": "unknown repository"}
 
     # Verify token
-    if not repo.webhook_secret:
+    # SEC-28: ciphertext on the row; decrypted only to compare against
+    # the signature on this request and never returned anywhere.
+    secret = get_webhook_secret(repo)
+    if not secret:
         raise HTTPException(status_code=401, detail="Webhook secret not configured")
     token = request.headers.get("X-Gitlab-Token")
-    if not _verify_gitlab_token(repo.webhook_secret, token):
+    if not _verify_gitlab_token(secret, token):
         raise HTTPException(status_code=401, detail="Invalid token")
 
     # Check for branch deletion
@@ -189,10 +196,13 @@ async def gitea_webhook(
     if not repo:
         return {"status": "ignored", "reason": "unknown repository"}
 
-    if not repo.webhook_secret:
+    # SEC-28: ciphertext on the row; decrypted only to compare against
+    # the signature on this request and never returned anywhere.
+    secret = get_webhook_secret(repo)
+    if not secret:
         raise HTTPException(status_code=401, detail="Webhook secret not configured")
     sig = request.headers.get("X-Gitea-Signature")
-    if not _verify_gitea_signature(body, repo.webhook_secret, sig):
+    if not _verify_gitea_signature(body, secret, sig):
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     ref = payload.get("ref", "")

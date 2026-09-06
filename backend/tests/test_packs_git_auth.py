@@ -25,17 +25,21 @@ def test_no_credentials_yields_empty_context():
 
 
 def test_token_sets_extraheader_and_redacts():
+    """SEC-29: the header is configured through the environment, not
+    ``git -c``. Both keep the token out of ``.git/config``, but argv is
+    world-readable through ``/proc/<pid>/cmdline``."""
     with git_auth_context(token="ghp_secret_pat_value") as ctx:
-        assert ctx.extra_args[0] == "-c"
-        assert "Authorization: Bearer ghp_secret_pat_value" in ctx.extra_args[1]
+        assert ctx.extra_env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+        assert ctx.extra_env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer ghp_secret_pat_value"
         assert "ghp_secret_pat_value" in ctx.redact_values
+        assert "ghp_secret_pat_value" not in " ".join(ctx.extra_args)
 
 
 def test_token_disables_follow_redirects():
     """SEC-11: PAT path must also set http.followRedirects=false."""
     with git_auth_context(token="ghp_secret") as ctx:
-        args_str = " ".join(ctx.extra_args)
-        assert "http.followRedirects=false" in args_str
+        assert ctx.extra_env["GIT_CONFIG_KEY_1"] == "http.followRedirects"
+        assert ctx.extra_env["GIT_CONFIG_VALUE_1"] == "false"
 
 
 def test_ssh_key_does_not_set_follow_redirects():

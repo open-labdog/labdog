@@ -118,7 +118,7 @@ class TestTheTokenPathIsUnchanged:
 
     def test_the_token_is_still_kept_off_the_url(self):
         with git_auth_context(token="ghp_example") as auth:
-            assert "http.extraHeader=Authorization: Bearer ghp_example" in auth.extra_args
+            assert auth.extra_env["GIT_CONFIG_VALUE_0"] == "Authorization: Bearer ghp_example"
             assert auth.redact_values == ["ghp_example"]
 
 

@@ -9,6 +9,30 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **The webhook secret is encrypted at rest and no longer returned by the
+  API.** It was stored in plain text under a comment calling it "not a
+  credential" — it is the HMAC key every inbound push webhook is verified
+  against, so anyone who could read it could forge a push and make LabDog
+  import configuration from a commit of their choosing. Any authenticated
+  user could read it, because `GET /api/git-repos` returned it verbatim. It
+  was also the only secret outside an `encrypted_*` column.
+
+  Existing secrets are encrypted in place on upgrade, so configured webhooks
+  keep working — nothing to re-enter. The API now reports
+  `has_webhook_secret` instead, and the UI shows whether one is set rather
+  than offering to copy it. To rotate, type a new one; leaving the field
+  blank keeps the existing secret.
+
+- **The git HTTPS token no longer appears on the `git` command line.** It was
+  embedded in the clone URL, so it sat in `/proc/<pid>/cmdline` — which is
+  world-readable, meaning any local account could read the token off a
+  running clone — and was written into `.git/config` until a `set_url` two
+  lines later scrubbed it. It now travels as an `Authorization` header
+  configured through `GIT_CONFIG_*` environment variables, which are readable
+  only by the process owner and root. The pack sync path already kept the
+  token out of the URL but passed it via `git -c`, which is argv too; both
+  paths now use the same mechanism.
+
 - **Ansible runs and git syncs now verify the host they connect to.** LabDog
   already recorded each managed host's SSH key on first contact and refused a
   changed one — but only on its own asyncssh connections. The Ansible path,
