@@ -514,7 +514,10 @@ async def get_stale_operation_counts(db: AsyncSession) -> StaleOperationCounts:
         ActionRun.status == "pending", ActionRun.host_id.isnot(None)
     )
     pending_action_host_run_hosts = select(ActionHostRun.host_id).where(
-        ActionHostRun.status == "pending"
+        ActionHostRun.status == "pending",
+        # A row whose host was deleted holds nothing (BUG-77); without
+        # this it would union in as a single extra "blocked host".
+        ActionHostRun.host_id.isnot(None),
     )
     blocked_hosts = union(
         pending_sync_hosts, pending_action_hosts, pending_action_host_run_hosts

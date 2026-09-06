@@ -386,6 +386,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 hr = ActionHostRun(
                     action_run_id=action_run_id,
                     host_id=host.id,
+                    hostname=host.hostname,
                     status="queued",
                 )
                 db.add(hr)
@@ -1376,6 +1377,11 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
 
                 for hr in host_runs:
                     if hr.status != "succeeded":
+                        continue
+                    if hr.host_id is None:
+                        # Host deleted while the play ran. The row keeps
+                        # its transcript (BUG-77) but there is nothing
+                        # left to sync or register against.
                         continue
                     if post_run_sync_modules:
                         try:

@@ -26,14 +26,25 @@ function stripAnsi(text: string): string {
   return text.replace(ANSI_SGR, "")
 }
 
+// The name to show for one host run. `hostname` is the live host's name
+// when it still exists and the dispatch-time snapshot when it does not,
+// so it is set on every row; the fallback is for rows written before
+// that column existed.
+function hostLabel(hr: ActionHostRun): string {
+  return hr.hostname ?? (hr.host_id !== null ? `Host ${hr.host_id}` : "Deleted host")
+}
+
 export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailProps) {
   const queryClient = useQueryClient()
   const [output, setOutput] = useState("")
-  // Per-host output, keyed by host_id, for the click-to-filter view.
-  // `undefined` entry = not fetched yet (shows a loading hint).
+  // Per-host output, keyed by ActionHostRun.id, for the click-to-filter
+  // view. `undefined` entry = not fetched yet (shows a loading hint).
+  // Keyed by the row rather than by host_id because the transcript
+  // outlives the host: a deleted host leaves host_id null, and the row
+  // id is the only identifier still guaranteed to resolve.
   const [hostOutputs, setHostOutputs] = useState<Record<number, string>>({})
-  // Which host's log to show. null = combined "All hosts" view.
-  const [selectedHostId, setSelectedHostId] = useState<number | null>(null)
+  // Which host's log to show, by ActionHostRun.id. null = combined view.
+  const [selectedHostRunId, setSelectedHostRunId] = useState<number | null>(null)
   const [pinToBottom, setPinToBottom] = useState(true)
   const outputRef = useRef<HTMLPreElement>(null)
   // Tracks the runId we've already loaded persisted output for, so the
@@ -71,9 +82,10 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       const entries = await Promise.all(
         run.host_runs.map(async (hr) => {
           try {
-            const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/hosts/${hr.host_id}/output`, {
-              credentials: "include",
-            })
+            const res = await fetch(
+              `${API_BASE}/api/actions/runs/${runId}/host-runs/${hr.id}/output`,
+              { credentials: "include" },
+            )
             return { hr, text: res.ok ? stripAnsi(await res.text()) : "" }
           } catch {
             return { hr, text: "" }
@@ -88,7 +100,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
       if (terminalFetchedForRef.current !== runId) return
       // Cache each host's log so clicking a host card switches instantly.
       const map: Record<number, string> = {}
-      for (const { hr, text } of entries) map[hr.host_id] = text
+      for (const { hr, text } of entries) map[hr.id] = text
       setHostOutputs(map)
       // Combined "All hosts" view: prefix per-host sections only for group runs.
       const combined =
@@ -96,7 +108,7 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           ? entries
               .map(
                 ({ hr, text }) =>
-                  `===== ${hr.hostname ?? `Host ${hr.host_id}`} (${hr.status}) =====\n${text}\n`,
+                  `===== ${hostLabel(hr)} (${hr.status}) =====\n${text}\n`,
               )
               .join("\n")
           : entries.map((e) => e.text).join("\n")
@@ -152,27 +164,28 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
     if (pinToBottom && outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [output, hostOutputs, selectedHostId, pinToBottom])
+  }, [output, hostOutputs, selectedHostRunId, pinToBottom])
 
   // Toggle the per-host log filter. Clicking the active host clears back to
   // the combined view. Fetches the host's log on demand if it isn't cached
   // yet (e.g. a still-running run, where the terminal-fetch effect hasn't
   // populated the map).
-  async function selectHost(hostId: number) {
-    if (selectedHostId === hostId) {
-      setSelectedHostId(null)
+  async function selectHostRun(hostRunId: number) {
+    if (selectedHostRunId === hostRunId) {
+      setSelectedHostRunId(null)
       return
     }
-    setSelectedHostId(hostId)
-    if (hostOutputs[hostId] !== undefined) return
+    setSelectedHostRunId(hostRunId)
+    if (hostOutputs[hostRunId] !== undefined) return
     try {
-      const res = await fetch(`${API_BASE}/api/actions/runs/${runId}/hosts/${hostId}/output`, {
-        credentials: "include",
-      })
+      const res = await fetch(
+        `${API_BASE}/api/actions/runs/${runId}/host-runs/${hostRunId}/output`,
+        { credentials: "include" },
+      )
       const text = res.ok ? stripAnsi(await res.text()) : ""
-      setHostOutputs((prev) => ({ ...prev, [hostId]: text }))
+      setHostOutputs((prev) => ({ ...prev, [hostRunId]: text }))
     } catch {
-      setHostOutputs((prev) => ({ ...prev, [hostId]: "" }))
+      setHostOutputs((prev) => ({ ...prev, [hostRunId]: "" }))
     }
   }
 
@@ -196,12 +209,14 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
 
   // Resolve the currently-selected host + what the output pane should show.
   const selectedHost =
-    selectedHostId !== null ? run?.host_runs.find((hr) => hr.host_id === selectedHostId) ?? null : null
-  const selectedLabel = selectedHost ? selectedHost.hostname ?? `Host ${selectedHost.host_id}` : null
-  const paneText = selectedHostId !== null ? hostOutputs[selectedHostId] ?? "" : output
+    selectedHostRunId !== null
+      ? run?.host_runs.find((hr) => hr.id === selectedHostRunId) ?? null
+      : null
+  const selectedLabel = selectedHost ? hostLabel(selectedHost) : null
+  const paneText = selectedHostRunId !== null ? hostOutputs[selectedHostRunId] ?? "" : output
   const paneFallback =
-    selectedHostId !== null
-      ? hostOutputs[selectedHostId] === undefined
+    selectedHostRunId !== null
+      ? hostOutputs[selectedHostRunId] === undefined
         ? "Loading…"
         : "(no output captured for this host)"
       : isLoading
@@ -302,10 +317,10 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-slate-200">Host Status</h3>
-            {selectedHostId !== null && (
+            {selectedHostRunId !== null && (
               <button
                 type="button"
-                onClick={() => setSelectedHostId(null)}
+                onClick={() => setSelectedHostRunId(null)}
                 className="text-xs text-slate-400 hover:text-white"
               >
                 Show all hosts
@@ -314,14 +329,18 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
             {run.host_runs.map((hr: ActionHostRun) => {
-              const selected = selectedHostId === hr.host_id
+              const selected = selectedHostRunId === hr.id
               return (
                 <button
                   key={hr.id}
                   type="button"
-                  onClick={() => selectHost(hr.host_id)}
+                  onClick={() => selectHostRun(hr.id)}
                   aria-pressed={selected}
-                  title={`Show ${hr.hostname ?? `Host ${hr.host_id}`} log`}
+                  title={
+                    hr.host_id === null
+                      ? `Show ${hostLabel(hr)} log (host has been deleted)`
+                      : `Show ${hostLabel(hr)} log`
+                  }
                   className={`flex items-center justify-between rounded border px-3 py-2 text-left transition-colors ${
                     selected
                       ? "border-sky-500 bg-sky-500/10"
@@ -329,7 +348,10 @@ export function ActionRunDetail({ runId, backHref, backLabel }: ActionRunDetailP
                   }`}
                 >
                   <span className="text-xs text-slate-400 truncate">
-                    {hr.hostname ?? `Host ${hr.host_id}`}
+                    {hostLabel(hr)}
+                    {hr.host_id === null && (
+                      <span className="text-slate-500"> (deleted)</span>
+                    )}
                   </span>
                   <RunStatusBadge status={hr.status} reason={hr.pending_reason} />
                 </button>
