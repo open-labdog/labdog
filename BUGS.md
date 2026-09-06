@@ -220,16 +220,6 @@ content policy.
 
 ### Security — Medium
 
-- [ ] **SEC-33** `backend/app/ansible_runtime/generator.py:115-243` — the
-      firewall deadman's-switch uses fixed `/tmp` paths on the *managed*
-      host (`/tmp/nftables-backup.conf`, `/tmp/nftables-revert.pid`, and
-      the iptables equivalents), then runs `kill $(cat …)` as root against
-      one of them. `fs.protected_regular` mitigates the write side on
-      modern kernels but not the read. Use an `ansible.builtin.tempfile`
-      registered at the top of the play and thread the path through.
-      Regenerate `bandit-baseline.json` afterwards — these are the eleven
-      baselined B108 entries.
-
 ### Security — Low
 
 - [ ] **SEC-34** Grouped, all low-impact: `/docs`, `/redoc` and

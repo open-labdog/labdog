@@ -9,6 +9,19 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **Firewall rollback state no longer lives at guessable paths on the managed
+  host.** The deadman's switch — the 60-second automatic revert that saves you
+  when a new ruleset cuts off SSH — kept its backups and its revert PID at
+  fixed names under `/tmp`, then ran `kill $(cat …)` as root against one of
+  them. Any local user on a managed host could pre-create or symlink those
+  names and choose what root read back: which ruleset gets restored when the
+  switch fires, or which process gets signalled.
+
+  Both playbooks now create a private root-owned directory per run and thread
+  its path through, so nothing is predictable and the whole directory is
+  removed afterwards. The switch itself is unchanged, including the ordering
+  that keeps the backups available until the revert has been cancelled.
+
 - **The login rate limit now throttles the attacker instead of the whole
   install.** It keyed on the client address alone, and behind a reverse proxy
   with `server.trusted_proxies` unset — the default — every request resolves

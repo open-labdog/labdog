@@ -22,6 +22,62 @@ from app.rules.renderers.nftables import render_nftables_config
 # ---------------------------------------------------------------------------
 
 
+#: Ansible fact the firewall plays register their scratch directory under.
+#: Referenced as ``{{ labdog_fw_tmp.path }}`` throughout both playbooks.
+_WORKDIR_VAR = "labdog_fw_tmp"
+
+#: Jinja expression for that directory, as written into the shell
+#: fragments below. Kept short so the command strings stay readable.
+_TMP = "{{ " + _WORKDIR_VAR + ".path }}"
+
+
+def _workdir_task() -> dict:
+    """Create a private scratch directory on the managed host (SEC-33).
+
+    The deadman's-switch machinery used fixed paths under ``/tmp`` —
+    ``/tmp/nftables-backup.conf``, ``/tmp/nftables-revert.pid`` and the
+    iptables equivalents — on the *managed* host, then ran
+    ``kill $(cat …)`` as root against one of them. Any local user on
+    that host could pre-create or symlink those names and choose what
+    root read back: which ruleset gets restored when the switch fires,
+    or which process id gets signalled.
+
+    ``fs.protected_regular`` blunts the write side on modern kernels. It
+    does nothing about the read side, and it is a kernel setting LabDog
+    does not control on hosts it manages.
+
+    ``ansible.builtin.tempfile`` gives a 0700 directory owned by root
+    (the play runs with ``become``) whose name is unpredictable, which
+    removes both.
+    """
+    return {
+        "name": "Create private working directory for firewall rollback state",
+        "ansible.builtin.tempfile": {
+            "state": "directory",
+            "prefix": "labdog-fw-",
+        },
+        "register": _WORKDIR_VAR,
+    }
+
+
+def _cleanup_workdir_task() -> dict:
+    """Remove the scratch directory and everything in it.
+
+    Runs after the revert has been cancelled, so the deadman's switch
+    still has its backups for as long as it might need them. If the play
+    dies before this point — which is exactly when the switch matters —
+    the directory survives for the revert to use, as the individual
+    files did before.
+    """
+    return {
+        "name": "Clean up firewall rollback working directory",
+        "ansible.builtin.file": {
+            "path": _TMP,
+            "state": "absent",
+        },
+    }
+
+
 def _iptables_teardown_task() -> dict:
     """Task removing stale LabDog iptables chains (run when nftables is active).
 
@@ -109,11 +165,12 @@ def generate_nftables_playbook(
     """
     nft_config = render_nftables_config(rules, policies=policies)
     tasks = [
+        _workdir_task(),
         {
             "name": "Backup current nftables ruleset",
             "ansible.builtin.shell": (
-                "/usr/sbin/nft list table inet filter > /tmp/nftables-backup.conf"
-                " 2>/dev/null || touch /tmp/nftables-backup.conf"
+                f"/usr/sbin/nft list table inet filter > {_TMP}/nftables-backup.conf"
+                f" 2>/dev/null || touch {_TMP}/nftables-backup.conf"
             ),
         },
         {
@@ -122,17 +179,17 @@ def generate_nftables_playbook(
                 "nohup bash -c '"
                 "sleep 60 && "
                 "/usr/sbin/nft delete table inet filter 2>/dev/null; "
-                "/usr/sbin/nft -f /tmp/nftables-backup.conf 2>/dev/null; "
-                "cp /tmp/nftables-backup.conf.orig /etc/nftables.conf 2>/dev/null"
-                "' > /tmp/nftables-revert.log 2>&1 & "
-                "echo $! > /tmp/nftables-revert.pid"
+                f"/usr/sbin/nft -f {_TMP}/nftables-backup.conf 2>/dev/null; "
+                f"cp {_TMP}/nftables-backup.conf.orig /etc/nftables.conf 2>/dev/null"
+                f"' > {_TMP}/nftables-revert.log 2>&1 & "
+                f"echo $! > {_TMP}/nftables-revert.pid"
             ),
         },
         {
             "name": "Backup original config file",
             "ansible.builtin.copy": {
                 "src": "/etc/nftables.conf",
-                "dest": "/tmp/nftables-backup.conf.orig",
+                "dest": f"{_TMP}/nftables-backup.conf.orig",
                 "remote_src": True,
             },
             "ignore_errors": True,
@@ -155,9 +212,9 @@ def generate_nftables_playbook(
         {
             "name": "Cancel automatic revert (SSH still works)",
             "ansible.builtin.shell": (
-                "if [ -f /tmp/nftables-revert.pid ]; then "
-                "kill $(cat /tmp/nftables-revert.pid) 2>/dev/null; "
-                "rm -f /tmp/nftables-revert.pid; "
+                f"if [ -f {_TMP}/nftables-revert.pid ]; then "
+                f"kill $(cat {_TMP}/nftables-revert.pid) 2>/dev/null; "
+                f"rm -f {_TMP}/nftables-revert.pid; "
                 "fi"
             ),
         },
@@ -171,18 +228,7 @@ def generate_nftables_playbook(
                 "enabled": True,
             },
         },
-        {
-            "name": "Clean up backup files",
-            "ansible.builtin.file": {
-                "path": "{{ item }}",
-                "state": "absent",
-            },
-            "loop": [
-                "/tmp/nftables-backup.conf",
-                "/tmp/nftables-backup.conf.orig",
-                "/tmp/nftables-revert.log",
-            ],
-        },
+        _cleanup_workdir_task(),
     ]
     playbook = [
         {
@@ -219,18 +265,19 @@ def generate_iptables_playbook(
     """
     ipv4_content, ipv6_content = render_iptables_rules(rules, policies=policies)
     tasks = [
+        _workdir_task(),
         {
             "name": "Backup current iptables ruleset",
             "ansible.builtin.shell": (
-                "iptables-save > /tmp/iptables-backup.rules"
-                " 2>/dev/null || touch /tmp/iptables-backup.rules"
+                f"iptables-save > {_TMP}/iptables-backup.rules"
+                f" 2>/dev/null || touch {_TMP}/iptables-backup.rules"
             ),
         },
         {
             "name": "Backup current ip6tables ruleset",
             "ansible.builtin.shell": (
-                "ip6tables-save > /tmp/ip6tables-backup.rules"
-                " 2>/dev/null || touch /tmp/ip6tables-backup.rules"
+                f"ip6tables-save > {_TMP}/ip6tables-backup.rules"
+                f" 2>/dev/null || touch {_TMP}/ip6tables-backup.rules"
             ),
         },
         {
@@ -238,10 +285,10 @@ def generate_iptables_playbook(
             "ansible.builtin.shell": (
                 "nohup bash -c '"
                 "sleep 60 && "
-                "iptables-restore < /tmp/iptables-backup.rules && "
-                "ip6tables-restore < /tmp/ip6tables-backup.rules"
-                "' > /tmp/iptables-revert.log 2>&1 & "
-                "echo $! > /tmp/iptables-revert.pid"
+                f"iptables-restore < {_TMP}/iptables-backup.rules && "
+                f"ip6tables-restore < {_TMP}/ip6tables-backup.rules"
+                f"' > {_TMP}/iptables-revert.log 2>&1 & "
+                f"echo $! > {_TMP}/iptables-revert.pid"
             ),
         },
         {
@@ -303,9 +350,9 @@ def generate_iptables_playbook(
         {
             "name": "Cancel automatic revert (SSH still works)",
             "ansible.builtin.shell": (
-                "if [ -f /tmp/iptables-revert.pid ]; then "
-                "kill $(cat /tmp/iptables-revert.pid) 2>/dev/null; "
-                "rm -f /tmp/iptables-revert.pid; "
+                f"if [ -f {_TMP}/iptables-revert.pid ]; then "
+                f"kill $(cat {_TMP}/iptables-revert.pid) 2>/dev/null; "
+                f"rm -f {_TMP}/iptables-revert.pid; "
                 "fi"
             ),
         },
@@ -340,18 +387,7 @@ def generate_iptables_playbook(
             ),
             "ignore_errors": True,
         },
-        {
-            "name": "Clean up backup files",
-            "ansible.builtin.file": {
-                "path": "{{ item }}",
-                "state": "absent",
-            },
-            "loop": [
-                "/tmp/iptables-backup.rules",
-                "/tmp/ip6tables-backup.rules",
-                "/tmp/iptables-revert.log",
-            ],
-        },
+        _cleanup_workdir_task(),
     ]
     playbook = [
         {
