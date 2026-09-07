@@ -14,7 +14,11 @@ class HostGroup(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    priority: Mapped[int] = mapped_column(Integer)  # higher = higher priority
+    # Unique: two groups sharing a priority made the merge winner for a host
+    # in both nondeterministic (BUG-69). The API has always rejected a
+    # duplicate with 409, but only with a read-then-write check that two
+    # concurrent requests can both pass; this is the constraint that holds.
+    priority: Mapped[int] = mapped_column(Integer, unique=True)  # higher = higher priority
     input_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
     output_policy: Mapped[str | None] = mapped_column(String(6), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

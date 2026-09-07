@@ -260,19 +260,6 @@ _No bugs are currently open._
       with `pending_reason` set and the parent left un-finalised until the
       queued sync completes. The second is more honest and more work.
 
-- [ ] **BUG-69** All seven merge engines order by `HostGroup.priority`
-      only, with no secondary key, and read each group's rules with an
-      unordered `SELECT`. `host_groups.priority` has no unique constraint —
-      only an application-level pre-check with a TOCTOU window — so two
-      groups can share a priority and a host in both gets a
-      nondeterministic winner that flips between syncs with no config
-      change and no drift reported. Independently: `FirewallRule.priority`
-      defaults to 0 for every rule, so within a group the first-match order
-      of an nftables ruleset is whatever the `SELECT` returned, and
-      `compute_diff` is set-based so it will never flag the reordering.
-      Add `.order_by(priority.desc(), id.asc())` throughout and the missing
-      unique index.
-
 - [ ] **BUG-71** Blocking work on the event loop:
       `api/_repo_scan.py:81,216` runs a `subprocess.run` git clone with a
       120s timeout inside an async handler, freezing the entire single-worker

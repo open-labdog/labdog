@@ -1,8 +1,8 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.merge_utils import ordered_groups_for_host
 from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
 from app.packages.models import PackageRepository, PackageRule
 from app.packages.schemas import EffectivePackageResponse, PackageRepositoryResponse
 
@@ -12,27 +12,22 @@ async def get_effective_packages(host_id: int, db: AsyncSession) -> list[Effecti
     Merge group-level package rules + host-level overrides into an effective list.
 
     Priority resolution:
-    - Groups ordered by priority DESC (highest first). First occurrence of a
-      package_name wins among groups.
+    - Groups ordered by priority DESC (highest first), ties by group id ASC.
+      First occurrence of a package_name wins among groups.
     - Host-level overrides replace group entries entirely (full record, not field merge).
     """
 
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     merged: dict[str, EffectivePackageResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(PackageRule).where(PackageRule.group_id == group_id))
+        result = await db.execute(
+            select(PackageRule)
+            .where(PackageRule.group_id == group_id)
+            .order_by(PackageRule.priority.desc(), PackageRule.id.asc())
+        )
         for rule in result.scalars().all():
             if rule.package_name not in merged:
                 merged[rule.package_name] = EffectivePackageResponse(
@@ -49,7 +44,11 @@ async def get_effective_packages(host_id: int, db: AsyncSession) -> list[Effecti
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(select(PackageRule).where(PackageRule.host_id == host_id))
+    host_result = await db.execute(
+        select(PackageRule)
+        .where(PackageRule.host_id == host_id)
+        .order_by(PackageRule.priority.desc(), PackageRule.id.asc())
+    )
     for rule in host_result.scalars().all():
         merged[rule.package_name] = EffectivePackageResponse(
             package_name=rule.package_name,
@@ -84,7 +83,9 @@ async def get_effective_repos(host_id: int, db: AsyncSession) -> list[PackageRep
         return []
 
     result = await db.execute(
-        select(PackageRepository).where(PackageRepository.group_id.in_(group_ids))
+        select(PackageRepository)
+        .where(PackageRepository.group_id.in_(group_ids))
+        .order_by(PackageRepository.id.asc())
     )
     repos = result.scalars().all()
 

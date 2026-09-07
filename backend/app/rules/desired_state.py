@@ -70,9 +70,15 @@ async def get_desired_state(
     )
     group_ids = [r[0] for r in memberships.all()]
 
-    # Fetch host-level rule overrides (needed in all branches)
+    # Fetch host-level rule overrides (needed in all branches). Ordered so
+    # the emitted first-match ruleset is stable across syncs (BUG-69):
+    # FirewallRule.priority defaults to 0 for every rule, so without the id
+    # tiebreak the order was whatever the SELECT happened to return, and the
+    # set-based diff engine never flags a re-ordering.
     host_rules_result = await db.execute(
-        select(FirewallRule).where(FirewallRule.host_id == host_id)
+        select(FirewallRule)
+        .where(FirewallRule.host_id == host_id)
+        .order_by(FirewallRule.priority.desc(), FirewallRule.id.asc())
     )
     host_rule_specs = firewall_rules_to_specs(host_rules_result.scalars().all())
 
@@ -89,7 +95,9 @@ async def get_desired_state(
 
     # 1 query for all rules across all groups (replaces N individual SELECTs)
     rules_result = await db.execute(
-        select(FirewallRule).where(FirewallRule.group_id.in_(group_ids))
+        select(FirewallRule)
+        .where(FirewallRule.group_id.in_(group_ids))
+        .order_by(FirewallRule.priority.desc(), FirewallRule.id.asc())
     )
     rules_by_group: dict[int, list] = {}
     for rule in rules_result.scalars().all():

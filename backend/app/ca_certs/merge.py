@@ -11,8 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ca_certs.models import CACertRule
 from app.ca_certs.schemas import EffectiveCACertResponse
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
+from app.merge_utils import ordered_groups_for_host
 
 
 def _state_str(state) -> str:
@@ -26,21 +25,15 @@ async def get_effective_ca_certs(host_id: int, db: AsyncSession) -> list[Effecti
     groups collapse to one entry, with source set to the first encountered
     group). Host-level rules then override any matching fingerprint.
     """
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc(), HostGroup.id.asc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     merged: dict[str, EffectiveCACertResponse] = {}
 
-    for group_id, group_name in groups:
-        result = await db.execute(select(CACertRule).where(CACertRule.group_id == group_id))
+    for group_id, group_name, _priority in groups:
+        result = await db.execute(
+            select(CACertRule).where(CACertRule.group_id == group_id).order_by(CACertRule.id.asc())
+        )
         for rule in result.scalars().all():
             if rule.fingerprint_sha256 not in merged:
                 merged[rule.fingerprint_sha256] = EffectiveCACertResponse(
@@ -57,7 +50,9 @@ async def get_effective_ca_certs(host_id: int, db: AsyncSession) -> list[Effecti
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(select(CACertRule).where(CACertRule.host_id == host_id))
+    host_result = await db.execute(
+        select(CACertRule).where(CACertRule.host_id == host_id).order_by(CACertRule.id.asc())
+    )
     for rule in host_result.scalars().all():
         merged[rule.fingerprint_sha256] = EffectiveCACertResponse(
             name=rule.name,

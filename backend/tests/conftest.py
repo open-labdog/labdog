@@ -274,11 +274,20 @@ def mock_celery_tasks():
 
 
 async def create_group(db, name=None, priority=None, description=None):
+    from sqlalchemy import func, select
+
     from app.models.host_group import HostGroup
 
+    if priority is None:
+        # ``host_groups.priority`` is unique since BUG-69, so the previous
+        # random pick would collide roughly once in a thousand pairs of
+        # groups. Take the next free slot instead — deterministic, and it
+        # keeps "created later ranks higher" for tests that care.
+        current_max = await db.scalar(select(func.max(HostGroup.priority)))
+        priority = (current_max or 0) + 1
     group = HostGroup(
         name=name or f"group-{uuid.uuid4().hex[:8]}",
-        priority=priority if priority is not None else int(uuid.uuid4().int % 1000) + 1,
+        priority=priority,
         description=description,
     )
     db.add(group)
