@@ -2,22 +2,14 @@
 
 import { ReactNode, useState, useEffect, useCallback } from 'react'
 import { ThemeProvider } from 'next-themes'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { AuthContext, User } from '@/lib/auth'
 import { API_BASE } from '@/lib/api'
+import { queryClient } from '@/lib/query-client'
 import { AuthGuard } from '@/components/auth-guard'
 import { SyncTrayProvider } from '@/lib/sync-tray'
 import { SyncTray } from '@/components/sync-tray'
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      refetchOnWindowFocus: false,
-    },
-  },
-})
 
 function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -50,6 +42,10 @@ function AuthProvider({ children }: { children: ReactNode }) {
       })
     } finally {
       setUser(null)
+      // Drop every cached response before leaving: without this the next
+      // account to sign in on this browser renders the previous one's
+      // data until each query refetches.
+      queryClient.clear()
       window.location.href = '/login'
     }
   }, [])

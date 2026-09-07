@@ -233,6 +233,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **An expired session sends you to the login page instead of failing silently
+  forever.** The sign-in cookie lasts 24 hours. When it lapsed mid-session
+  nothing noticed: every request kept failing and the UI raised an error toast
+  for each one, indefinitely, with no way back short of typing the login URL.
+  A 401 on an authenticated request now clears the cached data — so the next
+  account to sign in on that browser cannot briefly see the previous one's —
+  and redirects, once, however many requests fail at the same moment. Logging
+  out clears the cache too.
+
+- **The audit log reports failures instead of showing an empty page, and is no
+  longer capped at 50 entries.** The page caught every error and resolved as if
+  the request had succeeded with nothing in it, so a server error rendered as
+  "No audit entries found" and the error banner beneath it could never appear.
+  On a compliance surface, "nothing happened" and "we could not tell you what
+  happened" must not look the same. It also asked for no page size, so it got
+  the backend default of 50 and everything older was unreachable — including
+  from the column filters, which only ever searched what had been loaded. It
+  now pages through the log 100 entries at a time.
+
 - **Collecting a host's state is queued instead of running inside the request.**
   "Collect" opened an SSH connection and ran seven collectors one after another
   while the HTTP request waited, holding a database connection the whole time

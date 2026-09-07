@@ -268,15 +268,3 @@ _No bugs are currently open._
       action, in the table every claim scans and
       `metrics/aggregates.py:462` full-scans on each 15-second Prometheus
       refresh.
-
-- [ ] **BUG-75** Frontend, three related defects.
-      `app/(dashboard)/audit/page.tsx:109-120` catches every query failure
-      and resolves *successfully* with an empty array, so a 401 or a 500
-      renders as "No audit entries found" and the error banner below it is
-      unreachable dead code — the wrong failure mode for a compliance
-      surface. The same page requests no `limit`, so it is capped at the
-      backend default of 50 and everything older is unreachable, while the
-      column filters operate only on what was loaded. And nothing handles
-      401 globally (`lib/api.ts`), so once the 24h cookie expires every
-      query and mutation fails with error toasts indefinitely instead of
-      redirecting to login.
