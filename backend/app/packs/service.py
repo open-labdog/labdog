@@ -16,11 +16,12 @@ on-disk pack loader (``app.actions.packs``). Responsibilities:
 
 Callers (API endpoints, FastAPI lifespan, Celery worker startup) should
 use the high-level helpers: ``sync_pack``, ``sync_enabled_packs``,
-``load_db_packs``, ``delete_checkout``.
+``load_db_packs``, ``delete_checkout_async``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from datetime import UTC, datetime
@@ -272,6 +273,9 @@ def delete_checkout(pack_id: int) -> None:
     """Remove a git pack's managed checkout. Silent on missing; logs on error.
 
     Never called for local packs — LabDog doesn't own the directory.
+
+    Synchronous. Callers on an event loop want
+    :func:`delete_checkout_async`.
     """
     path = checkout_path_for(pack_id)
     if not path.exists():
@@ -280,3 +284,13 @@ def delete_checkout(pack_id: int) -> None:
         shutil.rmtree(path)
     except OSError:
         logger.warning("failed to delete pack checkout %s", path, exc_info=True)
+
+
+async def delete_checkout_async(pack_id: int) -> None:
+    """:func:`delete_checkout`, off the event loop (BUG-71).
+
+    An unlinked-file-at-a-time walk of a whole git checkout is bounded
+    by the repository's size rather than by anything LabDog controls,
+    and both callers are HTTP handlers in a single-worker process.
+    """
+    await asyncio.to_thread(delete_checkout, pack_id)

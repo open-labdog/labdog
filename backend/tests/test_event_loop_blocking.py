@@ -174,3 +174,51 @@ class TestStartupDoesNotWaitForGit:
 
         async with main_mod._lifespan(None):
             await asyncio.sleep(0.05)
+
+
+class TestThePackWalkRunsInAThread:
+    """``reload_registry_async`` reaches ``pack_policy``, which does an
+    ``rglob("*")`` over every enabled pack's root and parses the YAML of
+    every playbook it finds. Four API handlers call it, and the cost
+    scales with repository size — which is the operator's to choose."""
+
+    async def test_the_loop_keeps_ticking_while_packs_are_walked(self, db, monkeypatch):
+        import app.actions.packs as packs_mod
+        import app.actions.registry as registry_mod
+
+        real_load = packs_mod.load_packs_with_resolutions
+        calling_threads: list[int] = []
+
+        def _slow_load(*args, **kwargs):
+            calling_threads.append(threading.get_ident())
+            time.sleep(_BLOCK_SECONDS)
+            return real_load(*args, **kwargs)
+
+        monkeypatch.setattr(packs_mod, "load_packs_with_resolutions", _slow_load)
+        # Leave the process-wide registry alone; this is about where the
+        # rebuild runs, not what it produces.
+        monkeypatch.setattr(registry_mod, "_install", lambda _result: None)
+
+        ticks, _ = await _ticks_while(registry_mod.reload_registry_async(db))
+
+        assert ticks > 1, "the event loop was blocked for the whole pack walk"
+        assert calling_threads[0] != threading.get_ident(), "the walk ran on the loop's thread"
+
+
+class TestTheCheckoutRemovalRunsInAThread:
+    async def test_the_loop_keeps_ticking_while_a_checkout_is_deleted(self, monkeypatch, tmp_path):
+        from app.packs import service as service_mod
+
+        calling_threads: list[int] = []
+
+        def _slow_rmtree(_path):
+            calling_threads.append(threading.get_ident())
+            time.sleep(_BLOCK_SECONDS)
+
+        monkeypatch.setattr(service_mod, "checkout_path_for", lambda _pack_id: tmp_path)
+        monkeypatch.setattr("shutil.rmtree", _slow_rmtree)
+
+        ticks, _ = await _ticks_while(service_mod.delete_checkout_async(1))
+
+        assert ticks > 1, "the event loop was blocked for the whole rmtree"
+        assert calling_threads[0] != threading.get_ident()

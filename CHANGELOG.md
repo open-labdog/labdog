@@ -254,6 +254,11 @@ The format follows [Keep a Changelog]; LabDog follows
     and a running half that does not, so the session closes before the run
     starts.
 
+  Two smaller ones went with them: rebuilding the action registry walks every
+  file in every enabled pack repository and parses the YAML it finds, and
+  deleting a pack removes its whole checkout. Both are reached from request
+  handlers and both now run on a worker thread.
+
 - **Group merge results are deterministic.** Every module — firewall, cron,
   packages, services, users, `/etc/hosts` entries, CA certs, resolver —
   resolves a host's effective configuration by walking the groups it belongs

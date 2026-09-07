@@ -34,6 +34,7 @@ from. They MUST check ``ActionDefinition.is_unresolved`` (or
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -172,7 +173,15 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     packs.extend(await load_db_packs(db))
 
     resolutions, prior_winners = await _load_resolutions_and_snapshot_async(db)
-    result = load_packs_with_resolutions(
+    # Off the loop (BUG-71). This walks every file in every enabled pack
+    # repository — ``pack_policy`` does an ``rglob("*")`` over each root —
+    # and parses the YAML of every playbook and manifest it finds. The
+    # cost scales with repository size, which is the operator's to choose,
+    # and four API handlers reach this. ``packs`` holds plain dataclasses
+    # and the resolution maps are plain dicts, so nothing crossing into
+    # the thread is attached to a session.
+    result = await asyncio.to_thread(
+        load_packs_with_resolutions,
         packs,
         resolutions=resolutions,
         prior_winners=prior_winners,
