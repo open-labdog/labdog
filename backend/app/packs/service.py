@@ -29,13 +29,13 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.git_sync import GitSyncError, sync_remote_pack
+from app.actions.git_sync import GitSyncError
 from app.actions.packs import Pack
 from app.config import settings
 from app.crypto import decrypt_ssh_key, get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.ssh_key import SSHKey
-from app.packs.git_auth import git_auth_context
+from app.packs.clone import clone_to_thread
 from app.packs.models import ActionPack, PackSourceType
 from app.packs.redact import redact
 
@@ -160,15 +160,21 @@ async def sync_pack(
         )
 
     try:
-        with git_auth_context(
-            ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
-        ) as auth:
-            sha = sync_remote_pack(repo.url, repo.branch, path, auth=auth)
-            # SEC-27: trust on first use. Recorded here so the next sync
-            # of this repository is verified rather than trusted.
-            learned = auth.learned_host_key()
-            if learned:
-                repo.ssh_host_key_entry = learned
+        # Off the event loop: git can sit on an unreachable remote for the
+        # full 120 s timeout, and this is reached from the API process as
+        # well as the workers (BUG-71).
+        sha, learned = await clone_to_thread(
+            repo.url,
+            repo.branch,
+            path,
+            ssh_key=ssh_key,
+            token=token,
+            host_key_entry=repo.ssh_host_key_entry,
+        )
+        # SEC-27: trust on first use. Recorded here so the next sync
+        # of this repository is verified rather than trusted.
+        if learned:
+            repo.ssh_host_key_entry = learned
     except (GitSyncError, ValueError) as exc:
         secrets = [s for s in (ssh_key, token) if s]
         scrubbed = redact(str(exc), secrets)
