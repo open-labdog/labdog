@@ -37,39 +37,38 @@ test.describe("Audit page", () => {
 
     // Either real rows or the empty state — the page no longer falls back
     // to stub data, so an empty table now genuinely means no entries.
-    await expect(
-      page.getByRole("table").or(page.getByText("No audit entries found."))
-    ).toBeVisible({ timeout: 10000 })
+    // The table is always rendered; when there are no rows it carries the
+    // empty message in a cell. `getByRole("table").or(getByText(...))`
+    // matched both and tripped strict mode.
+    await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
   })
 
   test("filter by action type filters entries", async ({ page }) => {
     await page.goto("/audit")
 
     // Wait for entries to load
-    await expect(
-      page.getByRole("table").or(page.getByText("No audit entries found."))
-    ).toBeVisible({ timeout: 10000 })
+    // The table is always rendered; when there are no rows it carries the
+    // empty message in a cell. `getByRole("table").or(getByText(...))`
+    // matched both and tripped strict mode.
+    await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
 
     // Open Action filter and click Create option
     await page.getByRole("button", { name: "Filter Action" }).click()
     // After filtering, either entries remain or empty state shows
-    await expect(
-      page.getByRole("table").or(page.getByText("No audit entries found."))
-    ).toBeVisible()
+    await expect(page.getByRole("table")).toBeVisible()
   })
 
   test("filter by entity type filters entries", async ({ page }) => {
     await page.goto("/audit")
 
-    await expect(
-      page.getByRole("table").or(page.getByText("No audit entries found."))
-    ).toBeVisible({ timeout: 10000 })
+    // The table is always rendered; when there are no rows it carries the
+    // empty message in a cell. `getByRole("table").or(getByText(...))`
+    // matched both and tripped strict mode.
+    await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
 
     // Entity filter is present
     await expect(page.getByRole("button", { name: "Filter Entity" })).toBeVisible()
-    await expect(
-      page.getByRole("table").or(page.getByText("No audit entries found."))
-    ).toBeVisible()
+    await expect(page.getByRole("table")).toBeVisible()
   })
 
   test("table shows expected columns", async ({ page }) => {
@@ -96,7 +95,11 @@ test.describe("Audit page", () => {
     )
     await page.goto("/audit")
 
-    await expect(page.getByText(/Could not load the audit log/)).toBeVisible({ timeout: 10000 })
+    // The banner names the failure; the table's empty cell says the log
+    // could not be loaded. Target the banner specifically.
+    await expect(page.getByText("Could not load the audit log: boom")).toBeVisible({
+      timeout: 10000,
+    })
     await expect(page.getByText("No audit entries found.")).toHaveCount(0)
   })
 
