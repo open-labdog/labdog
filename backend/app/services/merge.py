@@ -1,8 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
+from app.merge_utils import ordered_groups_for_host
 from app.services.models import ServiceRule
 from app.services.schemas import EffectiveServiceResponse
 
@@ -12,22 +11,13 @@ async def get_effective_services(host_id: int, db: AsyncSession) -> list[Effecti
     Merge group-level service rules + host-level overrides into an effective list.
 
     Priority resolution:
-    - Groups ordered by priority DESC (highest first). First occurrence of a
-      service_name wins among groups.
+    - Groups ordered by priority DESC (highest first), ties by group id ASC.
+      First occurrence of a service_name wins among groups.
     - Host-level overrides replace group entries entirely (full record, not field merge).
     """
 
     # 1. Query host's group memberships with priority, ordered DESC
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     # 2. For each group (highest priority first), collect rules keyed by service_name.
@@ -35,7 +25,11 @@ async def get_effective_services(host_id: int, db: AsyncSession) -> list[Effecti
     merged: dict[str, EffectiveServiceResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(ServiceRule).where(ServiceRule.group_id == group_id))
+        result = await db.execute(
+            select(ServiceRule)
+            .where(ServiceRule.group_id == group_id)
+            .order_by(ServiceRule.priority.desc(), ServiceRule.id.asc())
+        )
         for rule in result.scalars().all():
             if rule.service_name not in merged:
                 merged[rule.service_name] = EffectiveServiceResponse(
@@ -52,7 +46,11 @@ async def get_effective_services(host_id: int, db: AsyncSession) -> list[Effecti
                 )
 
     # 3. Query host-level overrides
-    host_result = await db.execute(select(ServiceRule).where(ServiceRule.host_id == host_id))
+    host_result = await db.execute(
+        select(ServiceRule)
+        .where(ServiceRule.host_id == host_id)
+        .order_by(ServiceRule.priority.desc(), ServiceRule.id.asc())
+    )
     host_overrides = host_result.scalars().all()
 
     # 4. Host overrides REPLACE group entries entirely

@@ -1,8 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
+from app.merge_utils import ordered_groups_for_host
 from app.user_mgmt.models import LinuxGroup, LinuxUser
 from app.user_mgmt.schemas import EffectiveLinuxGroupResponse, EffectiveLinuxUserResponse
 
@@ -12,22 +11,17 @@ async def get_effective_users(host_id: int, db: AsyncSession) -> list[EffectiveL
 
     Merge key: username. Higher priority group wins. Host override = full replacement.
     """
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     merged: dict[str, EffectiveLinuxUserResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(LinuxUser).where(LinuxUser.group_id == group_id))
+        result = await db.execute(
+            select(LinuxUser)
+            .where(LinuxUser.group_id == group_id)
+            .order_by(LinuxUser.priority.desc(), LinuxUser.id.asc())
+        )
         for rule in result.scalars().all():
             if rule.username not in merged:
                 merged[rule.username] = EffectiveLinuxUserResponse(
@@ -45,7 +39,11 @@ async def get_effective_users(host_id: int, db: AsyncSession) -> list[EffectiveL
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(select(LinuxUser).where(LinuxUser.host_id == host_id))
+    host_result = await db.execute(
+        select(LinuxUser)
+        .where(LinuxUser.host_id == host_id)
+        .order_by(LinuxUser.priority.desc(), LinuxUser.id.asc())
+    )
     for rule in host_result.scalars().all():
         merged[rule.username] = EffectiveLinuxUserResponse(
             username=rule.username,
@@ -70,22 +68,17 @@ async def get_effective_groups(host_id: int, db: AsyncSession) -> list[Effective
 
     Merge key: groupname. Higher priority group wins. Host override = full replacement.
     """
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     merged: dict[str, EffectiveLinuxGroupResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(LinuxGroup).where(LinuxGroup.group_id == group_id))
+        result = await db.execute(
+            select(LinuxGroup)
+            .where(LinuxGroup.group_id == group_id)
+            .order_by(LinuxGroup.priority.desc(), LinuxGroup.id.asc())
+        )
         for rule in result.scalars().all():
             if rule.groupname not in merged:
                 merged[rule.groupname] = EffectiveLinuxGroupResponse(
@@ -97,7 +90,11 @@ async def get_effective_groups(host_id: int, db: AsyncSession) -> list[Effective
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(select(LinuxGroup).where(LinuxGroup.host_id == host_id))
+    host_result = await db.execute(
+        select(LinuxGroup)
+        .where(LinuxGroup.host_id == host_id)
+        .order_by(LinuxGroup.priority.desc(), LinuxGroup.id.asc())
+    )
     for rule in host_result.scalars().all():
         merged[rule.groupname] = EffectiveLinuxGroupResponse(
             groupname=rule.groupname,

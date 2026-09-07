@@ -3,8 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.cron.models import CronJob
 from app.cron.schemas import EffectiveCronJobResponse
-from app.models.host import HostGroupMembership
-from app.models.host_group import HostGroup
+from app.merge_utils import ordered_groups_for_host
 
 
 async def get_effective_cron_jobs(host_id: int, db: AsyncSession) -> list[EffectiveCronJobResponse]:
@@ -13,22 +12,17 @@ async def get_effective_cron_jobs(host_id: int, db: AsyncSession) -> list[Effect
     Merge key: (name, user) composite. Higher priority group wins.
     Host override = full replacement.
     """
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     merged: dict[tuple[str, str], EffectiveCronJobResponse] = {}
 
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(CronJob).where(CronJob.group_id == group_id))
+        result = await db.execute(
+            select(CronJob)
+            .where(CronJob.group_id == group_id)
+            .order_by(CronJob.priority.desc(), CronJob.id.asc())
+        )
         for rule in result.scalars().all():
             key = (rule.name, rule.user)
             if key not in merged:
@@ -46,7 +40,11 @@ async def get_effective_cron_jobs(host_id: int, db: AsyncSession) -> list[Effect
                     source_name=group_name,
                 )
 
-    host_result = await db.execute(select(CronJob).where(CronJob.host_id == host_id))
+    host_result = await db.execute(
+        select(CronJob)
+        .where(CronJob.host_id == host_id)
+        .order_by(CronJob.priority.desc(), CronJob.id.asc())
+    )
     for rule in host_result.scalars().all():
         key = (rule.name, rule.user)
         merged[key] = EffectiveCronJobResponse(

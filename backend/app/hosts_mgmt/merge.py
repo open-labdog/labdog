@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.hosts_mgmt.models import HostsEntry
 from app.hosts_mgmt.schemas import EffectiveHostsEntryResponse
-from app.models.host import Host, HostGroupMembership
-from app.models.host_group import HostGroup
+from app.merge_utils import ordered_groups_for_host
+from app.models.host import Host
 
 
 class HostRefUnresolved(ValueError):
@@ -78,28 +78,27 @@ async def get_effective_hosts_entries(
             source_name="system",
         )
 
-    # 2. Query group memberships ordered by priority DESC
-    memberships = await db.execute(
-        select(
-            HostGroupMembership.c.group_id,
-            HostGroup.name,
-            HostGroup.priority,
-        )
-        .join(HostGroup, HostGroup.id == HostGroupMembership.c.group_id)
-        .where(HostGroupMembership.c.host_id == host_id)
-        .order_by(HostGroup.priority.desc())
-    )
+    # 2. Query group memberships in merge order (priority DESC, id ASC)
+    memberships = await db.execute(ordered_groups_for_host(host_id))
     groups = memberships.all()
 
     # 3. For each group (highest priority first), collect entries
     all_group_entries: list[tuple[int, str, HostsEntry]] = []
     for group_id, group_name, _priority in groups:
-        result = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group_id))
+        result = await db.execute(
+            select(HostsEntry)
+            .where(HostsEntry.group_id == group_id)
+            .order_by(HostsEntry.priority.desc(), HostsEntry.id.asc())
+        )
         for entry in result.scalars().all():
             all_group_entries.append((group_id, group_name, entry))
 
     # 4. Host overrides
-    host_result = await db.execute(select(HostsEntry).where(HostsEntry.host_id == host_id))
+    host_result = await db.execute(
+        select(HostsEntry)
+        .where(HostsEntry.host_id == host_id)
+        .order_by(HostsEntry.priority.desc(), HostsEntry.id.asc())
+    )
     host_entries = list(host_result.scalars().all())
 
     # Batch-resolve host_ref_id → (ip, hostname)

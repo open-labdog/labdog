@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, func, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
@@ -21,6 +22,27 @@ class BulkAddHostsRequest(BaseModel):
 
 
 router = APIRouter(prefix="/groups", tags=["groups"])
+
+
+async def _flush_or_conflict(db: AsyncSession) -> None:
+    """Flush, turning a unique-constraint violation into the intended 409.
+
+    The read-then-write checks in the handlers are a nicety for the common
+    case; two concurrent requests can both pass them. ``name`` has always
+    been unique in the database and ``priority`` is since BUG-69, so the
+    race now lands here instead of as a 500.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        orig = getattr(exc, "orig", None)
+        marker = f"{getattr(orig, 'constraint_name', '') or ''} {orig}"
+        if "priority" in marker:
+            raise HTTPException(status_code=409, detail="Group priority already in use") from exc
+        if "name" in marker:
+            raise HTTPException(status_code=409, detail="Group name already exists") from exc
+        raise
 
 
 @router.get("", response_model=list[GroupResponse])
@@ -48,7 +70,7 @@ async def create_group(
         raise HTTPException(status_code=409, detail="Group priority already in use")
     group = HostGroup(**body.model_dump())
     db.add(group)
-    await db.flush()
+    await _flush_or_conflict(db)
     await log_action(
         db=db,
         action="create",
@@ -214,7 +236,7 @@ async def update_group(
             raise HTTPException(status_code=422, detail=f"'{non_nullable}' cannot be null")
     for field, value in updates.items():
         setattr(group, field, value)
-    await db.flush()
+    await _flush_or_conflict(db)
     await log_action(
         db=db,
         action="update",

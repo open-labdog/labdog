@@ -233,6 +233,31 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Group merge results are deterministic.** Every module — firewall, cron,
+  packages, services, users, `/etc/hosts` entries, CA certs, resolver —
+  resolves a host's effective configuration by walking the groups it belongs
+  to from highest priority down and letting the first match win. The walk was
+  ordered by priority alone, so two groups sharing a priority left the winner
+  to whatever order the database happened to return, and a host in both could
+  get a different answer on one sync than on the last with nobody having
+  changed anything. Nothing surfaced it either: drift is computed as a set
+  comparison, so a re-ordering is not drift.
+
+  `host_groups.priority` is unique now. The API has always answered 409 on a
+  duplicate, but with a check that two simultaneous requests could both pass;
+  the database enforces it. **On upgrade, existing duplicates are renumbered**
+  — the group that was created first keeps its priority and the rest drop to
+  the next free value down, which preserves the order they already had. Every
+  change is logged by the migration. A racing create or update now answers 409
+  instead of 500.
+
+  The same ordering was missing one level down, for the rules *inside* a
+  group. Firewall rules are the visible case: `priority` defaults to 0 for
+  every rule, so the first-match order of the emitted nftables ruleset was
+  whatever the query returned, and editing an unrelated rule could silently
+  reshuffle it. Rules are now read highest priority first, ties broken by
+  creation order, in every module.
+
 - **Deleting a host no longer destroys its action transcripts.** The previous
   release stopped `DELETE /api/hosts/{id}` from failing and kept the run row
   itself, with a record of what it had targeted. It did not keep the per-host
