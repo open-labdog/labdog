@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
 import { PlayIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
+import { collectHostState, queueHostStateCollection } from "@/lib/collect-state"
 import type { Host, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge } from "@/components/status-badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -160,21 +161,24 @@ export default function DashboardPage() {
 
   const handleCheckAll = async () => {
     setCheckingAll(true)
+    // Each of these now queues a run and returns (BUG-74) rather than
+    // holding a connection open for seven SSH collectors — which is what
+    // made this button, fired across the whole fleet at once, able to
+    // exhaust the pool and take unrelated requests down with it. The
+    // hosts list picks the results up as the runs land.
     await Promise.allSettled(
-      allHosts.map((h) =>
-        apiFetch(`/api/hosts/${h.id}/collect-state`, { method: "POST" }).catch(() => null)
-      )
+      allHosts.map((h) => queueHostStateCollection(h.id).catch(() => null))
     )
     await refetchHosts()
     setCheckingAll(false)
-    showSuccess("State collected for all hosts")
+    showSuccess("State collection queued for all hosts")
   }
 
   const handleSyncHost = async (hostId: number) => {
     setSyncingHost(hostId)
     try {
-      await apiFetch(`/api/hosts/${hostId}/collect-state`, { method: "POST" })
-      showSuccess("State collection triggered")
+      await collectHostState(hostId)
+      showSuccess("State collected")
       await refetchHosts()
     } catch {
       showError("Failed to trigger state collection")

@@ -125,8 +125,9 @@ export interface ModuleCurrentState {
   drift_check_enabled: boolean
   error_message: string | null
   // Non-fatal notices computed at collect time (e.g. the firewall
-  // competing-store warning). Only present on the POST /collect-state
-  // response; empty on the cached GET /current-state.
+  // competing-store warning). Always empty here: collection is queued
+  // now (BUG-74), so the notices ride on the run's output instead —
+  // see lib/collect-state.ts.
   warnings?: string[]
 }
 export interface SSHKey {
