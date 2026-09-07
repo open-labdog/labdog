@@ -17,8 +17,46 @@ import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ansible_runtime.composer import CANONICAL_ORDER, PLAY_NAME_TO_MODULE
-from app.sync.orchestrator import _runner_events_to_task_events, orchestrate_host_sync
+from app.sync.orchestrator import (
+    _runner_events_to_task_events,
+    build_host_sync_plan,
+    execute_host_sync_plan,
+)
 from tests.conftest import create_host, create_ssh_key
+
+
+async def orchestrate_host_sync(
+    host_id: int,
+    module_filter: list[str] | None,
+    db: AsyncSession,
+    *,
+    decrypt_key_fn,
+    run_ansible_fn,
+    ssh_key_path: str,
+    private_data_dir: str,
+    timeout: int | None = None,
+) -> tuple[dict[str, str], str, str]:
+    """Both halves in one call, composed the way the Celery wrapper does.
+
+    Production keeps them apart so the database session can close before
+    the ansible run starts (BUG-71). These tests are about the pipeline
+    end to end and hold no session worth releasing, so they compose it
+    back together here rather than repeating two calls thirteen times.
+    """
+    plan = await build_host_sync_plan(
+        host_id,
+        module_filter,
+        db,
+        decrypt_key_fn=decrypt_key_fn,
+        ssh_key_path=ssh_key_path,
+    )
+    return execute_host_sync_plan(
+        plan,
+        run_ansible_fn=run_ansible_fn,
+        private_data_dir=private_data_dir,
+        timeout=timeout,
+    )
+
 
 # These tests touch the real DB via testcontainers (factories require
 # it) — mark as integration so they share the same session/engine

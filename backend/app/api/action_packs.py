@@ -29,7 +29,7 @@ from app.packs.schemas import (
     ActionPackUpdate,
     ClaimAllKeysResponse,
 )
-from app.packs.service import delete_checkout, sync_pack
+from app.packs.service import delete_checkout_async, sync_pack
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +258,7 @@ async def update_action_pack(
     await db.refresh(pack)
 
     if drop_git_checkout:
-        delete_checkout(pack.id)
+        await delete_checkout_async(pack.id)
 
     if needs_resync and pack.enabled:
         await sync_pack(db, pack)
@@ -296,7 +296,7 @@ async def delete_action_pack(
     await db.delete(pack)
     await db.commit()
 
-    delete_checkout(pack_id)
+    await delete_checkout_async(pack_id)
     await reload_registry_async(db)
 
 

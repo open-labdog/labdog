@@ -12,6 +12,7 @@ C3 ships ``POST /api/git-repos/{repo_id}/scan``. C4 will append
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 import tempfile
@@ -21,12 +22,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.git_sync import GitSyncError, sync_remote_pack
+from app.actions.git_sync import GitSyncError
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.models.git_repository import GitRepository
 from app.models.user import User
-from app.packs.git_auth import git_auth_context
+from app.packs.clone import clone_to_thread
 from app.packs.redact import redact
 from app.packs.repo_scanner import scan_repository
 from app.packs.scan_conflicts import annotate_scan
@@ -77,22 +78,28 @@ async def scan_repo(
     clone_dir = Path(tempfile.mkdtemp(prefix="labdog-scan-"))
     try:
         try:
-            with git_auth_context(
-                ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
-            ) as auth:
-                head_sha = sync_remote_pack(repo.url, repo.branch, clone_dir, auth=auth)
-                # SEC-27: trust on first use, so later syncs are verified.
-                learned = auth.learned_host_key()
-                if learned:
-                    repo.ssh_host_key_entry = learned
-                    await db.commit()
+            # BUG-71: the clone and the tree walk both run off the loop.
+            # git alone can hold it for 120 s against an unreachable
+            # remote, and this process serves every request there is.
+            head_sha, learned = await clone_to_thread(
+                repo.url,
+                repo.branch,
+                clone_dir,
+                ssh_key=ssh_key,
+                token=token,
+                host_key_entry=repo.ssh_host_key_entry,
+            )
+            # SEC-27: trust on first use, so later syncs are verified.
+            if learned:
+                repo.ssh_host_key_entry = learned
+                await db.commit()
         except (GitSyncError, ValueError) as exc:
             secrets = [s for s in (ssh_key, token) if s]
             scrubbed = redact(str(exc), secrets) or "clone failed"
             logger.warning("scan: clone failed for repo %r: %s", repo.name, scrubbed)
             raise HTTPException(status_code=502, detail=scrubbed) from None
 
-        result = scan_repository(clone_dir, repo_name=repo.name)
+        result = await asyncio.to_thread(scan_repository, clone_dir, repo_name=repo.name)
         annotated = await annotate_scan(db, result)
 
         return RepoScanResponse(
@@ -106,7 +113,7 @@ async def scan_repo(
             head_sha=head_sha,
         )
     finally:
-        shutil.rmtree(clone_dir, ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, clone_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -219,22 +226,25 @@ async def activate_repo(
     clone_dir = Path(tempfile.mkdtemp(prefix="labdog-activate-"))
     try:
         try:
-            with git_auth_context(
-                ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
-            ) as auth:
-                head_sha = sync_remote_pack(repo.url, repo.branch, clone_dir, auth=auth)
-                # SEC-27: trust on first use, so later syncs are verified.
-                learned = auth.learned_host_key()
-                if learned:
-                    repo.ssh_host_key_entry = learned
-                    await db.commit()
+            head_sha, learned = await clone_to_thread(
+                repo.url,
+                repo.branch,
+                clone_dir,
+                ssh_key=ssh_key,
+                token=token,
+                host_key_entry=repo.ssh_host_key_entry,
+            )
+            # SEC-27: trust on first use, so later syncs are verified.
+            if learned:
+                repo.ssh_host_key_entry = learned
+                await db.commit()
         except (GitSyncError, ValueError) as exc:
             secrets = [s for s in (ssh_key, token) if s]
             scrubbed = redact(str(exc), secrets) or "clone failed"
             logger.warning("activate: clone failed for %r: %s", repo.name, scrubbed)
             raise HTTPException(status_code=502, detail=scrubbed) from None
 
-        scan = scan_repository(clone_dir, repo_name=repo.name)
+        scan = await asyncio.to_thread(scan_repository, clone_dir, repo_name=repo.name)
         annotated = await annotate_scan(db, scan)
 
         # Validate each submitted pack still exists in the scan.
@@ -509,7 +519,7 @@ async def activate_repo(
             head_sha=head_sha,
         )
     finally:
-        shutil.rmtree(clone_dir, ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, clone_dir, ignore_errors=True)
 
 
 async def _disambiguate_pack_name(

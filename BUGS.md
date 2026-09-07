@@ -260,17 +260,6 @@ _No bugs are currently open._
       with `pending_reason` set and the parent left un-finalised until the
       queued sync completes. The second is more honest and more work.
 
-- [ ] **BUG-71** Blocking work on the event loop:
-      `api/_repo_scan.py:81,216` runs a `subprocess.run` git clone with a
-      120s timeout inside an async handler, freezing the entire single-worker
-      API including `/health` and the terminal WebSocket;
-      `main.py:263-265` does per-pack git sync in the lifespan, so an
-      unreachable remote stalls startup past the container healthcheck and
-      the orchestrator restarts it in a loop; and
-      `tasks/host_sync_orchestrator.py:702-712` holds an open Postgres
-      transaction and its asyncpg connection for the entire ansible run,
-      up to 900s.
-
 - [ ] **BUG-73** No index supports `check_host_busy`, which runs three
       queries per claim and sequential-scans `action_runs` and
       `action_host_runs` on every one. Neither table has any retention job,

@@ -1,8 +1,7 @@
 """Celery task wrapper for the coalesced per-host sync orchestrator (v0.2.0).
 
-The wrapper drives the full lifecycle that the pure orchestrator at
-``app.sync.orchestrator.orchestrate_host_sync`` does *not* concern
-itself with:
+The wrapper drives the full lifecycle that the pure orchestrator in
+``app.sync.orchestrator`` does *not* concern itself with:
 
 1. Pre-run DB writes flipping ``SyncJob.status`` to ``running`` and
    seeding one ``HostModuleStatus`` row per module the run will touch.
@@ -10,8 +9,11 @@ itself with:
    directory (``/dev/shm`` when available, default tmpdir otherwise).
 3. Timeout computation as ``base + per_module_budget * len(modules)``,
    floored by the existing ``ansible.playbook_timeout`` setting.
-4. Driving ``orchestrate_host_sync`` via ``asyncio.run`` (sync Celery
-   task, like the other tasks under ``app.tasks``).
+4. Driving the orchestrator via ``asyncio.run`` (sync Celery task,
+   like the other tasks under ``app.tasks``). The plan is built with a
+   session open and the ansible run happens with it closed — the run
+   takes minutes and an asyncpg connection held across it is one the
+   rest of the process cannot have (BUG-71).
 5. Atomic post-run DB writes — ``SyncJob`` final state, per-module
    ``HostModuleStatus`` rows, and one composite ``AuditLog`` row — all
    committed together.
@@ -52,7 +54,7 @@ from sqlalchemy import select
 
 from app.db import task_session
 from app.enum_utils import enum_str
-from app.sync.orchestrator import orchestrate_host_sync
+from app.sync.orchestrator import build_host_sync_plan, execute_host_sync_plan
 from app.tasks import celery_app
 
 if TYPE_CHECKING:
@@ -734,17 +736,24 @@ async def _async_run(
             if modules_to_orchestrate:
                 from app.ansible_runtime.runner import run_ansible
 
+                # BUG-71: the session closes here, before the run. It was
+                # held open for the whole playbook — up to the full
+                # timeout, computed above — which parks one connection
+                # from a small pool per concurrent sync.
                 async with task_session() as db:
-                    module_outcomes, _playbook, _inventory = await orchestrate_host_sync(
+                    plan = await build_host_sync_plan(
                         host_id,
                         orchestrator_filter,
                         db,
                         decrypt_key_fn=decrypt_ssh_key,
-                        run_ansible_fn=run_ansible,
                         ssh_key_path=ssh_key_path,
-                        private_data_dir=private_data_dir,
-                        timeout=timeout,
                     )
+                module_outcomes, _playbook, _inventory = execute_host_sync_plan(
+                    plan,
+                    run_ansible_fn=run_ansible,
+                    private_data_dir=private_data_dir,
+                    timeout=timeout,
+                )
         except Exception as exc:
             # SEC-06: redact tmpfs SSH-key paths from the captured
             # message before it lands in DB columns the API surfaces.
@@ -756,7 +765,7 @@ async def _async_run(
                 m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
             }
             logger.exception(
-                "orchestrate_host_sync raised for job_id=%s host_id=%s", job_id, host_id
+                "host sync orchestration raised for job_id=%s host_id=%s", job_id, host_id
             )
 
         # --- Phase 3: finalise (atomic) ------------------------------

@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import ipaddress
 import json
 import logging
@@ -404,11 +406,42 @@ class HTTPSRedirectMiddleware:
 # ---------------------------------------------------------------------------
 
 
+async def _sync_packs_then_reload() -> None:
+    """Refresh every enabled pack from its remote, then refold the registry.
+
+    Runs as a background task off the startup path (BUG-71). Each pack
+    is a git clone with a 120 s timeout per invocation, so on a remote
+    that is merely unreachable this used to hold the lifespan open past
+    the container healthcheck and the orchestrator restarted the process
+    in a loop — a failure that repeats forever because restarting does
+    not make the remote reachable.
+
+    Nothing here is on the critical path: the registry has already been
+    loaded from what is on disk before this starts, so the process is
+    serving actions the whole time. This only picks up commits pushed
+    since the last run.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.packs.service import sync_enabled_packs  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await sync_enabled_packs(session)
+            await reload_registry_async(session)
+    except asyncio.CancelledError:
+        logger.info("action-pack startup sync cancelled at shutdown")
+        raise
+    except Exception:
+        logger.exception("action-pack startup sync failed; on-disk packs only")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Startup: sync every enabled action pack from its git remote, then
-    fold them into the in-memory action registry. Failures are logged
-    per-pack but don't prevent the app from booting — bundled actions
+    """Startup: fold the packs already on disk into the action registry,
+    then refresh them from their git remotes in the background. Failures
+    are logged but don't prevent the app from booting — bundled actions
     are always available."""
     logger = logging.getLogger(__name__)
 
@@ -430,17 +463,23 @@ async def _lifespan(app: FastAPI):
             exc_info=True,
         )
 
+    # On the critical path: reads what is already checked out, no network.
     try:
         from app.actions.registry import reload_registry_async  # noqa: PLC0415
         from app.db import AsyncSessionLocal  # noqa: PLC0415
-        from app.packs.service import sync_enabled_packs  # noqa: PLC0415
 
         async with AsyncSessionLocal() as session:
-            await sync_enabled_packs(session)
             await reload_registry_async(session)
     except Exception:
-        logger.exception("action-pack startup sync failed; bundled pack only")
-    yield
+        logger.exception("action registry load failed; bundled pack only")
+
+    sync_task = asyncio.create_task(_sync_packs_then_reload())
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sync_task
 
 
 def create_app() -> FastAPI:

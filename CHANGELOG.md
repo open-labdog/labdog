@@ -233,6 +233,32 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Slow git and long playbooks no longer stall the rest of the process.**
+  Three unrelated places did blocking work where it stopped everything else:
+
+  - Scanning or activating a git repository shelled out to `git` from inside
+    the request handler. The API is a single worker, so a slow or unreachable
+    remote did not just make that one request wait — it froze every other
+    request, `/health` and the terminal WebSocket included, for up to the
+    120-second git timeout. The clone and the repository walk now run on a
+    worker thread.
+  - Startup synced every enabled action pack from its remote before serving.
+    An unreachable remote held startup open past the container healthcheck,
+    the orchestrator restarted the process, and restarting did not make the
+    remote reachable. The registry is now loaded from what is already on disk
+    before the app serves, and the git refresh runs in the background; when it
+    finishes, the registry is refolded.
+  - A host sync held a database session — and one connection from a small
+    pool — open for the entire ansible run, up to the full playbook timeout.
+    The orchestrator is now split into a planning half that reads the database
+    and a running half that does not, so the session closes before the run
+    starts.
+
+  Two smaller ones went with them: rebuilding the action registry walks every
+  file in every enabled pack repository and parses the YAML it finds, and
+  deleting a pack removes its whole checkout. Both are reached from request
+  handlers and both now run on a worker thread.
+
 - **Group merge results are deterministic.** Every module — firewall, cron,
   packages, services, users, `/etc/hosts` entries, CA certs, resolver —
   resolves a host's effective configuration by walking the groups it belongs

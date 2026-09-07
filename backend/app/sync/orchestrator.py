@@ -1,24 +1,33 @@
 """Coalesced per-host sync orchestrator (v0.2.0).
 
-The orchestrator wires together the building blocks landed in earlier
-commits — desired-state queries, fragment adapters, the playbook
-composer, the inventory generator, ansible-runner dispatch, and the
-outcome aggregator — into a single async function that produces a
-unified playbook for a host, runs it once, and reports per-module
-outcomes.
+The orchestrator wires together the building blocks — desired-state
+queries, fragment adapters, the playbook composer, the inventory
+generator, ansible-runner dispatch, and the outcome aggregator — into
+one unified playbook per host, run once, reported per module.
+
+It comes in two halves, split at the database boundary (BUG-71):
+
+* :func:`build_host_sync_plan` does every database read and produces a
+  :class:`HostSyncPlan`, which holds no session and no ORM object.
+* :func:`execute_host_sync_plan` runs the playbook and aggregates the
+  outcomes, touching no database at all.
+
+That is what lets the caller close its session before a run that lasts
+minutes. Doing both under one open session parked an asyncpg connection
+from a small pool for the entire playbook.
 
 Pure-ish: only DB reads, no writes, no Celery decorator. The runner
 and the SSH-key decryption function are dependency-injected so unit
 tests can substitute stubs without spinning up SSH or ansible-runner.
-The Celery task wrapper that handles tmpfs lifecycle, status writes,
-and DB persistence lands in a follow-up commit and consumes this
-function as its core.
+The Celery task wrapper in ``app.tasks.host_sync_orchestrator`` handles
+tmpfs lifecycle, status writes, and DB persistence.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import select
@@ -119,40 +128,48 @@ def _runner_events_to_task_events(runner_events: Any) -> list[dict[str, Any]]:
     return out
 
 
-async def orchestrate_host_sync(
+@dataclass(frozen=True)
+class HostSyncPlan:
+    """Everything the ansible run needs, with no database attached.
+
+    Produced by :func:`build_host_sync_plan` and consumed by
+    :func:`execute_host_sync_plan`. The split exists so the caller can
+    close its session before the run starts: the run takes minutes —
+    up to the full playbook timeout — and holding a session across it
+    parks an asyncpg connection from a small pool for that whole time
+    (BUG-71).
+
+    ``playbook_yaml`` is empty when no module contributed a fragment;
+    :func:`execute_host_sync_plan` then reports ``no_tasks`` for every
+    requested module without invoking the runner at all.
+    """
+
+    modules_to_run: list[str]
+    playbook_yaml: str
+    inventory_json: str
+
+
+async def build_host_sync_plan(
     host_id: int,
     module_filter: list[str] | None,
     db: AsyncSession,
     *,
     decrypt_key_fn: Callable[[bytes, bytes], bytes],
-    run_ansible_fn: Callable,
     ssh_key_path: str,
-    private_data_dir: str,
-    timeout: int | None = None,
-) -> tuple[dict[str, str], str, str]:
-    """Orchestrate a coalesced per-host sync.
+) -> HostSyncPlan:
+    """Everything up to (not including) the ansible run.
 
     Steps: resolve modules → load Host + SSHKey → decrypt + write SSH
     key → gather desired states + build fragments → compose playbook →
-    build inventory → dispatch ansible-runner → aggregate outcomes.
+    build inventory.
 
     Args:
         host_id: target host ID.
         module_filter: subset of canonical modules to sync, or ``None`` for all.
-        db: async SQLAlchemy session (read-only — orchestrator does not commit).
+        db: async SQLAlchemy session (read-only — this does not commit).
         decrypt_key_fn: callable ``(encrypted_key, master_key) -> plaintext``.
             Plaintext bytes are written verbatim to ``ssh_key_path`` with mode 0o600.
-        run_ansible_fn: same shape as ``app.ansible_runtime.runner.run_ansible``.
-        ssh_key_path: caller pre-creates this path; orchestrator writes the
-            decrypted key here.
-        private_data_dir: ansible-runner work directory; caller manages lifecycle.
-        timeout: optional playbook timeout, forwarded to ``run_ansible_fn``.
-
-    Returns:
-        Tuple ``(module_outcomes, playbook_yaml, inventory_json)``.
-        ``module_outcomes`` maps each module run to ``"in_sync"``,
-        ``"error"``, or ``"no_tasks"``. ``playbook_yaml`` and
-        ``inventory_json`` are returned verbatim for audit logging.
+        ssh_key_path: caller pre-creates this path; the key is written here.
 
     Raises:
         LookupError: when the host or its SSH key is not found.
@@ -283,19 +300,11 @@ async def orchestrate_host_sync(
 
     # BUG-40: when the only requested module skipped its fragment (the
     # resolver block is the only one with a "skip when no config"
-    # branch), ``fragments`` is empty. Composing an empty playbook
-    # produces ``"[]\n"``, which ansible-runner rejects with a runtime
-    # error — the orchestrator surfaces that as an exception and the
-    # wrapper marks every seeded module as ``error``, even though the
-    # truthful outcome is "no managed config applies → no-op".
-    # Short-circuit: skip the runner entirely and return ``no_tasks``
-    # for every requested module.
+    # branch), ``fragments`` is empty. An empty playbook is not a
+    # runnable one — see execute_host_sync_plan, which reads the empty
+    # ``playbook_yaml`` as "no managed config applies → no-op".
     if not fragments:
-        return (
-            {m: "no_tasks" for m in modules_to_run},
-            "",
-            "",
-        )
+        return HostSyncPlan(modules_to_run=modules_to_run, playbook_yaml="", inventory_json="")
 
     # 5. Compose playbook.
     playbook_yaml = compose_playbook(
@@ -313,20 +322,59 @@ async def orchestrate_host_sync(
         known_hosts_path=known_hosts_path,
     )
 
-    # 7. Dispatch ansible-runner. Caller (the next-commit Celery
-    # wrapper) owns private_data_dir lifecycle and tmpfs cleanup.
-    runner = run_ansible_fn(
+    return HostSyncPlan(
+        modules_to_run=modules_to_run,
         playbook_yaml=playbook_yaml,
         inventory_json=inventory_json,
+    )
+
+
+def execute_host_sync_plan(
+    plan: HostSyncPlan,
+    *,
+    run_ansible_fn: Callable,
+    private_data_dir: str,
+    timeout: int | None = None,
+) -> tuple[dict[str, str], str, str]:
+    """Run the plan and aggregate the per-module outcomes.
+
+    Touches no database — see :class:`HostSyncPlan` for why that is the
+    point. Synchronous, because ``run_ansible_fn`` is: the caller is a
+    Celery worker whose loop exists only to drive this task.
+
+    Args:
+        plan: output of :func:`build_host_sync_plan`.
+        run_ansible_fn: same shape as ``app.ansible_runtime.runner.run_ansible``.
+        private_data_dir: ansible-runner work directory; caller manages lifecycle.
+        timeout: optional playbook timeout, forwarded to ``run_ansible_fn``.
+
+    Returns:
+        Tuple ``(module_outcomes, playbook_yaml, inventory_json)``.
+        ``module_outcomes`` maps each module run to ``"in_sync"``,
+        ``"error"``, or ``"no_tasks"``. The playbook and inventory are
+        echoed back verbatim for audit logging.
+    """
+    # BUG-40: when the only requested module skipped its fragment, the
+    # composed playbook would be ``"[]\n"``, which ansible-runner rejects
+    # with a runtime error — the wrapper then marks every seeded module
+    # as ``error``, even though the truthful outcome is "no managed
+    # config applies → no-op". Short-circuit instead.
+    if not plan.playbook_yaml:
+        return ({m: "no_tasks" for m in plan.modules_to_run}, "", "")
+
+    # Dispatch ansible-runner. The caller owns private_data_dir
+    # lifecycle and tmpfs cleanup.
+    runner = run_ansible_fn(
+        playbook_yaml=plan.playbook_yaml,
+        inventory_json=plan.inventory_json,
         private_data_dir=private_data_dir,
         timeout=timeout,
     )
 
-    # 8. Parse runner events into the shape aggregator expects.
     task_events = _runner_events_to_task_events(getattr(runner, "events", []))
-    module_outcomes = aggregate_module_outcomes(task_events, modules_to_run)
+    module_outcomes = aggregate_module_outcomes(task_events, plan.modules_to_run)
 
-    # 9. Return. `inventory_json` is already a JSON string from
-    # generate_inventory; we return it verbatim for audit. Parsing it
-    # back is the caller's concern.
-    return module_outcomes, playbook_yaml, inventory_json
+    # `inventory_json` is already a JSON string from generate_inventory;
+    # it is returned verbatim for audit. Parsing it back is the caller's
+    # concern.
+    return module_outcomes, plan.playbook_yaml, plan.inventory_json

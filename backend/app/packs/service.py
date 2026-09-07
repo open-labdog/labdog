@@ -16,11 +16,12 @@ on-disk pack loader (``app.actions.packs``). Responsibilities:
 
 Callers (API endpoints, FastAPI lifespan, Celery worker startup) should
 use the high-level helpers: ``sync_pack``, ``sync_enabled_packs``,
-``load_db_packs``, ``delete_checkout``.
+``load_db_packs``, ``delete_checkout_async``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import shutil
 from datetime import UTC, datetime
@@ -29,13 +30,13 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.git_sync import GitSyncError, sync_remote_pack
+from app.actions.git_sync import GitSyncError
 from app.actions.packs import Pack
 from app.config import settings
 from app.crypto import decrypt_ssh_key, get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.ssh_key import SSHKey
-from app.packs.git_auth import git_auth_context
+from app.packs.clone import clone_to_thread
 from app.packs.models import ActionPack, PackSourceType
 from app.packs.redact import redact
 
@@ -160,15 +161,21 @@ async def sync_pack(
         )
 
     try:
-        with git_auth_context(
-            ssh_private_key=ssh_key, token=token, host_key_entry=repo.ssh_host_key_entry
-        ) as auth:
-            sha = sync_remote_pack(repo.url, repo.branch, path, auth=auth)
-            # SEC-27: trust on first use. Recorded here so the next sync
-            # of this repository is verified rather than trusted.
-            learned = auth.learned_host_key()
-            if learned:
-                repo.ssh_host_key_entry = learned
+        # Off the event loop: git can sit on an unreachable remote for the
+        # full 120 s timeout, and this is reached from the API process as
+        # well as the workers (BUG-71).
+        sha, learned = await clone_to_thread(
+            repo.url,
+            repo.branch,
+            path,
+            ssh_key=ssh_key,
+            token=token,
+            host_key_entry=repo.ssh_host_key_entry,
+        )
+        # SEC-27: trust on first use. Recorded here so the next sync
+        # of this repository is verified rather than trusted.
+        if learned:
+            repo.ssh_host_key_entry = learned
     except (GitSyncError, ValueError) as exc:
         secrets = [s for s in (ssh_key, token) if s]
         scrubbed = redact(str(exc), secrets)
@@ -266,6 +273,9 @@ def delete_checkout(pack_id: int) -> None:
     """Remove a git pack's managed checkout. Silent on missing; logs on error.
 
     Never called for local packs — LabDog doesn't own the directory.
+
+    Synchronous. Callers on an event loop want
+    :func:`delete_checkout_async`.
     """
     path = checkout_path_for(pack_id)
     if not path.exists():
@@ -274,3 +284,13 @@ def delete_checkout(pack_id: int) -> None:
         shutil.rmtree(path)
     except OSError:
         logger.warning("failed to delete pack checkout %s", path, exc_info=True)
+
+
+async def delete_checkout_async(pack_id: int) -> None:
+    """:func:`delete_checkout`, off the event loop (BUG-71).
+
+    An unlinked-file-at-a-time walk of a whole git checkout is bounded
+    by the repository's size rather than by anything LabDog controls,
+    and both callers are HTTP handlers in a single-worker process.
+    """
+    await asyncio.to_thread(delete_checkout, pack_id)

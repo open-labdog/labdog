@@ -10,6 +10,7 @@ writes are visible to the assertions and roll back at test end.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -97,46 +98,64 @@ def _all_in_sync_outcomes() -> dict[str, str]:
     return {m: "in_sync" for m in CANONICAL_ORDER}
 
 
-def _patch_orchestrator(return_outcomes: dict[str, str], calls: list[dict] | None = None):
-    """Replace ``orchestrate_host_sync`` (as imported by the wrapper).
+@contextlib.contextmanager
+def _patch_halves(build_fn, execute_fn):
+    """Replace both halves of the orchestrator as the wrapper imports them.
 
-    The mock returns a 3-tuple matching the orchestrator's contract.
-    Recorded kwargs land in ``calls`` for argument assertions.
+    BUG-71 split ``orchestrate_host_sync`` into a DB-reading planner and
+    a DB-free runner so the wrapper can close its session before the
+    ansible run. Everything the old single mock recorded is still
+    recorded; it just arrives in two calls.
     """
+    with (
+        patch("app.tasks.host_sync_orchestrator.build_host_sync_plan", new=build_fn),
+        patch("app.tasks.host_sync_orchestrator.execute_host_sync_plan", new=execute_fn),
+    ):
+        yield
 
-    async def _fake_orchestrate(*args, **kwargs):
+
+def _recording_build(record: dict):
+    async def _fake_build(*args, **kwargs):
+        record.update(kwargs)
+        # Positional args present in the wrapper's call: (host_id,
+        # module_filter, db). Stash them under stable names too.
+        if len(args) >= 1:
+            record["_pos_host_id"] = args[0]
+        if len(args) >= 2:
+            record["_pos_module_filter"] = args[1]
+        return "plan-stub"
+
+    return _fake_build
+
+
+def _patch_orchestrator(return_outcomes: dict[str, str], calls: list[dict] | None = None):
+    """Plan + run stubs; the run returns the orchestrator's 3-tuple.
+
+    Arguments from both calls are merged into one dict appended to
+    ``calls``, so argument assertions read the same as they did when
+    this was a single function.
+    """
+    record: dict = {}
+
+    def _fake_execute(_plan, **kwargs):
+        record.update(kwargs)
         if calls is not None:
-            recorded = dict(kwargs)
-            # Positional args present in the wrapper's call: (host_id,
-            # module_filter, db). Stash them under stable names too.
-            if len(args) >= 1:
-                recorded["_pos_host_id"] = args[0]
-            if len(args) >= 2:
-                recorded["_pos_module_filter"] = args[1]
-            calls.append(recorded)
+            calls.append(dict(record))
         return return_outcomes, "playbook-yaml-stub", "{}"
 
-    return patch(
-        "app.tasks.host_sync_orchestrator.orchestrate_host_sync",
-        new=_fake_orchestrate,
-    )
+    return _patch_halves(_recording_build(record), _fake_execute)
 
 
 def _patch_orchestrator_raising(exc: Exception, calls: list[dict] | None = None):
-    async def _fake_orchestrate(*args, **kwargs):
+    record: dict = {}
+
+    def _fake_execute(_plan, **kwargs):
+        record.update(kwargs)
         if calls is not None:
-            recorded = dict(kwargs)
-            if len(args) >= 1:
-                recorded["_pos_host_id"] = args[0]
-            if len(args) >= 2:
-                recorded["_pos_module_filter"] = args[1]
-            calls.append(recorded)
+            calls.append(dict(record))
         raise exc
 
-    return patch(
-        "app.tasks.host_sync_orchestrator.orchestrate_host_sync",
-        new=_fake_orchestrate,
-    )
+    return _patch_halves(_recording_build(record), _fake_execute)
 
 
 async def _run_task(
@@ -574,7 +593,11 @@ async def test_defer_when_another_sync_running_on_host(db: AsyncSession, tmp_pat
     orchestrator_calls: list[dict] = []
     delay_calls: list[tuple] = []
 
-    async def _never_orchestrate(*args, **kwargs):  # pragma: no cover - guard
+    async def _never_build(*args, **kwargs):  # pragma: no cover - guard
+        orchestrator_calls.append({"args": args, "kwargs": kwargs})
+        return "plan-stub"
+
+    def _never_execute(*args, **kwargs):  # pragma: no cover - guard
         orchestrator_calls.append({"args": args, "kwargs": kwargs})
         return {}, "", ""
 
@@ -583,10 +606,7 @@ async def test_defer_when_another_sync_running_on_host(db: AsyncSession, tmp_pat
 
     with (
         _make_session_patcher(db),
-        patch(
-            "app.tasks.host_sync_orchestrator.orchestrate_host_sync",
-            new=_never_orchestrate,
-        ),
+        _patch_halves(_never_build, _never_execute),
         patch(
             "app.tasks.host_sync_orchestrator.run_host_sync.delay",
             new=MagicMock(side_effect=_record_delay),
@@ -1263,3 +1283,53 @@ async def test_dispatch_uses_correct_filter_for_per_tab_type(db: AsyncSession, t
 # ---------------------------------------------------------------------------
 
 _ = (MagicMock, AsyncMock)
+
+
+async def test_the_session_is_closed_before_the_ansible_run(db: AsyncSession, tmp_path):
+    """BUG-71: the playbook runs with no database session open.
+
+    The run lasts minutes — up to the timeout computed above it — and
+    the session it used to be wrapped in holds an asyncpg connection
+    from a small pool for every one of them. Splitting the orchestrator
+    into a planner and a runner is what makes closing it possible, so
+    assert the seam rather than trusting the shape of the code.
+    """
+    open_sessions = 0
+    sessions_during_run: list[int] = []
+
+    @asynccontextmanager
+    async def _tracking_task_session():
+        nonlocal open_sessions
+        open_sessions += 1
+        try:
+            yield db
+        finally:
+            open_sessions -= 1
+
+    async def _fake_build(*_args, **_kwargs):
+        return "plan-stub"
+
+    def _fake_execute(_plan, **_kwargs):
+        sessions_during_run.append(open_sessions)
+        return _all_in_sync_outcomes(), "playbook-yaml-stub", "{}"
+
+    host_id = await _setup_host_with_backend(db)
+    job_id = await _create_pending_job(db, host_id)
+
+    from app.tasks.host_sync_orchestrator import _async_run
+
+    with (
+        patch("app.tasks.host_sync_orchestrator.task_session", new=_tracking_task_session),
+        _patch_halves(_fake_build, _fake_execute),
+    ):
+        await _async_run(
+            job_id=job_id,
+            host_id=host_id,
+            module_filter=None,
+            private_data_dir=str(tmp_path / "pdir"),
+            ssh_key_path=str(tmp_path / "key"),
+        )
+
+    assert sessions_during_run == [0], (
+        "the ansible run held a database session open for its whole duration"
+    )
