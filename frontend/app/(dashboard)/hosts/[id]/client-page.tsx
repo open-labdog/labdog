@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { TerminalIcon, RefreshCwIcon, ArrowUpFromLineIcon, X, ShieldIcon, ShieldCheckIcon, PlayIcon, ChevronDownIcon, ChevronRightIcon, CheckCircleIcon, AlertTriangleIcon, XCircleIcon, Loader2Icon, HelpCircleIcon } from "lucide-react"
 import { SshTerminal } from "@/components/ssh-terminal"
+import { collectHostState } from "@/lib/collect-state"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -380,10 +381,8 @@ function CurrentStateSection({
   const handleCollect = async () => {
     setCollecting(true)
     try {
-      const collected = await apiFetch<import("@/lib/types").ModuleCurrentState[]>(
-        `/api/hosts/${hostId}/collect-state?module=${moduleType}`,
-        { method: "POST" },
-      )
+      // Queued, not run inline (BUG-74) — this waits for the run.
+      const { notices } = await collectHostState(hostId, moduleType)
       await queryClient.invalidateQueries({ queryKey: ["host-current-state", hostId] })
       // Also refetch the host row: a firewall collect can newly detect the
       // firewall backend (host.firewall_backend), and any collect updates the
@@ -391,9 +390,10 @@ function CurrentStateSection({
       // Detected" even after detection succeeded.
       await queryClient.invalidateQueries({ queryKey: ["host", hostId] })
       // Surface non-fatal collect-time notices (e.g. a competing LabDog ruleset
-      // left in the inactive firewall backend on a dual-stack host). These are
-      // not persisted, so they only show at the moment of collection.
-      for (const w of collected?.find(m => m.module_type === moduleType)?.warnings ?? []) {
+      // left in the inactive firewall backend on a dual-stack host). They ride
+      // on the run's output, since the POST now returns before any collector
+      // has run.
+      for (const w of notices) {
         toast.warning(w, { duration: 10000 })
       }
     } catch (e) { toast.error(e instanceof ApiError ? e.message : "Operation failed") }
@@ -519,7 +519,7 @@ function InstallFirewallSection({ hostId, queryClient }: { hostId: number; query
     // 3. Re-collect firewall state to detect the new backend
     setStatus("Detecting firewall backend...")
     try {
-      await apiFetch(`/api/hosts/${hostId}/collect-state?module=firewall`, { method: "POST" })
+      await collectHostState(hostId, "firewall")
     } catch { /* ignore */ }
 
     if (!mountedRef.current) return
@@ -2148,7 +2148,7 @@ export default function HostDetailPage() {
                   onClick={async () => {
                     setCollecting(true)
                     try {
-                      await apiFetch(`/api/hosts/${id}/collect-state`, { method: "POST" })
+                      await collectHostState(id)
                       await queryClient.invalidateQueries({ queryKey: ["host-current-state", id] })
                       await queryClient.invalidateQueries({ queryKey: ["host", id] })
                     } catch { /* ignore */ }

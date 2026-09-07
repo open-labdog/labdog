@@ -82,22 +82,46 @@ DRIFT_CHECK = ActionDefinition(
 )
 
 
+#: Modules ``_builtin.collect_state`` can be narrowed to. Mirrors
+#: ``app.api.host_state.COLLECTABLE_MODULES``; the two are asserted equal
+#: in ``tests/test_host_state.py`` rather than imported across the layer.
+_COLLECTABLE_MODULES = (
+    "cron",
+    "firewall",
+    "hosts_file",
+    "linux_user",
+    "package",
+    "resolver",
+    "service",
+)
+
+
 COLLECT_STATE = ActionDefinition(
     key="_builtin.collect_state",
     name="Collect host state",
     description=(
-        "SSH into hosts and refresh their cached module state. Used by the "
-        "current-state tabs in host detail."
+        "SSH into hosts and refresh their cached module state, then their "
+        "host facts. Used by the current-state tabs in host detail."
     ),
     icon="database-zap",
     playbook_path=None,
-    version="1.0.0",
+    version="1.1.0",
     estimated_duration="< 1 min/host",
     destructive=False,
     supports_group=True,
     supports_host=True,
     supports_fleet=True,
-    parameters=(),
+    parameters=(
+        ActionParameter(
+            key="module",
+            label="Module",
+            type="choice",
+            choices=_COLLECTABLE_MODULES,
+            required=False,
+            default=None,
+            help_text="Collect a single module. Leave empty to collect all of them.",
+        ),
+    ),
     pack_name=BUILTIN_PACK_NAME,
 )
 

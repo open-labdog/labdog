@@ -233,6 +233,27 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Collecting a host's state is queued instead of running inside the request.**
+  "Collect" opened an SSH connection and ran seven collectors one after another
+  while the HTTP request waited, holding a database connection the whole time
+  and taking no host lock. The dashboard's "Check all" starts one of these per
+  host at once, so a handful of unresponsive hosts drained the connection pool
+  and unrelated requests across the whole app began failing. Running one during
+  a sync overwrote the module status the sync was writing.
+
+  It is an action run now — `_builtin.collect_state` — so it waits its turn
+  behind anything already working on that host, and the button returns
+  immediately. **The endpoint now answers 202 with a run to poll rather than
+  the collected state**, and pressing it twice joins the run already in flight
+  instead of starting a second one. The UI polls and refreshes as before; the
+  dashboard's fleet-wide button now says the collection was queued, because it
+  was.
+
+  `_builtin.collect_state` also does what its description always claimed. It
+  collected only host facts — OS, kernel, firewall backend — and never the
+  module state the current-state tabs read. It now collects both, and takes an
+  optional `module` parameter to narrow it to one.
+
 - **Slow git and long playbooks no longer stall the rest of the process.**
   Three unrelated places did blocking work where it stopped everything else:
 

@@ -269,15 +269,6 @@ _No bugs are currently open._
       `metrics/aggregates.py:462` full-scans on each 15-second Prometheus
       refresh.
 
-- [ ] **BUG-74** `backend/app/api/host_state.py:75-232` —
-      `POST /hosts/{id}/collect-state` runs seven unbounded SSH collectors
-      serially inside the request, holding a pooled connection throughout
-      and taking no host lock. Fifteen clicks against unresponsive hosts
-      exhaust the 5+10 pool and every other request 500s on
-      `pool_timeout`; run it during a sync and it clobbers the module
-      status the sync is writing. Dispatch the locked
-      `_builtin.collect_state` and return 202.
-
 - [ ] **BUG-75** Frontend, three related defects.
       `app/(dashboard)/audit/page.tsx:109-120` catches every query failure
       and resolves *successfully* with an empty array, so a 401 or a 500

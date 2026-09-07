@@ -140,6 +140,7 @@ async def _finish_host_run(
     *,
     succeeded: bool,
     error: str | None = None,
+    output: str | None = None,
     dispatch_next: bool = True,
 ) -> None:
     """Persist terminal status AND optionally dispatch-next-pending.
@@ -171,6 +172,8 @@ async def _finish_host_run(
         host_run.finished_at = datetime.now(UTC)
         if error is not None:
             host_run.error_message = error
+        if output is not None:
+            host_run.output = output
         host_id_for_dispatch = host_run.host_id
         action_run_id_for_dispatch = host_run.action_run_id
         await db.commit()
@@ -223,6 +226,18 @@ def run_builtin_collect_state(action_run_id: int, host_run_id: int) -> dict:
 
 
 async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
+    """Refresh a host's cached module state, then its host facts.
+
+    BUG-74: the module half used to run inline in
+    ``POST /hosts/{id}/collect-state`` — seven SSH collectors serially,
+    on a pooled connection, with no host lock. It runs here now, under
+    the claim ``_begin_host_run`` takes, so a collection queues behind a
+    sync instead of overwriting what the sync is writing.
+
+    Before that this task collected only host facts, despite the action
+    describing itself as refreshing "cached module state". It does both
+    now, in the order the API used to: modules first, then facts.
+    """
     from sqlalchemy import select
 
     from app.db import task_session
@@ -231,6 +246,40 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
     host_id = await _begin_host_run(host_run_id)
     if host_id is None:
         return
+
+    parameters = await _load_action_run_parameters(action_run_id)
+    module = parameters.get("module") or None
+
+    notices: list[str] = []
+    try:
+        from app.api.host_state import collect_module_state
+
+        async with task_session() as db:
+            _states, notices = await collect_module_state(host_id, module, db)
+    except (LookupError, ValueError) as exc:
+        await _finish_host_run(host_run_id, succeeded=False, error=str(exc))
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("collect_state: module collection failed for host %d", host_id)
+        await _finish_host_run(host_run_id, succeeded=False, error=str(exc))
+        return
+
+    # Host-level facts (OS, kernel, firewall backend, NIC, and the
+    # placeholder-hostname auto-heal). Skipped on a single-module collect
+    # — the operator is focused on one module surface, not the Overview
+    # tab — except when a firewall collect ran against a host whose
+    # backend is still unknown, since the facts probe is what detects it.
+    if module is not None and module != "firewall":
+        await _finish_host_run(host_run_id, succeeded=True, output="\n".join(notices) or None)
+        return
+    if module == "firewall":
+        async with task_session() as db:
+            host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+            raw_backend = host.firewall_backend if host else None
+            backend = getattr(raw_backend, "value", raw_backend)
+        if str(backend) != "unknown":
+            await _finish_host_run(host_run_id, succeeded=True, output="\n".join(notices) or None)
+            return
 
     # Snapshot the host's os_facts_collected_at before the call so we
     # can detect a silent SSH-error skip — collect_host_facts swallows
@@ -271,7 +320,12 @@ async def _collect_state_async(action_run_id: int, host_run_id: int) -> None:
         error = str(exc)
         logger.exception("collect_state failed for host %d", host_id)
 
-    await _finish_host_run(host_run_id, succeeded=succeeded, error=error)
+    await _finish_host_run(
+        host_run_id,
+        succeeded=succeeded,
+        error=error,
+        output="\n".join(notices) or None,
+    )
 
 
 # ---------------------------------------------------------------------------
