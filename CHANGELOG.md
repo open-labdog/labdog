@@ -252,6 +252,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The container reaps its own orphaned processes.** LabDog ran as PID 1 with
+  no init, and PID 1 is the process every orphan re-parents to. The app shells
+  out to git, git spawns `ssh` for SSH remotes and exits first, and the
+  orphaned `ssh` landed on a PID 1 that never reaps anything — so each one
+  became a permanent zombie holding a task slot. One instance accrued 115 of
+  them at roughly 26 a day; the count only ever grows, and the end state is a
+  host that cannot `fork()` and needs a reboot. The image now starts under
+  `tini`. Deployments carrying `init: true` as a workaround can drop it.
+
 - **The per-host queue no longer scans whole tables to decide if a host is
   busy.** Every sync, action run and drift check asks that question first, and
   two of the three tables it consults had no index for it — including the one
