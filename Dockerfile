@@ -74,7 +74,7 @@ WORKDIR /app
 ARG BUILD_DATE=""
 RUN echo "apt security refresh @ ${BUILD_DATE}" \
     && apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client git \
+    && apt-get install -y --no-install-recommends openssh-client git tini \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
@@ -163,4 +163,19 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4); sys.exit(0 if r.status == 200 else 1)" || exit 1
 
+# BUG-55: an init as PID 1, so orphaned grandchildren get reaped.
+#
+# The app shells out to git; git spawns ssh for SSH remotes and exits
+# first; the orphaned ssh re-parents to PID 1. When PID 1 was `python -m
+# app` — which never wait()s on children it did not spawn — each one
+# stayed a zombie holding a task slot for the life of the container. One
+# instance reached 115 of them (114 ssh, 1 git) at roughly 26 a day, and
+# the count only ever grows: the end state is a host that cannot fork(),
+# which takes a reboot to clear.
+#
+# Deployments could set `init: true` themselves, and the one that found
+# this did. That is the wrong place for it — the published image is run
+# by people who will not know to. tini forwards signals to the app, so
+# SIGTERM shutdown is unchanged.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "-m", "app"]
