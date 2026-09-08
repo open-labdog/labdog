@@ -67,7 +67,21 @@ async def _job(db, *, status: JobStatus, age_days: int, host_id: int) -> SyncJob
 
 @pytest.fixture
 def retention(db, monkeypatch):
-    """Point the pruners at the test's session and set the window."""
+    """Point the pruners at the test's session and set the window.
+
+    Every test in this suite runs inside one transaction that is rolled
+    back at the end — that is what keeps them from seeing each other's
+    rows. The pruner commits once per batch on purpose, so that it never
+    holds a long transaction on the table every claim has to scan, and a
+    real commit here would make the test's writes permanent and leak them
+    into the tests that follow.
+
+    So ``commit`` is replaced with a recorder rather than left alone. The
+    deletes still happen and are still visible to the assertions; the
+    commits are counted instead of performed, which is what
+    ``test_it_commits_each_batch`` checks. Call the returned function to
+    set the window; read ``.commits`` for the call count.
+    """
     import contextlib
 
     from app.tasks import run_retention
@@ -76,14 +90,13 @@ def retention(db, monkeypatch):
     async def _fake_task_session():
         yield db
 
-    async def _no_commit():
-        # The batching loop commits per batch; inside the test's savepoint
-        # session that would end the outer transaction the fixture rolls
-        # back. The deletes are still visible to the assertions below.
-        return None
+    commits: list[None] = []
+
+    async def _record_commit():
+        commits.append(None)
 
     monkeypatch.setattr("app.db.task_session", _fake_task_session)
-    monkeypatch.setattr(db, "commit", _no_commit)
+    monkeypatch.setattr(db, "commit", _record_commit)
 
     def _set_days(days: int):
         async def _days(_db):
@@ -91,6 +104,7 @@ def retention(db, monkeypatch):
 
         monkeypatch.setattr(run_retention, "_get_retention_days", _days)
 
+    _set_days.commits = commits
     return _set_days
 
 
@@ -171,6 +185,34 @@ class TestActionRunRetention:
         result = await run_retention._prune_action_runs()
 
         assert result["deleted"] == 7
+
+    async def test_it_commits_each_batch(self, db, retention, monkeypatch):
+        """The commit inside the loop is the point of batching: one long
+        transaction on ``action_runs`` blocks the claim protocol, which
+        every sync and action run has to pass through first. Without this
+        assertion, dropping the commit would leave the suite green — the
+        deletes would still happen, just all in one transaction."""
+        from app.tasks import run_retention
+
+        monkeypatch.setattr(run_retention, "_BATCH_SIZE", 3)
+        retention(30)
+        for _ in range(7):
+            await _run(db, status="succeeded", age_days=100)
+
+        await run_retention._prune_action_runs()
+
+        # 3 + 3 + 1 rows, and a commit after each.
+        assert len(retention.commits) == 3
+
+    async def test_it_does_not_commit_when_there_is_nothing_to_delete(self, db, retention):
+        from app.tasks.run_retention import _prune_action_runs
+
+        retention(90)
+        await _run(db, status="succeeded", age_days=1)
+
+        await _prune_action_runs()
+
+        assert retention.commits == [], "an empty first batch should not open a write"
 
 
 class TestSyncJobRetention:
