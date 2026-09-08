@@ -54,7 +54,18 @@ async def get_effective_services(host_id: int, db: AsyncSession) -> list[Effecti
     host_overrides = host_result.scalars().all()
 
     # 4. Host overrides REPLACE group entries entirely
+    # Host overrides replace whatever a group contributed, and among
+    # themselves the highest priority wins — LabDog settles a clash by
+    # priority at every level (BUG-57). The read is ordered
+    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
+    # unconditional assignment made the *last* row win, which after
+    # BUG-69 made the order deterministic and the winner the lowest
+    # priority.
+    host_keys: set = set()
     for rule in host_overrides:
+        if rule.service_name in host_keys:
+            continue
+        host_keys.add(rule.service_name)
         merged[rule.service_name] = EffectiveServiceResponse(
             service_name=rule.service_name,
             state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),

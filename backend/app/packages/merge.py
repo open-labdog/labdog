@@ -49,7 +49,18 @@ async def get_effective_packages(host_id: int, db: AsyncSession) -> list[Effecti
         .where(PackageRule.host_id == host_id)
         .order_by(PackageRule.priority.desc(), PackageRule.id.asc())
     )
+    # Host overrides replace whatever a group contributed, and among
+    # themselves the highest priority wins — LabDog settles a clash by
+    # priority at every level (BUG-57). The read is ordered
+    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
+    # unconditional assignment made the *last* row win, which after
+    # BUG-69 made the order deterministic and the winner the lowest
+    # priority.
+    host_keys: set = set()
     for rule in host_result.scalars().all():
+        if rule.package_name in host_keys:
+            continue
+        host_keys.add(rule.package_name)
         merged[rule.package_name] = EffectivePackageResponse(
             package_name=rule.package_name,
             version=rule.version,
