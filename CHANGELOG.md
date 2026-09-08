@@ -252,6 +252,17 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **`2>&1` no longer needs approval.** The AI assistant's command classifier
+  cut a command line into segments on `&`, so `systemctl status sshd 2>&1`
+  became two pieces — the second headed by `1`, which is not a known read-only
+  command, so the whole line was treated as a write. Nothing was ever
+  wrongly *allowed*; the most common redirection idiom there is was simply
+  refused in a read-only session and raised an approval prompt in an approval
+  session, and prompts that are obviously unnecessary teach people to approve
+  without reading. The `&` of an fd duplication is now part of the
+  redirection, not a separator. Redirections to a *file* that share the
+  syntax — bash's `>&name` and `1>&name` — still count as writes.
+
 - **The container reaps its own orphaned processes.** LabDog ran as PID 1 with
   no init, and PID 1 is the process every orphan re-parents to. The app shells
   out to git, git spawns `ssh` for SSH remotes and exits first, and the
