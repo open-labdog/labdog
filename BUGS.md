@@ -154,26 +154,4 @@ _No bugs are currently open._
 
 ### Correctness — Medium
 
-- [ ] **BUG-81** `backend/app/tasks/builtin_dispatchers.py:_sync_async` —
-      `_builtin.sync` reports `succeeded` when the underlying sync was
-      deferred, not run.
-
-      **Symptom.** A scheduled `_builtin.sync` whose host is genuinely
-      busy finishes as `succeeded` with the sync still queued. The
-      `SyncJob` is re-dispatched later by the host queue, so the work
-      does happen — but the action-run history says it happened at a time
-      it did not, and an operator reading the run list has no way to tell
-      a real sync from a deferred one.
-
-      **Root cause.** The `status == "deferred"` branch falls through with
-      `succeeded` unchanged, on the reasoning that a defer "is not a
-      failure either". True, but neither is it success.
-
-      **Severity: Low.** Only misreports; the sync is not lost. Split out
-      of the BUG-78/79/80 fix, which was about the path not working at
-      all — this is about what it says when it does.
-
-      **Fix direction.** `ActionHostRun` has no "deferred" terminal
-      status, so this needs either a new one or the run staying `pending`
-      with `pending_reason` set and the parent left un-finalised until the
-      queued sync completes. The second is more honest and more work.
+_No bugs are currently open._

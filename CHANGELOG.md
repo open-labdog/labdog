@@ -252,6 +252,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A sync that had to wait no longer reports itself as done.** When a
+  scheduled `_builtin.sync` found the host busy, the underlying job was queued
+  behind the in-flight work — correctly — but the action run finished
+  `succeeded` anyway. The history then said the sync happened at a time it did
+  not, and nothing in the run list distinguished it from one that really ran.
+  Such a run now stays *pending*, with the same "waiting for…" reason any other
+  deferred operation shows, and closes for real when the queued sync actually
+  runs.
+
 - **`2>&1` no longer needs approval.** The AI assistant's command classifier
   cut a command line into segments on `&`, so `systemctl status sshd 2>&1`
   became two pieces — the second headed by `1`, which is not a known read-only
