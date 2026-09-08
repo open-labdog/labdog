@@ -458,7 +458,14 @@ async def get_action_host_run_counts(db: AsyncSession) -> list[tuple[str, int]]:
     """Return ``(status, count)`` from ``action_host_runs`` — ALL-TIME.
     Feeds ``labdog_action_host_runs_total``. The nonzero-exit counter is
     folded into ``get_simple_counts`` (a single unrelated predicate, not a
-    grouping)."""
+    grouping).
+
+    Still all-time, and still a scan of every row — but of
+    ``ix_action_host_runs_status`` rather than of the heap, which is where
+    ``output`` lives (BUG-73). Deliberately not narrowed to a window: the
+    metric's meaning is what dashboards are built on. What bounds the cost
+    is retention (``app/tasks/run_retention.py``), which bounds the table.
+    """
     stmt = select(ActionHostRun.status, func.count().label("value")).group_by(ActionHostRun.status)
     result = await db.execute(stmt)
     return [(row.status, row.value) for row in result.all()]

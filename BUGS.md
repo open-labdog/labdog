@@ -259,12 +259,3 @@ _No bugs are currently open._
       status, so this needs either a new one or the run staying `pending`
       with `pending_reason` set and the parent left un-finalised until the
       queued sync completes. The second is more honest and more work.
-
-- [ ] **BUG-73** No index supports `check_host_busy`, which runs three
-      queries per claim and sequential-scans `action_runs` and
-      `action_host_runs` on every one. Neither table has any retention job,
-      unlike `audit_log`, while `ActionHostRun.output` holds up to 1 MiB of
-      transcript per host per run — roughly 7 GB/year for a nightly 20-host
-      action, in the table every claim scans and
-      `metrics/aggregates.py:462` full-scans on each 15-second Prometheus
-      refresh.
