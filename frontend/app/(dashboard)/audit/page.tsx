@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useDelayedLoading } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -28,9 +28,6 @@ interface TranscriptRow {
   command_text: string
   recorded_at: string
 }
-
-const STUB_DATA: AuditEntry[] = [
-]
 
 const ACTION_COLORS: Record<string, string> = {
   create: "bg-green-600 text-white",
@@ -100,29 +97,33 @@ function TranscriptModal({
   )
 }
 
-const PAGE_SIZE = 20
+/** Rows per request. The endpoint caps `limit` at 200; 100 keeps a page
+ *  worth of filtering material in hand without a slow first paint. */
+const PAGE_SIZE = 100
 
 export default function AuditPage() {
-  const [page, setPage] = useState(1)
   const [transcriptSessionId, setTranscriptSessionId] = useState<string | null>(null)
 
-  const { data, isLoading, error } = useQuery<AuditEntry[]>({
-    queryKey: ["audit-log"],
-    queryFn: async () => {
-      try {
-        return await apiFetch<AuditEntry[]>("/api/audit-log")
-      } catch {
-        // Endpoint may not exist yet -- fall back to stub data
-        return STUB_DATA
-      }
-    },
-    retry: false,
-  })
+  // Cursor-paginated (BUG-75). This used to fetch once with no `limit`,
+  // which meant the backend default of 50 — everything older than the
+  // fiftieth entry was unreachable, and the column filters searched only
+  // those fifty. The cursor is the id of the last row seen.
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useInfiniteQuery<AuditEntry[]>({
+      queryKey: ["audit-log"],
+      initialPageParam: undefined as number | undefined,
+      queryFn: ({ pageParam }) => {
+        const cursor = pageParam as number | undefined
+        const query = cursor === undefined ? "" : `&cursor=${cursor}`
+        return apiFetch<AuditEntry[]>(`/api/audit-log?limit=${PAGE_SIZE}${query}`)
+      },
+      getNextPageParam: (lastPage) =>
+        lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1].id : undefined,
+      retry: false,
+    })
   const showLoading = useDelayedLoading(isLoading)
 
-  const entries = data ?? []
-  const paginated = entries.slice(0, page * PAGE_SIZE)
-  const hasMore = paginated.length < entries.length
+  const entries = data?.pages.flat() ?? []
 
   return (
     <div className="space-y-6">
@@ -136,9 +137,14 @@ export default function AuditPage() {
 
       {showLoading && <TableSkeleton rows={5} columns={5} />}
 
+      {/* The query used to swallow every failure and resolve with an empty
+          array, so a 500 or a dropped connection rendered as "No audit
+          entries found" and this banner was unreachable. On a compliance
+          surface, "nothing happened" and "we could not tell you what
+          happened" must not look the same. */}
       {error && (
-        <div className="rounded-lg border border-amber-800 bg-amber-950/30 px-4 py-3 text-amber-400 text-sm">
-          Audit log endpoint unavailable — showing stub data.
+        <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-300 text-sm">
+          Could not load the audit log: {error instanceof Error ? error.message : "unknown error"}
         </div>
       )}
 
@@ -146,8 +152,8 @@ export default function AuditPage() {
         <>
           <DataTable<AuditEntry>
             tableId="audit-log"
-            data={paginated}
-            emptyMessage="No audit entries found."
+            data={entries}
+            emptyMessage={error ? "Could not load the audit log." : "No audit entries found."}
             getRowKey={(e) => e.id}
             columns={[
               {
@@ -234,20 +240,21 @@ export default function AuditPage() {
             ]}
           />
 
-          {hasMore && (
+          {hasNextPage && (
             <div className="flex justify-center">
               <Button
                 variant="outline"
-                onClick={() => setPage((p) => p + 1)}
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
               >
-                Load More
+                {isFetchingNextPage ? "Loading..." : "Load More"}
               </Button>
             </div>
           )}
 
           {entries.length > 0 && (
             <p className="text-center text-xs text-slate-500">
-              Showing {paginated.length} of {entries.length} entries
+              Showing {entries.length} entries{hasNextPage ? " so far" : ""}
             </p>
           )}
         </>
