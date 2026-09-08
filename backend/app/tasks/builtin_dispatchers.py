@@ -33,6 +33,40 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+async def _mark_deferred(db, host_run, reason: str) -> None:
+    """Put a host run — and its parent, when single-host — back to pending.
+
+    Used both by the claim-or-defer gate and by ``_builtin.sync`` when the
+    sync it delegated to defers (BUG-81). The row is not terminal: the
+    work is queued on the host, and ``finalise_run_if_complete`` treats
+    ``pending`` as still active, so the parent stays open until it runs.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.models.action_run import ActionRun  # noqa: PLC0415
+
+    host_run.status = "pending"
+    host_run.pending_reason = reason
+    host_run.started_at = None
+    # Mark parent ActionRun pending too if it's a single-host target; for
+    # multi-host (group with supports_host=True) the parent reflects the
+    # aggregate, not one member.
+    run_row = (
+        await db.execute(select(ActionRun).where(ActionRun.id == host_run.action_run_id))
+    ).scalar_one_or_none()
+    if (
+        run_row is not None
+        and run_row.host_id is not None
+        and run_row.status
+        in (
+            "queued",
+            "running",
+        )
+    ):
+        run_row.status = "pending"
+        run_row.pending_reason = reason
+
+
 async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | None:
     """Claim-or-defer + mark the ActionHostRun as running.
 
@@ -55,7 +89,7 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
     from sqlalchemy import select
 
     from app.db import task_session
-    from app.models.action_run import ActionHostRun, ActionRun
+    from app.models.action_run import ActionHostRun
 
     async with task_session() as db:
         host_run = (
@@ -99,27 +133,7 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
             )
             if blocker is not None:
                 reason = await format_pending_reason(db, blocker)
-                host_run.status = "pending"
-                host_run.pending_reason = reason
-                # Mark parent ActionRun pending too if it's a single-host
-                # target; for multi-host (group with supports_host=True)
-                # the parent reflects the aggregate, not one member.
-                run_row = (
-                    await db.execute(
-                        select(ActionRun).where(ActionRun.id == host_run.action_run_id)
-                    )
-                ).scalar_one_or_none()
-                if (
-                    run_row is not None
-                    and run_row.host_id is not None
-                    and run_row.status
-                    in (
-                        "queued",
-                        "running",
-                    )
-                ):
-                    run_row.status = "pending"
-                    run_row.pending_reason = reason
+                await _mark_deferred(db, host_run, reason)
                 await db.commit()
                 logger.info(
                     "builtin_dispatchers: deferred host_run=%d (host %d busy: %s)",
@@ -406,6 +420,99 @@ def run_builtin_sync(action_run_id: int, host_run_id: int) -> dict:
     return {"action_run_id": action_run_id, "host_run_id": host_run_id}
 
 
+async def _defer_for_queued_sync(host_run_id: int, host_id: int, job_id: int) -> None:
+    """Leave a built-in sync's row pending because its job was deferred.
+
+    The ``SyncJob`` is queued on the host and will be re-dispatched by the
+    host queue. Reporting the run finished here would say the sync had
+    happened when it had not (BUG-81), so the row — and the parent, when
+    the run targets one host — go back to ``pending`` with the same
+    ``pending_reason`` any other deferred op carries.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.action_run import ActionHostRun  # noqa: PLC0415
+    from app.tasks.host_lock import (  # noqa: PLC0415
+        acquire_host_lock,
+        check_host_busy,
+        format_pending_reason,
+    )
+
+    async with task_session() as db:
+        host_run = (
+            await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
+        ).scalar_one_or_none()
+        if host_run is None:
+            return
+        await acquire_host_lock(db, host_id)
+        blocker = await check_host_busy(db, host_id, exclude_action_run_id=host_run.action_run_id)
+        # The blocker can be gone already — it finished between the inner
+        # sync deferring and this lookup. The job is still queued either
+        # way, so the row is still pending; only the wording is generic.
+        reason = (
+            await format_pending_reason(db, blocker)
+            if blocker is not None
+            else "Waiting for another operation on this host"
+        )
+        await _mark_deferred(db, host_run, reason)
+        await db.commit()
+
+    logger.info(
+        "_builtin.sync deferred (job_id=%s host_id=%s host_run=%s) — %s",
+        job_id,
+        host_id,
+        host_run_id,
+        reason,
+    )
+
+
+async def close_origin_host_run(job_id: int, payload: dict | None) -> None:
+    """Close the ``_builtin.sync`` row a finished SyncJob was queued for.
+
+    Called from ``run_host_sync`` — the path the host queue re-dispatches
+    a deferred job through — and not from the inline call ``_sync_async``
+    makes, which closes its own row.
+
+    A job that defers *again* is left alone: it is still queued, so the
+    row is still honestly pending and this runs again next time.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.action_run import ActionHostRun  # noqa: PLC0415
+    from app.models.sync_job import SyncJob  # noqa: PLC0415
+
+    status = (payload or {}).get("status")
+    if status == "deferred":
+        return
+
+    async with task_session() as db:
+        job = (await db.execute(select(SyncJob).where(SyncJob.id == job_id))).scalar_one_or_none()
+        origin_id = job.origin_action_host_run_id if job is not None else None
+        if origin_id is None:
+            return
+        host_run = (
+            await db.execute(select(ActionHostRun).where(ActionHostRun.id == origin_id))
+        ).scalar_one_or_none()
+        if host_run is None or host_run.status not in ("pending", "queued", "running"):
+            return
+        action_run_id = host_run.action_run_id
+
+    succeeded = status == "success"
+    error = None if succeeded else f"sync did not complete successfully (status={status!r})"
+    # dispatch_next=False: ``_async_run`` already ran its own
+    # dispatch-next-pending in its finally, and a second pick here would
+    # race it for the same pending row.
+    await _finish_host_run(origin_id, succeeded=succeeded, error=error, dispatch_next=False)
+
+    from app.tasks.action_orchestrator import finalise_run_if_complete  # noqa: PLC0415
+
+    # Nothing else will: the orchestrator's own aggregation ran when the
+    # built-in first returned, long before this job was re-dispatched.
+    await finalise_run_if_complete(action_run_id)
+
+
 async def _sync_async(action_run_id: int, host_run_id: int) -> None:
     from sqlalchemy import select
 
@@ -431,9 +538,16 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
     succeeded = True
     error: str | None = None
     try:
-        # Create the SyncJob row that run_host_sync expects.
+        # Create the SyncJob row that run_host_sync expects. It carries a
+        # pointer back to this run's per-host row: if the sync defers, the
+        # queue re-dispatches the job later and whoever runs it then has to
+        # close the row this task deliberately leaves open (BUG-81).
         async with task_session() as db:
-            job = SyncJob(host_id=host_id, status=JobStatus.pending)
+            job = SyncJob(
+                host_id=host_id,
+                status=JobStatus.pending,
+                origin_action_host_run_id=host_run_id,
+            )
             db.add(job)
             await db.flush()
             job_id = job.id
@@ -475,16 +589,20 @@ async def _sync_async(action_run_id: int, host_run_id: int) -> None:
         if status == "success":
             pass  # succeeded as initialised
         elif status == "deferred":
-            # The advisory lock was held by another sync job — ours
-            # is queued behind it and the option-c dispatch-next
-            # chain will run it when the in-flight job finishes.
-            # The per-host work isn't done yet, but it's not a
-            # failure either; treat as succeeded with a note.
-            logger.info(
-                "_builtin.sync deferred (job_id=%s host_id=%s) — queued behind in-flight sync",
-                job_id,
-                host_id,
-            )
+            # The host was busy, so the SyncJob is queued behind the
+            # in-flight op and the dispatch-next chain will run it when
+            # that finishes.
+            #
+            # This used to report ``succeeded`` on the reasoning that a
+            # defer is not a failure. True, but it is not success either:
+            # the run history then said the sync happened at a time it did
+            # not, and nothing distinguished it from one that really ran
+            # (BUG-81). The row goes back to ``pending`` instead, and the
+            # parent with it, so the run stays open until the queued job
+            # actually runs — ``run_host_sync`` closes it then, via
+            # ``SyncJob.origin_action_host_run_id``.
+            await _defer_for_queued_sync(host_run_id, host_id, job_id)
+            return
         else:
             succeeded = False
             error = f"sync did not complete successfully (status={status!r})"

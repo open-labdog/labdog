@@ -861,7 +861,7 @@ def run_host_sync(
     """
     private_data_dir, ssh_key_path = _make_tmpfs_workspace()
     try:
-        return asyncio.run(
+        payload = asyncio.run(
             _async_run(
                 job_id=job_id,
                 host_id=host_id,
@@ -870,5 +870,15 @@ def run_host_sync(
                 ssh_key_path=ssh_key_path,
             )
         )
+        # A job the host queue re-dispatched may be the one a deferred
+        # ``_builtin.sync`` is still waiting on. That run's per-host row
+        # was deliberately left ``pending`` rather than closed as a
+        # success it had not earned (BUG-81); this is where it closes.
+        # Only this path — ``_sync_async`` calls ``_async_run`` directly
+        # and closes its own row.
+        from app.tasks.builtin_dispatchers import close_origin_host_run  # noqa: PLC0415
+
+        asyncio.run(close_origin_host_run(job_id, payload))
+        return payload
     finally:
         _cleanup_tmpfs(private_data_dir)
