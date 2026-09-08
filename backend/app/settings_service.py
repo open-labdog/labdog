@@ -90,6 +90,16 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 3650,
         "description": "Days to retain audit log entries (0 = keep forever)",
     },
+    "logging.run_retention_days": {
+        "type": "int",
+        "default": 90,
+        "min": 0,
+        "max": 3650,
+        "description": (
+            "Days to retain finished action runs, their transcripts, and sync "
+            "jobs (0 = keep forever)"
+        ),
+    },
     "logging.level": {
         "type": "string",
         "default": "info",

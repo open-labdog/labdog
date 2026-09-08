@@ -231,7 +231,33 @@ The format follows [Keep a Changelog]; LabDog follows
   set the flag. It makes accepting controller-side code a deliberate,
   audited act rather than a side effect of adding a repository.
 
+### Added
+
+- **Finished action runs and sync jobs are now pruned on a schedule.** They
+  were the only history LabDog kept forever — the audit log and terminal
+  transcripts have been pruned daily since they were added. An action run's
+  per-host transcript can reach a mebibyte, so a nightly twenty-host action
+  wrote something like 7 GB a year into the table the per-host queue scans
+  before *every* sync, action and drift check.
+
+  The window is `logging.run_retention_days`, default **90**, settable in
+  `labdog.toml` or the settings UI; `0` keeps everything. It is deliberately
+  separate from `logging.audit_retention_days` — an audit trail is usually
+  wanted for longer than an ansible transcript. Only finished runs are
+  touched: anything queued, pending or running is left alone however old it
+  is, because a run waiting behind a host lock is not stale. **On the first
+  run after upgrading, an instance that has been up for a while will delete
+  everything older than 90 days** — set the value first if you want to keep
+  more.
+
 ### Fixed
+
+- **The per-host queue no longer scans whole tables to decide if a host is
+  busy.** Every sync, action run and drift check asks that question first, and
+  two of the three tables it consults had no index for it — including the one
+  holding the transcripts. Five indexes are added; they are built
+  `CONCURRENTLY`, so the upgrade does not lock writes out of those tables while
+  it runs.
 
 - **An expired session sends you to the login page instead of failing silently
   forever.** The sign-in cookie lasts 24 hours. When it lapsed mid-session

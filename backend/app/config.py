@@ -142,6 +142,9 @@ class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error", "critical"] = "info"
     format: Literal["text", "json"] = "text"
     audit_retention_days: int = 90
+    #: Separate from the audit window on purpose: an audit trail is usually
+    #: wanted for longer than an ansible transcript (BUG-73).
+    run_retention_days: int = 90
 
 
 class SSHConfig(BaseModel):

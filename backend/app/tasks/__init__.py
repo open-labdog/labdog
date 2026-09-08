@@ -238,6 +238,7 @@ celery_app.conf.include = [
     "app.tasks.sync_sweeper",
     "app.tasks.action_sweeper",
     "app.tasks.audit_retention",
+    "app.tasks.run_retention",
     "app.tasks.ai_task",
     "app.tasks.ai_approvals",
     "app.tasks.ai_snapshots",
