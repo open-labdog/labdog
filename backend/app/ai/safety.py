@@ -451,6 +451,31 @@ _HALT_COMMANDS = frozenset({"shutdown", "reboot", "poweroff", "halt", "init", "t
 # conservative parse, never a less conservative one.
 _SEGMENT_SPLIT = re.compile(r"\|\||&&|[;|&\n]")
 
+# The `&` of an fd duplication is not a segment boundary (BUG-60).
+#
+# `_SEGMENT_SPLIT` breaks on `&`, so `ls -l 2>&1` became the two segments
+# `ls -l 2>` and `1`. The second is headed by `1`, which is not on
+# READ_ONLY_HEADS, so default-deny classified the whole line `mutating` —
+# and `2>&1` is the most common idiom there is. It fails safe, but a
+# read-only session refused `systemctl status sshd 2>&1`, and an approval
+# session raised a prompt for it. Prompts that are obviously unnecessary
+# are how an operator learns to approve without reading.
+#
+# Digits after the `&` are required, and that is the whole safety
+# argument. Bash's `>&word` and `1>&word` forms redirect *to a file* when
+# word is not a number — verified: `echo pwned 1>& /tmp/x` writes /tmp/x —
+# so exempting them would turn a write into a read. `2>&word` is an
+# ambiguous-redirect error. The trailing `(?=\s|$)` mirrors the same guard
+# in `_REDIRECT`, so a filename that merely starts with a digit
+# (`>& 2tmp`) still splits, and still reaches the redirect rule.
+_FD_DUP = re.compile(r"\d*>&\s*\d+(?=\s|$)")
+
+# Stand-in for the `&` of an fd-dup while the line is being split. NUL
+# cannot appear in a command the SSH tool will run, but if one somehow
+# arrives, masking is skipped rather than risking the reverse
+# substitution turning a literal NUL into a `&` that escapes the split.
+_FD_DUP_MARK = "\x00"
+
 # Shell constructs that run a *second* command the classifier never sees.
 #
 # This is the hole that made every other rule here optional. `_SEGMENT_SPLIT`
@@ -594,7 +619,20 @@ class Verdict:
 
 
 def _segments(command: str) -> list[str]:
-    return [seg.strip() for seg in _SEGMENT_SPLIT.split(command) if seg.strip()]
+    """Split *command* into pipeline segments, keeping fd-dups intact.
+
+    See ``_FD_DUP``: the ``&`` in ``2>&1`` is part of a redirection, not a
+    separator, and splitting on it produced a bogus segment headed by a
+    digit.
+    """
+    if _FD_DUP_MARK in command:
+        return [seg.strip() for seg in _SEGMENT_SPLIT.split(command) if seg.strip()]
+    masked = _FD_DUP.sub(lambda m: m.group(0).replace("&", _FD_DUP_MARK), command)
+    return [
+        seg.replace(_FD_DUP_MARK, "&").strip()
+        for seg in _SEGMENT_SPLIT.split(masked)
+        if seg.strip()
+    ]
 
 
 def _tokenize(segment: str) -> list[str]:

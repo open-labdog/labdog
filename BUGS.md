@@ -48,39 +48,6 @@ spot-checked against current HEAD before filing.
 
 _No bugs are currently open._
 
-### AI command classifier — Low
-
-- [ ] **BUG-60** `backend/app/ai/safety.py:452` — `2>&1` is classified
-      `mutating`, because the segment splitter breaks on the `&`.
-
-      **Symptom.** Any command ending in the most common redirection
-      idiom — `systemctl status sshd 2>&1`, `ls -l 2>&1` — is refused in
-      a read-only AI session and raises an approval request in an
-      approval session, despite writing nothing.
-
-      **Root cause.** `_SEGMENT_SPLIT` splits on `[;|&\n]`, so
-      `ls -l 2>&1` becomes the two segments `ls -l 2>` and `1`. The
-      second has head `1`, which is not on `READ_ONLY_HEADS`, so
-      default-deny classifies the pipeline as `mutating`. The redirect
-      rule itself is innocent here and is asserted not to fire on an fd
-      dup (`tests/ai/test_safety.py::TestRedirection`).
-
-      **Severity: Low.** Fails safe — over-classification costs an
-      approval prompt, never an unintended write. Filed because the
-      idiom is common enough that the prompts read as noise, and noisy
-      prompts are how an operator learns to approve without reading.
-
-      **Fix direction.** Teach `_segments` to recognise fd-dup
-      redirections before splitting, e.g. mask `\d*>&\d+` out of the
-      line, split, then restore. Deliberately not done alongside the
-      2026-09 classifier hardening: changing how a command is cut into
-      segments is the single edit most able to reopen the bypasses that
-      work closed, and it wants its own diff and its own review rather
-      than riding along in a security fix.
-
-      Predates the hardening — verified against `dev` at `c784afb`, not
-      introduced by it.
-
 ### Merge correctness — Medium
 
 - [ ] **BUG-57** `backend/app/hosts_mgmt/merge.py:118` — per-entry
