@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.hosts_mgmt.models import HostsEntry
 from app.hosts_mgmt.schemas import EffectiveHostsEntryResponse
-from app.merge_utils import ordered_groups_for_host
+from app.merge_utils import first_wins, load_owned_rows
 from app.models.host import Host
 
 
@@ -58,93 +58,61 @@ SYSTEM_ENTRIES = [
 async def get_effective_hosts_entries(
     host_id: int, db: AsyncSession
 ) -> list[EffectiveHostsEntryResponse]:
+    """Merge group-level hosts entries + host-level overrides.
+
+    Merge key: the resolved ``ip_address``. Host override replaces a group
+    entry entirely; among rows at the same level the highest priority
+    wins. The two system entries are seeded first and nothing may displace
+    them.
+
+    Unlike its sibling modules the key cannot be read straight off the
+    row: an entry may name a ``host_ref_id`` instead of an address, so
+    every candidate is resolved — in one batched query — before the
+    first-wins pass runs.
     """
-    Merge group-level hosts entries + host-level overrides.
-    Key = ip_address. Host override replaces group entry entirely.
-    Higher priority group wins.
-    Always includes system entries (localhost).
-    """
-    # 1. Start with system entries
-    merged: dict[str, EffectiveHostsEntryResponse] = {}
-    for sys_entry in SYSTEM_ENTRIES:
-        merged[sys_entry["ip_address"]] = EffectiveHostsEntryResponse(
-            ip_address=sys_entry["ip_address"],
-            hostname=sys_entry["hostname"],
-            aliases=sys_entry["aliases"],
-            comment=sys_entry["comment"],
+    system: dict[str, EffectiveHostsEntryResponse] = {
+        entry["ip_address"]: EffectiveHostsEntryResponse(
+            ip_address=entry["ip_address"],
+            hostname=entry["hostname"],
+            aliases=entry["aliases"],
+            comment=entry["comment"],
             priority=0,
             is_system=True,
             source="system",
             source_id=0,
             source_name="system",
         )
+        for entry in SYSTEM_ENTRIES
+    }
 
-    # 2. Query group memberships in merge order (priority DESC, id ASC)
-    memberships = await db.execute(ordered_groups_for_host(host_id))
-    groups = memberships.all()
+    owned = await load_owned_rows(db, host_id, HostsEntry)
+    ref_lookup = await _build_host_ref_lookup(db, [o.row for o in owned])
+    # Resolve every candidate, winner or not: a dangling host_ref_id is a
+    # broken configuration whether or not that entry would have survived
+    # the merge, and it raised here before the extraction too.
+    resolved = {o.row.id: _resolve_entry(o.row, ref_lookup) for o in owned}
 
-    # 3. For each group (highest priority first), collect entries
-    all_group_entries: list[tuple[int, str, HostsEntry]] = []
-    for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(HostsEntry)
-            .where(HostsEntry.group_id == group_id)
-            .order_by(HostsEntry.priority.desc(), HostsEntry.id.asc())
-        )
-        for entry in result.scalars().all():
-            all_group_entries.append((group_id, group_name, entry))
+    winners = first_wins(owned, key=lambda e: resolved[e.id][0])
 
-    # 4. Host overrides
-    host_result = await db.execute(
-        select(HostsEntry)
-        .where(HostsEntry.host_id == host_id)
-        .order_by(HostsEntry.priority.desc(), HostsEntry.id.asc())
-    )
-    host_entries = list(host_result.scalars().all())
-
-    # Batch-resolve host_ref_id → (ip, hostname)
-    ref_lookup = await _build_host_ref_lookup(
-        db, [e for _, _, e in all_group_entries] + host_entries
-    )
-
-    for group_id, group_name, entry in all_group_entries:
-        ip, hostname = _resolve_entry(entry, ref_lookup)
-        if ip not in merged:
-            merged[ip] = EffectiveHostsEntryResponse(
-                ip_address=ip,
-                hostname=hostname,
-                aliases=entry.aliases or [],
-                comment=entry.comment,
-                priority=entry.priority,
-                is_system=False,
-                source="group",
-                source_id=group_id,
-                source_name=group_name,
-            )
-
-    # Host overrides replace whatever a group contributed, and among
-    # themselves the highest priority wins — LabDog settles a clash by
-    # priority at every level (BUG-57). The read is ordered
-    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
-    # unconditional assignment made the *last* row win, which after
-    # BUG-69 made the order deterministic and the winner the lowest
-    # priority.
-    host_keys: set = set()
-    for entry in host_entries:
-        ip, hostname = _resolve_entry(entry, ref_lookup)
-        if ip in host_keys:
+    merged = dict(system)
+    for owner in winners:
+        ip, hostname = resolved[owner.row.id]
+        # A group may not displace a system entry, but a host override
+        # may — that asymmetry is how it behaved before this extraction,
+        # and someone pinning their own 127.0.0.1 line is doing it
+        # deliberately at the level where deliberate is the only option.
+        if owner.source == "group" and ip in system:
             continue
-        host_keys.add(ip)
         merged[ip] = EffectiveHostsEntryResponse(
             ip_address=ip,
             hostname=hostname,
-            aliases=entry.aliases or [],
-            comment=entry.comment,
-            priority=entry.priority,
+            aliases=owner.row.aliases or [],
+            comment=owner.row.comment,
+            priority=owner.row.priority,
             is_system=False,
-            source="host",
-            source_id=host_id,
-            source_name="host override",
+            source=owner.source,
+            source_id=owner.source_id,
+            source_name=owner.source_name,
         )
 
     # System entries first, then highest priority first — `/etc/hosts` is

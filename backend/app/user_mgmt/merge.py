@@ -1,130 +1,58 @@
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.merge_utils import ordered_groups_for_host
+from app.enum_utils import enum_str
+from app.merge_utils import OwnedRow, first_wins, load_owned_rows
 from app.user_mgmt.models import LinuxGroup, LinuxUser
 from app.user_mgmt.schemas import EffectiveLinuxGroupResponse, EffectiveLinuxUserResponse
+
+
+def _user_response(owned: OwnedRow[LinuxUser]) -> EffectiveLinuxUserResponse:
+    rule = owned.row
+    return EffectiveLinuxUserResponse(
+        username=rule.username,
+        uid=rule.uid,
+        shell=rule.shell,
+        home_dir=rule.home_dir,
+        state=enum_str(rule.state),
+        comment=rule.comment,
+        sudo_rule=rule.sudo_rule,
+        authorized_keys=rule.authorized_keys or [],
+        supplementary_groups=rule.supplementary_groups or [],
+        source=owned.source,
+        source_id=owned.source_id,
+        source_name=owned.source_name,
+    )
+
+
+def _group_response(owned: OwnedRow[LinuxGroup]) -> EffectiveLinuxGroupResponse:
+    rule = owned.row
+    return EffectiveLinuxGroupResponse(
+        groupname=rule.groupname,
+        gid=rule.gid,
+        state=enum_str(rule.state),
+        source=owned.source,
+        source_id=owned.source_id,
+        source_name=owned.source_name,
+    )
 
 
 async def get_effective_users(host_id: int, db: AsyncSession) -> list[EffectiveLinuxUserResponse]:
     """Merge group-level LinuxUser rules + host-level overrides.
 
-    Merge key: username. Higher priority group wins. Host override = full replacement.
+    Merge key: ``username``. Host override = full replacement; among rows
+    at the same level the highest priority wins.
     """
-    memberships = await db.execute(ordered_groups_for_host(host_id))
-    groups = memberships.all()
-
-    merged: dict[str, EffectiveLinuxUserResponse] = {}
-
-    for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(LinuxUser)
-            .where(LinuxUser.group_id == group_id)
-            .order_by(LinuxUser.priority.desc(), LinuxUser.id.asc())
-        )
-        for rule in result.scalars().all():
-            if rule.username not in merged:
-                merged[rule.username] = EffectiveLinuxUserResponse(
-                    username=rule.username,
-                    uid=rule.uid,
-                    shell=rule.shell,
-                    home_dir=rule.home_dir,
-                    state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-                    comment=rule.comment,
-                    sudo_rule=rule.sudo_rule,
-                    authorized_keys=rule.authorized_keys or [],
-                    supplementary_groups=rule.supplementary_groups or [],
-                    source="group",
-                    source_id=group_id,
-                    source_name=group_name,
-                )
-
-    host_result = await db.execute(
-        select(LinuxUser)
-        .where(LinuxUser.host_id == host_id)
-        .order_by(LinuxUser.priority.desc(), LinuxUser.id.asc())
-    )
-    # Host overrides replace whatever a group contributed, and among
-    # themselves the highest priority wins — LabDog settles a clash by
-    # priority at every level (BUG-57). The read is ordered
-    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
-    # unconditional assignment made the *last* row win, which after
-    # BUG-69 made the order deterministic and the winner the lowest
-    # priority.
-    host_keys: set = set()
-    for rule in host_result.scalars().all():
-        if rule.username in host_keys:
-            continue
-        host_keys.add(rule.username)
-        merged[rule.username] = EffectiveLinuxUserResponse(
-            username=rule.username,
-            uid=rule.uid,
-            shell=rule.shell,
-            home_dir=rule.home_dir,
-            state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-            comment=rule.comment,
-            sudo_rule=rule.sudo_rule,
-            authorized_keys=rule.authorized_keys or [],
-            supplementary_groups=rule.supplementary_groups or [],
-            source="host",
-            source_id=host_id,
-            source_name="host override",
-        )
-
-    return sorted(merged.values(), key=lambda u: u.username)
+    owned = await load_owned_rows(db, host_id, LinuxUser)
+    winners = first_wins(owned, key=lambda r: r.username)
+    return sorted((_user_response(o) for o in winners), key=lambda u: u.username)
 
 
 async def get_effective_groups(host_id: int, db: AsyncSession) -> list[EffectiveLinuxGroupResponse]:
     """Merge group-level LinuxGroup rules + host-level overrides.
 
-    Merge key: groupname. Higher priority group wins. Host override = full replacement.
+    Merge key: ``groupname``. Host override = full replacement; among rows
+    at the same level the highest priority wins.
     """
-    memberships = await db.execute(ordered_groups_for_host(host_id))
-    groups = memberships.all()
-
-    merged: dict[str, EffectiveLinuxGroupResponse] = {}
-
-    for group_id, group_name, _priority in groups:
-        result = await db.execute(
-            select(LinuxGroup)
-            .where(LinuxGroup.group_id == group_id)
-            .order_by(LinuxGroup.priority.desc(), LinuxGroup.id.asc())
-        )
-        for rule in result.scalars().all():
-            if rule.groupname not in merged:
-                merged[rule.groupname] = EffectiveLinuxGroupResponse(
-                    groupname=rule.groupname,
-                    gid=rule.gid,
-                    state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-                    source="group",
-                    source_id=group_id,
-                    source_name=group_name,
-                )
-
-    host_result = await db.execute(
-        select(LinuxGroup)
-        .where(LinuxGroup.host_id == host_id)
-        .order_by(LinuxGroup.priority.desc(), LinuxGroup.id.asc())
-    )
-    # Host overrides replace whatever a group contributed, and among
-    # themselves the highest priority wins — LabDog settles a clash by
-    # priority at every level (BUG-57). The read is ordered
-    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
-    # unconditional assignment made the *last* row win, which after
-    # BUG-69 made the order deterministic and the winner the lowest
-    # priority.
-    host_keys: set = set()
-    for rule in host_result.scalars().all():
-        if rule.groupname in host_keys:
-            continue
-        host_keys.add(rule.groupname)
-        merged[rule.groupname] = EffectiveLinuxGroupResponse(
-            groupname=rule.groupname,
-            gid=rule.gid,
-            state=rule.state.value if hasattr(rule.state, "value") else str(rule.state),
-            source="host",
-            source_id=host_id,
-            source_name="host override",
-        )
-
-    return sorted(merged.values(), key=lambda g: g.groupname)
+    owned = await load_owned_rows(db, host_id, LinuxGroup)
+    winners = first_wins(owned, key=lambda r: r.groupname)
+    return sorted((_group_response(o) for o in winners), key=lambda g: g.groupname)
