@@ -70,11 +70,18 @@ export async function apiFetch<T>(
     }
   }
 
+  // Only declare a content type when something is actually being sent.
+  // Setting it unconditionally made every GET a non-simple CORS request,
+  // so the documented cross-origin dev setup (NEXT_PUBLIC_API_URL pointing
+  // at :8000) paid a preflight on every read. Callers that hand-roll
+  // `body: JSON.stringify(...)` instead of passing `json` still get it.
+  const hasBody = json !== undefined || fetchOptions.body !== undefined
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
       ...csrfHeaders,
       ...fetchOptions?.headers,
     },

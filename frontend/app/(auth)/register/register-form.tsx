@@ -105,6 +105,9 @@ export function RegisterForm() {
       })
 
       if (res.ok) {
+        // Full page load so the login page re-reads /api/auth/setup-status
+        // and stops offering registration, which is now closed.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/login"
         return
       }
