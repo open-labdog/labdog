@@ -629,17 +629,22 @@ async def _load_envelope(ctx: _RunCtx, spec: _RunSpec) -> _Envelope:
     return env
 
 
-def _write_ssh_key(ctx: _RunCtx, private_key_text: str) -> None:
-    """Write the decrypted private key to the tmpfs path already allocated."""
-    assert ctx.ssh_key_path is not None
-    with open(ctx.ssh_key_path, "w") as fh:
+def _write_ssh_key(ssh_key_path: str, private_key_text: str) -> None:
+    """Write the decrypted private key to the tmpfs path already allocated.
+
+    Takes the path rather than reading it off the context: the driver
+    allocates it before anything else and holds it as a plain ``str``, so
+    passing it keeps these helpers free of a "cannot be None here" claim
+    they would otherwise have to assert.
+    """
+    with open(ssh_key_path, "w") as fh:
         fh.write(private_key_text)
         if not private_key_text.endswith("\n"):
             fh.write("\n")
-    os.chmod(ctx.ssh_key_path, 0o600)
+    os.chmod(ssh_key_path, 0o600)
 
 
-async def _preflight_ok(ctx: _RunCtx, spec: _RunSpec) -> bool:
+async def _preflight_ok(ctx: _RunCtx, spec: _RunSpec, ssh_key_path: str) -> bool:
     """Bounded reachability probe before any snapshot.
 
     Runs before the snapshot so we never snapshot a host we can't reach. A
@@ -655,8 +660,7 @@ async def _preflight_ok(ctx: _RunCtx, spec: _RunSpec) -> bool:
     if not preflight_on:
         return True
 
-    assert ctx.ssh_key_path is not None
-    ok, preflight_err = await _preflight_reachable(spec.host_id, ctx.ssh_key_path)
+    ok, preflight_err = await _preflight_reachable(spec.host_id, ssh_key_path)
     if not ok:
         _log_step(ctx, f"[preflight] FAILED: {preflight_err}")
         await _finish_early(
@@ -670,7 +674,9 @@ async def _preflight_ok(ctx: _RunCtx, spec: _RunSpec) -> bool:
     return True
 
 
-async def _build_inventory(ctx: _RunCtx, spec: _RunSpec) -> tuple[str, dict | None, bool]:
+async def _build_inventory(
+    ctx: _RunCtx, spec: _RunSpec, ssh_key_path: str
+) -> tuple[str, dict | None, bool]:
     """Render the inventory and extra-vars for this run.
 
     Returns ``(inventory_json, extra_vars, dry_run)``.
@@ -681,18 +687,15 @@ async def _build_inventory(ctx: _RunCtx, spec: _RunSpec) -> tuple[str, dict | No
     from app.ansible_runtime.known_hosts import write_known_hosts
     from app.grafana.service import build_metrics_extra_vars
 
-    assert ctx.ssh_key_path is not None
     # SEC-26: pin the run to the host key LabDog recorded over asyncssh.
     # Read fresh rather than from the cached scalars in the spec, because
     # preflight runs in between and is what records the key on a host
     # contacted for the first time.
-    known_hosts_path = write_known_hosts(
-        await _stored_host_key_entry(spec.host_id), ctx.ssh_key_path
-    )
+    known_hosts_path = write_known_hosts(await _stored_host_key_entry(spec.host_id), ssh_key_path)
     inventory_json = generate_inventory(
         spec.host_ip,
         spec.host_port,
-        ctx.ssh_key_path,
+        ssh_key_path,
         ssh_user=spec.ssh_user,
         hostname=spec.host_hostname,
         known_hosts_path=known_hosts_path,
@@ -1410,8 +1413,9 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
         # leaked, the ActionHostRun stayed "queued" forever, and dispatch-next
         # never fired — wedging that host's queue.
         key_dir = "/dev/shm" if Path("/dev/shm").is_dir() else None
-        fd, ctx.ssh_key_path = tempfile.mkstemp(dir=key_dir, prefix="labdog-action-", suffix=".key")
+        fd, ssh_key_path = tempfile.mkstemp(dir=key_dir, prefix="labdog-action-", suffix=".key")
         os.close(fd)
+        ctx.ssh_key_path = ssh_key_path
 
         if await _cancelled_before_start(ctx):
             return
@@ -1423,12 +1427,12 @@ async def _run_action_host_async(action_run_id: int, host_run_id: int) -> None:
             return
 
         env = await _load_envelope(ctx, spec)
-        _write_ssh_key(ctx, spec.private_key_text)
+        _write_ssh_key(ssh_key_path, spec.private_key_text)
 
-        if not await _preflight_ok(ctx, spec):
+        if not await _preflight_ok(ctx, spec, ssh_key_path):
             return
 
-        inventory_json, extra_vars, dry_run = await _build_inventory(ctx, spec)
+        inventory_json, extra_vars, dry_run = await _build_inventory(ctx, spec, ssh_key_path)
 
         # A per-action floor (manifest ``playbook_timeout_seconds``) lets a
         # long-running action guarantee itself enough budget without forcing
