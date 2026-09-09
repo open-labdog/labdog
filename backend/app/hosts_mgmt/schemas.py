@@ -173,6 +173,13 @@ class EffectiveHostsEntryResponse(BaseModel):
     hostname: str
     aliases: list[str]
     comment: str | None
+    #: Decides the entry's position in the rendered file, and with it
+    #: which of two entries sharing a hostname resolves (BUG-57).
+    #: ``/etc/hosts`` is read top to bottom and the first match for a
+    #: name wins, so this is the one module where a per-entry priority
+    #: has an ordering meaning rather than only a tie-break one. Zero
+    #: for the injected system entries, which are pinned first anyway.
+    priority: int = 0
     is_system: bool
     source: Literal["group", "host", "system"]
     source_id: int

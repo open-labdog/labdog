@@ -509,6 +509,10 @@ export interface EffectiveHostsEntry {
   hostname: string
   aliases: string[]
   comment: string | null
+  /** Position in the rendered file, highest first. /etc/hosts is read top
+   *  to bottom and the first match for a name wins, so this is what
+   *  settles two entries that share a hostname. */
+  priority: number
   is_system: boolean
   source: "group" | "host" | "system"
   source_id: number

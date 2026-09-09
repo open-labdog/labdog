@@ -72,6 +72,7 @@ async def get_effective_hosts_entries(
             hostname=sys_entry["hostname"],
             aliases=sys_entry["aliases"],
             comment=sys_entry["comment"],
+            priority=0,
             is_system=True,
             source="system",
             source_id=0,
@@ -114,32 +115,54 @@ async def get_effective_hosts_entries(
                 hostname=hostname,
                 aliases=entry.aliases or [],
                 comment=entry.comment,
+                priority=entry.priority,
                 is_system=False,
                 source="group",
                 source_id=group_id,
                 source_name=group_name,
             )
 
+    # Host overrides replace whatever a group contributed, and among
+    # themselves the highest priority wins — LabDog settles a clash by
+    # priority at every level (BUG-57). The read is ordered
+    # ``priority DESC, id ASC``, so first-wins is that rule; the previous
+    # unconditional assignment made the *last* row win, which after
+    # BUG-69 made the order deterministic and the winner the lowest
+    # priority.
+    host_keys: set = set()
     for entry in host_entries:
         ip, hostname = _resolve_entry(entry, ref_lookup)
+        if ip in host_keys:
+            continue
+        host_keys.add(ip)
         merged[ip] = EffectiveHostsEntryResponse(
             ip_address=ip,
             hostname=hostname,
             aliases=entry.aliases or [],
             comment=entry.comment,
+            priority=entry.priority,
             is_system=False,
             source="host",
             source_id=host_id,
             source_name="host override",
         )
 
-    return sorted(merged.values(), key=lambda e: (not e.is_system, e.ip_address))
+    # System entries first, then highest priority first — `/etc/hosts` is
+    # read top to bottom and the first match for a name wins, so this is
+    # what settles two entries that share a hostname (BUG-57). The IP is
+    # the final tie-break, only so the file is stable when priorities are
+    # equal; it is a string compare, and never meant more than that.
+    return sorted(merged.values(), key=lambda e: (not e.is_system, -e.priority, e.ip_address))
 
 
 def render_hosts_file(entries: list[EffectiveHostsEntryResponse]) -> str:
     """
     Render a complete /etc/hosts file from effective entries.
-    System entries first, then sorted by IP.
+
+    Emitted in the order given, which ``get_effective_hosts_entries``
+    has already settled: system entries first, then highest priority
+    first. Order is not cosmetic here — the file is read top to bottom
+    and the first line matching a name wins.
     """
     lines = ["# Managed by LabDog — do not edit manually"]
 

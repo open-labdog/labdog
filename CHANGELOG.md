@@ -252,6 +252,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A clash between two entries is settled by priority, everywhere.** Priority
+  ordering is how LabDog resolves competing configuration, but the per-entry
+  **Priority** field was only half wired in. Group-level entries honoured it;
+  host-level overrides did not — among two host entries for the same cron job,
+  service, package, user, group or address, the one with the *lowest* priority
+  won. Raising the number made it lose. Both levels now let the highest
+  priority win, and a host override still beats an inherited group entry
+  whatever the numbers say, because that is scope rather than a clash.
+
+  **`/etc/hosts` is now ordered by priority.** The file is read top to bottom
+  and the first line matching a name wins, so when two entries give the same
+  hostname different addresses, position *is* the decision. Entries were
+  emitted in address order, which settled it arbitrarily; they are emitted
+  highest priority first now, with the address as a stable tie-break and the
+  system entries still pinned at the top. **The rendered file changes on hosts
+  whose entries carry non-zero priorities** — the drift check compares entries
+  by address rather than by order, so it will not flag this; the new order
+  lands at the host's next sync.
+
 - **A sync that had to wait no longer reports itself as done.** When a
   scheduled `_builtin.sync` found the host busy, the underlying job was queued
   behind the in-flight work — correctly — but the action run finished
