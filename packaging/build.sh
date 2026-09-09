@@ -39,6 +39,7 @@ Prerequisites:
   python3.12   apt: python3.12 / dnf: python3.12
   npm          apt: nodejs / dnf: nodejs
   tar          apt: tar / dnf: tar
+  uv           https://docs.astral.sh/uv/getting-started/installation/
   nfpm         https://nfpm.goreleaser.com/install/ (for deb/rpm only)
 
 Output (in packaging/dist/):
@@ -81,6 +82,9 @@ check_prereq python3.12  "apt: sudo apt install python3.12  |  dnf: sudo dnf ins
 check_prereq npm         "apt: sudo apt install nodejs     |  dnf: sudo dnf install nodejs"
 check_prereq tar         "apt: sudo apt install tar        |  dnf: sudo dnf install tar"
 check_prereq git         "apt: sudo apt install git        |  dnf: sudo dnf install git"
+# The venv is built from backend/uv.lock rather than by re-resolving
+# pyproject.toml, so uv is required for every target, not just deb/rpm.
+check_prereq uv          "https://docs.astral.sh/uv/getting-started/installation/"
 
 # nfpm only required for deb/rpm
 if [[ "$TARGET" == "all" || "$TARGET" == "deb" || "$TARGET" == "rpm" ]]; then

@@ -655,6 +655,11 @@ jobs:
         if: steps.decide.outputs.run == 'true'
         with:
           python-version: "3.12"
+      - name: Install uv
+        # packaging/build.sh builds the venv from backend/uv.lock now,
+        # so uv is a prerequisite of every target, not just deb/rpm.
+        if: steps.decide.outputs.run == 'true'
+        run: pip install -U uv -q
       - uses: actions/setup-node@v4
         if: steps.decide.outputs.run == 'true'
         with:
@@ -663,11 +668,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install nfpm
         if: steps.decide.outputs.run == 'true'
+        # Verified before it is unpacked. This tarball is piped into a
+        # runner that then builds and signs the release, so an upstream
+        # or in-transit swap would reach users' .deb and .rpm. The
+        # version was pinned but nothing checked what arrived; nfpm
+        # publishes checksums.txt, so check against it.
         run: |
+          set -euo pipefail
           NFPM_VERSION=2.41.3
-          curl -sSL \
-            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
-            | sudo tar -xzC /usr/local/bin nfpm
+          NFPM_SHA256=22aa6d3bc2ec239d62d3d190bcb036a47f2b24e0c3c6edfccebb6a55fbb2078e
+          TARBALL="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -sSfL -o "/tmp/${TARBALL}" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/${TARBALL}"
+          echo "${NFPM_SHA256}  /tmp/${TARBALL}" | sha256sum -c -
+          sudo tar -xzC /usr/local/bin -f "/tmp/${TARBALL}" nfpm
           nfpm --version
       - name: Build artifacts
         if: steps.decide.outputs.run == 'true'
@@ -693,14 +707,124 @@ jobs:
   # — a broken install path blocks the release rather than shipping. Run
   # ./packaging/tests/run-smoke.sh to reproduce the smoke locally.
 
+  # ---- RELEASE GUARD ----------------------------------------------------
+  #
+  # Every lint/test/scan job in this file excludes push-to-main, on the
+  # reasoning that nothing reaches main except through a PR that already
+  # ran them. That reasoning holds for a merge and does not hold for
+  # `workflow_dispatch` on main, which release-artifacts also accepts.
+  #
+  # So this job runs the suite for exactly that case and short-circuits
+  # for the other. It always runs — a skipped job would make
+  # release-artifacts skip with it, silently turning the gate off.
+  release-guard:
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: labdog_test
+          POSTGRES_USER: labdog
+          POSTGRES_PASSWORD: labdog
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://labdog:labdog@localhost:5432/labdog_test
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-test-secret-key-not-for-production
+      ENCRYPTION_KEY: Y2ktdGVzdC1lbmNyeXB0aW9uLWtleS0zMmJ5dGVz
+    steps:
+      - name: Decide whether to run
+        id: decide
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" | tee -a "$GITHUB_OUTPUT"
+            echo "::notice::Manual dispatch on main — running the suite before allowing a release."
+          else
+            echo "run=false" | tee -a "$GITHUB_OUTPUT"
+            echo "::notice::Push to main — the PR that produced it already ran the full suite."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.decide.outputs.run == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.decide.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        if: steps.decide.outputs.run == 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend dependencies
+        if: steps.decide.outputs.run == 'true'
+        working-directory: backend
+        run: |
+          pip install -U pip uv -q
+          uv lock --check
+          uv export --frozen --no-emit-project --extra dev --extra agent --format requirements-txt -o /tmp/req.txt
+          uv pip install --system -r /tmp/req.txt
+          uv pip install --system --no-deps .
+      - name: Fetch bundled action pack
+        if: steps.decide.outputs.run == 'true'
+        run: |
+          export LABDOG_PLAYBOOKS_REF="$(tr -d '[:space:]' < LABDOG_PLAYBOOKS_REF)"
+          ./scripts/fetch-bundled-pack.sh backend/app/ansible
+      - name: pytest
+        if: steps.decide.outputs.run == 'true'
+        working-directory: backend
+        run: python -m pytest tests/ -q -m "not integration" --ignore=tests/integration
+      - name: ruff
+        if: steps.decide.outputs.run == 'true'
+        working-directory: backend
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: Frontend build
+        if: steps.decide.outputs.run == 'true'
+        working-directory: frontend
+        run: |
+          npm ci --prefer-offline
+          npm run build
+
   release-artifacts:
-    needs: [packaging-smoke]
+    # `needs: [packaging-smoke]` alone was enough for the normal merge
+    # path, because branch protection means nothing reaches main without
+    # the lint/test/scan jobs having passed on the PR. It is not enough
+    # for `workflow_dispatch` on main, which bypasses that reasoning
+    # entirely — every other job here excludes push-to-main, so a manual
+    # dispatch could cut a release with nothing but the smoke test behind
+    # it. Requiring the guard job below closes that path without making
+    # the normal merge slower.
+    needs: [packaging-smoke, release-guard]
     if: >-
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
       && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # push the auto-tag and create the release
+      contents: write # push the auto-tag and create the release
+      id-token: write # sign the provenance attestation
+      attestations: write # record it against the repository
     steps:
       - uses: actions/checkout@v4
         with:
@@ -734,6 +858,9 @@ jobs:
         if: steps.ver.outputs.skip != 'true'
         with:
           python-version: "3.12"
+      - name: Install uv
+        if: steps.ver.outputs.skip != 'true'
+        run: pip install -U uv -q
       - uses: actions/setup-node@v4
         if: steps.ver.outputs.skip != 'true'
         with:
@@ -742,11 +869,20 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install nfpm (for .deb / .rpm)
         if: steps.ver.outputs.skip != 'true'
+        # Verified before it is unpacked. This tarball is piped into a
+        # runner that then builds and signs the release, so an upstream
+        # or in-transit swap would reach users' .deb and .rpm. The
+        # version was pinned but nothing checked what arrived; nfpm
+        # publishes checksums.txt, so check against it.
         run: |
+          set -euo pipefail
           NFPM_VERSION=2.41.3
-          curl -sSL \
-            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz" \
-            | sudo tar -xzC /usr/local/bin nfpm
+          NFPM_SHA256=22aa6d3bc2ec239d62d3d190bcb036a47f2b24e0c3c6edfccebb6a55fbb2078e
+          TARBALL="nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          curl -sSfL -o "/tmp/${TARBALL}" \
+            "https://github.com/goreleaser/nfpm/releases/download/v${NFPM_VERSION}/${TARBALL}"
+          echo "${NFPM_SHA256}  /tmp/${TARBALL}" | sha256sum -c -
+          sudo tar -xzC /usr/local/bin -f "/tmp/${TARBALL}" nfpm
           nfpm --version
       - name: Sync version files to VERSION
         # backend/pyproject.toml reads VERSION dynamically at install time
@@ -770,6 +906,20 @@ jobs:
           sha256sum labdog-* labdog_* > SHA256SUMS
           echo "=== SHA256SUMS ==="
           cat SHA256SUMS
+      - name: Attest build provenance
+        # SHA256SUMS is generated and uploaded by this same job, so it
+        # proves nothing to anyone who can modify the release — it says
+        # the files match a list written by whoever wrote the files.
+        # An attestation is signed by GitHub's OIDC identity for this
+        # workflow run and verified with:
+        #   gh attestation verify labdog_X.Y.Z_amd64.deb --repo open-labdog/labdog
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            packaging/dist/*.tar.gz
+            packaging/dist/*.deb
+            packaging/dist/*.rpm
       - name: List artifacts
         if: steps.ver.outputs.skip != 'true'
         run: ls -la packaging/dist/
@@ -852,9 +1002,19 @@ jobs:
         with:
           fetch-depth: 0
       - name: Run gitleaks
+        # Checksum-verified for the same reason as nfpm above, with one
+        # extra: this is the tool whose whole job is catching secrets, so
+        # a substituted binary that reports "no leaks found" is the one
+        # failure nobody would notice.
         run: |
-          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz \
-            | tar -xz -C /tmp gitleaks
+          set -euo pipefail
+          GITLEAKS_VERSION=8.30.1
+          GITLEAKS_SHA256=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+          TARBALL="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "/tmp/${TARBALL}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${TARBALL}"
+          echo "${GITLEAKS_SHA256}  /tmp/${TARBALL}" | sha256sum -c -
+          tar -xz -C /tmp -f "/tmp/${TARBALL}" gitleaks
           /tmp/gitleaks detect --source . --config .gitleaks.toml --verbose
 
   backend-audit:

@@ -383,17 +383,6 @@ added. These are the deferred hardening/maintenance tasks that remain.
 entries in [`BUGS.md`](BUGS.md). These are hardening and maintenance
 tasks rather than defects, so they live here. Ordered roughly by value.
 
-- [ ] **Build release artefacts from the lockfile.**
-      `packaging/Makefile:104` runs `pip install ../backend/`, which
-      re-resolves the `>=` floors in `pyproject.toml` at build time. The
-      Docker image and CI both use `uv export --frozen`, and CI even runs
-      `uv lock --check` — the release path ignores all of it. So the
-      `.deb` a user installs contains a *different* dependency set than
-      the one CI tested and Trivy scanned, the same VERSION built twice on
-      different days differs, and anything compromised upstream between CI
-      and the release job lands in a signed-looking artefact. Mirror the
-      Docker stage and add `--require-hashes`.
-
 - [ ] **Stop PR builds overwriting the floating `:test` Docker tag.**
       `.github/workflows/ci.yml:361-407` pushes every PR to both
       `:test-<sha>` and the mutable `:test`. BUG-55 records a production
@@ -406,13 +395,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
       plus the trivy scan that `needs:` it goes red for a contributor who
       cannot fix it.
 
-- [ ] **Verify build-time tooling downloads.** `ci.yml:539-542,618-621`
-      pipes an nfpm tarball straight into `sudo tar` on the runner that
-      then builds and signs the release; `:727-729` does the same for
-      gitleaks — the tool whose job is catching secrets. Versions are
-      pinned but nothing is checksummed. Both projects publish
-      `checksums.txt`; download, verify, then extract.
-
 - [ ] **Pin GitHub Actions to commit SHAs.** Every `uses:` in
       `ci.yml` and `bump-playbooks-ref.yml` names a mutable tag
       (`actions/checkout@v4`, `docker/login-action@v3`,
@@ -424,13 +406,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
       moving. Distinct from the Node 24 item above: that is about runtime
       versions, this is about ref immutability.
 
-- [ ] **Attest the release.** `SHA256SUMS` is generated and uploaded by
-      the same job that uploads the artefacts, so it proves nothing
-      against anyone who can modify the release. `actions/attest-build-
-      provenance` is a three-line addition needing `id-token: write` +
-      `attestations: write` on that job only, and gives verifiable
-      provenance without key management.
-
 - [ ] **Bump the build toolchain off Node 20.** `Dockerfile:6`,
       `frontend/Dockerfile:4,14` and seven `ci.yml` sites pin Node 20,
       which is out of Maintenance LTS. `website/package.json` already
@@ -441,17 +416,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
       is rebuilt continuously, so two builds of one commit differ — which
       is also why `Dockerfile:70-77` needs its `BUILD_DATE` cache-buster.
       Pinning by digest makes that hack unnecessary.
-
-- [ ] **Verify the bundled pack really is the pinned SHA.**
-      `scripts/fetch-bundled-pack.sh:80-96` is careful — flag-injection
-      and `ext::` are both handled, and the "fallback" is an explicit
-      failure, not a silent switch to `main`. The remaining gap: it tries
-      `--branch "$REF"` first, so if upstream is compromised and someone
-      creates a branch or tag *named* like the pinned SHA, that ref's tree
-      is fetched and nothing notices. Three lines after the clone:
-      `git rev-parse HEAD` must equal `$REF` when `$REF` is 40 hex chars.
-      Also replace the PID-based temp path with `mktemp -d`, and guard
-      `rm -rf "$DEST"` against a `$DEST` of `/`.
 
 - [ ] **Finish the systemd hardening.** `packaging/systemd/labdog.service`
       is already better than most — `NoNewPrivileges`, `ProtectSystem=strict`,
@@ -465,12 +429,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
       `/tmp` and `/var/tmp` — and `PrivateDevices=true` is what the
       "per-run SSH key on tmpfs" comment actually wants. Add a
       `systemd-analyze security` assertion to `packaging-smoke`.
-
-- [ ] **Gate `release-artifacts` on more than the smoke test.** It
-      `needs: [packaging-smoke]` only, and every lint/test/scan job
-      excludes push-to-`main`. Branch protection makes that safe for the
-      normal merge path but `workflow_dispatch` on `main` bypasses the
-      reasoning entirely.
 
 - [ ] **Don't ship `frontend/Dockerfile` as a footgun.** It runs as root,
       installs `serve` unpinned, and emits none of the security headers
