@@ -25,16 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Audit GitHub Actions pins for Node 24 readiness (low priority).**
-      GitHub is deprecating the Node 20 runtime on Actions runners; the
-      runner default has already moved to Node 24 (surfaced as a warning
-      during the v0.6.1 release run, e.g. under `actions/deploy-pages`).
-      Nothing fails on Node 24 today, so this is not urgent — but before
-      Node 20 support is fully removed, sweep `.github/workflows/*.yml`
-      for any action pinned to a version whose runtime is Node 20 and
-      bump to a Node 24-compatible release, so no workflow starts failing
-      when the old runtime is dropped.
-
 ---
 
 ## Content-Security-Policy — finish the header
@@ -394,47 +384,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
       fork `DOCKER_HUB_PAT` is empty, the login fails, and the whole job
       plus the trivy scan that `needs:` it goes red for a contributor who
       cannot fix it.
-
-- [ ] **Pin GitHub Actions to commit SHAs.** Every `uses:` in
-      `ci.yml` and `bump-playbooks-ref.yml` names a mutable tag
-      (`actions/checkout@v4`, `docker/login-action@v3`,
-      `softprops/action-gh-release@v2`, …). A compromised upstream action
-      retroactively poisons every run, including `release-artifacts`,
-      which holds `contents: write`, and the Docker login, which holds the
-      registry PAT. Pin to 40-char SHAs with a trailing version comment
-      and add `.github/dependabot.yml` for `github-actions` so they keep
-      moving. Distinct from the Node 24 item above: that is about runtime
-      versions, this is about ref immutability.
-
-- [ ] **Bump the build toolchain off Node 20.** `Dockerfile:6`,
-      `frontend/Dockerfile:4,14` and seven `ci.yml` sites pin Node 20,
-      which is out of Maintenance LTS. `website/package.json` already
-      declares `>=20.0` and Next 16 supports 22/24, so nothing blocks it.
-
-- [ ] **Pin base images by digest.** `Dockerfile:6,16,58` use
-      `node:20-alpine` and `python:3.12-slim` by tag. `python:3.12-slim`
-      is rebuilt continuously, so two builds of one commit differ — which
-      is also why `Dockerfile:70-77` needs its `BUILD_DATE` cache-buster.
-      Pinning by digest makes that hack unnecessary.
-
-- [ ] **Finish the systemd hardening.** `packaging/systemd/labdog.service`
-      is already better than most — `NoNewPrivileges`, `ProtectSystem=strict`,
-      `PrivateTmp`, a dedicated user, scoped `ReadWritePaths`. Missing and
-      zero-risk for this workload: `CapabilityBoundingSet=` (empty),
-      `RestrictNamespaces`, `RestrictRealtime`,
-      `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`,
-      `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`,
-      `ProtectProc=invisible`, `PrivateDevices`. Note `ReadWritePaths=/dev/shm`
-      grants the *host's* shared `/dev/shm` — `PrivateTmp` covers only
-      `/tmp` and `/var/tmp` — and `PrivateDevices=true` is what the
-      "per-run SSH key on tmpfs" comment actually wants. Add a
-      `systemd-analyze security` assertion to `packaging-smoke`.
-
-- [ ] **Don't ship `frontend/Dockerfile` as a footgun.** It runs as root,
-      installs `serve` unpinned, and emits none of the security headers
-      the FastAPI middleware provides. Fine for the standalone testing it
-      documents — but add a non-root user and a pinned version, or a
-      banner saying it is not for deployment.
 
 ---
 

@@ -29,7 +29,33 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
-# /dev/shm is needed for the per-run SSH key tmpfs.
+# Logs and state files should not be world-readable: they carry host
+# names, run output and audit detail. 0027 rather than 0077 so the
+# labdog group can still read them (the .deb installs /etc/labdog
+# root:labdog 0750 on the same reasoning).
+UMask=0027
+RestrictRealtime=true
+RestrictNamespaces=true
+ProtectProc=invisible
+# The service needs no capabilities at all: it binds 8000, not a
+# privileged port, and every privileged action it performs happens on a
+# *managed host* over SSH, not locally.
+CapabilityBoundingSet=
+# It speaks TCP to Postgres, Redis, managed hosts and HTTP APIs, and
+# AF_UNIX to nothing in particular — but not netlink, packet or bluetooth.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+SystemCallArchitectures=native
+PrivateDevices=true
+# ReadWritePaths=/dev/shm grants the *host's* shared memory, and that is
+# still true with everything above set. Measured rather than assumed: a
+# file created in the host's /dev/shm stays visible to the service under
+# PrivateTmp, under PrivateDevices, and under both. PrivateTmp covers
+# /tmp and /var/tmp; PrivateDevices replaces /dev with a minimal device
+# set but leaves the /dev/shm mount alone. So the per-run SSH key still
+# lands in shared memory — the mkstemp 0600 mode is what keeps it to its
+# owner, not the sandbox.
 ReadWritePaths=/var/lib/labdog /var/log/labdog /run/labdog /dev/shm
 
 [Install]
