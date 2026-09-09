@@ -415,16 +415,32 @@ Small correctness and cost items; none are defects worth a BUGS entry.
 
 ## Refactors the audit surfaced — deliberately deferred
 
-- [ ] **Unify `_run_action_host_async` and `_run_action_group_async`.**
-      980 and ~530 lines, both carrying `# noqa: C901, PLR0912, PLR0915`,
-      and both the same lifecycle written twice: claim → snapshot → run →
-      verify → rollback → cleanup → finalise → dispatch-next. That
-      duplication is *why* the `/dev/shm` guard and the verify-tempdir
-      leak each had to be fixed in two places, and why BUG-62's claim-window
-      race exists in both. Genuinely divergent in the middle, though — flat
-      `all` inventory, event routing by inventory hostname, different
-      snapshot fan-out — so this is a real refactor, not a merge. Do it
-      *after* BUG-62's fixes land, so their tests exist as a safety net.
+- [ ] **Share the identical ends of the two action lifecycles.**
+      `action_host.py` and `action_group.py` are now the same shape —
+      both run a documented Phase A–G lifecycle with a context object and
+      named phase functions — which makes it visible which parts are
+      genuinely the same code written twice:
+
+      * **claim-or-defer** against the per-host advisory lock,
+      * **load-and-mark-running**, and
+      * **finalise-and-dispatch-next**.
+
+      Those three belong next to `host_lock.py`. Extracting them is what
+      stops the next fix in this area having to land twice, which is what
+      happened to the `/dev/shm` guard, the verify-tempdir leak, and
+      BUG-62's claim-window race.
+
+      **The middle should stay divergent, and the original entry here was
+      wrong to imply otherwise.** Phase B is one host with a pinned host
+      key versus a flat `all` inventory across every member; Phase C
+      exists only on the group side (routing runner events back to rows by
+      inventory hostname); the snapshot fan-out is sequential versus
+      batched with partial-failure handling; and the locking is one
+      advisory lock versus every member's taken in sorted host-id order to
+      avoid deadlock. Those are two algorithms wearing the same phase
+      names. Merging them produces a function with an `is_group` flag
+      threaded through eight phases — a third thing, harder to read than
+      either original.
 
 - [ ] **Finish the `enum_str` sweep.** 18 inline
       `.value if hasattr(x, "value") else str(x)` coercions remain across
