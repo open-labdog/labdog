@@ -1,28 +1,6 @@
-import { test, expect } from "@playwright/test"
-import { execSync } from "child_process"
+import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-
-function dbExec(sql: string) {
-  // Try each known container name. Same pattern as auth.setup.ts's dbExec.
-  // Silently ignoring failure here would mask test-setup bugs (a NULL
-  // is_system rule gets rendered as a normal rule, the disabled-button
-  // assertion fails, and the apparent UI defect is really a test that
-  // never wrote the DB row it claimed to). Throw on no-match.
-  const containers = ["labdog-postgres-1", "dev-postgres-1", "postgres"]
-  for (const container of containers) {
-    try {
-      execSync(
-        `docker exec ${container} psql -U labdog -d labdog -c '${sql.replace(/'/g, "'\\''")}'`,
-        { stdio: "pipe" }
-      )
-      return
-    } catch {
-      continue
-    }
-  }
-  throw new Error("Could not exec SQL — no postgres container reachable")
-}
 
 test.describe("Rules page", () => {
   test.describe.configure({ mode: "serial" })
@@ -109,35 +87,19 @@ test.describe("Rules page", () => {
     await expect(page.getByText("Should not be saved")).not.toBeVisible()
   })
 
-  test("system rules have disabled Edit and Delete buttons", async ({ request, page }) => {
-    const ruleRes = await request.post(`${API_BASE}/api/groups/${groupId}/rules`, {
-      data: {
-        action: "allow",
-        protocol: "tcp",
-        direction: "input",
-        source_cidr: null,
-        destination_cidr: null,
-        port_start: null,
-        port_end: null,
-        comment: "system-rule-e2e",
-      },
-    })
-    const rule = await ruleRes.json()
-    dbExec(`UPDATE firewall_rules SET is_system = TRUE WHERE id = ${rule.id}`)
-
-    await page.goto(`/groups/${groupId}/rules`)
-
-    // The SortableRow renders <tr> with role="button" (from dnd-kit useSortable attributes).
-    // Scope by the comment text in a table cell and find the containing row element.
-    const systemRow = page.locator("tr").filter({ hasText: "system-rule-e2e" })
-    await expect(systemRow).toBeVisible()
-
-    const editBtn = systemRow.locator("button", { hasText: "Edit" })
-    const deleteBtn = systemRow.locator("button", { hasText: "Delete" })
-
-    await expect(editBtn).toBeDisabled()
-    await expect(deleteBtn).toBeDisabled()
-  })
+  // REMOVED: "system rules have disabled Edit and Delete buttons".
+  //
+  // The test needed a firewall_rules row with is_system = TRUE, and it got
+  // one by shelling out to `docker exec ... psql`, which only worked on the
+  // author's machine. There is no supported way to create that row: RuleCreate
+  // does not accept is_system (deliberately — a client must not be able to
+  // mint a rule the API then refuses to let it edit or delete), and no backend
+  // code path writes the column either. The only is_system rules LabDog builds
+  // are synthesised at merge time in app/rules/merge.py and never persisted.
+  //
+  // So the disabled-button state this asserted is unreachable through any
+  // interface a test can use. Rather than keep a spec that can only pass next
+  // to a hand-edited database, it is gone and the gap is recorded in TODO.md.
 
   test("edit an existing rule", async ({ request, page }) => {
     const ruleRes = await request.post(`${API_BASE}/api/groups/${groupId}/rules`, {

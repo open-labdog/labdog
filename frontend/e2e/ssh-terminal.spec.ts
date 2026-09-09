@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -21,7 +21,11 @@ test.describe("SSH Terminal UI", () => {
     // Either the terminal div is visible (during connecting) or the status text is shown
     const connectingText = page.locator("text=/Connecting to/")
     const terminalContainer = page.locator("[data-testid='ssh-terminal']")
-    await expect(connectingText.or(terminalContainer)).toBeAttached({ timeout: 5000 })
+    // Both are on the page at once — the "Connecting to …" line renders
+    // inside the terminal container — so `.or()` resolves to two elements
+    // and trips strict mode. `.first()` keeps the original intent: either
+    // one being attached means the terminal mounted.
+    await expect(connectingText.or(terminalContainer).first()).toBeAttached({ timeout: 5000 })
   })
 
   test("terminal handles connection errors gracefully", async ({ page }) => {

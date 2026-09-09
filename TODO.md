@@ -484,15 +484,25 @@ tasks rather than defects, so they live here. Ordered roughly by value.
 
 Small correctness and cost items; none are defects worth a BUGS entry.
 
-- [ ] **Run the Playwright suite in CI.** 18 spec files under
-      `frontend/e2e/` cover auth, hosts, groups, rules, sync, the
-      terminal, the command palette, mobile and toasts — and nothing runs
-      them, so nobody notices when they rot. The CSRF-less password change
-      fixed in the quick-wins batch is exactly the class they would catch.
-      Bring up postgres+redis+backend, run them non-blocking for one
-      cycle, then make it a required check. If some cannot be kept green,
-      delete those and be honest about the coverage rather than leaving
-      them to decay.
+- [ ] **Make `frontend-e2e` a required check.** The job exists and is
+      green, but carries `continue-on-error: true` so a flake cannot wedge
+      the merge queue while it settles. After it has been green for a
+      cycle, drop that line from `.github/workflows/ci.yml` and add the job
+      to branch protection. Until then a red run is advisory and easy to
+      miss.
+
+- [ ] **Persisted `firewall_rules.is_system` rows are unreachable.** The
+      column exists, `api/rules.py` refuses edit, delete, reorder and
+      import on any row that has it set, and the UI disables the row's
+      Edit/Delete buttons — but nothing in the codebase ever writes it.
+      `RuleCreate` deliberately does not accept it, and the only system
+      rules LabDog builds are synthesised at merge time in
+      `app/rules/merge.py` and never persisted. So four guards and a UI
+      state protect rows that can only exist if someone edits the database
+      by hand. The e2e test that covered the disabled buttons was deleted
+      for exactly this reason (see the note in `frontend/e2e/rules.spec.ts`).
+      Decide whether the column is legacy and should go, or whether
+      something is meant to set it.
 
 - [ ] **Broaden `stripAnsi`.** `components/action-run-detail.tsx:23`
       strips SGR sequences only, so cursor movement, OSC title/hyperlink

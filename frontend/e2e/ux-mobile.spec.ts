@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Mobile responsive layout", () => {
   test("mobile viewport hides sidebar and shows hamburger menu", async ({

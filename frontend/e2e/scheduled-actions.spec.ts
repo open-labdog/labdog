@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from "@playwright/test"
+import { test, expect } from "./fixtures"
+import type { Page, Route } from "@playwright/test"
 
 // Mock backend payloads so the schedule-action surface can be exercised
 // without hitting a real Celery worker / database.
@@ -52,6 +53,26 @@ const FAKE_ACTIONS: Action[] = [
     supports_fleet: true,
     parameters: [],
     pack_name: "_builtin",
+    overridden_from: [],
+  },
+  {
+    // A pack action that supports every target kind. Needed because the
+    // picker deliberately hides `_builtin.*` keys for new schedules
+    // (schedule-action-dialog.tsx: they have their own UI entry points),
+    // so the tests below cannot drive the wizard with collect_state or
+    // drift_check the way they used to.
+    key: "fleet-report",
+    name: "Fleet report",
+    description: "Collects a fleet-wide report.",
+    icon: "FileText",
+    version: "1.0",
+    estimated_duration: "< 1 min",
+    destructive: false,
+    supports_group: true,
+    supports_host: true,
+    supports_fleet: true,
+    parameters: [],
+    pack_name: "bundled",
     overridden_from: [],
   },
   {
@@ -260,9 +281,7 @@ test.describe("Schedules", () => {
       page.getByRole("heading", { name: "Schedule an action" }),
     ).toBeVisible()
 
-    await page
-      .getByTestId("action-picker")
-      .selectOption("_builtin.collect_state")
+    await page.getByTestId("action-picker").selectOption("fleet-report")
     await page.getByTestId("target-group").click()
     await page.locator('select').nth(1).selectOption(String(FAKE_GROUP_ID))
     await page.getByRole("button", { name: "Continue" }).click()
@@ -278,7 +297,7 @@ test.describe("Schedules", () => {
     await page.getByTestId("schedule-submit").click()
 
     await expect.poll(() => captured.lastBody).toMatchObject({
-      action_key: "_builtin.collect_state",
+      action_key: "fleet-report",
       target_kind: "group",
       target_id: FAKE_GROUP_ID,
       schedule_cron: "0 3 * * *",
@@ -294,8 +313,8 @@ test.describe("Schedules", () => {
     await page.getByTestId("action-picker").selectOption("linux-upgrade")
     await expect(page.getByTestId("target-fleet")).toBeDisabled()
 
-    // Switching to drift_check (supports_fleet=true) enables Fleet.
-    await page.getByTestId("action-picker").selectOption("_builtin.drift_check")
+    // Switching to fleet-report (supports_fleet=true) enables Fleet.
+    await page.getByTestId("action-picker").selectOption("fleet-report")
     await expect(page.getByTestId("target-fleet")).toBeEnabled()
   })
 
@@ -317,8 +336,11 @@ test.describe("Schedules", () => {
     await setupCommonMocks(page, { schedules: [makeSchedule()] })
     await page.goto("/schedules")
 
-    const row = page.getByTestId("scheduled-action-row")
-    await expect(row).toHaveCount(1)
+    // The testid marks the per-row actions menu, which is an icon button
+    // with no text of its own — assert the content on the table row holding it.
+    const marker = page.getByTestId("scheduled-action-row")
+    await expect(marker).toHaveCount(1)
+    const row = page.getByRole("row").filter({ has: marker })
     await expect(row).toContainText("Collect host state")
     await expect(row).toContainText("e2e-test-group")
     await expect(row).toContainText("0 3 * * *")
