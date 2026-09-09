@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Breadcrumb navigation UX", () => {
   test("breadcrumb renders on groups page", async ({ page }) => {

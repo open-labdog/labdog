@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Dashboard page", () => {
   test("dashboard loads with heading", async ({ page }) => {
@@ -24,9 +24,11 @@ test.describe("Dashboard page", () => {
   test("dashboard shows hosts table when hosts exist or empty state", async ({ page }) => {
     await page.goto("/dashboard")
 
-    await expect(
-      page.getByRole("table").or(page.getByText("No hosts configured yet."))
-    ).toBeVisible({ timeout: 10000 })
+    // The table is always rendered; when there are no hosts the empty
+    // message is a cell *inside* it. `.or()` therefore matched both the
+    // table and that cell and failed Playwright's strict mode — asserting
+    // on the table alone covers both states.
+    await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
   })
 
   test("hosts table has expected columns when populated", async ({ page }) => {
@@ -48,7 +50,8 @@ test.describe("Dashboard page", () => {
 
     await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Groups" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Hosts" })).toBeVisible()
+    // Not `exact`, this also matches the "View all hosts →" card link.
+    await expect(page.getByRole("link", { name: "Hosts", exact: true })).toBeVisible()
     await expect(page.getByRole("link", { name: "SSH Keys" })).toBeVisible()
     await expect(page.getByRole("link", { name: "Audit Log" })).toBeVisible()
   })

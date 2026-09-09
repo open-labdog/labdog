@@ -1,8 +1,22 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-test.describe("Sync page", () => {
+/**
+ * Group sync.
+ *
+ * This file used to drive a standalone /groups/{id}/sync page with its own
+ * Preview / Apply / confirm-dialog flow. That page no longer exists —
+ * `frontend/app/(dashboard)/groups/[id]/` has no `sync/` route — and every
+ * test here navigated to a URL the SPA answered with the group detail page,
+ * then failed looking for a heading that was never going to be there.
+ *
+ * Sync is now the `GroupSyncButton` dialog on the group detail page
+ * (components/group-sync-dialog.tsx): opening it runs the preview
+ * immediately, and Apply Changes stays disabled until the preview finds
+ * something to change. These tests cover that surface instead.
+ */
+test.describe("Group sync dialog", () => {
   test.describe.configure({ mode: "serial" })
   let groupId: number
 
@@ -14,75 +28,42 @@ test.describe("Sync page", () => {
     groupId = group.id
   })
 
-  test("sync page loads with correct heading", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    await expect(page.getByRole("heading", { name: "Sync" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Preview Changes" })).toBeVisible()
+  test("the Sync Status card offers a Sync button", async ({ page }) => {
+    await page.goto(`/groups/${groupId}`)
+    await expect(page.getByRole("heading", { name: "Sync Status" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible()
   })
 
-  test("Apply Changes button is disabled before preview", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    const applyBtn = page.getByRole("button", { name: "Apply Changes" })
-    await expect(applyBtn).toBeDisabled()
-  })
+  test("opening it previews every module", async ({ page }) => {
+    await page.goto(`/groups/${groupId}`)
+    await page.getByRole("button", { name: "Sync", exact: true }).click()
 
-  test("Preview Changes button triggers preview", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    await page.getByRole("button", { name: "Preview Changes" }).click()
-
-    // Wait for preview to complete (either shows planned changes or no hosts message)
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
     await expect(
-      page.getByText("Planned Changes").or(page.getByText("No hosts in this group"))
-    ).toBeVisible({ timeout: 15000 })
+      dialog.getByRole("heading", { name: "Sync all modules — Preview" })
+    ).toBeVisible()
   })
 
-  test("Apply Changes button is enabled after preview", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    await page.getByRole("button", { name: "Preview Changes" }).click()
+  test("an empty group has nothing to apply", async ({ page }) => {
+    await page.goto(`/groups/${groupId}`)
+    await page.getByRole("button", { name: "Sync", exact: true }).click()
 
-    await expect(
-      page.getByText("Planned Changes").or(page.getByText("No hosts in this group"))
-    ).toBeVisible({ timeout: 15000 })
-
-    const applyBtn = page.getByRole("button", { name: "Apply Changes" })
-    await expect(applyBtn).toBeEnabled()
+    const dialog = page.getByRole("dialog")
+    // The group was created with no hosts, so the preview resolves to the
+    // empty state and Apply must stay disabled — `hasChanges` is false.
+    await expect(dialog.getByText("No hosts in this group.")).toBeVisible({ timeout: 15000 })
+    await expect(dialog.getByRole("button", { name: "Apply Changes" })).toBeDisabled()
   })
 
-  test("Apply Changes button opens confirmation dialog", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    await page.getByRole("button", { name: "Preview Changes" }).click()
+  test("Cancel closes the dialog", async ({ page }) => {
+    await page.goto(`/groups/${groupId}`)
+    await page.getByRole("button", { name: "Sync", exact: true }).click()
 
-    await expect(
-      page.getByText("Planned Changes").or(page.getByText("No hosts in this group"))
-    ).toBeVisible({ timeout: 15000 })
+    const dialog = page.getByRole("dialog")
+    await expect(dialog).toBeVisible()
 
-    await page.getByRole("button", { name: "Apply Changes" }).click()
-
-    await expect(page.getByRole("dialog")).toBeVisible()
-    await expect(page.getByRole("heading", { name: "Confirm Changes" })).toBeVisible()
-    await expect(page.getByRole("button", { name: /Apply/i }).last()).toBeVisible()
-    await expect(page.getByRole("button", { name: "Cancel" })).toBeVisible()
-  })
-
-  test("Cancel in confirmation dialog closes it without applying", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    await page.getByRole("button", { name: "Preview Changes" }).click()
-
-    await expect(
-      page.getByText("Planned Changes").or(page.getByText("No hosts in this group"))
-    ).toBeVisible({ timeout: 15000 })
-
-    await page.getByRole("button", { name: "Apply Changes" }).click()
-    await expect(page.getByRole("dialog")).toBeVisible()
-
-    await page.getByRole("button", { name: "Cancel" }).click()
-    await expect(page.getByRole("dialog")).not.toBeVisible()
-  })
-
-  test("initial state shows prompt to click Preview Changes", async ({ page }) => {
-    await page.goto(`/groups/${groupId}/sync`)
-    // The initial state shows a prompt containing "Preview Changes" text within a <strong>
-    // and the button also says "Preview Changes" — scope to the button to avoid strict mode
-    await expect(page.getByRole("button", { name: "Preview Changes" })).toBeVisible()
+    await dialog.getByRole("button", { name: "Cancel" }).click()
+    await expect(dialog).not.toBeVisible()
   })
 })

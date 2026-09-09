@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 // BUG-75: nothing handled a 401 once the session cookie expired. Every
 // query and mutation kept failing and the UI raised an error toast for
