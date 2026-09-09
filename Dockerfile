@@ -1,9 +1,16 @@
 # LabDog — single-image build
 # Produces a container that runs the API, Celery worker+beat, and serves
 # the static frontend — all from `python -m app`.
+#
+# Every FROM is pinned by digest with the tag kept alongside it for
+# readability. `python:3.12-slim` in particular is rebuilt continuously,
+# so a tag-only pin meant two builds of one commit produced different
+# images. The cost is that a pinned base goes stale: dependabot's `docker`
+# ecosystem (.github/dependabot.yml) opens the bump PRs, and the trivy
+# scan is the backstop that makes ignoring one loud.
 
 # ── Stage 1: Build frontend static export ─────────────────────────────
-FROM node:20-alpine AS frontend-builder
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend-builder
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci --silent
@@ -13,7 +20,7 @@ RUN npm run build
 # Output: /app/out/
 
 # ── Stage 2: Build Python backend + install deps ──────────────────────
-FROM python:3.12-slim AS backend-builder
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY backend/pyproject.toml backend/uv.lock ./
@@ -45,7 +52,7 @@ RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt
 # (sourced from the repo-root LABDOG_PLAYBOOKS_REF file + the workflow's
 # own configuration). A local ``docker build`` without overrides uses
 # whatever defaults are pinned below.
-FROM alpine/git:v2.45.2 AS bundled-pack-fetcher
+FROM alpine/git:v2.45.2@sha256:16ad8e788e1d3b0c30f18da8dde5c0ace3b187445a62d8af893b003ca1e70592 AS bundled-pack-fetcher
 ARG LABDOG_PLAYBOOKS_REPO=https://github.com/open-labdog/labdog-playbooks.git
 ARG LABDOG_PLAYBOOKS_REF=main
 ENV LABDOG_PLAYBOOKS_REPO=${LABDOG_PLAYBOOKS_REPO}
@@ -55,7 +62,7 @@ RUN chmod +x /usr/local/bin/fetch-bundled-pack \
     && /usr/local/bin/fetch-bundled-pack /bundle
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 WORKDIR /app
 
 # Install the runtime tools we need, then fully upgrade every base
@@ -71,6 +78,13 @@ WORKDIR /app
 # and Trivy gates the stale image. Referencing the per-build BUILD_DATE
 # forces apt to refresh on every CI build. Local builds (no BUILD_DATE)
 # keep the cached layer, which is fine — they aren't security-gated.
+#
+# Pinning the base image by digest (above) does NOT replace this, despite
+# what it looks like. The digest freezes the base, so the layer cache
+# above never invalidates on its own and `apt-get upgrade` here is the
+# *only* route by which a patched libssl or libssh2 reaches the image.
+# Removing BUILD_DATE alongside the digest pin would leave the image
+# frozen at whatever apt served the day the cache was filled.
 ARG BUILD_DATE=""
 RUN echo "apt security refresh @ ${BUILD_DATE}" \
     && apt-get update \
