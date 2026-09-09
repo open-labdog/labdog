@@ -519,14 +519,12 @@ Small correctness and cost items; none are defects worth a BUGS entry.
       snapshot fan-out — so this is a real refactor, not a merge. Do it
       *after* BUG-62's fixes land, so their tests exist as a safety net.
 
-- [ ] **Extract the merge scaffold.** The six non-firewall `merge.py`
-      modules repeat the same twenty lines: membership query ordered by
-      priority, a per-group `SELECT` in a loop, first-wins dict, host
-      overwrite, sort. Extracting it would fix BUG-69's ordering and
-      BUG-57's dead per-entry `priority` in one place instead of six, and
-      remove the per-group N+1 that `rules/desired_state.py` already shows
-      how to avoid. The blocker is that the modules disagree on first-wins
-      versus last-wins semantics — reconciling that *is* BUG-57, so it is a
-      product decision before it is a refactor. The seven inline
-      `.value if hasattr(x, "value") else str(x)` sites should move to the
-      existing `app.enum_utils.enum_str` regardless.
+- [ ] **Finish the `enum_str` sweep.** 18 inline
+      `.value if hasattr(x, "value") else str(x)` coercions remain across
+      10 files (`api/sync.py`, `api/drift.py`, `api/host_state.py`,
+      `api/hosts.py`, `rules/converter.py`, `cron/generator.py`,
+      `services/generator.py`, `services/diff.py`, `tasks/drift.py`,
+      `tasks/host_sync_orchestrator.py`). `app.enum_utils.enum_str` exists
+      for exactly this and the seven sites in the merge modules already
+      use it — these were left out of that change to keep the merge-scaffold
+      diff about the scaffold. Purely mechanical.
