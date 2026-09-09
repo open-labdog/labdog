@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ActionCard } from "@/components/action-card"
 import { ActionRunDialog } from "@/components/action-run-dialog"
@@ -53,12 +53,22 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
   })
 
   const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
+  // Which host ids this component instance has already asked to refresh.
+  //
+  // Collection is asynchronous: the POST queues a Celery job and
+  // os_facts_collected_at does not move until that job lands, so the
+  // staleness test below stays true and the effect re-fired on every mount
+  // of the tab — one extra SSH round trip per navigation until the worker
+  // caught up. The ref makes the dispatch once-per-host instead.
+  const factsRefreshRequested = useRef<Set<number>>(new Set())
   useEffect(() => {
     if (scope !== "host" || !host) return
+    if (factsRefreshRequested.current.has(targetId)) return
     const stale =
       !host.os_facts_collected_at ||
       Date.now() - new Date(host.os_facts_collected_at).getTime() > SEVEN_DAYS_MS
     if (stale) {
+      factsRefreshRequested.current.add(targetId)
       apiFetch(`/api/hosts/${targetId}/facts/refresh`, { method: "POST" }).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

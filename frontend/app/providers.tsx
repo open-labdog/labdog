@@ -46,6 +46,11 @@ function AuthProvider({ children }: { children: ReactNode }) {
       // account to sign in on this browser renders the previous one's
       // data until each query refetches.
       queryClient.clear()
+      // Deliberately a full page load rather than router.push. The cache
+      // clear above covers TanStack Query, but a client-side navigation
+      // would keep every component's local state — including anything a
+      // signed-out user should no longer see — alive in the same tree.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.href = '/login'
     }
   }, [])

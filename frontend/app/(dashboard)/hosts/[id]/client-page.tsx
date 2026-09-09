@@ -105,7 +105,12 @@ function ModuleStateView({
       <DataTable
         tableId="current-state-firewall"
         data={rules}
-        getRowKey={(_, i) => i}
+        // Content-derived, not the row index: this table filters and
+        // reorders, and an index key hands row N's DOM state to whatever
+        // row lands at position N next. Two rules identical in every
+        // field collide, which is harmless — there is nothing to tell
+        // their DOM state apart.
+        getRowKey={(r) => `${r.direction}|${r.protocol}|${r.action}|${r.source_cidr ?? ""}|${r.destination_cidr ?? ""}|${r.port_start ?? ""}|${r.port_end ?? ""}|${r.comment ?? ""}`}
         emptyMessage="No firewall rules."
         // This table has fewer columns than Effective Rules (no Priority/Group/Actions), so Source/Destination get room for a full IPv4 CIDR (up to 18 chars); wider values still truncate with full text on hover via title.
         columns={[
@@ -128,7 +133,7 @@ function ModuleStateView({
       <DataTable
         tableId="current-state-service"
         data={services}
-        getRowKey={(_, i) => i}
+        getRowKey={(s) => s.unit ?? s.service_name ?? ""}
         emptyMessage="No services."
         columns={[
           { key: "service", label: "Service", accessor: (s) => s.unit ?? s.service_name ?? "", cell: (s) => <span className="font-mono text-white text-sm">{s.unit ?? s.service_name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. nginx" } },
@@ -145,7 +150,7 @@ function ModuleStateView({
       <DataTable
         tableId="current-state-hosts_file"
         data={entries}
-        getRowKey={(_, i) => i}
+        getRowKey={(e) => `${e.ip_address}|${e.hostname}`}
         emptyMessage="No hosts file entries."
         columns={[
           { key: "ip_address", label: "IP Address", accessor: (e) => e.ip_address, cell: (e) => <span className="font-mono text-slate-300 text-sm">{e.ip_address}</span>, defaultWidth: 140, filter: { type: "text", placeholder: "e.g. 10.0.1" } },
@@ -273,7 +278,7 @@ function ModuleStateView({
             <DataTable
               tableId="current-state-package-packages"
               data={packages}
-              getRowKey={(_, i) => i}
+              getRowKey={(pkg) => pkg.name}
               emptyMessage="No managed packages configured."
               columns={[
                 { key: "name", label: "Package", accessor: (p) => p.name, cell: (p) => <span className="font-mono text-white text-sm">{p.name}</span>, defaultWidth: 200, filter: { type: "text", placeholder: "e.g. curl" } },
@@ -291,7 +296,7 @@ function ModuleStateView({
             <DataTable
               tableId="current-state-package-repos"
               data={repos}
-              getRowKey={(_, i) => i}
+              getRowKey={(r) => `${r.type}|${r.name}|${r.url}`}
               emptyMessage="No repositories detected."
               columns={[
                 { key: "name", label: "Name", accessor: (r) => r.name, cell: (r) => <span className="text-white text-sm">{r.name}</span>, defaultWidth: 160, filter: { type: "text" } },
@@ -327,7 +332,7 @@ function ModuleStateView({
       <DataTable
         tableId="current-state-cron"
         data={cronEntries}
-        getRowKey={(_, i) => i}
+        getRowKey={(c) => `${String(c.user ?? "")}|${String(c.name ?? c.command ?? "")}|${[c.minute, c.hour, c.day, c.month, c.weekday].join(" ")}`}
         emptyMessage="No cron jobs."
         columns={[
           { key: "name", label: "Name/Command", accessor: (c) => String(c.name ?? c.command ?? ""), cell: (c) => <span className="font-mono text-white text-sm">{String(c.name ?? c.command ?? "—")}</span>, defaultWidth: 220, filter: { type: "text", placeholder: "e.g. backup" } },

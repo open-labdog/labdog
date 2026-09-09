@@ -504,43 +504,6 @@ Small correctness and cost items; none are defects worth a BUGS entry.
       Decide whether the column is legacy and should go, or whether
       something is meant to set it.
 
-- [ ] **Broaden `stripAnsi`.** `components/action-run-detail.tsx:23`
-      strips SGR sequences only, so cursor movement, OSC title/hyperlink
-      sequences and bare `\r` survive into the `<pre>`. Not an XSS risk
-      (React escapes), but the rendered log is wrong and copying it into a
-      terminal re-injects the control codes.
-
-- [ ] **Only set `Content-Type` when there is a body.** `lib/api.ts:47`
-      sets it on every request including GETs. When `NEXT_PUBLIC_API_URL`
-      points cross-origin — the documented dev setup — that makes every
-      read a non-simple CORS request and doubles the request count with
-      preflights.
-
-- [ ] **Stable row keys in the filterable tables.**
-      `hosts/[id]/client-page.tsx` uses `getRowKey={(_, i) => i}` in five
-      places. Harmless in append-only lists, wrong in a table that can be
-      filtered and reordered, where index keys reuse DOM state across
-      different rows.
-
-- [ ] **Stop re-dispatching the facts refresh.**
-      `components/actions-tab.tsx:55-64` POSTs `/facts/refresh` whenever
-      `os_facts_collected_at` is older than seven days. Collection is
-      async, so the timestamp does not change synchronously and the effect
-      re-fires on every mount of the tab until the Celery job lands — one
-      extra SSH round trip per navigation. Track dispatch in a ref keyed
-      by host id.
-
-- [ ] **Clear the query cache on logout.** `app/providers.tsx:44-56` does
-      `setUser(null)` then a full-page `window.location.href`, which
-      destroys the cache — so this is safe today by accident. If that ever
-      becomes a client-side `router.push`, cached host facts, SSH
-      transcripts and AI session content survive into the next user's
-      session on a shared browser. `queryClient.clear()` in the `finally`
-      costs nothing and removes the dependency on the redirect style.
-
-- [ ] **Align `eslint-config-next` with `next`.** Pinned to `16.1.6`
-      while `next` is `^16.2.11`.
-
 ---
 
 ## Refactors the audit surfaced — deliberately deferred

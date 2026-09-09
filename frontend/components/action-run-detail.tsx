@@ -17,13 +17,28 @@ interface ActionRunDetailProps {
 
 const TERMINAL = new Set(["succeeded", "failed", "partial", "cancelled"])
 
-// Strip ANSI CSI SGR escape sequences (colour codes) from Ansible output.
+// Strip terminal control sequences from Ansible output.
+//
 // Future runs are emitted uncoloured via ANSIBLE_NOCOLOR=1; this keeps legacy
 // rows that were captured before that env var was set rendering cleanly too.
-// eslint-disable-next-line no-control-regex
-const ANSI_SGR = /\x1B\[[0-9;]*m/g
+//
+// This used to match SGR (colour) sequences only, so cursor movement, OSC
+// title/hyperlink sequences and bare carriage returns survived into the
+// <pre>. React escapes them, so it was never an XSS risk — but the rendered
+// log was wrong, and copying it into a terminal re-injected the control
+// codes. The three patterns below cover what a playbook actually emits:
+//
+//   CSI  — ESC [ ... final byte: every colour code, cursor move, erase and
+//          scroll. A superset of the old SGR-only pattern.
+//   OSC  — ESC ] ... terminated by BEL or ST, which is how a window title
+//          or a hyperlink is set.
+//   CR   — a bare carriage return, used to overwrite a progress line in
+//          place. With no terminal to act on it, it renders as a stray break.
+const ANSI_CSI = /\x1B\[[0-?]*[ -/]*[@-~]/g
+const ANSI_OSC = /\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g
+const BARE_CR = /\r(?!\n)/g
 function stripAnsi(text: string): string {
-  return text.replace(ANSI_SGR, "")
+  return text.replace(ANSI_OSC, "").replace(ANSI_CSI, "").replace(BARE_CR, "")
 }
 
 // The name to show for one host run. `hostname` is the live host's name
