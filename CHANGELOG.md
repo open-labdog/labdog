@@ -259,6 +259,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **`drift_samples` is now pruned, without resetting the drift counters.**
+  The table was written once per drift check per module and nothing ever
+  deleted from it. It is now pruned daily by a new
+  `logging.drift_retention_days` setting (default 90, `0` = keep forever).
+
+  The reason this took a rollup table rather than a `DELETE`:
+  `labdog_drift_checks_total`, `labdog_drift_changes_total` and
+  `labdog_drift_check_duration_seconds` are derived from the whole table with
+  no time window, and all three are counters. Deleting rows makes a counter
+  decrease, which Prometheus reads as a process restart — `rate()` copes,
+  `increase()` across the deletion silently under-reports, and nobody is
+  told. Retention folds each row it deletes into `drift_sample_rollup` in the
+  same transaction as the delete, and the exporter sums live rows plus
+  rollup, so the totals only ever move forward.
+
+  Note for operators: the drift counters stay all-time, but the dashboard's
+  drift-trend chart is windowed and reads `drift_samples` directly, so a
+  retention window below 90 days will empty the chart's older buckets.
+
 - **Broker queue depth on `/metrics`.** `labdog_broker_queue_depth{queue}`
   and `labdog_broker_reachable`, covering every queue a worker consumes
   (`default`, `long_running`, `orchestrator`). These are the only families

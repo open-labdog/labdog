@@ -132,19 +132,6 @@ zero-filled). All three look like bugs and none of them are.
 [docs/metrics-export.md](docs/metrics-export.md)). These were
 deliberately scoped out of that PR.
 
-- [ ] **`drift_samples` retention + rollup.** The table has no
-      retention job (unlike `audit_log` / `ssh_session_transcripts`) and
-      grows unbounded. The catch: naively deleting rows makes
-      `labdog_drift_checks_total` and `labdog_drift_changes_total`
-      *decrease*, which Prometheus reads as a counter reset — `rate()`
-      copes, `increase()` across the deletion silently under-reports.
-      Recommended shape: a `drift_sample_rollup(module_type, status,
-      checks, add_count, remove_count, policy_change_count)` table
-      incremented **in the same transaction as the delete**, with the
-      exporter's aggregates summing live rows + rollup. `app/metrics/
-      aggregates.py` is written so this is a one-line `UNION ALL`
-      change. Model the job on `app/tasks/audit_retention.py`.
-
 - [ ] **Unify `HostModuleStatus.sync_status` vocabulary.** Three
       modules (`package_drift`, `cron_drift`, `user_drift`) write the
       legacy value `"drifted"` where the rest write `"out_of_sync"`;

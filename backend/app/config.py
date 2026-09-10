@@ -151,6 +151,12 @@ class LoggingConfig(BaseModel):
     #: Separate from the audit window on purpose: an audit trail is usually
     #: wanted for longer than an ansible transcript (BUG-73).
     run_retention_days: int = 90
+    #: Individual drift-check samples. Separate again: these are small, and
+    #: they feed a trend chart that offers up to 90 days, so the window
+    #: should not fall below what the chart can ask for. Deleted samples are
+    #: folded into ``drift_sample_rollup`` first — see
+    #: ``app.tasks.drift_retention``.
+    drift_retention_days: int = 90
 
 
 class SSHConfig(BaseModel):
