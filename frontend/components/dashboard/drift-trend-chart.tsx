@@ -96,9 +96,9 @@ export function DriftTrendChart({ anyChecksConfigured }: { anyChecksConfigured?:
                 Nothing is being checked, so nothing will ever appear here. Enable
                 drift checking on the{" "}
                 <Link href="/hosts" className="text-slate-300 underline underline-offset-2 hover:text-white">
-                  Hosts
-                </Link>{" "}
-                page.
+                  Hosts page
+                </Link>
+                .
               </p>
             </>
           ) : (

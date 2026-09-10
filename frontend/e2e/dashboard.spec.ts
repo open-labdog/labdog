@@ -48,12 +48,21 @@ test.describe("Dashboard page", () => {
   test("sidebar navigation links are visible", async ({ page }) => {
     await page.goto("/dashboard")
 
-    await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Groups" })).toBeVisible()
-    // Not `exact`, this also matches the "View all hosts →" card link.
-    await expect(page.getByRole("link", { name: "Hosts", exact: true })).toBeVisible()
-    await expect(page.getByRole("link", { name: "SSH Keys" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "Audit Log" })).toBeVisible()
+    // Scoped to the sidebar, which is what this test is named for. It used
+    // to search the whole page and lean on `exact: true` to dodge the
+    // "View all hosts →" card link — a workaround that only held while no
+    // other link on the dashboard was named exactly "Hosts". One eventually
+    // was (the drift-trend empty state), and the assertion failed on a
+    // strict-mode violation rather than on anything being wrong with the
+    // sidebar. Scoping to the landmark is immune to whatever the page body
+    // grows next.
+    const sidebar = page.getByRole("complementary")
+
+    await expect(sidebar.getByRole("link", { name: "Dashboard" })).toBeVisible()
+    await expect(sidebar.getByRole("link", { name: "Groups" })).toBeVisible()
+    await expect(sidebar.getByRole("link", { name: "Hosts", exact: true })).toBeVisible()
+    await expect(sidebar.getByRole("link", { name: "SSH Keys" })).toBeVisible()
+    await expect(sidebar.getByRole("link", { name: "Audit Log" })).toBeVisible()
   })
 
   test("sidebar navigation to Groups works", async ({ page }) => {
@@ -65,7 +74,10 @@ test.describe("Dashboard page", () => {
 
   test("sidebar navigation to Hosts works", async ({ page }) => {
     await page.goto("/dashboard")
-    await page.getByRole("link", { name: "Hosts" }).click()
+    // Scoped for the same reason as the test above: an unscoped "Hosts"
+    // matches the dashboard card link and the drift-trend empty state too,
+    // and a strict-mode violation here reads as "the sidebar is broken".
+    await page.getByRole("complementary").getByRole("link", { name: "Hosts" }).click()
     await expect(page).toHaveURL(/\/hosts/)
   })
 
