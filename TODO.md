@@ -167,11 +167,6 @@ provider form and in `docs/ui/assistant.md`.
 
 Follow-ups it leaves open:
 
-- [ ] **Persist resume state across restarts.** `resume` relies on the
-  CLI's own session files under `CLAUDE_CONFIG_DIR`, so parking a session
-  across a container restart needs that path on a volume.
-  `ClaudeAgentOptions.session_store` accepts a custom store, so
-  Postgres-backed sessions are possible if the volume proves fragile.
 - [ ] **Surface rate-limit state.** `RateLimitInfo` carries utilisation
   and reset time. On a subscription the money budget is meaningless but
   quota is not, so that is what the usage panel should show for these
