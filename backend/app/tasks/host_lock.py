@@ -55,6 +55,7 @@ acquiring transaction).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
@@ -808,3 +809,61 @@ async def dispatch_next_pending_for_host(
 
         run_action.delay(action_row.id)
         return ("action_group", action_row.id)
+
+
+async def release_host_queue(
+    host_ids: int | Iterable[int],
+    *,
+    after: str,
+    exclude_sync_job_id: int | None = None,
+    exclude_action_run_id: int | None = None,
+) -> None:
+    """Hand every host this operation claimed to its next pending op.
+
+    The ``finally``-block counterpart to the claim. Five tasks used to
+    write this out by hand — ``action_host``, ``action_group``,
+    ``builtin_dispatchers`` and ``host_sync_orchestrator`` twice — each
+    with its own session, its own try/except and its own log line. Two
+    properties matter and neither is obvious from any one copy:
+
+    * **It never raises.** A failure here must not mask the real outcome
+      of the task whose ``finally`` block is running.
+    * **One host's failure does not skip the rest.** The group path
+      releases every member, and a try/except placed around the loop
+      instead of inside it would let one bad host wedge the queue of
+      every other member. The loop below keeps the guard on the inside.
+
+    Each host gets its own short session: ``dispatch_next_pending_for_host``
+    takes that host's advisory lock, and holding several at once across
+    one transaction is how the group path would deadlock against an
+    overlapping group op.
+
+    Args:
+        host_ids: One host id, or every host this op claimed.
+        after: What just finished, for the log line when a release fails
+            (e.g. ``"action_run_id=42"``). The caller knows which of its
+            several ids is the useful one; this helper does not.
+        exclude_sync_job_id: Passed through — the just-finished sync job,
+            in case its commit is not yet visible to the scan.
+        exclude_action_run_id: Passed through — the just-finished action
+            run, for the same reason.
+    """
+    from app.db import task_session
+
+    ids = [host_ids] if isinstance(host_ids, int) else list(host_ids)
+    for host_id in ids:
+        try:
+            async with task_session() as db:
+                await dispatch_next_pending_for_host(
+                    db,
+                    host_id,
+                    exclude_sync_job_id=exclude_sync_job_id,
+                    exclude_action_run_id=exclude_action_run_id,
+                )
+        except Exception:
+            logger.exception(
+                "release_host_queue: dispatch-next-pending failed for host_id=%s after %s; "
+                "that host's queue may be stuck until the next op on it triggers a release",
+                host_id,
+                after,
+            )

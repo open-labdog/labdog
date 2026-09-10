@@ -194,21 +194,13 @@ async def _finish_host_run(
 
     if not dispatch_next or host_id_for_dispatch is None:
         return
-    from app.tasks.host_lock import dispatch_next_pending_for_host
+    from app.tasks.host_lock import release_host_queue
 
-    try:
-        async with task_session() as db:
-            await dispatch_next_pending_for_host(
-                db,
-                host_id_for_dispatch,
-                exclude_action_run_id=action_run_id_for_dispatch,
-            )
-    except Exception:
-        logger.exception(
-            "builtin_dispatchers: dispatch-next-pending failed for host_id=%s after host_run_id=%s",
-            host_id_for_dispatch,
-            host_run_id,
-        )
+    await release_host_queue(
+        host_id_for_dispatch,
+        after=f"host_run_id={host_run_id}",
+        exclude_action_run_id=action_run_id_for_dispatch,
+    )
 
 
 async def _load_action_run_parameters(action_run_id: int) -> dict:

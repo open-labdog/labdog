@@ -605,6 +605,7 @@ async def _async_run(
     handle that when it finishes.
     """
     from app.crypto import decrypt_ssh_key
+    from app.tasks.host_lock import release_host_queue
 
     # --- Phase 0+1: claim-and-prepare under one advisory lock --------
     # Single-flight gate combined with the pre-run write. The advisory
@@ -691,16 +692,11 @@ async def _async_run(
                 logger.exception(
                     "compensating finalise failed for job_id=%s host_id=%s", job_id, host_id
                 )
-            try:
-                async with task_session() as db:
-                    await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
-            except Exception:
-                logger.exception(
-                    "dispatch-next-pending failed in BUG-39 compensation path "
-                    "for host_id=%s after job_id=%s",
-                    host_id,
-                    job_id,
-                )
+            await release_host_queue(
+                host_id,
+                after=f"job_id={job_id} (BUG-39 compensation path)",
+                exclude_sync_job_id=job_id,
+            )
         raise exc
 
     if not claimed:
@@ -812,16 +808,11 @@ async def _async_run(
         # ``_claim_or_defer`` short-circuits above and skips the try
         # entirely). Any failure in the dispatch helper itself is
         # swallowed so it never masks the real outcome of the task.
-        try:
-            async with task_session() as db:
-                await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
-        except Exception:
-            logger.exception(
-                "dispatch-next-pending failed for host_id=%s after job_id=%s; "
-                "queue may be stuck until next sync triggers it",
-                host_id,
-                job_id,
-            )
+        await release_host_queue(
+            host_id,
+            after=f"job_id={job_id}",
+            exclude_sync_job_id=job_id,
+        )
 
 
 # ---------------------------------------------------------------------------
