@@ -180,9 +180,6 @@ provider form and in `docs/ui/assistant.md`.
 
 Follow-ups it leaves open:
 
-- [ ] **Stream partial text.** The runner emits one SSE `text` event per
-  completed assistant message. `include_partial_messages` would give
-  token-by-token streaming, which is what the chat page wants.
 - [ ] **Persist resume state across restarts.** `resume` relies on the
   CLI's own session files under `CLAUDE_CONFIG_DIR`, so parking a session
   across a container restart needs that path on a volume.
