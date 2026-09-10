@@ -57,15 +57,22 @@ class TestTheCspItself:
         """
         assert "base-uri" in _directives(_CSP.decode())
 
-    def test_script_src_still_allows_inline_and_that_is_known(self):
-        """Not an oversight — see the comment on ``_CSP`` and TODO.md.
+    def test_script_src_no_longer_allows_inline(self):
+        """This assertion used to be its own inverse.
 
-        Next's static export inlines the RSC flight data as ``<script>``
-        blocks. This test exists so that removing 'unsafe-inline' is a
-        deliberate act that updates a test, rather than something a
-        future reader assumes was never tried.
+        It was written to say "'unsafe-inline' is here on purpose, and
+        removing it should be a deliberate act that updates a test". That
+        act happened: HTML responses now carry a per-response nonce
+        (``tests/test_csp_nonce.py``), and this constant is the fallback for
+        responses that have no scripts to govern.
         """
-        assert "'unsafe-inline'" in _directives(_CSP.decode())["script-src"]
+        assert "'unsafe-inline'" not in _directives(_CSP.decode())["script-src"]
+
+    def test_style_src_still_allows_inline_and_that_is_known(self):
+        """Next inlines styles as well as scripts, and nothing has been done
+        about that. Separate question, lower value: an injected style cannot
+        execute. Called out so it reads as a known gap, not an oversight."""
+        assert "'unsafe-inline'" in _directives(_CSP.decode())["style-src"]
 
 
 class TestTheHeadersOnARealResponse:

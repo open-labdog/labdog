@@ -9,6 +9,27 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **`script-src 'unsafe-inline'` is gone; HTML now carries a per-response CSP
+  nonce.** This was the last and hardest of the CSP items. Next's static export
+  inlines the RSC flight data as `<script>` blocks, so the usual fix —
+  build-time hashes — does not work here: 19 of the export's 147 inline scripts
+  are rewritten *per request* to patch the real route id in, so a hash computed
+  at build time never matches what is served. Each HTML response instead gets a
+  fresh 128-bit nonce stamped into its inline tags and a CSP naming it.
+
+  The rewrite cache is preserved: the document is cached with a sentinel in the
+  nonce slots and the substitution happens per response, so the expensive part
+  is still shared while the token is not.
+
+  `/docs` and `/redoc` keep `'unsafe-inline'` — FastAPI generates those pages
+  with inline bootstrap we do not control. They are off unless
+  `server.expose_docs` is set. Every other response gets a strict `script-src
+  'self'` fallback, deliberately strict so that a future code path returning
+  HTML outside the nonce machinery breaks visibly instead of quietly serving
+  inline script.
+
+  `style-src 'unsafe-inline'` is unchanged and remains a known gap.
+
 - **The Content-Security-Policy now sets the four directives that do not
   inherit from `default-src`.** `object-src 'none'`, `base-uri 'self'`,
   `form-action 'self'` and `frame-ancestors 'none'` were previously
