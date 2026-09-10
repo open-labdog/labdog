@@ -100,6 +100,17 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "jobs (0 = keep forever)"
         ),
     },
+    "logging.drift_retention_days": {
+        "type": "int",
+        "default": 90,
+        "min": 0,
+        "max": 3650,
+        "description": (
+            "Days to retain individual drift-check samples (0 = keep forever). "
+            "Older samples are folded into running totals before deletion, so "
+            "the exported drift counters never go backwards"
+        ),
+    },
     "logging.level": {
         "type": "string",
         "default": "info",

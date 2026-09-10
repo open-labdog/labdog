@@ -246,6 +246,40 @@ no place in a scrape path. Run [celery-exporter] alongside if you need it.
 
 ---
 
+## Drift sample retention
+
+`drift_samples` is written once per drift check per module. It is pruned
+daily by `logging.drift_retention_days` (default 90, `0` = keep forever).
+
+Deleting rows from it is not as simple as it looks, and the mechanism is
+worth knowing before you read the drift counters:
+
+`labdog_drift_checks_total`, `labdog_drift_changes_total` and
+`labdog_drift_check_duration_seconds` are all derived from the whole table
+with no time window, and all three are **counters**. A plain delete would
+make them decrease, which Prometheus reads as a process restart — `rate()`
+copes, `increase()` across the deletion silently under-reports, and nothing
+warns you.
+
+So retention folds every row it deletes into a `drift_sample_rollup` table
+**in the same transaction as the delete**, and the exporter reports live
+rows plus rollup. The totals therefore only ever move forward. Two
+consequences:
+
+- **The drift counters are all-time, not "last 90 days".** Retention shrinks
+  the table, not the numbers.
+- **The dashboard's drift-trend chart *is* windowed**, and reads
+  `drift_samples` directly. Set the retention window at or above the longest
+  range the chart offers (90 days) or the older buckets go empty.
+
+`drift_sample_rollup` stores the bucket boundaries its histogram counts were
+computed against. If `_BUCKETS_DRIFT` is ever changed, rolled-up counts from
+before the change stop contributing their buckets — `_count` and `_sum` are
+bucket-independent and keep accumulating — rather than being added to arrays
+whose positions now mean different durations.
+
+---
+
 ## Counter semantics
 
 Every counter except `labdog_metrics_scrape_errors_total` is computed as a
