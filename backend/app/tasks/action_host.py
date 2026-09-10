@@ -1315,24 +1315,16 @@ async def _release_host(ctx: _RunCtx) -> None:
     stalls. Failures here are swallowed — they must not mask the real
     outcome of the task.
     """
-    from app.db import task_session
-    from app.tasks.host_lock import dispatch_next_pending_for_host
+    from app.tasks.host_lock import release_host_queue
 
     if not (ctx.claimed and ctx.claimed_host_id is not None):
         return
 
-    try:
-        async with task_session() as db:
-            await dispatch_next_pending_for_host(
-                db, ctx.claimed_host_id, exclude_action_run_id=ctx.action_run_id
-            )
-    except Exception:
-        logger.exception(
-            "action_host: dispatch-next-pending failed for host_id=%s "
-            "after action_run_id=%s; queue may be stuck until next op triggers it",
-            ctx.claimed_host_id,
-            ctx.action_run_id,
-        )
+    await release_host_queue(
+        ctx.claimed_host_id,
+        after=f"action_run_id={ctx.action_run_id}",
+        exclude_action_run_id=ctx.action_run_id,
+    )
 
     # Close the parent run if this was the last member outstanding.
     #

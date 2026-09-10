@@ -415,32 +415,26 @@ Small correctness and cost items; none are defects worth a BUGS entry.
 
 ## Refactors the audit surfaced — deliberately deferred
 
-- [ ] **Share the identical ends of the two action lifecycles.**
-      `action_host.py` and `action_group.py` are now the same shape —
-      both run a documented Phase A–G lifecycle with a context object and
-      named phase functions — which makes it visible which parts are
-      genuinely the same code written twice:
+- [ ] **Extract `action_group`'s claim-or-defer into a function.**
+      Not for reuse — for testability. `action_host._claim_or_defer` is a
+      function, so `tests/test_release_host_queue.py` can call it and
+      assert the busy check and the status flip share one transaction,
+      which is exactly the invariant BUG-62 broke. The group's claim is
+      inline in `_run_action_group_async`, so the same guard cannot be
+      written for it, and the group is the path where BUG-62 was *also*
+      found. Pulling it out is mechanical; the test is the point.
 
-      * **claim-or-defer** against the per-host advisory lock,
-      * **load-and-mark-running**, and
-      * **finalise-and-dispatch-next**.
-
-      Those three belong next to `host_lock.py`. Extracting them is what
-      stops the next fix in this area having to land twice, which is what
-      happened to the `/dev/shm` guard, the verify-tempdir leak, and
-      BUG-62's claim-window race.
-
-      **The middle should stay divergent, and the original entry here was
-      wrong to imply otherwise.** Phase B is one host with a pinned host
-      key versus a flat `all` inventory across every member; Phase C
-      exists only on the group side (routing runner events back to rows by
-      inventory hostname); the snapshot fan-out is sequential versus
-      batched with partial-failure handling; and the locking is one
-      advisory lock versus every member's taken in sorted host-id order to
-      avoid deadlock. Those are two algorithms wearing the same phase
-      names. Merging them produces a function with an `is_group` flag
-      threaded through eight phases — a third thing, harder to read than
-      either original.
+      **Correction to what this entry used to claim.** It listed three
+      things as "the same code written twice" — claim-or-defer,
+      load-and-mark-running, and dispatch-next. Only the third was.
+      Dispatch-next is now `host_lock.release_host_queue`, shared by all
+      five call sites. The other two share a *protocol* over different
+      cardinality: one host versus every member, `check_host_busy` with
+      an exclude versus `check_hosts_busy` without, flipping a child row
+      versus flipping the parent run and every child. A helper covering
+      both needs three callbacks, which is the "third thing, harder to
+      read than either original" this list warns against for the middle
+      phases. Not planned.
 
 - [ ] **Finish the `enum_str` sweep.** 18 inline
       `.value if hasattr(x, "value") else str(x)` coercions remain across

@@ -192,8 +192,8 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from app.tasks.host_lock import (
         acquire_host_locks,
         check_hosts_busy,
-        dispatch_next_pending_for_host,
         format_pending_reason,
+        release_host_queue,
     )
 
     r = redis_lib.from_url(settings.redis.url)
@@ -739,21 +739,14 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         # Dispatch-next-pending per claimed member. Each freed host can
         # unblock a different queued op; we honour exclude_action_run_id
         # so our own row (already finalised in a prior commit) doesn't
-        # re-pick itself. Failures here are swallowed so they never
-        # mask the real task outcome.
-        for host_id in claimed_member_ids:
-            try:
-                async with task_session() as db:
-                    await dispatch_next_pending_for_host(
-                        db, host_id, exclude_action_run_id=action_run_id
-                    )
-            except Exception:
-                logger.exception(
-                    "action_group: dispatch-next-pending failed for host_id=%s "
-                    "after action_run_id=%s; queue may be stuck until next op triggers it",
-                    host_id,
-                    action_run_id,
-                )
+        # re-pick itself. The helper swallows per-host failures so they
+        # neither mask the real task outcome nor stop the remaining
+        # members from being released.
+        await release_host_queue(
+            claimed_member_ids,
+            after=f"action_run_id={action_run_id}",
+            exclude_action_run_id=action_run_id,
+        )
 
         # CRITICAL: always remove SSH keys from tmpfs.
         for key_path in ssh_key_paths:
