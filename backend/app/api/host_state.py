@@ -45,8 +45,16 @@ async def refresh_host_sync_status(host: Host, db: AsyncSession) -> None:
         host.sync_status = SyncStatus.error
     elif "out_of_sync" in statuses:
         host.sync_status = SyncStatus.out_of_sync
-    elif statuses:
+    elif statuses - {"unknown"}:
         host.sync_status = SyncStatus.in_sync
+    elif statuses:
+        # Every module reports `unknown`, which is not the same as clean.
+        # This used to fall through to `in_sync`, which was unreachable
+        # while a fresh host had no module rows at all — opting a host into
+        # drift checking at creation writes six of them, all `unknown`, and
+        # made it reachable. A host that has never been synced must not
+        # show a green badge for having rows.
+        host.sync_status = SyncStatus.unknown
 
 
 class ModuleState(BaseModel):

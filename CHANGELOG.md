@@ -295,6 +295,20 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **The Add Host form asks whether to check the host for drift.** Ticked by
+  default. Drift checking stays off by default at the API and for every host
+  already added — the default is deliberate, since it means LabDog connects to
+  the host on a timer — but nobody was ever *asked*, which is how an install
+  ends up with 17 hosts and drift silently off on all of them.
+
+  Ticking it enables all seven modules, not just firewall.
+  `Host.drift_check_enabled` gates the firewall sweep alone and the other six
+  read their own rows, so a control that set only the host flag would have
+  enabled one seventh of what it says.
+
+  `POST /api/hosts` without `drift_check_enabled` is unchanged, so existing
+  scripts keep the behaviour they have.
+
 - **`drift_samples` is now pruned, without resetting the drift counters.**
   The table was written once per drift check per module and nothing ever
   deleted from it. It is now pruned daily by a new
@@ -359,6 +373,13 @@ The format follows [Keep a Changelog]; LabDog follows
   more.
 
 ### Fixed
+
+- **A host whose modules all report `unknown` no longer shows as "In Sync".**
+  `refresh_host_sync_status` fell through to `in_sync` for any non-empty status
+  set with no error and no drift. It was unreachable while a freshly added host
+  had no module rows at all; opting one into drift checking at creation writes
+  six of them, all `unknown`, and made it reachable — a green badge earned by
+  ticking a checkbox on a host that had never been synced.
 
 - **BUG-82: the firewall row's "Enable Drift Check" toggle showed the wrong
   state.** Firewall drift is the one sweep still gated by the *host* flag

@@ -8,11 +8,27 @@ Checks run on a timer (`drift.check_interval_minutes`, default 30, see
 [Settings](settings.md)) and can also be run on demand from the Host detail
 page.
 
-## It is off by default, on every host
+## It is off by default, and the Add Host form asks
 
-`drift_check_enabled` defaults to **off** for newly added hosts. The periodic
-sweep runs on schedule regardless and simply finds no hosts to check, so a
-fresh install shows no error, no warning, and no checks — indefinitely.
+`drift_check_enabled` defaults to **off**. That is deliberate: drift checking
+means LabDog connects to the host on a timer, and a tool should not start
+doing that to a machine because nobody said otherwise.
+
+What was missing was being *asked*. The **Add Host** form now carries a
+"Check this host for drift" checkbox, ticked by default — the moment someone
+is already deciding to manage a host is the right moment to decide this too.
+Ticking it enables all seven modules, not just firewall (see
+[The two flags](#the-two-flags) below for why that distinction exists).
+
+The API default is unchanged: `POST /api/hosts` without
+`drift_check_enabled` still creates a host with drift checking off, so
+existing scripts keep the behaviour they have.
+
+Hosts added before this, and hosts added through discovery bulk-add, are
+unaffected — use the bulk action on the Hosts list. The periodic sweep runs
+on schedule regardless of whether anything is enabled, and simply finds no
+hosts to check, so a fleet with it off everywhere shows no error, no
+warning, and no checks — indefinitely.
 
 This is worth stating plainly because everything downstream of drift goes
 quiet too, and each looks like a separate malfunction:

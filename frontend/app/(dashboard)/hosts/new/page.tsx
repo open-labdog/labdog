@@ -23,7 +23,7 @@ export default function NewHostPage() {
 
   const form = useForm<HostInput>({
     resolver: zodResolver(hostSchema),
-    defaultValues: { hostname: "", ip_address: "", ssh_port: 22, ssh_user: "root", ssh_key_id: "", group_ids: [] },
+    defaultValues: { hostname: "", ip_address: "", ssh_port: 22, ssh_user: "root", ssh_key_id: "", group_ids: [], drift_check_enabled: true },
     mode: "onSubmit",
   })
 
@@ -54,6 +54,7 @@ export default function NewHostPage() {
           ssh_user: data.ssh_user,
           ssh_key_id: data.ssh_key_id ? Number(data.ssh_key_id) : null,
           group_ids: (data.group_ids ?? []).map(Number),
+          drift_check_enabled: !!data.drift_check_enabled,
         }),
       })
       router.push("/hosts")
@@ -165,6 +166,31 @@ export default function NewHostPage() {
               onChange={(ids) => form.setValue("group_ids", ids.map(String))}
             />
           )}
+
+          {/*
+            Drift checking stays off by default at the API and for every
+            host already added — the default is a deliberate choice, not an
+            oversight. What was missing is that nobody was ever asked. This
+            asks, at the moment someone is already deciding to manage the
+            host, and it is ticked because that is the answer most people
+            adding a host to a config-management tool want.
+          */}
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 cursor-pointer"
+              {...form.register("drift_check_enabled")}
+            />
+            <span className="text-sm">
+              <span className="font-medium">Check this host for drift</span>
+              <span className="mt-0.5 block text-xs text-slate-400">
+                LabDog will connect over SSH on a timer and report where the
+                host has diverged from its desired configuration. Read-only —
+                it never changes the host. You can turn this off per module
+                later.
+              </span>
+            </span>
+          </label>
 
           {error && (
             <p className="text-sm text-red-400">{error}</p>

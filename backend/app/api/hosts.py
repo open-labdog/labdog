@@ -15,6 +15,7 @@ from app.db import get_db
 from app.enum_utils import enum_str
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
+from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.hosts import HostCreate, HostResponse, HostUpdate
@@ -102,6 +103,33 @@ async def list_hosts(
     return hosts
 
 
+def _enable_all_drift_modules(db, host_id: int) -> None:
+    """Turn on the six per-module drift flags for a newly created host.
+
+    ``Host.drift_check_enabled`` gates the *firewall* sweep and nothing
+    else; the other six modules each read their own ``HostModuleStatus``
+    row (see ``docs/ui/drift-detection.md``). A single "enable drift
+    checking" control that set only the host flag would enable one seventh
+    of what it says — which is the class of half-connected control BUG-82
+    was about.
+
+    Firewall is deliberately absent from the rows written here. Its module
+    column has no reader; the host flag above is what its sweep consults,
+    and writing a second copy would create a value to keep in sync for no
+    benefit.
+    """
+    from app.api.host_state import COLLECTABLE_MODULES  # noqa: PLC0415
+
+    for module_type in sorted(COLLECTABLE_MODULES - {"firewall"}):
+        db.add(
+            HostModuleStatus(
+                host_id=host_id,
+                module_type=module_type,
+                drift_check_enabled=True,
+            )
+        )
+
+
 @router.post("", response_model=HostResponse, status_code=201)
 async def create_host(
     body: HostCreate,
@@ -163,9 +191,13 @@ async def create_host(
         ssh_key_id=body.ssh_key_id,
         labdog_source_ip=source_ip,
         ssh_host_key_entry=captured_host_key_entry,
+        drift_check_enabled=body.drift_check_enabled,
     )
     db.add(host)
     await db.flush()  # get host.id
+
+    if body.drift_check_enabled:
+        _enable_all_drift_modules(db, host.id)
 
     if body.group_ids:
         await db.execute(
