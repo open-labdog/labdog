@@ -71,19 +71,6 @@ that the alloy-install action stamps. A few deliberate deferrals:
 ---
 
 
-## Metrics export — follow-ups
-
-**Context:** the opt-in Prometheus `/metrics` endpoint shipped (see
-[docs/metrics-export.md](docs/metrics-export.md)). These were
-deliberately scoped out of that PR.
-
-- [ ] **True OpenMetrics 1.0 output.** The endpoint currently serves
-      Prometheus text exposition `0.0.4` unconditionally (universally
-      parsed; OpenMetrics 1.0's `# EOF` terminator and counter-naming
-      differences are a common footgun). Add 1.0 as an additive
-      `Accept`-negotiated branch if something in the stack requires it.
-
----
 
 ## AI integration — remaining phases
 
