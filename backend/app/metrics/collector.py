@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.metrics import aggregates as agg
+from app.metrics import broker as broker_probe
 from app.metrics.aggregates import _BUCKETS_DRIFT, _BUCKETS_SYNC
 from app.metrics.exposition import Labels, MetricFamily, counter, gauge, histogram
 from app.models.git_repository import GitAuthType, GitOpsStatus
@@ -97,6 +98,41 @@ async def collect(db: AsyncSession) -> list[MetricFamily]:
     ca_cert_expiries = await agg.get_ca_cert_expiries(db)
     sync_duration_hist = await agg.get_sync_duration_histogram(db)
     drift_duration_hist = await agg.get_drift_duration_histogram(db)
+
+    # -- broker queue depth -------------------------------------------
+    #
+    # The only family here that does not come from PostgreSQL. Kept behind
+    # a hard timeout because it puts a second failure domain into an
+    # unauthenticated request path; see ``app.metrics.broker``.
+    #
+    # On an unreachable broker the depth gauges are omitted rather than
+    # zero-filled. A zero would read as "the queues are empty" — the
+    # opposite of what is known — and would silence the "work is piling
+    # up" alert at the moment it should fire. The zero-fill rule at the
+    # top of this module is about *label values* for known enums, not
+    # about inventing a value for a measurement that failed.
+    broker = await broker_probe.probe()
+    families.append(
+        gauge(
+            "labdog_broker_reachable",
+            "1 if the Celery broker answered within its timeout, 0 otherwise. "
+            "When 0, labdog_broker_queue_depth is absent rather than zero.",
+            [((), 1.0 if broker.reachable else 0.0)],
+        )
+    )
+    if broker.depths is not None:
+        families.append(
+            gauge(
+                "labdog_broker_queue_depth",
+                "Tasks waiting in each Celery queue. Waiting only — a task a "
+                "worker has already picked up is not in the queue. Absent when "
+                "the broker is unreachable.",
+                [
+                    (_labels(("queue", queue)), float(depth))
+                    for queue, depth in sorted(broker.depths.items())
+                ],
+            )
+        )
 
     # -- build_info ---------------------------------------------------
     from app.api.version import _BUILD_DATE, _COMMIT_SHA, _VERSION

@@ -132,15 +132,6 @@ zero-filled). All three look like bugs and none of them are.
 [docs/metrics-export.md](docs/metrics-export.md)). These were
 deliberately scoped out of that PR.
 
-- [ ] **Redis broker queue depth.** Export `LLEN default` /
-      `LLEN long_running` plus a `labdog_broker_reachable` gauge. Needs
-      a short (~200ms) `redis.asyncio` timeout and a defined value to
-      emit on timeout — it puts a second failure domain into an
-      unauthenticated request path, which is why it wasn't bundled in.
-      Celery *worker* introspection stays out of scope entirely
-      (`inspect().active()` is a multi-second broadcast RPC); point
-      operators at `celery-exporter` instead.
-
 - [ ] **`drift_samples` retention + rollup.** The table has no
       retention job (unlike `audit_log` / `ssh_session_transcripts`) and
       grows unbounded. The catch: naively deleting rows makes

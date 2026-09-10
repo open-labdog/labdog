@@ -117,6 +117,12 @@ class MetricsConfig(BaseModel):
     enabled: bool = False
     cache_ttl_seconds: float = 15.0
     action_key_label: bool = True
+    #: Hard timeout for the Redis broker probe that produces
+    #: ``labdog_broker_queue_depth``. Short on purpose: the broker is a
+    #: second failure domain in an unauthenticated request path, so a
+    #: broker that is not answering promptly is reported as unreachable
+    #: rather than waited for. See ``app.metrics.broker``.
+    broker_timeout_seconds: float = 0.2
 
 
 class AlertsConfig(BaseModel):

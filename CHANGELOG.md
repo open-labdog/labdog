@@ -259,6 +259,18 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Broker queue depth on `/metrics`.** `labdog_broker_queue_depth{queue}`
+  and `labdog_broker_reachable`, covering every queue a worker consumes
+  (`default`, `long_running`, `orchestrator`). These are the only families
+  not derived from PostgreSQL, so two things are deliberate: the probe has a
+  hard timeout (`metrics.broker_timeout_seconds`, default 0.2) because the
+  endpoint is unauthenticated and a hanging Redis must not hang a request;
+  and when the broker is unreachable the depth gauge is **absent rather than
+  zero**, since a zero reads as "the queues are empty" and would silence a
+  backlog alert at the moment it should fire. Celery worker introspection
+  stays out of scope — `inspect().active()` is a multi-second broadcast RPC;
+  run `celery-exporter` alongside if you need that detail.
+
 - **The dashboard now says when drift checking is off, instead of looking
   empty.** Drift checking is off by default on every host and the periodic
   sweep runs on schedule regardless, so a fleet with it switched off nowhere
