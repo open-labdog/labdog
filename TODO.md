@@ -124,15 +124,6 @@ zero-filled). All three look like bugs and none of them are.
       (`labdog_hosts_drift_check_enabled` / `hosts_never_drift_checked`
       exist precisely because this was invisible).
 
-- [ ] **Explain the two flags.** `Host.drift_check_enabled` and
-      `HostModuleStatus.drift_check_enabled` are independent, set from
-      three unrelated places — the bulk toggle on the Hosts list, the
-      Enabled/Disabled button on Host → Overview, and a per-module
-      "Enable Drift Check" action on each module tab (backed by three
-      different route prefixes: `/api/drift`, `/api/hosts-mgmt`,
-      `/api/cron`). Nothing states how host-level and module-level
-      interact, or which one a given control writes.
-
 - [ ] **Make the empty states diagnostic rather than passive.** The
       drift-trend chart should distinguish "no checks are configured"
       from "checks are running, no drift found yet" — currently both

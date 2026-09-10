@@ -63,6 +63,31 @@ class ModuleState(BaseModel):
     warnings: list[str] = []
 
 
+def _module_drift_enabled(hms: HostModuleStatus, host_drift_enabled: bool) -> bool:
+    """Which flag actually governs drift checking for *hms*'s module.
+
+    Firewall drift is gated by the *host* flag, not by a per-module one:
+    ``drift_sweep.sweep_module(..., host_gated=True)`` in
+    ``tasks/drift.py`` is the only sweep that works this way — it predates
+    the per-module toggles. So ``HostModuleStatus.drift_check_enabled``
+    for ``module_type="firewall"`` has no writer anywhere in the codebase
+    and sits at its ``false`` server default forever.
+
+    Reporting that column told the UI the opposite of the truth. The
+    firewall row's "Enable Drift Check" action PUTs
+    ``/api/drift/hosts/{id}/settings``, which sets ``Host.drift_check_enabled``,
+    and then read back a False that never moved: a switch whose label
+    never changed while its real state alternated invisibly on each click.
+
+    The host flag stays the single source of truth — this reports it
+    rather than mirroring it into a second column that would then need
+    keeping in sync.
+    """
+    if hms.module_type == "firewall":
+        return bool(host_drift_enabled)
+    return hms.drift_check_enabled
+
+
 @router.get("/{host_id}/current-state", response_model=list[ModuleState])
 async def get_current_state(
     host_id: int,
@@ -72,13 +97,14 @@ async def get_current_state(
     """Return all cached collected states for a host."""
     result = await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host_id))
     statuses = result.scalars().all()
+    host_drift_enabled = await db.scalar(select(Host.drift_check_enabled).where(Host.id == host_id))
     return [
         ModuleState(
             module_type=hms.module_type,
             sync_status=hms.sync_status,
             collected_state=hms.collected_state,
             collected_at=hms.collected_at,
-            drift_check_enabled=hms.drift_check_enabled,
+            drift_check_enabled=_module_drift_enabled(hms, host_drift_enabled),
             error_message=hms.error_message,
         )
         for hms in statuses
@@ -244,7 +270,7 @@ async def collect_module_state(
                     sync_status=hms.sync_status,
                     collected_state=hms.collected_state,
                     collected_at=hms.collected_at,
-                    drift_check_enabled=hms.drift_check_enabled,
+                    drift_check_enabled=_module_drift_enabled(hms, host.drift_check_enabled),
                     error_message=hms.error_message,
                 )
             )
@@ -279,7 +305,7 @@ async def collect_module_state(
                 sync_status=hms.sync_status,
                 collected_state=hms.collected_state,
                 collected_at=hms.collected_at,
-                drift_check_enabled=hms.drift_check_enabled,
+                drift_check_enabled=_module_drift_enabled(hms, host.drift_check_enabled),
                 error_message=hms.error_message,
                 warnings=warnings_by_module.get(module_type, []),
             )

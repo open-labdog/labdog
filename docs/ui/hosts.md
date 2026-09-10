@@ -49,7 +49,10 @@ After adding, assign the host to one or more groups from the Groups page.
 Shows a single host's configuration, group memberships, and per-module sync status. From here you can:
 
 - Edit the host's connection settings
-- Enable or disable **drift detection** for this host
+- Enable or disable **drift detection** for this host. This is the
+  host-level flag, which governs *firewall* drift only — the other six
+  modules each have their own toggle on their own tab. See
+  [Drift detection](drift-detection.md).
 - Open the **SSH terminal**
 - **Sync** an individual module or all modules at once — each opens a diff **preview** before applying, with live progress shown in the global sync tray
 - View and discover the host's **Proxmox VM mapping**
