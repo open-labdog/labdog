@@ -39,6 +39,20 @@ from app.models.base import Base
 # tools, while "claude_agent" drives Claude Code through the Claude Agent
 # SDK, which runs the loop itself and calls LabDog's tools over an
 # in-process MCP server.
+#
+# Who owns the loop is also why they stream differently, which looks like
+# an inconsistency and is not one. "anthropic" and "openai_compat" are
+# LLMProviders: AgentLoop asks them for one turn at a time, so LabDog owns
+# the token stream and forwards deltas as it reads them. "claude_agent"
+# cannot be an LLMProvider at all — it is never asked for a turn — so what
+# arrives is a whole AssistantMessage, and that is the unit the runner
+# emits, counts usage against, persists, and checks the approval park on.
+#
+# Token-level streaming there is therefore not a missing feature but a
+# different shape: the SDK's include_partial_messages would add a second
+# event stream that still has to be reconciled with the message that
+# follows it, on the runner's most safety-critical path. Deliberately not
+# done. See `git log --grep "agentic sessions on a Claude subscription"`.
 PROVIDER_TYPES = ("openai_compat", "anthropic", "claude_cli", "claude_agent")
 
 # How much the model is allowed to do without a human in the loop.
