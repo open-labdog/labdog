@@ -35,6 +35,9 @@ export const hostSchema = z.object({
   ssh_user: z.string().min(1, "SSH user is required").max(32),
   ssh_key_id: z.string().optional(),
   group_ids: z.array(z.string()).optional(),
+  // Opt-in at creation. The API defaults it to false so existing clients
+  // are unaffected; the form ticks it. See docs/ui/drift-detection.md.
+  drift_check_enabled: z.boolean().optional(),
 })
 export type HostInput = z.infer<typeof hostSchema>
 

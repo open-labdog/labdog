@@ -70,30 +70,6 @@ that the alloy-install action stamps. A few deliberate deferrals:
 
 ---
 
-## Drift check — make enabling it discoverable
-
-**Context:** `Host.drift_check_enabled` defaults to `False`, and
-`check_all_drift` only walks hosts where it is `True`. So on a fresh
-install the periodic sweep runs every 30 minutes and does nothing,
-indefinitely, with no indication anywhere that drift checking is off.
-Found on a real deployment: 17 hosts, all with drift checking disabled,
-where the operator reasonably assumed it was running.
-
-The cost is not just the missing checks — it silently empties every
-downstream surface. `drift_samples` stays empty, so the dashboard's
-drift-trend chart shows its "collecting history" state forever, and the
-exporter emits no `labdog_drift_*` families at all (they are absent
-rather than zero, because `module` is a free-text column and cannot be
-zero-filled). All three look like bugs and none of them are.
-
-- [ ] **Decide the default.** Whether new hosts should opt in
-      automatically is a genuine product call, not an oversight:
-      flipping it to `True` means LabDog starts SSHing to every newly
-      added host on a timer without being asked. If it stays `False`,
-      the onboarding flow should prompt for it explicitly rather than
-      leaving it to be discovered.
-
----
 
 ## Metrics export — follow-ups
 

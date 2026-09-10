@@ -73,6 +73,33 @@ class TestTheRollupStillSeesDrift:
 
         assert host.sync_status.value == expected
 
+    async def test_all_unknown_is_unknown_not_in_sync(self, db):
+        """`unknown` is not a clean bill of health.
+
+        The fall-through used to report `in_sync` for any non-empty status
+        set with no error and no drift. It was unreachable while a fresh
+        host had no module rows; opting one into drift checking at creation
+        writes six, all `unknown`, and made it reachable.
+        """
+        host = await create_host(db, hostname="vocab-unknown")
+        for module in ("cron", "package"):
+            db.add(HostModuleStatus(host_id=host.id, module_type=module, sync_status="unknown"))
+        await db.flush()
+
+        await refresh_host_sync_status(host, db)
+
+        assert host.sync_status.value == "unknown"
+
+    async def test_one_real_status_among_unknowns_still_counts(self, db):
+        host = await create_host(db, hostname="vocab-partial")
+        db.add(HostModuleStatus(host_id=host.id, module_type="cron", sync_status="unknown"))
+        db.add(HostModuleStatus(host_id=host.id, module_type="package", sync_status="in_sync"))
+        await db.flush()
+
+        await refresh_host_sync_status(host, db)
+
+        assert host.sync_status.value == "in_sync"
+
     async def test_error_outranks_out_of_sync(self, db):
         host = await create_host(db, hostname="vocab-precedence")
         db.add(HostModuleStatus(host_id=host.id, module_type="cron", sync_status="out_of_sync"))

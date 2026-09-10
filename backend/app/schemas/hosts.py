@@ -60,6 +60,14 @@ class HostCreate(BaseModel):
     ssh_user: str = "root"
     ssh_key_id: int | None = None
     group_ids: list[int] = []
+    #: Turn drift checking on for this host as it is created.
+    #:
+    #: Defaults to ``False`` so an existing API client keeps the behaviour
+    #: it has. The *form* ticks it — the point of the change is to make
+    #: drift checking a decision someone takes at the moment they are
+    #: already deciding to manage the host, not a default flipped under
+    #: everyone. See ``docs/ui/drift-detection.md``.
+    drift_check_enabled: bool = False
 
     @field_validator("hostname")
     @classmethod
