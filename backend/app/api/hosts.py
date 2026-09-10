@@ -12,6 +12,7 @@ from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
+from app.enum_utils import enum_str
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
 from app.models.ssh_key import SSHKey
@@ -246,12 +247,8 @@ async def list_hosts_summary(
                     "ip_address": h.ip_address,
                     "ssh_port": h.ssh_port,
                     "ssh_user": h.ssh_user,
-                    "firewall_backend": h.firewall_backend.value
-                    if hasattr(h.firewall_backend, "value")
-                    else h.firewall_backend,
-                    "sync_status": h.sync_status.value
-                    if hasattr(h.sync_status, "value")
-                    else h.sync_status,
+                    "firewall_backend": enum_str(h.firewall_backend),
+                    "sync_status": enum_str(h.sync_status),
                     "labdog_source_ip": h.labdog_source_ip,
                     "drift_check_enabled": h.drift_check_enabled,
                     "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,

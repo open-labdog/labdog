@@ -17,6 +17,7 @@ the verdict becomes durable.
 import logging
 from datetime import UTC
 
+from app.enum_utils import enum_str
 from app.tasks import celery_app
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,7 @@ async def _check_drift_for_one_host(host, db, hms=None) -> bool:
     from app.ssh_utils import get_source_ip, ssh_connect_host
     from app.sync.diff import SSHFetchError, fetch_current_firewall_state
 
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown":
         return False
 
@@ -85,9 +82,7 @@ async def _check_drift_for_one_host(host, db, hms=None) -> bool:
             db,
             host_id=host.id,
             module_type="firewall",
-            status=drift_result.status.value
-            if hasattr(drift_result.status, "value")
-            else drift_result.status,
+            status=enum_str(drift_result.status),
             add_count=len(diff.rules_to_add) if diff else 0,
             remove_count=len(diff.rules_to_remove) if diff else 0,
             policy_change_count=len(diff.policy_changes) if diff else 0,

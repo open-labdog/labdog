@@ -180,15 +180,6 @@ deliberately scoped out of that PR.
       aggregates.py` is written so this is a one-line `UNION ALL`
       change. Model the job on `app/tasks/audit_retention.py`.
 
-- [ ] **Index `sync_jobs.created_at`.** There is no index on it
-      (`0001_initial_schema.py` only has `(host_id, module_type,
-      status)` plus a partial unique). This is **not** an exporter
-      problem — the exporter's counters are all-time and use no time
-      predicate — but `GET /api/dashboard/sync-success-rate` does
-      `WHERE created_at >= :since` and full-scans today. Needs
-      `CREATE INDEX CONCURRENTLY` in its own migration with Alembic's
-      `autocommit_block()`.
-
 - [ ] **Unify `HostModuleStatus.sync_status` vocabulary.** Three
       modules (`package_drift`, `cron_drift`, `user_drift`) write the
       legacy value `"drifted"` where the rest write `"out_of_sync"`;
@@ -428,13 +419,3 @@ Small correctness and cost items; none are defects worth a BUGS entry.
       both needs three callbacks, which is the "third thing, harder to
       read than either original" this list warns against for the middle
       phases. Not planned.
-
-- [ ] **Finish the `enum_str` sweep.** 18 inline
-      `.value if hasattr(x, "value") else str(x)` coercions remain across
-      10 files (`api/sync.py`, `api/drift.py`, `api/host_state.py`,
-      `api/hosts.py`, `rules/converter.py`, `cron/generator.py`,
-      `services/generator.py`, `services/diff.py`, `tasks/drift.py`,
-      `tasks/host_sync_orchestrator.py`). `app.enum_utils.enum_str` exists
-      for exactly this and the seven sites in the merge modules already
-      use it — these were left out of that change to keep the merge-scaffold
-      diff about the scaffold. Purely mechanical.

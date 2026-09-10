@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.db import get_db
+from app.enum_utils import enum_str
 from app.models.host import Host, HostGroupMembership
 from app.models.host_group import HostGroup
 from app.models.host_module_status import HostModuleStatus
@@ -514,9 +515,7 @@ async def trigger_bulk_sync(
                 detail="Bulk sync conflict; please retry",
             ) from None
         existing_id = existing.id
-        existing_status = (
-            existing.status.value if hasattr(existing.status, "value") else str(existing.status)
-        )
+        existing_status = enum_str(existing.status)
         # The queued job's own filter, which the row now records (BUG-64).
         existing_filter = list(existing.module_filter) if existing.module_filter else None
         # SEC-05 idempotent-200 audit row.
@@ -570,7 +569,7 @@ async def trigger_bulk_sync(
     response.status_code = 201
     return BulkSyncResponse(
         job_id=job.id,
-        status=job.status.value if hasattr(job.status, "value") else str(job.status),
+        status=enum_str(job.status),
         module_filter=module_filter,
     )
 

@@ -15,6 +15,7 @@ from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
+from app.enum_utils import enum_str
 from app.models.host import Host, SyncStatus
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
@@ -647,11 +648,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
 
         from app.sync.collector import collect_current_rules
 
-        backend = (
-            host.firewall_backend.value
-            if hasattr(host.firewall_backend, "value")
-            else str(host.firewall_backend)
-        )
+        backend = enum_str(host.firewall_backend)
         info_messages: list[str] = []
         if backend == "unknown":
             # Auto-detect firewall backend
