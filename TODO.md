@@ -395,23 +395,18 @@ Small correctness and cost items; none are defects worth a BUGS entry.
 
 ## Refactors the audit surfaced — deliberately deferred
 
-- [ ] **Extract `action_group`'s claim-or-defer into a function.**
-      Not for reuse — for testability. `action_host._claim_or_defer` is a
-      function, so `tests/test_release_host_queue.py` can call it and
-      assert the busy check and the status flip share one transaction,
-      which is exactly the invariant BUG-62 broke. The group's claim is
-      inline in `_run_action_group_async`, so the same guard cannot be
-      written for it, and the group is the path where BUG-62 was *also*
-      found. Pulling it out is mechanical; the test is the point.
-
-      **Correction to what this entry used to claim.** It listed three
-      things as "the same code written twice" — claim-or-defer,
-      load-and-mark-running, and dispatch-next. Only the third was.
-      Dispatch-next is now `host_lock.release_host_queue`, shared by all
-      five call sites. The other two share a *protocol* over different
-      cardinality: one host versus every member, `check_host_busy` with
-      an exclude versus `check_hosts_busy` without, flipping a child row
-      versus flipping the parent run and every child. A helper covering
-      both needs three callbacks, which is the "third thing, harder to
-      read than either original" this list warns against for the middle
-      phases. Not planned.
+**Not planned — unifying the host and group run lifecycles.** This
+section once listed three things as "the same code written twice":
+claim-or-defer, load-and-mark-running, and dispatch-next. Only the third
+was, and it is now `host_lock.release_host_queue`, shared by all five
+call sites. Claim-or-defer is now a function on both paths
+(`action_host._claim_or_defer`, `action_group._claim_or_defer_group`)
+but they are *not* shared — extracting each was for testability, so the
+single-transaction invariant BUG-62 broke can be asserted, and
+`tests/test_release_host_queue.py` asserts it for both. The two
+remaining pairs share a *protocol* over different cardinality: one host
+versus every member, `check_host_busy` with an exclude versus
+`check_hosts_busy` without, flipping a child row versus flipping the
+parent run and every child. A helper covering both needs three
+callbacks, which is the "third thing, harder to read than either
+original" this list warns against.
