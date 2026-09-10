@@ -278,6 +278,18 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **BUG-82: the firewall row's "Enable Drift Check" toggle showed the wrong
+  state.** Firewall drift is the one sweep still gated by the *host* flag
+  (`Host.drift_check_enabled`) rather than by a per-module one, and nothing in
+  the codebase ever wrote the firewall module's own
+  `HostModuleStatus.drift_check_enabled` column — it sat at its `false`
+  default forever. `GET /hosts/{id}/current-state` reported that column
+  anyway, and the Host detail page renders the row's label from it while the
+  button writes the host flag. The label therefore never changed, and each
+  click silently alternated drift checking for the whole host. The row now
+  reports the flag its own control writes. The other six modules are
+  unaffected — their sweeps do read the per-module column.
+
 - **A clash between two entries is settled by priority, everywhere.** Priority
   ordering is how LabDog resolves competing configuration, but the per-entry
   **Priority** field was only half wired in. Group-level entries honoured it;
