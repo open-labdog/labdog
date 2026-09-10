@@ -437,12 +437,22 @@ means a large history table would benefit from pruning or an index; raising
 
 ## Design notes
 
-- **Format is Prometheus text exposition `0.0.4`**, not strict OpenMetrics 1.0.
-  0.0.4 is parsed by everything (Prometheus, VictoriaMetrics, Grafana Alloy, the
-  OpenTelemetry receiver, Telegraf), while OpenMetrics 1.0 changes counter
-  naming rules and requires an `# EOF` terminator — a well-known source of
-  "half my metrics disappeared". OpenMetrics can be added later as an additive
-  content-negotiated branch.
+- **Format is Prometheus text exposition `0.0.4`**, not strict OpenMetrics 1.0,
+  and that is a settled decision rather than a gap. 0.0.4 is parsed by
+  everything (Prometheus, VictoriaMetrics, Grafana Alloy, the OpenTelemetry
+  receiver, Telegraf), while OpenMetrics 1.0 changes counter naming rules and
+  requires an `# EOF` terminator — a well-known source of "half my metrics
+  disappeared".
+
+  Supporting a second exposition format means keeping it correct forever. That
+  is worth doing for a scraper that needs it and worth nothing for one that
+  does not, and no known consumer requires 1.0. If one appears, add it as an
+  additive `Accept`-negotiated branch: `0.0.4` stays the default and clients
+  asking for `application/openmetrics-text` get the newer envelope. The
+  renderer in `app/metrics/exposition.py` is where that would go, and the
+  counter-naming rules are the part to get right — a metric not ending
+  `_total` is invalid as an OpenMetrics counter, so the mapping has to be
+  deliberate rather than a suffix swap.
 - **No `prometheus_client` dependency.** That library's value is its in-process
   registry, which doesn't fit here: LabDog derives every value from SQL at
   scrape time, and in-process counters would be *wrong* under multiple uvicorn
