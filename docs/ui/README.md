@@ -42,7 +42,7 @@ Your email, a **Change Password** link, and a **Log Out** button sit at the bott
 | [SSH Keys](admin.md#ssh-keys) | Manage SSH private keys used to connect to hosts |
 | [Git Repos](gitops-ui.md) | Connect Git repositories for GitOps-driven configuration |
 | [Proxmox](settings.md#proxmox-settings) | Connect Proxmox VE nodes (TLS verification, per-node CA certificate) and discover host↔VM mappings for snapshot/rollback |
-| [Grafana](metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
+| [Grafana](host-metrics.md) | Two directions on one page. **Metrics in:** register a Mimir/Loki (Prometheus-compatible) backend to show instant CPU/memory/disk on the host page; ties into the bundled Alloy install action. **Metrics out:** the [Prometheus scrape endpoint](../metrics-export.md) — status, scrape URL and config snippet |
 | [AI Providers](assistant.md#ai-providers) | Connect a local or hosted LLM, set per-token pricing, and cap spend with daily/monthly budgets |
 | [Audit Log](admin.md#audit-log) | Append-only record of every change with before/after state |
 | [Users](admin.md#users) | LabDog user accounts (superuser only) |
