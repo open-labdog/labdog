@@ -259,6 +259,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **The dashboard now says when drift checking is off, instead of looking
+  empty.** Drift checking is off by default on every host and the periodic
+  sweep runs on schedule regardless, so a fleet with it switched off nowhere
+  shows no error and no checks — indefinitely. Every downstream surface goes
+  quiet too, and each looks like a separate malfunction. Three changes:
+  a banner on Fleet Overview when no host has any drift check enabled,
+  linking to where to turn it on; the `Never Checked` tile now says
+  "drift checking is off" rather than counting hosts without a cause; and
+  the drift-trend chart distinguishes "no drift checks are configured" from
+  "history is being collected", which previously rendered identically.
+  Backed by a new `GET /api/dashboard/drift-coverage`. Coverage counts both
+  flags — host-level (firewall) and per-module — as a union, so a fleet
+  checking six modules with the host flag off is correctly reported as
+  covered. See `docs/ui/drift-detection.md`.
+
 - **Finished action runs and sync jobs are now pruned on a schedule.** They
   were the only history LabDog kept forever — the audit log and terminal
   transcripts have been pruned daily since they were added. An action run's

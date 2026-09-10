@@ -2,7 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query"
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts"
-import { History } from "lucide-react"
+import Link from "next/link"
+import { History, ShieldOff } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import type { DriftTrendPoint, DriftTrendSeries } from "@/lib/types"
 import { useDelayedLoading } from "@/lib/utils"
@@ -43,7 +44,13 @@ function renderBody(point: DriftTrendPoint) {
   )
 }
 
-export function DriftTrendChart() {
+/**
+ * @param anyChecksConfigured Whether any host has any drift check switched
+ *   on. `undefined` while the coverage query is in flight — the empty state
+ *   stays neutral until we know, rather than accusing an install that is
+ *   simply still loading.
+ */
+export function DriftTrendChart({ anyChecksConfigured }: { anyChecksConfigured?: boolean }) {
   const { data, isLoading, error } = useQuery<DriftTrendSeries>({
     queryKey: ["dashboard", "drift-trend", DAYS],
     queryFn: () => apiFetch<DriftTrendSeries>(`/api/dashboard/drift-trend?days=${DAYS}&granularity=day`),
@@ -71,14 +78,38 @@ export function DriftTrendChart() {
         </div>
       )}
 
-      {/* Distinct empty-state: no data collected yet at all -- not "zero drift" (see allZero above). */}
+      {/*
+        Two different empty states, which used to render as one. "No history
+        yet" is a matter of waiting; "nothing is being checked" never
+        resolves on its own and is the state a fresh install sits in
+        permanently, because every drift flag defaults to off and the sweep
+        runs on schedule finding no candidates. Showing the patient message
+        for the second case is how a silent misconfiguration reads as normal.
+      */}
       {!showLoading && !error && points.length === 0 && (
         <div className={cn(PANEL_BODY_HEIGHT, "flex flex-col items-center justify-center gap-2 text-center")}>
-          <History className="h-8 w-8 text-slate-600" />
-          <p className="text-sm text-slate-400">Drift history is being collected</p>
-          <p className="max-w-[280px] text-xs text-slate-500">
-            Trend appears after the first drift checks run across your fleet.
-          </p>
+          {anyChecksConfigured === false ? (
+            <>
+              <ShieldOff className="h-8 w-8 text-amber-500/70" />
+              <p className="text-sm text-amber-400">No drift checks are configured</p>
+              <p className="max-w-[300px] text-xs text-slate-500">
+                Nothing is being checked, so nothing will ever appear here. Enable
+                drift checking on the{" "}
+                <Link href="/hosts" className="text-slate-300 underline underline-offset-2 hover:text-white">
+                  Hosts
+                </Link>{" "}
+                page.
+              </p>
+            </>
+          ) : (
+            <>
+              <History className="h-8 w-8 text-slate-600" />
+              <p className="text-sm text-slate-400">Drift history is being collected</p>
+              <p className="max-w-[280px] text-xs text-slate-500">
+                Trend appears after the first drift checks run across your fleet.
+              </p>
+            </>
+          )}
         </div>
       )}
 

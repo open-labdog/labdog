@@ -37,6 +37,17 @@ export interface DriftTrendSeries {
   points: DriftTrendPoint[]
 }
 
+// GET /api/dashboard/drift-coverage. Lets an empty drift surface say *why*
+// it is empty: nothing drifted, or nothing being checked. The two flags are
+// independent (host-level gates firewall only; the other six modules each
+// have their own), so `any_enabled_hosts` is a union, not a sum.
+export interface DriftCoverage {
+  hosts_total: number
+  firewall_enabled_hosts: number
+  module_enabled_hosts: number
+  any_enabled_hosts: number
+}
+
 // ---------------------------------------------------------------------------
 // Audit log (GET /api/audit-log) — mirrors backend/app/api/audit.py
 // AuditLogResponse. Shared by the audit page and the dashboard activity feed.

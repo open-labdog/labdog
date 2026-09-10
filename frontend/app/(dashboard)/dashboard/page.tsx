@@ -3,10 +3,10 @@
 import { useState } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
-import { PlayIcon } from "lucide-react"
+import { PlayIcon, ShieldOff } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { collectHostState, queueHostStateCollection } from "@/lib/collect-state"
-import type { Host, SyncStatus } from "@/lib/types"
+import type { DriftCoverage, Host, SyncStatus } from "@/lib/types"
 import { SyncStatusBadge } from "@/components/status-badge"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { TableSkeleton } from "@/components/ui/skeleton"
@@ -138,6 +138,23 @@ export default function DashboardPage() {
   })
   const showHostsLoading = useDelayedLoading(hostsLoading)
 
+  // Lets the drift surfaces below say *why* they are empty. Deliberately a
+  // separate query rather than derived from `hosts`: the host flag gates
+  // firewall drift only, and a fleet can be fully covered for the other six
+  // modules with every host flag off. Counting `hosts` here would report
+  // "nothing is being checked" at an install that is checking six modules.
+  const { data: driftCoverage } = useQuery<DriftCoverage>({
+    queryKey: ["dashboard", "drift-coverage"],
+    queryFn: () => apiFetch<DriftCoverage>("/api/dashboard/drift-coverage"),
+    refetchInterval: 30000,
+  })
+  const anyChecksConfigured =
+    driftCoverage === undefined ? undefined : driftCoverage.any_enabled_hosts > 0
+  const driftIsOffEverywhere =
+    driftCoverage !== undefined &&
+    driftCoverage.hosts_total > 0 &&
+    driftCoverage.any_enabled_hosts === 0
+
   const allHosts = hosts ?? []
 
   const statusCounts: Record<SyncStatus, number> = {
@@ -207,6 +224,33 @@ export default function DashboardPage() {
         </Button>
       </div>
 
+      {/*
+        The silent-misconfiguration banner. Drift checking is off by default
+        on every host, and when it is off fleet-wide the sweep still runs on
+        schedule and finds nothing — so every drift surface below renders its
+        patient "collecting" state forever with no error anywhere. Found on a
+        real deployment: 17 hosts, drift off on all of them, and the operator
+        reasonably assumed it was running.
+      */}
+      {driftIsOffEverywhere && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-amber-700/50 bg-amber-950/30 px-4 py-3 text-sm">
+          <ShieldOff className="h-4 w-4 shrink-0 text-amber-400" />
+          <span className="text-amber-200">
+            Drift checking is off on all {driftCoverage.hosts_total}{" "}
+            {driftCoverage.hosts_total === 1 ? "host" : "hosts"}.
+          </span>
+          <span className="text-slate-400">
+            Nothing is being checked, so the drift figures below stay empty.
+          </span>
+          <Link
+            href="/hosts"
+            className="text-amber-300 underline underline-offset-2 hover:text-amber-100"
+          >
+            Enable it on the Hosts page
+          </Link>
+        </div>
+      )}
+
       {/* Summary cards — two tiers */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard label="Total Hosts" count={allHosts.length} colorClass="text-white" />
@@ -225,7 +269,10 @@ export default function DashboardPage() {
           label="Never Checked"
           count={neverChecked}
           colorClass={neverChecked > 0 ? "text-amber-400" : "text-slate-500"}
-          sub={`of ${allHosts.length} hosts`}
+          // A count with no cause is the passive version of this tile. When
+          // drift is off fleet-wide the count is not a backlog to work
+          // through, it is a setting — say which.
+          sub={driftIsOffEverywhere ? "drift checking is off" : `of ${allHosts.length} hosts`}
         />
         <StatCard
           label="Never Synced"
@@ -238,7 +285,7 @@ export default function DashboardPage() {
       {/* Charts row — 2 up */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 items-stretch">
         <div className="h-full"><SyncSuccessChart /></div>
-        <div className="h-full"><DriftTrendChart /></div>
+        <div className="h-full"><DriftTrendChart anyChecksConfigured={anyChecksConfigured} /></div>
       </div>
 
       {/* Feeds row — 2 up */}
