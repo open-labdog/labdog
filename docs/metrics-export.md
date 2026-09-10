@@ -8,7 +8,7 @@ directly — no extra agent, no extra database.
 > This page is about LabDog **exposing** metrics *outward* (Prometheus scrapes
 > LabDog).
 > For LabDog **reading** per-host CPU / memory / disk *inward* from a Grafana
-> Mimir backend, see [Live host metrics](ui/metrics.md).
+> Mimir backend, see [Live host metrics](ui/host-metrics.md).
 > They are independent — you can use either, both, or neither.
 
 Ready-made scrape config, alert rules and a Grafana dashboard live in
@@ -270,7 +270,7 @@ The default export is roughly **250 series**, and there is deliberately **no
 per-host label anywhere**. Adding one would multiply out badly: a 10,000-host
 fleet with 7 modules and 5 states would produce 350,000 series from a single
 metric family. Per-host telemetry has its own home — the Grafana Alloy → Mimir
-path documented in [Live host metrics](ui/metrics.md), where each series is
+path documented in [Live host metrics](ui/host-metrics.md), where each series is
 already tagged with `labdog_host_id`.
 
 Free-text values are never used as labels either: error messages, pending

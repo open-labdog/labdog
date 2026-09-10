@@ -247,6 +247,16 @@ The format follows [Keep a Changelog]; LabDog follows
   set the flag. It makes accepting controller-side code a deliberate,
   audited act rather than a side effect of adding a repository.
 
+### Changed
+
+- **`docs/ui/metrics.md` is now `docs/ui/host-metrics.md`.** Two features
+  shared the word "metrics" — reading per-host CPU/memory/disk *inward* from a
+  Grafana Mimir backend, and exposing LabDog's own fleet state *outward* for
+  Prometheus to scrape (`docs/metrics-export.md`). Both pages carried
+  disambiguation banners; distinct filenames say it before the banner has to.
+  The published URL moves from `/ui/metrics` to `/ui/host-metrics`, so an
+  external bookmark to the old path will 404.
+
 ### Added
 
 - **Finished action runs and sync jobs are now pruned on a schedule.** They
@@ -1381,7 +1391,8 @@ host's Overview tab by querying a registered Grafana Mimir
   dispatch, and the per-host executor always injects `labdog_host_id` /
   `labdog_hostname` so shipped metrics are queryable back. Register
   endpoints, run Install Alloy, and metrics appear automatically.
-  See [docs/ui/metrics.md](docs/ui/metrics.md).
+  See [docs/ui/host-metrics.md](docs/ui/host-metrics.md) (renamed from
+  `docs/ui/metrics.md` after this release).
 - **Bundled-pack pin auto-bump CI.** A new GitHub Actions workflow opens a
   PR against `dev` whenever `labdog-playbooks` `main` moves ahead of the
   pinned `LABDOG_PLAYBOOKS_REF` — triggered immediately via

@@ -186,13 +186,6 @@ deliberately scoped out of that PR.
       the three drift tasks, `api/host_state.py`, and the frontend
       status badges.
 
-- [ ] **Rename `docs/ui/metrics.md` → `docs/ui/host-metrics.md`.** The
-      name collides conceptually with the new outbound
-      `docs/metrics-export.md`; both now carry disambiguation banners,
-      but distinct filenames would be clearer. Docusaurus is configured
-      with `onBrokenLinks: 'throw'`, so CI will catch any missed
-      reference.
-
 - [ ] **True OpenMetrics 1.0 output.** The endpoint currently serves
       Prometheus text exposition `0.0.4` unconditionally (universally
       parsed; OpenMetrics 1.0's `# EOF` terminator and counter-naming
