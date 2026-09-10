@@ -199,6 +199,43 @@ worth alerting on, and it is a signal the in-app drift trend does not surface.
 orphaned schedule fires on time and silently does nothing, because its
 `action_key` has no winner in the registry.
 
+### Broker
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `labdog_broker_reachable` | gauge | — | `1` if the Celery broker answered within its timeout, `0` otherwise |
+| `labdog_broker_queue_depth` | gauge | `queue` | Tasks **waiting** in each Celery queue. Absent when the broker is unreachable |
+
+These are the only families not derived from PostgreSQL, which has two
+consequences worth knowing before you alert on them.
+
+**`labdog_broker_queue_depth` is absent, not zero, when the broker is
+down.** A zero would read as "the queues are empty" — the opposite of what
+is known — and would silence a backlog alert at exactly the moment it
+should fire. Join on `labdog_broker_reachable`, or use `absent()`:
+
+```promql
+# Work piling up — only meaningful when we could actually read the queue.
+labdog_broker_queue_depth > 100
+
+# The broker itself is the problem.
+labdog_broker_reachable == 0
+```
+
+**The probe has a hard timeout** (`metrics.broker_timeout_seconds`,
+default `0.2`). The `/metrics` endpoint is unauthenticated, so a hanging
+Redis must not become a hanging request; a broker that does not answer
+inside the budget is reported unreachable rather than waited for. Raise it
+only if a healthy broker is genuinely slower than that.
+
+Depth counts *waiting* tasks. A task a worker has already picked up has
+left the queue, so a queue at zero with everything running looks identical
+to a queue at zero with nothing to do. Worker-level detail is deliberately
+out of scope — `inspect().active()` is a multi-second broadcast RPC and has
+no place in a scrape path. Run [celery-exporter] alongside if you need it.
+
+[celery-exporter]: https://github.com/danihodovic/celery-exporter
+
 ### Exporter self-health
 
 | Metric | Type | Description |
