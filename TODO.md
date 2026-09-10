@@ -391,13 +391,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
 
 Small correctness and cost items; none are defects worth a BUGS entry.
 
-- [ ] **Make `frontend-e2e` a required check.** The job exists and is
-      green, but carries `continue-on-error: true` so a flake cannot wedge
-      the merge queue while it settles. After it has been green for a
-      cycle, drop that line from `.github/workflows/ci.yml` and add the job
-      to branch protection. Until then a red run is advisory and easy to
-      miss.
-
 - [ ] **Persisted `firewall_rules.is_system` rows are unreachable.** The
       column exists, `api/rules.py` refuses edit, delete, reorder and
       import on any row that has it set, and the UI disables the row's
