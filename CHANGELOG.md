@@ -9,6 +9,22 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Security
 
+- **The Content-Security-Policy now sets the four directives that do not
+  inherit from `default-src`.** `object-src 'none'`, `base-uri 'self'`,
+  `form-action 'self'` and `frame-ancestors 'none'` were previously
+  unrestricted rather than inherited — most consequentially `base-uri`, where
+  an injected `<base href>` retargets every relative script URL on the page
+  and turns a same-origin `script-src` into a loader for someone else's host.
+  Nothing in the UI uses `<base>`, `<object>`, `<embed>`, `<iframe>` or a
+  cross-origin form action, so this restricts nothing that worked before. If
+  you embed LabDog in a frame, note that `frame-ancestors 'none'` now says so
+  in CSP as well as in the `x-frame-options: DENY` header that was already
+  being sent.
+
+- **`x-xss-protection` is no longer sent.** Deprecated, ignored by current
+  browsers, and on some older ones the filter it enables is itself an XSS
+  vector.
+
 - **Four smaller exposures closed.** None was a hole on its own; together they
   were the difference between an install that tells an unauthenticated caller
   nothing and one that hands over a route map and a certificate inventory.

@@ -37,21 +37,17 @@ allow-list in `_resolve_dynamic_route` is the control; the CSP is the
 defence-in-depth that was *not* tightened, and it is weak enough to be
 worth doing on its own.
 
-`SecurityHeadersMiddleware` in `backend/app/main.py` currently sends:
+`SecurityHeadersMiddleware` in `backend/app/main.py` now sends:
 
-    default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'
+    default-src 'self'; script-src 'self' 'unsafe-inline';
+    style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self';
+    form-action 'self'; frame-ancestors 'none'
 
-- [ ] **Add the directives `default-src` does not cover.** `object-src
-      'none'`, `base-uri 'self'`, `form-action 'self'` and
-      `frame-ancestors 'none'` all fall back to nothing rather than to
-      `default-src`. `base-uri` matters most: an injected `<base>` tag
-      retargets every relative script URL on the page.
+The four directives that do not fall back to `default-src` are set, and
+`x-xss-protection` is gone. `tests/test_security_headers.py` holds the
+header set. One item is left, and it is the hard one:
 
-- [ ] **Drop `x-xss-protection`.** Deprecated, ignored by current
-      browsers, and actively harmful on some old ones.
-
-- [ ] **Remove `script-src 'unsafe-inline'`.** This is the hard one and
-      the reason the whole item is deferred rather than done. Next's
+- [ ] **Remove `script-src 'unsafe-inline'`.** Next's
       static export inlines the RSC flight data as `<script>` blocks, so
       a nonce has to be injected per response — which means the backend
       rewriting every served HTML document, on a path that is already

@@ -328,6 +328,40 @@ async def _buffered_receive(receive):
 # ---------------------------------------------------------------------------
 
 
+#: The four directives added here are the ones that do **not** fall back to
+#: ``default-src``, so leaving them out left them unrestricted entirely:
+#:
+#: * ``base-uri`` — an injected ``<base href>`` retargets every relative
+#:   script URL on the page, which turns a same-origin ``script-src`` into
+#:   a loader for someone else's host. This is the one that matters most.
+#: * ``form-action`` — where a form may POST. The app posts nowhere but its
+#:   own origin.
+#: * ``frame-ancestors`` — who may frame us. Same intent as the
+#:   ``x-frame-options: DENY`` above, for browsers that read CSP instead.
+#: * ``object-src`` — ``<object>``/``<embed>``, a plugin-era script vector.
+#:
+#: Nothing in the frontend uses ``<base>``, ``<object>``, ``<embed>``,
+#: ``<iframe>``, or a cross-origin form action, so all four are 'none'/'self'
+#: without loosening anything that works today.
+#:
+#: ``script-src 'unsafe-inline'`` is still here and is still the weak part.
+#: Next's static export inlines the RSC flight data as ``<script>`` blocks,
+#: so removing it needs either a per-response nonce (another rewrite on the
+#: path where the SPA-placeholder XSS lived) or build-time hashes shipped
+#: with the export. See TODO.md — it is a deliberate decision, not an
+#: oversight, and the digits-only allow-list in ``_resolve_dynamic_route``
+#: is the actual control.
+_CSP = (
+    b"default-src 'self'; "
+    b"script-src 'self' 'unsafe-inline'; "
+    b"style-src 'self' 'unsafe-inline'; "
+    b"object-src 'none'; "
+    b"base-uri 'self'; "
+    b"form-action 'self'; "
+    b"frame-ancestors 'none'"
+)
+
+
 class SecurityHeadersMiddleware:
     """Pure ASGI middleware that adds security headers to HTTP responses.
 
@@ -348,18 +382,16 @@ class SecurityHeadersMiddleware:
             if message["type"] == "http.response.start":
                 extra = [
                     (b"x-content-type-options", b"nosniff"),
+                    # Redundant with frame-ancestors below for any browser
+                    # that understands CSP, kept for the proxies and the
+                    # older clients that only read this one.
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
-                    (b"x-xss-protection", b"1; mode=block"),
                     (
                         b"permissions-policy",
                         b"camera=(), microphone=(), geolocation=(), payment=()",
                     ),
-                    (
-                        b"content-security-policy",
-                        b"default-src 'self'; script-src 'self' 'unsafe-inline';"
-                        b" style-src 'self' 'unsafe-inline'",
-                    ),
+                    (b"content-security-policy", _CSP),
                 ]
                 if settings.tls.force_https or settings.security.cookie_secure:
                     extra.append(
