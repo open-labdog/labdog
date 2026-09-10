@@ -249,6 +249,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **`HostModuleStatus.sync_status` has one spelling for drift.** Packages,
+  cron and linux users wrote the legacy `"drifted"` where the other four
+  modules wrote `"out_of_sync"`. Nothing was broken by it — the host rollup
+  treated the two as equivalent and each drift task translated before
+  recording its metrics sample — but every consumer had to know both, and
+  the translation step is the sort of thing that gets forgotten at the next
+  call site. Migration `0037` rewrites existing rows; nothing writes the old
+  value any more.
+
+  **If you alert on `/metrics`:** `labdog_host_modules{sync_status="drifted"}`
+  is no longer emitted. That label was observed-values-only and never
+  zero-filled, so a rule matching it goes from matching some series to
+  matching none rather than reading zero. Use
+  `sync_status="out_of_sync"` instead.
+
 - **`docs/ui/metrics.md` is now `docs/ui/host-metrics.md`.** Two features
   shared the word "metrics" — reading per-host CPU/memory/disk *inward* from a
   Grafana Mimir backend, and exposing LabDog's own fleet state *outward* for

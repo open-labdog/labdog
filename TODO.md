@@ -132,16 +132,6 @@ zero-filled). All three look like bugs and none of them are.
 [docs/metrics-export.md](docs/metrics-export.md)). These were
 deliberately scoped out of that PR.
 
-- [ ] **Unify `HostModuleStatus.sync_status` vocabulary.** Three
-      modules (`package_drift`, `cron_drift`, `user_drift`) write the
-      legacy value `"drifted"` where the rest write `"out_of_sync"`;
-      `refresh_host_sync_status` already treats them as equivalent, and
-      each drift task deliberately normalises before recording a metric
-      sample. Consolidating needs a data migration and touches
-      `api/user_sync.py`, `api/cron_sync.py`, `api/package_sync.py`,
-      the three drift tasks, `api/host_state.py`, and the frontend
-      status badges.
-
 - [ ] **True OpenMetrics 1.0 output.** The endpoint currently serves
       Prometheus text exposition `0.0.4` unconditionally (universally
       parsed; OpenMetrics 1.0's `# EOF` terminator and counter-naming

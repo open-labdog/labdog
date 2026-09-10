@@ -71,7 +71,7 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
             group_diff.groups_to_add or group_diff.groups_to_remove or group_diff.groups_to_update
         )
 
-        hms.sync_status = "drifted" if users_drifted or groups_drifted else "in_sync"
+        hms.sync_status = "out_of_sync" if users_drifted or groups_drifted else "in_sync"
         hms.last_drift_check_at = datetime.now(UTC)
         hms.collected_state = {"users": actual_users, "groups": actual_groups}
         hms.collected_at = datetime.now(UTC)
@@ -80,7 +80,7 @@ async def check_user_drift_for_one_host(host, hms, db) -> bool:
             db,
             host_id=host.id,
             module_type="linux_user",
-            status="out_of_sync" if (users_drifted or groups_drifted) else "in_sync",
+            status=hms.sync_status,
             add_count=len(user_diff.users_to_add) + len(group_diff.groups_to_add),
             remove_count=len(user_diff.users_to_remove) + len(group_diff.groups_to_remove),
             policy_change_count=len(user_diff.users_to_update) + len(group_diff.groups_to_update),
