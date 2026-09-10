@@ -70,7 +70,7 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
             cron_diff.jobs_to_add or cron_diff.jobs_to_remove or cron_diff.jobs_to_update
         )
 
-        hms.sync_status = "drifted" if drifted else "in_sync"
+        hms.sync_status = "out_of_sync" if drifted else "in_sync"
         hms.last_drift_check_at = datetime.now(UTC)
         hms.collected_state = actual
         hms.collected_at = datetime.now(UTC)
@@ -79,7 +79,7 @@ async def check_cron_drift_for_one_host(host, hms, db) -> bool:
             db,
             host_id=host.id,
             module_type="cron",
-            status="out_of_sync" if drifted else "in_sync",
+            status=hms.sync_status,
             add_count=len(cron_diff.jobs_to_add),
             remove_count=len(cron_diff.jobs_to_remove),
             policy_change_count=len(cron_diff.jobs_to_update),

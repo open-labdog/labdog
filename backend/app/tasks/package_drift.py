@@ -57,20 +57,16 @@ async def check_package_drift_for_one_host(host, hms, db) -> bool:
         pkg_diff = compute_diff(desired_dicts, actual)
         _duration_ms = int((time.monotonic() - _t0) * 1000)
 
-        hms.sync_status = "drifted" if pkg_diff.has_drift else "in_sync"
+        hms.sync_status = "out_of_sync" if pkg_diff.has_drift else "in_sync"
         hms.last_drift_check_at = datetime.now(UTC)
         hms.collected_state = actual
         hms.collected_at = datetime.now(UTC)
         hms.error_message = None
-        # HostModuleStatus.sync_status uses this module's own legacy
-        # "drifted" vocabulary (not the Host.sync_status SyncStatus enum)
-        # -- map to the SyncStatus vocabulary independently for the
-        # metrics sample.
         await record_drift_sample(
             db,
             host_id=host.id,
             module_type="package",
-            status="out_of_sync" if pkg_diff.has_drift else "in_sync",
+            status=hms.sync_status,
             add_count=len(pkg_diff.to_install),
             remove_count=len(pkg_diff.to_remove),
             policy_change_count=len(pkg_diff.to_upgrade) + len(pkg_diff.to_hold_change),

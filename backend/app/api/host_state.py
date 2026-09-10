@@ -43,7 +43,7 @@ async def refresh_host_sync_status(host: Host, db: AsyncSession) -> None:
     statuses = {row[0] for row in result.all()}
     if "error" in statuses:
         host.sync_status = SyncStatus.error
-    elif "out_of_sync" in statuses or "drifted" in statuses:
+    elif "out_of_sync" in statuses:
         host.sync_status = SyncStatus.out_of_sync
     elif statuses:
         host.sync_status = SyncStatus.in_sync
