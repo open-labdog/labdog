@@ -296,9 +296,12 @@ jobs:
     # compiles. The CSRF-less password change that shipped broken is
     # exactly the class of defect they catch.
     #
-    # Non-blocking for now (continue-on-error) so a flake cannot wedge the
-    # merge queue while the job settles. Drop that line and add the job to
-    # branch protection once it has been green for a cycle.
+    # Blocking. It ran non-blocking (continue-on-error) for nine
+    # consecutive runs across PRs #113-#119 and passed every one, which
+    # was the condition for making it a gate. A failure here now fails
+    # the workflow, which is the whole point: an advisory red run is
+    # easy to miss, and the defects these specs catch are exactly the
+    # ones that otherwise reach a release.
     if: >-
       github.event_name == 'pull_request' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
@@ -306,7 +309,6 @@ jobs:
        && github.ref != 'refs/heads/main'
        && !startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
-    continue-on-error: true
     services:
       postgres:
         image: postgres:18-alpine
