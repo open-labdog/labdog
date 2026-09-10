@@ -647,11 +647,7 @@ async def _async_run(
                 row = (
                     await probe.execute(select(_SyncJob).where(_SyncJob.id == job_id))
                 ).scalar_one_or_none()
-                if (
-                    row is not None
-                    and str(row.status.value if hasattr(row.status, "value") else row.status)
-                    == "running"
-                ):
+                if row is not None and enum_str(row.status) == "running":
                     post_commit = True
         except Exception:  # pragma: no cover - probe failure shouldn't mask root cause
             logger.exception("post-commit probe failed for job_id=%s", job_id)

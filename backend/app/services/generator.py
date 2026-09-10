@@ -1,6 +1,7 @@
 import yaml
 
 from app.ansible_runtime.inventory import generate_inventory
+from app.enum_utils import enum_str
 
 
 def generate_cleanup_tasks(desired_services: list[dict]) -> tuple[list[dict], list[str], list[str]]:
@@ -221,7 +222,7 @@ def generate_service_playbook(
                 )
             )
 
-        state_str = svc["state"].value if hasattr(svc["state"], "value") else str(svc["state"])
+        state_str = enum_str(svc["state"])
         deploy_tasks.append(
             _with_when(
                 {

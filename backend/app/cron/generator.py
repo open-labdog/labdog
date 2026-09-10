@@ -1,18 +1,13 @@
 from typing import Any
 
 from app.cron.validators import validate_cron_expression
+from app.enum_utils import enum_str
 
 
 def _get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(key, default)
     return getattr(obj, key, default)
-
-
-def _serialize_state(state: Any) -> str:
-    if hasattr(state, "value"):
-        return state.value
-    return str(state)
 
 
 def _add_absent_cron_task(tasks: list, name: str, user: str) -> None:
@@ -77,7 +72,7 @@ def generate_cron_playbook(host_ip: str, cron_jobs: list, ssh_key_path: str) -> 
         user = _get(job, "user")
         schedule = _get(job, "schedule")
         command = _get(job, "command")
-        state = _serialize_state(_get(job, "state"))
+        state = enum_str(_get(job, "state"))
         environment = _get(job, "environment", {})
 
         if state == "absent":

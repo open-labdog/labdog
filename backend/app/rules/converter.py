@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 
+from app.enum_utils import enum_str
 from app.models.firewall_rule import FirewallRule
 from app.rules.model import FirewallRuleSpec
 
@@ -7,9 +8,9 @@ from app.rules.model import FirewallRuleSpec
 def firewall_rule_to_spec(rule: FirewallRule) -> FirewallRuleSpec:
     """Convert SQLAlchemy FirewallRule model to FirewallRuleSpec dataclass."""
     return FirewallRuleSpec(
-        action=rule.action.value if hasattr(rule.action, "value") else rule.action,
-        protocol=rule.protocol.value if hasattr(rule.protocol, "value") else rule.protocol,
-        direction=rule.direction.value if hasattr(rule.direction, "value") else rule.direction,
+        action=enum_str(rule.action),
+        protocol=enum_str(rule.protocol),
+        direction=enum_str(rule.direction),
         source_cidr=rule.source_cidr,
         destination_cidr=rule.destination_cidr,
         source_host_id=rule.source_host_id,
