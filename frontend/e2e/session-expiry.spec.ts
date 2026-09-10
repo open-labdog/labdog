@@ -28,7 +28,7 @@ test.describe("Expired session", () => {
 
     // Client-side navigation: no document load, so nothing but the app's
     // own fetches can notice.
-    await page.getByRole("link", { name: "Hosts", exact: true }).click()
+    await page.getByRole("complementary").getByRole("link", { name: "Hosts" }).click()
 
     await expect(page).toHaveURL(/\/login/, { timeout: 15000 })
   })
