@@ -117,19 +117,6 @@ exporter emits no `labdog_drift_*` families at all (they are absent
 rather than zero, because `module` is a free-text column and cannot be
 zero-filled). All three look like bugs and none of them are.
 
-- [ ] **Surface the fleet-wide state.** Nothing tells you "0 of 17 hosts
-      have drift checking enabled". The Fleet Overview already has
-      `Never Checked` as a passive count — make it, or a sibling tile,
-      say *why* and link to the fix. The data is already there
-      (`labdog_hosts_drift_check_enabled` / `hosts_never_drift_checked`
-      exist precisely because this was invisible).
-
-- [ ] **Make the empty states diagnostic rather than passive.** The
-      drift-trend chart should distinguish "no checks are configured"
-      from "checks are running, no drift found yet" — currently both
-      render the same "collecting history" message. Same for the
-      per-module drift panels.
-
 - [ ] **Decide the default.** Whether new hosts should opt in
       automatically is a genuine product call, not an oversight:
       flipping it to `True` means LabDog starts SSHing to every newly
