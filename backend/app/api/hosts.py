@@ -535,7 +535,6 @@ async def import_rules(
             port_end=rule_data.get("port_end"),
             comment=rule_data.get("comment", f"Imported from {host.hostname}"),
             priority=rule_data.get("priority", 0),
-            is_system=False,
         )
         db.add(rule)
         created.append(rule)

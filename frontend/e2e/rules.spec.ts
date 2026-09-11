@@ -89,17 +89,13 @@ test.describe("Rules page", () => {
 
   // REMOVED: "system rules have disabled Edit and Delete buttons".
   //
-  // The test needed a firewall_rules row with is_system = TRUE, and it got
-  // one by shelling out to `docker exec ... psql`, which only worked on the
-  // author's machine. There is no supported way to create that row: RuleCreate
-  // does not accept is_system (deliberately — a client must not be able to
-  // mint a rule the API then refuses to let it edit or delete), and no backend
-  // code path writes the column either. The only is_system rules LabDog builds
-  // are synthesised at merge time in app/rules/merge.py and never persisted.
-  //
-  // So the disabled-button state this asserted is unreachable through any
-  // interface a test can use. Rather than keep a spec that can only pass next
-  // to a hand-edited database, it is gone and the gap is recorded in TODO.md.
+  // The state it asserted no longer exists. The test needed a firewall_rules
+  // row with is_system = TRUE and got one by shelling out to
+  // `docker exec ... psql`; nothing else could produce one, because no code
+  // path ever wrote the column. Migration 0038 dropped it, along with the
+  // guards and the disabled buttons. System rules are still real — the
+  // anti-lockout SSH allow is synthesised per host in app/rules/merge.py —
+  // but they are never rows, so they never appear on this page.
 
   test("edit an existing rule", async ({ request, page }) => {
     const ruleRes = await request.post(`${API_BASE}/api/groups/${groupId}/rules`, {
@@ -112,7 +108,6 @@ test.describe("Rules page", () => {
         port_start: 443,
         port_end: 443,
         comment: "original-comment",
-        is_system: false,
       },
     })
     await ruleRes.json()

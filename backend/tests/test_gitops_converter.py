@@ -25,7 +25,6 @@ class TestConverter:
             port_start=443,
             port_end=445,
             comment="HTTPS range",
-            is_system=False,
             priority=5,
         )
         rule = spec_to_firewall_rule(original, group_id=42)
@@ -39,7 +38,6 @@ class TestConverter:
         assert roundtripped.port_start == original.port_start
         assert roundtripped.port_end == original.port_end
         assert roundtripped.comment == original.comment
-        assert roundtripped.is_system == original.is_system
         assert roundtripped.priority == original.priority
 
     def test_batch_conversion(self):
@@ -87,17 +85,3 @@ class TestConverter:
         rule = spec_to_firewall_rule(spec, group_id=1)
         assert rule.port_start is None
         assert rule.port_end is None
-
-    def test_system_flag_preserved(self):
-        """is_system flag survives roundtrip."""
-        spec = FirewallRuleSpec(
-            action="allow",
-            protocol="tcp",
-            direction="input",
-            port_start=22,
-            is_system=True,
-        )
-        rule = spec_to_firewall_rule(spec, group_id=1)
-        assert rule.is_system is True
-        roundtripped = firewall_rule_to_spec(rule)
-        assert roundtripped.is_system is True

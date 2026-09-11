@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Lock, GitBranch, GripVertical, ChevronUp, ChevronDown } from "lucide-react"
+import { GitBranch, GripVertical, ChevronUp, ChevronDown } from "lucide-react"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
 import {
   DndContext,
@@ -131,9 +131,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
   })
   const showLoading = useDelayedLoading(isLoading)
 
-  const systemRules = useMemo(() => rules?.filter((r) => r.is_system) ?? [], [rules])
-  const userRules = useMemo(() => rules?.filter((r) => !r.is_system) ?? [], [rules])
-  const allRules = useMemo(() => [...systemRules, ...userRules], [systemRules, userRules])
+  const allRules = useMemo(() => rules ?? [], [rules])
   const sortableIds = useMemo(() => allRules.map((r) => r.id), [allRules])
 
   const gitopsEnabled = !!group?.gitops_enabled
@@ -171,24 +169,22 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
   }
 
   function handleReorder(newOrder: FirewallRule[]) {
-    const ruleIds = newOrder.filter((r) => !r.is_system).map((r) => r.id)
+    const ruleIds = newOrder.map((r) => r.id)
     reorderMutation.mutate(ruleIds)
   }
 
   function handleMoveUp(rule: FirewallRule) {
-    if (rule.is_system || gitopsEnabled) return
-    const idx = userRules.findIndex((r) => r.id === rule.id)
+    if (gitopsEnabled) return
+    const idx = allRules.findIndex((r) => r.id === rule.id)
     if (idx <= 0) return
-    const newUserRules = arrayMove(userRules, idx, idx - 1)
-    handleReorder([...systemRules, ...newUserRules])
+    handleReorder(arrayMove(allRules, idx, idx - 1))
   }
 
   function handleMoveDown(rule: FirewallRule) {
-    if (rule.is_system || gitopsEnabled) return
-    const idx = userRules.findIndex((r) => r.id === rule.id)
-    if (idx < 0 || idx >= userRules.length - 1) return
-    const newUserRules = arrayMove(userRules, idx, idx + 1)
-    handleReorder([...systemRules, ...newUserRules])
+    if (gitopsEnabled) return
+    const idx = allRules.findIndex((r) => r.id === rule.id)
+    if (idx < 0 || idx >= allRules.length - 1) return
+    handleReorder(arrayMove(allRules, idx, idx + 1))
   }
 
   function handleDragEnd(event: DragEndEvent) {
@@ -199,15 +195,11 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
     const overRule = allRules.find((r) => r.id === over.id)
     if (!activeRule || !overRule) return
 
-    // Don't allow dragging system rules or dropping onto system rules
-    if (activeRule.is_system || overRule.is_system) return
-
-    const oldIndex = userRules.findIndex((r) => r.id === active.id)
-    const newIndex = userRules.findIndex((r) => r.id === over.id)
+    const oldIndex = allRules.findIndex((r) => r.id === active.id)
+    const newIndex = allRules.findIndex((r) => r.id === over.id)
     if (oldIndex === -1 || newIndex === -1) return
 
-    const newUserRules = arrayMove(userRules, oldIndex, newIndex)
-    handleReorder([...systemRules, ...newUserRules])
+    handleReorder(arrayMove(allRules, oldIndex, newIndex))
   }
 
   const handleAdd = () => {
@@ -250,8 +242,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         // useSortable listeners. We accomplish this with a per-row inner
         // component rendered inside the cell.
         cell: (rule: FirewallRule) => {
-          const isDragDisabled = rule.is_system || gitopsEnabled
-          return <DragHandleCell rule={rule} isDragDisabled={isDragDisabled} />
+          return <DragHandleCell rule={rule} isDragDisabled={gitopsEnabled} />
         },
         defaultWidth: 40,
         resizable: false,
@@ -262,12 +253,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         label: "Priority",
         accessor: (rule: FirewallRule) => rule.priority,
         cell: (rule: FirewallRule) => (
-          <div className="flex items-center gap-1 font-mono text-slate-300">
-            {rule.is_system && (
-              <Lock className="h-3 w-3 text-slate-500" aria-label="System rule" />
-            )}
-            {rule.priority}
-          </div>
+          <div className="font-mono text-slate-300">{rule.priority}</div>
         ),
         defaultWidth: 80,
         sortable: false,
@@ -350,25 +336,22 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
         key: "actions",
         label: "Actions",
         cell: (rule: FirewallRule) => {
-          const userIdx = userRules.findIndex((r) => r.id === rule.id)
-          const isFirstNonSystem = !rule.is_system && userIdx === 0
-          const isLastRule = !rule.is_system && userIdx === userRules.length - 1
-          const arrowDisabled = rule.is_system || gitopsEnabled
+          const idx = allRules.findIndex((r) => r.id === rule.id)
+          const isFirstRule = idx === 0
+          const isLastRule = idx === allRules.length - 1
           return (
             <div className="flex gap-1">
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={arrowDisabled || isFirstNonSystem}
+                disabled={gitopsEnabled || isFirstRule}
                 onClick={() => handleMoveUp(rule)}
                 title={
                   gitopsEnabled
                     ? "Rules are managed via GitOps"
-                    : rule.is_system
-                      ? "System rules cannot be reordered"
-                      : isFirstNonSystem
-                        ? "Already at top"
-                        : "Move up"
+                    : isFirstRule
+                      ? "Already at top"
+                      : "Move up"
                 }
                 className="h-7 w-7 p-0"
               >
@@ -377,16 +360,14 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={arrowDisabled || isLastRule}
+                disabled={gitopsEnabled || isLastRule}
                 onClick={() => handleMoveDown(rule)}
                 title={
                   gitopsEnabled
                     ? "Rules are managed via GitOps"
-                    : rule.is_system
-                      ? "System rules cannot be reordered"
-                      : isLastRule
-                        ? "Already at bottom"
-                        : "Move down"
+                    : isLastRule
+                      ? "Already at bottom"
+                      : "Move down"
                 }
                 className="h-7 w-7 p-0"
               >
@@ -395,30 +376,18 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={rule.is_system || gitopsEnabled}
+                disabled={gitopsEnabled}
                 onClick={() => handleEdit(rule)}
-                title={
-                  gitopsEnabled
-                    ? "Rules are managed via GitOps"
-                    : rule.is_system
-                      ? "System rules cannot be edited"
-                      : "Edit rule"
-                }
+                title={gitopsEnabled ? "Rules are managed via GitOps" : "Edit rule"}
               >
                 Edit
               </Button>
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={rule.is_system || deleteMutation.isPending || gitopsEnabled}
+                disabled={deleteMutation.isPending || gitopsEnabled}
                 onClick={() => handleDelete(rule)}
-                title={
-                  gitopsEnabled
-                    ? "Rules are managed via GitOps"
-                    : rule.is_system
-                      ? "System rules cannot be deleted"
-                      : "Delete rule"
-                }
+                title={gitopsEnabled ? "Rules are managed via GitOps" : "Delete rule"}
                 className="text-red-400 hover:text-red-300 hover:bg-red-950"
               >
                 {deleteMutation.isPending ? "…" : "Delete"}
@@ -432,7 +401,7 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
       },
     ]
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userRules, systemRules, gitopsEnabled, deleteMutation.isPending])
+  }, [allRules, gitopsEnabled, deleteMutation.isPending])
 
   return (
     <div className="space-y-6">
@@ -522,9 +491,8 @@ export default function GroupRulesPage({ embedded = false }: { embedded?: boolea
               getRowKey={(rule) => rule.id}
               columns={columns}
               renderRow={(rule, _idx, defaultCells) => {
-                const isDragDisabled = rule.is_system || gitopsEnabled
                 return (
-                  <SortableRow key={rule.id} rule={rule} isDragDisabled={isDragDisabled}>
+                  <SortableRow key={rule.id} rule={rule} isDragDisabled={gitopsEnabled}>
                     {defaultCells}
                   </SortableRow>
                 )

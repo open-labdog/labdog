@@ -79,13 +79,7 @@ async def import_firewall(
                 error_message=f"Rule validation error: {e}",
             )
 
-    # Fetch current non-system rules.
-    current_result = await db.execute(
-        select(FirewallRule).where(
-            FirewallRule.group_id == group_id,
-            FirewallRule.is_system == False,  # noqa: E712
-        )
-    )
+    current_result = await db.execute(select(FirewallRule).where(FirewallRule.group_id == group_id))
     current_rules = list(current_result.scalars().all())
 
     from app.sync.diff import compute_diff
@@ -110,12 +104,7 @@ async def import_firewall(
 
     if diff.has_changes or policies_changed:
         if diff.has_changes:
-            await db.execute(
-                delete(FirewallRule).where(
-                    FirewallRule.group_id == group_id,
-                    FirewallRule.is_system == False,  # noqa: E712
-                )
-            )
+            await db.execute(delete(FirewallRule).where(FirewallRule.group_id == group_id))
 
             for i, spec in enumerate(desired_specs):
                 rule = spec_to_firewall_rule(spec, group_id)

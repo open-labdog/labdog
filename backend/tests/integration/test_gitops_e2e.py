@@ -319,14 +319,7 @@ class TestMultiModuleGroupYAML:
 
             # Per-table assertions.
             fw = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )
@@ -407,14 +400,7 @@ class TestMultiModuleGroupYAML:
 
             # Firewall: SSH unchanged + HTTPS added.
             fw2 = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )
@@ -738,14 +724,7 @@ class TestWebhookReceiver:
             assert group.gitops_last_import_at is not None
 
             fw = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )
