@@ -69,7 +69,15 @@ logger = logging.getLogger(__name__)
 
 #: Where the CLI keeps its own session files. ``resume`` reads them, so a
 #: deployment that wants to park a session across a container restart has
-#: to persist this path — it is under LabDog's state root for that reason.
+#: to persist this path — it is under LabDog's state root for that reason,
+#: and the shipped compose in ``docs/production-deploy.md`` mounts it.
+#:
+#: ``ClaudeAgentOptions.session_store`` would let this live in Postgres
+#: instead, which would remove the filesystem dependency altogether.
+#: Deliberately not done: it means owning compatibility with an SDK
+#: interface in order to replace a volume mount that already works, and
+#: package installs get the persistence for free because this is a real
+#: directory on disk. Worth revisiting only if the volume proves fragile.
 SESSION_STATE_DIR = DEFAULT_CONFIG_DIR
 
 
