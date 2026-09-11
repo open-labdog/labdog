@@ -291,10 +291,30 @@ export default function AssistantPage() {
       queryClient.invalidateQueries({ queryKey: ["ai-approvals"] })
     })
 
-    source.addEventListener("budget_warning", (event) => {
-      const data = JSON.parse((event as MessageEvent).data)
-      setError(data.message ?? "AI spend is approaching its budget.")
-    })
+    // Both warnings are advisory: the run is still going. They share the
+    // error banner because there is one place on this page to say
+    // something is wrong, and "you are about to be cut off" belongs in it.
+    const warn = (fallback: string) => (event: Event) => {
+      let data: { message?: string }
+      try {
+        data = JSON.parse((event as MessageEvent).data)
+      } catch {
+        // A truncated frame would otherwise throw inside the listener and
+        // take the rest of the stream with it — the same guard the text
+        // handler above carries, which this one only claimed to.
+        setError(fallback)
+        return
+      }
+      setError(data.message ?? fallback)
+    }
+
+    source.addEventListener("budget_warning", warn("AI spend is approaching its budget."))
+    // Subscription-billed providers stop on the plan's quota, not on a
+    // money budget, so this is the only advance notice they get.
+    source.addEventListener(
+      "rate_limit_warning",
+      warn("The Claude plan's usage quota is nearly used up.")
+    )
 
     source.addEventListener("error", (event) => {
       const raw = (event as MessageEvent).data

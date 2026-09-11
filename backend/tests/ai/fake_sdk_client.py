@@ -16,7 +16,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+from claude_agent_sdk import (
+    AssistantMessage,
+    RateLimitEvent,
+    RateLimitInfo,
+    ResultMessage,
+    TextBlock,
+)
 
 
 def assistant(text: str, usage: dict | None = None) -> AssistantMessage:
@@ -29,6 +35,31 @@ def assistant(text: str, usage: dict | None = None) -> AssistantMessage:
     all report nothing can never reach a limit.
     """
     return AssistantMessage(content=[TextBlock(text=text)], model="fake-model", usage=usage)
+
+
+def rate_limit(
+    status: str = "rejected",
+    *,
+    rate_limit_type: str | None = "five_hour",
+    utilization: float | None = None,
+    resets_at: int | None = None,
+) -> RateLimitEvent:
+    """One quota transition, as the CLI reports it.
+
+    Out of band rather than part of a turn: the CLI emits these whenever
+    the plan's rate-limit state changes, so a script interleaves them
+    between assistant messages.
+    """
+    return RateLimitEvent(
+        rate_limit_info=RateLimitInfo(
+            status=status,
+            resets_at=resets_at,
+            rate_limit_type=rate_limit_type,
+            utilization=utilization,
+        ),
+        uuid="fake-rate-limit-uuid",
+        session_id="fake-session-id",
+    )
 
 
 #: Distinguishes "caller said nothing about usage" from "the backend

@@ -167,10 +167,14 @@ provider form and in `docs/ui/assistant.md`.
 
 Follow-ups it leaves open:
 
-- [ ] **Surface rate-limit state.** `RateLimitInfo` carries utilisation
-  and reset time. On a subscription the money budget is meaningless but
-  quota is not, so that is what the usage panel should show for these
-  providers.
+- [ ] **Show plan quota in the usage panel.** The stop-reason half of
+  this is done: a refused run now names the window and its reset time,
+  and `allowed_warning` raises a banner mid-run. Both are live-only.
+  `RateLimitInfo.utilization` is never stored, so the panel still shows
+  these providers a money figure that is an estimate of money nobody
+  spends. Persisting the last-seen quota per provider is what would let
+  the panel show the limit that actually binds — including between runs,
+  which is when an operator is most likely to be asking.
 - [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
   per alert — severity, dedup, budget — but nothing bounds sessions per
   unit of time. A flapping rule produces a new `(fingerprint, starts_at)`

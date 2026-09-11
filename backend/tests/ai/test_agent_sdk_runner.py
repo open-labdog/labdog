@@ -20,7 +20,12 @@ pytest.importorskip("claude_agent_sdk", reason="optional [agent] extra not insta
 
 from app.ai.agent_sdk.runner import AgentSDKRunner  # noqa: E402
 from app.ai.loop import LoopCaps  # noqa: E402
-from tests.ai.fake_sdk_client import FakeSDKClient, assistant, result  # noqa: E402
+from tests.ai.fake_sdk_client import (  # noqa: E402
+    FakeSDKClient,
+    assistant,
+    rate_limit,
+    result,
+)
 
 
 async def _run(db, session, provider_row, messages, *, caps=None, events=None, on_query=None):
@@ -538,3 +543,254 @@ class TestASessionSaysWhyItStopped:
         await _run(db, session, ai_provider, [assistant("all done"), result()])
 
         assert not session.stopped_reason
+
+
+class TestThePlanQuotaIsAStopReason:
+    """The limit that actually binds a subscription-billed provider.
+
+    `claude_agent` books cost from `estimate_cost` and flags it
+    `cost_unknown`, because on a subscription no per-token money is spent.
+    The money budgets therefore measure something imaginary, and the plan's
+    own quota is the only limit that can really end a run — the one thing
+    the runner ignored. `RateLimitEvent` was not handled at all, so a
+    refused run reported "the backend reported an error" at best, and at
+    worst finished on whatever had already been said and wore a green
+    `succeeded` badge with no indication the plan had cut it off.
+    """
+
+    async def test_a_refusal_stops_the_run(self, db, ai_provider, make_session) -> None:
+        """The load-bearing assertion. Without the break, the exchange runs
+        on into a turn the plan has already refused."""
+        session = await make_session()
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("Checked disk usage."),
+                rate_limit("rejected"),
+                assistant("And now the network."),
+                result(),
+            ],
+        )
+
+        rows = (
+            (
+                await db.execute(
+                    select(AIMessage.content)
+                    .where(AIMessage.session_id == session.id, AIMessage.role == "assistant")
+                    .order_by(AIMessage.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert rows == ["Checked disk usage."], (
+            "the exchange continued past a refused quota; the second turn was persisted"
+        )
+
+    async def test_the_refusal_is_what_the_session_says_stopped_it(
+        self, db, ai_provider, make_session
+    ) -> None:
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Checked disk usage."), rate_limit("rejected"), result()],
+        )
+
+        assert "5-hour rate limit" in (outcome.stopped_by or "")
+        assert "5-hour rate limit" in (session.stopped_reason or "")
+        assert "Stopped early" in outcome.report
+
+    async def test_the_reset_time_is_carried_into_the_reason(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """ "Come back later" is only useful with a "later" attached."""
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("Checked disk usage."),
+                # 2026-09-10 17:30 UTC.
+                rate_limit("rejected", resets_at=1789061400),
+                result(),
+            ],
+        )
+
+        assert "resetting at 17:30 UTC on 10 Sep" in (outcome.stopped_by or "")
+
+    async def test_no_wrap_up_turn_is_attempted(self, db, ai_provider, make_session) -> None:
+        """Every other stop reason buys one more turn to summarise with.
+        This one cannot: the wrap-up is another request on the quota that
+        was just refused."""
+        session = await make_session()
+        _, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Checked disk usage."), rate_limit("rejected"), result()],
+        )
+
+        assert len(fake.prompts) == 1, "a second prompt means the wrap-up turn was attempted"
+
+    async def test_the_sdk_is_interrupted(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        _, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [assistant("Checked disk usage."), rate_limit("rejected"), result()],
+        )
+
+        assert fake.interrupted
+
+    async def test_an_unnamed_window_still_reads_as_a_sentence(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """``rate_limit_type`` is optional. Substituting a placeholder for
+        it produced "the plan's plan rate limit"."""
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("Checked disk usage."),
+                rate_limit("rejected", rate_limit_type=None),
+                result(),
+            ],
+        )
+
+        assert "the plan's rate limit" in (outcome.stopped_by or "")
+
+    async def test_an_unknown_window_still_names_itself(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """A rate-limit window this version has not heard of is still the
+        reason the run stopped."""
+        session = await make_session()
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("Checked disk usage."),
+                rate_limit("rejected", rate_limit_type="seven_day_haiku"),
+                result(),
+            ],
+        )
+
+        assert "seven_day_haiku" in (outcome.stopped_by or "")
+
+
+class TestTheQuotaWarning:
+    """`allowed_warning` is advance notice, not a stop. It is the only
+    warning a subscription provider gets: `budget_warning` is computed from
+    spend that, for these, is an estimate of money nobody pays."""
+
+    async def test_a_warning_is_surfaced_and_the_run_continues(
+        self, db, ai_provider, make_session
+    ) -> None:
+        session = await make_session()
+        events: list = []
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                rate_limit("allowed_warning", utilization=0.85),
+                assistant("All healthy."),
+                result(),
+            ],
+            events=events,
+        )
+
+        warnings = [payload for name, payload in events if name == "rate_limit_warning"]
+        assert len(warnings) == 1
+        assert "85% used" in warnings[0]["message"]
+        assert warnings[0]["utilization"] == 0.85
+        assert outcome.status == "succeeded"
+        assert outcome.stopped_by == "", "a warning is not a stop"
+
+    async def test_a_warning_without_a_figure_still_warns(
+        self, db, ai_provider, make_session
+    ) -> None:
+        session = await make_session()
+        events: list = []
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [rate_limit("allowed_warning", utilization=None), assistant("ok"), result()],
+            events=events,
+        )
+
+        warnings = [payload for name, payload in events if name == "rate_limit_warning"]
+        assert len(warnings) == 1
+        assert "nearly used up" in warnings[0]["message"]
+
+    async def test_the_same_window_warns_once(self, db, ai_provider, make_session) -> None:
+        """The CLI re-emits on every transition. A banner that reappears
+        each turn reads as a new problem rather than the same one."""
+        session = await make_session()
+        events: list = []
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                rate_limit("allowed_warning", utilization=0.85),
+                assistant("one"),
+                rate_limit("allowed_warning", utilization=0.9),
+                assistant("two"),
+                result(),
+            ],
+            events=events,
+        )
+
+        assert len([1 for name, _ in events if name == "rate_limit_warning"]) == 1
+
+    async def test_a_second_window_warns_separately(self, db, ai_provider, make_session) -> None:
+        """Deduping on the window rather than on "have we warned at all"
+        — the 5-hour and 7-day limits are different problems with
+        different answers."""
+        session = await make_session()
+        events: list = []
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                rate_limit("allowed_warning", utilization=0.85),
+                assistant("one"),
+                rate_limit("allowed_warning", rate_limit_type="seven_day", utilization=0.95),
+                assistant("two"),
+                result(),
+            ],
+            events=events,
+        )
+
+        windows = [p["window"] for name, p in events if name == "rate_limit_warning"]
+        assert windows == ["5-hour", "7-day"]
+
+    async def test_an_allowed_event_is_routine(self, db, ai_provider, make_session) -> None:
+        """The CLI emits on every transition, including back down to
+        normal. A run inside its quota has nothing to report."""
+        session = await make_session()
+        events: list = []
+        outcome, _, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [rate_limit("allowed", utilization=0.2), assistant("All healthy."), result()],
+            events=events,
+        )
+
+        assert not [1 for name, _ in events if name == "rate_limit_warning"]
+        assert outcome.status == "succeeded"
+        assert outcome.stopped_by == ""
