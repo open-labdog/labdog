@@ -435,7 +435,6 @@ export interface FirewallRule {
   port_end: number | null
   comment: string | null
   priority: number
-  is_system: boolean
   created_at: string
   updated_at: string
 }
@@ -508,7 +507,6 @@ export interface HostsEntry {
   aliases: string[]
   comment: string | null
   priority: number
-  is_system: boolean
   group_id: number | null
   host_id: number | null
   created_at: string

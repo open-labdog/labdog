@@ -270,6 +270,28 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **The `is_system` columns on `firewall_rules` and `hosts_entries` are gone
+  (migration `0038`).** Neither was ever written. The create schemas do not
+  accept the field, the two GitOps importers strip `system: true` out of
+  incoming YAML before a row is built, and the only system rules and entries
+  LabDog has — the anti-lockout SSH allow and the loopback lines — are
+  synthesised at merge time and never persisted. So five API guards, four
+  importer filters and two UI branches were protecting rows that could only
+  exist if someone edited the database directly; the e2e test covering the
+  disabled buttons was deleted a release ago for exactly that reason.
+
+  Nothing operator-visible changes: `is_system` still appears on the
+  effective-rules and effective-entries views, where it is real, and system
+  rules are still untouchable through the UI because they were never rows to
+  begin with. The **System** badge and the greyed-out Edit/Delete buttons on
+  the group Rules and Hosts Entries pages are removed, since they could never
+  render. `RuleResponse.is_system` and `HostsEntryResponse.is_system` are
+  removed from the API — both were always `false`.
+
+  If you set the column by hand, the upgrade logs a warning naming the row
+  count before dropping it; those rows become ordinary editable rows.
+
+
 - **`HostModuleStatus.sync_status` has one spelling for drift.** Packages,
   cron and linux users wrote the legacy `"drifted"` where the other four
   modules wrote `"out_of_sync"`. Nothing was broken by it — the host rollup

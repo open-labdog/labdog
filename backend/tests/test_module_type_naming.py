@@ -40,7 +40,6 @@ class TestTheNameWrittenIsTheNameRead:
                 host_ref_id=referenced.id,
                 aliases=[],
                 priority=0,
-                is_system=False,
             )
         )
         await db.flush()

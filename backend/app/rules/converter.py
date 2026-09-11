@@ -18,7 +18,6 @@ def firewall_rule_to_spec(rule: FirewallRule) -> FirewallRuleSpec:
         port_start=rule.port_start,
         port_end=rule.port_end,
         comment=rule.comment,
-        is_system=rule.is_system,
         priority=rule.priority,
         group_id=rule.group_id,
         host_id=rule.host_id,
@@ -48,6 +47,5 @@ def spec_to_firewall_rule(
         port_start=spec.port_start,
         port_end=spec.port_end,
         comment=spec.comment,
-        is_system=spec.is_system,
         priority=spec.priority,
     )

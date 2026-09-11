@@ -241,25 +241,6 @@ tasks rather than defects, so they live here. Ordered roughly by value.
 
 ---
 
-## Frontend polish — 2026-09 audit
-
-Small correctness and cost items; none are defects worth a BUGS entry.
-
-- [ ] **Persisted `firewall_rules.is_system` rows are unreachable.** The
-      column exists, `api/rules.py` refuses edit, delete, reorder and
-      import on any row that has it set, and the UI disables the row's
-      Edit/Delete buttons — but nothing in the codebase ever writes it.
-      `RuleCreate` deliberately does not accept it, and the only system
-      rules LabDog builds are synthesised at merge time in
-      `app/rules/merge.py` and never persisted. So four guards and a UI
-      state protect rows that can only exist if someone edits the database
-      by hand. The e2e test that covered the disabled buttons was deleted
-      for exactly this reason (see the note in `frontend/e2e/rules.spec.ts`).
-      Decide whether the column is legacy and should go, or whether
-      something is meant to set it.
-
----
-
 ## Refactors the audit surfaced — deliberately deferred
 
 **Not planned — unifying the host and group run lifecycles.** This

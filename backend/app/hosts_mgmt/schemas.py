@@ -160,7 +160,6 @@ class HostsEntryResponse(BaseModel):
     aliases: list[str]
     comment: str | None
     priority: int
-    is_system: bool
     group_id: int | None
     host_id: int | None
     created_at: datetime

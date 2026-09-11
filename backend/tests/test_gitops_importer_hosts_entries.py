@@ -303,36 +303,6 @@ hosts_entries:
         db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
         assert db_rows.scalars().all() == []
 
-    async def test_system_entries_preserved_across_import(self, db):
-        """System-flagged rows are untouched even when YAML wipes non-system entries."""
-        group = await _make_gitops_group(db)
-
-        # Manually seed a system row (simulating what the system init does).
-        system_entry = HostsEntry(
-            group_id=group.id,
-            ip_address="127.0.0.1",
-            hostname="localhost",
-            is_system=True,
-            priority=9999,
-        )
-        db.add(system_entry)
-        await db.flush()
-
-        # Import fresh YAML (no hosts_entries → wipe non-system).
-        result = await import_group_from_yaml(
-            group_id=group.id,
-            yaml_content=NO_HOSTS_ENTRIES_YAML,
-            commit_sha="sha_system_check",
-            db=db,
-        )
-        assert result.success is True
-
-        db_rows = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group.id))
-        remaining = db_rows.scalars().all()
-        assert len(remaining) == 1
-        assert remaining[0].is_system is True
-        assert remaining[0].hostname == "localhost"
-
     async def test_missing_host_ref_returns_error(self, db):
         """YAML with a non-existent host_ref_id produces a module error; DB unchanged."""
         group = await _make_gitops_group(db)

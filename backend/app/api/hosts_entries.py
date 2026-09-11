@@ -177,9 +177,6 @@ async def delete_group_hosts_entry(
     if not entry:
         raise HTTPException(status_code=404, detail="Hosts entry not found")
 
-    if entry.is_system:
-        raise HTTPException(status_code=403, detail="Cannot delete system hosts entry")
-
     before = {"ip_address": entry.ip_address, "hostname": entry.hostname}
     entry_id_for_log = entry.id
 
@@ -325,9 +322,6 @@ async def delete_host_hosts_entry(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Hosts entry not found")
-
-    if entry.is_system:
-        raise HTTPException(status_code=403, detail="Cannot delete system hosts entry")
 
     before = {"ip_address": entry.ip_address, "hostname": entry.hostname}
     entry_id_for_log = entry.id

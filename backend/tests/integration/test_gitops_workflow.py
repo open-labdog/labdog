@@ -153,10 +153,7 @@ class TestGitOpsWorkflow:
             assert result.modules[0].added == 2
 
             rules_result = await db.execute(
-                select(FirewallRule).where(
-                    FirewallRule.group_id == group.id,
-                    FirewallRule.is_system == False,  # noqa: E712
-                )
+                select(FirewallRule).where(FirewallRule.group_id == group.id)
             )
             rules = rules_result.scalars().all()
             assert len(rules) == 2
@@ -192,10 +189,7 @@ class TestGitOpsWorkflow:
             assert group.gitops_status == GitOpsStatus.error
 
             rules_after_error = await db.execute(
-                select(FirewallRule).where(
-                    FirewallRule.group_id == group.id,
-                    FirewallRule.is_system == False,  # noqa: E712
-                )
+                select(FirewallRule).where(FirewallRule.group_id == group.id)
             )
             assert len(rules_after_error.scalars().all()) == 2
 
@@ -226,10 +220,7 @@ class TestGitOpsWorkflow:
             assert group.gitops_status == GitOpsStatus.synced
 
             rules_updated = await db.execute(
-                select(FirewallRule).where(
-                    FirewallRule.group_id == group.id,
-                    FirewallRule.is_system == False,  # noqa: E712
-                )
+                select(FirewallRule).where(FirewallRule.group_id == group.id)
             )
             updated_ports = {r.port_start for r in rules_updated.scalars().all()}
             assert updated_ports == {443, 8080, 22}

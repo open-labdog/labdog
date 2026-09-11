@@ -112,11 +112,11 @@ breaking older LabDog versions.
 
 | Module | `section: null` or key absent | `section: []` |
 |---|---|---|
-| `firewall` | wipe all non-system rules | wipe |
+| `firewall` | wipe | wipe |
 | `services` | wipe | wipe |
 | `packages` | wipe | wipe |
 | `package_repositories` | wipe | wipe |
-| `hosts_entries` | wipe all non-system entries | wipe |
+| `hosts_entries` | wipe | wipe |
 | `cron_jobs` | wipe | wipe |
 | `users` | wipe | wipe |
 | `linux_groups` | wipe | wipe |
