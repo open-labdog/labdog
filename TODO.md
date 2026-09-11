@@ -172,22 +172,24 @@ Follow-ups it leaves open:
   and `allowed_warning` raises a banner mid-run. Both are live-only.
   `RateLimitInfo.utilization` is never stored, so the panel still shows
   these providers a money figure that is an estimate of money nobody
-  spends. Persisting the last-seen quota per provider is what would let
-  the panel show the limit that actually binds — including between runs,
-  which is when an operator is most likely to be asking.
-- [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
-  per alert — severity, dedup, budget — but nothing bounds sessions per
-  unit of time. A flapping rule produces a new `(fingerprint, starts_at)`
-  on every firing, so each one is a fresh row and a fresh session, and the
-  dedup that stops repeat notifications does not stop repeat firings. The
-  money budgets are the backstop, except on a subscription-billed provider
-  (`claude_agent`) where cost is 0 and every USD limit is therefore inert,
-  leaving only the per-session token cap — which is per session, not per
-  day. Deferred deliberately on 2026-08-23: the first answer is to design
-  the alert rules so they do not flap and route only what is worth
-  spending on. A per-hour session cap, or a cooldown keyed on alertname,
-  is the backstop if that proves insufficient.
+  spends.
 
+  **Decided 2026-09-11: persist the last reading per provider.** Add
+  `ai_providers.rate_limit_state` (JSONB, keyed by `rate_limit_type`,
+  each entry holding `status`, `utilization`, `resets_at`, `seen_at`,
+  `source`). Two writers already receive the event: the runner's
+  `RateLimitEvent` branch (every status, `allowed` included — a 20%
+  reading is as much information as an 85% one) and the provider Test
+  probe, which gives an on-demand refresh without spending a session.
+  Reassign the dict rather than mutate it, or SQLAlchemy never flushes
+  it. `GET /api/ai/usage` gains a `quotas` list for `claude_agent`
+  providers; the panel renders a bar per window with `seen_at` and
+  `source` as a first-class label, because the figure is stale by
+  construction and a timestamped number is information while the same
+  number without one is a guess. Rejected: hiding the money meter and
+  saying nothing (leaves the signal unused), and closing as done (the
+  panel keeps lying to subscription users). Move the window-label map
+  out of `runner.py` into a shared module when doing this.
 - [ ] **Persist a verify session's evidence pack.** The rendered pack is
   in the session's first user turn, which is enough to read back but not
   to query — "which verifications ran with an unavailable disk reading"
