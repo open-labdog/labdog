@@ -374,6 +374,23 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A session stopped by the Claude plan's rate limit now says so.** The two
+  subscription-billed backends stop on the plan's quota, not on a money
+  budget — their cost is booked from an estimate and flagged
+  `cost not reported`, because on a subscription no per-token money is spent.
+  The SDK announces quota state on the message stream, and the runner ignored
+  it: a refused run ended as "the backend reported an error", or, when the CLI
+  gave up without a final message, on whatever text had already arrived, with
+  a green `succeeded` badge and nothing to say it had been cut off.
+
+  A refusal now ends the run with the window and reset time as its stop reason
+  — `Stopped early: the plan's 5-hour rate limit, resetting at 17:30 UTC on 10
+  Sep` — and, uniquely among stop reasons, skips the wrap-up turn, which would
+  be another request on the quota that was just refused. Approaching the limit
+  raises a banner on the assistant page once per window, which is the only
+  advance notice these providers get. API-key providers are unaffected; they
+  do not receive these events.
+
 - **A host whose modules all report `unknown` no longer shows as "In Sync".**
   `refresh_host_sync_status` fell through to `in_sync` for any non-empty status
   set with no error and no drift. It was unreachable while a freshly added host

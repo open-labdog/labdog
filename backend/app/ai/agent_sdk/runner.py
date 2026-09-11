@@ -80,6 +80,48 @@ logger = logging.getLogger(__name__)
 #: directory on disk. Worth revisiting only if the volume proves fragile.
 SESSION_STATE_DIR = DEFAULT_CONFIG_DIR
 
+#: How the CLI's ``rate_limit_type`` values read in a sentence. An
+#: unrecognised value is used verbatim rather than dropped: a window this
+#: version has not heard of is still the reason a run stopped, and
+#: "the plan's seven_day_haiku quota" beats "the plan's quota".
+_RATE_LIMIT_WINDOWS = {
+    "five_hour": "5-hour",
+    "seven_day": "7-day",
+    "seven_day_opus": "7-day Opus",
+    "seven_day_sonnet": "7-day Sonnet",
+    "overage": "overage",
+}
+
+
+def _rate_limit_window(info: Any) -> str:
+    """Which plan window an event is about, ready to drop into a sentence.
+
+    Trailing space included, and "" when the CLI did not name a window —
+    so the caller reads "the plan's 5-hour rate limit" or, with nothing
+    to go on, "the plan's rate limit" rather than a doubled-up "the
+    plan's plan rate limit".
+    """
+    kind = (getattr(info, "rate_limit_type", None) or "").strip()
+    named = _RATE_LIMIT_WINDOWS.get(kind, kind)
+    return f"{named} " if named else ""
+
+
+def _rate_limit_reset(info: Any) -> str:
+    """`` resetting at <time>``, or "" when the CLI did not say.
+
+    ``resets_at`` is a unix timestamp. Tolerated as absent or malformed
+    because it is decoration on a message whose substance — that the plan
+    said no — does not depend on it.
+    """
+    resets_at = getattr(info, "resets_at", None)
+    if not resets_at:
+        return ""
+    try:
+        when = datetime.fromtimestamp(int(resets_at), UTC)
+    except (OSError, OverflowError, TypeError, ValueError):
+        return ""
+    return f", resetting at {when:%H:%M UTC on %d %b}"
+
 
 class AgentSDKRunner:
     """Runs one session on the Claude Agent SDK."""
@@ -128,6 +170,13 @@ class AgentSDKRunner:
         # id for a tool name is that call's.
         self._tool_use_ids: dict[str, str] = {}
         self._stopped_by = ""
+        # Set when the plan's own quota ended the run, which is the one
+        # stop reason that also rules out the wrap-up turn in `run`.
+        self._rate_limited = False
+        # Windows already warned about. The CLI re-emits on every
+        # transition, and a banner that reappears each turn reads as a new
+        # problem rather than the same one.
+        self._rate_limit_warned: set[str] = set()
         # Set when a call needs an operator's decision. The SDK has no way
         # to suspend a turn, so the gate refuses the call and this flag
         # tells the driver to stop the exchange rather than let the model
@@ -663,7 +712,11 @@ class AgentSDKRunner:
         # when it ran out of turns — mid-sentence, mid-investigation, and
         # indistinguishable from a conclusion once it is sitting in the
         # report pane. Ask for a real one instead.
-        if self._stopped_by:
+        # Not when the plan refused us: the wrap-up is another request on
+        # the same exhausted quota, so it can only fail. `_summarise_partial`
+        # would swallow that, but it would still cost a round trip and a
+        # warning log line saying nothing the stop reason does not.
+        if self._stopped_by and not self._rate_limited:
             if wrapped := await self._summarise_partial():
                 final_text = wrapped
                 await self._emit("text", {"text": wrapped})
@@ -688,7 +741,13 @@ class AgentSDKRunner:
 
     async def _exchange(self) -> str:
         """One prompt in, the assistant's final text out."""
-        from claude_agent_sdk import AssistantMessage, ResultMessage, SystemMessage, TextBlock
+        from claude_agent_sdk import (
+            AssistantMessage,
+            RateLimitEvent,
+            ResultMessage,
+            SystemMessage,
+            TextBlock,
+        )
 
         session = self.session
         options = self._build_options()
@@ -711,6 +770,16 @@ class AgentSDKRunner:
                     # and an interrupted exchange is exactly the case where
                     # a final result may never arrive.
                     await self._remember_sdk_session(message)
+                    continue
+
+                if isinstance(message, RateLimitEvent):
+                    # Out of band: this arrives when the plan's quota state
+                    # changes, not as part of a turn, so it neither counts
+                    # an iteration nor carries usage.
+                    if stopped := await self._rate_limit_hit(message.rate_limit_info):
+                        self._stopped_by = stopped
+                        await client.interrupt()
+                        break
                     continue
 
                 if isinstance(message, AssistantMessage):
@@ -805,6 +874,56 @@ class AgentSDKRunner:
                     "month_spend": budget.month_spend,
                 },
             )
+        return None
+
+    async def _rate_limit_hit(self, info: Any) -> str | None:
+        """Read one ``RateLimitInfo``: a stop reason, a warning, or nothing.
+
+        The plan's quota is the limit that actually binds a
+        subscription-billed provider. Its money budgets do not: cost is
+        booked from :func:`service.estimate_cost`, an estimate of money
+        nobody spends, flagged ``cost_unknown`` for exactly that reason.
+        So the one limit that can really end a ``claude_agent`` run was
+        the one LabDog never mentioned.
+
+        What an operator saw instead depended on where the CLI gave up.
+        With a result message, ``_stop_reason`` reported "the backend
+        reported an error"; without one, the run ended on whatever text
+        had already arrived and was badged ``succeeded``. Both describe a
+        session that stopped because the plan said no, and neither says
+        so — which is the same failure as a truncated run presented as a
+        conclusion, wearing quota's clothes.
+
+        ``allowed`` is routine: the CLI emits on every transition,
+        including back down to normal, and a run that is within its quota
+        has nothing to report.
+        """
+        status = (getattr(info, "status", None) or "").strip()
+        if status not in ("allowed_warning", "rejected"):
+            return None
+
+        window = _rate_limit_window(info)
+        if status == "rejected":
+            self._rate_limited = True
+            return f"the plan's {window}rate limit{_rate_limit_reset(info)}"
+
+        if window in self._rate_limit_warned:
+            return None
+        self._rate_limit_warned.add(window)
+        utilization = getattr(info, "utilization", None)
+        try:
+            used = f"{float(utilization) * 100:.0f}% used"
+        except (TypeError, ValueError):
+            used = "nearly used up"
+        await self._emit(
+            "rate_limit_warning",
+            {
+                "message": f"The plan's {window}quota is {used}{_rate_limit_reset(info)}.",
+                "window": window.strip(),
+                "utilization": utilization,
+                "resets_at": getattr(info, "resets_at", None),
+            },
+        )
         return None
 
     def _cap_hit(self) -> str | None:
