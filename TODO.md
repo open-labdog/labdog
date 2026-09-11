@@ -190,19 +190,6 @@ Follow-ups it leaves open:
   saying nothing (leaves the signal unused), and closing as done (the
   panel keeps lying to subscription users). Move the window-label map
   out of `runner.py` into a shared module when doing this.
-- [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
-  per alert — severity, dedup, budget — but nothing bounds sessions per
-  unit of time. A flapping rule produces a new `(fingerprint, starts_at)`
-  on every firing, so each one is a fresh row and a fresh session, and the
-  dedup that stops repeat notifications does not stop repeat firings. The
-  money budgets are the backstop, except on a subscription-billed provider
-  (`claude_agent`) where cost is 0 and every USD limit is therefore inert,
-  leaving only the per-session token cap — which is per session, not per
-  day. Deferred deliberately on 2026-08-23: the first answer is to design
-  the alert rules so they do not flap and route only what is worth
-  spending on. A per-hour session cap, or a cooldown keyed on alertname,
-  is the backstop if that proves insufficient.
-
 - [ ] **Persist a verify session's evidence pack.** The rendered pack is
   in the session's first user turn, which is enough to read back but not
   to query — "which verifications ran with an unavailable disk reading"
