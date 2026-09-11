@@ -172,9 +172,24 @@ Follow-ups it leaves open:
   and `allowed_warning` raises a banner mid-run. Both are live-only.
   `RateLimitInfo.utilization` is never stored, so the panel still shows
   these providers a money figure that is an estimate of money nobody
-  spends. Persisting the last-seen quota per provider is what would let
-  the panel show the limit that actually binds — including between runs,
-  which is when an operator is most likely to be asking.
+  spends.
+
+  **Decided 2026-09-11: persist the last reading per provider.** Add
+  `ai_providers.rate_limit_state` (JSONB, keyed by `rate_limit_type`,
+  each entry holding `status`, `utilization`, `resets_at`, `seen_at`,
+  `source`). Two writers already receive the event: the runner's
+  `RateLimitEvent` branch (every status, `allowed` included — a 20%
+  reading is as much information as an 85% one) and the provider Test
+  probe, which gives an on-demand refresh without spending a session.
+  Reassign the dict rather than mutate it, or SQLAlchemy never flushes
+  it. `GET /api/ai/usage` gains a `quotas` list for `claude_agent`
+  providers; the panel renders a bar per window with `seen_at` and
+  `source` as a first-class label, because the figure is stale by
+  construction and a timestamped number is information while the same
+  number without one is a guess. Rejected: hiding the money meter and
+  saying nothing (leaves the signal unused), and closing as done (the
+  panel keeps lying to subscription users). Move the window-label map
+  out of `runner.py` into a shared module when doing this.
 - [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
   per alert — severity, dedup, budget — but nothing bounds sessions per
   unit of time. A flapping rule produces a new `(fingerprint, starts_at)`
