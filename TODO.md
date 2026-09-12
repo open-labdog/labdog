@@ -190,11 +190,6 @@ Follow-ups it leaves open:
   saying nothing (leaves the signal unused), and closing as done (the
   panel keeps lying to subscription users). Move the window-label map
   out of `runner.py` into a shared module when doing this.
-- [ ] **Persist a verify session's evidence pack.** The rendered pack is
-  in the session's first user turn, which is enough to read back but not
-  to query — "which verifications ran with an unavailable disk reading"
-  needs the `EvidenceItem` list stored structurally. Worth doing when
-  there is a second evidence producer, not before.
 
 ---
 
