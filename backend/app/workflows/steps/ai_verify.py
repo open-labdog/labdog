@@ -21,6 +21,20 @@ evidence pack (:mod:`app.ai.evidence`), hand it over, and render the
 result. The evidence pack is the seam — a future operator-declared list
 of commands produces the same ``list[EvidenceItem]`` and nothing
 downstream changes.
+
+**If you are adding that second producer, persist the pack while you are
+here.** Today the rendered text is the session's first user turn, which
+reads back fine but cannot be queried: "which verifications ran with an
+unavailable disk reading" means grepping transcripts, even though
+:func:`app.ai.evidence.summarise` already computes the answer for the log
+line below. Storing the ``list[EvidenceItem]`` structurally — a JSONB
+column on :class:`~app.ai.models.AISession`, written by
+:func:`app.ai.verify.run_verify_session` — turns that into a query.
+
+Deliberately not done yet: with one producer there is nothing to compare
+across, and a column nothing reads is how ``firewall_rules.is_system``
+started. A second producer is what makes the question worth asking, so
+the work belongs to whoever adds one.
 """
 
 from __future__ import annotations
