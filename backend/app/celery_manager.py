@@ -112,8 +112,10 @@ class CeleryManager:
             "-A",
             "app.tasks",
             "beat",
+            # Not the stock RedBeatScheduler: that one dies on the first
+            # Redis restart. See app.tasks.scheduler.
             "--scheduler",
-            "redbeat.RedBeatScheduler",
+            "app.tasks.scheduler.ResilientRedBeatScheduler",
             f"--loglevel={settings.logging.level}",
         ]
 

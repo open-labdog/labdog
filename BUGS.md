@@ -89,28 +89,7 @@ content policy.
 
 ### Correctness — High
 
-- [ ] **BUG-83** `backend/app/celery_manager.py` — beat does not survive a
-      Redis restart
-
-      Celery beat's tick loop (`celery.beat.Service.start`) catches only
-      `KeyboardInterrupt` and `SystemExit`. RedBeat's `tick()` opens with an
-      unguarded `self.lock.extend()`, which raises `ConnectionError` while
-      Redis is down and `LockNotOwnedError` once it is back with the lock
-      key gone. Either ends the loop and the scheduler exits. Every
-      periodic job stops — drift sweeps, scheduled actions, audit and
-      snapshot retention, Alertmanager polling — until LabDog is restarted.
-      A Redis without persistence also comes back with an empty
-      `redbeat:schedule`, since entries are registered once at `beat_init`.
-
-      The invisible half is fixed: beat now runs as its own supervised
-      subprocess, so its death fails `/health/ready` with `beat not running`
-      instead of leaving the process green. What remains is recovery — a
-      `RedBeatScheduler` subclass whose `tick()` catches those two
-      exceptions, re-acquires the lock, re-runs `register_all` (idempotent;
-      also what repopulates a flushed schedule) and returns a short retry
-      interval instead of propagating. Verified against celery 5.6.3 and
-      celery-redbeat 2.3.3 source. High: a routine Redis image update takes
-      out all scheduling.
+_No bugs are currently open._
 
 ### Correctness — Medium
 
