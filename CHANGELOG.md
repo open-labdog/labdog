@@ -7,7 +7,872 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-Nothing yet.
+_Nothing yet._
+
+## [0.10.0] — 2026-09-18
+
+### Security
+
+- **`script-src 'unsafe-inline'` is gone; HTML now carries a per-response CSP
+  nonce.** This was the last and hardest of the CSP items. Next's static export
+  inlines the RSC flight data as `<script>` blocks, so the usual fix —
+  build-time hashes — does not work here: 19 of the export's 147 inline scripts
+  are rewritten *per request* to patch the real route id in, so a hash computed
+  at build time never matches what is served. Each HTML response instead gets a
+  fresh 128-bit nonce stamped into its inline tags and a CSP naming it.
+
+  The rewrite cache is preserved: the document is cached with a sentinel in the
+  nonce slots and the substitution happens per response, so the expensive part
+  is still shared while the token is not.
+
+  `/docs` and `/redoc` keep `'unsafe-inline'` — FastAPI generates those pages
+  with inline bootstrap we do not control. They are off unless
+  `server.expose_docs` is set. Every other response gets a strict `script-src
+  'self'` fallback, deliberately strict so that a future code path returning
+  HTML outside the nonce machinery breaks visibly instead of quietly serving
+  inline script.
+
+  `style-src 'unsafe-inline'` is unchanged and remains a known gap.
+
+- **The Content-Security-Policy now sets the four directives that do not
+  inherit from `default-src`.** `object-src 'none'`, `base-uri 'self'`,
+  `form-action 'self'` and `frame-ancestors 'none'` were previously
+  unrestricted rather than inherited — most consequentially `base-uri`, where
+  an injected `<base href>` retargets every relative script URL on the page
+  and turns a same-origin `script-src` into a loader for someone else's host.
+  Nothing in the UI uses `<base>`, `<object>`, `<embed>`, `<iframe>` or a
+  cross-origin form action, so this restricts nothing that worked before. If
+  you embed LabDog in a frame, note that `frame-ancestors 'none'` now says so
+  in CSP as well as in the `x-frame-options: DENY` header that was already
+  being sent.
+
+- **`x-xss-protection` is no longer sent.** Deprecated, ignored by current
+  browsers, and on some older ones the filter it enables is itself an XSS
+  vector.
+
+- **Four smaller exposures closed.** None was a hole on its own; together they
+  were the difference between an install that tells an unauthenticated caller
+  nothing and one that hands over a route map and a certificate inventory.
+
+  - `/docs`, `/redoc` and `/openapi.json` are no longer served. They needed no
+    authentication and listed every route, parameter and schema. Set
+    `server.expose_docs = true` to bring them back; the dev config does.
+  - `POST /api/ai/providers/{id}/test` no longer returns the text of an
+    unexpected exception. A client library raising on an auth failure can
+    quote the request it sent, credentials included, and that response goes to
+    the browser. The detail is logged instead.
+  - `/metrics` no longer labels CA-certificate expiry with the certificate's
+    SHA-256 fingerprint. The endpoint is unauthenticated and everything else
+    it emits is an aggregate count; the name is what an alert needs.
+  - **The terminal WebSocket now authenticates before completing the
+    handshake, checks `Origin`, and — the one that was a live gap — honours
+    the session generation.** A token invalidated by logging out or changing a
+    password still opened a terminal, because the WebSocket path did not go
+    through the check added for that. A rejected handshake now surfaces in the
+    browser as a plain connection failure rather than a coded close.
+
+- **Firewall sync to an iptables-backend host was failing outright, and had
+  been for as long as the dual-stack teardown has existed.** The teardown
+  script carries a prose comment containing the word `isn't`. Ansible parses a
+  shell task given as a bare string by tokenising it shell-style, and that
+  apostrophe read as an unclosed quote — so the whole playbook was rejected
+  before a single task ran. The YAML was valid, so nothing in the test suite
+  noticed; only Ansible objected, and only at run time.
+
+  Found while verifying the `/tmp` change above against a real host. The two
+  teardown scripts are now passed as a mapping, which skips that parsing
+  entirely, and a test runs every generated task through Ansible's own
+  splitter so this class of failure cannot come back quietly.
+
+- **Firewall rollback state no longer lives at guessable paths on the managed
+  host.** The deadman's switch — the 60-second automatic revert that saves you
+  when a new ruleset cuts off SSH — kept its backups and its revert PID at
+  fixed names under `/tmp`, then ran `kill $(cat …)` as root against one of
+  them. Any local user on a managed host could pre-create or symlink those
+  names and choose what root read back: which ruleset gets restored when the
+  switch fires, or which process gets signalled.
+
+  Both playbooks now create a private root-owned directory per run and thread
+  its path through, so nothing is predictable and the whole directory is
+  removed afterwards. The switch itself is unchanged, including the ordering
+  that keeps the backups available until the revert has been cancelled.
+
+- **The login rate limit now throttles the attacker instead of the whole
+  install.** It keyed on the client address alone, and behind a reverse proxy
+  with `server.trusted_proxies` unset — the default — every request resolves
+  to the proxy, so one shared 5/minute bucket covered everybody. Five bad
+  passwords from anywhere locked all users out, and an attacker was throttled
+  no harder than someone with a typo.
+
+  Attempts are now counted per account: once for the pairing of client
+  address and account, and once for the account across all addresses, so both
+  a single source guessing one password and a distributed attempt on one
+  account are caught. Nothing is keyed on the address alone any more.
+
+  `server.trusted_proxies` accepts CIDR entries, which the shipped config's
+  comment already claimed and the code did not do — useful when the proxy
+  runs in a container and its address is not known when the config is
+  written. If a proxy is forwarding client addresses and `trusted_proxies` is
+  empty, LabDog now says so in the log once at startup rather than silently
+  discarding them.
+
+- **Startup now refuses to run with a signing key that can be guessed, and
+  checks the encryption key before it is needed.** Validation rejected exactly
+  two literal placeholder strings and nothing else, so a six-character HS256
+  key passed — and forging the auth cookie is forging any account, superuser
+  included.
+
+  `security.secret_key` must now be at least 32 characters (`openssl rand
+  -base64 32`, which the docs already tell you to run, gives 44).
+  `security.encryption_key` is decoded at startup instead of failing hours
+  later during the first host sync. `security.allowed_origins = ["*"]` is
+  refused outright: LabDog always sends credentials, so a wildcard makes
+  Starlette reflect whatever `Origin` the request carried — any site a
+  logged-in user visits could drive the API as them.
+
+  **`CHANGE_ME` — the placeholder shipped in `packaging/etc/labdog.toml` —
+  was not on the rejected list.** A `.deb` or `.rpm` install that skipped the
+  "generate your secrets" step therefore ran with a nine-character signing
+  key that is published in this repository. If that describes your install,
+  treat every account as compromised: generate real secrets, and note that
+  every session is invalidated when `secret_key` changes.
+
+  Running LabDog over plain HTTP on a trusted LAN still works. That case now
+  logs a warning about `cookie_secure`, rather than refusing to start.
+
+- **Logging out and changing a password now actually revoke the session.**
+  The auth cookie is a stateless JWT: logging out cleared it in the browser
+  and did nothing else, so a cookie somebody had already copied stayed valid
+  for the rest of `security.session_lifetime_seconds` — 24 hours by default.
+  Changing a password did not help, which made "change your password"
+  useless as a response to a suspected compromise, the one situation it
+  exists for. Neither did an administrator resetting one.
+
+  Sessions now carry a generation number that is checked on every request
+  and bumped on logout, on a password change and on an admin password reset.
+
+  Three things to expect:
+
+  - **Everyone is logged out once when you upgrade.** Existing cookies carry
+    no generation and are rejected. Accepting them would leave exactly the
+    sessions this exists to revoke working until they expired on their own.
+  - **Logging out signs you out everywhere**, not just in the browser you
+    clicked it in. This is the documented trade-off of the cheap fix:
+    per-session revocation would need a second datastore in the request path
+    that fails open when it is unreachable.
+  - **Changing your password signs you out everywhere too**, including the
+    browser you changed it in, so you will be asked to log in again
+    immediately afterwards.
+
+- **The password policy now applies everywhere a password is set.** The
+  12-character rule lived on the registration form alone, so it held on the
+  one path nobody needs to use. `PATCH /api/users/me` accepts a `password`
+  field and had no validator — any user could set a one-character password
+  on their own account, no administrator involved — and the admin
+  create-user and reset-password endpoints hashed whatever string they were
+  given.
+
+  The rule itself is unchanged; tightening it would lock out existing
+  accounts at their next password change, which is a separate decision. Two
+  things were added that cannot lock anyone out: a 128-character ceiling (the
+  hashing cost is paid on every login attempt, on input an unauthenticated
+  caller chooses) and a refusal to set the password equal to the account's
+  own email address.
+
+- **The webhook secret is encrypted at rest and no longer returned by the
+  API.** It was stored in plain text under a comment calling it "not a
+  credential" — it is the HMAC key every inbound push webhook is verified
+  against, so anyone who could read it could forge a push and make LabDog
+  import configuration from a commit of their choosing. Any authenticated
+  user could read it, because `GET /api/git-repos` returned it verbatim. It
+  was also the only secret outside an `encrypted_*` column.
+
+  Existing secrets are encrypted in place on upgrade, so configured webhooks
+  keep working — nothing to re-enter. The API now reports
+  `has_webhook_secret` instead, and the UI shows whether one is set rather
+  than offering to copy it. To rotate, type a new one; leaving the field
+  blank keeps the existing secret.
+
+- **The git HTTPS token no longer appears on the `git` command line.** It was
+  embedded in the clone URL, so it sat in `/proc/<pid>/cmdline` — which is
+  world-readable, meaning any local account could read the token off a
+  running clone — and was written into `.git/config` until a `set_url` two
+  lines later scrubbed it. It now travels as an `Authorization` header
+  configured through `GIT_CONFIG_*` environment variables, which are readable
+  only by the process owner and root. The pack sync path already kept the
+  token out of the URL but passed it via `git -c`, which is argv too; both
+  paths now use the same mechanism.
+
+- **Ansible runs and git syncs now verify the host they connect to.** LabDog
+  already recorded each managed host's SSH key on first contact and refused a
+  changed one — but only on its own asyncssh connections. The Ansible path,
+  which is what pushes root-level configuration, set
+  `StrictHostKeyChecking=accept-new` with no known-hosts file and re-accepted
+  whatever key was presented on every run. A man-in-the-middle the web
+  terminal refused was accepted by the pipeline that matters more.
+
+  Playbook runs now verify against the key LabDog recorded for that host. A
+  host with no recorded key yet still accepts on first contact — refusing
+  would make a brand-new host unmanageable — and the key is recorded during
+  the preflight connection, so the unverified window is one connection wide.
+  Clear a key with `POST /api/hosts/{id}/trust-host-key` after a legitimate
+  reinstall.
+
+- **Git syncs over SSH are verified too, and the repository's host key is now
+  recorded.** Both git paths combined `accept-new` with
+  `UserKnownHostsFile=/dev/null`, which reads like trust-on-first-use and is
+  in fact unconditional acceptance: every invocation started from an empty
+  file, so there was never a first use and never a mismatch. Anyone able to
+  intercept the connection to a pack repository could serve arbitrary
+  playbooks, which LabDog then runs against the fleet as root.
+
+  The first sync after upgrading records the server's key (unchanged trust
+  posture, once) and every sync after that is verified against it. **If your
+  git server is legitimately re-keyed, syncs will start failing with a
+  host-key mismatch** — that is the point; clear the recorded key with
+  `POST /api/git-repos/{id}/trust-host-key`. Changing a repository's URL to a
+  different server clears it automatically.
+
+- **SSH terminal transcripts no longer capture what you type at a password
+  prompt.** Everything typed at a `sudo` prompt, a `mysql -p`, an `openssl`
+  passphrase, or any pasted key or token was stored in plain text and
+  served by the audit API. The host hiding its own echo never protected it —
+  the keystrokes cross the WebSocket either way.
+
+  A line answering a password prompt is now recorded as
+  `[password input suppressed]`, the body of a pasted private key as
+  `[private key input suppressed]`, and every row passes through the
+  redactor on its way to the database. The *fact* that a secret was entered
+  is still recorded; only the value is discarded.
+
+  Existing transcripts are not rewritten. They still hold whatever was
+  captured before this release — `logging.audit_retention_days` governs how
+  long, and that setting now actually takes effect (see below). Consider
+  whether the stored history warrants clearing.
+
+- **Action packs can no longer ship code that runs on the LabDog host
+  without being told to.** A pack is a git repository you point LabDog at,
+  and ansible-core gives a repository several ways to execute on the
+  *controller* rather than on a managed host: plugin directories it imports
+  Python from (`action_plugins/`, `library/`, `filter_plugins/`, …), and
+  plays that set `connection: local` or target `localhost`. Nothing
+  inspected any of it, so adding a pack was equivalent to granting code
+  execution as the `labdog` user.
+
+  Packs containing either are now refused, and the refusal names what it
+  found. A new **"Allow content that runs on the LabDog host"** setting per
+  pack accepts it deliberately; flipping it is recorded in the audit log.
+
+  **Existing packs are unaffected** — they are marked trusted on upgrade,
+  because a migration cannot audit pack content and silently breaking a
+  working pack is worse than preserving the status quo behind a flag you
+  can now see. Packs added from here on default to untrusted.
+
+  This is not a privilege boundary: LabDog's model is flat, so any user can
+  set the flag. It makes accepting controller-side code a deliberate,
+  audited act rather than a side effect of adding a repository.
+
+### Changed
+
+- **Frontend lint runs on ESLint 10; `eslint-config-next` is gone.** ESLint 9
+  reached end of life on 2026-08-06 and the only thing keeping LabDog on it
+  was `eslint-plugin-react` — silent since April 2025, peer-capped at 9, and
+  still calling an API 10 removed — pulled in by `eslint-config-next`. The
+  rule sets that package assembled are now assembled in `eslint.config.mjs`
+  directly, rule for rule, from `@next/eslint-plugin-next`,
+  `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y`
+  and `eslint-plugin-import-x` (the maintained fork of `eslint-plugin-import`,
+  whose peer range also stopped at 9). What is lost is `eslint-plugin-react`'s
+  `recommended` set, most of which TypeScript `strict` subsumes.
+
+  `eslint-plugin-react-hooks` moves 7.0 → 7.1, which promotes two React
+  Compiler readiness rules to errors; both are held at `warn` for now and the
+  four sites they flag are on TODO.md. Lint result on the tree: 0 errors
+  before and after; warnings 5 → 15, all advisory. Development-only — nothing
+  in the shipped image changes.
+
+- **The `is_system` columns on `firewall_rules` and `hosts_entries` are gone
+  (migration `0038`).** Neither was ever written. The create schemas do not
+  accept the field, the two GitOps importers strip `system: true` out of
+  incoming YAML before a row is built, and the only system rules and entries
+  LabDog has — the anti-lockout SSH allow and the loopback lines — are
+  synthesised at merge time and never persisted. So five API guards, four
+  importer filters and two UI branches were protecting rows that could only
+  exist if someone edited the database directly; the e2e test covering the
+  disabled buttons was deleted a release ago for exactly that reason.
+
+  Nothing operator-visible changes: `is_system` still appears on the
+  effective-rules and effective-entries views, where it is real, and system
+  rules are still untouchable through the UI because they were never rows to
+  begin with. The **System** badge and the greyed-out Edit/Delete buttons on
+  the group Rules and Hosts Entries pages are removed, since they could never
+  render. `RuleResponse.is_system` and `HostsEntryResponse.is_system` are
+  removed from the API — both were always `false`.
+
+  If you set the column by hand, the upgrade logs a warning naming the row
+  count before dropping it; those rows become ordinary editable rows.
+
+
+- **`HostModuleStatus.sync_status` has one spelling for drift.** Packages,
+  cron and linux users wrote the legacy `"drifted"` where the other four
+  modules wrote `"out_of_sync"`. Nothing was broken by it — the host rollup
+  treated the two as equivalent and each drift task translated before
+  recording its metrics sample — but every consumer had to know both, and
+  the translation step is the sort of thing that gets forgotten at the next
+  call site. Migration `0037` rewrites existing rows; nothing writes the old
+  value any more.
+
+  **If you alert on `/metrics`:** `labdog_host_modules{sync_status="drifted"}`
+  is no longer emitted. That label was observed-values-only and never
+  zero-filled, so a rule matching it goes from matching some series to
+  matching none rather than reading zero. Use
+  `sync_status="out_of_sync"` instead.
+
+- **`docs/ui/metrics.md` is now `docs/ui/host-metrics.md`.** Two features
+  shared the word "metrics" — reading per-host CPU/memory/disk *inward* from a
+  Grafana Mimir backend, and exposing LabDog's own fleet state *outward* for
+  Prometheus to scrape (`docs/metrics-export.md`). Both pages carried
+  disambiguation banners; distinct filenames say it before the banner has to.
+  The published URL moves from `/ui/metrics` to `/ui/host-metrics`, so an
+  external bookmark to the old path will 404.
+
+### Added
+
+- **The Add Host form asks whether to check the host for drift.** Ticked by
+  default. Drift checking stays off by default at the API and for every host
+  already added — the default is deliberate, since it means LabDog connects to
+  the host on a timer — but nobody was ever *asked*, which is how an install
+  ends up with 17 hosts and drift silently off on all of them.
+
+  Ticking it enables all seven modules, not just firewall.
+  `Host.drift_check_enabled` gates the firewall sweep alone and the other six
+  read their own rows, so a control that set only the host flag would have
+  enabled one seventh of what it says.
+
+  `POST /api/hosts` without `drift_check_enabled` is unchanged, so existing
+  scripts keep the behaviour they have.
+
+- **`drift_samples` is now pruned, without resetting the drift counters.**
+  The table was written once per drift check per module and nothing ever
+  deleted from it. It is now pruned daily by a new
+  `logging.drift_retention_days` setting (default 90, `0` = keep forever).
+
+  The reason this took a rollup table rather than a `DELETE`:
+  `labdog_drift_checks_total`, `labdog_drift_changes_total` and
+  `labdog_drift_check_duration_seconds` are derived from the whole table with
+  no time window, and all three are counters. Deleting rows makes a counter
+  decrease, which Prometheus reads as a process restart — `rate()` copes,
+  `increase()` across the deletion silently under-reports, and nobody is
+  told. Retention folds each row it deletes into `drift_sample_rollup` in the
+  same transaction as the delete, and the exporter sums live rows plus
+  rollup, so the totals only ever move forward.
+
+  Note for operators: the drift counters stay all-time, but the dashboard's
+  drift-trend chart is windowed and reads `drift_samples` directly, so a
+  retention window below 90 days will empty the chart's older buckets.
+
+- **Broker queue depth on `/metrics`.** `labdog_broker_queue_depth{queue}`
+  and `labdog_broker_reachable`, covering every queue a worker consumes
+  (`default`, `long_running`, `orchestrator`). These are the only families
+  not derived from PostgreSQL, so two things are deliberate: the probe has a
+  hard timeout (`metrics.broker_timeout_seconds`, default 0.2) because the
+  endpoint is unauthenticated and a hanging Redis must not hang a request;
+  and when the broker is unreachable the depth gauge is **absent rather than
+  zero**, since a zero reads as "the queues are empty" and would silence a
+  backlog alert at the moment it should fire. Celery worker introspection
+  stays out of scope — `inspect().active()` is a multi-second broadcast RPC;
+  run `celery-exporter` alongside if you need that detail.
+
+- **The dashboard now says when drift checking is off, instead of looking
+  empty.** Drift checking is off by default on every host and the periodic
+  sweep runs on schedule regardless, so a fleet with it switched off nowhere
+  shows no error and no checks — indefinitely. Every downstream surface goes
+  quiet too, and each looks like a separate malfunction. Three changes:
+  a banner on Fleet Overview when no host has any drift check enabled,
+  linking to where to turn it on; the `Never Checked` tile now says
+  "drift checking is off" rather than counting hosts without a cause; and
+  the drift-trend chart distinguishes "no drift checks are configured" from
+  "history is being collected", which previously rendered identically.
+  Backed by a new `GET /api/dashboard/drift-coverage`. Coverage counts both
+  flags — host-level (firewall) and per-module — as a union, so a fleet
+  checking six modules with the host flag off is correctly reported as
+  covered. See `docs/ui/drift-detection.md`.
+
+- **Finished action runs and sync jobs are now pruned on a schedule.** They
+  were the only history LabDog kept forever — the audit log and terminal
+  transcripts have been pruned daily since they were added. An action run's
+  per-host transcript can reach a mebibyte, so a nightly twenty-host action
+  wrote something like 7 GB a year into the table the per-host queue scans
+  before *every* sync, action and drift check.
+
+  The window is `logging.run_retention_days`, default **90**, settable in
+  `labdog.toml` or the settings UI; `0` keeps everything. It is deliberately
+  separate from `logging.audit_retention_days` — an audit trail is usually
+  wanted for longer than an ansible transcript. Only finished runs are
+  touched: anything queued, pending or running is left alone however old it
+  is, because a run waiting behind a host lock is not stale. **On the first
+  run after upgrading, an instance that has been up for a while will delete
+  everything older than 90 days** — set the value first if you want to keep
+  more.
+
+### Fixed
+
+- **BUG-83: the periodic scheduler now survives a Redis restart, and its death
+  is no longer invisible.** Beat ran embedded in the `work` worker, which
+  Celery runs as a *child* of that worker. Its tick loop catches only
+  `KeyboardInterrupt` and `SystemExit`, and RedBeat's `tick()` opens with an
+  unguarded lock refresh that raises `ConnectionError` while Redis is down and
+  `LockNotOwnedError` once it is back with the lock key gone. Either killed
+  the child; nothing restarted it; and because the worker itself was fine,
+  `/health/ready` kept reporting `celery: ok` while every periodic job — drift
+  sweeps, scheduled actions, audit and snapshot retention, Alertmanager
+  polling — had silently stopped. A routine Redis image update was enough.
+
+  Two changes. Beat is now its own supervised subprocess alongside the two
+  workers, so if it does die, `/health/ready` returns 503 with
+  `beat not running`. And it no longer dies: a `RedBeatScheduler` subclass
+  retries after a lost connection, re-acquires a lost lock without blocking,
+  and re-registers every schedule when the lock loss says Redis came back
+  empty. Verified by restarting a persistence-less Redis under a live beat —
+  the stock scheduler exits with code 1 and an empty schedule; the new one
+  logs the loss, re-acquires, re-registers 17 schedule groups and keeps
+  ticking. No operator action is needed on upgrade.
+
+- **A session stopped by the Claude plan's rate limit now says so.** The two
+  subscription-billed backends stop on the plan's quota, not on a money
+  budget — their cost is booked from an estimate and flagged
+  `cost not reported`, because on a subscription no per-token money is spent.
+  The SDK announces quota state on the message stream, and the runner ignored
+  it: a refused run ended as "the backend reported an error", or, when the CLI
+  gave up without a final message, on whatever text had already arrived, with
+  a green `succeeded` badge and nothing to say it had been cut off.
+
+  A refusal now ends the run with the window and reset time as its stop reason
+  — `Stopped early: the plan's 5-hour rate limit, resetting at 17:30 UTC on 10
+  Sep` — and, uniquely among stop reasons, skips the wrap-up turn, which would
+  be another request on the quota that was just refused. Approaching the limit
+  raises a banner on the assistant page once per window, which is the only
+  advance notice these providers get. API-key providers are unaffected; they
+  do not receive these events.
+
+- **A host whose modules all report `unknown` no longer shows as "In Sync".**
+  `refresh_host_sync_status` fell through to `in_sync` for any non-empty status
+  set with no error and no drift. It was unreachable while a freshly added host
+  had no module rows at all; opting one into drift checking at creation writes
+  six of them, all `unknown`, and made it reachable — a green badge earned by
+  ticking a checkbox on a host that had never been synced.
+
+- **BUG-82: the firewall row's "Enable Drift Check" toggle showed the wrong
+  state.** Firewall drift is the one sweep still gated by the *host* flag
+  (`Host.drift_check_enabled`) rather than by a per-module one, and nothing in
+  the codebase ever wrote the firewall module's own
+  `HostModuleStatus.drift_check_enabled` column — it sat at its `false`
+  default forever. `GET /hosts/{id}/current-state` reported that column
+  anyway, and the Host detail page renders the row's label from it while the
+  button writes the host flag. The label therefore never changed, and each
+  click silently alternated drift checking for the whole host. The row now
+  reports the flag its own control writes. The other six modules are
+  unaffected — their sweeps do read the per-module column.
+
+- **A clash between two entries is settled by priority, everywhere.** Priority
+  ordering is how LabDog resolves competing configuration, but the per-entry
+  **Priority** field was only half wired in. Group-level entries honoured it;
+  host-level overrides did not — among two host entries for the same cron job,
+  service, package, user, group or address, the one with the *lowest* priority
+  won. Raising the number made it lose. Both levels now let the highest
+  priority win, and a host override still beats an inherited group entry
+  whatever the numbers say, because that is scope rather than a clash.
+
+  **`/etc/hosts` is now ordered by priority.** The file is read top to bottom
+  and the first line matching a name wins, so when two entries give the same
+  hostname different addresses, position *is* the decision. Entries were
+  emitted in address order, which settled it arbitrarily; they are emitted
+  highest priority first now, with the address as a stable tie-break and the
+  system entries still pinned at the top. **The rendered file changes on hosts
+  whose entries carry non-zero priorities** — the drift check compares entries
+  by address rather than by order, so it will not flag this; the new order
+  lands at the host's next sync.
+
+- **A sync that had to wait no longer reports itself as done.** When a
+  scheduled `_builtin.sync` found the host busy, the underlying job was queued
+  behind the in-flight work — correctly — but the action run finished
+  `succeeded` anyway. The history then said the sync happened at a time it did
+  not, and nothing in the run list distinguished it from one that really ran.
+  Such a run now stays *pending*, with the same "waiting for…" reason any other
+  deferred operation shows, and closes for real when the queued sync actually
+  runs.
+
+- **`2>&1` no longer needs approval.** The AI assistant's command classifier
+  cut a command line into segments on `&`, so `systemctl status sshd 2>&1`
+  became two pieces — the second headed by `1`, which is not a known read-only
+  command, so the whole line was treated as a write. Nothing was ever
+  wrongly *allowed*; the most common redirection idiom there is was simply
+  refused in a read-only session and raised an approval prompt in an approval
+  session, and prompts that are obviously unnecessary teach people to approve
+  without reading. The `&` of an fd duplication is now part of the
+  redirection, not a separator. Redirections to a *file* that share the
+  syntax — bash's `>&name` and `1>&name` — still count as writes.
+
+- **The container reaps its own orphaned processes.** LabDog ran as PID 1 with
+  no init, and PID 1 is the process every orphan re-parents to. The app shells
+  out to git, git spawns `ssh` for SSH remotes and exits first, and the
+  orphaned `ssh` landed on a PID 1 that never reaps anything — so each one
+  became a permanent zombie holding a task slot. One instance accrued 115 of
+  them at roughly 26 a day; the count only ever grows, and the end state is a
+  host that cannot `fork()` and needs a reboot. The image now starts under
+  `tini`. Deployments carrying `init: true` as a workaround can drop it.
+
+- **The per-host queue no longer scans whole tables to decide if a host is
+  busy.** Every sync, action run and drift check asks that question first, and
+  two of the three tables it consults had no index for it — including the one
+  holding the transcripts. Five indexes are added; they are built
+  `CONCURRENTLY`, so the upgrade does not lock writes out of those tables while
+  it runs.
+
+- **An expired session sends you to the login page instead of failing silently
+  forever.** The sign-in cookie lasts 24 hours. When it lapsed mid-session
+  nothing noticed: every request kept failing and the UI raised an error toast
+  for each one, indefinitely, with no way back short of typing the login URL.
+  A 401 on an authenticated request now clears the cached data — so the next
+  account to sign in on that browser cannot briefly see the previous one's —
+  and redirects, once, however many requests fail at the same moment. Logging
+  out clears the cache too.
+
+- **The audit log reports failures instead of showing an empty page, and is no
+  longer capped at 50 entries.** The page caught every error and resolved as if
+  the request had succeeded with nothing in it, so a server error rendered as
+  "No audit entries found" and the error banner beneath it could never appear.
+  On a compliance surface, "nothing happened" and "we could not tell you what
+  happened" must not look the same. It also asked for no page size, so it got
+  the backend default of 50 and everything older was unreachable — including
+  from the column filters, which only ever searched what had been loaded. It
+  now pages through the log 100 entries at a time.
+
+- **Collecting a host's state is queued instead of running inside the request.**
+  "Collect" opened an SSH connection and ran seven collectors one after another
+  while the HTTP request waited, holding a database connection the whole time
+  and taking no host lock. The dashboard's "Check all" starts one of these per
+  host at once, so a handful of unresponsive hosts drained the connection pool
+  and unrelated requests across the whole app began failing. Running one during
+  a sync overwrote the module status the sync was writing.
+
+  It is an action run now — `_builtin.collect_state` — so it waits its turn
+  behind anything already working on that host, and the button returns
+  immediately. **The endpoint now answers 202 with a run to poll rather than
+  the collected state**, and pressing it twice joins the run already in flight
+  instead of starting a second one. The UI polls and refreshes as before; the
+  dashboard's fleet-wide button now says the collection was queued, because it
+  was.
+
+  `_builtin.collect_state` also does what its description always claimed. It
+  collected only host facts — OS, kernel, firewall backend — and never the
+  module state the current-state tabs read. It now collects both, and takes an
+  optional `module` parameter to narrow it to one.
+
+- **Slow git and long playbooks no longer stall the rest of the process.**
+  Three unrelated places did blocking work where it stopped everything else:
+
+  - Scanning or activating a git repository shelled out to `git` from inside
+    the request handler. The API is a single worker, so a slow or unreachable
+    remote did not just make that one request wait — it froze every other
+    request, `/health` and the terminal WebSocket included, for up to the
+    120-second git timeout. The clone and the repository walk now run on a
+    worker thread.
+  - Startup synced every enabled action pack from its remote before serving.
+    An unreachable remote held startup open past the container healthcheck,
+    the orchestrator restarted the process, and restarting did not make the
+    remote reachable. The registry is now loaded from what is already on disk
+    before the app serves, and the git refresh runs in the background; when it
+    finishes, the registry is refolded.
+  - A host sync held a database session — and one connection from a small
+    pool — open for the entire ansible run, up to the full playbook timeout.
+    The orchestrator is now split into a planning half that reads the database
+    and a running half that does not, so the session closes before the run
+    starts.
+
+  Two smaller ones went with them: rebuilding the action registry walks every
+  file in every enabled pack repository and parses the YAML it finds, and
+  deleting a pack removes its whole checkout. Both are reached from request
+  handlers and both now run on a worker thread.
+
+- **Group merge results are deterministic.** Every module — firewall, cron,
+  packages, services, users, `/etc/hosts` entries, CA certs, resolver —
+  resolves a host's effective configuration by walking the groups it belongs
+  to from highest priority down and letting the first match win. The walk was
+  ordered by priority alone, so two groups sharing a priority left the winner
+  to whatever order the database happened to return, and a host in both could
+  get a different answer on one sync than on the last with nobody having
+  changed anything. Nothing surfaced it either: drift is computed as a set
+  comparison, so a re-ordering is not drift.
+
+  `host_groups.priority` is unique now. The API has always answered 409 on a
+  duplicate, but with a check that two simultaneous requests could both pass;
+  the database enforces it. **On upgrade, existing duplicates are renumbered**
+  — the group that was created first keeps its priority and the rest drop to
+  the next free value down, which preserves the order they already had. Every
+  change is logged by the migration. A racing create or update now answers 409
+  instead of 500.
+
+  The same ordering was missing one level down, for the rules *inside* a
+  group. Firewall rules are the visible case: `priority` defaults to 0 for
+  every rule, so the first-match order of the emitted nftables ruleset was
+  whatever the query returned, and editing an unrelated rule could silently
+  reshuffle it. Rules are now read highest priority first, ties broken by
+  creation order, in every module.
+
+- **Deleting a host no longer destroys its action transcripts.** The previous
+  release stopped `DELETE /api/hosts/{id}` from failing and kept the run row
+  itself, with a record of what it had targeted. It did not keep the per-host
+  rows underneath, and those are where `output` lives — the actual transcript
+  of what ran. So the surviving run said what was targeted and whether it
+  failed, and no longer said what happened, usually at the exact moment
+  someone was removing a host *because* something went wrong.
+
+  Those rows now survive the delete. Each one keeps the hostname as it stood
+  when the run was dispatched, so it still has a name to show once there is
+  nothing left to look up, and the run detail page marks it "(deleted)".
+  Reading one back is now addressed by the row rather than by host id — the
+  old `/api/actions/runs/{id}/hosts/{host_id}/output` route cannot reach a
+  run whose host is gone, so `/api/actions/runs/{id}/host-runs/{host_run_id}/output`
+  was added and the UI uses it for every row. The old route still works for
+  hosts that exist.
+
+  A run whose host is deleted while it is in flight now finishes as failed
+  with "Host was deleted before this run started" instead of raising into the
+  generic error handler.
+
+- **A host could show as drifted seconds after a clean sync.** The seven
+  periodic drift sweeps took no per-host lock. A sweep that landed while a
+  sync was applying that host's configuration read a half-applied state and
+  wrote `out_of_sync` over the status the sync was maintaining — and nothing
+  distinguished that stale verdict from a real one, so the usual reaction was
+  to sync again and watch it happen again.
+
+  Every sweep now goes through one shared driver that asks the same
+  "is this host claimed?" question syncs and action runs ask, skips a claimed
+  host for that tick, and — for the case a lock alone cannot cover — re-checks
+  after the collection and discards the verdict if an operation claimed the
+  host while the SSH round trip was in flight. A skipped host is checked on
+  the next interval; the operation holding it leaves the status correct on its
+  way out either way.
+
+  Six of the seven also held a single transaction open across the whole
+  sweep and committed once at the end, so a worker restart mid-sweep threw
+  away every host's result and one host's failed statement took every host
+  after it with it. Each host now gets its own transaction, and an
+  unanticipated failure is logged with its traceback instead of being
+  swallowed.
+
+- **A run page opened under a host showed the wrong id in its links.**
+  `/hosts/7/actions/runs/12/` rendered with *both* route parameters set to
+  `12`, so the host id was missing from the page data and the back-link and
+  breadcrumb pointed at the run as though it were the host. The pre-rendered
+  page bakes in one placeholder per dynamic segment and only one value was
+  being substituted. Affected the two nested routes,
+  `hosts/[id]/actions/runs/[runId]` and `groups/[id]/actions/runs/[runId]`.
+  The page always fetched the right data — the client router resolves the
+  real URL — so this was confusing rather than harmful.
+
+- **A sync deferred behind a busy host no longer reapplies every module.**
+  Asking to reapply just the firewall on a host that was already syncing
+  queued the request — and when the queue drained, the queued job had lost
+  its module list and applied all seven: packages reinstalled, services
+  restarted, `/etc/hosts` rewritten. `sync_jobs` had nowhere to record which
+  modules were asked for, so the re-dispatch reconstructed "all of them"
+  from a row that only said "bulk".
+
+  The job now records its module list, and `GET /api/sync/jobs` reports it.
+  A repeat request while one is in flight also stops claiming the filter is
+  unknown and names what the queued job will actually do.
+
+  Jobs queued before upgrading have no recorded list and still mean every
+  module, which is what they were going to do anyway.
+
+- **Daily maintenance jobs now actually fire.** Fifteen periodic schedules
+  were registered when their module was first imported, and every
+  registration reset the job's next-due time to a full interval away. Both
+  the API and the worker import those modules, so every restart pushed the
+  daily jobs back another day: on a deployment that restarts more often than
+  once a day, audit-log pruning, SSH-transcript pruning and AI snapshot
+  retention **never ran at all**. Six of the fifteen also swallowed their
+  own failures silently.
+
+  Registration now happens once, in the process that actually runs the
+  scheduler, and only rewrites an entry when the schedule genuinely changed
+  — so a restart no longer moves a job that was due in ten minutes.
+
+  On upgrade, expect the pruners to run for the first time. If your install
+  has been up for a while, the first audit-log prune may delete a lot at
+  once; check `logging.audit_retention_days` before restarting if that
+  matters to you.
+
+- **A referenced host changing its IP now actually flags its dependants.**
+  When a host referenced by an `/etc/hosts` entry changed address, LabDog
+  raised the drift flag on the dependent hosts — under a module name nothing
+  reads. The status those hosts displayed still said in sync, no drift was
+  reported, no sync was offered, and their `/etc/hosts` kept pointing at the
+  old address. The firewall half of the same code path used the right name,
+  so half the feature worked.
+
+  Upgrading repairs the existing rows rather than discarding them: a host
+  whose stale row recorded drift is marked out of sync on the row that is
+  actually read, so signals raised while the bug was live are delivered
+  now rather than lost. Expect some hosts to show `/etc/hosts` as out of
+  sync after upgrading — that is the backlog surfacing, and a sync or the
+  next drift check clears it.
+
+- **Values LabDog writes into config files can no longer add lines to them.**
+  Three fields were interpolated into generated files with nothing stopping
+  them from ending the line they sat on:
+
+  A `/etc/hosts` entry's **comment** had no validation at all, so a comment
+  containing a newline appended a second, working `/etc/hosts` line — a
+  package-mirror redirect on every host in the group, written by LabDog
+  itself and invisible in a UI that shows the comment on one line. A managed
+  **host's hostname** reaches the same file through host references and was
+  likewise unchecked. And a **sudo rule** was written into
+  `/etc/sudoers.d/<user>`, where a newline produced a two-line drop-in
+  granting passwordless root to an account LabDog does not manage —
+  `visudo -cf` validated it happily, because it is correct sudoers syntax.
+
+  All three are now rejected, at the schema and again where the file is
+  written, since entries also arrive through the GitOps YAML importer and
+  older rows predate the validators. `ssh_port` is bounded to a real port
+  range while nearby.
+
+  An existing hosts entry or sudo rule containing a newline will now be
+  refused on edit; the rendered files stay safe either way.
+
+- **A hung host no longer stalls every host behind it.** LabDog bounded how
+  long it would wait to *reach* a host, but not how long a command could take
+  once connected. A host that answered SSH and then hung — a wedged
+  `nft list ruleset`, a stuck NFS mount, a process in D state — held the
+  caller indefinitely. The drift sweep and state collection walk hosts one at
+  a time, so a single unresponsive host silently stopped every host after it
+  from being checked at all, on every tick.
+
+  Every command now carries a deadline, bound at the connection rather than
+  at each call site, so it covers the thirty-odd places that needed it and
+  anything added later. The new **SSH command timeout** setting (default 60s)
+  controls it; the connect timeout is unchanged and still separate.
+
+- **The container healthcheck now checks something.** `/health` returned
+  `{"status": "ok"}` unconditionally — it never touched the database, Redis,
+  or the Celery workers. If a worker died the container stayed healthy
+  forever while nothing ran: no syncs, no drift checks, no scheduled actions,
+  and no signal that anything was wrong.
+
+  There are now two endpoints. `/health` and `/health/live` stay constant —
+  "is the process answering" is what a restart policy should act on.
+  `/health/ready` checks the database, Redis and the workers, and returns 503
+  naming the component that failed. The image healthcheck points at it.
+
+  If you run LabDog outside the provided image and monitor `/health`, nothing
+  changes; point at `/health/ready` to get the stronger check.
+
+- **Built-in actions actually run.** `_builtin.collect_state`,
+  `_builtin.drift_check`, `_builtin.sync` and `_builtin.ai_task` never
+  executed their work — three separate defects, stacked, each hiding the
+  next. Found by running six of them against a live instance.
+
+  First, every built-in deferred behind its own parent run. The run
+  orchestrator marks the parent "running" before dispatching, and the
+  built-in's busy-check counted that as another operation holding the
+  host. The deferral was permanent: it is only cleared when some *other*
+  operation on that host finishes, and there was none.
+
+  With that cleared, two of them crashed on `asyncio.run() cannot be
+  called from a running event loop` — they invoked another Celery task
+  in-process, and that task's body starts its own event loop inside the
+  one already running.
+
+  With that fixed, `_builtin.sync` deferred against itself again, this
+  time through its own per-host row, and reported `succeeded` having
+  synced nothing.
+
+  All three are fixed. A scheduled sync or drift check now claims its
+  host, does the work, and reports what actually happened. Nothing needs
+  reconfiguring, but if you have scheduled actions using these built-ins,
+  expect them to start doing something on the next tick — check that
+  their schedules and targets are still what you want before upgrading.
+
+  One related reporting gap remains (tracked as BUG-81): a `_builtin.sync`
+  that is genuinely deferred behind another operation still finishes as
+  `succeeded` rather than saying it was queued.
+
+- **Action runs no longer deadlock the fleet when several schedules share a
+  cron minute.** The run orchestrator dispatches one task per host and then
+  blocks until they finish — but it was published to the same queue and pool
+  as those children, four slots wide by default. Four schedules on `0 3 * * *`
+  took every slot, no child could get one, and nothing moved until the
+  orchestrator's twelve-hour limit fired and finalised four runs as `partial`
+  with zero hosts touched.
+
+  LabDog now runs two Celery workers: `work`, which does everything it did
+  before, and `orchestrator`, which runs only the run orchestrator. The pool
+  an orchestrator waits on is never the pool it occupies, so the starvation
+  is impossible rather than merely unlikely. Exceeding
+  `celery.orchestrator_concurrency` (default 4) queues runs instead.
+
+  Operationally: the process now has two Celery children instead of one, so
+  expect roughly double the worker memory. Nothing needs reconfiguring — no
+  deployment sets `-Q` itself — but a container with a tight memory limit may
+  need it raised.
+
+- **A host or group with action-run history can be deleted again.**
+  `DELETE /api/hosts/{id}` returned 500 for any host that had ever been the
+  target of an ad-hoc action run, with no way to remove it short of manual
+  SQL. `action_runs` links to its target through `ON DELETE SET NULL`
+  foreign keys, under a constraint that forbade all of them being NULL —
+  which is exactly what `SET NULL` produced when the run's only target was
+  the host being deleted.
+
+  Runs now describe their own target: `target_kind` (`host`, `group` or
+  `fleet`) and `target_label`, the hostname or group name as it stood when
+  the run was dispatched. Both survive the delete, so the run history stays
+  readable — the action-run page shows the label with "(deleted)" beside it.
+  Cascading the runs away instead would have destroyed the audit trail at
+  the moment an operator most needs it, since a run's output is often the
+  only record of what was done to a host that is being removed *because*
+  something went wrong.
+
+  Note that per-host output is a separate table and is still cascaded away
+  with the host (tracked as BUG-77): the parent run survives and says what
+  was targeted and how it ended, but the per-host transcript for the deleted
+  host does not.
+
+- **Ten settings that never did anything now take effect.** Every setting
+  read from a Celery task or an SSH code path silently fell back to its
+  hardcoded default. The synchronous reader built its own connection URL
+  with two `.replace()` calls, the second undoing the first, leaving a
+  `postgresql://` URL that needs a driver LabDog does not depend on — and a
+  blanket `except Exception` turned the resulting import error into "use the
+  default". Nothing warmed the shared cache in a worker either, so it could
+  not cover for it.
+
+  **Read this before upgrading.** These settings start being honoured on the
+  next restart, and some of them have never been observed to do anything, so
+  a value set long ago may not be a value anyone still wants:
+
+  | Setting | Was always | Now |
+  |---|---|---|
+  | `ansible.playbook_timeout` | 300s | your value (3 call sites) |
+  | `ssh.connect_timeout` | 10s | your value (2 call sites) |
+  | `ssh.idle_timeout_seconds` | 1800s | your value |
+  | `discovery.max_concurrent` | 100 | your value |
+  | `logging.audit_retention_days` | 90 | your value |
+  | `actions.preflight_enabled` | always on | your value |
+  | `ai.wall_clock_seconds` | 900s | your value |
+
+  Check **Settings** — or `SELECT key, value FROM app_settings` — and
+  confirm the stored values are what you want before restarting. Lowering
+  `ansible.playbook_timeout` below a slow playbook's real runtime will now
+  actually kill it; `logging.audit_retention_days` will now actually delete
+  audit rows (`0` means keep forever, and is honoured as such).
+
+  Synchronous readers now consult a process cache that is refreshed from
+  whatever database session the surrounding code already has, so no code
+  path opens its own connection or blocks an event loop to read a setting.
 
 ## [0.9.0] — 2026-08-24
 
@@ -722,7 +1587,8 @@ host's Overview tab by querying a registered Grafana Mimir
   dispatch, and the per-host executor always injects `labdog_host_id` /
   `labdog_hostname` so shipped metrics are queryable back. Register
   endpoints, run Install Alloy, and metrics appear automatically.
-  See [docs/ui/metrics.md](docs/ui/metrics.md).
+  See [docs/ui/host-metrics.md](docs/ui/host-metrics.md) (renamed from
+  `docs/ui/metrics.md` after this release).
 - **Bundled-pack pin auto-bump CI.** A new GitHub Actions workflow opens a
   PR against `dev` whenever `labdog-playbooks` `main` moves ahead of the
   pinned `LABDOG_PLAYBOOKS_REF` — triggered immediately via
@@ -1417,7 +2283,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0

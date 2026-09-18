@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 const TEST_EMAIL = process.env.TEST_USER_EMAIL || "e2e@labdog.io"
@@ -62,10 +62,26 @@ test.describe("Auth guards", () => {
 })
 
 test.describe("Logout", () => {
+  // Logging out bumps `users.token_version`, and every token this account
+  // ever issued carries the old `tv` claim — that is the whole point of
+  // SEC-33's revocation. So this test must not log out the shared account:
+  // doing so invalidates the session saved in playwright/.auth/user.json
+  // and every spec that runs after it lands on /login instead of the page
+  // it asked for. (It did: 53 of 77 specs failed that way the first time
+  // this suite was run end to end.) Give it a throwaway account instead.
+  const LOGOUT_EMAIL = "e2e-logout@labdog.io"
+
+  test.beforeAll(async ({ request }) => {
+    // 400 means a previous run already created it — the password is fixed,
+    // so the login below works either way.
+    await request.post(`${API_BASE}/api/admin/users`, {
+      data: { email: LOGOUT_EMAIL, password: TEST_PASSWORD, is_superuser: false },
+    })
+  })
+
   test("logout clears session and redirects to /login", async ({ page }) => {
-    // Test user is seeded by auth.setup.ts
     await page.goto("/login")
-    await page.locator("#email").fill(TEST_EMAIL)
+    await page.locator("#email").fill(LOGOUT_EMAIL)
     await page.locator("#password").fill(TEST_PASSWORD)
     await page.getByRole("button", { name: "Sign In" }).click()
     await page.waitForURL(/\/dashboard\/?$/)

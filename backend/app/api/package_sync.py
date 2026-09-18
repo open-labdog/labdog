@@ -260,7 +260,7 @@ async def check_package_drift(
 
         pkg_diff = compute_diff(desired_dicts, actual)
 
-        hms.sync_status = "drifted" if pkg_diff.has_drift else "in_sync"
+        hms.sync_status = "out_of_sync" if pkg_diff.has_drift else "in_sync"
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status

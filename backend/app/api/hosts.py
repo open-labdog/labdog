@@ -12,8 +12,10 @@ from app.ca_certs.actions import auto_enqueue_for_new_membership
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
+from app.enum_utils import enum_str
 from app.models.firewall_rule import FirewallRule
 from app.models.host import Host, HostGroupMembership
+from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 from app.schemas.hosts import HostCreate, HostResponse, HostUpdate
@@ -101,6 +103,33 @@ async def list_hosts(
     return hosts
 
 
+def _enable_all_drift_modules(db, host_id: int) -> None:
+    """Turn on the six per-module drift flags for a newly created host.
+
+    ``Host.drift_check_enabled`` gates the *firewall* sweep and nothing
+    else; the other six modules each read their own ``HostModuleStatus``
+    row (see ``docs/ui/drift-detection.md``). A single "enable drift
+    checking" control that set only the host flag would enable one seventh
+    of what it says — which is the class of half-connected control BUG-82
+    was about.
+
+    Firewall is deliberately absent from the rows written here. Its module
+    column has no reader; the host flag above is what its sweep consults,
+    and writing a second copy would create a value to keep in sync for no
+    benefit.
+    """
+    from app.api.host_state import COLLECTABLE_MODULES  # noqa: PLC0415
+
+    for module_type in sorted(COLLECTABLE_MODULES - {"firewall"}):
+        db.add(
+            HostModuleStatus(
+                host_id=host_id,
+                module_type=module_type,
+                drift_check_enabled=True,
+            )
+        )
+
+
 @router.post("", response_model=HostResponse, status_code=201)
 async def create_host(
     body: HostCreate,
@@ -162,9 +191,13 @@ async def create_host(
         ssh_key_id=body.ssh_key_id,
         labdog_source_ip=source_ip,
         ssh_host_key_entry=captured_host_key_entry,
+        drift_check_enabled=body.drift_check_enabled,
     )
     db.add(host)
     await db.flush()  # get host.id
+
+    if body.drift_check_enabled:
+        _enable_all_drift_modules(db, host.id)
 
     if body.group_ids:
         await db.execute(
@@ -246,12 +279,8 @@ async def list_hosts_summary(
                     "ip_address": h.ip_address,
                     "ssh_port": h.ssh_port,
                     "ssh_user": h.ssh_user,
-                    "firewall_backend": h.firewall_backend.value
-                    if hasattr(h.firewall_backend, "value")
-                    else h.firewall_backend,
-                    "sync_status": h.sync_status.value
-                    if hasattr(h.sync_status, "value")
-                    else h.sync_status,
+                    "firewall_backend": enum_str(h.firewall_backend),
+                    "sync_status": enum_str(h.sync_status),
                     "labdog_source_ip": h.labdog_source_ip,
                     "drift_check_enabled": h.drift_check_enabled,
                     "last_sync_at": h.last_sync_at.isoformat() if h.last_sync_at else None,
@@ -506,7 +535,6 @@ async def import_rules(
             port_end=rule_data.get("port_end"),
             comment=rule_data.get("comment", f"Imported from {host.hostname}"),
             priority=rule_data.get("priority", 0),
-            is_system=False,
         )
         db.add(rule)
         created.append(rule)
@@ -524,7 +552,8 @@ async def trust_host_key(
     """Clear the stored SSH host key so the next connection re-TOFUs.
 
     Use this when a host was legitimately re-keyed (OS reinstall, key
-    rotation).  Superuser-only.  Emits an audit log row.
+    rotation).  Any authenticated user, per the flat privilege model.
+    Emits an audit log row.
     """
     result = await db.execute(select(Host).where(Host.id == host_id))
     host = result.scalar_one_or_none()

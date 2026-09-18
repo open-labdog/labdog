@@ -37,7 +37,10 @@ class FirewallRuleSpec:
     port_start: int | None = None  # single port or range start
     port_end: int | None = None  # range end (None = single port)
     comment: str | None = None
-    is_system: bool = False  # True = auto-injected, non-deletable
+    # True = synthesised at merge time (the anti-lockout SSH rule), never
+    # a persisted row: the flag exists on the spec and in the effective
+    # view, and nowhere else.
+    is_system: bool = False
     priority: int = 0  # ordering within group
     group_id: int | None = None  # source group (for merge tracking)
     host_id: int | None = None  # source host (for host-level overrides)

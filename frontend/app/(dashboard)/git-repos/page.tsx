@@ -125,7 +125,8 @@ export default function GitReposPage() {
       branch: repo.branch,
       ssh_key_id: repo.ssh_key_id ? String(repo.ssh_key_id) : "",
       https_token: "",
-      webhook_secret: repo.webhook_secret || "",
+      // SEC-28: the stored secret is write-only. Blank means "keep it".
+      webhook_secret: "",
     })
     saveMutation.reset()
     setEditDialogOpen(true)
@@ -245,7 +246,7 @@ export default function GitReposPage() {
 
             <div className="space-y-2">
               <Label htmlFor="webhook-secret">Webhook Secret (optional)</Label>
-              <Input id="webhook-secret" type="text" placeholder="Optional webhook secret" {...form.register("webhook_secret")} />
+              <Input id="webhook-secret" type="password" placeholder={editingRepo?.has_webhook_secret ? "Set — leave blank to keep" : "Optional webhook secret"} {...form.register("webhook_secret")} />
             </div>
 
             {saveMutation.error && (
@@ -433,23 +434,18 @@ export default function GitReposPage() {
               </div>
             ))}
             {(() => {
+              // SEC-28: the secret is stored encrypted and never returned,
+              // so there is nothing to copy here — only whether one is set.
               const repo = repos?.find(r => r.id === webhookRepoId)
-              if (!repo?.webhook_secret) return null
+              if (!repo?.has_webhook_secret) return null
               return (
-                <div className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-800 px-3 py-2">
-                  <div className="min-w-0">
-                    <span className="text-xs text-slate-400">Webhook Secret</span>
-                    <p className="text-sm font-mono text-white">{"•".repeat(16)}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="ml-2 shrink-0"
-                    onClick={() => copyToClipboard(repo.webhook_secret!)}
-                  >
-                    {copiedUrl === repo.webhook_secret ? <CheckIcon className="w-3.5 h-3.5" /> : <CopyIcon className="w-3.5 h-3.5" />}
-                  </Button>
+                <div className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2">
+                  <span className="text-xs text-slate-400">Webhook Secret</span>
+                  <p className="text-sm font-mono text-white">{"•".repeat(16)}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Configured. The secret is stored encrypted and cannot be shown
+                    again — edit the repository to replace it.
+                  </p>
                 </div>
               )
             })()}

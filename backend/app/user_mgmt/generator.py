@@ -105,6 +105,8 @@ def _authorized_key_tasks(users: list) -> list[dict]:
 
 
 def _sudoers_tasks(users: list) -> list[dict]:
+    from app.user_mgmt.constants import SUDO_FORBIDDEN_PATTERN
+
     tasks = []
     for u in users:
         username = _get(u, "username")
@@ -112,6 +114,16 @@ def _sudoers_tasks(users: list) -> list[dict]:
         sudo_rule = _get(u, "sudo_rule")
 
         if state == "present" and sudo_rule is not None:
+            # Second line of defence. The schema rejects newlines
+            # (SEC-25), but a rule can also reach here from the GitOps
+            # YAML importer and from rows written before that validator
+            # existed. This is the point where a newline becomes a real
+            # sudoers line, so it is the right place to be certain.
+            if SUDO_FORBIDDEN_PATTERN.search(sudo_rule):
+                raise ValueError(
+                    f"sudo_rule for {username!r} contains forbidden characters; "
+                    "refusing to write /etc/sudoers.d"
+                )
             tasks.append(
                 {
                     "name": f"Sudo rule for {username}",

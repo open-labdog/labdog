@@ -32,6 +32,7 @@ from sqlalchemy import desc, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, ActionDefinition
+from app.actions.run_target import describe_target
 from app.actions.validation import build_param_model
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
@@ -481,11 +482,18 @@ async def run_now(
             },
         )
 
+    run_host_id = sa.target_id if sa.target_kind == "host" else None
+    run_group_id = sa.target_id if sa.target_kind == "group" else None
+    target_kind, target_label = await describe_target(
+        db, host_id=run_host_id, group_id=run_group_id
+    )
     run = ActionRun(
         action_key=sa.action_key,
         action_version=action.version,
-        host_id=sa.target_id if sa.target_kind == "host" else None,
-        group_id=sa.target_id if sa.target_kind == "group" else None,
+        host_id=run_host_id,
+        group_id=run_group_id,
+        target_kind=target_kind,
+        target_label=target_label,
         scheduled_action_id=sa.id,
         parameters=sa.parameters,
         parallelism=sa.batch_size,

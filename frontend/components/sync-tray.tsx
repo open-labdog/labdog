@@ -43,7 +43,6 @@ const MOD_STATUS: Record<string, { cls: string; label: string }> = {
   running: { cls: "text-blue-400", label: "running" },
   in_sync: { cls: "text-green-400", label: "in sync" },
   out_of_sync: { cls: "text-amber-400", label: "out of sync" },
-  drifted: { cls: "text-amber-400", label: "drifted" },
   error: { cls: "text-red-400", label: "error" },
 }
 

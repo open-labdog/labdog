@@ -66,12 +66,23 @@ case "$REPO" in
     ;;
 esac
 
+# $DEST is about to be `rm -rf`'d, so refuse the values where that is
+# catastrophic rather than merely wrong. A caller passing an unset
+# variable would otherwise hand us "" (already caught above) or "/".
+case "$DEST" in
+  /|//|.|..)
+    echo "fetch-bundled-pack: ERROR: refusing to use '${DEST}' as a destination" >&2
+    exit 1
+    ;;
+esac
+
 mkdir -p "$DEST"
 # Clone into a sibling of $DEST so we can move .git out before any
-# consumer notices; cleaner than racing with `rm -rf $DEST/.git`.
-TMP="${DEST}.fetch.$$"
+# consumer notices; cleaner than racing with `rm -rf $DEST/.git`, and a
+# sibling keeps the final `mv` on one filesystem. mktemp rather than $$:
+# a PID is predictable and repeats, so two builds could collide on it.
+TMP="$(mktemp -d "${DEST}.fetch.XXXXXX")"
 trap 'rm -rf "$TMP"' EXIT
-rm -rf "$TMP"
 
 echo "fetch-bundled-pack: cloning ${REPO}@${REF} into ${DEST}..." >&2
 
@@ -93,6 +104,28 @@ else
     echo "  See BUGS.md BUG-46 for the gitlab->github mirror transition." >&2
     exit 3
   fi
+fi
+
+# When the pin is a full SHA, verify we actually got that commit.
+#
+# The clone tries `--branch "$REF"` first, and `--branch` matches tags and
+# branches, not commits. So if upstream were compromised and someone
+# created a *branch or tag named like the pinned SHA*, that ref's tree
+# would be fetched and the fallback path — the one that checks out a
+# commit — would never run. Nothing downstream would notice: the pin
+# would look honoured. Three lines close it.
+if [ ${#REF} -eq 40 ]; then
+  case "$REF" in
+    *[!0-9a-f]*) ;;
+    *)
+      HEAD_SHA="$(git -C "$TMP" rev-parse HEAD)"
+      if [ "$HEAD_SHA" != "$REF" ]; then
+        echo "fetch-bundled-pack: ERROR: pinned ${REF} but HEAD is ${HEAD_SHA}." >&2
+        echo "  Upstream has a branch or tag named like the pinned commit." >&2
+        exit 3
+      fi
+      ;;
+  esac
 fi
 
 rm -rf "$TMP/.git" "$TMP/.gitignore"

@@ -7,7 +7,6 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { GitBranch } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
@@ -218,31 +217,25 @@ export default function GroupHostsEntriesPage({ embedded = false }: { embedded?:
               label: "Actions",
               cell: (entry) => (
                 <div className="flex gap-1">
-                  {entry.is_system ? (
-                    <Badge variant="outline" className="text-xs text-slate-500">System</Badge>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={gitopsEnabled}
-                        onClick={() => openEditDialog(entry)}
-                        title={gitopsEnabled ? "Managed via GitOps" : undefined}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={deleteMutation.isPending || gitopsEnabled}
-                        onClick={() => handleDelete(entry)}
-                        title={gitopsEnabled ? "Managed via GitOps" : undefined}
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                      >
-                        {deleteMutation.isPending ? "…" : "Delete"}
-                      </Button>
-                    </>
-                  )}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={gitopsEnabled}
+                    onClick={() => openEditDialog(entry)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={deleteMutation.isPending || gitopsEnabled}
+                    onClick={() => handleDelete(entry)}
+                    title={gitopsEnabled ? "Managed via GitOps" : undefined}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-950"
+                  >
+                    {deleteMutation.isPending ? "…" : "Delete"}
+                  </Button>
                 </div>
               ),
               defaultWidth: 160,

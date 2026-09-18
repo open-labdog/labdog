@@ -10,7 +10,7 @@ import { ChevronRightIcon, InfoIcon } from "lucide-react"
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/lib/auth"
-import { API_BASE, apiFetch } from "@/lib/api"
+import { apiFetch } from "@/lib/api"
 import { passwordChangeSchema, type PasswordChangeInput } from "@/lib/schemas"
 import { showSuccess, showError } from "@/lib/toast"
 import { Button } from "@/components/ui/button"
@@ -189,16 +189,15 @@ export function Sidebar({ onNavigation }: { onNavigation?: () => void } = {}) {
 
   const onPasswordSubmit = form.handleSubmit(async (data) => {
     try {
-      const res = await fetch(`${API_BASE}/api/users/me`, {
+      // Must go through apiFetch: it attaches the X-CSRF-Token header from the
+      // labdog_csrf cookie. This was a bare fetch(), and /api/users/me is not
+      // in the CSRF middleware's exempt list, so every password change was
+      // rejected with 403 "CSRF token missing or invalid" before reaching the
+      // handler — self-service password change never worked.
+      await apiFetch("/api/users/me", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ password: data.new_password }),
+        json: { password: data.new_password },
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => null)
-        throw new Error(err?.detail || "Failed to update password")
-      }
       form.reset()
       setPasswordDialogOpen(false)
       showSuccess("Password updated successfully")

@@ -420,7 +420,10 @@ async def test_fifo_across_queues(db, fake_redis):
 
     # Patch the orchestrator inside the wrapper so the sync completes
     # with all-in-sync outcomes (no real ansible-runner).
-    async def _fake_orch(*_args, **_kwargs):
+    async def _fake_build(*_args, **_kwargs):
+        return "plan-stub"
+
+    def _fake_execute(*_args, **_kwargs):
         from app.ansible_runtime.composer import CANONICAL_ORDER
 
         return {m: "in_sync" for m in CANONICAL_ORDER}, "", "{}"
@@ -431,7 +434,8 @@ async def test_fifo_across_queues(db, fake_redis):
 
     with (
         patch("app.tasks.host_sync_orchestrator.task_session", new=_fake_task_session),
-        patch("app.tasks.host_sync_orchestrator.orchestrate_host_sync", new=_fake_orch),
+        patch("app.tasks.host_sync_orchestrator.build_host_sync_plan", new=_fake_build),
+        patch("app.tasks.host_sync_orchestrator.execute_host_sync_plan", new=_fake_execute),
         patch("app.tasks.host_sync_orchestrator.run_host_sync.delay", new=sync_delay),
         patch("app.tasks.action_orchestrator.run_action.delay", new=action_delay),
     ):

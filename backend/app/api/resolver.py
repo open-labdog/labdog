@@ -19,7 +19,13 @@ from app.resolver.schemas import (
     ResolverConfigResponse,
 )
 
-router = APIRouter(tags=["resolver"])
+# Auth is applied at the router so it cannot be forgotten on a new route. The
+# four GET handlers below previously carried no dependency at all — unlike
+# their sibling PUT/DELETE handlers — which left resolver config, the
+# effective merge, and the rendered resolv.conf preview readable without a
+# session. Every user is equally privileged here (see the privilege model note
+# in CLAUDE.md); the requirement is simply that a caller be authenticated.
+router = APIRouter(tags=["resolver"], dependencies=[Depends(current_active_user)])
 
 
 # ---------------------------------------------------------------------------

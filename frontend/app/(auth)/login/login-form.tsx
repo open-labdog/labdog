@@ -62,6 +62,10 @@ export function LoginForm() {
         body: `username=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
       })
       if (res.ok) {
+        // A full page load, not router.push: the auth provider reads the
+        // session cookie once on mount, so a client-side navigation would
+        // land on /dashboard still holding the logged-out user object.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/dashboard"
         return
       }

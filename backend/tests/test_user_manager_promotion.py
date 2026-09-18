@@ -142,3 +142,72 @@ class TestFirstUserPromotion:
             "is_superuser must be True on INSERT (set before super().create), "
             "not applied in a separate post-create step"
         )
+
+
+class TestClientSuppliedPrivilegeFlagsAreIgnored:
+    """The request body must never be what decides privilege.
+
+    ``BaseUserCreate`` carries ``is_superuser`` / ``is_verified``, and the
+    registration path calls ``UserManager.create`` with ``safe=False`` — which
+    in fastapi-users means "honour those fields from the payload". It cannot
+    simply pass ``safe=True`` instead, because that routes through
+    ``create_update_dict()``, which strips exactly the flag the first-user
+    promotion has just set. So the manager neutralises the client's values
+    first and decides the flags itself.
+
+    Not currently reachable over HTTP — the endpoint refuses once any user
+    exists — but one refactor of that gate away from being a hole.
+    """
+
+    async def test_payload_cannot_self_promote_when_users_exist(self, client, db):
+        from fastapi_users.password import PasswordHelper
+
+        ph = PasswordHelper()
+        db.add(
+            UserModel(
+                email=f"existing_{uuid.uuid4().hex[:8]}@test.com",
+                hashed_password=ph.hash("TestPass1!Secure"),
+                is_active=True,
+                is_superuser=True,
+                is_verified=True,
+            )
+        )
+        await db.flush()
+
+        email = f"escalate_{uuid.uuid4().hex[:8]}@test.com"
+        with patch(
+            "app.api.auth_setup.AsyncSessionLocal",
+            return_value=_mock_auth_setup_session(0),
+        ):
+            resp = await client.post(
+                "/api/auth/register",
+                json={
+                    "email": email,
+                    "password": "TestPass1!Secure",
+                    "is_superuser": True,
+                    "is_verified": True,
+                },
+            )
+
+        assert resp.status_code == 201, resp.text
+
+        result = await db.execute(select(UserModel).where(UserModel.email == email))
+        user = result.scalar_one()
+        assert user.is_superuser is False, "is_superuser from the request body must be ignored"
+        assert user.is_verified is False, "is_verified from the request body must be ignored"
+
+    async def test_payload_flags_do_not_block_first_user_promotion(self, client, db):
+        """The reset must not defeat the promotion it runs before."""
+        email = f"first_{uuid.uuid4().hex[:8]}@test.com"
+        with patch(
+            "app.api.auth_setup.AsyncSessionLocal",
+            return_value=_mock_auth_setup_session(0),
+        ):
+            resp = await client.post(
+                "/api/auth/register",
+                json={"email": email, "password": "TestPass1!Secure", "is_superuser": False},
+            )
+
+        assert resp.status_code == 201, resp.text
+        result = await db.execute(select(UserModel).where(UserModel.email == email))
+        assert result.scalar_one().is_superuser is True

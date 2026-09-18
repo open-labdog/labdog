@@ -38,6 +38,7 @@ from sqlalchemy import select
 from app.cron.models import CronJob
 from app.gitops.git_service import clone_repo_local, read_file_at_sha
 from app.gitops.importer import import_global_from_yaml, import_group_from_yaml
+from app.gitops.webhook_secret import set_webhook_secret
 from app.hosts_mgmt.models import HostsEntry
 from app.models.app_setting import AppSetting
 from app.models.firewall_rule import FirewallRule
@@ -318,14 +319,7 @@ class TestMultiModuleGroupYAML:
 
             # Per-table assertions.
             fw = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )
@@ -406,14 +400,7 @@ class TestMultiModuleGroupYAML:
 
             # Firewall: SSH unchanged + HTTPS added.
             fw2 = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )
@@ -573,8 +560,9 @@ def _make_file_url_repo(db, name: str, bare_dir: Path, secret: str) -> GitReposi
         url=f"file://{bare_dir}",
         branch="main",
         auth_type=GitAuthType.ssh_key,
-        webhook_secret=secret,
     )
+    # SEC-28: the column is ciphertext now.
+    set_webhook_secret(repo, secret)
     db.add(repo)
     return repo
 
@@ -736,14 +724,7 @@ class TestWebhookReceiver:
             assert group.gitops_last_import_at is not None
 
             fw = (
-                (
-                    await db.execute(
-                        select(FirewallRule).where(
-                            FirewallRule.group_id == group.id,
-                            FirewallRule.is_system == False,  # noqa: E712
-                        )
-                    )
-                )
+                (await db.execute(select(FirewallRule).where(FirewallRule.group_id == group.id)))
                 .scalars()
                 .all()
             )

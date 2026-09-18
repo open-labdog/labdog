@@ -18,6 +18,7 @@ from app.models.action_run import ActionHostRun, ActionRun
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.drift_sample import DriftSample
+from app.models.drift_sample_rollup import DriftSampleRollup
 from app.models.firewall_rule import FirewallRule, RuleAction, RuleDirection, RuleProtocol
 from app.models.git_repository import GitAuthType, GitOpsStatus, GitRepository
 from app.models.host import FirewallBackend, Host, HostGroupMembership, SyncStatus
@@ -110,6 +111,7 @@ __all__ = [
     "GitOpsStatus",
     "HostModuleStatus",
     "DriftSample",
+    "DriftSampleRollup",
     "ScheduledAction",
     "ServiceRule",
     "HostsEntry",

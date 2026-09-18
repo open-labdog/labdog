@@ -37,6 +37,81 @@ Each release notes in `CHANGELOG.md` whether it carries breaking
 schema changes, deprecated config fields, or non-reversible
 migrations. Read that section before upgrading.
 
+### Upgrading to 0.10.0
+
+This release is mostly the fixes from a full security and correctness
+audit. Three things can bite an existing install; check them **before**
+restarting, not after.
+
+**1. LabDog now refuses to start on a weak `security.secret_key`.** It
+must be at least 32 characters. `openssl rand -base64 32` — what the
+install docs already told you to run — gives 44. If your key is shorter,
+or is still the `CHANGE_ME` placeholder from the packaged
+`labdog.toml`, the service will not come up until you replace it. Two
+consequences of replacing it: every session is invalidated (see 2), and
+if the old key was a placeholder, treat every account as having been
+exposed — that key is published in this repository.
+
+`security.allowed_origins = ["*"]` is refused for the same reason; list
+your real origins. Plain HTTP on a trusted LAN still works and now logs
+a warning about `cookie_secure` rather than failing.
+
+**2. Everyone is logged out once.** Sessions now carry a generation
+number so that logging out or changing a password actually revokes the
+cookie. Existing cookies have no generation and are rejected. From here
+on, logging out or changing your password signs you out everywhere,
+including the browser you did it in.
+
+**3. Old history is deleted on the first scheduler tick.** Two things
+combine here:
+
+- Finished action runs and sync jobs are pruned for the first time ever,
+  using the new `logging.run_retention_days` (default **90**; `0` keeps
+  everything).
+- The daily maintenance jobs — audit-log, SSH-transcript and AI-snapshot
+  pruning — were registered in a way that meant they **never ran** on a
+  deployment that restarts more than once a day. They now do, so the
+  first audit-log prune may delete a lot at once, per
+  `logging.audit_retention_days` (default 90).
+
+Set both values first if you want to keep more. Both are in
+**Settings** and in `labdog.toml`.
+
+Smaller things to know:
+
+- **Settings that never took effect now do**, on the next restart:
+  `ansible.playbook_timeout`, `ssh.connect_timeout`,
+  `ssh.idle_timeout_seconds`, `discovery.max_concurrent`,
+  `logging.audit_retention_days`, `actions.preflight_enabled` and
+  `ai.wall_clock_seconds`. A value someone set long ago and forgot will
+  now be honoured — lowering `ansible.playbook_timeout` below a slow
+  playbook's real runtime will now actually kill it.
+  `SELECT key, value FROM app_settings` shows what is stored.
+- **`/docs`, `/redoc` and `/openapi.json` are no longer served** unless
+  `server.expose_docs = true`.
+- **Ansible runs and git syncs now verify SSH host keys** against the key
+  LabDog recorded on first contact. A host or git server that is
+  legitimately re-keyed will start failing with a mismatch; clear it with
+  `POST /api/hosts/{id}/trust-host-key` or
+  `POST /api/git-repos/{id}/trust-host-key`.
+- **Action packs that ship controller-side code** (`action_plugins/`,
+  `library/`, `connection: local`, …) are now refused unless the pack is
+  marked trusted. Packs that exist at upgrade time are marked trusted by
+  the migration; packs added afterwards are not.
+- Webhook secrets are encrypted in place; nothing to re-enter. The API
+  reports `has_webhook_secret` instead of the value.
+- Duplicate `host_groups.priority` values are renumbered by the
+  migration (the older group keeps its number); every change is logged.
+- `firewall_rules.is_system` and `hosts_entries.is_system` are dropped.
+  Nothing ever wrote them; if you set one by hand the migration logs the
+  row count before dropping it.
+- **Docker:** Celery beat is now a third supervised subprocess, and
+  `/health/ready` fails if it dies. No compose change is needed.
+
+Fourteen migrations (`0025`–`0038`) apply with the normal step below.
+All are forward-safe; `0037` and `0038` are documented as lossy on
+downgrade.
+
 ### Upgrading to 0.9.0
 
 Nothing is required — the AI assistant is off by default and stays off

@@ -142,7 +142,6 @@ class RuleResponse(BaseModel):
     port_end: int | None
     comment: str | None
     priority: int
-    is_system: bool
     created_at: datetime
     updated_at: datetime
     model_config = {"from_attributes": True}

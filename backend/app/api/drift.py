@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.drift.detector import check_drift
+from app.enum_utils import enum_str
 from app.metrics.recorder import record_drift_sample
 from app.models.host import Host, HostGroupMembership
 from app.models.user import User
@@ -68,11 +69,7 @@ async def check_host_drift(
     host = host_result.scalar_one_or_none()
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
-    backend = (
-        host.firewall_backend.value
-        if hasattr(host.firewall_backend, "value")
-        else host.firewall_backend
-    )
+    backend = enum_str(host.firewall_backend)
     if backend == "unknown":
         from app.models.host import SyncStatus
 
@@ -97,7 +94,7 @@ async def check_host_drift(
     host.sync_status = result.status
     host.last_drift_check_at = datetime.now(UTC)
     diff = result.diff
-    status_value = result.status.value if hasattr(result.status, "value") else result.status
+    status_value = enum_str(result.status)
     await record_drift_sample(
         db,
         host_id=host_id,
@@ -128,11 +125,7 @@ async def check_group_drift(
     for hid in host_ids:
         host_result = await db.execute(select(Host).where(Host.id == hid))
         host = host_result.scalar_one()
-        backend = (
-            host.firewall_backend.value
-            if hasattr(host.firewall_backend, "value")
-            else host.firewall_backend
-        )
+        backend = enum_str(host.firewall_backend)
         if backend == "unknown":
             host.sync_status = SyncStatus.unknown
             host.last_drift_check_at = datetime.now(UTC)
@@ -158,7 +151,7 @@ async def check_group_drift(
         host.sync_status = result.status
         host.last_drift_check_at = datetime.now(UTC)
         diff = result.diff
-        status_value = result.status.value if hasattr(result.status, "value") else result.status
+        status_value = enum_str(result.status)
         await record_drift_sample(
             db,
             host_id=hid,

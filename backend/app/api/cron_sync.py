@@ -257,7 +257,7 @@ async def check_cron_drift(
             cron_diff.jobs_to_add or cron_diff.jobs_to_remove or cron_diff.jobs_to_update
         )
 
-        hms.sync_status = "drifted" if drifted else "in_sync"
+        hms.sync_status = "out_of_sync" if drifted else "in_sync"
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status

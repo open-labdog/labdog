@@ -102,7 +102,28 @@ _build-venv: fetch-bundled-pack
 	@# carries the real version (otherwise it builds as 0.0.0 and
 	@# /api/version reports 0.0.0). backend/VERSION is gitignored.
 	cp ../VERSION ../backend/VERSION
-	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir --quiet ../backend/
+	@# Dependencies come from backend/uv.lock, not from re-resolving the
+	@# `>=` floors in pyproject.toml. `pip install ../backend/` did the
+	@# latter, which meant the .deb a user installs carried a *different*
+	@# dependency set than the one CI tested and Trivy scanned, the same
+	@# VERSION built twice on different days differed, and anything
+	@# compromised upstream between CI and the release job landed in a
+	@# signed-looking artefact. The Docker image and CI have always used
+	@# `uv export --frozen`; this is the release path catching up.
+	@#
+	@# `uv export` emits a hash for every pinned distribution, and
+	@# --require-hashes makes pip refuse anything whose download does not
+	@# match — so a compromised index cannot substitute a package even if
+	@# the version is right. The project itself is installed separately
+	@# with --no-deps: it is built from this tree, has no hash to check,
+	@# and its dependencies are already satisfied above.
+	@echo "[build-venv] Exporting locked dependencies..."
+	cd ../backend && uv export --frozen --no-emit-project --format requirements-txt \
+		-o $(CURDIR)/staging-requirements.txt
+	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir --quiet \
+		--require-hashes --no-deps -r $(CURDIR)/staging-requirements.txt
+	$(DESTDIR)$(PREFIX)/venv/bin/pip install --no-cache-dir --quiet --no-deps ../backend/
+	@rm -f $(CURDIR)/staging-requirements.txt
 	@echo "[build-venv] Fixing shebangs..."
 	@find $(DESTDIR)$(PREFIX)/venv/bin -maxdepth 1 -type f | while read f; do \
 		head -c2 "$$f" | grep -q '^#!' && sed -i "1s|$(DESTDIR)||g" "$$f" || true; \

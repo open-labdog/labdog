@@ -1,4 +1,23 @@
-"""Manages Celery worker+beat as a subprocess of the main LabDog process."""
+"""Manages the Celery subprocesses of the main LabDog process.
+
+Three of them: two workers and the beat scheduler. Beat is separate for
+the reason given at :data:`BEAT`. The workers are two for the reason
+below.
+
+Two workers, not one. ``action_orchestrator.run_action`` blocks in
+``result.join()`` waiting for per-host children it published itself, so
+sharing a pool with those children is a self-deadlock: with the default
+``concurrency=4``, four schedules landing on the same cron minute — and
+``0 3 * * *`` is the obvious default — take all four slots, leaving none
+for any child. Nothing progresses until the orchestrator's 12h soft limit
+fires, and then four runs finalise ``partial`` having touched zero hosts.
+
+Giving the orchestrator its own queue and its own worker makes the
+starvation impossible by construction rather than by sizing: the pool an
+orchestrator waits on is never the pool it occupies. A chord would also
+remove the join, but the join is what carries the mid-run cancel poll and
+the batched parallelism, both of which a chord drops.
+"""
 
 from __future__ import annotations
 
@@ -15,22 +34,92 @@ logger = logging.getLogger(__name__)
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
-class CeleryManager:
-    """Spawn and manage a Celery worker+beat subprocess."""
+#: Which queues each worker consumes, keyed by worker name.
+#:
+#: ``work`` runs everything except the orchestrator. ``orchestrator``
+#: exists only so ``run_action`` never waits on a pool it is itself
+#: occupying — see the module docstring. Nothing else may be routed to
+#: it: an orchestrator slot held by unrelated work reintroduces exactly
+#: the starvation the split removes.
+WORKER_QUEUES: dict[str, tuple[str, ...]] = {
+    "work": ("default", "long_running"),
+    "orchestrator": ("orchestrator",),
+}
 
-    #: Queues this worker consumes, in `-Q` order.
+#: The scheduler's own process name. Not in WORKER_QUEUES because it
+#: consumes nothing; it only publishes.
+#:
+#: Beat used to ride inside the ``work`` worker as ``--beat``, which
+#: Celery runs as a *child* of that worker. The child's tick loop catches
+#: only KeyboardInterrupt and SystemExit, so the first Redis restart
+#: killed it — RedBeat's ``tick()`` begins with an unguarded
+#: ``lock.extend()`` that raises ConnectionError while Redis is down and
+#: LockNotOwnedError once it is back with the lock key gone — and nothing
+#: restarted it. The worker itself was fine, so ``is_alive()`` said so,
+#: and ``/health/ready`` stayed green while every periodic job had
+#: stopped: drift sweeps, scheduled actions, retention, alert polling
+#: (BUG-83). Running beat as its own supervised subprocess is what puts
+#: it under the same ``poll()`` as the workers.
+BEAT = "beat"
+
+
+#: The manager this process owns, or None.
+#:
+#: ``/health/ready`` needs to know whether the Celery children are alive,
+#: and the manager is created by ``app.__main__`` rather than by the
+#: FastAPI app, so there is nothing on ``app.state`` to read. Set by
+#: ``start()`` and cleared by ``stop()``.
+#:
+#: Only meaningful in the process that spawned the workers. Under
+#: ``--workers N`` uvicorn forks, and a forked child sees None — which is
+#: why the health check reports "not supervised here" rather than "down"
+#: when it is unset. A single-worker deployment, which is what the
+#: container ships, always has it.
+_active_manager: CeleryManager | None = None
+
+
+def active_manager() -> CeleryManager | None:
+    """The CeleryManager supervising this process's workers, if any."""
+    return _active_manager
+
+
+class CeleryManager:
+    """Spawn and manage the Celery worker subprocesses."""
+
+    #: Every queue some worker consumes.
     #:
     #: Named rather than inlined because it is half of a contract: a task
     #: published to a queue absent from this tuple is accepted by the broker
     #: and never executed. `tests/test_task_routing.py` imports this to check
     #: the other half — that every registered task routes into it.
-    QUEUES: tuple[str, ...] = ("default", "long_running")
+    QUEUES: tuple[str, ...] = tuple(q for queues in WORKER_QUEUES.values() for q in queues)
 
     def __init__(self) -> None:
-        self._process: subprocess.Popen[bytes] | None = None
+        self._processes: dict[str, subprocess.Popen[bytes]] = {}
 
-    def start(self) -> None:
-        """Spawn the Celery worker+beat subprocess."""
+    def _beat_command(self) -> list[str]:
+        """The standalone scheduler.
+
+        No ``--pidfile``: the CLI defaults to none, and a stale pidfile
+        after a crash would refuse the very restart the supervisor
+        exists to make possible. RedBeat keeps its schedule in Redis, so
+        the ``--schedule`` file the CLI would otherwise write is unused.
+        """
+        return [
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "app.tasks",
+            "beat",
+            # Not the stock RedBeatScheduler: that one dies on the first
+            # Redis restart. See app.tasks.scheduler.
+            "--scheduler",
+            "app.tasks.scheduler.ResilientRedBeatScheduler",
+            f"--loglevel={settings.logging.level}",
+        ]
+
+    def _command(self, name: str, queues: tuple[str, ...]) -> list[str]:
         cmd = [
             sys.executable,
             "-m",
@@ -38,44 +127,90 @@ class CeleryManager:
             "-A",
             "app.tasks",
             "worker",
-            "--beat",
-            "--scheduler",
-            "redbeat.RedBeatScheduler",
+        ]
+        concurrency = (
+            settings.celery.orchestrator_concurrency
+            if name == "orchestrator"
+            else settings.celery.concurrency
+        )
+        cmd += [
             f"--max-tasks-per-child={settings.celery.max_tasks_per_child}",
-            f"--concurrency={settings.celery.concurrency}",
+            f"--concurrency={concurrency}",
             "-Q",
-            ",".join(self.QUEUES),
+            ",".join(queues),
+            # Distinct node names: two workers sharing one would collide in
+            # the broker's control/mingle channels, and `celery inspect`
+            # would report whichever answered first.
+            "-n",
+            f"{name}@%h",
             f"--loglevel={settings.logging.level}",
         ]
-        logger.info("Starting Celery worker+beat: %s", " ".join(cmd))
-        self._process = subprocess.Popen(
+        return cmd
+
+    def _spawn(self, name: str, cmd: list[str]) -> None:
+        logger.info("Starting Celery %r: %s", name, " ".join(cmd))
+        self._processes[name] = subprocess.Popen(
             cmd,
             cwd=BACKEND_DIR,
             stderr=subprocess.STDOUT,
         )
-        logger.info("Celery subprocess started (pid=%d)", self._process.pid)
+        logger.info("Celery %r started (pid=%d)", name, self._processes[name].pid)
+
+    def start(self) -> None:
+        """Spawn one worker per entry in WORKER_QUEUES, plus the scheduler.
+
+        Exactly one beat: two schedulers against one RedBeat keyspace
+        would double-fire every periodic task. It is a peer of the
+        workers here rather than a child of one of them so that its
+        death is a dead entry in ``_processes`` — visible to
+        ``is_alive()`` and named by ``dead_workers()`` — instead of a
+        silent stop inside a worker that reports itself healthy.
+        """
+        global _active_manager
+        _active_manager = self
+        for name, queues in WORKER_QUEUES.items():
+            self._spawn(name, self._command(name, queues))
+        self._spawn(BEAT, self._beat_command())
 
     def stop(self, timeout: int = 60) -> None:
-        """Send SIGTERM to celery, wait up to *timeout* seconds, then SIGKILL."""
-        if self._process is None or self._process.poll() is not None:
-            return
-        pid = self._process.pid
-        logger.info("Stopping Celery subprocess (pid=%d) ...", pid)
-        self._process.terminate()
-        try:
-            self._process.wait(timeout=timeout)
-            logger.info("Celery subprocess exited gracefully")
-        except subprocess.TimeoutExpired:
-            logger.warning("Celery subprocess did not exit within %ds, sending SIGKILL", timeout)
-            self._process.kill()
-            self._process.wait()
-            logger.info("Celery subprocess killed")
+        """SIGTERM every subprocess, wait up to *timeout* seconds each, then SIGKILL.
+
+        Terminate all of them first and only then wait: signalling serially
+        would give the last worker `timeout × (n-1)` seconds less to drain.
+        """
+        global _active_manager
+        if _active_manager is self:
+            _active_manager = None
+        live = [(n, p) for n, p in self._processes.items() if p.poll() is None]
+        for name, proc in live:
+            logger.info("Stopping Celery %r (pid=%d) ...", name, proc.pid)
+            proc.terminate()
+        for name, proc in live:
+            try:
+                proc.wait(timeout=timeout)
+                logger.info("Celery %r exited gracefully", name)
+            except subprocess.TimeoutExpired:
+                logger.warning(
+                    "Celery %r did not exit within %ds, sending SIGKILL",
+                    name,
+                    timeout,
+                )
+                proc.kill()
+                proc.wait()
+                logger.info("Celery %r killed", name)
 
     def is_alive(self) -> bool:
-        """Return True if the celery subprocess is still running."""
-        if self._process is None:
-            return False
-        return self._process.poll() is None
+        """True only if every subprocess — both workers and beat — is running.
+
+        All-or-nothing on purpose: a dead orchestrator worker means no
+        action run ever starts, and a dead beat means no periodic job
+        ever fires. Neither is a healthy process.
+        """
+        return bool(self._processes) and all(p.poll() is None for p in self._processes.values())
+
+    def dead_workers(self) -> list[str]:
+        """Names of subprocesses that have exited. Empty when healthy."""
+        return sorted(n for n, p in self._processes.items() if p.poll() is not None)
 
     # -- context manager --------------------------------------------------
 

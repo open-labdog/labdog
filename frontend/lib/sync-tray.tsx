@@ -133,10 +133,20 @@ export function SyncTrayProvider({ children }: { children: ReactNode }) {
           return next
         })
         // Fire a completion toast once per operation, when it first finishes.
+        //
+        // Must return `prev` unchanged when nothing flipped. `prev.map(...)`
+        // always allocates a new array, so React never bails out of the state
+        // update, `operations` gets a new identity, this effect's dependency
+        // changes, and the interval is torn down and re-armed — calling
+        // poll() again immediately. That turned a 3s poll into a request
+        // loop running at network round-trip speed for the whole duration of
+        // a sync, which exhausts the 100/min API rate limit and 429s the rest
+        // of the UI.
         setOperations((prev) => {
           const jobMap: Record<number, SyncJob> = { ...jobsRef.current }
           for (const j of fetched) jobMap[j.id] = j
-          return prev.map((o) => {
+          let changed = false
+          const next = prev.map((o) => {
             if (o.notifiedDone || !operationDone(o, jobMap)) return o
             const { total, failed } = operationCounts(o, jobMap)
             if (failed > 0) {
@@ -144,8 +154,10 @@ export function SyncTrayProvider({ children }: { children: ReactNode }) {
             } else {
               showSuccess(`${o.label}: ${total} host${total === 1 ? "" : "s"} synced`)
             }
+            changed = true
             return { ...o, notifiedDone: true }
           })
+          return changed ? next : prev
         })
       } catch {
         // Transient poll failure — keep the last known state, retry next tick.

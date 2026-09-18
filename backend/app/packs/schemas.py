@@ -135,6 +135,13 @@ class ActionPackCreate(BaseModel):
     path: str = Field(default="", max_length=512)
     local_path: str | None = Field(default=None, max_length=512)
     enabled: bool = True
+    trusted: bool = False
+    """Permit content that runs on the LabDog host rather than on a target.
+
+    Defaults false: a pack added today is refused if it ships ansible
+    plugin directories or plays aimed at localhost, and the refusal names
+    what it found. Not a privilege boundary — the model is flat — but it
+    makes accepting controller-side code a deliberate, audited act."""
 
     _validate_name = field_validator("name")(classmethod(lambda cls, v: _validate_name(v)))
 
@@ -170,6 +177,7 @@ class ActionPackUpdate(BaseModel):
     path: str | None = Field(default=None, max_length=512)
     local_path: str | None = Field(default=None, max_length=512)
     enabled: bool | None = None
+    trusted: bool | None = None
 
     @field_validator("name")
     @classmethod
@@ -239,6 +247,7 @@ class ActionPackResponse(BaseModel):
     path: str
     local_path: str | None
     enabled: bool
+    trusted: bool
 
     last_synced_at: datetime | None
     last_sync_status: str | None
@@ -258,6 +267,7 @@ class ActionPackResponse(BaseModel):
             path=row.path,
             local_path=row.local_path,
             enabled=row.enabled,
+            trusted=row.trusted,
             last_synced_at=row.last_synced_at,
             last_sync_status=row.last_sync_status,
             last_sync_error=row.last_sync_error,

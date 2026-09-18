@@ -419,6 +419,29 @@ Sessions on these backends count against your plan's usage limits — the
 same ones the Claude apps use, not a separate meter. API credits are a
 distinct thing you would have to opt into.
 
+**When the plan says no**, a **Claude Code (agentic)** session stops and
+says which limit it hit:
+
+```
+succeeded   Stopped early: the plan's 5-hour rate limit, resetting at 17:30 UTC on 10 Sep
+```
+
+Unlike every other limit, this one buys no wrap-up turn — summarising
+would be another request on the quota that was just refused — so the
+report is whatever the assistant had established when it stopped. Re-run
+it after the reset time.
+
+You also get one banner per window as the quota runs low, while the
+session is still going. That is the only advance warning a subscription
+backend has: the **Usage and budget** panel measures money, and a
+subscription spends none, so its figures there are an estimate rather
+than a bill, and its limits will not stop a run. The per-session token
+cap and the plan's own quota are what bound these providers.
+
+The **Claude Code CLI** backend runs the binary once per prompt rather
+than holding a conversation open, so it never sees these announcements.
+A run the plan refuses fails there with whatever the CLI reported.
+
 Anthropic's terms describe subscription OAuth as being for ordinary use
 of Claude Code and other Anthropic applications, and they do not permit
 routing requests through a plan's credentials on behalf of other people.

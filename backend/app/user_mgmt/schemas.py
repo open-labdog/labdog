@@ -53,7 +53,11 @@ class LinuxUserCreate(BaseModel):
     @classmethod
     def validate_sudo_rule(cls, v: str | None) -> str | None:
         if v is not None and SUDO_FORBIDDEN_PATTERN.search(v):
-            raise ValueError("sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >")
+            raise ValueError(
+                "sudo_rule contains forbidden shell metacharacters or a line "
+                "break: ` $ ( ) ; | & < > CR LF NUL. A line break would write "
+                "a second sudoers rule."
+            )
         return v
 
     @field_validator("authorized_keys")
@@ -110,7 +114,11 @@ class LinuxUserUpdate(BaseModel):
     @classmethod
     def validate_sudo_rule(cls, v: str | None) -> str | None:
         if v is not None and SUDO_FORBIDDEN_PATTERN.search(v):
-            raise ValueError("sudo_rule contains forbidden shell metacharacters: ` $ ( ) ; | & < >")
+            raise ValueError(
+                "sudo_rule contains forbidden shell metacharacters or a line "
+                "break: ` $ ( ) ; | & < > CR LF NUL. A line break would write "
+                "a second sudoers rule."
+            )
         return v
 
     @field_validator("authorized_keys")

@@ -57,7 +57,7 @@ def fixed_setting():
     per_host_deadline (registry miss) = 1800 + 300(verify) + 900(grace) = 3000s
     run_deadline (1 host, parallelism 1) = 3000 + 3600(slack) = 6600s
     """
-    with patch("app.settings_service.get_setting_sync_typed", return_value=1800):
+    with patch("app.settings_service.get_setting_cached_typed", return_value=1800):
         yield
 
 

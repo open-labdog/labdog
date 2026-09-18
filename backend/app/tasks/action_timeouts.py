@@ -50,10 +50,10 @@ def effective_playbook_timeout(playbook_timeout_floor: int | None) -> int:
     but never shrink it below the manifest's
     ``playbook_timeout_seconds`` floor.
     """
-    from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+    from app.settings_service import get_setting_cached_typed  # noqa: PLC0415
 
     try:
-        timeout = int(get_setting_sync_typed("ansible.playbook_timeout"))
+        timeout = int(get_setting_cached_typed("ansible.playbook_timeout"))
     except Exception:
         timeout = FALLBACK_TIMEOUT_SECONDS
     if playbook_timeout_floor:
@@ -85,10 +85,10 @@ def _ai_wall_clock_floor() -> int:
     ``ai.wall_clock_seconds`` widens the deadline automatically instead of
     silently exceeding it.
     """
-    from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+    from app.settings_service import get_setting_cached_typed  # noqa: PLC0415
 
     try:
-        return int(get_setting_sync_typed("ai.wall_clock_seconds"))
+        return int(get_setting_cached_typed("ai.wall_clock_seconds"))
     except Exception:
         return 900
 

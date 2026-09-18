@@ -47,9 +47,11 @@ class TestNftablesActiveTearsDownIptables:
         assert teardown > cancel
 
     def test_only_touches_labdog_chains(self):
+        # The script is passed as a mapping so Ansible does not free-form
+        # parse it — see tests/test_firewall_playbook_parses.py.
         script = _task_named(_tasks("nftables"), "Remove stale LabDog iptables rules")[
             "ansible.builtin.shell"
-        ]
+        ]["cmd"]
         # Guarded on our own chain existing; only LABDOG-* chains are removed.
         assert "LABDOG-INPUT" in script and "LABDOG-OUTPUT" in script
         # Never flush/delete the base chains.
@@ -74,7 +76,7 @@ class TestIptablesActiveTearsDownNftables:
     def test_deletes_table_only_when_labdog_owned(self):
         script = _task_named(_tasks("iptables"), "Remove stale LabDog nftables table")[
             "ansible.builtin.shell"
-        ]
+        ]["cmd"]
         # Marker-guarded: only delete inet filter when it is LabDog's.
         assert 'grep -q "Managed by LabDog"' in script
         assert "delete table inet filter" in script

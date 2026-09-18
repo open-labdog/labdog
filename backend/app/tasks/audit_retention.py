@@ -40,10 +40,18 @@ def prune_old_ssh_transcripts() -> dict:
     return asyncio.run(_prune_ssh_transcripts())
 
 
-async def _get_retention_days() -> int:
-    from app.settings_service import get_setting_sync_typed  # noqa: PLC0415
+async def _get_retention_days(db) -> int:
+    """The configured retention window, read authoritatively.
 
-    return int(get_setting_sync_typed("logging.audit_retention_days"))
+    Takes a session rather than reading the process cache: this job runs
+    once a day and deletes rows irreversibly, so it is worth one query to
+    read the value as stored rather than a copy that may be up to a minute
+    old. It is also the only one of the settings readers that was already
+    async, so nothing has to change shape to allow it.
+    """
+    from app.settings_service import get_setting_typed  # noqa: PLC0415
+
+    return int(await get_setting_typed("logging.audit_retention_days", db))
 
 
 async def _prune_audit_logs() -> dict:
@@ -54,10 +62,24 @@ async def _prune_audit_logs() -> dict:
     from app.db import task_session  # noqa: PLC0415
     from app.models.audit_log import AuditLog  # noqa: PLC0415
 
-    retention_days = await _get_retention_days()
-    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-
     async with task_session() as db:
+        retention_days = await _get_retention_days(db)
+        # ``0`` means "keep forever" per the setting's own description.
+        # Without this guard the cutoff becomes *now* and the whole table is
+        # deleted — the value meaning "never delete" performing the largest
+        # possible delete.
+        if retention_days <= 0:
+            logger.info(
+                "audit_retention: retention disabled (%d) — keeping all audit_log rows",
+                retention_days,
+            )
+            return {
+                "deleted": 0,
+                "retention_days": retention_days,
+                "skipped": "retention disabled",
+            }
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
         # Count before delete for reporting.
         count_result = await db.execute(
             func.count(AuditLog.id).select().where(AuditLog.created_at < cutoff)
@@ -83,10 +105,21 @@ async def _prune_ssh_transcripts() -> dict:
     from app.db import task_session  # noqa: PLC0415
     from app.models.ssh_session_transcript import SSHSessionTranscript  # noqa: PLC0415
 
-    retention_days = await _get_retention_days()
-    cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-
     async with task_session() as db:
+        retention_days = await _get_retention_days(db)
+        # See ``_prune_audit_logs`` — 0 means keep forever, not delete all.
+        if retention_days <= 0:
+            logger.info(
+                "audit_retention: retention disabled (%d) — keeping all transcript rows",
+                retention_days,
+            )
+            return {
+                "deleted": 0,
+                "retention_days": retention_days,
+                "skipped": "retention disabled",
+            }
+        cutoff = datetime.now(UTC) - timedelta(days=retention_days)
+
         count_result = await db.execute(
             func.count(SSHSessionTranscript.id)
             .select()
@@ -113,8 +146,7 @@ async def _prune_ssh_transcripts() -> dict:
 
 
 def _register_beat_schedules() -> None:
-    from celery.schedules import schedule  # noqa: PLC0415
-    from redbeat import RedBeatSchedulerEntry  # noqa: PLC0415
+    from app.tasks.beat_registry import ensure_entry
 
     _SECONDS_PER_DAY = 86400
 
@@ -128,16 +160,15 @@ def _register_beat_schedules() -> None:
             "app.tasks.audit_retention.prune_old_ssh_transcripts",
         ),
     ):
-        entry = RedBeatSchedulerEntry(
+        ensure_entry(
             name=name,
             task=task,
-            schedule=schedule(run_every=_SECONDS_PER_DAY),
+            run_every_seconds=_SECONDS_PER_DAY,
             app=celery_app,
         )
-        entry.save()
 
 
-try:
-    _register_beat_schedules()
-except Exception:
-    pass  # nosec B110 — Redis may not be available at import time (e.g. during tests)
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

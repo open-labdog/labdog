@@ -132,6 +132,23 @@ The prompt the session starts from is `ai.alert_mission_template` — see
 [Settings](settings.md#the-investigation-prompt) if you want to change what
 it asks.
 
+**There is no rate limit, and that is deliberate.** LabDog does not own
+your alerts; Grafana or Alertmanager does. A rule that fires, resolves
+and fires again every few minutes passes every check above each time,
+because each firing is genuinely new — and the fix belongs where the
+rule lives: a longer `for:` duration, a threshold with hysteresis, or
+Alertmanager routing (`group_wait`, `repeat_interval`, inhibition) that
+sends LabDog only what is worth investigating. Adding a cooldown here
+would paper over a rule that needs tuning and hide it from the person
+who can tune it.
+
+What bounds the spend is the AI budget, per session and in money. On a
+subscription-billed provider the money limits do not apply — cost there
+is an estimate of nothing — so the plan's own quota is the backstop, and
+a session that hits it stops and says so. If a storm ever gets that
+far, the `×N` badge in [How deduplication works](#how-deduplication-works)
+is where to look for the rule that caused it.
+
 Whatever happened is recorded on the row and shown as a badge, because
 "nothing happened" has six different causes and each has a different fix:
 

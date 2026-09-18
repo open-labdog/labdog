@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 
+from app.enum_utils import enum_str
+
 NORMALIZE_TO_RUNNING = {"running", "restarted", "reloaded"}
 
 
@@ -51,11 +53,7 @@ def compute_service_diff(
 
     for desired_svc in desired:
         name = desired_svc.service_name
-        desired_state = _normalize_state(
-            desired_svc.state.value
-            if hasattr(desired_svc.state, "value")
-            else str(desired_svc.state)
-        )
+        desired_state = _normalize_state(enum_str(desired_svc.state))
         desired_enabled = desired_svc.enabled
 
         current_svc = current_map.get(name)

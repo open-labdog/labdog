@@ -156,3 +156,59 @@ class TestGroups:
         # Verify it's gone
         resp = await superuser_client.get(f"/api/groups/{group_id}")
         assert resp.status_code == 404
+
+
+class TestGroupUpdateClearsNullableFields:
+    """PUT /api/groups/{id} must distinguish "omitted" from "explicitly null".
+
+    The handler used ``model_dump(exclude_none=True)``, which drops both
+    cases identically — so there was no way to remove a description or
+    category, or to stop overriding a chain policy. Sending
+    ``{"input_policy": null}`` returned 200 with the old value still in
+    place, and the group kept pushing that policy to every member host.
+    """
+
+    async def _make_group(self, superuser_client, **extra):
+        payload = {
+            "name": f"group-{uuid.uuid4().hex[:8]}",
+            "priority": int(uuid.uuid4().int % 1000) + 1,
+            **extra,
+        }
+        resp = await superuser_client.post("/api/groups", json=payload)
+        assert resp.status_code == 201, resp.text
+        return resp.json()
+
+    async def test_explicit_null_clears_description(self, superuser_client):
+        group = await self._make_group(superuser_client, description="initial")
+        assert group["description"] == "initial"
+
+        resp = await superuser_client.put(f"/api/groups/{group['id']}", json={"description": None})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["description"] is None
+
+    async def test_explicit_null_clears_policy_override(self, superuser_client):
+        group = await self._make_group(superuser_client, input_policy="accept")
+        assert group["input_policy"] == "accept"
+
+        resp = await superuser_client.put(f"/api/groups/{group['id']}", json={"input_policy": None})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["input_policy"] is None
+
+    async def test_omitted_field_is_left_alone(self, superuser_client):
+        """The other half of the contract: omission must not clear."""
+        group = await self._make_group(superuser_client, description="keep me")
+
+        resp = await superuser_client.put(f"/api/groups/{group['id']}", json={"category": "prod"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["category"] == "prod"
+        assert body["description"] == "keep me"
+
+    @pytest.mark.parametrize("field", ["name", "priority"])
+    async def test_null_on_non_nullable_column_is_422(self, superuser_client, field):
+        """name/priority are NOT NULL — an explicit null is a client error,
+        not a clear-the-field request, and must not reach the database."""
+        group = await self._make_group(superuser_client)
+
+        resp = await superuser_client.put(f"/api/groups/{group['id']}", json={field: None})
+        assert resp.status_code == 422, resp.text

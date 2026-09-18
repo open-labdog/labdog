@@ -556,3 +556,251 @@ async def test_dispatch_defensive_when_sync_host_deleted(db: AsyncSession):
 
 # Keep `_uuid` referenced for ruff parity with sibling tests.
 _ = _uuid
+
+
+# ---------------------------------------------------------------------------
+# BUG-62 — the four defects in the per-host serialisation protocol
+# ---------------------------------------------------------------------------
+
+
+class TestAClaimedGroupRunHoldsItsMembers:
+    """Defect 1, group half.
+
+    action_group takes every member's advisory lock, checks them, then
+    commits — and only marked the run ``running`` in a *later* session that
+    also creates the per-host rows. check_host_busy matched a group run
+    through those rows, so between the two the group held every member and
+    nothing said so: a sync entering its gate saw the host free and claimed
+    it, which is the apt/nftables race the lock exists to prevent.
+    """
+
+    async def test_a_running_group_run_blocks_a_member_without_per_host_rows(
+        self, db: AsyncSession
+    ):
+        from app.models.host_group import HostGroup
+        from app.tasks.host_lock import check_host_busy
+
+        ssh = await create_ssh_key(db)
+        group = HostGroup(
+            name=f"g-{_uuid.uuid4().hex[:8]}",
+            priority=int(_uuid.uuid4().int % 900) + 1,
+        )
+        db.add(group)
+        await db.flush()
+        host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
+
+        # Running, group-targeted, and deliberately no ActionHostRun rows —
+        # exactly the window between claim and load.
+        await _create_action_run(db, group_id=group.id, status="running")
+        await db.flush()
+
+        blocker = await check_host_busy(db, host.id)
+        assert blocker is not None, "a claimed group run must hold its members"
+        assert blocker.kind == "action_group"
+
+    async def test_the_same_window_is_seen_by_the_multi_host_check(self, db: AsyncSession):
+        from app.models.host_group import HostGroup
+        from app.tasks.host_lock import check_hosts_busy
+
+        ssh = await create_ssh_key(db)
+        group = HostGroup(
+            name=f"g-{_uuid.uuid4().hex[:8]}",
+            priority=int(_uuid.uuid4().int % 900) + 1,
+        )
+        db.add(group)
+        await db.flush()
+        host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
+        await _create_action_run(db, group_id=group.id, status="running")
+        await db.flush()
+
+        assert await check_hosts_busy(db, [host.id]) is not None
+
+    async def test_a_child_does_not_block_itself_on_its_own_parent(self, db: AsyncSession):
+        """The per-host fan-out of a group action runs while its parent is
+        ``running``; excluding it is what stops it deferring against itself."""
+        from app.models.host_group import HostGroup
+        from app.tasks.host_lock import check_host_busy
+
+        ssh = await create_ssh_key(db)
+        group = HostGroup(
+            name=f"g-{_uuid.uuid4().hex[:8]}",
+            priority=int(_uuid.uuid4().int % 900) + 1,
+        )
+        db.add(group)
+        await db.flush()
+        host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
+        run_id = await _create_action_run(db, group_id=group.id, status="running")
+        await db.flush()
+
+        assert await check_host_busy(db, host.id, exclude_action_run_id=run_id) is None
+
+
+class TestADeferredChildIsReDispatched:
+    """Defect 2.
+
+    action_host defers a member of a group-targeted run by flipping only
+    the ActionHostRun to ``pending`` — the parent stays running because the
+    other members are still going. Nothing anywhere selected on that, so
+    the child sat pending forever while the parent reported success for a
+    host it never touched.
+    """
+
+    async def test_a_pending_child_is_picked_up(self, db: AsyncSession):
+        from app.models.host_group import HostGroup
+        from app.tasks.host_lock import dispatch_next_pending_for_host
+
+        ssh = await create_ssh_key(db)
+        group = HostGroup(
+            name=f"g-{_uuid.uuid4().hex[:8]}",
+            priority=int(_uuid.uuid4().int % 900) + 1,
+        )
+        db.add(group)
+        await db.flush()
+        host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
+        run_id = await _create_action_run(db, group_id=group.id, status="running")
+        child_id = await _create_action_host_run(db, run_id, host.id, status="pending")
+        await db.commit()
+
+        with patch("app.tasks.action_host.run_action_host.delay") as delay:
+            result = await dispatch_next_pending_for_host(db, host.id)
+
+        assert result == ("action_host_run", child_id)
+        delay.assert_called_once_with(run_id, child_id)
+
+    async def test_the_child_leaves_pending_so_it_is_not_picked_twice(self, db: AsyncSession):
+        from app.models.action_run import ActionHostRun
+        from app.models.host_group import HostGroup
+        from app.tasks.host_lock import dispatch_next_pending_for_host
+
+        ssh = await create_ssh_key(db)
+        group = HostGroup(
+            name=f"g-{_uuid.uuid4().hex[:8]}",
+            priority=int(_uuid.uuid4().int % 900) + 1,
+        )
+        db.add(group)
+        await db.flush()
+        host = await create_host(db, ssh_key_id=ssh.id, group_ids=[group.id])
+        run_id = await _create_action_run(db, group_id=group.id, status="running")
+        child_id = await _create_action_host_run(db, run_id, host.id, status="pending")
+        await db.commit()
+
+        with patch("app.tasks.action_host.run_action_host.delay"):
+            await dispatch_next_pending_for_host(db, host.id)
+
+        status = (
+            await db.execute(select(ActionHostRun.status).where(ActionHostRun.id == child_id))
+        ).scalar_one()
+        assert status == "queued"
+
+
+class TestAPendingRunIsDispatchedOnce:
+    """Defect 3.
+
+    The dispatch called ``.delay()`` with the row still ``pending``, and
+    the advisory lock covers only the host that just freed. A group run
+    matches every member, so two hosts finishing together both selected it
+    — and the second copy's IntegrityError handler marked the run failed
+    while the first was still executing it.
+    """
+
+    async def test_the_run_leaves_pending_when_dispatched(self, db: AsyncSession):
+        from app.models.action_run import ActionRun
+        from app.tasks.host_lock import dispatch_next_pending_for_host
+
+        ssh = await create_ssh_key(db)
+        host = await create_host(db, ssh_key_id=ssh.id)
+        run_id = await _create_action_run(db, host_id=host.id, status="pending")
+        await db.commit()
+
+        with patch("app.tasks.action_orchestrator.run_action.delay") as delay:
+            result = await dispatch_next_pending_for_host(db, host.id)
+
+        assert result == ("action_host", run_id)
+        delay.assert_called_once_with(run_id)
+        status = (
+            await db.execute(select(ActionRun.status).where(ActionRun.id == run_id))
+        ).scalar_one()
+        assert status == "queued", "a dispatched run must not stay pending"
+
+    async def test_a_second_dispatch_does_not_re_send_the_same_run(self, db: AsyncSession):
+        """The property that matters: whatever else happens, the run is
+        handed to Celery exactly once."""
+        from app.tasks.host_lock import dispatch_next_pending_for_host
+
+        ssh = await create_ssh_key(db)
+        host = await create_host(db, ssh_key_id=ssh.id)
+        await _create_action_run(db, host_id=host.id, status="pending")
+        await db.commit()
+
+        with patch("app.tasks.action_orchestrator.run_action.delay") as delay:
+            await dispatch_next_pending_for_host(db, host.id)
+            await dispatch_next_pending_for_host(db, host.id)
+
+        assert delay.call_count == 1
+
+
+class TestTheDefensiveHostGoneBranchesAreUnreachable:
+    """Defect 4, and what the investigation actually found.
+
+    The "host no longer exists" branches in dispatch_next_pending_for_host
+    flushed without committing, and no caller commits the session it passes
+    in — so the write rolled back and the dead row was re-examined forever.
+    That is a real defect and is now fixed.
+
+    But the state it guards against cannot arise. ``sync_jobs.host_id`` and
+    ``action_host_runs.host_id`` are ``ON DELETE CASCADE``, so deleting a
+    host removes those rows outright, and ``action_runs.host_id`` is
+    ``ON DELETE SET NULL``, so such a run falls to the group branch instead.
+    The branches are dead code, which is why the missing commit was never
+    observed.
+
+    These tests pin the FK behaviour rather than the branch. If someone
+    changes a rule to RESTRICT or SET NULL later, the branch becomes live —
+    and this fails, pointing at the code that then matters.
+    """
+
+    async def test_deleting_a_host_cascades_its_sync_jobs(self, db: AsyncSession):
+        from app.models.sync_job import JobStatus, SyncJob
+
+        ssh = await create_ssh_key(db)
+        host = await create_host(db, ssh_key_id=ssh.id)
+        host_id = host.id
+        job = SyncJob(host_id=host_id, module_type="firewall", status=JobStatus.pending)
+        db.add(job)
+        await db.flush()
+        job_id = job.id
+
+        await db.execute(text("DELETE FROM hosts WHERE id = :h"), {"h": host_id})
+        await db.flush()
+
+        remaining = (
+            await db.execute(select(SyncJob.id).where(SyncJob.id == job_id))
+        ).scalar_one_or_none()
+        assert remaining is None, (
+            "sync_jobs.host_id is ON DELETE CASCADE, so the dispatch's "
+            "'host no longer exists' branch cannot be reached for a SyncJob"
+        )
+
+    async def test_the_action_run_host_fk_sets_null_rather_than_cascading(self, db: AsyncSession):
+        """Read the rule from the catalogue rather than by deleting a host.
+
+        Performing the delete here reproduces BUG-65 instead: an
+        ``action_runs`` row whose ``host_id`` is nulled violates
+        ``ck_action_runs_scope``, which forbids all three target columns
+        being NULL, so the DELETE fails outright. That is a separate filed
+        defect and not this branch's problem — but it does mean the
+        host-gone branch is unreachable for a second, independent reason.
+        """
+        rule = (
+            await db.execute(
+                text(
+                    "SELECT rc.delete_rule "
+                    "FROM information_schema.referential_constraints rc "
+                    "WHERE rc.constraint_name = 'fk_action_runs_host_id_hosts'"
+                )
+            )
+        ).scalar_one_or_none()
+        assert rule == "SET NULL", (
+            "action_runs.host_id is SET NULL, so a run whose host is deleted "
+            "is routed to the group branch, never the host-gone branch"
+        )

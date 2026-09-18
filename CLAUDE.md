@@ -204,6 +204,31 @@ DB-backed override pack (seeded in `alembic 0001`, points at
 in-image snapshot. Operators that prefer a private fork delete the
 seeded row and add their own.
 
+### Celery workers and queues
+
+Three subprocesses, all children of the main process
+(`app/celery_manager.py`):
+
+- **`work`** — `-Q default,long_running`. Everything except the run
+  orchestrator: syncs, drift, discovery, and the per-host half of every
+  action run.
+- **`orchestrator`** — `-Q orchestrator`. Runs only
+  `app.tasks.action_orchestrator.run_action`.
+- **`beat`** — the RedBeat scheduler, standalone. It used to be embedded
+  in `work` as `--beat`, which Celery runs as a *child* of the worker: a
+  Redis restart killed the child, nothing restarted it, and
+  `/health/ready` stayed green because the worker itself was fine
+  (BUG-83). As a peer it is under the same `poll()` as the workers.
+
+The split is load-bearing, not tidiness. `run_action` dispatches per-host
+children to `long_running` and then blocks in `result.join()` until they
+finish, so an orchestrator sharing that pool competes with the very work
+it is waiting for. Do not route anything else to `orchestrator`, and do
+not remove the `-n <name>@%h` node names — the `worker_ready` handlers use
+them to avoid doing pack sync twice. `tests/test_orchestrator_queue.py`
+asserts the separation; `tests/test_task_routing.py` asserts every task
+lands on a queue some worker consumes.
+
 ### Group-dispatch actions
 
 Most actions fan out per-host (one Celery task per target host with a
@@ -256,6 +281,15 @@ ops. The built-in `_builtin.sync` opts out of the outer lock (its
 inner `run_host_sync.apply()` already participates via the sync
 orchestrator) — see the comment on `with_lock=` in
 `builtin_dispatchers.py`.
+
+The seven periodic drift sweeps participate too, but as *readers*
+rather than claimants: `app/tasks/drift_sweep.py::sweep_module` asks
+the same `check_host_busy` question, skips a claimed host for that
+tick, and re-checks after the collection so a verdict gathered before
+a claim is discarded rather than written over the running op's status.
+Each module supplies only a `check_one(host, hms, db)` body that writes
+into the session and never commits — the driver owns the transaction,
+because throwing it away is how a mid-check claim is handled.
 
 ### About / version surface
 

@@ -41,3 +41,17 @@ class DriftTrendSeries(BaseModel):
     granularity: Granularity
     since: datetime
     points: list[DriftTrendPoint]
+
+
+class DriftCoverage(BaseModel):
+    """Fleet-wide drift-check coverage, for telling "nothing drifted" apart
+    from "nothing is being checked"."""
+
+    hosts_total: int
+    #: Hosts with ``Host.drift_check_enabled`` — the firewall sweep's gate.
+    firewall_enabled_hosts: int
+    #: Distinct hosts with at least one non-firewall module enabled.
+    module_enabled_hosts: int
+    #: Distinct hosts covered by either flag. Not the sum of the two above —
+    #: a host with both kinds on is one covered host.
+    any_enabled_hosts: int

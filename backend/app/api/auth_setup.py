@@ -44,6 +44,12 @@ async def register(
     except Exception:
         raise HTTPException(status_code=503, detail="Database unavailable")
 
+    # Deliberately ``safe=False``: ``UserManager.create`` promotes the very
+    # first user to superuser by setting the flag on ``user_create``, and
+    # ``safe=True`` would make fastapi-users strip it again (its
+    # ``create_update_dict()`` drops is_superuser/is_active/is_verified). The
+    # manager neutralises client-supplied privilege flags itself — see
+    # ``UserManager.create`` in app/auth/users.py.
     user = await user_manager.create(user_create)
     return user
 

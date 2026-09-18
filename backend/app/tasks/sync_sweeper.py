@@ -51,9 +51,9 @@ async def _sweep_stale_syncs_async() -> dict:
     from app.models.sync_job import JobStatus, SyncJob
     from app.tasks.host_sync_orchestrator import (
         _dispatch_next_pending_for_host,
-        _filter_from_module_type,
         _finalise_run,
         _resolve_modules,
+        module_filter_for,
     )
 
     cutoff = datetime.now(UTC) - timedelta(minutes=STALE_THRESHOLD_MINUTES)
@@ -85,7 +85,7 @@ async def _sweep_stale_syncs_async() -> dict:
             if job is None or job.status != JobStatus.running:
                 continue
 
-            module_filter = _filter_from_module_type(job.module_type)
+            module_filter = module_filter_for(job)
             seeded_modules = _resolve_modules(module_filter)
             synthesized_outcomes = {m: "error" for m in seeded_modules}
             error_message = (
@@ -147,19 +147,17 @@ def sweep_stale_syncs() -> dict:
 
 
 def _register_beat_schedule() -> None:
-    from celery.schedules import schedule
-    from redbeat import RedBeatSchedulerEntry
+    from app.tasks.beat_registry import ensure_entry
 
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="app.tasks.sync_sweeper.sweep_stale_syncs",
         task="app.tasks.sync_sweeper.sweep_stale_syncs",
-        schedule=schedule(run_every=SWEEP_FREQUENCY_SECONDS),
+        run_every_seconds=SWEEP_FREQUENCY_SECONDS,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_beat_schedule()
-except Exception:
-    pass
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

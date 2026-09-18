@@ -37,6 +37,17 @@ export interface DriftTrendSeries {
   points: DriftTrendPoint[]
 }
 
+// GET /api/dashboard/drift-coverage. Lets an empty drift surface say *why*
+// it is empty: nothing drifted, or nothing being checked. The two flags are
+// independent (host-level gates firewall only; the other six modules each
+// have their own), so `any_enabled_hosts` is a union, not a sum.
+export interface DriftCoverage {
+  hosts_total: number
+  firewall_enabled_hosts: number
+  module_enabled_hosts: number
+  any_enabled_hosts: number
+}
+
 // ---------------------------------------------------------------------------
 // Audit log (GET /api/audit-log) — mirrors backend/app/api/audit.py
 // AuditLogResponse. Shared by the audit page and the dashboard activity feed.
@@ -125,8 +136,9 @@ export interface ModuleCurrentState {
   drift_check_enabled: boolean
   error_message: string | null
   // Non-fatal notices computed at collect time (e.g. the firewall
-  // competing-store warning). Only present on the POST /collect-state
-  // response; empty on the cached GET /current-state.
+  // competing-store warning). Always empty here: collection is queued
+  // now (BUG-74), so the notices ride on the run's output instead —
+  // see lib/collect-state.ts.
   warnings?: string[]
 }
 export interface SSHKey {
@@ -143,7 +155,11 @@ export interface GitRepository {
   branch: string
   auth_type: GitAuthType
   ssh_key_id: number | null
-  webhook_secret: string | null
+  // SEC-28: the secret itself is never returned — it is the HMAC key
+  // inbound push webhooks are verified against.
+  has_webhook_secret: boolean
+  // SEC-27: true once a sync has recorded the git server's SSH host key.
+  has_pinned_host_key: boolean
   last_commit_sha: string | null
   last_sync_at: string | null
   created_at: string
@@ -249,6 +265,14 @@ export interface ActionPack {
   /** Absolute filesystem path for source_type=local. Null for git. */
   local_path: string | null
   enabled: boolean
+  /**
+   * Whether this pack may ship content that runs on the LabDog host —
+   * ansible plugin directories, or plays targeting localhost. An untrusted
+   * pack containing either is refused by the loader and contributes no
+   * actions. Not a privilege boundary: the model is flat and any user can
+   * set it. It makes accepting controller-side code deliberate and audited.
+   */
+  trusted: boolean
   last_synced_at: string | null
   last_sync_status: "ok" | "failed" | null
   last_sync_error: string | null
@@ -411,7 +435,6 @@ export interface FirewallRule {
   port_end: number | null
   comment: string | null
   priority: number
-  is_system: boolean
   created_at: string
   updated_at: string
 }
@@ -484,7 +507,6 @@ export interface HostsEntry {
   aliases: string[]
   comment: string | null
   priority: number
-  is_system: boolean
   group_id: number | null
   host_id: number | null
   created_at: string
@@ -496,6 +518,10 @@ export interface EffectiveHostsEntry {
   hostname: string
   aliases: string[]
   comment: string | null
+  /** Position in the rendered file, highest first. /etc/hosts is read top
+   *  to bottom and the first match for a name wins, so this is what
+   *  settles two entries that share a hostname. */
+  priority: number
   is_system: boolean
   source: "group" | "host" | "system"
   source_id: number
@@ -819,8 +845,12 @@ export interface ActionDefinition {
 export interface ActionHostRun {
   id: number
   action_run_id: number
-  host_id: number
-  /** Target hostname for display. NULL only if the host row was deleted. */
+  /** NULL once the target host has been deleted — the run and its
+   *  transcript outlive it. Anything keyed on this must handle null;
+   *  address the row by `id` instead. */
+  host_id: number | null
+  /** Name to display: the live host's when it still exists, otherwise
+   *  the snapshot taken at dispatch. */
   hostname: string | null
   status: string
   started_at: string | null
@@ -839,6 +869,11 @@ export interface ActionRun {
   action_version: string
   host_id: number | null
   group_id: number | null
+  /** What the run targeted, recorded at dispatch time. Both survive the
+   *  target being deleted, which nulls host_id/group_id — target_label is
+   *  then the only description of what the run ran against. */
+  target_kind: ScheduledActionTargetKind
+  target_label: string
   /** NULL for ad-hoc runs; populated when the run was dispatched by the
    *  unified scheduler or POST /api/scheduled-actions/{id}/run-now. */
   scheduled_action_id: number | null

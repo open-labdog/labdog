@@ -1,7 +1,7 @@
 import enum
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Enum, Integer, LargeBinary, String
+from sqlalchemy import DateTime, Enum, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -38,7 +38,21 @@ class GitRepository(Base):
         LargeBinary,
         nullable=True,
     )
-    webhook_secret: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    #: SEC-28. The HMAC key inbound push webhooks are verified against.
+    #: Encrypted at rest exactly like ``encrypted_https_token`` above —
+    #: it used to sit here in plaintext and be returned by the API,
+    #: which made forging a push webhook a matter of reading a response
+    #: body. Read and written through ``app.gitops.webhook_secret``.
+    encrypted_webhook_secret: Mapped[bytes | None] = mapped_column(
+        LargeBinary,
+        nullable=True,
+    )
+    #: SEC-27. The ``known_hosts`` line recorded the first time LabDog
+    #: reached this repository over SSH. Every later sync is verified
+    #: against it, so an intercepted connection is refused rather than
+    #: silently accepted. NULL means first contact has not happened yet
+    #: (or the operator cleared it after a legitimate server rekey).
+    ssh_host_key_entry: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -53,3 +67,21 @@ class GitRepository(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+    @property
+    def has_webhook_secret(self) -> bool:
+        """Whether a webhook secret is configured.
+
+        This is what ``GitRepoResponse`` reports. The secret itself is
+        never returned — knowing one is set is all a form needs.
+        """
+        return bool(self.encrypted_webhook_secret)
+
+    @property
+    def has_pinned_host_key(self) -> bool:
+        """Whether an SSH sync has recorded this server's host key.
+
+        Read by ``GitRepoResponse`` so the API can say that syncs are
+        verified without returning the key itself.
+        """
+        return bool(self.ssh_host_key_entry)

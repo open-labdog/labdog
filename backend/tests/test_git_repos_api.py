@@ -313,3 +313,148 @@ async def test_delete_git_repo_emits_audit_row(superuser_client, db):
     assert "https_token" not in row.before_state
     assert "encrypted_https_token" not in row.before_state
     assert "webhook_secret" not in row.before_state
+
+
+# ---------------------------------------------------------------------------
+# Host-key pinning surface (SEC-27)
+# ---------------------------------------------------------------------------
+
+
+async def test_a_repo_starts_unpinned_and_says_so(superuser_client):
+    """Nothing to pin to until the first SSH sync records a key."""
+    resp = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "fresh", "url": "https://example.com/r.git", "branch": "main"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["has_pinned_host_key"] is False
+
+
+async def test_the_pinned_key_is_reported_but_never_returned(superuser_client, db):
+    """The UI needs to know a key is pinned so it can offer "re-trust";
+    it has no use for the key itself."""
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "pinned", "url": "https://example.com/r.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    repo.ssh_host_key_entry = "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotReal"
+    await db.commit()
+
+    data = (await superuser_client.get(f"/api/git-repos/{repo_id}")).json()
+    assert data["has_pinned_host_key"] is True
+    assert "ssh_host_key_entry" not in data
+
+
+async def test_trust_host_key_clears_the_pin_so_the_next_sync_re_tofus(superuser_client, db):
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "rekeyed", "url": "https://example.com/r.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    repo.ssh_host_key_entry = "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotReal"
+    await db.commit()
+
+    resp = await superuser_client.post(f"/api/git-repos/{repo_id}/trust-host-key")
+    assert resp.status_code == 204, resp.text
+    await db.refresh(repo)
+    assert repo.ssh_host_key_entry is None
+
+
+async def test_trusting_a_new_key_is_audited(superuser_client, db):
+    """Accepting a new key for the repository LabDog takes playbooks
+    from is worth being able to look up later."""
+    from sqlalchemy import select
+
+    from app.models.audit_log import AuditLog
+    from app.models.git_repository import GitRepository
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "audited", "url": "https://example.com/r.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    repo.ssh_host_key_entry = "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotReal"
+    await db.commit()
+
+    await superuser_client.post(f"/api/git-repos/{repo_id}/trust-host-key")
+
+    rows = (
+        (
+            await db.execute(
+                select(AuditLog).where(
+                    AuditLog.entity_type == "git_repository",
+                    AuditLog.entity_id == repo_id,
+                    AuditLog.action == "trust_host_key",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1
+
+
+async def test_trust_host_key_on_a_missing_repo_is_404(superuser_client):
+    assert (await superuser_client.post("/api/git-repos/999999/trust-host-key")).status_code == 404
+
+
+async def test_pointing_the_repo_at_another_server_drops_the_pin(superuser_client, db):
+    """A key pinned for one host can only produce a spurious mismatch
+    against a different one, which would look like an attack and wedge
+    every sync."""
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "moved", "url": "https://old.example.com/r.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    repo.ssh_host_key_entry = "old.example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotReal"
+    await db.commit()
+
+    resp = await superuser_client.put(
+        f"/api/git-repos/{repo_id}", json={"url": "https://new.example.com/r.git"}
+    )
+    assert resp.status_code == 200, resp.text
+    await db.refresh(repo)
+    assert repo.ssh_host_key_entry is None
+
+
+async def test_moving_to_another_path_on_the_same_server_keeps_the_pin(superuser_client, db):
+    """Same host, same key. Dropping it here would silently re-TOFU on
+    an ordinary rename."""
+    from sqlalchemy import select
+
+    from app.models.git_repository import GitRepository
+
+    create = await superuser_client.post(
+        "/api/git-repos",
+        json={"name": "renamed", "url": "https://example.com/team/r.git", "branch": "main"},
+    )
+    repo_id = create.json()["id"]
+    repo = (await db.execute(select(GitRepository).where(GitRepository.id == repo_id))).scalar_one()
+    entry = "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINotReal"
+    repo.ssh_host_key_entry = entry
+    await db.commit()
+
+    resp = await superuser_client.put(
+        f"/api/git-repos/{repo_id}", json={"url": "https://example.com/team/renamed.git"}
+    )
+    assert resp.status_code == 200, resp.text
+    await db.refresh(repo)
+    assert repo.ssh_host_key_entry == entry

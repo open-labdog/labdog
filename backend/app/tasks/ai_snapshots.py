@@ -160,19 +160,17 @@ async def _prune_ai_snapshots() -> dict:
 
 
 def _register_beat_schedules() -> None:
-    from celery.schedules import schedule  # noqa: PLC0415
-    from redbeat import RedBeatSchedulerEntry  # noqa: PLC0415
+    from app.tasks.beat_registry import ensure_entry
 
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="prune-ai-snapshots",
         task="app.tasks.ai_snapshots.prune_ai_snapshots",
-        schedule=schedule(run_every=SWEEP_INTERVAL_SECONDS),
+        run_every_seconds=SWEEP_INTERVAL_SECONDS,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_beat_schedules()
-except Exception:
-    pass  # nosec B110 — Redis may not be available at import time (e.g. during tests)
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

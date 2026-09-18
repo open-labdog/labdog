@@ -25,16 +25,6 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
-- [ ] **Audit GitHub Actions pins for Node 24 readiness (low priority).**
-      GitHub is deprecating the Node 20 runtime on Actions runners; the
-      runner default has already moved to Node 24 (surfaced as a warning
-      during the v0.6.1 release run, e.g. under `actions/deploy-pages`).
-      Nothing fails on Node 24 today, so this is not urgent — but before
-      Node 20 support is fully removed, sweep `.github/workflows/*.yml`
-      for any action pinned to a version whose runtime is Node 20 and
-      bump to a Node 24-compatible release, so no workflow starts failing
-      when the old runtime is dropped.
-
 ---
 
 ## k8s-upgrade — broaden OS support
@@ -80,114 +70,7 @@ that the alloy-install action stamps. A few deliberate deferrals:
 
 ---
 
-## Drift check — make enabling it discoverable
 
-**Context:** `Host.drift_check_enabled` defaults to `False`, and
-`check_all_drift` only walks hosts where it is `True`. So on a fresh
-install the periodic sweep runs every 30 minutes and does nothing,
-indefinitely, with no indication anywhere that drift checking is off.
-Found on a real deployment: 17 hosts, all with drift checking disabled,
-where the operator reasonably assumed it was running.
-
-The cost is not just the missing checks — it silently empties every
-downstream surface. `drift_samples` stays empty, so the dashboard's
-drift-trend chart shows its "collecting history" state forever, and the
-exporter emits no `labdog_drift_*` families at all (they are absent
-rather than zero, because `module` is a free-text column and cannot be
-zero-filled). All three look like bugs and none of them are.
-
-- [ ] **Surface the fleet-wide state.** Nothing tells you "0 of 17 hosts
-      have drift checking enabled". The Fleet Overview already has
-      `Never Checked` as a passive count — make it, or a sibling tile,
-      say *why* and link to the fix. The data is already there
-      (`labdog_hosts_drift_check_enabled` / `hosts_never_drift_checked`
-      exist precisely because this was invisible).
-
-- [ ] **Explain the two flags.** `Host.drift_check_enabled` and
-      `HostModuleStatus.drift_check_enabled` are independent, set from
-      three unrelated places — the bulk toggle on the Hosts list, the
-      Enabled/Disabled button on Host → Overview, and a per-module
-      "Enable Drift Check" action on each module tab (backed by three
-      different route prefixes: `/api/drift`, `/api/hosts-mgmt`,
-      `/api/cron`). Nothing states how host-level and module-level
-      interact, or which one a given control writes.
-
-- [ ] **Make the empty states diagnostic rather than passive.** The
-      drift-trend chart should distinguish "no checks are configured"
-      from "checks are running, no drift found yet" — currently both
-      render the same "collecting history" message. Same for the
-      per-module drift panels.
-
-- [ ] **Decide the default.** Whether new hosts should opt in
-      automatically is a genuine product call, not an oversight:
-      flipping it to `True` means LabDog starts SSHing to every newly
-      added host on a timer without being asked. If it stays `False`,
-      the onboarding flow should prompt for it explicitly rather than
-      leaving it to be discovered.
-
----
-
-## Metrics export — follow-ups
-
-**Context:** the opt-in Prometheus `/metrics` endpoint shipped (see
-[docs/metrics-export.md](docs/metrics-export.md)). These were
-deliberately scoped out of that PR.
-
-- [ ] **Redis broker queue depth.** Export `LLEN default` /
-      `LLEN long_running` plus a `labdog_broker_reachable` gauge. Needs
-      a short (~200ms) `redis.asyncio` timeout and a defined value to
-      emit on timeout — it puts a second failure domain into an
-      unauthenticated request path, which is why it wasn't bundled in.
-      Celery *worker* introspection stays out of scope entirely
-      (`inspect().active()` is a multi-second broadcast RPC); point
-      operators at `celery-exporter` instead.
-
-- [ ] **`drift_samples` retention + rollup.** The table has no
-      retention job (unlike `audit_log` / `ssh_session_transcripts`) and
-      grows unbounded. The catch: naively deleting rows makes
-      `labdog_drift_checks_total` and `labdog_drift_changes_total`
-      *decrease*, which Prometheus reads as a counter reset — `rate()`
-      copes, `increase()` across the deletion silently under-reports.
-      Recommended shape: a `drift_sample_rollup(module_type, status,
-      checks, add_count, remove_count, policy_change_count)` table
-      incremented **in the same transaction as the delete**, with the
-      exporter's aggregates summing live rows + rollup. `app/metrics/
-      aggregates.py` is written so this is a one-line `UNION ALL`
-      change. Model the job on `app/tasks/audit_retention.py`.
-
-- [ ] **Index `sync_jobs.created_at`.** There is no index on it
-      (`0001_initial_schema.py` only has `(host_id, module_type,
-      status)` plus a partial unique). This is **not** an exporter
-      problem — the exporter's counters are all-time and use no time
-      predicate — but `GET /api/dashboard/sync-success-rate` does
-      `WHERE created_at >= :since` and full-scans today. Needs
-      `CREATE INDEX CONCURRENTLY` in its own migration with Alembic's
-      `autocommit_block()`.
-
-- [ ] **Unify `HostModuleStatus.sync_status` vocabulary.** Three
-      modules (`package_drift`, `cron_drift`, `user_drift`) write the
-      legacy value `"drifted"` where the rest write `"out_of_sync"`;
-      `refresh_host_sync_status` already treats them as equivalent, and
-      each drift task deliberately normalises before recording a metric
-      sample. Consolidating needs a data migration and touches
-      `api/user_sync.py`, `api/cron_sync.py`, `api/package_sync.py`,
-      the three drift tasks, `api/host_state.py`, and the frontend
-      status badges.
-
-- [ ] **Rename `docs/ui/metrics.md` → `docs/ui/host-metrics.md`.** The
-      name collides conceptually with the new outbound
-      `docs/metrics-export.md`; both now carry disambiguation banners,
-      but distinct filenames would be clearer. Docusaurus is configured
-      with `onBrokenLinks: 'throw'`, so CI will catch any missed
-      reference.
-
-- [ ] **True OpenMetrics 1.0 output.** The endpoint currently serves
-      Prometheus text exposition `0.0.4` unconditionally (universally
-      parsed; OpenMetrics 1.0's `# EOF` terminator and counter-naming
-      differences are a common footgun). Add 1.0 as an additive
-      `Accept`-negotiated branch if something in the stack requires it.
-
----
 
 ## AI integration — remaining phases
 
@@ -284,36 +167,29 @@ provider form and in `docs/ui/assistant.md`.
 
 Follow-ups it leaves open:
 
-- [ ] **Stream partial text.** The runner emits one SSE `text` event per
-  completed assistant message. `include_partial_messages` would give
-  token-by-token streaming, which is what the chat page wants.
-- [ ] **Persist resume state across restarts.** `resume` relies on the
-  CLI's own session files under `CLAUDE_CONFIG_DIR`, so parking a session
-  across a container restart needs that path on a volume.
-  `ClaudeAgentOptions.session_store` accepts a custom store, so
-  Postgres-backed sessions are possible if the volume proves fragile.
-- [ ] **Surface rate-limit state.** `RateLimitInfo` carries utilisation
-  and reset time. On a subscription the money budget is meaningless but
-  quota is not, so that is what the usage panel should show for these
-  providers.
-- [ ] **Bound what an alert storm can spend.** Auto-investigation is gated
-  per alert — severity, dedup, budget — but nothing bounds sessions per
-  unit of time. A flapping rule produces a new `(fingerprint, starts_at)`
-  on every firing, so each one is a fresh row and a fresh session, and the
-  dedup that stops repeat notifications does not stop repeat firings. The
-  money budgets are the backstop, except on a subscription-billed provider
-  (`claude_agent`) where cost is 0 and every USD limit is therefore inert,
-  leaving only the per-session token cap — which is per session, not per
-  day. Deferred deliberately on 2026-08-23: the first answer is to design
-  the alert rules so they do not flap and route only what is worth
-  spending on. A per-hour session cap, or a cooldown keyed on alertname,
-  is the backstop if that proves insufficient.
+- [ ] **Show plan quota in the usage panel.** The stop-reason half of
+  this is done: a refused run now names the window and its reset time,
+  and `allowed_warning` raises a banner mid-run. Both are live-only.
+  `RateLimitInfo.utilization` is never stored, so the panel still shows
+  these providers a money figure that is an estimate of money nobody
+  spends.
 
-- [ ] **Persist a verify session's evidence pack.** The rendered pack is
-  in the session's first user turn, which is enough to read back but not
-  to query — "which verifications ran with an unavailable disk reading"
-  needs the `EvidenceItem` list stored structurally. Worth doing when
-  there is a second evidence producer, not before.
+  **Decided 2026-09-11: persist the last reading per provider.** Add
+  `ai_providers.rate_limit_state` (JSONB, keyed by `rate_limit_type`,
+  each entry holding `status`, `utilization`, `resets_at`, `seen_at`,
+  `source`). Two writers already receive the event: the runner's
+  `RateLimitEvent` branch (every status, `allowed` included — a 20%
+  reading is as much information as an 85% one) and the provider Test
+  probe, which gives an on-demand refresh without spending a session.
+  Reassign the dict rather than mutate it, or SQLAlchemy never flushes
+  it. `GET /api/ai/usage` gains a `quotas` list for `claude_agent`
+  providers; the panel renders a bar per window with `seen_at` and
+  `source` as a first-class label, because the figure is stale by
+  construction and a timestamped number is information while the same
+  number without one is a guess. Rejected: hiding the money meter and
+  saying nothing (leaves the signal unused), and closing as done (the
+  panel keeps lying to subscription users). Move the window-label map
+  out of `runner.py` into a shared module when doing this.
 
 ---
 
@@ -326,16 +202,61 @@ raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
 `starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
 added. These are the deferred hardening/maintenance tasks that remain.
 
-- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06.
-      Flat config is already in place (`eslint.config.mjs`), so this is just the
-      version bump — but it is **currently blocked upstream**: bumping `eslint`
-      to 10 crashes lint with `context.getFilename is not a function`, because
-      `eslint-config-next` (even the latest 16.2.10) bundles
-      `eslint-plugin-react@7.37.5`, which still calls the API ESLint 10 removed.
-      Re-attempt once `eslint-plugin-react` ships an ESLint-10-compatible
-      release and `eslint-config-next` picks it up (then just bump both).
+- [ ] **React Compiler readiness (frontend).** `eslint-plugin-react-hooks`
+      7.1 promoted `set-state-in-effect` and `purity` to errors; the ESLint 10
+      move (2026-09-18) demoted both to warnings rather than restructure
+      components in a toolchain PR. Four sites are flagged: debounced
+      validation in `cron-input.tsx`, prop→state sync in
+      `table-filter-cell.tsx`, seeding state from query data in
+      `action-run-dialog.tsx`, and `Date.now()` in a render-time helper in
+      `groups/[id]/client-page.tsx`. None is a bug. Fix them the React way
+      (derive during render, key-based reset, `useSyncExternalStore` or a
+      ticking hook for relative time) and restore the two rules to `error`
+      in `eslint.config.mjs`. The nine `incompatible-library` warnings are
+      react-hook-form's `watch()` and stay until that library is replaced or
+      the rule learns it.
 
 - [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
       separately; the safe react-query / tailwindcss / zod / react-hook-form
       minor bumps have already landed.
 
+
+---
+
+## Supply chain, packaging and CI — 2026-09 audit
+
+**Context:** from the same whitebox pass that produced the SEC-/BUG-
+entries in [`BUGS.md`](BUGS.md). These are hardening and maintenance
+tasks rather than defects, so they live here. Ordered roughly by value.
+
+- [ ] **Stop PR builds overwriting the floating `:test` Docker tag.**
+      `.github/workflows/ci.yml:361-407` pushes every PR to both
+      `:test-<sha>` and the mutable `:test`. BUG-55 records a production
+      instance running `openlabdog/labdog:test`, so an in-review branch is
+      one `docker compose pull` from a live fleet-management box. The
+      immutable tag next to it is what Trivy actually scans, so the
+      floating one buys nothing. **Repoint that instance before removing
+      the tag.** Also gate the job on the PR coming from this repo: on a
+      fork `DOCKER_HUB_PAT` is empty, the login fails, and the whole job
+      plus the trivy scan that `needs:` it goes red for a contributor who
+      cannot fix it.
+
+---
+
+## Refactors the audit surfaced — deliberately deferred
+
+**Not planned — unifying the host and group run lifecycles.** This
+section once listed three things as "the same code written twice":
+claim-or-defer, load-and-mark-running, and dispatch-next. Only the third
+was, and it is now `host_lock.release_host_queue`, shared by all five
+call sites. Claim-or-defer is now a function on both paths
+(`action_host._claim_or_defer`, `action_group._claim_or_defer_group`)
+but they are *not* shared — extracting each was for testability, so the
+single-transaction invariant BUG-62 broke can be asserted, and
+`tests/test_release_host_queue.py` asserts it for both. The two
+remaining pairs share a *protocol* over different cardinality: one host
+versus every member, `check_host_busy` with an exclude versus
+`check_hosts_busy` without, flipping a child row versus flipping the
+parent run and every child. A helper covering both needs three
+callbacks, which is the "third thing, harder to read than either
+original" this list warns against.

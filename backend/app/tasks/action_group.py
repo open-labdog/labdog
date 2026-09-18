@@ -65,6 +65,7 @@ rows — so a dead member can't wedge the run.
 from __future__ import annotations
 
 import asyncio
+import glob
 import json
 import logging
 import os
@@ -126,6 +127,7 @@ class _HostCtx:
         "port",
         "ssh_user",
         "ssh_key_path",
+        "known_hosts_path",
         "hostname",
         "snapshot_name",
         "snapshot_error",
@@ -146,6 +148,7 @@ class _HostCtx:
         self.port: int = 22
         self.ssh_user: str = "root"
         self.ssh_key_path: str = ""
+        self.known_hosts_path: str | None = None
         self.hostname: str = ""
         self.snapshot_name: str | None = None
         self.snapshot_error: str | None = None
@@ -165,7 +168,117 @@ class _HostCtx:
 # ---------------------------------------------------------------------------
 
 
-async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PLR0912, PLR0915
+async def _claim_or_defer_group(action_run_id: int) -> list[int] | None:
+    """Serialize the whole group against any in-flight op on any member.
+
+    Returns the member host ids this call claimed — the list the caller's
+    ``finally`` releases — or ``None`` when the caller must stop: the run
+    row is gone, or a member was busy and the run has been parked as
+    ``pending`` for the in-flight op's dispatch hook to re-fire.
+
+    An empty list is *not* a stop. A run with no ``group_id``, or a group
+    with no members, has nothing to lock and nothing to release; the main
+    loader fails it cleanly through its existing branches.
+
+    Extracted from ``_run_action_group_async`` so the single-transaction
+    invariant below can be asserted by a test. That is the whole reason it
+    is a function: the gate and the flip must commit together, and while
+    this lived inline there was no seam to call.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.db import task_session  # noqa: PLC0415
+    from app.models.action_run import ActionHostRun, ActionRun  # noqa: PLC0415
+    from app.models.host import Host, HostGroupMembership  # noqa: PLC0415
+    from app.tasks.host_lock import (  # noqa: PLC0415
+        acquire_host_locks,
+        check_hosts_busy,
+        format_pending_reason,
+    )
+
+    # One session, one transaction, deliberately. The advisory locks taken
+    # by ``acquire_host_locks`` are transaction-scoped, so the busy check
+    # and the status flip below are only safe against a concurrent claim
+    # while they are inside *this* ``async with``. Splitting it is BUG-62.
+    async with task_session() as db:
+        run_peek = (
+            await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
+        ).scalar_one_or_none()
+        if run_peek is None:
+            logger.warning("action_group: action_run %d not found at claim", action_run_id)
+            return None
+
+        if run_peek.group_id is None:
+            # The main loader fails this run cleanly with its existing
+            # "no group_id" branch — let it run.
+            return []
+
+        hosts_peek = await db.execute(
+            select(Host.id)
+            .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
+            .where(HostGroupMembership.c.group_id == run_peek.group_id)
+            .order_by(Host.id)
+        )
+        member_ids_peek = list(hosts_peek.scalars().all())
+        if not member_ids_peek:
+            return []
+
+        await acquire_host_locks(db, member_ids_peek)
+        blocker = await check_hosts_busy(db, member_ids_peek)
+        if blocker is not None:
+            reason = await format_pending_reason(db, blocker)
+            # Defer: mark parent + any pre-created per-host rows as
+            # ``pending`` and stamp them with the blocker diagnostic. The
+            # pre-created rows only exist if an earlier dispatch flipped
+            # them; first-time runs will have none yet (the main loader
+            # creates them). Every per-host row gets the same string — the
+            # defer is run-level (one busy member blocks the whole group),
+            # not host-level.
+            run_peek.status = "pending"
+            run_peek.pending_reason = reason
+            existing_hrs = (
+                (
+                    await db.execute(
+                        select(ActionHostRun).where(ActionHostRun.action_run_id == action_run_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for hr in existing_hrs:
+                if hr.status in ("queued", "running"):
+                    hr.status = "pending"
+                    hr.pending_reason = reason
+            await db.commit()
+            logger.info(
+                "action_group: deferred action_run=%d (host %d busy: %s)",
+                action_run_id,
+                blocker.host_id,
+                reason,
+            )
+            return None
+
+        # All free → claim *here*, while this transaction still holds every
+        # member's advisory lock.
+        #
+        # BUG-62: this used to commit with the run still ``queued``, and the
+        # load phase marked it running in a later session. In between, the
+        # group held every member's lock and nothing recorded it:
+        # check_host_busy matches a group run through its ActionHostRun rows,
+        # and those are created in that later phase. A sync entering its gate
+        # in the gap saw the host free and claimed it. Flipping the run here,
+        # plus the membership case added to check_host_busy, closes it from
+        # both sides.
+        run_peek.status = "running"
+        run_peek.started_at = datetime.now(UTC)
+        await db.commit()
+
+    return list(member_ids_peek)
+
+
+async def _run_action_group_async(action_run_id: int) -> None:
     """Drive a single ansible-runner invocation across all group members,
     wrapped in a per-host snapshot/verify/rollback envelope for destructive
     actions when the host has a Proxmox VM mapping.
@@ -174,8 +287,10 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from celery.exceptions import SoftTimeLimitExceeded
     from sqlalchemy import select
 
+    from app.actions.extra_vars import sanitize_extra_vars
     from app.actions.registry import ACTION_REGISTRY
     from app.actions.validation import DRY_RUN_PARAM
+    from app.ansible_runtime.known_hosts import remove_known_hosts, write_known_hosts
     from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
     from app.config import settings
     from app.crypto import decrypt_ssh_key, get_master_key
@@ -184,12 +299,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
     from app.models.host import Host, HostGroupMembership
     from app.models.ssh_key import SSHKey
     from app.tasks.action_timeouts import effective_playbook_timeout
-    from app.tasks.host_lock import (
-        acquire_host_locks,
-        check_hosts_busy,
-        dispatch_next_pending_for_host,
-        format_pending_reason,
-    )
+    from app.tasks.host_lock import release_host_queue
 
     r = redis_lib.from_url(settings.redis.url)
     channel = f"actions.run.{action_run_id}"
@@ -211,72 +321,12 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
             return
 
         # ------------------------------------------------------------------ #
-        # Claim-or-defer all members atomically. If any member is busy with #
-        # another op (sync, host action, or another group action that      #
-        # includes it), mark the ActionRun + every pre-created             #
-        # ActionHostRun as ``pending`` and return. The in-flight op's      #
-        # finally hook will re-fire us once it frees up.                   #
+        # Claim-or-defer all members atomically.                              #
         # ------------------------------------------------------------------ #
-        async with task_session() as db:
-            run_peek = (
-                await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
-            ).scalar_one_or_none()
-            if run_peek is None:
-                logger.warning("action_group: action_run %d not found at claim", action_run_id)
-                return
-            if run_peek.group_id is None:
-                # The main loader below will fail this run cleanly with
-                # the existing "no group_id" branch — let it run.
-                pass
-            else:
-                hosts_peek = await db.execute(
-                    select(Host.id)
-                    .join(HostGroupMembership, Host.id == HostGroupMembership.c.host_id)
-                    .where(HostGroupMembership.c.group_id == run_peek.group_id)
-                    .order_by(Host.id)
-                )
-                member_ids_peek = [hid for hid in hosts_peek.scalars().all()]
-                if member_ids_peek:
-                    await acquire_host_locks(db, member_ids_peek)
-                    blocker = await check_hosts_busy(db, member_ids_peek)
-                    if blocker is not None:
-                        reason = await format_pending_reason(db, blocker)
-                        # Defer: mark parent + any pre-created per-host rows
-                        # as ``pending`` and stamp them with the blocker
-                        # diagnostic. The pre-created rows only exist if
-                        # an earlier dispatch flipped them; first-time runs
-                        # will have none yet (the main loader creates them).
-                        # Every per-host row gets the same string — the
-                        # defer is run-level (one busy member blocks the
-                        # whole group), not host-level.
-                        run_peek.status = "pending"
-                        run_peek.pending_reason = reason
-                        existing_hrs = (
-                            (
-                                await db.execute(
-                                    select(ActionHostRun).where(
-                                        ActionHostRun.action_run_id == action_run_id
-                                    )
-                                )
-                            )
-                            .scalars()
-                            .all()
-                        )
-                        for hr in existing_hrs:
-                            if hr.status in ("queued", "running"):
-                                hr.status = "pending"
-                                hr.pending_reason = reason
-                        await db.commit()
-                        logger.info(
-                            "action_group: deferred action_run=%d (host %d busy: %s)",
-                            action_run_id,
-                            blocker.host_id,
-                            reason,
-                        )
-                        return
-                    # All free → record what we claimed for the finally release.
-                    claimed_member_ids = list(member_ids_peek)
-                    await db.commit()
+        claim = await _claim_or_defer_group(action_run_id)
+        if claim is None:
+            return
+        claimed_member_ids = claim
 
         # ------------------------------------------------------------------ #
         # Phase 1: load run + action + group members + ssh keys, mark running #
@@ -332,8 +382,19 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 await db.commit()
                 return
 
+            # Already flipped under the member locks in the claim block; a
+            # cancel is the one thing that can legitimately have moved it
+            # since, and re-asserting "running" over that would run a group
+            # action the operator stopped.
+            if run.status == "cancelled":
+                logger.info(
+                    "action_group: action_run %d was cancelled after the claim — not proceeding",
+                    action_run_id,
+                )
+                return
             run.status = "running"
-            run.started_at = datetime.now(UTC)
+            if run.started_at is None:
+                run.started_at = datetime.now(UTC)
             await db.flush()
 
             # Cache action + run attributes before the session closes.
@@ -357,6 +418,7 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 hr = ActionHostRun(
                     action_run_id=action_run_id,
                     host_id=host.id,
+                    hostname=host.hostname,
                     status="queued",
                 )
                 db.add(hr)
@@ -394,6 +456,10 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                 ctx.port = host.ssh_port or 22
                 ctx.ssh_user = ssh_key.ssh_user or "root"
                 ctx.ssh_key_path = key_path
+                # SEC-26: pin this member's connections to the host key
+                # LabDog recorded over asyncssh; None until first contact,
+                # which leaves the accept-new fallback in place.
+                ctx.known_hosts_path = write_known_hosts(host.ssh_host_key_entry, key_path)
                 ctx.hostname = host.hostname
                 host_ctxs.append(ctx)
                 host_run_by_inventory_name[ctx.inv_name] = ctx
@@ -481,12 +547,19 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
                     "port": ctx.port,
                     "ssh_user": ctx.ssh_user,
                     "ssh_key_path": ctx.ssh_key_path,
+                    "known_hosts_path": ctx.known_hosts_path,
                 }
                 for ctx in host_ctxs
             ]
         )
 
         dry_run = parameters.pop(DRY_RUN_PARAM, False)
+        # Fail closed before these become extra-vars. Ansible evaluates
+        # extra-vars on the controller — the LabDog host — not on the
+        # target, so a template expression here is code execution here.
+        # The API rejects them too; this catches rows that did not come
+        # through that path. See app/actions/extra_vars.py.
+        sanitize_extra_vars(parameters)
         extra_vars: dict | None = dict(parameters) if parameters else None
         if dry_run:
             extra_vars = extra_vars or {}
@@ -698,31 +771,35 @@ async def _run_action_group_async(action_run_id: int) -> None:  # noqa: C901, PL
         # Dispatch-next-pending per claimed member. Each freed host can
         # unblock a different queued op; we honour exclude_action_run_id
         # so our own row (already finalised in a prior commit) doesn't
-        # re-pick itself. Failures here are swallowed so they never
-        # mask the real task outcome.
-        for host_id in claimed_member_ids:
-            try:
-                async with task_session() as db:
-                    await dispatch_next_pending_for_host(
-                        db, host_id, exclude_action_run_id=action_run_id
-                    )
-            except Exception:
-                logger.exception(
-                    "action_group: dispatch-next-pending failed for host_id=%s "
-                    "after action_run_id=%s; queue may be stuck until next op triggers it",
-                    host_id,
-                    action_run_id,
-                )
+        # re-pick itself. The helper swallows per-host failures so they
+        # neither mask the real task outcome nor stop the remaining
+        # members from being released.
+        await release_host_queue(
+            claimed_member_ids,
+            after=f"action_run_id={action_run_id}",
+            exclude_action_run_id=action_run_id,
+        )
 
         # CRITICAL: always remove SSH keys from tmpfs.
         for key_path in ssh_key_paths:
             try:
                 if os.path.exists(key_path):
                     os.unlink(key_path)
+                # The pinned known-hosts file sits beside the key (SEC-26).
+                remove_known_hosts(key_path)
             except Exception:
                 logger.debug("action_group: failed to remove key %s", key_path, exc_info=True)
         if os.path.exists(private_data_dir):
             shutil.rmtree(private_data_dir, ignore_errors=True)
+        # _verify_all allocates a sibling runner dir per verified host
+        # (f"{private_data_dir}-verify-{host_id}"), so removing only the base
+        # dir leaked one tree per host per run — each holding the rendered
+        # inventory and the full ansible event stream. Globbing the siblings
+        # cannot miss one and needs no bookkeeping threaded through
+        # _verify_all; private_data_dir is an mkdtemp path, so the prefix is
+        # unambiguous.
+        for verify_dir in glob.glob(f"{private_data_dir}-verify*"):
+            shutil.rmtree(verify_dir, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------
@@ -976,6 +1053,7 @@ async def _verify_all(
                     ctx.ssh_key_path,
                     ssh_user=ctx.ssh_user,
                     hostname=ctx.hostname,
+                    known_hosts_path=ctx.known_hosts_path,
                 )
                 verify_runner = run_ansible(
                     playbook_path=verify_playbook_path,
@@ -1324,6 +1402,11 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
 
                 for hr in host_runs:
                     if hr.status != "succeeded":
+                        continue
+                    if hr.host_id is None:
+                        # Host deleted while the play ran. The row keeps
+                        # its transcript (BUG-77) but there is nothing
+                        # left to sync or register against.
                         continue
                     if post_run_sync_modules:
                         try:

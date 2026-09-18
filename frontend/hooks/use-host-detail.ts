@@ -177,7 +177,15 @@ export function useHostQueries(id: number, activeTab: ActiveTab) {
     queryKey: ["host-ca-cert-runs", id],
     queryFn: () => apiFetch<CACertActionRun[]>(`/api/ca-certs/hosts/${id}/runs`),
     enabled: !!id && activeTab === "ca-certs",
-    refetchInterval: 5000,
+    // Poll only while a run is non-terminal — see the same predicate in
+    // components/actions-tab.tsx. Previously unconditional, so sitting on the
+    // CA-certs tab polled every 5s indefinitely.
+    refetchInterval: (query) => {
+      const data = query.state.data as CACertActionRun[] | undefined
+      if (!data) return false
+      const hasActive = data.some((r) => r.status === "pending" || r.status === "running")
+      return hasActive ? 5000 : false
+    },
   })
 
   const effectiveResolver = useQuery<EffectiveResolverConfig>({

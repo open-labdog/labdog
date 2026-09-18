@@ -7,7 +7,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
 from app.audit.logger import log_action
-from app.auth.ws_auth import get_ws_user
+from app.auth.ws_auth import check_ws_origin, get_ws_user
 from app.db import AsyncSessionLocal
 from app.models.host import Host
 from app.ssh_terminal.session_registry import registry
@@ -26,13 +26,23 @@ router = APIRouter(prefix="/api/ssh-terminal", tags=["ssh-terminal"])
 
 @router.websocket("/ws/{host_id}")
 async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
-    await websocket.accept()
+    # SEC-34: authenticate before completing the handshake. Accepting
+    # first meant an unauthenticated peer got an open socket, however
+    # briefly, on the endpoint that hands out a root shell. A close
+    # before accept is answered as an HTTP rejection, so the browser
+    # reports a plain connection failure rather than a coded close —
+    # that is the intended trade.
+    if not await check_ws_origin(websocket):
+        await websocket.close(code=4403, reason="Origin not allowed")
+        return
 
     async with AsyncSessionLocal() as db:
         try:
             user = await get_ws_user(websocket, db)
         except RuntimeError:
             return
+
+        await websocket.accept()
 
         session_id = registry.generate_session_id()
         can_register = await registry.register(
@@ -111,6 +121,12 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
             while not process.stdout.at_eof():
                 data = await process.stdout.read(65536)
                 if data:
+                    # SEC-22: host output is never stored. The writer reads it
+                    # only to notice a password prompt, so the keystrokes that
+                    # answer one are recorded as a placeholder rather than as
+                    # the secret. Before the user sees the data, so a slow
+                    # WebSocket cannot let the answer arrive first.
+                    transcript.observe_output(data)
                     await websocket.send_bytes(data)
         except Exception:
             logger.exception("ssh_to_ws error for session %s", session_id)
@@ -149,9 +165,9 @@ async def ssh_terminal_ws(websocket: WebSocket, host_id: int):
         nonlocal disconnect_reason
         while True:
             await asyncio.sleep(60)
-            from app.settings_service import get_setting_sync_typed
+            from app.settings_service import get_setting_cached_typed
 
-            idle_timeout = int(get_setting_sync_typed("ssh.idle_timeout_seconds"))
+            idle_timeout = int(get_setting_cached_typed("ssh.idle_timeout_seconds"))
             idle = registry.get_idle_sessions(idle_timeout)
             if session_id in idle:
                 disconnect_reason = "idle_timeout"

@@ -14,11 +14,50 @@ model surfaces those at the API boundary instead.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+import re
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, create_model
 
 from app.actions.types import ActionDefinition, ActionParameter
+
+#: Template delimiters that make a parameter value executable.
+#:
+#: Action-run parameters are handed to ansible-runner as extra-vars, and
+#: Ansible does not mark extra-vars ``!unsafe``. The moment a playbook
+#: templates one — a ``msg:``, a ``when:``, a ``template:`` src — a value
+#: like ``{{ lookup('pipe', 'curl … | sh') }}`` is evaluated **on the
+#: Ansible controller**, which is the LabDog host itself, as the labdog
+#: user. Not on the target. That is the case SECURITY.md names as serious,
+#: and it was reachable from an ordinary ``POST /api/actions/runs`` body.
+#:
+#: Rejected at the boundary rather than escaped. ``wrap_var`` /
+#: ``AnsibleUnsafeText`` is the documented way to mark a value untrusted,
+#: but it does not survive this path: ansible-runner serialises extravars
+#: to a JSON artefact on disk before ansible-core ever parses them, so the
+#: Python marker object is long gone by the time templating happens.
+#:
+#: ``{#`` is included because a comment can close and reopen around an
+#: expression, and ``}}``/``%}`` because a value spliced into the middle
+#: of an existing template expression escapes it from the other side.
+_TEMPLATE_DELIMITERS = re.compile(r"\{\{|\}\}|\{%|%\}|\{#|#\}")
+
+
+def _reject_template_syntax(value: str) -> str:
+    """Refuse a parameter value carrying Jinja delimiters."""
+    if _TEMPLATE_DELIMITERS.search(value):
+        raise ValueError(
+            "template delimiters ({{, }}, {%, %}, {#, #}) are not allowed in "
+            "action parameters — the value is evaluated on the LabDog host, "
+            "not on the target"
+        )
+    return value
+
+
+#: ``str`` that cannot carry a template expression. Used for every
+#: free-text parameter; ``int``/``bool`` cannot express one, and ``choice``
+#: is constrained to a ``Literal`` of the manifest's own values.
+SafeStr = Annotated[str, AfterValidator(_reject_template_syntax)]
 
 #: Key under which a dry run is carried inside ``ActionRun.parameters``.
 #:
@@ -33,20 +72,22 @@ from app.actions.types import ActionDefinition, ActionParameter
 #: the boundary necessary rather than optional.
 DRY_RUN_PARAM = "__dry_run"
 
-_PYDANTIC_TYPE: dict[str, type] = {
-    "string": str,
+_PYDANTIC_TYPE: dict[str, Any] = {
+    "string": SafeStr,
     "int": int,
     "bool": bool,
 }
 
 
-def _annotation_for(p: ActionParameter) -> tuple[type, Any]:
+def _annotation_for(p: ActionParameter) -> tuple[Any, Any]:
     """Pydantic ``(annotation, default)`` tuple for one parameter."""
     if p.type == "choice":
         if p.choices is None or len(p.choices) == 0:
             # Manifest validation should keep this from happening, but
-            # a bad row could theoretically arrive — fall back to str.
-            ann: type = str
+            # a bad row could theoretically arrive — fall back to a
+            # template-checked string rather than a bare one, so the
+            # degraded path is not the permissive one.
+            ann: Any = SafeStr
         else:
             ann = Literal[tuple(p.choices)]  # type: ignore[valid-type]
     else:

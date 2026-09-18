@@ -75,6 +75,13 @@ if [ -f /etc/labdog/labdog.toml ]; then
 else
     log "Installing default configuration to /etc/labdog..."
     mkdir -p /etc/labdog
+    # The directory mode matters as much as the file's: labdog.toml holds
+    # security.secret_key and security.encryption_key. mkdir uses the invoking
+    # root's umask (usually 0755), so without this the tarball install ended up
+    # more permissive than the .deb/.rpm, which declare 0750 root:labdog for
+    # this path in packaging/nfpm.yaml.
+    chmod 750 /etc/labdog
+    chown root:labdog /etc/labdog
     cp "$SCRIPT_DIR/etc/labdog.toml" /etc/labdog/
     chmod 640 /etc/labdog/labdog.toml
     chown root:labdog /etc/labdog/labdog.toml

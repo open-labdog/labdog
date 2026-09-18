@@ -15,6 +15,7 @@ from app.auth.users import current_active_user
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.db import get_db
+from app.enum_utils import enum_str
 from app.models.host import Host, SyncStatus
 from app.models.host_module_status import HostModuleStatus
 from app.models.ssh_key import SSHKey
@@ -25,6 +26,14 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/hosts", tags=["host-state"])
 
+#: Modules ``collect_module_state`` knows how to collect. Kept beside the
+#: router rather than derived from ``_build_collectors``, which needs a
+#: host and a decrypted key to call; ``test_host_state`` asserts the two
+#: stay in step.
+COLLECTABLE_MODULES = frozenset(
+    {"firewall", "service", "hosts_file", "linux_user", "cron", "package", "resolver"}
+)
+
 
 async def refresh_host_sync_status(host: Host, db: AsyncSession) -> None:
     """Recalculate host.sync_status from its module statuses."""
@@ -34,10 +43,18 @@ async def refresh_host_sync_status(host: Host, db: AsyncSession) -> None:
     statuses = {row[0] for row in result.all()}
     if "error" in statuses:
         host.sync_status = SyncStatus.error
-    elif "out_of_sync" in statuses or "drifted" in statuses:
+    elif "out_of_sync" in statuses:
         host.sync_status = SyncStatus.out_of_sync
-    elif statuses:
+    elif statuses - {"unknown"}:
         host.sync_status = SyncStatus.in_sync
+    elif statuses:
+        # Every module reports `unknown`, which is not the same as clean.
+        # This used to fall through to `in_sync`, which was unreachable
+        # while a fresh host had no module rows at all — opting a host into
+        # drift checking at creation writes six of them, all `unknown`, and
+        # made it reachable. A host that has never been synced must not
+        # show a green badge for having rows.
+        host.sync_status = SyncStatus.unknown
 
 
 class ModuleState(BaseModel):
@@ -48,8 +65,35 @@ class ModuleState(BaseModel):
     drift_check_enabled: bool = False
     error_message: str | None = None
     # Non-fatal notices computed at collect time (not persisted): e.g. the
-    # firewall competing-store warning. Empty on the cached GET /current-state.
+    # firewall competing-store warning. Always empty on the cached
+    # GET /current-state; the collection itself now runs on the queue, so
+    # its notices reach the caller on the run's output (BUG-74).
     warnings: list[str] = []
+
+
+def _module_drift_enabled(hms: HostModuleStatus, host_drift_enabled: bool) -> bool:
+    """Which flag actually governs drift checking for *hms*'s module.
+
+    Firewall drift is gated by the *host* flag, not by a per-module one:
+    ``drift_sweep.sweep_module(..., host_gated=True)`` in
+    ``tasks/drift.py`` is the only sweep that works this way — it predates
+    the per-module toggles. So ``HostModuleStatus.drift_check_enabled``
+    for ``module_type="firewall"`` has no writer anywhere in the codebase
+    and sits at its ``false`` server default forever.
+
+    Reporting that column told the UI the opposite of the truth. The
+    firewall row's "Enable Drift Check" action PUTs
+    ``/api/drift/hosts/{id}/settings``, which sets ``Host.drift_check_enabled``,
+    and then read back a False that never moved: a switch whose label
+    never changed while its real state alternated invisibly on each click.
+
+    The host flag stays the single source of truth — this reports it
+    rather than mirroring it into a second column that would then need
+    keeping in sync.
+    """
+    if hms.module_type == "firewall":
+        return bool(host_drift_enabled)
+    return hms.drift_check_enabled
 
 
 @router.get("/{host_id}/current-state", response_model=list[ModuleState])
@@ -61,41 +105,122 @@ async def get_current_state(
     """Return all cached collected states for a host."""
     result = await db.execute(select(HostModuleStatus).where(HostModuleStatus.host_id == host_id))
     statuses = result.scalars().all()
+    host_drift_enabled = await db.scalar(select(Host.drift_check_enabled).where(Host.id == host_id))
     return [
         ModuleState(
             module_type=hms.module_type,
             sync_status=hms.sync_status,
             collected_state=hms.collected_state,
             collected_at=hms.collected_at,
-            drift_check_enabled=hms.drift_check_enabled,
+            drift_check_enabled=_module_drift_enabled(hms, host_drift_enabled),
             error_message=hms.error_message,
         )
         for hms in statuses
     ]
 
 
-@router.post("/{host_id}/collect-state", response_model=list[ModuleState])
+class CollectStateAccepted(BaseModel):
+    """Receipt for a queued collection (BUG-74).
+
+    ``run_id`` is an ``ActionRun``; poll ``GET /api/actions/runs/{id}``
+    for the outcome and re-read ``GET /hosts/{id}/current-state`` when it
+    reaches a terminal status.
+    """
+
+    run_id: int
+    status: str
+    #: Set when an identical collection was already in flight and this
+    #: request joined it rather than starting a second one.
+    already_running: bool = False
+
+
+@router.post("/{host_id}/collect-state", status_code=202, response_model=CollectStateAccepted)
 async def collect_state(
     host_id: int,
     module: str | None = None,
-    _: User = Depends(current_active_user),
+    user: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """SSH into host and collect current state.
+    """Queue a state collection for this host and return immediately.
 
-    Pass ?module=service to collect a single module, or omit for all.
+    Pass ``?module=service`` to collect a single module, or omit for all.
+
+    BUG-74: this used to run all seven SSH collectors serially inside the
+    request, holding a pooled database connection for the duration and
+    taking no host lock. Fifteen clicks against unresponsive hosts — the
+    dashboard's "Check all" fans out over every host at once — exhausted
+    the 5+10 pool and every unrelated request began failing on
+    ``pool_timeout``; run it during a sync and it overwrote the module
+    status the sync was writing.
+
+    It now goes through the action queue as ``_builtin.collect_state``,
+    which claims the host lock like any other per-host operation, so a
+    collection waits for a sync instead of racing it. ``create_run``'s
+    advisory lock also means a second request for the same host joins the
+    run already in flight rather than starting another.
     """
-    host_result = await db.execute(select(Host).where(Host.id == host_id))
-    host = host_result.scalar_one_or_none()
+    if module is not None and module not in COLLECTABLE_MODULES:
+        raise HTTPException(status_code=400, detail=f"Unknown module: {module}")
+
+    host = await db.scalar(select(Host).where(Host.id == host_id))
     if not host:
         raise HTTPException(status_code=404, detail="Host not found")
     if not host.ssh_key_id:
         raise HTTPException(status_code=400, detail="Host has no SSH key assigned")
 
-    key_result = await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
-    ssh_key = key_result.scalar_one_or_none()
+    from app.api.actions import create_run  # noqa: PLC0415
+    from app.schemas.actions import RunCreateBody  # noqa: PLC0415
+
+    try:
+        run = await create_run(
+            RunCreateBody(
+                action_key="_builtin.collect_state",
+                host_id=host_id,
+                parameters={"module": module},
+            ),
+            user,
+            db,
+        )
+    except HTTPException as exc:
+        # An identical collection is already queued or running. That is
+        # the answer the caller wanted — join it rather than making the
+        # UI show an error for pressing a button twice.
+        running_id = exc.detail.get("running_run_id") if isinstance(exc.detail, dict) else None
+        if exc.status_code == 409 and running_id is not None:
+            return CollectStateAccepted(run_id=running_id, status="running", already_running=True)
+        raise
+
+    return CollectStateAccepted(run_id=run.id, status=run.status)
+
+
+async def collect_module_state(
+    host_id: int,
+    module: str | None,
+    db: AsyncSession,
+) -> tuple[list[ModuleState], list[str]]:
+    """SSH into a host and refresh its cached module state.
+
+    The body of what ``POST /hosts/{id}/collect-state`` used to do
+    inline. Returns the per-module states and any non-fatal collect-time
+    notices, and commits. Does **not** take the host lock or dispatch
+    fact collection — the caller owns both; see
+    ``app.tasks.builtin_dispatchers._collect_state_async``, which is the
+    only caller and holds the lock for the whole of it.
+
+    Raises:
+        LookupError: host missing, or it has no usable SSH key.
+        ValueError: *module* is not a collectable module.
+        HostKeyMismatchError: the host's key changed since it was pinned.
+    """
+    host = await db.scalar(select(Host).where(Host.id == host_id))
+    if not host:
+        raise LookupError(f"Host {host_id} not found")
+    if not host.ssh_key_id:
+        raise LookupError(f"Host {host_id} has no SSH key assigned")
+
+    ssh_key = await db.scalar(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
     if not ssh_key:
-        raise HTTPException(status_code=400, detail="SSH key not found")
+        raise LookupError(f"SSH key {host.ssh_key_id} for host {host_id} not found")
 
     private_pem = decrypt_ssh_key(ssh_key.encrypted_private_key, get_master_key())
 
@@ -103,7 +228,7 @@ async def collect_state(
 
     if module:
         if module not in all_collectors:
-            raise HTTPException(status_code=400, detail=f"Unknown module: {module}")
+            raise ValueError(f"Unknown module: {module}")
         collectors = {module: all_collectors[module]}
     else:
         collectors = all_collectors
@@ -153,12 +278,12 @@ async def collect_state(
                     sync_status=hms.sync_status,
                     collected_state=hms.collected_state,
                     collected_at=hms.collected_at,
-                    drift_check_enabled=hms.drift_check_enabled,
+                    drift_check_enabled=_module_drift_enabled(hms, host.drift_check_enabled),
                     error_message=hms.error_message,
                 )
             )
         await db.commit()
-        return results
+        return results, []
 
     for module_type, collect_fn in collectors.items():
         hms = await _get_or_create_hms(db, host_id, module_type)
@@ -175,17 +300,6 @@ async def collect_state(
             hms.sync_status = "error"
             hms.error_message = str(e)
 
-        results.append(
-            ModuleState(
-                module_type=hms.module_type,
-                sync_status=hms.sync_status,
-                collected_state=hms.collected_state,
-                collected_at=hms.collected_at,
-                drift_check_enabled=hms.drift_check_enabled,
-                error_message=hms.error_message,
-            )
-        )
-
     # Run inline drift checks on successfully collected modules
     await _run_inline_drift(host, db, collectors.keys())
 
@@ -199,7 +313,7 @@ async def collect_state(
                 sync_status=hms.sync_status,
                 collected_state=hms.collected_state,
                 collected_at=hms.collected_at,
-                drift_check_enabled=hms.drift_check_enabled,
+                drift_check_enabled=_module_drift_enabled(hms, host.drift_check_enabled),
                 error_message=hms.error_message,
                 warnings=warnings_by_module.get(module_type, []),
             )
@@ -210,25 +324,8 @@ async def collect_state(
 
     await db.commit()
 
-    # Kick off host-level fact collection (OS info, kernel, firewall
-    # backend, NIC, and the placeholder-hostname auto-heal). Fire-and-
-    # forget on the long_running queue -- the UI re-fetches the host
-    # row via React Query so the new fields surface on next refresh.
-    # Normally skipped on collect-one-module calls (the operator is focused
-    # on a single module surface, not the Overview tab) -- but also run it
-    # when a firewall collect ran against a host whose backend is still
-    # unknown, so "Collect" on the Rules tab detects the firewall the same
-    # way the Overview "collect all" does (its robust probe is what sets
-    # host.firewall_backend). Gated on still-unknown so a detected host
-    # doesn't re-probe on every collect.
-    backend_value = getattr(host.firewall_backend, "value", host.firewall_backend)
-    firewall_unknown = str(backend_value) == "unknown"
-    if module is None or (module == "firewall" and firewall_unknown):
-        from app.tasks.facts import collect_host_facts
-
-        collect_host_facts.delay(host_id)
-
-    return results
+    warnings = [w for module_warnings in warnings_by_module.values() for w in module_warnings]
+    return results, warnings
 
 
 async def _run_inline_drift(
@@ -585,11 +682,7 @@ def _build_collectors(host: Host, private_pem: str, ssh_user: str, db: AsyncSess
 
         from app.sync.collector import collect_current_rules
 
-        backend = (
-            host.firewall_backend.value
-            if hasattr(host.firewall_backend, "value")
-            else str(host.firewall_backend)
-        )
+        backend = enum_str(host.firewall_backend)
         info_messages: list[str] = []
         if backend == "unknown":
             # Auto-detect firewall backend

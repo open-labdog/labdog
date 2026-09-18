@@ -82,11 +82,11 @@ async def import_hosts_entries(
     there are changes, and emits a ``gitops.import.hosts_entries`` audit event.
 
     Missing or ``None`` ``hosts_entries`` section and an empty list both
-    trigger wipe semantics — all existing non-system group-scoped rows are
-    deleted.
+    trigger wipe semantics — all existing group-scoped rows are deleted.
 
-    System entries (``is_system=True``) are never touched by GitOps import,
-    mirroring the same filter applied in the firewall handler.
+    The loopback entries LabDog injects are not rows and are therefore not
+    at risk here: they are synthesised at merge time from
+    ``app.hosts_mgmt.merge.SYSTEM_ENTRIES``.
 
     Does **not** touch ``group.gitops_status`` — that is the dispatcher's
     responsibility.
@@ -128,14 +128,7 @@ async def import_hosts_entries(
                 )
         desired_entries.append(entry)
 
-    # Fetch current non-system group-scoped rows.
-    # System entries are never GitOps-managed (same pattern as firewall's is_system filter).
-    current_result = await db.execute(
-        select(HostsEntry).where(
-            HostsEntry.group_id == group_id,
-            HostsEntry.is_system == False,  # noqa: E712
-        )
-    )
+    current_result = await db.execute(select(HostsEntry).where(HostsEntry.group_id == group_id))
     current_entries: list[HostsEntry] = list(current_result.scalars().all())
 
     # Diff by comparing sets of field tuples.
@@ -178,12 +171,7 @@ async def import_hosts_entries(
         # deletion of a referenced *host* while entries referencing it exist —
         # it does not prevent deletion of the entries themselves.  Safe to
         # delete-and-replace here.
-        await db.execute(
-            delete(HostsEntry).where(
-                HostsEntry.group_id == group_id,
-                HostsEntry.is_system == False,  # noqa: E712
-            )
-        )
+        await db.execute(delete(HostsEntry).where(HostsEntry.group_id == group_id))
 
         # Insert desired entries in YAML list order (display order).
         # Emission order in /etc/hosts is priority-driven, not insertion order.

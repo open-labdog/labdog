@@ -1,9 +1,16 @@
 # LabDog — single-image build
-# Produces a container that runs the API, Celery worker+beat, and serves
+# Produces a container that runs the API, the Celery workers and beat, and serves
 # the static frontend — all from `python -m app`.
+#
+# Every FROM is pinned by digest with the tag kept alongside it for
+# readability. `python:3.12-slim` in particular is rebuilt continuously,
+# so a tag-only pin meant two builds of one commit produced different
+# images. The cost is that a pinned base goes stale: dependabot's `docker`
+# ecosystem (.github/dependabot.yml) opens the bump PRs, and the trivy
+# scan is the backstop that makes ignoring one loud.
 
 # ── Stage 1: Build frontend static export ─────────────────────────────
-FROM node:20-alpine AS frontend-builder
+FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend-builder
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci --silent
@@ -13,7 +20,7 @@ RUN npm run build
 # Output: /app/out/
 
 # ── Stage 2: Build Python backend + install deps ──────────────────────
-FROM python:3.12-slim AS backend-builder
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea AS backend-builder
 WORKDIR /app
 RUN pip install --no-cache-dir uv
 COPY backend/pyproject.toml backend/uv.lock ./
@@ -45,7 +52,7 @@ RUN uv export --frozen --no-emit-project --extra agent --format requirements-txt
 # (sourced from the repo-root LABDOG_PLAYBOOKS_REF file + the workflow's
 # own configuration). A local ``docker build`` without overrides uses
 # whatever defaults are pinned below.
-FROM alpine/git:v2.45.2 AS bundled-pack-fetcher
+FROM alpine/git:v2.45.2@sha256:16ad8e788e1d3b0c30f18da8dde5c0ace3b187445a62d8af893b003ca1e70592 AS bundled-pack-fetcher
 ARG LABDOG_PLAYBOOKS_REPO=https://github.com/open-labdog/labdog-playbooks.git
 ARG LABDOG_PLAYBOOKS_REF=main
 ENV LABDOG_PLAYBOOKS_REPO=${LABDOG_PLAYBOOKS_REPO}
@@ -55,7 +62,7 @@ RUN chmod +x /usr/local/bin/fetch-bundled-pack \
     && /usr/local/bin/fetch-bundled-pack /bundle
 
 # ── Stage 3: Runtime ──────────────────────────────────────────────────
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
 WORKDIR /app
 
 # Install the runtime tools we need, then fully upgrade every base
@@ -71,10 +78,17 @@ WORKDIR /app
 # and Trivy gates the stale image. Referencing the per-build BUILD_DATE
 # forces apt to refresh on every CI build. Local builds (no BUILD_DATE)
 # keep the cached layer, which is fine — they aren't security-gated.
+#
+# Pinning the base image by digest (above) does NOT replace this, despite
+# what it looks like. The digest freezes the base, so the layer cache
+# above never invalidates on its own and `apt-get upgrade` here is the
+# *only* route by which a patched libssl or libssh2 reaches the image.
+# Removing BUILD_DATE alongside the digest pin would leave the image
+# frozen at whatever apt served the day the cache was filled.
 ARG BUILD_DATE=""
 RUN echo "apt security refresh @ ${BUILD_DATE}" \
     && apt-get update \
-    && apt-get install -y --no-install-recommends openssh-client git \
+    && apt-get install -y --no-install-recommends openssh-client git tini \
     && apt-get upgrade -y \
     && rm -rf /var/lib/apt/lists/*
 
@@ -154,7 +168,28 @@ EXPOSE 8000
 # process. /api/version is a no-auth endpoint that exercises the
 # FastAPI app at a minimum. Python is used instead of curl to avoid
 # adding an extra runtime dep -- python is already in the image.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/api/version', timeout=3); sys.exit(0 if r.status == 200 else 1)" || exit 1
+# /health/ready, not /api/version: the old probe only proved that uvicorn
+# was answering. It never touched the database, Redis or the Celery
+# children, so a container whose worker had died stayed "healthy" forever
+# while nothing executed a single task (BUG-72). start-period covers
+# startup migrations and the worker boot; a 503 names the failing
+# component in its body.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD python -c "import urllib.request, sys; r = urllib.request.urlopen('http://localhost:8000/health/ready', timeout=4); sys.exit(0 if r.status == 200 else 1)" || exit 1
 
+# BUG-55: an init as PID 1, so orphaned grandchildren get reaped.
+#
+# The app shells out to git; git spawns ssh for SSH remotes and exits
+# first; the orphaned ssh re-parents to PID 1. When PID 1 was `python -m
+# app` — which never wait()s on children it did not spawn — each one
+# stayed a zombie holding a task slot for the life of the container. One
+# instance reached 115 of them (114 ssh, 1 git) at roughly 26 a day, and
+# the count only ever grows: the end state is a host that cannot fork(),
+# which takes a reboot to clear.
+#
+# Deployments could set `init: true` themselves, and the one that found
+# this did. That is the wrong place for it — the published image is run
+# by people who will not know to. tini forwards signals to the app, so
+# SIGTERM shutdown is unchanged.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["python", "-m", "app"]

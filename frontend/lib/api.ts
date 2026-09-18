@@ -1,4 +1,34 @@
+import { queryClient } from "@/lib/query-client"
+
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""
+
+/** Paths whose own 401 is the answer, not an expired session. */
+const _AUTH_PATH_PREFIX = "/api/auth/"
+
+/** Pages that are already the place an expired session sends you. */
+const _PUBLIC_PATHS = ["/login", "/register"]
+
+/** One redirect per page load, however many requests fail at once. */
+let _redirecting = false
+
+/**
+ * Handle a 401 on a request that expected to be authenticated.
+ *
+ * The session cookie lasts 24 hours. When it expired mid-session nothing
+ * noticed: every query and mutation just kept failing, and the UI showed
+ * an error toast for each one, indefinitely (BUG-75). Now the cache is
+ * dropped — so the next user cannot momentarily see the last one's data —
+ * and the browser goes to the login page, once.
+ *
+ * Exported for tests; `apiFetch` calls it for you.
+ */
+export function handleUnauthorized(): void {
+  if (_redirecting || typeof window === "undefined") return
+  if (_PUBLIC_PATHS.some((p) => window.location.pathname.startsWith(p))) return
+  _redirecting = true
+  queryClient.clear()
+  window.location.replace("/login")
+}
 
 export class ApiError extends Error {
   status: number
@@ -40,17 +70,27 @@ export async function apiFetch<T>(
     }
   }
 
+  // Only declare a content type when something is actually being sent.
+  // Setting it unconditionally made every GET a non-simple CORS request,
+  // so the documented cross-origin dev setup (NEXT_PUBLIC_API_URL pointing
+  // at :8000) paid a preflight on every read. Callers that hand-roll
+  // `body: JSON.stringify(...)` instead of passing `json` still get it.
+  const hasBody = json !== undefined || fetchOptions.body !== undefined
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     credentials: "include",
     headers: {
-      "Content-Type": "application/json",
+      ...(hasBody ? { "Content-Type": "application/json" } : {}),
       ...csrfHeaders,
       ...fetchOptions?.headers,
     },
     ...(json !== undefined ? { body: JSON.stringify(json) } : {}),
   })
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith(_AUTH_PATH_PREFIX)) {
+      handleUnauthorized()
+    }
     let detail = `API error ${res.status}`
     try {
       const body = await res.json()

@@ -42,6 +42,7 @@ async def _check_due_async() -> dict:
     from sqlalchemy import select
 
     from app.actions.registry import ACTION_REGISTRY
+    from app.actions.run_target import describe_target
     from app.audit.logger import log_action
     from app.db import task_session
     from app.models.action_run import ActionRun
@@ -127,11 +128,18 @@ async def _check_due_async() -> dict:
                     skipped_orphan += 1
                     continue
 
+                run_host_id = sa.target_id if sa.target_kind == "host" else None
+                run_group_id = sa.target_id if sa.target_kind == "group" else None
+                target_kind, target_label = await describe_target(
+                    db, host_id=run_host_id, group_id=run_group_id
+                )
                 run = ActionRun(
                     action_key=sa.action_key,
                     action_version=action.version,
-                    host_id=sa.target_id if sa.target_kind == "host" else None,
-                    group_id=sa.target_id if sa.target_kind == "group" else None,
+                    host_id=run_host_id,
+                    group_id=run_group_id,
+                    target_kind=target_kind,
+                    target_label=target_label,
                     scheduled_action_id=sa.id,
                     parameters=sa.parameters,
                     parallelism=sa.batch_size,
@@ -165,6 +173,16 @@ async def _check_due_async() -> dict:
 
             except Exception:
                 # Don't let one bad schedule abort the rest of the walk.
+                #
+                # The rollback is load-bearing, not tidiness: a failure part-way
+                # through (e.g. the FK violation you get when a schedule's
+                # target host has been deleted — ``scheduled_actions.target_id``
+                # is an index, not a constraint) leaves the session needing
+                # rollback. Without this, the *next* iteration's first query
+                # raises PendingRollbackError, is caught here too, and so on —
+                # so one broken row silently skipped every schedule ordered
+                # after it, on every tick, indefinitely.
+                await db.rollback()
                 logger.exception("scheduler: failed to evaluate scheduled_action %d", sa.id)
 
     return {
@@ -180,8 +198,9 @@ async def _check_due_async() -> dict:
 
 
 def _register_beat_schedule() -> None:
-    from celery.schedules import schedule
     from redbeat import RedBeatSchedulerEntry
+
+    from app.tasks.beat_registry import ensure_entry
 
     # Best-effort: drop the old workflow scheduler entry. Otherwise the
     # legacy task name keeps firing across an upgrade and produces
@@ -193,17 +212,15 @@ def _register_beat_schedule() -> None:
         # Already gone, or Redis is unreachable — fall through.
         pass
 
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="check-due-scheduled-actions",
         task="app.tasks.scheduled_action_schedule.check_due",
-        schedule=schedule(run_every=60),
+        run_every_seconds=60,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_beat_schedule()
-except Exception:
-    # Redis may not be available at import time (e.g. during tests).
-    pass
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

@@ -44,6 +44,25 @@ grep -q 'ExecStart=/usr/lib/labdog/venv/bin/python -m app' "$UNIT" \
 [ -f /etc/labdog/labdog.toml ]         || fail "config file missing: /etc/labdog/labdog.toml"
 ok "systemd unit + tmpfiles.d + config present"
 
+# 3b. Config permissions ----------------------------------------------------
+#     labdog.toml holds security.secret_key and security.encryption_key, so
+#     both the file and the directory above it matter. nfpm declares 0750 for
+#     the directory and 0640 for the file; install.sh has to match, and did
+#     not — it created /etc/labdog with the invoking root's umask, typically
+#     0755, so the tarball install was more permissive than the .deb/.rpm of
+#     the same version. Asserted here for every target so the three installs
+#     cannot drift apart again.
+CONF_DIR_MODE=$(stat -c '%a' /etc/labdog)
+[ "$CONF_DIR_MODE" = "750" ] \
+    || fail "/etc/labdog is mode $CONF_DIR_MODE, expected 750 (holds secret_key)"
+CONF_MODE=$(stat -c '%a' /etc/labdog/labdog.toml)
+[ "$CONF_MODE" = "640" ] \
+    || fail "/etc/labdog/labdog.toml is mode $CONF_MODE, expected 640"
+CONF_OWNER=$(stat -c '%U:%G' /etc/labdog/labdog.toml)
+[ "$CONF_OWNER" = "root:labdog" ] \
+    || fail "/etc/labdog/labdog.toml is owned by $CONF_OWNER, expected root:labdog"
+ok "config dir 0750 + file 0640 root:labdog"
+
 # 4. Owned directories + service account -----------------------------------
 [ -d /var/lib/labdog ] || fail "/var/lib/labdog missing"
 [ -d /var/log/labdog ] || fail "/var/log/labdog missing"

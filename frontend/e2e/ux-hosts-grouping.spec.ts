@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 test.describe("Hosts page group features", () => {
   test("groups column header exists in hosts table", async ({ page }) => {
@@ -18,24 +18,8 @@ test.describe("Hosts page group features", () => {
     await expect(filterButton).toBeVisible()
   })
 
-  // TODO: "Group View" toggle feature was removed — the hosts page now uses a
-  // button-based group filter dropdown instead of a flat/group view toggle.
-  test.skip("view toggle button exists with 'Group View' text", async ({ page }) => {
-    await page.goto("/hosts")
-    await expect(page.getByRole("heading", { name: "Hosts" })).toBeVisible()
-    await expect(page.getByText("Group View")).toBeVisible()
-  })
-
-  // TODO: Dependent on the removed Group View toggle feature
-  test.skip("clicking toggle switches to grouped view with sections", async ({ page }) => {
-    await page.goto("/hosts")
-    await expect(page.getByRole("heading", { name: "Hosts" })).toBeVisible()
-    await page.getByText("Group View").click()
-    await expect(page.getByText("Flat View")).toBeVisible()
-    const details = page.locator("details")
-    const hasHosts = (await page.locator("table").count()) > 0
-    if (hasHosts) {
-      await expect(details.first()).toBeVisible()
-    }
-  })
+  // Two tests for a "Group View" / "Flat View" toggle were removed here.
+  // The toggle no longer exists — the hosts page filters by group through a
+  // dropdown instead — so they had been `test.skip`ped indefinitely, which
+  // reads as coverage without being any.
 })

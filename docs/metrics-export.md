@@ -8,7 +8,7 @@ directly — no extra agent, no extra database.
 > This page is about LabDog **exposing** metrics *outward* (Prometheus scrapes
 > LabDog).
 > For LabDog **reading** per-host CPU / memory / disk *inward* from a Grafana
-> Mimir backend, see [Live host metrics](ui/metrics.md).
+> Mimir backend, see [Live host metrics](ui/host-metrics.md).
 > They are independent — you can use either, both, or neither.
 
 Ready-made scrape config, alert rules and a Grafana dashboard live in
@@ -199,6 +199,43 @@ worth alerting on, and it is a signal the in-app drift trend does not surface.
 orphaned schedule fires on time and silently does nothing, because its
 `action_key` has no winner in the registry.
 
+### Broker
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `labdog_broker_reachable` | gauge | — | `1` if the Celery broker answered within its timeout, `0` otherwise |
+| `labdog_broker_queue_depth` | gauge | `queue` | Tasks **waiting** in each Celery queue. Absent when the broker is unreachable |
+
+These are the only families not derived from PostgreSQL, which has two
+consequences worth knowing before you alert on them.
+
+**`labdog_broker_queue_depth` is absent, not zero, when the broker is
+down.** A zero would read as "the queues are empty" — the opposite of what
+is known — and would silence a backlog alert at exactly the moment it
+should fire. Join on `labdog_broker_reachable`, or use `absent()`:
+
+```promql
+# Work piling up — only meaningful when we could actually read the queue.
+labdog_broker_queue_depth > 100
+
+# The broker itself is the problem.
+labdog_broker_reachable == 0
+```
+
+**The probe has a hard timeout** (`metrics.broker_timeout_seconds`,
+default `0.2`). The `/metrics` endpoint is unauthenticated, so a hanging
+Redis must not become a hanging request; a broker that does not answer
+inside the budget is reported unreachable rather than waited for. Raise it
+only if a healthy broker is genuinely slower than that.
+
+Depth counts *waiting* tasks. A task a worker has already picked up has
+left the queue, so a queue at zero with everything running looks identical
+to a queue at zero with nothing to do. Worker-level detail is deliberately
+out of scope — `inspect().active()` is a multi-second broadcast RPC and has
+no place in a scrape path. Run [celery-exporter] alongside if you need it.
+
+[celery-exporter]: https://github.com/danihodovic/celery-exporter
+
 ### Exporter self-health
 
 | Metric | Type | Description |
@@ -206,6 +243,40 @@ orphaned schedule fires on time and silently does nothing, because its
 | `labdog_metrics_scrape_duration_seconds` | gauge | Wall time of the last full collection |
 | `labdog_metrics_cache_age_seconds` | gauge | Age of the snapshot served (0 on a fresh collection) |
 | `labdog_metrics_scrape_errors_total` | counter | Collections that raised — **process-local**, resets on restart |
+
+---
+
+## Drift sample retention
+
+`drift_samples` is written once per drift check per module. It is pruned
+daily by `logging.drift_retention_days` (default 90, `0` = keep forever).
+
+Deleting rows from it is not as simple as it looks, and the mechanism is
+worth knowing before you read the drift counters:
+
+`labdog_drift_checks_total`, `labdog_drift_changes_total` and
+`labdog_drift_check_duration_seconds` are all derived from the whole table
+with no time window, and all three are **counters**. A plain delete would
+make them decrease, which Prometheus reads as a process restart — `rate()`
+copes, `increase()` across the deletion silently under-reports, and nothing
+warns you.
+
+So retention folds every row it deletes into a `drift_sample_rollup` table
+**in the same transaction as the delete**, and the exporter reports live
+rows plus rollup. The totals therefore only ever move forward. Two
+consequences:
+
+- **The drift counters are all-time, not "last 90 days".** Retention shrinks
+  the table, not the numbers.
+- **The dashboard's drift-trend chart *is* windowed**, and reads
+  `drift_samples` directly. Set the retention window at or above the longest
+  range the chart offers (90 days) or the older buckets go empty.
+
+`drift_sample_rollup` stores the bucket boundaries its histogram counts were
+computed against. If `_BUCKETS_DRIFT` is ever changed, rolled-up counts from
+before the change stop contributing their buckets — `_count` and `_sum` are
+bucket-independent and keep accumulating — rather than being added to arrays
+whose positions now mean different durations.
 
 ---
 
@@ -270,7 +341,7 @@ The default export is roughly **250 series**, and there is deliberately **no
 per-host label anywhere**. Adding one would multiply out badly: a 10,000-host
 fleet with 7 modules and 5 states would produce 350,000 series from a single
 metric family. Per-host telemetry has its own home — the Grafana Alloy → Mimir
-path documented in [Live host metrics](ui/metrics.md), where each series is
+path documented in [Live host metrics](ui/host-metrics.md), where each series is
 already tagged with `labdog_host_id`.
 
 Free-text values are never used as labels either: error messages, pending
@@ -366,12 +437,22 @@ means a large history table would benefit from pruning or an index; raising
 
 ## Design notes
 
-- **Format is Prometheus text exposition `0.0.4`**, not strict OpenMetrics 1.0.
-  0.0.4 is parsed by everything (Prometheus, VictoriaMetrics, Grafana Alloy, the
-  OpenTelemetry receiver, Telegraf), while OpenMetrics 1.0 changes counter
-  naming rules and requires an `# EOF` terminator — a well-known source of
-  "half my metrics disappeared". OpenMetrics can be added later as an additive
-  content-negotiated branch.
+- **Format is Prometheus text exposition `0.0.4`**, not strict OpenMetrics 1.0,
+  and that is a settled decision rather than a gap. 0.0.4 is parsed by
+  everything (Prometheus, VictoriaMetrics, Grafana Alloy, the OpenTelemetry
+  receiver, Telegraf), while OpenMetrics 1.0 changes counter naming rules and
+  requires an `# EOF` terminator — a well-known source of "half my metrics
+  disappeared".
+
+  Supporting a second exposition format means keeping it correct forever. That
+  is worth doing for a scraper that needs it and worth nothing for one that
+  does not, and no known consumer requires 1.0. If one appears, add it as an
+  additive `Accept`-negotiated branch: `0.0.4` stays the default and clients
+  asking for `application/openmetrics-text` get the newer envelope. The
+  renderer in `app/metrics/exposition.py` is where that would go, and the
+  counter-naming rules are the part to get right — a metric not ending
+  `_total` is invalid as an OpenMetrics counter, so the mapping has to be
+  deliberate rather than a suffix swap.
 - **No `prometheus_client` dependency.** That library's value is its in-process
   registry, which doesn't fit here: LabDog derives every value from SQL at
   scrape time, and in-process counters would be *wrong* under multiple uvicorn

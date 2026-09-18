@@ -98,7 +98,7 @@ async def check_user_drift(
             group_diff.groups_to_add or group_diff.groups_to_remove or group_diff.groups_to_update
         )
 
-        hms.sync_status = "drifted" if users_drifted or groups_drifted else "in_sync"
+        hms.sync_status = "out_of_sync" if users_drifted or groups_drifted else "in_sync"
         hms.last_drift_check_at = checked_at
 
         from app.api.host_state import refresh_host_sync_status

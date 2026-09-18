@@ -279,7 +279,12 @@ class TestValuesMatchSeededRows:
     async def test_host_module_status_observed_value_not_in_enum(self, metrics_enabled, client, db):
         """HostModuleStatus.sync_status is free text, not the Host SyncStatus
         enum — 'drifted' isn't one of SyncStatus's 5 canonical values, which
-        proves this dimension is observed-values-only, not validated/enum."""
+        proves this dimension is observed-values-only, not validated/enum.
+
+        Since 0037_unify_module_sync_status nothing in the application writes
+        'drifted' either, which makes it a better example rather than a worse
+        one: this row can only exist because the test put it there, and the
+        exporter emits it regardless."""
         from app.models.host_module_status import HostModuleStatus
 
         host = await create_host(db)
@@ -419,9 +424,14 @@ class TestValuesMatchSeededRows:
         samples = _parse_samples(resp.text)
         key = (
             "labdog_ca_cert_not_after_timestamp_seconds",
-            (("fingerprint", "deadbeef" * 8), ("name", "Test Root CA")),
+            (("name", "Test Root CA"),),
         )
         assert samples[key] == pytest.approx(not_after.timestamp())
+        # SEC-34: /metrics is unauthenticated and everything else it
+        # emits is an aggregate. A per-certificate fingerprint is an
+        # inventory of the trust LabDog manages, handed to anyone who
+        # can reach the scrape URL.
+        assert "deadbeef" not in resp.text
 
 
 # ---------------------------------------------------------------------------

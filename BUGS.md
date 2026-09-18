@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-59`, `SEC-19`,
+ID counter as of last housekeeping pass: `BUG-83`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -48,112 +48,49 @@ spot-checked against current HEAD before filing.
 
 _No bugs are currently open._
 
-### Reliability — Medium
+---
 
-- [ ] **BUG-55** `Dockerfile:160` — the app runs as container PID 1 and never
-      reaps orphaned grandchildren, so every `ssh` that outlives its `git`
-      parent becomes a permanent zombie.
+## Open — 2026-09 whitebox audit
 
-      **Symptom.** Zombie `ssh` processes accumulate on the container host for
-      as long as the container runs. Observed on a production instance
-      (`openlabdog/labdog:test`): 115 zombies — 114 `ssh`, 1 `git` — all
-      parented to the `python -m app` PID, accruing at roughly 26/day over 4.4
-      days of container uptime. Each zombie holds a task slot until the parent
-      exits, so the count only ever grows.
+Filed 2026-09-03 from a full whitebox review (security, correctness,
+performance) of the backend, frontend, packaging and CI. Every entry was
+verified against source at `c784afb` before filing; the ones already
+fixed are absent rather than ticked, per the open-only convention.
 
-      **Root cause.** `Dockerfile:160` is `CMD ["python", "-m", "app"]` with no
-      init as ENTRYPOINT, so the application is PID 1. `subprocess.run` in
-      `backend/app/actions/git_sync.py:50` correctly reaps `git` itself, but
-      `git` spawns `ssh` for SSH remotes (`GIT_SSH_COMMAND`, set in
-      `backend/app/packs/git_auth.py:87` and
-      `backend/app/gitops/git_service.py:87`). When `ssh` outlives `git` it is
-      orphaned, re-parented to PID 1 — the app — and there it stays: nothing in
-      `backend/app/` installs a `SIGCHLD` handler or calls `waitpid`, so the
-      orphan is never reaped.
+Findings from the same pass that have already landed are absent rather
+than listed: the reflected XSS in the SPA dynamic-route rewrite, the AI
+command-classifier bypasses, action-parameter template injection, pack
+manifest path containment, and the quick-win batch (unauthenticated
+resolver reads, registration privilege flags, `retention_days=0` wiping
+the audit log, the scheduler tick poisoning itself, two temp-dir leaks,
+the sync-tray request loop, the CSRF-less password change). Search the
+log: `git log --grep "SEC"`.
 
-      **Severity: Medium.** Not urgent at the observed rate — the affected host
-      sat at 571 of 31,008 threads, about three years of headroom — but the leak
-      is unbounded and scales with git-backed pack sync frequency, so a busier
-      instance leaks proportionally faster. The end state is severe and not
-      gracefully recoverable: once a host cannot `fork()`, it cannot start or
-      stop containers, `exec` into them, or accept SSH logins, and only a reboot
-      clears it. A Kubernetes node was taken out this way by an unrelated
-      controller with the same PID-1 defect on 2026-08-19.
+**Note on the privilege model.** LabDog is deliberately flat — every
+authenticated user has the same permissions and `is_superuser` gates only
+user administration. That is a confirmed design decision, not a finding.
+Its consequence shapes the severities below: the AI classifier, the
+action-parameter validator and pack content policy are the *only* controls
+protecting host root from an ordinary account. All three are now in
+place: the classifier hardening, the extra-vars validator, and the pack
+content policy.
 
-      **Reproduce.** Run the published image without `--init`, configure a
-      git-backed action pack over SSH, and let pack sync run for a few days.
-      `ps -eo stat,ppid,comm | awk '$1 ~ /Z/'` on the host shows the pile, all
-      parented to the app PID.
+### Security — Medium
 
-      **Fix.** This should not depend on the deployment remembering to pass
-      `--init` — the published image is run by people who will not. Either add
-      an init as ENTRYPOINT (tini or dumb-init, `ENTRYPOINT ["/usr/bin/tini",
-      "--"]`), or reap orphans in-process at startup when `os.getpid() == 1`.
-      Narrowing `GIT_SSH_COMMAND` with `-o ControlMaster=no -o ControlPersist=no`
-      would stop `ssh` outliving `git` in this specific path, but leaves the
-      general PID-1 defect in place for any future subprocess.
+### Security — Low
 
-      Deployments can mitigate today with `init: true` on the compose service;
-      that has been applied to the lin-manager stack in `infra/docker-gitops`,
-      which is what surfaced this.
+- [ ] **SEC-35** Grafana, Loki, Mimir and AI-provider base URLs are
+      scheme-checked but may point at loopback, RFC1918 or 169.254.169.254
+      (`app/grafana/schemas.py:16-25`, `app/ai/schemas.py:25-33`). Close to
+      blind — responses must parse as the expected shape and httpx does not
+      follow redirects by default — and a documented homelab decision. Git
+      repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
+      so it is not re-discovered as new, not because it needs changing.
 
-### Merge correctness — Medium
+### Correctness — High
 
-- [ ] **BUG-57** `backend/app/hosts_mgmt/merge.py:118` — per-entry
-      `priority` is decorative in five modules; a same-key entry
-      silently overwrites instead.
+_No bugs are currently open._
 
-      **Symptom.** Adding a hosts-file override for an IP that already
-      has an entry replaces the existing one without warning. Raising
-      the new entry's **Priority** does not change the outcome, and
-      neither does lowering it.
+### Correctness — Medium
 
-      **Root cause — two defects that compound.**
-
-      1. *The merge keys on identity alone and overwrites.* Host-level
-         entries are applied as `merged[ip] = ...` with no membership
-         check ([`merge.py:118-129`](backend/app/hosts_mgmt/merge.py)),
-         so the last row read wins. Which row that is depends on an
-         unordered `SELECT`, so the winner is not even stable. Group
-         entries use the opposite rule — `if ip not in merged`,
-         first-wins in `HostGroup.priority DESC` order.
-      2. *`priority` is never consulted.* `HostsEntry.priority` exists
-         as a column, is validated `ge=0, le=10000` in the schema, and
-         is rendered as a form field — but no merge engine reads it.
-         The only priority that affects any outcome is
-         `HostGroup.priority`, which orders the groups.
-
-      **Same issue, other modules.** The dead per-entry `priority`
-      column is not specific to hosts entries. In each of these the
-      merge reads `HostGroup.priority` only:
-
-      | Module | Merge key | Reads entry `priority`? | Unique constraint? |
-      |---|---|---|---|
-      | `hosts_mgmt` | `ip_address` | No | **No** |
-      | `services` | `service_name` | No | **No** |
-      | `cron` | `(name, user)` | No — passthrough to response only | **No** |
-      | `user_mgmt` | `username` / `groupname` | No | **No** |
-      | `packages` | `package_name` | No — passthrough only | Yes |
-
-      `packages` is the one that already behaves: it carries
-      `uq_package_rules_group_pkg` / `uq_package_rules_host_pkg`, so a
-      duplicate is refused at write time rather than silently resolved
-      at merge time. The other four have no unique constraint on
-      `(scope, key)`, which is why the collision surfaces as a silent
-      overwrite.
-
-      `rules` (firewall) is **not** affected — it genuinely orders by
-      group priority then `rule.priority`
-      ([`rules/merge.py:83`](backend/app/rules/merge.py)).
-
-      **Fix direction** (not yet done). Either honour `priority` in the
-      merge or remove it from the UI and schema — but not leave a
-      control that reads as if it disambiguates and does nothing. The
-      narrower fix the reporter asked for is to make the field
-      unavailable and say so. Adding the missing unique constraints,
-      following the `packages` precedent, would turn the silent
-      overwrite into an honest error at the point of entry. Note that
-      keying hosts entries on `ip_address` alone also forbids two
-      hostnames sharing an IP, which is legitimate in `/etc/hosts`.
-
-      Reported 2026-08-21 from the **Add Hosts Entry Override** dialog.
+_No bugs are currently open._

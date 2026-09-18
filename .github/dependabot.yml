@@ -1,0 +1,39 @@
+# Keeps the SHA-pinned `uses:` refs moving.
+#
+# Pinning every action to a commit SHA (see the version comment after each
+# one) removes the "a compromised upstream retroactively poisons every run"
+# problem, and replaces it with "nobody notices the action is two years
+# stale". Dependabot is the other half: it opens a PR when an action
+# publishes a new release, rewriting the SHA and the comment together.
+#
+# Actions only. Python is pinned by backend/uv.lock and npm by
+# frontend/package-lock.json; both have their own audit jobs in ci.yml
+# that fail on a vulnerable dependency, which is a stronger signal than a
+# bump PR and one this repo already acts on.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+
+  # Base images are pinned by digest in Dockerfile and frontend/Dockerfile,
+  # which is what makes a build of one commit reproducible — and what makes
+  # a pinned base go stale on its own. These PRs are the other half; the
+  # trivy scan is the backstop when one is ignored.
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies

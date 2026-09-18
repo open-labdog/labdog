@@ -47,8 +47,9 @@ def merge_group_rules(
     elif server_ip is None:
         server_ip = settings.security.labdog_server_ip
 
-    # Sort groups by priority descending (highest priority first)
-    sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
+    # Sort groups by priority descending (highest priority first), ties by
+    # group id ascending — see app.merge_utils for why the tiebreak matters.
+    sorted_groups = sorted(groups, key=lambda g: (-g["priority"], g["id"]))
 
     merged: list[FirewallRuleSpec] = []
     seen_signatures: set[tuple] = set()
@@ -81,9 +82,18 @@ def merge_group_rules(
     # handles identical ones) would sort below the group rules it is meant to
     # take precedence over. host_id marks an override; group rules have it None.
     # Then order by group priority, then rule priority within a group.
+    # Ascending key with the descending fields negated, so ``rule_id`` can
+    # tiebreak *ascending* (oldest rule first) instead of inheriting the
+    # reverse. Without it two rules of equal group priority and equal rule
+    # priority — the default, since FirewallRule.priority is 0 for every
+    # rule — kept whatever order they arrived in (BUG-69).
     merged.sort(
-        key=lambda r: (1 if r.host_id else 0, r.group_priority or 0, r.priority),
-        reverse=True,
+        key=lambda r: (
+            0 if r.host_id else 1,
+            -(r.group_priority or 0),
+            -r.priority,
+            r.rule_id or 0,
+        )
     )
 
     # Prepend SSH lockout rule (always first). Drop any group/host rule that
@@ -103,7 +113,7 @@ def merge_group_policies(groups: list[dict]) -> ChainPolicies:
     value wins.  If no group defines a policy, system defaults apply
     (input=drop, output=accept).
     """
-    sorted_groups = sorted(groups, key=lambda g: g["priority"], reverse=True)
+    sorted_groups = sorted(groups, key=lambda g: (-g["priority"], g["id"]))
     input_policy: str | None = None
     output_policy: str | None = None
     input_source: tuple[int | None, str | None] = (None, None)

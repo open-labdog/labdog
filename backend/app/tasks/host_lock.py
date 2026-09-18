@@ -55,10 +55,11 @@ acquiring transaction).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import or_, select, text
+from sqlalchemy import or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,35 @@ async def acquire_host_lock(db: AsyncSession, host_id: int) -> None:
     await db.execute(text("SELECT pg_advisory_xact_lock(:h)"), {"h": host_id})
 
 
+async def try_acquire_host_lock(db: AsyncSession, host_id: int) -> bool:
+    """Take the lock on ``host_id`` if it is free right now, else give up.
+
+    Non-blocking counterpart to `acquire_host_lock`, with the same
+    transaction-level lifetime on success. Returns ``False`` — without
+    waiting — when another transaction holds the key.
+
+    For callers that must claim the host there is nothing useful to do
+    with ``False`` and they should keep using `acquire_host_lock`. It
+    exists for the periodic drift sweep, which asks the question with
+    row locks of its own already held (so waiting would be a
+    lock-ordering hazard) and for which "someone else is claiming this
+    host right now" and "this host is busy" have the same answer:
+    leave it alone this tick.
+
+    Args:
+        db: An open async session inside a transaction. The lock, if
+            taken, releases when that transaction commits/rolls back.
+        host_id: Host id to lock on. Used directly as the advisory key.
+
+    Returns:
+        ``True`` if the lock is now held by this transaction.
+    """
+    granted = (
+        await db.execute(text("SELECT pg_try_advisory_xact_lock(:h)"), {"h": host_id})
+    ).scalar()
+    return bool(granted)
+
+
 async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
     """Take advisory locks on multiple hosts in deterministic order.
 
@@ -180,22 +210,35 @@ async def check_host_busy(
        belonging to an ActionRun with ``status='running'``
        (group-targeted action runs whose member set includes X).
 
+    Rows whose host has been deleted carry ``host_id IS NULL`` (BUG-77)
+    and match none of these scans, which is the wanted answer: a host
+    that no longer exists cannot be holding anything.
+
     Must be called inside a transaction that already holds the
     advisory lock for ``host_id`` (via `acquire_host_lock`). Without
     the lock, two callers can both see "not busy" and both proceed
     to claim — the race the lock exists to close.
 
-    ``exclude_action_run_id`` must be supplied by ``action_host`` tasks.
-    The orchestrator marks the parent ActionRun ``running`` before
+    ``exclude_action_run_id`` must be supplied by every task the
+    orchestrator dispatches — ``action_host``, the built-in dispatchers,
+    and the sync orchestrator when a built-in is driving it. The
+    orchestrator marks the parent ActionRun ``running`` before
     dispatching per-host tasks, so without the exclusion the per-host
-    task would find its own parent run in the running-rows scan and
-    incorrectly defer itself as if the host were busy.
+    task finds its own parent run in the running-rows scan and defers
+    itself as if the host were busy. That deferral is permanent: it is
+    only ever cleared by another op on the same host finishing, and
+    there is no other op.
+
+    The exclusion applies to all three scans that can surface an
+    ActionRun (2, 3 and 3b), because a parent is reachable both directly
+    by ``host_id`` and indirectly through its own ``ActionHostRun``.
 
     Args:
         db: An open async session inside the acquiring transaction.
         host_id: Host id to check.
-        exclude_action_run_id: ActionRun id to skip in the host-targeted
-            scan (pass the parent action_run_id from action_host tasks).
+        exclude_action_run_id: ActionRun id to skip in every scan
+            (pass the parent action_run_id from any task the run
+            orchestrator dispatched).
 
     Returns:
         A :class:`BlockerInfo` describing the running op holding the
@@ -235,18 +278,52 @@ async def check_host_busy(
     # 3. Group-targeted ActionHostRun running for this host (parent ActionRun
     # must also be running — finished runs may leave per-host rows around
     # but the run itself is no longer holding the host).
-    group_action_hit = (
-        await db.execute(
+    group_action_stmt = (
+        select(ActionRun.id, ActionRun.action_key)
+        .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
+        .where(
+            ActionHostRun.host_id == host_id,
+            ActionHostRun.status == "running",
+            ActionRun.status == "running",
+        )
+    )
+    if exclude_action_run_id is not None:
+        # The exclusion has to reach this scan too, not just the
+        # host-targeted one. ``_builtin.sync`` marks its own
+        # ActionHostRun ``running`` and *then* delegates to the sync
+        # orchestrator, so the parent run is reachable here through its
+        # own per-host row — and the sync deferred behind the run that
+        # was waiting for the sync, with nothing left to clear it
+        # (BUG-80).
+        group_action_stmt = group_action_stmt.where(ActionRun.id != exclude_action_run_id)
+    group_action_hit = (await db.execute(group_action_stmt.limit(1))).first()
+    if group_action_hit is None:
+        # 3b. A group-targeted run that has claimed its members but has not
+        # created their ActionHostRun rows yet.
+        #
+        # BUG-62: case 3 above needs a per-host row, and action_group creates
+        # those in its load phase — *after* the transaction that took the
+        # locks commits. Between those two points a group run held every
+        # member and nothing said so, so a sync entering its gate saw the
+        # host free. Matching on membership closes that window without
+        # depending on rows that do not exist yet.
+        from app.models.host import HostGroupMembership  # noqa: PLC0415
+
+        claimed_group_stmt = (
             select(ActionRun.id, ActionRun.action_key)
-            .join(ActionHostRun, ActionRun.id == ActionHostRun.action_run_id)
+            .join(
+                HostGroupMembership,
+                HostGroupMembership.c.group_id == ActionRun.group_id,
+            )
             .where(
-                ActionHostRun.host_id == host_id,
-                ActionHostRun.status == "running",
+                HostGroupMembership.c.host_id == host_id,
+                ActionRun.host_id.is_(None),
                 ActionRun.status == "running",
             )
-            .limit(1)
         )
-    ).first()
+        if exclude_action_run_id is not None:
+            claimed_group_stmt = claimed_group_stmt.where(ActionRun.id != exclude_action_run_id)
+        group_action_hit = (await db.execute(claimed_group_stmt.limit(1))).first()
     if group_action_hit is not None:
         return BlockerInfo(
             kind="action_group",
@@ -349,6 +426,35 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
             ),
         )
 
+    # Same window as case 3b in check_host_busy: a group run that has taken
+    # its members' locks but not yet created their per-host rows.
+    from app.models.host import HostGroupMembership  # noqa: PLC0415
+
+    claimed_group_rows = (
+        await db.execute(
+            select(ActionRun.id, ActionRun.action_key, HostGroupMembership.c.host_id)
+            .join(
+                HostGroupMembership,
+                HostGroupMembership.c.group_id == ActionRun.group_id,
+            )
+            .where(
+                HostGroupMembership.c.host_id.in_(ordered),
+                ActionRun.host_id.is_(None),
+                ActionRun.status == "running",
+            )
+        )
+    ).all()
+    for row in claimed_group_rows:
+        blockers.setdefault(
+            row.host_id,
+            BlockerInfo(
+                kind="action_group",
+                id=row.id,
+                host_id=row.host_id,
+                action_key=row.action_key,
+            ),
+        )
+
     if not blockers:
         return None
     first_host = min(blockers.keys())
@@ -402,7 +508,7 @@ async def format_pending_reason(db: AsyncSession, blocker: BlockerInfo) -> str:
 # ---------------------------------------------------------------------------
 
 
-DispatchedKind = Literal["sync", "action_host", "action_group"]
+DispatchedKind = Literal["sync", "action_host", "action_group", "action_host_run"]
 """What the dispatch picked, returned for log surfaces.
 
 `action_host`: an ActionRun whose `host_id` matches the freed host.
@@ -410,6 +516,34 @@ DispatchedKind = Literal["sync", "action_host", "action_group"]
     (the dispatched task will re-check all its members and may defer
     again if another member is still busy).
 """
+
+
+async def _claim_pending_run(db: AsyncSession, action_run_id: int) -> bool:
+    """Move one ``ActionRun`` out of ``pending``, or report it was taken.
+
+    BUG-62: the dispatch used to call ``.delay()`` with the row still
+    ``pending``, and the advisory lock covers only the host that just freed
+    up. A group-targeted run matches *every* member, so two hosts finishing
+    at once both selected it and both dispatched. The second copy then hit
+    ``uq_action_host_run`` creating the per-host rows, and its handler
+    marked the run **failed while the first copy was still executing it** —
+    the operator saw a run flicker to failed, and the audit recorded a
+    failure that never happened.
+
+    The conditional UPDATE is the whole fix: exactly one caller sees a row
+    come back.
+    """
+    from app.models.action_run import ActionRun
+
+    claimed = (
+        await db.execute(
+            update(ActionRun)
+            .where(ActionRun.id == action_run_id, ActionRun.status == "pending")
+            .values(status="queued")
+            .returning(ActionRun.id)
+        )
+    ).scalar_one_or_none()
+    return claimed is not None
 
 
 async def dispatch_next_pending_for_host(
@@ -515,22 +649,73 @@ async def dispatch_next_pending_for_host(
             action_stmt = action_stmt.where(ActionRun.id != exclude_action_run_id)
         action_candidate = (await db.execute(action_stmt)).scalar_one_or_none()
 
-        # Pick the older of the two by created_at — FIFO fairness across
-        # queues. Either may be None.
-        candidate_kind: str | None = None
-        candidate_row = None
-        if sync_candidate is not None and action_candidate is not None:
-            if sync_candidate.created_at <= action_candidate.created_at:
-                candidate_kind, candidate_row = "sync", sync_candidate
-            else:
-                candidate_kind, candidate_row = "action", action_candidate
-        elif sync_candidate is not None:
-            candidate_kind, candidate_row = "sync", sync_candidate
-        elif action_candidate is not None:
-            candidate_kind, candidate_row = "action", action_candidate
+        # ------------------------------------------------------------------
+        # ActionHostRun candidate: a deferred *child* of a group-targeted
+        # run whose action has supports_host=True.
+        #
+        # BUG-62: nothing selected on this. action_host defers such a child
+        # by flipping only the ActionHostRun to ``pending`` — the parent
+        # stays running because the other members are still going — and the
+        # two scans above look at parent rows only. So the child sat
+        # ``pending`` forever, the parent finalised ``succeeded`` having
+        # never touched that host, and the sweeper skipped it because the
+        # parent was terminal. Reporting success for work that did not
+        # happen is worse than reporting failure.
+        # ------------------------------------------------------------------
+        # ActionHostRun has no created_at of its own, so a child takes its
+        # parent's queue position — which is the FIFO semantic that matters
+        # anyway: the run was submitted at one instant, not per member.
+        child_stmt = (
+            select(ActionHostRun, ActionRun.created_at)
+            .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
+            .where(
+                ActionHostRun.host_id == host_id,
+                ActionHostRun.status == "pending",
+                ActionRun.status.in_(("queued", "running", "pending")),
+            )
+            .order_by(ActionRun.created_at.asc(), ActionHostRun.id.asc())
+            .limit(1)
+        )
+        if exclude_action_run_id is not None:
+            child_stmt = child_stmt.where(ActionHostRun.action_run_id != exclude_action_run_id)
+        child_hit = (await db.execute(child_stmt)).first()
 
-        if candidate_row is None:
+        # Pick the oldest across all three queues — FIFO fairness. Any may
+        # be None. The sort key is carried explicitly rather than read off
+        # the row, because the three row types do not share a timestamp.
+        candidates: list[tuple[str, object, object]] = []
+        if sync_candidate is not None:
+            candidates.append(("sync", sync_candidate, sync_candidate.created_at))
+        if action_candidate is not None:
+            candidates.append(("action", action_candidate, action_candidate.created_at))
+        if child_hit is not None:
+            candidates.append(("action_host_run", child_hit[0], child_hit[1]))
+
+        if not candidates:
             return None
+        candidate_kind, candidate_row, _sort_key = min(candidates, key=lambda c: c[2])
+
+        if candidate_kind == "action_host_run":
+            child_row: ActionHostRun = candidate_row  # type: ignore[assignment]
+            # Claim it out of ``pending`` in this transaction so a second
+            # finisher cannot pick the same child (see the ActionRun claim
+            # below for the same reasoning).
+            claimed_child = (
+                await db.execute(
+                    update(ActionHostRun)
+                    .where(ActionHostRun.id == child_row.id, ActionHostRun.status == "pending")
+                    .values(status="queued")
+                    .returning(ActionHostRun.id)
+                )
+            ).scalar_one_or_none()
+            if claimed_child is None:
+                continue
+            await db.commit()
+
+            from app.tasks.action_host import run_action_host
+
+            run_action_host.delay(child_row.action_run_id, child_row.id)
+            return ("action_host_run", child_row.id)
 
         if candidate_kind == "sync":
             sync_row: SyncJob = candidate_row  # type: ignore[assignment]
@@ -546,16 +731,23 @@ async def dispatch_next_pending_for_host(
                 )
                 sync_row.status = JobStatus.failed
                 sync_row.error_message = "host no longer exists"
-                await db.flush()
+                # BUG-62: this used to only flush. No caller commits the
+                # session it hands in, and task_session disposes the engine
+                # on exit, so the write rolled back and the same dead row was
+                # re-examined on every subsequent dispatch, forever.
+                await db.commit()
                 continue
             # Dispatch via the existing run_host_sync task. Import lazily
             # to avoid a circular import at module load.
             from app.tasks.host_sync_orchestrator import (
-                _filter_from_module_type,
+                module_filter_for,
                 run_host_sync,
             )
 
-            module_filter = _filter_from_module_type(sync_row.module_type)
+            # Not _filter_from_module_type: a deferred bulk sync stores
+            # module_type="bulk", which reconstructs as "every module" and
+            # would escalate a firewall-only request into a full sync.
+            module_filter = module_filter_for(sync_row)
             run_host_sync.delay(
                 job_id=sync_row.id,
                 host_id=sync_row.host_id,
@@ -594,8 +786,13 @@ async def dispatch_next_pending_for_host(
                 for hr in hrs:
                     hr.status = "failed"
                     hr.error_message = "host no longer exists"
-                await db.flush()
+                # Committed for the same reason as the SyncJob branch above.
+                await db.commit()
                 continue
+
+            if not await _claim_pending_run(db, action_row.id):
+                continue
+            await db.commit()
 
             from app.tasks.action_orchestrator import run_action
 
@@ -604,7 +801,69 @@ async def dispatch_next_pending_for_host(
 
         # group target: nothing to verify on host existence here (the
         # group task does its own member resolution + claim-or-defer).
+        if not await _claim_pending_run(db, action_row.id):
+            continue
+        await db.commit()
+
         from app.tasks.action_orchestrator import run_action
 
         run_action.delay(action_row.id)
         return ("action_group", action_row.id)
+
+
+async def release_host_queue(
+    host_ids: int | Iterable[int],
+    *,
+    after: str,
+    exclude_sync_job_id: int | None = None,
+    exclude_action_run_id: int | None = None,
+) -> None:
+    """Hand every host this operation claimed to its next pending op.
+
+    The ``finally``-block counterpart to the claim. Five tasks used to
+    write this out by hand — ``action_host``, ``action_group``,
+    ``builtin_dispatchers`` and ``host_sync_orchestrator`` twice — each
+    with its own session, its own try/except and its own log line. Two
+    properties matter and neither is obvious from any one copy:
+
+    * **It never raises.** A failure here must not mask the real outcome
+      of the task whose ``finally`` block is running.
+    * **One host's failure does not skip the rest.** The group path
+      releases every member, and a try/except placed around the loop
+      instead of inside it would let one bad host wedge the queue of
+      every other member. The loop below keeps the guard on the inside.
+
+    Each host gets its own short session: ``dispatch_next_pending_for_host``
+    takes that host's advisory lock, and holding several at once across
+    one transaction is how the group path would deadlock against an
+    overlapping group op.
+
+    Args:
+        host_ids: One host id, or every host this op claimed.
+        after: What just finished, for the log line when a release fails
+            (e.g. ``"action_run_id=42"``). The caller knows which of its
+            several ids is the useful one; this helper does not.
+        exclude_sync_job_id: Passed through — the just-finished sync job,
+            in case its commit is not yet visible to the scan.
+        exclude_action_run_id: Passed through — the just-finished action
+            run, for the same reason.
+    """
+    from app.db import task_session
+
+    ids = [host_ids] if isinstance(host_ids, int) else list(host_ids)
+    for host_id in ids:
+        try:
+            async with task_session() as db:
+                await dispatch_next_pending_for_host(
+                    db,
+                    host_id,
+                    exclude_sync_job_id=exclude_sync_job_id,
+                    exclude_action_run_id=exclude_action_run_id,
+                )
+        except Exception:
+            logger.exception(
+                "release_host_queue: dispatch-next-pending failed for host_id=%s after %s; "
+                "that host's queue may be stuck until the next op on it triggers a release",
+                host_id,
+                after,
+            )

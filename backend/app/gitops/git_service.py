@@ -8,13 +8,13 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 
 import git  # gitpython
 
 from app.crypto.encryption import decrypt_ssh_key
 from app.crypto.key_management import get_master_key
 from app.models.git_repository import GitAuthType, GitRepository
+from app.packs.git_auth import build_ssh_command, token_config_env
 
 
 def clone_repo(
@@ -70,6 +70,7 @@ def _clone_ssh(
 
     fd, ssh_key_path = tempfile.mkstemp(dir="/dev/shm", prefix="labdog-", suffix=".key")
     os.close(fd)
+    known_hosts_path = f"{ssh_key_path}.known_hosts"
     try:
         master_key = get_master_key()
         private_key = decrypt_ssh_key(encrypted_ssh_key, master_key)
@@ -79,23 +80,58 @@ def _clone_ssh(
             f.write(private_key)
         os.chmod(ssh_key_path, 0o600)
 
-        ssh_cmd = (
-            f"ssh -i {ssh_key_path} "
-            "-o StrictHostKeyChecking=accept-new "
-            "-o UserKnownHostsFile=/dev/null"
-        )
-        env = {**os.environ, "GIT_SSH_COMMAND": ssh_cmd}
+        # SEC-27: verify the server against the key recorded on the
+        # repository row. This used to be accept-new *with*
+        # UserKnownHostsFile=/dev/null, which never verifies anything —
+        # every clone started from an empty file, so there was never a
+        # first use and never a mismatch. On first contact we still
+        # accept and record, so the next clone is checked.
+        pinned = bool(repo.ssh_host_key_entry and repo.ssh_host_key_entry.strip())
+        with open(known_hosts_path, "w") as f:
+            if pinned:
+                f.write(repo.ssh_host_key_entry.strip() + "\n")  # type: ignore[union-attr]
+        os.chmod(known_hosts_path, 0o600)
+
+        env = {
+            **os.environ,
+            "GIT_SSH_COMMAND": build_ssh_command(ssh_key_path, known_hosts_path, pinned=pinned),
+        }
 
         cloned = git.Repo.clone_from(repo.url, str(target_dir), branch=repo.branch, env=env)
+
+        # Trust on first use: record what the server presented so every
+        # later clone is verified against it. The caller owns the
+        # session this row belongs to and commits it.
+        if not pinned:
+            learned = Path(known_hosts_path).read_text().strip()
+            if learned:
+                repo.ssh_host_key_entry = learned
+
         return cloned, target_dir
     finally:
         # Always clean up SSH key from tmpfs
-        if os.path.exists(ssh_key_path):
-            os.unlink(ssh_key_path)
+        for path in (ssh_key_path, known_hosts_path):
+            if os.path.exists(path):
+                os.unlink(path)
 
 
 def _clone_https(repo: GitRepository, target_dir: Path) -> tuple[git.Repo, Path]:
-    """Clone via HTTPS token auth. Token never persisted in .git/config."""
+    """Clone via HTTPS token auth. The token never reaches argv or disk.
+
+    SEC-29: this used to embed the token in the URL
+    (``https://oauth2:TOKEN@host/...``) and pass that to ``git clone``.
+    The token was therefore on the command line — ``/proc/<pid>/cmdline``
+    is world-readable, so any local account could read the PAT off a
+    running clone — and it was written into ``.git/config`` until the
+    ``set_url`` two lines later scrubbed it, which is a window, not an
+    absence.
+
+    It now travels as an ``Authorization`` header configured through
+    ``GIT_CONFIG_*`` env vars, the same mechanism the pack sync path
+    uses. ``/proc/<pid>/environ`` is readable only by the process owner
+    and root, the URL stays clean, and there is nothing to scrub
+    afterwards.
+    """
     if not repo.encrypted_https_token:
         raise ValueError(f"HTTPS token not available for repository '{repo.name}'")
 
@@ -103,18 +139,8 @@ def _clone_https(repo: GitRepository, target_dir: Path) -> tuple[git.Repo, Path]
     # Reuse same AES-256-GCM encrypt/decrypt for both SSH keys and tokens
     token = decrypt_ssh_key(repo.encrypted_https_token, master_key)
 
-    # Embed token in URL: https://github.com/u/r.git -> https://oauth2:TOKEN@github.com/u/r.git
-    parsed = urlparse(repo.url)
-    host_with_port = parsed.hostname or ""
-    if parsed.port:
-        host_with_port += f":{parsed.port}"
-    auth_url = urlunparse(parsed._replace(netloc=f"oauth2:{token}@{host_with_port}"))
-
-    cloned = git.Repo.clone_from(auth_url, str(target_dir), branch=repo.branch)
-
-    # Scrub token from .git/config — set remote to original URL
-    cloned.remote("origin").set_url(repo.url)
-
+    env = {**os.environ, **token_config_env(token)}
+    cloned = git.Repo.clone_from(repo.url, str(target_dir), branch=repo.branch, env=env)
     return cloned, target_dir
 
 

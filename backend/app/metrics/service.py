@@ -18,12 +18,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.metrics.schemas import (
+    DriftCoverage,
     DriftTrendPoint,
     DriftTrendSeries,
     SyncRatePoint,
     SyncRateSeries,
 )
 from app.models.drift_sample import DriftSample
+from app.models.host import Host
+from app.models.host_module_status import HostModuleStatus
 from app.models.sync_job import JobStatus, SyncJob
 
 _TERMINAL_STATUSES = (JobStatus.success, JobStatus.failed, JobStatus.cancelled)
@@ -104,3 +107,60 @@ async def get_drift_trend(
         for row in result.all()
     ]
     return DriftTrendSeries(granularity=granularity, since=since, points=points)
+
+
+async def get_drift_coverage(db: AsyncSession) -> DriftCoverage:
+    """How much of the fleet has any drift checking switched on at all.
+
+    Answers the question every empty drift surface raises and none of them
+    could: are there no results because nothing has drifted, or because
+    nothing is being checked? On a fresh install it is always the second —
+    every flag defaults to off and the sweep runs on schedule finding no
+    candidates, indefinitely and silently.
+
+    Both flags are counted because they are independent (see
+    ``docs/ui/drift-detection.md``). ``Host.drift_check_enabled`` gates the
+    firewall sweep and nothing else; the other six modules each read their
+    own ``HostModuleStatus`` row. A fleet with every service-drift row on
+    and every host flag off is fully covered for six modules and not at all
+    for firewall — one number could not say that, so this returns three.
+    """
+    hosts_total = await db.scalar(select(func.count()).select_from(Host)) or 0
+    firewall_hosts = (
+        await db.scalar(
+            select(func.count()).select_from(Host).where(Host.drift_check_enabled.is_(True))
+        )
+        or 0
+    )
+    module_hosts = (
+        await db.scalar(
+            select(func.count(func.distinct(HostModuleStatus.host_id))).where(
+                HostModuleStatus.drift_check_enabled.is_(True),
+                # The firewall module's own column has no writer and is
+                # always false; counting it would be counting nothing.
+                HostModuleStatus.module_type != "firewall",
+            )
+        )
+        or 0
+    )
+    # The union, not the sum: a host with both kinds on is one covered host.
+    any_hosts = (
+        await db.scalar(
+            select(func.count(func.distinct(Host.id)))
+            .select_from(Host)
+            .outerjoin(
+                HostModuleStatus,
+                (HostModuleStatus.host_id == Host.id)
+                & HostModuleStatus.drift_check_enabled.is_(True)
+                & (HostModuleStatus.module_type != "firewall"),
+            )
+            .where(Host.drift_check_enabled.is_(True) | HostModuleStatus.id.is_not(None))
+        )
+        or 0
+    )
+    return DriftCoverage(
+        hosts_total=hosts_total,
+        firewall_enabled_hosts=firewall_hosts,
+        module_enabled_hosts=module_hosts,
+        any_enabled_hosts=any_hosts,
+    )

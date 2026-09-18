@@ -1,8 +1,7 @@
 """Celery task wrapper for the coalesced per-host sync orchestrator (v0.2.0).
 
-The wrapper drives the full lifecycle that the pure orchestrator at
-``app.sync.orchestrator.orchestrate_host_sync`` does *not* concern
-itself with:
+The wrapper drives the full lifecycle that the pure orchestrator in
+``app.sync.orchestrator`` does *not* concern itself with:
 
 1. Pre-run DB writes flipping ``SyncJob.status`` to ``running`` and
    seeding one ``HostModuleStatus`` row per module the run will touch.
@@ -10,8 +9,11 @@ itself with:
    directory (``/dev/shm`` when available, default tmpdir otherwise).
 3. Timeout computation as ``base + per_module_budget * len(modules)``,
    floored by the existing ``ansible.playbook_timeout`` setting.
-4. Driving ``orchestrate_host_sync`` via ``asyncio.run`` (sync Celery
-   task, like the other tasks under ``app.tasks``).
+4. Driving the orchestrator via ``asyncio.run`` (sync Celery task,
+   like the other tasks under ``app.tasks``). The plan is built with a
+   session open and the ansible run happens with it closed — the run
+   takes minutes and an asyncpg connection held across it is one the
+   rest of the process cannot have (BUG-71).
 5. Atomic post-run DB writes — ``SyncJob`` final state, per-module
    ``HostModuleStatus`` rows, and one composite ``AuditLog`` row — all
    committed together.
@@ -52,7 +54,7 @@ from sqlalchemy import select
 
 from app.db import task_session
 from app.enum_utils import enum_str
-from app.sync.orchestrator import orchestrate_host_sync
+from app.sync.orchestrator import build_host_sync_plan, execute_host_sync_plan
 from app.tasks import celery_app
 
 if TYPE_CHECKING:
@@ -123,9 +125,9 @@ def _compute_timeout(modules_to_run: list[str]) -> int:
     computed = _TIMEOUT_BASE_SECONDS + _TIMEOUT_PER_MODULE_SECONDS * len(modules_to_run)
     floor = 0
     try:
-        from app.settings_service import get_setting_sync_typed
+        from app.settings_service import get_setting_cached_typed
 
-        floor_val = get_setting_sync_typed("ansible.playbook_timeout")
+        floor_val = get_setting_cached_typed("ansible.playbook_timeout")
         floor = int(floor_val) if floor_val is not None else 0
     except Exception:
         # Best-effort: missing setting / DB unavailable shouldn't crash
@@ -218,12 +220,36 @@ def _filter_from_module_type(module_type: str) -> list[str] | None:
     return [canonical]
 
 
+def module_filter_for(job) -> list[str] | None:
+    """The modules a stored :class:`SyncJob` was asked to apply.
+
+    Prefer the recorded list; fall back to reconstructing it from
+    ``module_type`` for rows written before ``module_filter`` existed and
+    for the per-module endpoints, which name their single module there.
+
+    Every re-dispatch path must go through this rather than
+    :func:`_filter_from_module_type` directly — that function maps
+    ``"bulk"`` to ``None``, i.e. *every* module, which silently escalates
+    a filtered bulk sync that was deferred behind a busy host.
+    """
+    stored = job.module_filter
+    if stored:
+        return list(stored)
+    return _filter_from_module_type(job.module_type)
+
+
 # ---------------------------------------------------------------------------
 # Per-host serialization (queue mechanism)
 # ---------------------------------------------------------------------------
 
 
-async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
+async def _claim_or_defer(
+    db: AsyncSession,
+    job_id: int,
+    host_id: int,
+    *,
+    exclude_action_run_id: int | None = None,
+) -> bool:
     """Single-flight gate at task entry.
 
     Returns ``True`` when no other operation (sync, host-targeted
@@ -254,6 +280,14 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     ``job_id`` is retained for log/trace surfaces; the busy check
     doesn't need it (the caller's own row is still ``pending``, not
     ``running``, so it's naturally excluded).
+
+    ``exclude_action_run_id`` is for the one caller that is *not*
+    naturally excluded: ``_builtin.sync`` runs this sync on behalf of an
+    ``ActionRun`` that the orchestrator already marked ``running`` on
+    this host. Without the exclusion that parent is its own blocker, and
+    the sync defers behind a run that is waiting for the sync — a
+    standstill nothing clears, because the only thing that would
+    re-dispatch it is another op finishing on the same host (BUG-80).
     """
     from app.models.sync_job import SyncJob
     from app.tasks.host_lock import (
@@ -263,7 +297,7 @@ async def _claim_or_defer(db: AsyncSession, job_id: int, host_id: int) -> bool:
     )
 
     await acquire_host_lock(db, host_id)
-    blocker = await check_host_busy(db, host_id)
+    blocker = await check_host_busy(db, host_id, exclude_action_run_id=exclude_action_run_id)
     if blocker is None:
         return True
 
@@ -552,6 +586,7 @@ async def _async_run(
     module_filter: list[str] | None,
     private_data_dir: str,
     ssh_key_path: str,
+    exclude_action_run_id: int | None = None,
 ) -> dict:
     """Async implementation of :func:`run_host_sync`.
 
@@ -570,6 +605,7 @@ async def _async_run(
     handle that when it finishes.
     """
     from app.crypto import decrypt_ssh_key
+    from app.tasks.host_lock import release_host_queue
 
     # --- Phase 0+1: claim-and-prepare under one advisory lock --------
     # Single-flight gate combined with the pre-run write. The advisory
@@ -594,7 +630,9 @@ async def _async_run(
 
     try:
         async with task_session() as db:
-            claimed = await _claim_or_defer(db, job_id, host_id)
+            claimed = await _claim_or_defer(
+                db, job_id, host_id, exclude_action_run_id=exclude_action_run_id
+            )
             if claimed:
                 modules_to_orchestrate, seeded_modules, triggered_by_user_id = await _prepare_run(
                     db, job_id, host_id, module_filter
@@ -609,11 +647,7 @@ async def _async_run(
                 row = (
                     await probe.execute(select(_SyncJob).where(_SyncJob.id == job_id))
                 ).scalar_one_or_none()
-                if (
-                    row is not None
-                    and str(row.status.value if hasattr(row.status, "value") else row.status)
-                    == "running"
-                ):
+                if row is not None and enum_str(row.status) == "running":
                     post_commit = True
         except Exception:  # pragma: no cover - probe failure shouldn't mask root cause
             logger.exception("post-commit probe failed for job_id=%s", job_id)
@@ -654,16 +688,11 @@ async def _async_run(
                 logger.exception(
                     "compensating finalise failed for job_id=%s host_id=%s", job_id, host_id
                 )
-            try:
-                async with task_session() as db:
-                    await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
-            except Exception:
-                logger.exception(
-                    "dispatch-next-pending failed in BUG-39 compensation path "
-                    "for host_id=%s after job_id=%s",
-                    host_id,
-                    job_id,
-                )
+            await release_host_queue(
+                host_id,
+                after=f"job_id={job_id} (BUG-39 compensation path)",
+                exclude_sync_job_id=job_id,
+            )
         raise exc
 
     if not claimed:
@@ -699,17 +728,24 @@ async def _async_run(
             if modules_to_orchestrate:
                 from app.ansible_runtime.runner import run_ansible
 
+                # BUG-71: the session closes here, before the run. It was
+                # held open for the whole playbook — up to the full
+                # timeout, computed above — which parks one connection
+                # from a small pool per concurrent sync.
                 async with task_session() as db:
-                    module_outcomes, _playbook, _inventory = await orchestrate_host_sync(
+                    plan = await build_host_sync_plan(
                         host_id,
                         orchestrator_filter,
                         db,
                         decrypt_key_fn=decrypt_ssh_key,
-                        run_ansible_fn=run_ansible,
                         ssh_key_path=ssh_key_path,
-                        private_data_dir=private_data_dir,
-                        timeout=timeout,
                     )
+                module_outcomes, _playbook, _inventory = execute_host_sync_plan(
+                    plan,
+                    run_ansible_fn=run_ansible,
+                    private_data_dir=private_data_dir,
+                    timeout=timeout,
+                )
         except Exception as exc:
             # SEC-06: redact tmpfs SSH-key paths from the captured
             # message before it lands in DB columns the API surfaces.
@@ -721,7 +757,7 @@ async def _async_run(
                 m: "error" for m in seeded_modules if not (m == "firewall" and firewall_pre_error)
             }
             logger.exception(
-                "orchestrate_host_sync raised for job_id=%s host_id=%s", job_id, host_id
+                "host sync orchestration raised for job_id=%s host_id=%s", job_id, host_id
             )
 
         # --- Phase 3: finalise (atomic) ------------------------------
@@ -768,16 +804,11 @@ async def _async_run(
         # ``_claim_or_defer`` short-circuits above and skips the try
         # entirely). Any failure in the dispatch helper itself is
         # swallowed so it never masks the real outcome of the task.
-        try:
-            async with task_session() as db:
-                await _dispatch_next_pending_for_host(db, host_id, exclude_job_id=job_id)
-        except Exception:
-            logger.exception(
-                "dispatch-next-pending failed for host_id=%s after job_id=%s; "
-                "queue may be stuck until next sync triggers it",
-                host_id,
-                job_id,
-            )
+        await release_host_queue(
+            host_id,
+            after=f"job_id={job_id}",
+            exclude_sync_job_id=job_id,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -817,7 +848,7 @@ def run_host_sync(
     """
     private_data_dir, ssh_key_path = _make_tmpfs_workspace()
     try:
-        return asyncio.run(
+        payload = asyncio.run(
             _async_run(
                 job_id=job_id,
                 host_id=host_id,
@@ -826,5 +857,15 @@ def run_host_sync(
                 ssh_key_path=ssh_key_path,
             )
         )
+        # A job the host queue re-dispatched may be the one a deferred
+        # ``_builtin.sync`` is still waiting on. That run's per-host row
+        # was deliberately left ``pending`` rather than closed as a
+        # success it had not earned (BUG-81); this is where it closes.
+        # Only this path — ``_sync_async`` calls ``_async_run`` directly
+        # and closes its own row.
+        from app.tasks.builtin_dispatchers import close_origin_host_run  # noqa: PLC0415
+
+        asyncio.run(close_origin_host_run(job_id, payload))
+        return payload
     finally:
         _cleanup_tmpfs(private_data_dir)

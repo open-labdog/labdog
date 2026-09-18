@@ -6,6 +6,7 @@ from app.audit.logger import log_action
 from app.auth.users import current_active_user
 from app.crypto import encrypt_ssh_key, get_master_key
 from app.db import get_db
+from app.gitops.webhook_secret import set_webhook_secret
 from app.models.git_repository import GitAuthType, GitRepository
 from app.models.host_group import HostGroup
 from app.models.user import User
@@ -15,6 +16,7 @@ from app.schemas.git_repos import (
     GitRepoResponse,
     GitRepoUpdate,
     derive_auth_type,
+    extract_hostname,
 )
 
 router = APIRouter(prefix="/git-repos", tags=["git-repos"])
@@ -50,8 +52,9 @@ async def create_git_repo(
         branch=body.branch,
         auth_type=GitAuthType(auth_type),
         ssh_key_id=body.ssh_key_id if auth_type == "ssh_key" else None,
-        webhook_secret=body.webhook_secret,
     )
+    # SEC-28: encrypted at rest like the token beside it, never echoed back.
+    set_webhook_secret(repo, body.webhook_secret)
 
     if body.https_token and auth_type == "https_token":
         master_key = get_master_key()
@@ -112,9 +115,19 @@ async def update_git_repo(
 
     update_data = body.model_dump(exclude_none=True)
     token = update_data.pop("https_token", None)
+    # SEC-28: never assigned by the setattr loop below — the column is
+    # ciphertext, and an omitted value means "keep the existing secret".
+    webhook_secret = update_data.pop("webhook_secret", None)
 
+    previous_url = repo.url
     for field, value in update_data.items():
         setattr(repo, field, value)
+
+    # SEC-27: a pinned host key belongs to the server the URL names. If
+    # the URL now points somewhere else, the old key can only produce a
+    # spurious mismatch, so drop it and let the next sync re-TOFU.
+    if extract_hostname(repo.url) != extract_hostname(previous_url):
+        repo.ssh_host_key_entry = None
 
     # Re-derive auth_type whenever URL or credential inputs changed.
     # An omitted token on update means "keep the existing one"; a
@@ -140,6 +153,9 @@ async def update_git_repo(
     if token and auth_type == "https_token":
         repo.encrypted_https_token = encrypt_ssh_key(token, get_master_key())
 
+    if webhook_secret:
+        set_webhook_secret(repo, webhook_secret)
+
     await log_action(
         db=db,
         action="update",
@@ -157,6 +173,36 @@ async def update_git_repo(
     await db.commit()
     await db.refresh(repo)
     return repo
+
+
+@router.post("/{repo_id}/trust-host-key", status_code=204)
+async def trust_repo_host_key(
+    repo_id: int,
+    user: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear the pinned SSH host key so the next sync re-TOFUs (SEC-27).
+
+    The counterpart to ``POST /api/hosts/{id}/trust-host-key``. Use it
+    when the git server was legitimately re-keyed — otherwise every sync
+    fails with a host-key mismatch, which is the point. Emits an audit
+    row, because accepting a new key for the repository LabDog takes
+    playbooks from is a decision worth being able to look up later.
+    """
+    result = await db.execute(select(GitRepository).where(GitRepository.id == repo_id))
+    repo = result.scalar_one_or_none()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Git repository not found")
+
+    repo.ssh_host_key_entry = None
+    await log_action(
+        db=db,
+        action="trust_host_key",
+        entity_type="git_repository",
+        entity_id=repo.id,
+        user_id=user.id,
+    )
+    await db.commit()
 
 
 @router.delete("/{repo_id}", status_code=204)

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.users import current_active_user
 from app.db import get_db
 from app.metrics import service
-from app.metrics.schemas import DriftTrendSeries, SyncRateSeries
+from app.metrics.schemas import DriftCoverage, DriftTrendSeries, SyncRateSeries
 from app.models.user import User
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -39,3 +39,19 @@ async def get_drift_trend(
     """Drift trend chart data: bucketed drift-check counts + drift volume over time."""
     since = datetime.now(UTC) - timedelta(days=days)
     return await service.get_drift_trend(db, since=since, granularity=granularity, module=module)
+
+
+@router.get("/drift-coverage", response_model=DriftCoverage)
+async def get_drift_coverage(
+    _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> DriftCoverage:
+    """How many hosts have any drift checking switched on.
+
+    The dashboard uses this to say *why* a drift surface is empty. Without
+    it "no drift found" and "nothing is being checked" render identically,
+    which is the state a fresh install is in permanently: every flag
+    defaults to off, and the periodic sweep runs on schedule finding no
+    candidates.
+    """
+    return await service.get_drift_coverage(db)

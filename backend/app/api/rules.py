@@ -90,7 +90,7 @@ async def reorder_rules(
             )
         )
         rule = result.scalar_one_or_none()
-        if rule and not rule.is_system:
+        if rule:
             rule.priority = idx
     await db.commit()
     return {"reordered": len(body.rule_ids)}
@@ -114,8 +114,6 @@ async def update_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    if rule.is_system:
-        raise HTTPException(status_code=403, detail="System rules cannot be modified")
     await _apply_rule_update(db, rule, body)
     await db.commit()
     await db.refresh(rule)
@@ -167,8 +165,6 @@ async def delete_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    if rule.is_system:
-        raise HTTPException(status_code=403, detail="System rules cannot be deleted")
     await db.delete(rule)
     await db.commit()
 
@@ -229,8 +225,6 @@ async def update_host_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    if rule.is_system:
-        raise HTTPException(status_code=403, detail="System rules cannot be modified")
     await _apply_rule_update(db, rule, body)
     await db.commit()
     await db.refresh(rule)
@@ -254,8 +248,6 @@ async def delete_host_rule(
     rule = result.scalar_one_or_none()
     if not rule:
         raise HTTPException(status_code=404, detail="Rule not found")
-    if rule.is_system:
-        raise HTTPException(status_code=403, detail="System rules cannot be deleted")
     await db.delete(rule)
     await db.commit()
 

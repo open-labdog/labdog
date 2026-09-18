@@ -25,6 +25,10 @@ def generate_multi_host_inventory(
             - ssh_user: str — SSH login user
             - ssh_key_path: str — path to the private key file on disk
             - name: str (optional) — unique label for this host entry
+            - known_hosts_path: str | None (optional) — file holding this
+              host's pinned SSH host key (SEC-26). Absent or None keeps
+              the ``accept-new`` fallback for a host with no recorded
+              key yet.
 
     Returns:
         JSON string with all hosts nested under ``all.hosts``.
@@ -37,7 +41,7 @@ def generate_multi_host_inventory(
             "ansible_port": host["port"],
             "ansible_user": host["ssh_user"],
             "ansible_ssh_private_key_file": host["ssh_key_path"],
-            "ansible_ssh_common_args": build_ssh_common_args(),
+            "ansible_ssh_common_args": build_ssh_common_args(host.get("known_hosts_path")),
         }
     inventory = {"all": {"hosts": all_hosts}}
     return json.dumps(inventory, indent=2)

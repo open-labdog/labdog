@@ -269,3 +269,38 @@ class TestResolverPlaybook:
         assert rm_task["ansible.builtin.file"] == {"path": "/etc/resolv.conf", "state": "absent"}
         assert "islnk" in rm_task["when"]
         assert write_task["ansible.builtin.copy"]["dest"] == "/etc/resolv.conf"
+
+
+class TestResolverEndpointAuth:
+    """Every resolver route requires a session.
+
+    The four GET handlers carried no auth dependency at all — unlike their
+    sibling PUT/DELETE handlers on the same paths — so resolver config, the
+    effective merge, and the rendered resolv.conf preview were readable
+    without logging in. Auth now lives on the router, which is also why a
+    route added later cannot repeat the omission.
+
+    Note this is *not* a privilege check: LabDog's model is flat and every
+    authenticated user may read these. The assertion is only that an
+    anonymous caller cannot.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/groups/1/resolver",
+            "/api/hosts/1/resolver",
+            "/api/hosts/1/effective-resolver",
+            "/api/hosts/1/resolver-preview",
+        ],
+    )
+    async def test_get_requires_auth(self, client, path):
+        resp = await client.get(path)
+        assert resp.status_code == 401, f"{path} → {resp.status_code}: {resp.text}"
+
+    @pytest.mark.asyncio
+    async def test_authenticated_user_is_not_forbidden(self, regular_user_client):
+        """A plain (non-superuser) account still reads these — flat model."""
+        resp = await regular_user_client.get("/api/groups/999999/resolver")
+        assert resp.status_code not in (401, 403), resp.text

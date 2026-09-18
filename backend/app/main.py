@@ -1,8 +1,16 @@
+import asyncio
+import base64
+import contextlib
+import ipaddress
+import json
 import logging
 import logging.config
 import os
 import re
+import secrets
+import urllib.parse
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -119,17 +127,59 @@ def _configure_logging() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _is_trusted_proxy(ip: str, trusted: list[str]) -> bool:
+    """Whether *ip* is one of the configured proxies.
+
+    Accepts CIDR entries as well as literal addresses (SEC-32). The
+    check used to be a plain ``in`` against the list, so ``10.0.0.0/8``
+    never matched anything — which made the setting unusable in Docker,
+    where the proxy's address is assigned at container start and is not
+    known when the config is written.
+    """
+    for entry in trusted:
+        if ip == entry:
+            return True
+        try:
+            if ipaddress.ip_address(ip) in ipaddress.ip_network(entry, strict=False):
+                return True
+        except ValueError:
+            # A malformed entry should not break IP resolution for
+            # every request; skip it and try the next.
+            continue
+    return False
+
+
+@lru_cache(maxsize=1)
+def _warn_untrusted_forwarding() -> None:
+    """Say once that forwarded addresses are being discarded.
+
+    Cached rather than guarded by a module flag so the "only once" part
+    is the mechanism rather than a convention someone has to maintain.
+    """
+    logging.getLogger(__name__).warning(
+        "X-Forwarded-For is present but server.trusted_proxies is empty, so the "
+        "real client address is being ignored. Set trusted_proxies to your "
+        "reverse proxy's address or network."
+    )
+
+
 def _get_client_ip(request: Request) -> str:
     """Extract real client IP, respecting trusted proxies."""
     trusted = settings.server.trusted_proxies
+    forwarded = request.headers.get("x-forwarded-for", "")
     if trusted and request.client:
-        forwarded = request.headers.get("x-forwarded-for", "")
         if forwarded:
             # Walk the chain from right to left, skipping trusted proxies
             chain = [ip.strip() for ip in forwarded.split(",")]
             for ip in reversed(chain):
-                if ip not in trusted:
+                if not _is_trusted_proxy(ip, trusted):
                     return ip
+    elif forwarded:
+        # A reverse proxy is forwarding the real client address and
+        # LabDog is discarding it, so every request looks like it came
+        # from the proxy — which is what collapsed the login rate limit
+        # into a single shared bucket (SEC-32).
+        _warn_untrusted_forwarding()
     if request.client:
         return request.client.host
     return "127.0.0.1"
@@ -165,8 +215,178 @@ def _build_login_limiter():
 
 
 # ---------------------------------------------------------------------------
+# Login rate-limit keying (SEC-32)
+# ---------------------------------------------------------------------------
+#
+# The limiter used to key on the client IP alone. Behind a reverse proxy
+# with ``server.trusted_proxies`` unset — the default — every request
+# resolves to the proxy's address, so the whole install shared one
+# 5/minute bucket: five bad passwords from anywhere locked everybody out,
+# and an attacker was never throttled relative to anyone else.
+#
+# Keying on the account being attacked fixes both halves. Two buckets are
+# consumed per attempt:
+#
+#   * ``(ip, identity)`` — the targeted case. One source guessing one
+#     account's password.
+#   * ``identity`` — the distributed case. Many sources guessing one
+#     account's password, which the first bucket alone would not catch.
+#
+# There is deliberately no bucket on the IP alone. That is the one this
+# change exists to remove, and behind a proxy it is the same global
+# bucket by another name.
+
+#: Paths the login limiter guards.
+_LOGIN_PATHS = frozenset({"/api/auth/jwt/login", "/api/auth/register"})
+
+#: Most a login body may be before we stop buffering it to find the
+#: account name. A real one is a couple of hundred bytes; the cap keeps
+#: an attacker from making the middleware hold arbitrary memory.
+_MAX_LOGIN_BODY = 8192
+
+#: Identities longer than this are truncated before they become part of
+#: a Redis key, so the key size stays bounded by us rather than by the
+#: caller.
+_MAX_IDENTITY = 128
+
+
+def login_rate_limit_keys(client_ip: str, identity: str | None) -> list[str]:
+    """Buckets one login attempt should consume.
+
+    Empty when the request carries no recognisable account name. Such a
+    request cannot test a password, so throttling it buys nothing — and
+    keying it on the IP would reintroduce exactly the shared bucket this
+    replaces, reachable by anyone willing to POST nonsense.
+    """
+    if not identity:
+        return []
+    return [f"ip-user:{client_ip}|{identity}", f"user:{identity}"]
+
+
+def login_identity(content_type: str, body: bytes) -> str | None:
+    """The account name a login or register body is about, normalised.
+
+    ``/api/auth/jwt/login`` is an OAuth2 password form (``username``);
+    ``/api/auth/register`` is JSON (``email``). Case and surrounding
+    whitespace are folded so that ``Alice@x.com`` and ``alice@x.com ``
+    cannot buy an attacker two separate budgets against one account.
+    """
+    if not body:
+        return None
+    raw: str | None = None
+    ctype = content_type.split(";", 1)[0].strip().lower()
+    try:
+        if ctype == "application/json":
+            payload = json.loads(body)
+            if isinstance(payload, dict):
+                value = payload.get("email") or payload.get("username")
+                raw = value if isinstance(value, str) else None
+        else:
+            # Form-encoded, which is what OAuth2PasswordRequestForm reads.
+            parsed = urllib.parse.parse_qs(body.decode("utf-8", "replace"))
+            values = parsed.get("username") or parsed.get("email") or []
+            raw = values[0] if values else None
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not raw:
+        return None
+    return raw.strip().casefold()[:_MAX_IDENTITY] or None
+
+
+async def _buffered_receive(receive):
+    """Read the request body, returning it plus a replayable ``receive``.
+
+    ASGI bodies are consumed once. To key on the account name we have to
+    look at the body before the route does, so the messages are recorded
+    and handed back verbatim — including an ``http.disconnect``, which
+    must reach the app rather than being swallowed here.
+
+    Stops at :data:`_MAX_LOGIN_BODY`; anything beyond that is left in the
+    stream for the route to read, and the identity simply comes out as
+    ``None``.
+    """
+    messages: list[dict] = []
+    total = 0
+    while True:
+        message = await receive()
+        messages.append(message)
+        if message["type"] != "http.request":
+            break
+        total += len(message.get("body", b""))
+        if not message.get("more_body", False) or total > _MAX_LOGIN_BODY:
+            break
+    body = b"".join(m.get("body", b"") for m in messages if m["type"] == "http.request")
+
+    async def replay():
+        if messages:
+            return messages.pop(0)
+        return await receive()
+
+    return (b"" if total > _MAX_LOGIN_BODY else body), replay
+
+
+# ---------------------------------------------------------------------------
 # Security headers middleware
 # ---------------------------------------------------------------------------
+
+
+#: The four directives added here are the ones that do **not** fall back to
+#: ``default-src``, so leaving them out left them unrestricted entirely:
+#:
+#: * ``base-uri`` — an injected ``<base href>`` retargets every relative
+#:   script URL on the page, which turns a same-origin ``script-src`` into
+#:   a loader for someone else's host. This is the one that matters most.
+#: * ``form-action`` — where a form may POST. The app posts nowhere but its
+#:   own origin.
+#: * ``frame-ancestors`` — who may frame us. Same intent as the
+#:   ``x-frame-options: DENY`` above, for browsers that read CSP instead.
+#: * ``object-src`` — ``<object>``/``<embed>``, a plugin-era script vector.
+#:
+#: Nothing in the frontend uses ``<base>``, ``<object>``, ``<embed>``,
+#: ``<iframe>``, or a cross-origin form action, so all four are 'none'/'self'
+#: without loosening anything that works today.
+#:
+#: ``script-src`` is no longer ``'unsafe-inline'``. Next's static export
+#: inlines the RSC flight data as ``<script>`` blocks, so every HTML
+#: document gets a fresh per-response nonce stamped into its inline tags by
+#: ``spa_fallback``; see ``_inject_nonce_slots``. Build-time hashes were the
+#: alternative and do not work here: ``_rewrite_placeholder`` mutates 19 of
+#: the export's 147 inline scripts *per request*, so a hash computed at
+#: build time never matches what is served.
+#: Everything but ``script-src``, which is per-response — see ``_csp``.
+_CSP_TAIL = (
+    "style-src 'self' 'unsafe-inline'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+#: The fallback ``script-src`` for responses that carry no nonce.
+#:
+#: Every HTML document LabDog serves goes through ``spa_fallback``, which
+#: stamps a nonce and sends its own header, so in practice this applies to
+#: JSON and to redirects — responses with no scripts to govern. It stays
+#: strict rather than permissive precisely so that a future code path which
+#: starts returning HTML without going through the nonce machinery *breaks
+#: visibly* instead of quietly serving inline script under ``unsafe-inline``.
+_SCRIPT_SRC_STRICT = "script-src 'self'"
+
+#: FastAPI's Swagger UI and ReDoc pages are generated by the framework with
+#: inline bootstrap scripts we do not control and cannot stamp. They are off
+#: unless ``server.expose_docs`` is set (dev only), and are the one place
+#: ``unsafe-inline`` survives. Scoped to those three paths rather than
+#: loosened globally.
+_DOCS_PATHS = frozenset({"/docs", "/redoc", "/docs/oauth2-redirect"})
+_SCRIPT_SRC_DOCS = "script-src 'self' 'unsafe-inline'"
+
+
+def _csp(script_src: str) -> bytes:
+    return f"default-src 'self'; {script_src}; {_CSP_TAIL}".encode()
+
+
+#: Kept as a module constant because the tests assert against it.
+_CSP = _csp(_SCRIPT_SRC_STRICT)
 
 
 class SecurityHeadersMiddleware:
@@ -187,22 +407,33 @@ class SecurityHeadersMiddleware:
 
         async def send_with_headers(message):
             if message["type"] == "http.response.start":
-                dict(message.get("headers", []))
                 extra = [
                     (b"x-content-type-options", b"nosniff"),
+                    # Redundant with frame-ancestors below for any browser
+                    # that understands CSP, kept for the proxies and the
+                    # older clients that only read this one.
                     (b"x-frame-options", b"DENY"),
                     (b"referrer-policy", b"strict-origin-when-cross-origin"),
-                    (b"x-xss-protection", b"1; mode=block"),
                     (
                         b"permissions-policy",
                         b"camera=(), microphone=(), geolocation=(), payment=()",
                     ),
-                    (
-                        b"content-security-policy",
-                        b"default-src 'self'; script-src 'self' 'unsafe-inline';"
-                        b" style-src 'self' 'unsafe-inline'",
-                    ),
                 ]
+                # An HTML response that stamped nonces into its own inline
+                # scripts has already sent the only CSP that can match them.
+                # Adding a second `content-security-policy` header would not
+                # replace it: browsers intersect multiple CSP headers, so the
+                # strict fallback would forbid every nonce the document just
+                # declared and the page would render with no script at all.
+                already_set = any(
+                    name.lower() == b"content-security-policy"
+                    for name, _value in message.get("headers", [])
+                )
+                if not already_set:
+                    script_src = (
+                        _SCRIPT_SRC_DOCS if scope.get("path") in _DOCS_PATHS else _SCRIPT_SRC_STRICT
+                    )
+                    extra.append((b"content-security-policy", _csp(script_src)))
                 if settings.tls.force_https or settings.security.cookie_secure:
                     extra.append(
                         (
@@ -248,12 +479,21 @@ class HTTPSRedirectMiddleware:
 # ---------------------------------------------------------------------------
 
 
-@asynccontextmanager
-async def _lifespan(app: FastAPI):
-    """Startup: sync every enabled action pack from its git remote, then
-    fold them into the in-memory action registry. Failures are logged
-    per-pack but don't prevent the app from booting — bundled actions
-    are always available."""
+async def _sync_packs_then_reload() -> None:
+    """Refresh every enabled pack from its remote, then refold the registry.
+
+    Runs as a background task off the startup path (BUG-71). Each pack
+    is a git clone with a 120 s timeout per invocation, so on a remote
+    that is merely unreachable this used to hold the lifespan open past
+    the container healthcheck and the orchestrator restarted the process
+    in a loop — a failure that repeats forever because restarting does
+    not make the remote reachable.
+
+    Nothing here is on the critical path: the registry has already been
+    loaded from what is on disk before this starts, so the process is
+    serving actions the whole time. This only picks up commits pushed
+    since the last run.
+    """
     logger = logging.getLogger(__name__)
     try:
         from app.actions.registry import reload_registry_async  # noqa: PLC0415
@@ -263,16 +503,74 @@ async def _lifespan(app: FastAPI):
         async with AsyncSessionLocal() as session:
             await sync_enabled_packs(session)
             await reload_registry_async(session)
+    except asyncio.CancelledError:
+        logger.info("action-pack startup sync cancelled at shutdown")
+        raise
     except Exception:
-        logger.exception("action-pack startup sync failed; bundled pack only")
-    yield
+        logger.exception("action-pack startup sync failed; on-disk packs only")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Startup: fold the packs already on disk into the action registry,
+    then refresh them from their git remotes in the background. Failures
+    are logged but don't prevent the app from booting — bundled actions
+    are always available."""
+    logger = logging.getLogger(__name__)
+
+    # Warm the settings cache before serving. The synchronous readers used
+    # by the SSH paths and the terminal's idle checker read that cache and
+    # never the database, so an unwarmed process would answer from hardcoded
+    # defaults. Kept separate from the pack sync below so a git failure
+    # cannot take the settings down with it.
+    try:
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+        from app.settings_service import refresh_settings_cache  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await refresh_settings_cache(session)
+    except Exception:
+        logger.warning(
+            "could not warm the settings cache at startup; synchronous "
+            "readers will use defaults until a session refreshes it",
+            exc_info=True,
+        )
+
+    # On the critical path: reads what is already checked out, no network.
+    try:
+        from app.actions.registry import reload_registry_async  # noqa: PLC0415
+        from app.db import AsyncSessionLocal  # noqa: PLC0415
+
+        async with AsyncSessionLocal() as session:
+            await reload_registry_async(session)
+    except Exception:
+        logger.exception("action registry load failed; bundled pack only")
+
+    sync_task = asyncio.create_task(_sync_packs_then_reload())
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sync_task
 
 
 def create_app() -> FastAPI:
     _configure_logging()
     logger = logging.getLogger(__name__)
 
-    app = FastAPI(title="LabDog", version="0.1.0", lifespan=_lifespan)
+    # SEC-34: the interactive docs enumerate every route and schema and
+    # are served unauthenticated. Off by default; `server.expose_docs`
+    # turns them back on where that is wanted (dev/labdog.toml does).
+    _docs = settings.server.expose_docs
+    app = FastAPI(
+        title="LabDog",
+        version="0.1.0",
+        lifespan=_lifespan,
+        docs_url="/docs" if _docs else None,
+        redoc_url="/redoc" if _docs else None,
+        openapi_url="/openapi.json" if _docs else None,
+    )
 
     # -- HTTPS redirect (must be outermost) --
     if settings.tls.force_https:
@@ -346,12 +644,18 @@ def create_app() -> FastAPI:
                     await self.app(scope, receive, send)
                     return
                 request = Request(scope, receive)
-                if request.method == "POST" and request.url.path in (
-                    "/api/auth/jwt/login",
-                    "/api/auth/register",
-                ):
-                    client_ip = _get_client_ip(request)
-                    if not _login_limiter.hit(client_ip):
+                if not (request.method == "POST" and request.url.path in _LOGIN_PATHS):
+                    await self.app(scope, receive, send)
+                    return
+
+                # SEC-32: the bucket is per account, not per source
+                # address, so the body has to be read here — and then
+                # handed back intact, because ASGI bodies are read once.
+                body, receive = await _buffered_receive(receive)
+                identity = login_identity(request.headers.get("content-type", ""), body)
+                client_ip = _get_client_ip(request)
+                for key in login_rate_limit_keys(client_ip, identity):
+                    if not _login_limiter.hit(key):
                         response = Response(
                             content='{"detail":"Too many login attempts. Try again later."}',
                             status_code=429,
@@ -457,7 +761,97 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
+        """Liveness. Kept at the original path so nothing pointed here breaks.
+
+        Deliberately still a constant: this answers "is the process
+        responding", which is what a restart policy should act on.
+        Readiness is a different question and lives at /health/ready.
+        """
         return {"status": "ok"}
+
+    @app.get("/health/live")
+    async def health_live():
+        """Liveness, at the conventional path. Same answer as /health."""
+        return {"status": "ok"}
+
+    @app.get("/health/ready")
+    async def health_ready(response: Response):
+        """Readiness: can this instance actually do its job right now?
+
+        /health returned ``{"status": "ok"}`` unconditionally — it never
+        touched the database, Redis, or the Celery children.
+        ``CeleryManager.is_alive()`` existed and was never called from
+        anywhere. So if the Celery subprocess died, the container stayed
+        healthy forever while nothing executed a single task: no sync, no
+        drift check, no scheduled action, and no signal that anything was
+        wrong (BUG-72).
+
+        Returns 503 with a per-component dict when any component is down,
+        so an operator reading the failing probe learns *which* one.
+        """
+        from sqlalchemy import text as _sql_text  # noqa: PLC0415
+        from sqlalchemy.ext.asyncio import create_async_engine  # noqa: PLC0415
+
+        from app.celery_manager import active_manager  # noqa: PLC0415
+
+        components: dict[str, str] = {}
+
+        # A dedicated connection rather than one from the request pool.
+        # The question is "can I reach Postgres", and borrowing from the
+        # pool answers a different one: under load the probe would queue
+        # behind real traffic and report the database down when it is
+        # merely busy — turning a slow moment into a restart.
+        #
+        # Engine construction is inside the try: a health check that raises
+        # is a health check that returns 500 with no component detail,
+        # which is the one outcome this endpoint exists to prevent.
+        probe_engine = None
+        try:
+            probe_engine = create_async_engine(settings.database.url, pool_size=1, max_overflow=0)
+            async with probe_engine.connect() as conn:
+                await conn.execute(_sql_text("SELECT 1"))
+            components["database"] = "ok"
+        except Exception as exc:
+            logger.warning("readiness: database check failed: %s", exc)
+            components["database"] = "error"
+        finally:
+            if probe_engine is not None:
+                try:
+                    await probe_engine.dispose()
+                except Exception:  # noqa: BLE001
+                    logger.warning("readiness: probe engine dispose failed", exc_info=True)
+
+        try:
+            import redis.asyncio as _redis  # noqa: PLC0415
+
+            client = _redis.from_url(settings.redis.url)
+            try:
+                await client.ping()
+                components["redis"] = "ok"
+            finally:
+                await client.aclose()
+        except Exception as exc:
+            logger.warning("readiness: redis check failed: %s", exc)
+            components["redis"] = "error"
+
+        manager = active_manager()
+        if manager is None:
+            # Either --no-celery (a development choice, not a fault) or a
+            # forked uvicorn worker that does not own the subprocesses.
+            # Saying "down" here would fail the probe on a healthy dev run;
+            # saying "ok" would claim knowledge this process does not have.
+            components["celery"] = "not_supervised_here"
+        elif manager.is_alive():
+            components["celery"] = "ok"
+        else:
+            dead = ", ".join(manager.dead_workers()) or "unknown"
+            logger.error("readiness: celery worker(s) not running: %s", dead)
+            components["celery"] = f"error: {dead} not running"
+
+        ready = all(not v.startswith("error") for v in components.values())
+        if not ready:
+            response.status_code = 503
+        return {"status": "ready" if ready else "not_ready", "components": components}
 
     # -- Static file serving (SPA) --
     static_dir = _resolve_static_dir()
@@ -465,84 +859,283 @@ def create_app() -> FastAPI:
         logger.info("Serving frontend static files from %s", static_dir)
         index_html = static_dir / "index.html"
 
+        def _serve(path: Path, dynamic_values: tuple[str, ...] = ()):
+            """Serve one file: HTML gets a nonce and its own CSP, the rest streams.
+
+            Every HTML document LabDog serves passes through here, which is
+            what makes the nonce approach viable at all — there is no
+            ``StaticFiles`` mount, so there is exactly one place to stamp.
+            ``tests/test_csp_nonce.py`` pins that; a mount added later for
+            performance would hand HTML to the strict fallback CSP, and the
+            page would render with no script rather than with weakened
+            script — visibly broken instead of quietly insecure.
+            """
+            if path.suffix == ".html":
+                return _html_response(path, dynamic_values) or _html_response(index_html)
+            if dynamic_values:
+                # The `.txt` RSC payloads carry the same baked-in
+                # placeholders and need the same rewrite. They contain no
+                # script tags, so there is no nonce to stamp.
+                content = _rewrite_placeholder(str(path), path.stat().st_mtime_ns, dynamic_values)
+                if content is None:
+                    return _html_response(index_html)
+                return Response(content=content, media_type="text/plain")
+            return FileResponse(path)
+
         @app.api_route("/{full_path:path}", methods=["GET", "HEAD"], include_in_schema=False)
         async def spa_fallback(full_path: str):
             """Serve static files; fall back to index.html for SPA routes."""
             file_path = static_dir / full_path
             if full_path and not file_path.resolve().is_relative_to(static_dir.resolve()):
-                return FileResponse(index_html)
+                return _serve(index_html)
             if full_path and file_path.is_file():
-                return FileResponse(file_path)
+                return _serve(file_path)
             # Support trailingSlash: true exports (e.g. /login/ → login/index.html)
             if full_path and file_path.is_dir():
                 dir_index = file_path / "index.html"
                 if dir_index.is_file():
-                    return FileResponse(dir_index)
+                    return _serve(dir_index)
             # Support dynamic routes: /hosts/123/ → hosts/placeholder/index.html
             result = _resolve_dynamic_route(static_dir, full_path)
             if result:
-                resolved_file, dynamic_value = result
-                if dynamic_value:
-                    # Rewrite the RSC flight data so the baked-in route
-                    # params match the actual URL instead of "placeholder".
-                    content = resolved_file.read_text(encoding="utf-8")
-                    # Rewrite only the baked-in route SEGMENT value ("placeholder"
-                    # as a quoted value), not a JSON prop key like
-                    # {"placeholder":"..."} from a form input — that would corrupt
-                    # the flight data. The route value is never immediately
-                    # followed by ':', so a negative lookahead skips prop keys.
-                    # HTML escapes quotes (\"), .txt uses plain quotes. Use a
-                    # replacement function so backslashes in the value aren't
-                    # treated as regex backreferences.
-                    content = re.sub(
-                        r'\\"placeholder\\"(?!:)',
-                        lambda _m: f'\\"{dynamic_value}\\"',
-                        content,
-                    )
-                    content = re.sub(
-                        r'"placeholder"(?!:)',
-                        lambda _m: f'"{dynamic_value}"',
-                        content,
-                    )
-                    media_type = "text/html" if resolved_file.suffix == ".html" else "text/plain"
-                    return Response(content=content, media_type=media_type)
-                return FileResponse(resolved_file)
-            return FileResponse(index_html)
+                resolved_file, dynamic_values = result
+                return _serve(resolved_file, dynamic_values)
+            return _serve(index_html)
     else:
         logger.warning("No frontend static directory found — running in API-only mode")
 
     return app
 
 
-def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, str | None] | None:
+_SAFE_DYNAMIC_SEGMENT = re.compile(r"[0-9]{1,19}")
+"""URL segments allowed to be substituted into pre-rendered flight data.
+
+Digits only, because every dynamic route in the app router is an integer
+database primary key — ``actions/runs/[runId]``, ``git-repos/[id]``,
+``groups/[id]``, ``groups/[id]/actions/runs/[runId]``, ``hosts/[id]``,
+``hosts/[id]/actions/runs/[runId]``, ``hosts/discovery/[id]/pending`` and
+``hosts/scans/[id]``. 19 digits is int64. (The discovery entry read
+``hosts/discovery/[id]`` until BUG-76; the export has no page at that
+path, only under ``/pending``.)
+
+This is the security boundary for the rewrite below, and it is an
+allow-list on purpose. The segment is interpolated into a ``<script>``
+block, so a deny-list would have to anticipate every way of breaking out
+of a JavaScript string literal; permitting only digits leaves nothing to
+break out with.
+
+**If a slug-shaped route is ever added, widening this is not sufficient
+on its own** — see the escaping note in ``_rewrite_placeholder``.
+"""
+
+
+def _substitute_placeholders(content: str, values: tuple[str, ...], quote: str) -> str:
+    """Replace the baked-in placeholders in *content*, in path order.
+
+    BUG-76. The export bakes the literal ``placeholder`` into the flight
+    data once per dynamic segment, in two distinct shapes, and a route
+    with two segments contains both twice:
+
+    * the path array — ``["","hosts","placeholder","actions","runs","placeholder",""]``
+    * one route-param tuple each — ``["id","placeholder","d",null]`` and
+      ``["runId","placeholder","d",null]``
+
+    Replacing every occurrence with one value made ``/hosts/7/actions/runs/12/``
+    render as though the host id were also ``12``, so the back-link and
+    breadcrumb on a run page opened under a host pointed at the run.
+
+    Each shape carries its segments in path order, so each is walked
+    separately and consumed in order. The param tuples go first: their
+    placeholders also match the plain pattern, and taking them out of the
+    way first is what keeps the two counts independent.
+
+    An occurrence past the end of *values* is left alone rather than
+    guessed at. A stale ``placeholder`` in the flight data is what the
+    unfixed code produced for every unhandled shape, and the client
+    router resolves the route regardless — a wrong id would be worse
+    than none.
+
+    *quote* is the quoting the file uses: ``"`` in the ``.txt`` payloads,
+    ``\\"`` in HTML, where the flight data is inside a JS string.
+    """
+    q = re.escape(quote)
+    # One pass, two counters. A separate pass per shape would let the
+    # second pattern pick up a param tuple the first had deliberately
+    # left alone, and replace it with the wrong value — which is how the
+    # "more placeholders than values" case failed in review.
+    pattern = re.compile(
+        rf"({q}\w+{q},{q})placeholder({q},{q}d{q})"  # ["id","placeholder","d"
+        rf"|{q}placeholder{q}(?!:)"  # a path-array element
+    )
+    # The lookahead above skips a JSON prop *key* named "placeholder"
+    # (e.g. a form input's), which is not a route value.
+    counts = {"param": 0, "path": 0}
+
+    def repl(match: re.Match[str]) -> str:
+        kind = "param" if match.group(1) is not None else "path"
+        index = counts[kind]
+        if index >= len(values):
+            return match.group(0)
+        counts[kind] = index + 1
+        value = values[index]
+        if kind == "param":
+            return f"{match.group(1)}{value}{match.group(2)}"
+        return f"{quote}{value}{quote}"
+
+    return pattern.sub(repl, content)
+
+
+#: Stand-in for the real nonce inside the cached HTML.
+#:
+#: The nonce has to differ per response, and the rewritten document is
+#: expensive enough to want cached. Both are satisfied by caching the
+#: document with this sentinel in the nonce slots and doing one
+#: ``str.replace`` per response — the cache stays keyed on
+#: ``(path, mtime, values)`` exactly as before, and the per-response work
+#: is a single pass over at most a few tens of kilobytes.
+#:
+#: It is a UUID rather than a readable token so it cannot collide with
+#: anything the export legitimately contains.
+_NONCE_SLOT = "b4c1f0e2-7a3d-4c8e-9f16-5d2a8e7b0c34"
+
+#: Matches an inline ``<script>`` opening tag — one with no ``src``.
+#:
+#: External scripts are left alone deliberately. They are already governed
+#: by ``'self'``, and a nonce on them would be noise; more importantly, the
+#: fewer tags this touches, the smaller the blast radius of a regex working
+#: on markup.
+_INLINE_SCRIPT_OPEN = re.compile(r"<script(?![^>]*\bsrc=)([^>]*)>", re.IGNORECASE)
+
+
+def _inject_nonce_slots(html: str) -> str:
+    """Put the nonce sentinel on every inline ``<script>`` in *html*."""
+    return _INLINE_SCRIPT_OPEN.sub(lambda m: f'<script{m.group(1)} nonce="{_NONCE_SLOT}">', html)
+
+
+def _new_nonce() -> str:
+    """A fresh CSP nonce: 128 bits, base64, per RFC-recommended length."""
+    return base64.b64encode(secrets.token_bytes(16)).decode("ascii")
+
+
+@lru_cache(maxsize=512)
+def _html_with_nonce_slots(
+    file_path: str, mtime_ns: int, dynamic_values: tuple[str, ...]
+) -> str | None:
+    """Load an HTML document ready for a nonce, or ``None`` to fall back.
+
+    Applies the placeholder rewrite when *dynamic_values* is non-empty, then
+    stamps the sentinel. Cached on the same key as ``_rewrite_placeholder``
+    and for the same reasons: ``mtime_ns`` so a redeployed export is not
+    served stale, ``maxsize`` so requesting many distinct ids cannot grow it
+    without bound.
+    """
+    if dynamic_values:
+        content = _rewrite_placeholder(file_path, mtime_ns, dynamic_values)
+        if content is None:
+            return None
+    else:
+        content = Path(file_path).read_text(encoding="utf-8")
+    return _inject_nonce_slots(content)
+
+
+def _html_response(file_path: Path, dynamic_values: tuple[str, ...] = ()) -> Response | None:
+    """Serve an HTML document with a fresh nonce and a matching CSP.
+
+    Returns ``None`` when the placeholder rewrite refused the values, which
+    the caller turns into a plain ``index.html`` response.
+    """
+    prepared = _html_with_nonce_slots(str(file_path), file_path.stat().st_mtime_ns, dynamic_values)
+    if prepared is None:
+        return None
+    nonce = _new_nonce()
+    return Response(
+        content=prepared.replace(_NONCE_SLOT, nonce),
+        media_type="text/html",
+        headers={"content-security-policy": _csp(f"script-src 'self' 'nonce-{nonce}'").decode()},
+    )
+
+
+@lru_cache(maxsize=512)
+def _rewrite_placeholder(
+    file_path: str, mtime_ns: int, dynamic_values: tuple[str, ...]
+) -> str | None:
+    """Return *file_path* with the baked-in route placeholders replaced.
+
+    Returns ``None`` when any value is not a permitted segment, which the
+    caller turns into a plain ``index.html`` response.
+
+    Keyed on ``mtime_ns`` as well as the path so a redeployed export is not
+    served from a stale entry; bounded by ``maxsize`` so the cache cannot be
+    grown without limit by requesting many distinct ids.
+
+    Security: the values are re-validated here rather than trusted from the
+    caller. They reach this function straight from the URL, and land inside
+    the RSC flight-data ``<script>`` block of the response — so before this
+    check, ``GET /hosts/x"</script><script>alert(1)</script>/`` closed the
+    string and the script tag and executed. The CSP in
+    ``SecurityHeadersMiddleware`` allows ``script-src 'unsafe-inline'``, and
+    the CSRF cookie is deliberately readable by JavaScript, so injected code
+    could drive any authenticated mutation same-origin.
+
+    No output escaping is layered on top, deliberately. The placeholder
+    appears in two different quoting contexts — plain ``"placeholder"`` in
+    ``.txt`` payloads and backslash-escaped ``\\"placeholder\\"`` in HTML —
+    which need *different* escaping, and a single escape helper applied to
+    both would be wrong in one of them. With the values constrained to digits
+    there is nothing to escape, so the allow-list carries the safety on its
+    own. Widening ``_SAFE_DYNAMIC_SEGMENT`` therefore requires adding
+    context-correct escaping at the same time.
+    """
+    if not dynamic_values:
+        return None
+    if not all(_SAFE_DYNAMIC_SEGMENT.fullmatch(v) for v in dynamic_values):
+        return None
+    content = Path(file_path).read_text(encoding="utf-8")
+    content = _substitute_placeholders(content, dynamic_values, '\\"')
+    content = _substitute_placeholders(content, dynamic_values, '"')
+    return content
+
+
+def _resolve_dynamic_route(static_dir: Path, full_path: str) -> tuple[Path, tuple[str, ...]] | None:
     """Resolve a Next.js dynamic route by substituting missing path segments
     with the generateStaticParams placeholder directory.
 
-    Returns ``(resolved_file, dynamic_value)`` where *dynamic_value* is the
-    original URL segment that was substituted (e.g. ``"1"`` for
-    ``/groups/1/``), or ``None`` when no substitution was needed.
+    Returns ``(resolved_file, dynamic_values)`` where *dynamic_values* holds
+    the original URL segments that were substituted, **in path order** —
+    ``("1",)`` for ``/groups/1/`` and ``("7", "12")`` for
+    ``/hosts/7/actions/runs/12/``. Empty when no substitution was needed.
+
+    BUG-76: this used to keep a single value, so the second segment of a
+    nested route overwrote the first and both were rewritten to it.
+
+    A segment that is not a permitted id (see ``_SAFE_DYNAMIC_SEGMENT``) is
+    refused outright rather than substituted, so the caller falls through to
+    the SPA shell and the client router resolves the route. Legitimate URLs
+    are unaffected: every dynamic segment the app produces is an integer id.
     """
     parts = Path(full_path).parts
     if not parts:
         return None
     current = static_dir
-    dynamic_value: str | None = None
+    dynamic_values: list[str] = []
     for part in parts:
         candidate = current / part
         if candidate.is_dir():
             current = candidate
         elif candidate.is_file():
-            return (candidate, dynamic_value)
+            return (candidate, tuple(dynamic_values))
         else:
             placeholder = current / "placeholder"
             if placeholder.is_dir():
-                dynamic_value = part
+                if not _SAFE_DYNAMIC_SEGMENT.fullmatch(part):
+                    return None
+                dynamic_values.append(part)
                 current = placeholder
             else:
                 return None
     index = current / "index.html"
     if index.is_file():
-        return (index, dynamic_value)
+        return (index, tuple(dynamic_values))
     return None
 
 

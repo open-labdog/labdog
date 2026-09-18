@@ -17,7 +17,7 @@ artifacts and apply either way.
 
 Full reference: [`docs/metrics-export.md`](../../metrics-export.md).
 
-> **Not to be confused with** [`docs/ui/metrics.md`](../../ui/metrics.md), which
+> **Not to be confused with** [`docs/ui/host-metrics.md`](../../ui/host-metrics.md), which
 > is the *opposite* direction — LabDog **reading** host CPU/memory/disk from a
 > Grafana Mimir backend. This directory is about Prometheus **reading LabDog**.
 
@@ -87,7 +87,7 @@ your Prometheus datasource when prompted.
 The default export is roughly 250 series and does not include any per-host
 label — that is deliberate (a 10,000-host fleet would otherwise produce hundreds
 of thousands of series). Per-host telemetry belongs to the Alloy → Mimir path
-documented in [`docs/ui/metrics.md`](../../ui/metrics.md).
+documented in [`docs/ui/host-metrics.md`](../../ui/host-metrics.md).
 
 The one knob that can grow the series count is the `action_key` label on
 `labdog_action_runs_total`. If you run a very large number of distinct actions

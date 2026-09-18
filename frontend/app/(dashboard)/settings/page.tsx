@@ -128,7 +128,7 @@ const CATEGORIES: Record<string, Category> = {
   },
   logging: {
     label: "Logging",
-    keys: ["logging.level", "logging.audit_retention_days"],
+    keys: ["logging.level", "logging.audit_retention_days", "logging.run_retention_days"],
   },
 }
 

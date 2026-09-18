@@ -281,23 +281,17 @@ def sweep_stale_action_runs() -> dict:
 
 
 def _register_beat_schedule() -> None:
-    from celery.schedules import schedule
-    from redbeat import RedBeatSchedulerEntry
+    from app.tasks.beat_registry import ensure_entry
 
-    entry = RedBeatSchedulerEntry(
+    ensure_entry(
         name="app.tasks.action_sweeper.sweep_stale_action_runs",
         task="app.tasks.action_sweeper.sweep_stale_action_runs",
-        schedule=schedule(run_every=SWEEP_FREQUENCY_SECONDS),
+        run_every_seconds=SWEEP_FREQUENCY_SECONDS,
         app=celery_app,
     )
-    entry.save()
 
 
-try:
-    _register_beat_schedule()
-except Exception as exc:  # noqa: BLE001
-    # Redis is absent at import time in unit tests, and a transient Redis
-    # blip shouldn't stop the worker from booting. Log rather than pass:
-    # a silently-unregistered sweeper means stale action runs are never
-    # reaped, which is precisely the failure this module exists to fix.
-    logger.warning("action_sweeper: RedBeat registration failed: %s", exc)
+# Registration happens from ``beat_init`` (app.tasks.beat_registry), not at
+# import. Calling it here rewrote the entry's ``due_at`` in every process
+# that imported this module — API included — so on a deployment that
+# restarts more than once a day, a daily job never fired at all (BUG-70).

@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./fixtures"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
@@ -58,8 +58,10 @@ test.describe("Groups page", () => {
     await expect(page.getByRole("heading", { name: groupName })).toBeVisible()
     // Group detail uses tabs — check for the Rules tab button
     await expect(page.getByRole("tab", { name: "Rules" })).toBeVisible()
-    // Sync tab replaces the old Sync link
-    await expect(page.getByRole("tab", { name: "Sync" })).toBeVisible()
+    // There is no Sync tab: group sync is the "Sync all modules" dialog
+    // opened from the Sync Status card. See sync.spec.ts.
+    await expect(page.getByRole("tab", { name: "Services" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible()
   })
 
   test("group detail shows priority card", async ({ request, page }) => {

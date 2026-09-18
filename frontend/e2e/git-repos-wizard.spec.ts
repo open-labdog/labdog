@@ -1,4 +1,5 @@
-import { test, expect, type Page, type Route } from "@playwright/test"
+import { test, expect } from "./fixtures"
+import type { Page, Route } from "@playwright/test"
 
 // Mock backend payloads. Tests that exercise the wizard intercept all
 // repo-onboarding endpoints with page.route() so the suite is fully
@@ -135,7 +136,8 @@ async function mockCreateRepo(page: Page) {
           branch: "main",
           auth_type: "none",
           ssh_key_id: null,
-          webhook_secret: null,
+          has_webhook_secret: false,
+          has_pinned_host_key: false,
           last_commit_sha: null,
           last_sync_at: null,
           created_at: now,
@@ -202,7 +204,7 @@ test.describe("Git repo onboarding wizard", () => {
   test("Add Repository on the list page links to the wizard", async ({ page }) => {
     await page.goto("/git-repos")
     await page.getByRole("link", { name: "Add Repository" }).first().click()
-    await expect(page).toHaveURL(/\/git-repos\/new$/)
+    await expect(page).toHaveURL(/\/git-repos\/new\/?$/)
   })
 
   test("happy path: scan returns findings, operator activates, lands on detail", async ({
@@ -262,7 +264,8 @@ test.describe("Git repo onboarding wizard", () => {
             branch: "main",
             auth_type: "none",
             ssh_key_id: null,
-            webhook_secret: null,
+            has_webhook_secret: false,
+            has_pinned_host_key: false,
             last_commit_sha: null,
             last_sync_at: null,
             created_at: "2024-01-01T00:00:00Z",
@@ -289,13 +292,16 @@ test.describe("Git repo onboarding wizard", () => {
 
     await page.getByTestId("activate-button").click()
 
-    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}$`))
+    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}/?$`))
 
     // Activation request shape: two packs default-checked, two gitops bindings.
+    // No `role` — packs carry no inherent precedence any more; every
+    // contested key is decided by an action_resolution pin instead
+    // (ActivatePackSelection in backend/app/schemas/repo_scan.py).
     expect(captured.lastBody).toMatchObject({
       packs: [
-        { path: "actions/upgrade", name: "upgrade-pack", role: "default" },
-        { path: "actions/k8s", name: "k8s-pack", role: "default" },
+        { path: "actions/upgrade", name: "upgrade-pack" },
+        { path: "actions/k8s", name: "k8s-pack" },
       ],
       gitops_bindings: [
         { file_path: "groups/web.yaml", host_group_id: 1 },
@@ -321,7 +327,8 @@ test.describe("Git repo onboarding wizard", () => {
             branch: "main",
             auth_type: "none",
             ssh_key_id: null,
-            webhook_secret: null,
+            has_webhook_secret: false,
+            has_pinned_host_key: false,
             last_commit_sha: null,
             last_sync_at: null,
             created_at: "2024-01-01T00:00:00Z",
@@ -354,7 +361,7 @@ test.describe("Git repo onboarding wizard", () => {
     await expect(page.getByTestId("activate-button")).toBeEnabled()
 
     await page.getByTestId("activate-button").click()
-    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}$`))
+    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}/?$`))
   })
 
   test("manifest errors render as a dimmed, non-checkable row", async ({ page }) => {
@@ -374,7 +381,8 @@ test.describe("Git repo onboarding wizard", () => {
             branch: "main",
             auth_type: "none",
             ssh_key_id: null,
-            webhook_secret: null,
+            has_webhook_secret: false,
+            has_pinned_host_key: false,
             last_commit_sha: null,
             last_sync_at: null,
             created_at: "2024-01-01T00:00:00Z",
@@ -403,7 +411,7 @@ test.describe("Git repo onboarding wizard", () => {
     // The healthy pack is still checkable + activatable.
     await expect(page.getByTestId("activate-button")).toBeEnabled()
     await page.getByTestId("activate-button").click()
-    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}$`))
+    await expect(page).toHaveURL(new RegExp(`/git-repos/${FAKE_REPO_ID}/?$`))
   })
 
   test("re-scan from the detail page reuses the review modal", async ({ page }) => {
@@ -415,7 +423,8 @@ test.describe("Git repo onboarding wizard", () => {
       branch: "main",
       auth_type: "none",
       ssh_key_id: null,
-      webhook_secret: null,
+      has_webhook_secret: false,
+      has_pinned_host_key: false,
       last_commit_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
       last_sync_at: "2024-01-02T03:04:05Z",
       created_at: "2024-01-01T00:00:00Z",
@@ -449,6 +458,6 @@ test.describe("Git repo onboarding wizard", () => {
 
     // Modal closes; we stay on the detail page.
     await expect(page.getByRole("heading", { name: "Re-scan repository" })).toBeHidden()
-    await expect(page).toHaveURL(new RegExp(`/git-repos/${REPO_ID}$`))
+    await expect(page).toHaveURL(new RegExp(`/git-repos/${REPO_ID}/?$`))
   })
 })

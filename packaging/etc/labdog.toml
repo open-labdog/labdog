@@ -23,11 +23,21 @@ port = 8000
 #   - /usr/lib/labdog/frontend/out  (production)
 # Set to a path to override, or "none" to disable static serving.
 # static_dir = ""
-# Trusted reverse-proxy IPs/CIDRs — X-Forwarded-For is only
-# honoured from these sources (important for audit logs)
+# Trusted reverse-proxy IPs/CIDRs — X-Forwarded-For is only honoured
+# from these sources (important for audit logs, and for the login rate
+# limit, which keys on the client address). CIDR entries work, so a
+# containerised proxy on a dynamic address can be covered by its network:
+#   trusted_proxies = ["172.18.0.0/16"]
+# Leave empty if nothing sits in front of LabDog. If a proxy is present
+# and this is empty, LabDog logs a warning once and treats every request
+# as coming from the proxy.
 trusted_proxies = []
 # Uvicorn's --forwarded-allow-ips (comma-separated string)
 forwarded_allow_ips = "127.0.0.1"
+# Serve the interactive API docs at /docs, /redoc and /openapi.json.
+# They require no authentication and list every route, parameter and
+# schema, so they are off by default.
+expose_docs = false
 
 # ── Database ─────────────────────────────────────────────────
 [database]
@@ -152,8 +162,14 @@ check_interval_minutes = 30
 
 # ── Celery (background workers) ─────────────────────────────
 [celery]
-# Number of worker processes
+# Two workers run: `work` (sync, drift, discovery, per-host action steps)
+# and `orchestrator` (action_orchestrator.run_action only). Separate pools
+# because an orchestrator blocks waiting for the children it dispatched.
+# Worker processes on the `work` pool
 concurrency = 4
+# Concurrent action runs the orchestrator worker supervises. Exceeding it
+# queues runs rather than deadlocking; each slot is a forked interpreter.
+orchestrator_concurrency = 4
 # Recycle worker after N tasks (prevents memory leaks)
 max_tasks_per_child = 100
 

@@ -38,6 +38,7 @@ a release artifact.
 | `security.encryption_key` | **Yes — critical** | `labdog.toml` (`/etc/labdog/labdog.toml` on package installs) | 32-byte AES-256-GCM key in base64. Without it, the encrypted columns in the DB are unrecoverable. |
 | `security.secret_key` | Recommended | same file | JWT signing key. Losing it invalidates all existing sessions but doesn't lose data — users re-login. |
 | Ansible pack checkouts | **No** | `/var/lib/labdog/packs/<id>/` | Re-cloned from the pack's linked `GitRepository` on next sync. |
+| Claude Code session state | Optional — but **must persist across restarts** | `/var/lib/labdog/claude-cli/` | Only relevant to the `claude_agent` and `claude_cli` providers. Holds the stored subscription login and the CLI's own session files. An AI session parked awaiting approval keeps only its `sdk_session_id` in the database — the conversation it resumes into lives here, so a container without this path on a volume loses parked sessions on restart. Not worth backing up (a lost login is re-entered, a lost parked session is re-run), but it does need to survive a restart: the shipped compose in [production-deploy.md](production-deploy.md) mounts it. |
 | Logs | Optional | `/var/log/labdog/` or `journalctl -u labdog` | Only for incident forensics; not required for service restoration. |
 | Frontend build | **No** | `/usr/lib/labdog/frontend/out/` | Comes from the release artifact. |
 | Backend venv | **No** | `/usr/lib/labdog/venv/` | Comes from the release artifact. |
