@@ -84,6 +84,20 @@ class TestReadinessChecksRealComponents:
         assert body["status"] == "not_ready"
         assert "orchestrator" in body["components"]["celery"]
 
+    async def test_a_dead_beat_makes_it_not_ready(self, client):
+        """Beat used to be a child of the `work` worker, invisible to
+        `is_alive()`. Now it is a supervised peer, and its death is
+        named here like any worker's (BUG-83)."""
+        manager = MagicMock()
+        manager.is_alive.return_value = False
+        manager.dead_workers.return_value = ["beat"]
+
+        with _redis_up(), patch("app.celery_manager.active_manager", return_value=manager):
+            resp = await client.get("/health/ready")
+
+        assert resp.status_code == 503
+        assert "beat" in resp.json()["components"]["celery"]
+
     async def test_a_live_celery_worker_is_ok(self, client):
         manager = MagicMock()
         manager.is_alive.return_value = True

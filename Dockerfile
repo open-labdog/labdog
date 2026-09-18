@@ -1,5 +1,5 @@
 # LabDog — single-image build
-# Produces a container that runs the API, Celery worker+beat, and serves
+# Produces a container that runs the API, the Celery workers and beat, and serves
 # the static frontend — all from `python -m app`.
 #
 # Every FROM is pinned by digest with the tag kept alongside it for

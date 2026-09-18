@@ -206,14 +206,19 @@ seeded row and add their own.
 
 ### Celery workers and queues
 
-Two workers, both children of the main process
-(`app/celery_manager.py::WORKER_QUEUES`):
+Three subprocesses, all children of the main process
+(`app/celery_manager.py`):
 
-- **`work`** — `-Q default,long_running`, carries beat. Everything except
-  the run orchestrator: syncs, drift, discovery, and the per-host half of
-  every action run.
+- **`work`** — `-Q default,long_running`. Everything except the run
+  orchestrator: syncs, drift, discovery, and the per-host half of every
+  action run.
 - **`orchestrator`** — `-Q orchestrator`. Runs only
   `app.tasks.action_orchestrator.run_action`.
+- **`beat`** — the RedBeat scheduler, standalone. It used to be embedded
+  in `work` as `--beat`, which Celery runs as a *child* of the worker: a
+  Redis restart killed the child, nothing restarted it, and
+  `/health/ready` stayed green because the worker itself was fine
+  (BUG-83). As a peer it is under the same `poll()` as the workers.
 
 The split is load-bearing, not tidiness. `run_action` dispatches per-host
 children to `long_running` and then blocks in `result.join()` until they

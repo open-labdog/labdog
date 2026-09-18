@@ -26,7 +26,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.celery_manager import WORKER_QUEUES, CeleryManager
+from app.celery_manager import BEAT, WORKER_QUEUES, CeleryManager
 from app.tasks import _is_orchestrator_worker, celery_app
 from app.tasks.action_orchestrator import CHILD_QUEUE
 
@@ -111,23 +111,66 @@ class TestBothWorkersAreActuallyStarted:
             mgr.start()
         return mgr, procs
 
-    def test_one_subprocess_per_worker(self):
+    @staticmethod
+    def _workers(procs):
+        return [cmd for cmd in procs if "worker" in cmd]
+
+    @staticmethod
+    def _beats(procs):
+        return [cmd for cmd in procs if "beat" in cmd]
+
+    def test_one_subprocess_per_worker_plus_beat(self):
         _, procs = self._start()
-        assert len(procs) == len(WORKER_QUEUES)
+        assert len(self._workers(procs)) == len(WORKER_QUEUES)
+        assert len(procs) == len(WORKER_QUEUES) + 1
 
     def test_each_worker_gets_its_own_queues_and_node_name(self):
         _, procs = self._start()
         by_name = {}
-        for cmd in procs:
+        for cmd in self._workers(procs):
             node = cmd[cmd.index("-n") + 1]
             by_name[node.split("@", 1)[0]] = cmd[cmd.index("-Q") + 1]
         assert by_name == {name: ",".join(q) for name, q in WORKER_QUEUES.items()}
 
-    def test_only_one_worker_carries_beat(self):
+    def test_exactly_one_beat(self):
         """Two RedBeat schedulers against one keyspace double-fire every
         periodic task."""
         _, procs = self._start()
-        assert sum("--beat" in cmd for cmd in procs) == 1
+        assert len(self._beats(procs)) == 1
+
+    def test_no_worker_carries_beat(self):
+        """Embedded beat is a *child* of the worker, and a dead child
+        leaves the worker's poll() saying alive. The scheduler has to be
+        a peer of the workers for the supervisor to see it die (BUG-83)."""
+        _, procs = self._start()
+        assert not any("--beat" in cmd or "-B" in cmd for cmd in self._workers(procs))
+
+    def test_beat_is_supervised_under_its_own_name(self):
+        mgr, _ = self._start()
+        assert BEAT in mgr._processes
+
+    def test_beat_uses_redbeat(self):
+        """A file-backed scheduler would keep a schedule the workers'
+        `ensure_entry` never wrote to."""
+        _, procs = self._start()
+        (beat,) = self._beats(procs)
+        assert beat[beat.index("--scheduler") + 1] == "redbeat.RedBeatScheduler"
+
+    def test_beat_has_no_pidfile(self):
+        """A stale pidfile after a crash refuses the restart the
+        supervisor exists to make possible."""
+        _, procs = self._start()
+        (beat,) = self._beats(procs)
+        assert not any(arg.startswith("--pidfile") for arg in beat)
+
+    def test_a_dead_beat_makes_the_manager_not_alive(self):
+        """The failure this whole change is for: beat gone, workers fine,
+        health green."""
+        mgr, _ = self._start()
+        assert mgr.is_alive()
+        mgr._processes[BEAT].poll.return_value = 1
+        assert not mgr.is_alive()
+        assert mgr.dead_workers() == [BEAT]
 
     def test_is_alive_is_false_when_any_worker_has_died(self):
         mgr, _ = self._start()
