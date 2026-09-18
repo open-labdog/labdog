@@ -270,6 +270,23 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **Frontend lint runs on ESLint 10; `eslint-config-next` is gone.** ESLint 9
+  reached end of life on 2026-08-06 and the only thing keeping LabDog on it
+  was `eslint-plugin-react` — silent since April 2025, peer-capped at 9, and
+  still calling an API 10 removed — pulled in by `eslint-config-next`. The
+  rule sets that package assembled are now assembled in `eslint.config.mjs`
+  directly, rule for rule, from `@next/eslint-plugin-next`,
+  `typescript-eslint`, `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y`
+  and `eslint-plugin-import-x` (the maintained fork of `eslint-plugin-import`,
+  whose peer range also stopped at 9). What is lost is `eslint-plugin-react`'s
+  `recommended` set, most of which TypeScript `strict` subsumes.
+
+  `eslint-plugin-react-hooks` moves 7.0 → 7.1, which promotes two React
+  Compiler readiness rules to errors; both are held at `warn` for now and the
+  four sites they flag are on TODO.md. Lint result on the tree: 0 errors
+  before and after; warnings 5 → 15, all advisory. Development-only — nothing
+  in the shipped image changes.
+
 - **The `is_system` columns on `firewall_rules` and `hosts_entries` are gone
   (migration `0038`).** Neither was ever written. The create schemas do not
   accept the field, the two GitOps importers strip `system: true` out of

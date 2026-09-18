@@ -202,14 +202,19 @@ raised (`cryptography>=49`, `gitpython>=3.1.49`, `asyncssh>=2.23.1`,
 `starlette>=1.0.1`, `python-multipart>=0.0.30`) and `backend/uv.lock`
 added. These are the deferred hardening/maintenance tasks that remain.
 
-- [ ] **Migrate ESLint 9 → 10 (frontend).** ESLint v9 reaches EOL ~2026-08-06.
-      Flat config is already in place (`eslint.config.mjs`), so this is just the
-      version bump — but it is **currently blocked upstream**: bumping `eslint`
-      to 10 crashes lint with `context.getFilename is not a function`, because
-      `eslint-config-next` (even the latest 16.2.10) bundles
-      `eslint-plugin-react@7.37.5`, which still calls the API ESLint 10 removed.
-      Re-attempt once `eslint-plugin-react` ships an ESLint-10-compatible
-      release and `eslint-config-next` picks it up (then just bump both).
+- [ ] **React Compiler readiness (frontend).** `eslint-plugin-react-hooks`
+      7.1 promoted `set-state-in-effect` and `purity` to errors; the ESLint 10
+      move (2026-09-18) demoted both to warnings rather than restructure
+      components in a toolchain PR. Four sites are flagged: debounced
+      validation in `cron-input.tsx`, prop→state sync in
+      `table-filter-cell.tsx`, seeding state from query data in
+      `action-run-dialog.tsx`, and `Date.now()` in a render-time helper in
+      `groups/[id]/client-page.tsx`. None is a bug. Fix them the React way
+      (derive during render, key-based reset, `useSyncExternalStore` or a
+      ticking hook for relative time) and restore the two rules to `error`
+      in `eslint.config.mjs`. The nine `incompatible-library` warnings are
+      react-hook-form's `watch()` and stay until that library is replaced or
+      the rule learns it.
 
 - [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
       separately; the safe react-query / tailwindcss / zod / react-hook-form
