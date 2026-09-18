@@ -8,7 +8,7 @@
 # below sends none of them and knows nothing about /api.
 #
 # It exists for CI and for looking at the static export on its own.
-FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS builder
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -18,7 +18,7 @@ RUN npm run build
 # Output: /app/out/
 
 # Serve with a lightweight static server (for standalone testing)
-FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
+FROM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4
 # Pinned: an unpinned `npm install -g serve` resolves to whatever is
 # newest at build time, which is the same floating-dependency problem the
 # release path was just fixed for.
