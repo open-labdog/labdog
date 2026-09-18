@@ -396,6 +396,27 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **BUG-83: the periodic scheduler now survives a Redis restart, and its death
+  is no longer invisible.** Beat ran embedded in the `work` worker, which
+  Celery runs as a *child* of that worker. Its tick loop catches only
+  `KeyboardInterrupt` and `SystemExit`, and RedBeat's `tick()` opens with an
+  unguarded lock refresh that raises `ConnectionError` while Redis is down and
+  `LockNotOwnedError` once it is back with the lock key gone. Either killed
+  the child; nothing restarted it; and because the worker itself was fine,
+  `/health/ready` kept reporting `celery: ok` while every periodic job — drift
+  sweeps, scheduled actions, audit and snapshot retention, Alertmanager
+  polling — had silently stopped. A routine Redis image update was enough.
+
+  Two changes. Beat is now its own supervised subprocess alongside the two
+  workers, so if it does die, `/health/ready` returns 503 with
+  `beat not running`. And it no longer dies: a `RedBeatScheduler` subclass
+  retries after a lost connection, re-acquires a lost lock without blocking,
+  and re-registers every schedule when the lock loss says Redis came back
+  empty. Verified by restarting a persistence-less Redis under a live beat —
+  the stock scheduler exits with code 1 and an empty schedule; the new one
+  logs the loss, re-acquires, re-registers 17 schedule groups and keeps
+  ticking. No operator action is needed on upgrade.
+
 - **A session stopped by the Claude plan's rate limit now says so.** The two
   subscription-billed backends stop on the plan's quota, not on a money
   budget — their cost is booked from an estimate and flagged

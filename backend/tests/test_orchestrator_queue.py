@@ -149,12 +149,15 @@ class TestBothWorkersAreActuallyStarted:
         mgr, _ = self._start()
         assert BEAT in mgr._processes
 
-    def test_beat_uses_redbeat(self):
+    def test_beat_uses_the_resilient_redbeat(self):
         """A file-backed scheduler would keep a schedule the workers'
-        `ensure_entry` never wrote to."""
+        `ensure_entry` never wrote to, and the stock RedBeat one dies on
+        the first Redis restart (BUG-83)."""
         _, procs = self._start()
         (beat,) = self._beats(procs)
-        assert beat[beat.index("--scheduler") + 1] == "redbeat.RedBeatScheduler"
+        assert (
+            beat[beat.index("--scheduler") + 1] == "app.tasks.scheduler.ResilientRedBeatScheduler"
+        )
 
     def test_beat_has_no_pidfile(self):
         """A stale pidfile after a crash refuses the restart the
