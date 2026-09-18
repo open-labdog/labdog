@@ -1,4 +1,8 @@
-"""Manages the Celery worker subprocesses of the main LabDog process.
+"""Manages the Celery subprocesses of the main LabDog process.
+
+Three of them: two workers and the beat scheduler. Beat is separate for
+the reason given at :data:`BEAT`. The workers are two for the reason
+below.
 
 Two workers, not one. ``action_orchestrator.run_action`` blocks in
 ``result.join()`` waiting for per-host children it published itself, so
@@ -32,15 +36,31 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 #: Which queues each worker consumes, keyed by worker name.
 #:
-#: ``work`` runs everything and carries beat. ``orchestrator`` exists only
-#: so ``run_action`` never waits on a pool it is itself occupying — see the
-#: module docstring. Nothing else may be routed to it: an orchestrator slot
-#: held by unrelated work reintroduces exactly the starvation the split
-#: removes.
+#: ``work`` runs everything except the orchestrator. ``orchestrator``
+#: exists only so ``run_action`` never waits on a pool it is itself
+#: occupying — see the module docstring. Nothing else may be routed to
+#: it: an orchestrator slot held by unrelated work reintroduces exactly
+#: the starvation the split removes.
 WORKER_QUEUES: dict[str, tuple[str, ...]] = {
     "work": ("default", "long_running"),
     "orchestrator": ("orchestrator",),
 }
+
+#: The scheduler's own process name. Not in WORKER_QUEUES because it
+#: consumes nothing; it only publishes.
+#:
+#: Beat used to ride inside the ``work`` worker as ``--beat``, which
+#: Celery runs as a *child* of that worker. The child's tick loop catches
+#: only KeyboardInterrupt and SystemExit, so the first Redis restart
+#: killed it — RedBeat's ``tick()`` begins with an unguarded
+#: ``lock.extend()`` that raises ConnectionError while Redis is down and
+#: LockNotOwnedError once it is back with the lock key gone — and nothing
+#: restarted it. The worker itself was fine, so ``is_alive()`` said so,
+#: and ``/health/ready`` stayed green while every periodic job had
+#: stopped: drift sweeps, scheduled actions, retention, alert polling
+#: (BUG-83). Running beat as its own supervised subprocess is what puts
+#: it under the same ``poll()`` as the workers.
+BEAT = "beat"
 
 
 #: The manager this process owns, or None.
@@ -77,6 +97,26 @@ class CeleryManager:
     def __init__(self) -> None:
         self._processes: dict[str, subprocess.Popen[bytes]] = {}
 
+    def _beat_command(self) -> list[str]:
+        """The standalone scheduler.
+
+        No ``--pidfile``: the CLI defaults to none, and a stale pidfile
+        after a crash would refuse the very restart the supervisor
+        exists to make possible. RedBeat keeps its schedule in Redis, so
+        the ``--schedule`` file the CLI would otherwise write is unused.
+        """
+        return [
+            sys.executable,
+            "-m",
+            "celery",
+            "-A",
+            "app.tasks",
+            "beat",
+            "--scheduler",
+            "redbeat.RedBeatScheduler",
+            f"--loglevel={settings.logging.level}",
+        ]
+
     def _command(self, name: str, queues: tuple[str, ...]) -> list[str]:
         cmd = [
             sys.executable,
@@ -86,10 +126,6 @@ class CeleryManager:
             "app.tasks",
             "worker",
         ]
-        if name == "work":
-            # Beat belongs to exactly one worker; two schedulers against one
-            # RedBeat keyspace would double-fire every periodic task.
-            cmd += ["--beat", "--scheduler", "redbeat.RedBeatScheduler"]
         concurrency = (
             settings.celery.orchestrator_concurrency
             if name == "orchestrator"
@@ -109,22 +145,33 @@ class CeleryManager:
         ]
         return cmd
 
+    def _spawn(self, name: str, cmd: list[str]) -> None:
+        logger.info("Starting Celery %r: %s", name, " ".join(cmd))
+        self._processes[name] = subprocess.Popen(
+            cmd,
+            cwd=BACKEND_DIR,
+            stderr=subprocess.STDOUT,
+        )
+        logger.info("Celery %r started (pid=%d)", name, self._processes[name].pid)
+
     def start(self) -> None:
-        """Spawn one Celery worker subprocess per entry in WORKER_QUEUES."""
+        """Spawn one worker per entry in WORKER_QUEUES, plus the scheduler.
+
+        Exactly one beat: two schedulers against one RedBeat keyspace
+        would double-fire every periodic task. It is a peer of the
+        workers here rather than a child of one of them so that its
+        death is a dead entry in ``_processes`` — visible to
+        ``is_alive()`` and named by ``dead_workers()`` — instead of a
+        silent stop inside a worker that reports itself healthy.
+        """
         global _active_manager
         _active_manager = self
         for name, queues in WORKER_QUEUES.items():
-            cmd = self._command(name, queues)
-            logger.info("Starting Celery worker %r: %s", name, " ".join(cmd))
-            self._processes[name] = subprocess.Popen(
-                cmd,
-                cwd=BACKEND_DIR,
-                stderr=subprocess.STDOUT,
-            )
-            logger.info("Celery worker %r started (pid=%d)", name, self._processes[name].pid)
+            self._spawn(name, self._command(name, queues))
+        self._spawn(BEAT, self._beat_command())
 
     def stop(self, timeout: int = 60) -> None:
-        """SIGTERM every worker, wait up to *timeout* seconds each, then SIGKILL.
+        """SIGTERM every subprocess, wait up to *timeout* seconds each, then SIGKILL.
 
         Terminate all of them first and only then wait: signalling serially
         would give the last worker `timeout × (n-1)` seconds less to drain.
@@ -134,32 +181,33 @@ class CeleryManager:
             _active_manager = None
         live = [(n, p) for n, p in self._processes.items() if p.poll() is None]
         for name, proc in live:
-            logger.info("Stopping Celery worker %r (pid=%d) ...", name, proc.pid)
+            logger.info("Stopping Celery %r (pid=%d) ...", name, proc.pid)
             proc.terminate()
         for name, proc in live:
             try:
                 proc.wait(timeout=timeout)
-                logger.info("Celery worker %r exited gracefully", name)
+                logger.info("Celery %r exited gracefully", name)
             except subprocess.TimeoutExpired:
                 logger.warning(
-                    "Celery worker %r did not exit within %ds, sending SIGKILL",
+                    "Celery %r did not exit within %ds, sending SIGKILL",
                     name,
                     timeout,
                 )
                 proc.kill()
                 proc.wait()
-                logger.info("Celery worker %r killed", name)
+                logger.info("Celery %r killed", name)
 
     def is_alive(self) -> bool:
-        """True only if every worker is still running.
+        """True only if every subprocess — both workers and beat — is running.
 
         All-or-nothing on purpose: a dead orchestrator worker means no
-        action run ever starts, which is not a healthy process.
+        action run ever starts, and a dead beat means no periodic job
+        ever fires. Neither is a healthy process.
         """
         return bool(self._processes) and all(p.poll() is None for p in self._processes.values())
 
     def dead_workers(self) -> list[str]:
-        """Names of workers that have exited. Empty when healthy."""
+        """Names of subprocesses that have exited. Empty when healthy."""
         return sorted(n for n, p in self._processes.items() if p.poll() is not None)
 
     # -- context manager --------------------------------------------------
