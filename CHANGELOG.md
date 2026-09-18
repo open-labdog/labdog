@@ -7,6 +7,10 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.10.0] — 2026-09-18
+
 ### Security
 
 - **`script-src 'unsafe-inline'` is gone; HTML now carries a per-response CSP
@@ -2279,7 +2283,8 @@ SSH-pushed Ansible reconciliation, and a per-host detail tab:
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/open-labdog/labdog/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/open-labdog/labdog/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/open-labdog/labdog/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/open-labdog/labdog/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/open-labdog/labdog/compare/v0.6.3...v0.7.0
