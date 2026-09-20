@@ -14,7 +14,9 @@ test.describe("Hosts page group features", () => {
     await expect(page.getByRole("heading", { name: "Hosts" })).toBeVisible()
     // Filters read as a sentence when set — "group · web" — and as their
     // bare label when not. Opening one lists "all group" first.
-    const filterButton = page.getByRole("button", { name: /^group/i })
+    // The filter reads "group ▾"; the column header is "groups", so anchor
+    // on the caret to tell them apart.
+    const filterButton = page.getByRole("button", { name: /^group\s*▾$/i })
     await expect(filterButton).toBeVisible()
     await filterButton.click()
     await expect(page.getByRole("button", { name: /all group/i })).toBeVisible()

@@ -11,13 +11,13 @@ test.describe("Overview page", () => {
     await page.goto("/overview")
     // One segment per status; each is a click-through into the hosts list.
     for (const label of ["in sync", "drifted", "syncing", "failed", "unknown"]) {
-      await expect(page.getByRole("button", { name: new RegExp(`${label} — click to filter`) })).toBeVisible()
+      await expect(page.getByRole("button", { name: new RegExp(`^\\d+ ${label} — filter the hosts list$`) })).toBeVisible()
     }
   })
 
   test("status segment filters the hosts list", async ({ page }) => {
     await page.goto("/overview")
-    await page.getByRole("button", { name: /in sync — click to filter/ }).click()
+    await page.getByRole("button", { name: /^\d+ in sync — filter the hosts list$/ }).click()
     await expect(page).toHaveURL(/\/hosts\/?\?status=in_sync/)
   })
 

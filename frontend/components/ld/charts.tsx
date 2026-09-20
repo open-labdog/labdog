@@ -91,6 +91,8 @@ export function StatusBar({
             type="button"
             onClick={() => onPick?.(k)}
             title={`${n} ${m.label} — click to filter the hosts list`}
+            aria-label={`${n} ${m.label} — filter the hosts list`}
+            aria-pressed={on || undefined}
             className="flex min-w-[104px] flex-col gap-1 border-0 px-2.5 py-2 text-left"
             style={{
               flex: Math.min(Math.max(n, 4), 14),
