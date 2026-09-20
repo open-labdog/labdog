@@ -56,7 +56,7 @@ export function ActionCard({ action, onRun, onSchedule, lastRun }: ActionCardPro
           {unresolved ? (
             <p className="mt-1 text-xs text-amber-300">
               Pick a winning pack on{" "}
-              <Link href="/action-packs" className="underline hover:text-amber-200">
+              <Link href="/actions?tab=packs" className="underline hover:text-amber-200">
                 /action-packs
               </Link>{" "}
               to enable this action.

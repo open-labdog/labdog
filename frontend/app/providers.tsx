@@ -1,7 +1,7 @@
 'use client'
 
 import { ReactNode, useState, useEffect, useCallback } from 'react'
-import { ThemeProvider } from 'next-themes'
+import { ThemeProvider, useTheme } from 'next-themes'
 import { QueryClientProvider } from '@tanstack/react-query'
 import { Toaster } from 'sonner'
 import { AuthContext, User } from '@/lib/auth'
@@ -12,6 +12,9 @@ import { SyncTrayProvider } from '@/lib/sync-tray'
 import { SyncTray } from '@/components/sync-tray'
 
 function AuthProvider({ children }: { children: ReactNode }) {
+  // Sonner does not read `data-theme`; hand it the resolved theme so the
+  // toasts flip with the rest of the page.
+  const { resolvedTheme } = useTheme()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -58,14 +61,30 @@ function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider value={{ user, loading, logout }}>
       {children}
-      <Toaster position="bottom-right" theme="dark" richColors closeButton />
+      <Toaster
+        position="bottom-right"
+        theme={resolvedTheme === "light" ? "light" : "dark"}
+        richColors
+        closeButton
+      />
     </AuthContext.Provider>
   )
 }
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+    // Both attributes: shadcn's `dark:` variant keys off the class, the
+    // design tokens in globals.css key off `data-theme`. Stored under the
+    // same key the design prototype used, so a theme picked there carries
+    // over. Dark is the default; there is no system-follow because the
+    // light theme is a deliberate second theme, not a fallback.
+    <ThemeProvider
+      attribute={["class", "data-theme"]}
+      defaultTheme="dark"
+      enableSystem={false}
+      storageKey="labdog:theme"
+      themes={["dark", "light"]}
+    >
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <SyncTrayProvider>

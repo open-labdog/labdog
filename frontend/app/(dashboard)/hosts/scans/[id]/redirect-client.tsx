@@ -7,7 +7,7 @@ export default function ScanRedirectClient() {
   const router = useRouter()
   const params = useParams()
   useEffect(() => {
-    router.replace(`/hosts/discovery/${params.id}`)
+    router.replace(`/discovery?tab=pending&scan=${params.id}`)
   }, [router, params.id])
   return null
 }

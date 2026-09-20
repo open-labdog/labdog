@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
@@ -11,9 +12,14 @@ import { PendingHostsTable } from "@/components/scans/pending-hosts-table"
 import type { ScanConfig, PendingHost } from "@/lib/types"
 import { useState } from "react"
 
-export default function PendingReviewClientPage() {
+/**
+ * `scanId` lets the Discovery screen show one scan's queue under
+ * `/discovery?tab=pending&scan=<id>`, where the route has no `[id]`
+ * segment; `embedded` drops the header there.
+ */
+export default function PendingReviewClientPage({ scanId, embedded = false }: { scanId?: number; embedded?: boolean } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = scanId ?? Number(params.id)
   const queryClient = useQueryClient()
 
   const [approveLoading, setApproveLoading] = useState(false)
@@ -93,24 +99,34 @@ export default function PendingReviewClientPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb
-        items={[
-          { label: "Hosts", href: "/hosts" },
-          { label: "Discovery", href: "/hosts/discovery" },
-          { label: scanName, href: `/hosts/discovery` },
-          { label: "Pending Review" },
-        ]}
-      />
+      {!embedded && (
+        <>
+          <Breadcrumb
+            items={[
+              { label: "Fleet", href: "/hosts" },
+              { label: "Discovery", href: "/discovery" },
+              { label: scanName, href: `/discovery` },
+              { label: "Pending Review" },
+            ]}
+          />
 
-      <div>
-        <h1 className="text-2xl font-bold text-white">
-          Pending Review &mdash; {scanName}
-        </h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Hosts discovered by this scan config that are awaiting your review.
-          Approve to add them to your inventory, or dismiss to ignore them.
-        </p>
-      </div>
+          <div>
+            <h1 className="text-2xl font-bold text-white">
+              Pending Review &mdash; {scanName}
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Hosts discovered by this scan config that are awaiting your review.
+              Approve to add them to your inventory, or dismiss to ignore them.
+            </p>
+          </div>
+        </>
+      )}
+      {embedded && (
+        <div className="flex items-center gap-2 text-xs text-text-2">
+          <span>Showing hosts found by <span className="mono text-text">{scanName}</span>.</span>
+          <Link href="/discovery?tab=pending" className="underline">every scan →</Link>
+        </div>
+      )}
 
       {showLoading && <TableSkeleton rows={4} columns={5} />}
 

@@ -35,7 +35,8 @@ summary see the [top-level README](https://github.com/open-labdog/labdog/blob/ma
 | Section | What it covers |
 |---|---|
 | [ui/](./ui/README.md) | Overview of every page in the LabDog web interface |
-| [ui/dashboard.md](./ui/dashboard.md) | Fleet overview — metric cards, host table, Collect State |
+| [ui/dashboard.md](./ui/dashboard.md) | Overview — the landing page: status bar, Pending queue, activity, drift trend, stale hosts |
+| [ui/operations.md](./ui/operations.md) | Operations — Plans (preview → apply), Drift findings, Actions library, Runs stream, Audit |
 | [ui/hosts.md](./ui/hosts.md) | Host management, discovery scanning, SSH terminal |
 | [ui/groups.md](./ui/groups.md) | Groups, all module tabs (firewall, services, packages, /etc/hosts, cron, users, DNS, CA certs) and preview-then-apply syncing |
 | [ui/gitops-ui.md](./ui/gitops-ui.md) | Git repo connections, enabling GitOps on a group, webhook setup, import flow |

@@ -16,15 +16,15 @@ test.describe("Login page", () => {
     await expect(page.getByRole("button", { name: "Sign In" })).toBeVisible()
   })
 
-  test("successful login redirects to /dashboard", async ({ page }) => {
+  test("successful login redirects to /overview", async ({ page }) => {
     // Test user is seeded by auth.setup.ts (runs via project dependency)
     await page.goto("/login")
     await page.locator("#email").fill(TEST_EMAIL)
     await page.locator("#password").fill(TEST_PASSWORD)
     await page.getByRole("button", { name: "Sign In" }).click()
 
-    await page.waitForURL(/\/dashboard\/?$/)
-    await expect(page).toHaveURL(/\/dashboard/)
+    await page.waitForURL(/\/overview\/?$/)
+    await expect(page).toHaveURL(/\/overview/)
   })
 
   test("invalid credentials shows error message", async ({ page }) => {
@@ -50,8 +50,8 @@ test.describe("Register page", () => {
 })
 
 test.describe("Auth guards", () => {
-  test("unauthenticated access to /dashboard redirects to /login", async ({ page }) => {
-    await page.goto("/dashboard")
+  test("unauthenticated access to /overview redirects to /login", async ({ page }) => {
+    await page.goto("/overview")
     await expect(page).toHaveURL(/\/login/)
   })
 
@@ -84,13 +84,13 @@ test.describe("Logout", () => {
     await page.locator("#email").fill(LOGOUT_EMAIL)
     await page.locator("#password").fill(TEST_PASSWORD)
     await page.getByRole("button", { name: "Sign In" }).click()
-    await page.waitForURL(/\/dashboard\/?$/)
+    await page.waitForURL(/\/overview\/?$/)
 
     await page.request.post(`${API_BASE}/api/auth/jwt/logout`, {
       headers: { "Content-Type": "application/json" },
     })
 
-    await page.goto("/dashboard")
+    await page.goto("/overview")
     await expect(page).toHaveURL(/\/login/)
   })
 })

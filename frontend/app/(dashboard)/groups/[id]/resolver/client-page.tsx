@@ -23,9 +23,14 @@ const RESOLVER_TYPE_LABELS: Record<string, string> = {
 
 const OPTION_KEYS = ["ndots", "timeout", "attempts", "rotate", "edns0"] as const
 
-export default function GroupResolverPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets the Config zone render this editor under
+ * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
+ * segment to read. The group detail page still embeds it without one.
+ */
+export default function GroupResolverPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],

@@ -97,9 +97,14 @@ function envVarsToRecord(vars: EnvVar[]): Record<string, string> {
   return record
 }
 
-export default function GroupCronJobsPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets the Config zone render this editor under
+ * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
+ * segment to read. The group detail page still embeds it without one.
+ */
+export default function GroupCronJobsPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<CronJob | null>(null)

@@ -1,7 +1,7 @@
 # Actions & Action Packs
 
 **Paths:** Actions tab on [host](hosts.md) and [group](groups.md) detail
-pages; management UI at `/action-packs` (sidebar → Integrations → Action
+pages; management UI at `/actions?tab=packs` (Operations → Actions → Packs; `/action-packs` redirects there — Action
 Packs).
 
 Actions are **Ansible playbook runs** LabDog can trigger against a host,
@@ -114,7 +114,7 @@ and Ubuntu nodes. RHEL / Rocky / Alma support is on the roadmap.
 
 ## Scheduled actions
 
-`/schedules` (sidebar → **Schedules**) lists every cron-driven
+`/actions?tab=schedules` (Operations → Actions → **Schedules**; `/schedules` redirects there) lists every cron-driven
 action across the fleet. Each row pairs an action_key with a target
 (host / group / fleet) and a 5-field cron expression. The unified
 scheduler ticks every 60 seconds, walks the table, and dispatches any

@@ -27,9 +27,14 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import type { HostsEntry, HostGroup, Host } from "@/lib/types"
 import { HostCombobox } from "@/components/host-combobox"
 
-export default function GroupHostsEntriesPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets the Config zone render this editor under
+ * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
+ * segment to read. The group detail page still embeds it without one.
+ */
+export default function GroupHostsEntriesPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingEntry, setEditingEntry] = useState<HostsEntry | null>(null)

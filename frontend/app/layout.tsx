@@ -12,20 +12,26 @@ import { AppShell } from '@/components/app-shell'
 // neither the network nor the font. CI hit it, and a build that fails for
 // reasons unrelated to the diff teaches you to re-run without reading.
 //
-// Both files are the *variable* latin-subset builds, so one file covers
-// the whole weight range instead of one per weight — 68 kB for both.
-// See app/fonts/README.md for licensing and how to update them.
-const dmSans = localFont({
-  src: './fonts/dm-sans.woff2',
+// IBM Plex is the typeface of the rail-and-pane redesign: Sans for UI
+// text, Mono for every value an operator might copy (hostnames, ports,
+// CIDRs, cron lines) and for the uppercase section labels. Plex Sans is
+// a variable build so one file covers 400–700; Plex Mono is not, so it
+// is the three static weights the UI uses. See app/fonts/README.md for
+// licensing and how to update them.
+const plexSans = localFont({
+  src: './fonts/ibm-plex-sans.woff2',
   variable: '--font-sans',
   weight: '400 700',
   display: 'swap',
 })
 
-const jetbrainsMono = localFont({
-  src: './fonts/jetbrains-mono.woff2',
+const plexMono = localFont({
+  src: [
+    { path: './fonts/ibm-plex-mono-400.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-500.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-600.woff2', weight: '600', style: 'normal' },
+  ],
   variable: '--font-mono',
-  weight: '400 500',
   display: 'swap',
 })
 
@@ -39,10 +45,14 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  // No hardcoded theme class here: next-themes (see providers.tsx) writes
+  // both `class` and `data-theme` on <html> before hydration, from the
+  // `labdog:theme` key in localStorage. Dark is the default; light is a
+  // real second theme, not an inversion — see globals.css.
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${dmSans.variable} ${jetbrainsMono.variable} font-sans antialiased bg-slate-950 text-slate-50`}
+        className={`${plexSans.variable} ${plexMono.variable} font-sans antialiased bg-bg text-text`}
       >
         <Providers>
           <AppShell>{children}</AppShell>

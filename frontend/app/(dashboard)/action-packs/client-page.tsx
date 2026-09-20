@@ -101,7 +101,8 @@ function packLabel(pack: { pack_id: number | null; pack_name: string }): string 
   return pack.pack_name
 }
 
-export default function ActionPacksPage() {
+/** `embedded` drops the header: under `/actions` it is the Packs tab. */
+export default function ActionPacksPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ActionPack | null>(null)
   const [form, setForm] = useState<PackFormState | null>(null)
@@ -379,11 +380,11 @@ export default function ActionPacksPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Action Packs" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Operations" }, { label: "Action Packs" }]} />}
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Action Packs</h1>
+          {!embedded && <h1 className="text-2xl font-bold text-white">Action Packs</h1>}
           <p className="text-slate-400 text-sm mt-1">
             Each action key has at most one source pack. When multiple packs
             declare the same key, pick a winner per key below. There is no

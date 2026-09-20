@@ -108,4 +108,4 @@ Deleting your own account or the last superuser account is blocked. At least one
 
 ### Changing Your Own Password
 
-Use **Change Password** in the sidebar footer (visible to all users). This does not require superuser access.
+Use **Change password…** in the account menu behind the avatar at the foot of the rail (visible to all users). This does not require superuser access.

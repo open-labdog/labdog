@@ -189,7 +189,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
               <code className="font-mono">{action.key}</code>. Choose which
               pack wins on{" "}
               <Link
-                href="/action-packs"
+                href="/actions?tab=packs"
                 className="underline hover:text-amber-200"
                 onClick={onClose}
               >

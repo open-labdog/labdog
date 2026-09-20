@@ -3,7 +3,7 @@ import { test, expect } from "./fixtures"
 test.describe("Audit page", () => {
   test("audit page loads with heading", async ({ page }) => {
     await page.goto("/audit")
-    await expect(page.getByRole("heading", { name: "Audit Log" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "Audit", exact: true })).toBeVisible()
   })
 
   test("audit page shows filter controls", async ({ page }) => {

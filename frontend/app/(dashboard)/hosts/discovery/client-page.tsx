@@ -197,7 +197,7 @@ function RowActions({
               </button>
               {hasPending && (
                 <Link
-                  href={`/hosts/discovery/${scan.id}/pending`}
+                  href={`/discovery?tab=pending&scan=${scan.id}`}
                   className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
                   onClick={() => setOpen(false)}
                 >
@@ -235,7 +235,11 @@ function RowActions({
 
 // ── page ──────────────────────────────────────────────────────────────────────
 
-export default function ScansPage() {
+/**
+ * `embedded` renders the schedules list alone: under `/discovery` the
+ * header and the tiles are the Discovery screen's own tabs.
+ */
+export default function ScansPage({ embedded = false }: { embedded?: boolean } = {}) {
   const queryClient = useQueryClient()
 
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -390,60 +394,65 @@ export default function ScansPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discovery" }]} />
+      {!embedded && (
+        <>
+          <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "Discovery" }]} />
 
-      <div>
-        <h1 className="text-2xl font-bold text-white">Discovery</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Find and onboard hosts via one-shot scans, schedules, or the approval inbox
-        </p>
-      </div>
+          <div>
+            <h1 className="text-2xl font-bold text-white">Discovery</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Find and onboard hosts via one-shot scans, schedules, or the approval inbox
+            </p>
+          </div>
 
-      {/* ── Action tiles ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card className="bg-slate-900 border border-slate-700 ring-0">
-          <CardHeader className="px-4">
-            <CardTitle className="flex items-center gap-2 text-white">
-              <SearchIcon className="w-4 h-4 text-slate-400" />
-              Scan now
-            </CardTitle>
-            <CardDescription className="text-slate-400">
-              Scan a network range right now
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1" />
-          <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
-            <Link href="/hosts/discover" className={cn(buttonVariants())}>
-              Scan now
-            </Link>
-          </CardFooter>
-        </Card>
+          {/* ── Action tiles ─────────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <Card className="bg-slate-900 border border-slate-700 ring-0">
+              <CardHeader className="px-4">
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <SearchIcon className="w-4 h-4 text-slate-400" />
+                  Scan now
+                </CardTitle>
+                <CardDescription className="text-slate-400">
+                  Scan a network range right now
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1" />
+              <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
+                <Link href="/discovery?tab=scan" className={cn(buttonVariants())}>
+                  Scan now
+                </Link>
+              </CardFooter>
+            </Card>
 
-        <Card className="bg-slate-900 border border-slate-700 ring-0">
-          <CardHeader className="px-4">
-            <CardTitle className="flex items-center gap-2 text-white">
-              <InboxIcon className="w-4 h-4 text-slate-400" />
-              Review pending
-            </CardTitle>
-            <CardDescription className="text-slate-400">
-              Hosts awaiting approval before joining the fleet
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1 px-4">
-            {pendingTotal > 0 && (
-              <Badge className="bg-amber-600 text-white text-[11px]">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-200 mr-1.5" />
-                {pendingTotal} pending
-              </Badge>
-            )}
-          </CardContent>
-          <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
-            <Link href="/hosts/pending" className={cn(buttonVariants({ variant: "outline" }))}>
-              Review pending
-            </Link>
-          </CardFooter>
-        </Card>
-      </div>
+            <Card className="bg-slate-900 border border-slate-700 ring-0">
+              <CardHeader className="px-4">
+                <CardTitle className="flex items-center gap-2 text-white">
+                  <InboxIcon className="w-4 h-4 text-slate-400" />
+                  Review pending
+                </CardTitle>
+                <CardDescription className="text-slate-400">
+                  Hosts awaiting approval before joining the fleet
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 px-4">
+                {pendingTotal > 0 && (
+                  <Badge className="bg-amber-600 text-white text-[11px]">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-200 mr-1.5" />
+                    {pendingTotal} pending
+                  </Badge>
+                )}
+              </CardContent>
+              <CardFooter className="justify-end border-0 bg-transparent px-4 pb-4 pt-2">
+                <Link href="/discovery?tab=pending" className={cn(buttonVariants({ variant: "outline" }))}>
+                  Review pending
+                </Link>
+              </CardFooter>
+            </Card>
+          </div>
+
+        </>
+      )}
 
       {/* ── Scan schedules list ──────────────────────────────────────── */}
       <div className="space-y-4">

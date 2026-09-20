@@ -100,9 +100,14 @@ function SortableRow({
   )
 }
 
-export default function GroupRulesPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets the Config zone render this editor under
+ * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
+ * segment to read. The group detail page still embeds it without one.
+ */
+export default function GroupRulesPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
   const [confirmState, setConfirmState] = useState<{

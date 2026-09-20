@@ -26,9 +26,14 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
 
 
-export default function GroupUsersPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets the Config zone render this editor under
+ * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
+ * segment to read. The group detail page still embeds it without one.
+ */
+export default function GroupUsersPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<LinuxUser | null>(null)

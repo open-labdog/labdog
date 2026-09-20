@@ -66,7 +66,7 @@ export function LoginForm() {
         // session cookie once on mount, so a client-side navigation would
         // land on /dashboard still holding the logged-out user object.
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.href = "/dashboard"
+        window.location.href = "/overview"
         return
       }
       setAuthError(classifyAuthError(res.status))

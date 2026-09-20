@@ -242,7 +242,7 @@ export function RecentScheduledRunsPanel() {
             >
               Grouped
             </button>
-            <Link href="/schedules" className="text-xs text-blue-400 hover:underline">
+            <Link href="/actions?tab=schedules" className="text-xs text-blue-400 hover:underline">
               View all →
             </Link>
           </div>

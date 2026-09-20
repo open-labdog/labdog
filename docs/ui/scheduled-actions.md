@@ -1,6 +1,6 @@
 # Schedules
 
-**Path:** `/schedules` (sidebar) and `/hosts/{id}/?tab=schedules` /
+**Path:** `/actions?tab=schedules` (Operations → Actions; `/schedules` redirects) and `/hosts/{id}/?tab=schedules` /
 `/groups/{id}/?tab=schedules` (per-target tabs).
 
 Scheduled Actions are cron-driven runs of any registered

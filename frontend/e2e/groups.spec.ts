@@ -6,12 +6,17 @@ test.describe("Groups page", () => {
   test("groups list page loads", async ({ page }) => {
     await page.goto("/groups")
     await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible()
-    await expect(page.getByRole("link", { name: "New Group" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "New group" })).toBeVisible()
   })
 
   test("new group link navigates to /groups/new", async ({ page }) => {
     await page.goto("/groups")
-    await page.getByRole("link", { name: "New Group" }).click()
+    // "New group" opens the group editor in place; the /groups/new form is
+    // kept for deep links and tested below.
+    await page.getByRole("button", { name: "New group" }).click()
+    await expect(page.getByRole("dialog").getByText("New group")).toBeVisible()
+    await page.keyboard.press("Escape")
+    await page.goto("/groups/new")
     await expect(page).toHaveURL(/\/groups\/new/)
   })
 

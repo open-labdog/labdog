@@ -72,8 +72,8 @@ setup("authenticate", async ({ page, request }) => {
   await page.locator("#password").fill(TEST_PASSWORD)
   await page.getByRole("button", { name: "Sign In" }).click()
 
-  await page.waitForURL(/\/dashboard\/?$/, { timeout: 15000 })
-  await expect(page).toHaveURL(/\/dashboard/)
+  await page.waitForURL(/\/overview\/?$/, { timeout: 15000 })
+  await expect(page).toHaveURL(/\/overview/)
 
   const cookies = await page.context().cookies()
   const csrf = cookies.find((c) => c.name === "labdog_csrf")?.value ?? ""
