@@ -107,6 +107,17 @@ The format follows [Keep a Changelog]; LabDog follows
   slate scale so they are not dark islands in the light theme. The typeface
   is IBM Plex Sans / Mono, vendored like the fonts before it.
 
+- **The shared dialogs are on the theme.** Run action…, the confirmation
+  modal every delete goes through, Change password and the sync tray are
+  the design's modal and panel now — a title with the target as its meta,
+  `esc` in the header, Cancel and the action in the footer, a danger button
+  where the action destroys something. The kit gains the pieces the
+  remaining screens need (`Field`, `Help`, `Banner`, `Toolbar`, `BulkBar`,
+  `Facts`, `Stat`, `CodeBlock`, `Copy`, `Confirm`, `Steps`, `RunStatus`) and
+  one status vocabulary (`lib/status.ts`) for run, GitOps, item, package,
+  service, audit, alert and assistant states, so an enum is painted the
+  same wherever it appears.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -118,6 +129,9 @@ The format follows [Keep a Changelog]; LabDog follows
   **Plan sync** button (plans start from a host, a group or Operations ›
   Plans), and Change Password as a sidebar button — it lives in the account
   menu with Log out.
+- The dashboard's chart and feed panels (`components/dashboard/*`) and the
+  `recharts` dependency: nothing rendered them once `/dashboard` became a
+  redirect to Overview.
 
 ## [0.10.0] — 2026-09-18
 

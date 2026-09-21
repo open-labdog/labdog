@@ -8,10 +8,7 @@ import { useAuth } from "@/lib/auth"
 import { apiFetch } from "@/lib/api"
 import { passwordChangeSchema, type PasswordChangeInput } from "@/lib/schemas"
 import { showSuccess, showError } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { Field, Modal } from "@/components/ld"
 
 /**
  * The avatar at the foot of the rail. Account things — who you are,
@@ -114,43 +111,35 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
         </div>
       )}
 
-      <Dialog
+      <Modal
         open={passwordDialogOpen}
-        onOpenChange={(o) => {
-          setPasswordDialogOpen(o)
-          if (!o) form.reset()
+        onClose={() => {
+          setPasswordDialogOpen(false)
+          form.reset()
         }}
+        onSubmit={onPasswordSubmit}
+        title="Change password"
+        meta={user?.email}
+        w={420}
+        footer={
+          <>
+            <span className="tt mr-auto">you stay signed in</span>
+            <button type="button" className="btn" onClick={() => setPasswordDialogOpen(false)}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={form.formState.isSubmitting}>
+              {form.formState.isSubmitting ? "Updating…" : "Update password"}
+            </button>
+          </>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Change Password</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={onPasswordSubmit} className="mt-2 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-password">New Password</Label>
-              <Input id="new-password" type="password" {...form.register("new_password")} />
-              {form.formState.errors.new_password?.message && (
-                <p className="text-sm text-danger">{form.formState.errors.new_password.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm New Password</Label>
-              <Input id="confirm-password" type="password" {...form.register("confirm_password")} />
-              {form.formState.errors.confirm_password?.message && (
-                <p className="text-sm text-danger">{form.formState.errors.confirm_password.message}</p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setPasswordDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Updating..." : "Update Password"}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+        <Field label="new password" htmlFor="new-password" error={form.formState.errors.new_password?.message}>
+          <input id="new-password" type="password" className="inp mono" autoComplete="new-password" {...form.register("new_password")} />
+        </Field>
+        <Field label="confirm new password" htmlFor="confirm-password" error={form.formState.errors.confirm_password?.message}>
+          <input id="confirm-password" type="password" className="inp mono" autoComplete="new-password" {...form.register("confirm_password")} />
+        </Field>
+      </Modal>
     </div>
   )
 }

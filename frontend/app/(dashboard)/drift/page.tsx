@@ -10,7 +10,7 @@ import { shortAgo } from "@/lib/fleet"
 import { moduleByAnyName, MODULES, type ModuleDef } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { DriftCoverage, Host, ModuleCurrentState } from "@/lib/types"
-import { Dot, Empty, Filter, PageHead, Panel, Seg, Tag } from "@/components/ld"
+import { Banner, Empty, Filter, PageHead, Panel, Seg, Tag } from "@/components/ld"
 
 interface Finding {
   id: string
@@ -149,13 +149,16 @@ export default function DriftPage() {
 
       <div className="scroll flex flex-1 flex-col gap-[11px] p-3.5">
         {driftOff && (
-          <div className="flex flex-wrap items-center gap-2 rounded-r border border-warn bg-warn-soft px-3 py-2 text-xs text-text">
-            <Dot tone="warn" />
-            Drift checking is off on all {coverage.hosts_total} hosts — the sweep runs and finds nothing.{" "}
-            <Link href="/hosts?drift=off" className="underline">
-              Enable it on Hosts
-            </Link>
-          </div>
+          <Banner
+            tone="warn"
+            action={
+              <Link href="/hosts?drift=off" className="btn btn-sm hover:no-underline">
+                enable it on Hosts →
+              </Link>
+            }
+          >
+            Drift checking is off on all {coverage.hosts_total} hosts — the sweep runs and finds nothing.
+          </Banner>
         )}
         {(isLoading || statesLoading) && findings.length === 0 && <div className="p-3 text-xs text-text-3">Reading module state…</div>}
         {!isLoading && !statesLoading && grouped.length === 0 && (

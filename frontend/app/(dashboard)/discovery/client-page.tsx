@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import type { PendingSummary, ScanConfig } from "@/lib/types"
-import { Dot, PageHead, Tabs, Tag } from "@/components/ld"
+import { Banner, PageHead, Tabs, Tag } from "@/components/ld"
 
 import PendingApprovalPage from "@/app/(dashboard)/hosts/pending/client-page"
 import PendingReviewClientPage from "@/app/(dashboard)/hosts/discovery/[id]/pending/client-page"
@@ -75,10 +75,9 @@ export default function DiscoveryPage() {
       </PageHead>
 
       {tab === "pending" && (
-        <div className="flex items-center gap-[9px] border-b border-line bg-hold-soft px-3.5 py-[9px] text-[11.5px] text-text">
-          <Dot tone="hold" />
-          <span>Nothing is managed until you approve it. Approving assigns groups — which is what decides the config a host receives on its first sync.</span>
-        </div>
+        <Banner tone="hold" flush>
+          Nothing is managed until you approve it. Approving assigns groups — which is what decides the config a host receives on its first sync.
+        </Banner>
       )}
 
       <div className="scroll flex-1 p-3.5">

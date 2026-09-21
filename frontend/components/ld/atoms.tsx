@@ -2,6 +2,7 @@
 
 import type { CSSProperties, MouseEvent, ReactNode } from "react"
 import { statusDef } from "@/lib/fleet"
+import { RUN_STATUS, def } from "@/lib/status"
 import { toneInk, toneSoft, toneVar, type Tone } from "./tone"
 
 /* ── status vocabulary — one component, used everywhere ─────────── */
@@ -24,6 +25,26 @@ export function Status({ s, dim }: { s: string | null | undefined; dim?: boolean
       style={{ color: dim ? "var(--text-2)" : toneVar(m.tone) }}
     >
       <Dot tone={m.tone} pulse={s === "pending"} />
+      {m.label}
+    </span>
+  )
+}
+
+/**
+ * An action run's status — same shape as `Status`, read from
+ * lib/status.ts. `reason` is the deferred-by-busy diagnostic the backend
+ * attaches to `pending`; it goes in the title so a hover explains the
+ * word without a tooltip component.
+ */
+export function RunStatus({ s, reason, dim }: { s: string | null | undefined; reason?: string | null; dim?: boolean }) {
+  const m = def(RUN_STATUS, s)
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 whitespace-nowrap text-[11.5px] font-medium"
+      style={{ color: dim ? "var(--text-2)" : toneVar(m.tone) }}
+      title={reason ?? undefined}
+    >
+      <Dot tone={m.tone} pulse={s === "running"} />
       {m.label}
     </span>
   )

@@ -2,6 +2,7 @@
 
 import type { CSSProperties, ReactNode } from "react"
 import { Fragment } from "react"
+import Link from "next/link"
 
 /* ── layout ─────────────────────────────────────────────────────── */
 
@@ -89,15 +90,17 @@ export function PageHead({
         {/* A basis, not just flex-1: below it the actions wrap under the
             title instead of squeezing the subtitle into a column. */}
         <div className="min-w-0 flex-[1_1_260px]">
+          {/* A <nav> so assistive tech and tests can find the trail; it
+              names the parents only — the current page is the title. */}
           {crumbs.length > 0 && (
-            <div className="mb-1 flex items-center gap-1.5">
+            <nav aria-label="breadcrumb" className="mb-1 flex items-center gap-1.5">
               {crumbs.map((c, i) => (
                 <Fragment key={i}>
                   {i > 0 && <span className="text-[10px] text-text-faint">/</span>}
                   {c.href ? (
-                    <a className="tt hover:text-text-2 hover:no-underline" href={c.href}>
+                    <Link className="tt hover:text-text-2 hover:no-underline" href={c.href}>
                       {c.label}
-                    </a>
+                    </Link>
                   ) : c.onClick ? (
                     <button type="button" className="tt border-0 bg-transparent p-0 hover:text-text-2" onClick={c.onClick}>
                       {c.label}
@@ -107,7 +110,7 @@ export function PageHead({
                   )}
                 </Fragment>
               ))}
-            </div>
+            </nav>
           )}
           <h1 className="m-0 flex flex-wrap items-center gap-2.5 text-[19px] font-semibold tracking-[-0.015em]">{title}</h1>
           {sub && <div className="mt-1 text-[12.5px] text-text-2">{sub}</div>}

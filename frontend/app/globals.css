@@ -299,6 +299,13 @@ html[data-theme="light"] {
     background-color: var(--surface);
     color: var(--text);
   }
+  /* Native checkboxes, radios and ranges take the one accent — the design
+     styles nothing else about them. */
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"] {
+    accent-color: var(--accent);
+  }
   ::-webkit-scrollbar {
     width: 9px;
     height: 9px;
@@ -323,8 +330,8 @@ html[data-theme="light"] {
 /* ---------------------------------------------------------------------------
    LabDog utility vocabulary — the small set of classes the design reads
    with. `.tt` is the uppercase mono section label; `.mono`/`.num` mark
-   copyable values; `.btn` is the dense button used by screens on the new
-   shell (components/ui/button stays for dialogs and legacy pages).
+   copyable values; `.btn` is the dense button; `.inp` is every text
+   control — input, select and textarea alike — inside a `Field`.
    ------------------------------------------------------------------------- */
 @layer components {
   .mono {
@@ -392,6 +399,12 @@ html[data-theme="light"] {
     color: var(--danger-ink);
     font-weight: 600;
   }
+  .btn-danger:hover {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger-ink);
+    filter: brightness(1.08);
+  }
   .btn-ghost {
     background: transparent;
     border-color: transparent;
@@ -425,6 +438,19 @@ html[data-theme="light"] {
   }
   .inp::placeholder {
     color: var(--text-faint);
+  }
+  .inp:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  textarea.inp {
+    line-height: 1.5;
+    min-height: 64px;
+    resize: vertical;
+  }
+  /* A Field with an error paints its control's border, not a red label. */
+  .field[data-invalid="true"] .inp {
+    border-color: var(--danger);
   }
   .pane-enter {
     animation: ld-slide var(--dur) ease;

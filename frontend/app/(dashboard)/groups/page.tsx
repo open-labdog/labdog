@@ -7,9 +7,8 @@ import { apiFetch } from "@/lib/api"
 import { MODULES } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { GroupSummary, Host } from "@/lib/types"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { GroupEditor } from "@/components/group-editor"
-import { Filter, PageHead, Table, Tag, type Sort } from "@/components/ld"
+import { BulkBar, Confirm, Filter, PageHead, Table, Tag, type Sort } from "@/components/ld"
 
 /**
  * Groups, in priority order — the order that makes the merge legible.
@@ -178,28 +177,20 @@ export default function GroupsPage() {
         />
       )}
 
-      {sel.size > 0 && (
-        <div className="fade flex shrink-0 flex-wrap items-center gap-[9px] border-t border-ld-accent-line bg-ld-accent-soft px-3.5 py-[9px]">
-          <span className="mono num text-xs font-semibold">{sel.size} selected</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSel(new Set())}>
-            clear
+      <BulkBar n={sel.size} onClear={() => setSel(new Set())}>
+        <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting} onClick={() => setBulkConfirmOpen(true)}>
+          Delete selected
+        </button>
+        {sel.size === 1 && (
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => router.push(`/plans?scope=group:${Array.from(sel)[0]}`)}>
+            Plan sync
           </button>
-          <div className="ml-auto flex flex-wrap gap-[7px]">
-            <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting} onClick={() => setBulkConfirmOpen(true)}>
-              Delete selected
-            </button>
-            {sel.size === 1 && (
-              <button type="button" className="btn btn-sm btn-primary" onClick={() => router.push(`/plans?scope=group:${Array.from(sel)[0]}`)}>
-                Plan sync
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </BulkBar>
 
       {creating && <GroupEditor group={null} groups={all} hosts={hosts ?? []} onClose={() => setCreating(false)} />}
 
-      <ConfirmDialog
+      <Confirm
         open={bulkConfirmOpen}
         onOpenChange={setBulkConfirmOpen}
         title={`Delete ${sel.size} ${sel.size === 1 ? "group" : "groups"}?`}
