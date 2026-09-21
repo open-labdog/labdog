@@ -275,7 +275,11 @@ export default function PlanPage() {
             <span className="mono">plan</span>
             {defined && <Tag>{modulesLabel}</Tag>}
             {defined && (
-              <Tag tone="accent" title={group ? "open the group this plan came from" : "the hosts this plan covers"} onClick={() => (group ? router.push(`/groups/${group.id}`) : router.push("/hosts"))}>
+              <Tag
+                tone="accent"
+                title={group ? "open the group this plan came from" : "the hosts this plan covers"}
+                onClick={() => (group ? router.push(`/groups/${group.id}?tab=config${modules.length === 1 ? `&module=${moduleByAnyName(modules[0])?.id ?? ""}` : ""}`) : router.push("/hosts"))}
+              >
                 {scopeLabel} →
               </Tag>
             )}

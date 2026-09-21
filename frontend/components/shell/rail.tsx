@@ -44,7 +44,7 @@ export function ThemeToggle({ size = 12 }: { size?: number }) {
 }
 
 /**
- * Pattern A shell: an icon rail of five zones at a fixed cost, plus
+ * Pattern A shell: an icon rail of four zones at a fixed cost, plus
  * Settings and the account at the foot. The rail never grows with the
  * feature count — new destinations go in a zone's pane.
  */
@@ -109,7 +109,7 @@ export function Rail({
   )
 }
 
-/** The rail at phone width: five zones along the bottom edge. */
+/** The rail at phone width: the four zones along the bottom edge. */
 export function MobileRail({ zone, counts }: { zone: ZoneKey; counts: ShellCounts }) {
   const router = useRouter()
   const pendingTotal = counts.pendingBlocking ?? 0

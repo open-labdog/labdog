@@ -12,19 +12,19 @@ Groups are the core organisational unit in LabDog. Each group holds desired-stat
 
 | Column | Description |
 |--------|-------------|
-| Name | Group name |
-| Priority | Higher number = higher precedence in merges |
+| Group | Group name; the row opens the group's page |
+| Priority | Higher number = higher precedence in merges — the list is sorted by it, strongest first |
+| Category | Free label (`baseline`, `role`, `policy` …); the **category** filter narrows the list |
 | Hosts | Number of hosts assigned to this group |
-| Modules | Icon row showing which modules have config in this group |
+| Drifted | Members currently out of sync |
+| Declares | Which modules have config in this group, with item counts — a tag opens that module's editor |
 | GitOps | Whether this group is controlled by a Git repository |
 
-### Categories
-
-Groups are displayed in collapsible category sections. The category is set when creating or editing a group. Uncategorised groups appear under **Other**.
+Selecting rows enables **Delete selected** and, for a single group, **Plan sync**.
 
 ### Creating a Group
 
-Click **New Group**. Fields:
+Click **New group**. The editor dialog shows the merge ladder — where the new group's priority lands among the existing ones — before you create it. Fields:
 
 | Field | Notes |
 |-------|-------|
@@ -41,42 +41,40 @@ Click **New Group**. Fields:
 
 **Path:** `/groups/{id}`
 
-Shows the group's metadata, sync status summary, GitOps status, and tabs for every configuration module.
+A group's own page, on the same pattern as [host detail](hosts.md#host-detail): a head with the group's name, category and priority (and a **gitops** tag when it imports from Git), then four tabs. Everything about a group is edited here, inline — there is no edit dialog.
 
-### Sync Status Card
+The head offers **Run action…** (pick an action the group supports, preview or run it — see [Actions](actions.md)) and **Plan sync — N hosts**, which opens [Operations › Plans](operations.md#plans) scoped to the group.
 
-| Metric | Description |
-|--------|-------------|
-| Hosts | Total hosts in this group |
-| In Sync | Hosts where all modules match desired state |
-| Out of Sync | Hosts where at least one module has drifted |
-| Error | Hosts where the last check failed |
-| Unknown | Hosts never checked |
+### Overview
 
-The **Sync all modules** button in the top-right of the card previews every changed module across all hosts in the group, then applies them on confirmation. See [Syncing changes](#syncing-changes).
+| Panel | What it does |
+|-------|--------------|
+| Settings | Name, category, description and priority, saved inline. Moving the priority shows a tie warning and **every winner/loser flip** the move causes — which other group this one starts beating or losing to, on how many shared hosts, for which modules — before you save. Nothing reaches a host until a plan runs. |
+| Modules | The modules this group declares, with item counts. A row opens that module in the Config tab. |
+| Members | The first hosts in the group and their sync summary (in sync · drifted · failed); **View all members →** opens the Members tab. |
+| Danger zone | **Delete group** — two clicks (the second confirms with the number of hosts that drop the group). Hosts keep their other groups; nothing on a host changes until a plan runs. |
+| GitOps | **Enable…** links a registered Git repository and file path; the group's desired state is then imported from that file and the module editors become read-only. Status, repository, file and last import are shown; **Disable GitOps** keeps the current items and stops importing. See [GitOps UI](gitops-ui.md). |
+| Recent activity | The group's latest action runs; **all activity →** opens the Activity tab. |
 
-### GitOps Card
+### Config
 
-Shows whether this group is managed by a Git repository. Click **Enable** to link a repository — after enabling, all module configuration for this group becomes read-only in the UI (a banner replaces the Add/Edit/Delete controls). See [GitOps UI](gitops-ui.md).
+The eight modules on the left — **Firewall**, **Services**, **Hosts file**, **Packages**, **Users & SSH**, **Cron**, **DNS resolver**, **CA certificates** — with item counts, and the selected module's editor on the right. A module is *declared* once the group has an item for it: adding the first item declares it, deleting the last undeclares it. The editors are documented below. The URL carries the selection (`?tab=config&module=firewall`), so a module's editor can be linked to directly; the command palette's *Firewall — group: web* entries land here.
 
-### Module Tabs
+With the Config tab open, **Plan sync** plans just that module.
 
-| Tab | Page |
-|-----|------|
-| Overview | Members table + GitOps status. The Members table is a flat list of hosts in the group; group-dispatched actions (e.g. [`k8s-upgrade`](actions.md#group-dispatch-actions)) target the whole group and the pack's playbook handles any per-member topology discovery itself. |
-| Rules | [Firewall Rules](#firewall-rules) |
-| Services | [Service Rules](#services) |
-| Hosts File | [/etc/hosts entries](#hosts-file) |
-| Users | [Linux Users & Groups](#linux-users) |
-| Cron Jobs | [Cron Jobs](#cron-jobs) |
-| Packages | [Packages](#packages) |
-| CA Certs | [CA Certificates](#ca-certificates) |
-| DNS Resolver | [DNS Resolver](#dns-resolver) |
-| Schedules | [Schedules](scheduled-actions.md) |
+### Members
 
-Every module tab carries its own **Sync** button; the Sync Status card also has a **Sync all modules** button. Both are preview-first — see [Syncing changes](#syncing-changes).
+The hosts that inherit this group — status, IP, their other groups (strongest first) and how many overrides of their own they carry. **+ add hosts** opens an inline picker (filter, tick a host to add it, or **add N** for everything that matches); **remove** drops a host from the group. Both change desired state only; the host re-merges on its next plan.
+
+### Activity
+
+**Runs** — every action run against the group, newest first; a row opens the run. **Schedules** — the group's [scheduled actions](scheduled-actions.md).
 
 ---
+
+## Module editors
+
+Each module's editor is the Config tab of the group's page (`/groups/{id}?tab=config&module=<id>`). The standalone paths below (`/groups/{id}/rules` …) still work as deep links and render the same editor on its own.
 
 ## Firewall Rules
 
@@ -314,45 +312,43 @@ The **Recent Deployment Runs** panel below the table shows the per-host outcome 
 
 ## Syncing changes
 
-LabDog applies a group's desired configuration to its hosts over SSH.
-There are two entry points, both **preview-first**:
+LabDog applies a group's desired configuration to its hosts over SSH,
+always **preview-first**, on the [Plans](operations.md#plans) screen:
 
-- **Per module** — each module tab (Rules, Services, Hosts File, Users,
-  Cron Jobs, Packages, CA Certs, DNS Resolver) has a **Sync _module_**
-  button (e.g. "Sync Firewall Rules") that previews and applies just that
-  module across every host in the group.
-- **All modules at once** — the **Sync all modules** button on the Sync
-  Status card previews and applies every changed module across the group
-  in a single operation.
+- **Plan sync — N hosts** on the group's page opens a plan scoped to the
+  group (`/plans?scope=group:<id>`); from the Config tab it plans just the
+  selected module (`&modules=firewall`).
+- A plan can also be started from a host's page, or from Operations ›
+  Plans with any set of hosts and modules.
 
 ### 1. Preview
 
-Both buttons open a **Preview** dialog first. LabDog computes a per-host
-diff between the desired state (stored in its database, merged across all
+Opening a plan runs a dry run on every host in scope: a per-host diff
+between the desired state (stored in LabDog's database, merged across all
 groups the host belongs to) and the current state fetched live over SSH.
-Each host card shows:
-
-- Config to **add** (green, `+` prefix)
-- Config to **remove** (red, `-` prefix)
-- Config **unchanged** (grey, indented)
-
-Hosts already in sync are flagged "no changes". A module whose current
-state could not be read is shown as an error and is **never applied
-blind** — only cleanly-previewed, changed modules are sent.
+Each host shows config to **add**, **remove** and leave **unchanged**;
+hosts already in sync are flagged as such, hosts that cannot be reached are
+skipped, not failed. A module whose current state could not be read is
+shown as an error and is **never applied blind**.
 
 ### 2. Apply
 
-Confirm the dialog to apply. Each host runs as a background job through
-the unified per-host orchestrator (v0.2.0+): one Ansible playbook per
-host covering every requested module, so two syncs targeting the same
-host queue rather than race over SSH. LabDog generates the playbook from
-the previewed diff, runs it via `ansible-runner`, updates the per-host
-and per-module sync status, and writes an audit-log entry.
+Untick any host you want to leave behind; the blast radius and the
+acknowledgements (hosts changing, an SSH-affecting rule, excluded hosts)
+follow the selection, and **Review & apply…** arms only once you have
+typed the host count. Each selected host then runs as a background job
+through the unified per-host orchestrator: one Ansible playbook per host
+covering every requested module, so two syncs targeting the same host
+queue rather than race over SSH. LabDog generates the playbook from the
+previewed diff, runs it via `ansible-runner`, updates the per-host and
+per-module sync status, and writes an audit-log entry.
 
 ### Progress
 
-Applied syncs are tracked in the **global Sync tray** at the bottom-right
-of every page — a live progress bar per operation, a per-host and
-per-module drill-down, and a success/failure toast on completion. You can
-navigate away while a sync runs; the tray keeps tracking until every job
-reaches a terminal state.
+The plan's URL is shareable, so a second pair of eyes can review before
+anyone clicks Apply, and the screen follows every job to its per-host
+result. Applied syncs are also tracked in the **global Sync tray** at the
+bottom-right of every page — a live progress bar per operation, a per-host
+and per-module drill-down, and a success/failure toast on completion. You
+can navigate away while a sync runs; the tray keeps tracking until every
+job reaches a terminal state.

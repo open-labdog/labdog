@@ -20,7 +20,7 @@ const NARROW = 1180
 const MOBILE = 640
 
 /**
- * Pattern A: icon rail (five zones, fixed cost) + contextual pane +
+ * Pattern A: icon rail (four zones, fixed cost) + contextual pane +
  * content. At 1024 the pane becomes an overlay; at 390 the rail is a
  * bottom tab bar. Keyboard: ⌘K palette, `[` toggles the pane, `t`
  * toggles the theme.

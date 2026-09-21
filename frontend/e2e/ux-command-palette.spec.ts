@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures"
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 const PLACEHOLDER = "Go to a host, module, scope — or run a command"
 
 test.describe("Command palette (Ctrl+K)", () => {
@@ -44,15 +45,23 @@ test.describe("Command palette (Ctrl+K)", () => {
     await expect(dialog.getByText("Fleet · Hosts")).not.toBeVisible()
   })
 
-  test("indexes module × scope pairs", async ({ page }) => {
+  test("indexes module × group pairs and lands on the group's editor", async ({ request, page }) => {
+    const groupName = `e2e-palette-${Date.now()}`
+    const res = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: groupName, description: null, priority: 991 },
+    })
+    const group = await res.json()
+
     await page.goto("/overview")
     await page.click("body")
     await page.keyboard.press("Control+k")
 
-    await page.getByPlaceholder(PLACEHOLDER).fill("firewall fleet")
+    await page.getByPlaceholder(PLACEHOLDER).fill(`firewall ${groupName}`)
     const dialog = page.getByRole("dialog")
-    await expect(dialog.getByText("Firewall — fleet")).toBeVisible()
-    await dialog.getByText("Firewall — fleet").click()
-    await expect(page).toHaveURL(/\/config\/firewall/)
+    const entry = dialog.getByText(`Firewall — group: ${groupName}`)
+    await expect(entry).toBeVisible()
+    await entry.click()
+    await expect(page).toHaveURL(new RegExp(`/groups/${group.id}/?\\?tab=config&module=firewall`))
+    await expect(page.getByRole("button", { name: "Firewall", pressed: true })).toBeVisible()
   })
 })

@@ -35,8 +35,8 @@ const SETTINGS_SECTIONS = [
 
 /**
  * The palette is infrastructure, not a feature. It indexes every
- * destination, every host, every group, every module × scope pair, and
- * a handful of verbs — that is what lets the rail stay at five entries:
+ * destination, every host, every group, every module × group pair, and
+ * a handful of verbs — that is what lets the rail stay at four entries:
  * the rail covers the cold path, the palette covers the fast path.
  */
 export function Palette({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -67,15 +67,16 @@ export function Palette({ open, onClose }: { open: boolean; onClose: () => void 
       out.push({ group: "destinations", label: `Settings · ${label}`, keywords: ["settings", label], run: go(`/settings?section=${k}`), defaultVisible: true })
     }
 
+    // Module × group: a module's desired state is edited on the group's
+    // page, so "firewall web" lands directly on that editor.
     for (const m of MODULES) {
-      out.push({ group: "config", label: `${m.label} — fleet`, meta: "every scope", keywords: [m.label, m.id, "fleet", "config"], run: go(`/config/${m.id}`) })
       for (const g of groups ?? []) {
         out.push({
           group: "config",
           label: `${m.label} — group: ${g.name}`,
           meta: "desired",
           keywords: [m.label, m.id, g.name, "group", "config"],
-          run: go(`/config/${m.id}?scope=group:${g.id}`),
+          run: go(`/groups/${g.id}?tab=config&module=${m.id}`),
         })
       }
     }

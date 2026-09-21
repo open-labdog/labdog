@@ -9,20 +9,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
-- **The navigation is a five-zone icon rail with a contextual pane, replacing
+- **The navigation is a four-zone icon rail with a contextual pane, replacing
   the 256px sidebar.** The old sidebar held thirteen links in three labelled
   groups plus a collapsible child that appeared only sometimes, and a third
   of it was integrations that are configured once a quarter. The rail now
-  holds a fixed set of zones — Overview, Fleet, Config, Operations,
-  Assistant — with Settings and the account at its foot; each zone's
-  destinations live in a 208px pane beside it. Below 1180px the pane
+  holds a fixed set of zones — Overview, Fleet, Operations, Assistant —
+  drawn as line icons (a gauge, server rows, a terminal, a chat bubble),
+  with Settings and the account at its foot; each zone's destinations live
+  in a 208px pane beside it. Below 1180px the pane
   overlays the content; below 640px the rail becomes a bottom tab bar. `[`
   toggles the pane, `t` toggles the theme, `⌘K` opens the palette.
 
   The command palette indexes everything now — every destination, every
-  host, every group, every module × scope pair, and verbs (plan a sync,
+  host, every group, every module × group pair, and verbs (plan a sync,
   check for drift, approve pending hosts, start a scan) — which is what lets
-  the rail stay at five entries: the rail is the cold path, the palette the
+  the rail stay at four entries: the rail is the cold path, the palette the
   fast path. It used to index nine of ~34 destinations and no objects.
 
 - **Overview replaces the dashboard.** `/overview` is the landing route:
@@ -36,12 +37,25 @@ The format follows [Keep a Changelog]; LabDog follows
   upcoming schedules with their blast radius, and integration health round
   it out. `/dashboard` redirects.
 
-- **Config is a top-level zone: module × scope.** `/config/<module>` is the
-  fleet lens — every scope that declares a module, strongest first — a
-  question the app could not answer before; `?scope=group:<id>` renders the
-  group's existing editor under the Config head with its blast radius; a
-  host scope opens the host's effective view. The eight group editors accept
-  a `groupId` so one implementation serves both entrances.
+- **A group has its own page, on the host detail pattern.** `/groups/<id>`
+  is Overview · Config · Members · Activity, and it is where a group is
+  edited — inline, with no dialog: name, category, description and
+  priority on Overview (a priority move shows the tie warning and every
+  winner/loser flip it causes before Save), the eight module editors behind
+  Config with the module list beside them, membership on Members (an
+  inline picker to add, remove per row), the group's runs and schedules on
+  Activity, GitOps and delete on Overview. Configuration is not a zone of
+  its own: a module's desired state belongs to the group that declares it,
+  so the palette's *Firewall — group: web* lands on that editor, and a
+  host's effective state stays on the host's page. `?tab=rules` and the
+  other legacy tab links still open the right module.
+
+- **Run action… from a host or a group.** Both heads gain the button; it
+  opens the same run dialog an action's own button does — the action as
+  the title, **Preview (dry-run)** and **Run** in the footer, parallelism
+  for a group — with an action picker, since here the target is known
+  first. The Actions library's rows open the same flow against a chosen
+  target, and its head gets **Run action…** too.
 
 - **Plan → apply is a screen with a URL, not a dialog.** `/plans` computes a
   dry run on every host in scope, lays the per-host diffs side by side with
@@ -75,13 +89,16 @@ The format follows [Keep a Changelog]; LabDog follows
 - **Host detail presents five tabs instead of twelve.** Overview · Config ·
   Metrics · Terminal · Activity; the eight module tabs sit behind Config with
   a module sub-nav that shows each module's drift dot, group membership is
-  Overview content, actions and schedules are Activity. `?tab=rules` and the
-  other legacy tab links still open the right module.
+  Overview content, actions and schedules are Activity. The header's
+  Terminal button is gone (the tab is the terminal) and **Run action…**
+  takes its place. `?tab=rules` and the other legacy tab links still open
+  the right module.
 
-- **Groups list is in priority order with a group editor.** Priority is the
-  merge order, so it is the first column; each row shows what the group
-  declares as chips into Config. The editor shows the merge ladder and every
-  winner/loser flip a priority move causes before Save, and adds members.
+- **Groups list is in priority order.** Priority is the merge order, so it
+  is the first column; each row shows what the group declares as chips into
+  that module's editor, and the row opens the group's page. **New group**
+  opens an editor dialog that shows the merge ladder — where the new
+  priority lands — before creating.
 
 - **Two themes.** Dark stays primary; light is a real second theme rather
   than an inversion, with one blue accent and status hues at a shared chroma.
@@ -95,8 +112,12 @@ The format follows [Keep a Changelog]; LabDog follows
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
   the dashboard stat cards, "Discover" as a concept separate from
   "Discovery", the category rename/remove affordance on the groups list
-  (category is edited per group in the editor), and Change Password as a
-  sidebar button — it lives in the account menu with Log out.
+  (category is edited on the group's page), the group **Edit** dialog and
+  the group **Sync all modules** dialog (`components/group-sync-dialog.tsx`;
+  Plan sync opens the Plans screen instead), the hosts list's bulk
+  **Plan sync** button (plans start from a host, a group or Operations ›
+  Plans), and Change Password as a sidebar button — it lives in the account
+  menu with Log out.
 
 ## [0.10.0] — 2026-09-18
 

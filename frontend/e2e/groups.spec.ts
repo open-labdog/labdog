@@ -52,7 +52,20 @@ test.describe("Groups page", () => {
     await expect(page).toHaveURL(/\/groups\/?$/)
   })
 
-  test("group detail page shows group info", async ({ request, page }) => {
+  test("a row opens the group's own page", async ({ request, page }) => {
+    const groupName = `e2e-row-${Date.now()}`
+    const res = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: groupName, description: "Row test", priority: 994 },
+    })
+    const group = await res.json()
+
+    await page.goto("/groups")
+    await page.getByRole("row").filter({ hasText: groupName }).getByText(groupName).click()
+    await expect(page).toHaveURL(new RegExp(`/groups/${group.id}/?$`))
+    await expect(page.getByRole("heading", { name: groupName })).toBeVisible()
+  })
+
+  test("group detail page shows group info on the Host detail pattern", async ({ request, page }) => {
     const groupName = `e2e-detail-${Date.now()}`
     const res = await request.post(`${API_BASE}/api/groups`, {
       data: { name: groupName, description: "Detail test", priority: 998 },
@@ -61,15 +74,18 @@ test.describe("Groups page", () => {
 
     await page.goto(`/groups/${group.id}`)
     await expect(page.getByRole("heading", { name: groupName })).toBeVisible()
-    // Group detail uses tabs — check for the Rules tab button
-    await expect(page.getByRole("tab", { name: "Rules" })).toBeVisible()
-    // There is no Sync tab: group sync is the "Sync all modules" dialog
-    // opened from the Sync Status card. See sync.spec.ts.
-    await expect(page.getByRole("tab", { name: "Services" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeVisible()
+    // Overview · Config · Members · Activity — the group is edited inline
+    // on these tabs; there is no Edit dialog.
+    for (const tab of ["Overview", "Config", "Members", "Activity"]) {
+      await expect(page.getByRole("tab", { name: tab })).toBeVisible()
+    }
+    await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
+    // Plan sync is the sync entry point; an empty group has nothing to plan.
+    await expect(page.getByRole("button", { name: "Plan sync — 0 hosts" })).toBeDisabled()
+    await expect(page.getByRole("button", { name: "Delete group" })).toBeVisible()
   })
 
-  test("group detail shows priority card", async ({ request, page }) => {
+  test("group detail shows the priority in the head and the settings form", async ({ request, page }) => {
     const groupName = `e2e-priority-${Date.now()}`
     const res = await request.post(`${API_BASE}/api/groups`, {
       data: { name: groupName, description: null, priority: 42 },
@@ -77,10 +93,80 @@ test.describe("Groups page", () => {
     const group = await res.json()
 
     await page.goto(`/groups/${group.id}`)
-    // Priority value shown in the info card (2xl bold number)
-    // Scope to the card that has a "Priority" heading to avoid ambiguous matches
-    const priorityCard = page.locator("[data-slot='card']").filter({ hasText: "Priority" })
-    await expect(priorityCard.getByText("42")).toBeVisible()
+    await expect(page.getByRole("heading", { name: groupName }).getByText("priority 42")).toBeVisible()
+    await expect(page.getByLabel("priority", { exact: true })).toHaveValue("42")
+  })
+
+  test("settings save inline and the head follows", async ({ request, page }) => {
+    const groupName = `e2e-rename-${Date.now()}`
+    const res = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: groupName, description: "before", priority: 41 },
+    })
+    const group = await res.json()
+
+    await page.goto(`/groups/${group.id}`)
+    const save = page.getByRole("button", { name: "Save changes" })
+    await expect(save).toBeDisabled()
+    await page.getByLabel("description").fill("after")
+    await expect(save).toBeEnabled()
+    await save.click()
+    await expect(page.getByText(/saved — desired state only/)).toBeVisible()
+    await expect(page.getByText("after · 0 hosts inherit this")).toBeVisible()
+  })
+
+  test("Config tab lists every module and opens the editor; legacy ?tab=rules still resolves", async ({ request, page }) => {
+    const groupName = `e2e-config-${Date.now()}`
+    const res = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: groupName, description: null, priority: 993 },
+    })
+    const group = await res.json()
+
+    await page.goto(`/groups/${group.id}?tab=rules`)
+    await expect(page).toHaveURL(/tab=rules/)
+    await expect(page.getByRole("tab", { name: "Config", selected: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Firewall", pressed: true })).toBeVisible()
+    for (const mod of ["Services", "Hosts file", "Packages", "Users & SSH", "Cron", "DNS resolver", "CA certificates"]) {
+      await expect(page.getByRole("button", { name: mod, exact: true })).toBeVisible()
+    }
+    await page.getByRole("button", { name: "Services", exact: true }).click()
+    await expect(page).toHaveURL(/tab=config&module=services/)
+    await expect(page.getByRole("button", { name: "Services", pressed: true })).toBeVisible()
+  })
+
+  test("Members tab adds and removes a host", async ({ request, page }) => {
+    const stamp = Date.now()
+    const groupRes = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: `e2e-members-${stamp}`, description: null, priority: 992 },
+    })
+    const group = await groupRes.json()
+    const keyRes = await request.post(`${API_BASE}/api/ssh-keys`, {
+      data: {
+        name: `e2e-members-key-${stamp}`,
+        private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\nfakekey\n-----END OPENSSH PRIVATE KEY-----",
+        is_default: false,
+      },
+    })
+    const sshKey = await keyRes.json()
+    const hostname = `e2e-member-${stamp}`
+    await request.post(`${API_BASE}/api/hosts`, {
+      data: { hostname, ip_address: "10.0.9.9", ssh_port: 22, ssh_key_id: sshKey.id, group_ids: [] },
+    })
+
+    await page.goto(`/groups/${group.id}?tab=members`)
+    await expect(page.getByText("0 hosts inherit this group")).toBeVisible()
+    await page.getByRole("button", { name: "+ add hosts" }).click()
+    await page.getByLabel("filter hosts to add").fill(hostname)
+    // Ticking a host adds it at once and drops it from the picker, so the
+    // box never reads as checked — click, don't check().
+    await page.getByLabel(`add ${hostname}`).click()
+
+    const row = page.getByRole("row").filter({ hasText: hostname })
+    await expect(row).toBeVisible()
+    await expect(page.getByText("1 host inherits this group")).toBeVisible()
+    await expect(page.getByRole("button", { name: "Plan sync — 1 host" })).toBeEnabled()
+
+    await row.getByRole("button", { name: "remove" }).click()
+    await expect(page.getByText("0 hosts inherit this group")).toBeVisible()
   })
 
   test("group not found shows error message", async ({ page }) => {

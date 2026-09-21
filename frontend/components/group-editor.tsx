@@ -4,12 +4,72 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { MODULES } from "@/lib/modules"
+import { MODULES, type ModuleDef } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { GroupSummary, Host } from "@/lib/types"
 import { Dot, Modal, Tag } from "@/components/ld"
 
-const CATEGORIES = ["baseline", "environment", "role", "exposure", "platform", "policy"]
+export const CATEGORIES = ["baseline", "environment", "role", "exposure", "platform", "policy"]
+
+/** Every category worth offering: the conventional set plus anything already in use. */
+export function categoryOptions(groups: Pick<GroupSummary, "category">[]): string[] {
+  return [...new Set([...CATEGORIES, ...groups.map((g) => g.category).filter((c): c is string => !!c)])]
+}
+
+export interface MergeFlip {
+  o: GroupSummary
+  shared: number
+  mods: ModuleDef[]
+  now: boolean
+}
+
+/**
+ * What editing a group's name and priority means for the merge. A
+ * priority move is the dangerous edit: it changes who wins on every host
+ * the group shares with another, so every winner/loser flip is computed
+ * here — counted only where it matters, on shared hosts for a module both
+ * declare — for the modal and the group page to show before Save.
+ */
+export function useGroupMerge({
+  group,
+  groups,
+  hosts,
+  name,
+  priority,
+}: {
+  /** null while creating. */
+  group: GroupSummary | null
+  groups: GroupSummary[]
+  hosts: Pick<Host, "group_ids">[]
+  name: string
+  priority: string | number
+}) {
+  const prio = Math.max(1, Math.min(1000, parseInt(String(priority), 10) || 0))
+  const others = useMemo(() => groups.filter((g) => !group || g.id !== group.id), [groups, group])
+  const tie = others.find((g) => g.priority === prio)
+  const moved = !!group && prio !== group.priority
+  const declared = useMemo(() => (group ? MODULES.filter((m) => group.module_counts[m.countKey] > 0) : []), [group])
+
+  const flips = useMemo<MergeFlip[]>(() => {
+    if (!group) return []
+    return others
+      .map((o) => {
+        const was = group.priority > o.priority
+        const now = prio > o.priority
+        if (was === now) return null
+        const shared = hosts.filter((h) => h.group_ids.includes(group.id) && h.group_ids.includes(o.id)).length
+        const mods = declared.filter((m) => o.module_counts[m.countKey] > 0)
+        if (!shared || !mods.length) return null
+        return { o, shared, mods, now }
+      })
+      .filter((x): x is MergeFlip => x !== null)
+  }, [group, others, prio, hosts, declared])
+
+  const trimmed = name.trim()
+  const nameErr = !trimmed ? "required" : others.some((o) => o.name === trimmed) ? "already taken" : null
+
+  return { prio, others, tie, moved, declared, flips, nameErr }
+}
 
 /** Field label with an optional lower-case hint after it. */
 function L({ children, hint }: { children: React.ReactNode; hint?: React.ReactNode }) {
@@ -22,10 +82,9 @@ function L({ children, hint }: { children: React.ReactNode; hint?: React.ReactNo
 }
 
 /**
- * Group editor — change what a group *is*. A priority move is the
- * dangerous edit: it changes who wins the merge on every host the group
- * shares with another, so the merge ladder and every winner/loser flip
- * the move causes are shown before Save. Saving records desired state;
+ * Group editor — change what a group *is*. Creation lives here; an
+ * existing group is edited inline on its own page (Overview tab), which
+ * shows the same merge consequences. Saving records desired state;
  * nothing reaches a host until a plan runs.
  */
 export function GroupEditor({
@@ -55,30 +114,9 @@ export function GroupEditor({
   const [q, setQ] = useState("")
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof f, v: string) => setF((s) => ({ ...s, [k]: v }))
-  const prio = Math.max(1, Math.min(1000, parseInt(f.priority, 10) || 0))
 
   const members = group ? hosts.filter((h) => h.group_ids.includes(group.id)) : []
-  const others = groups.filter((g) => !group || g.id !== group.id)
-  const tie = others.find((g) => g.priority === prio)
-  const moved = !!group && prio !== group.priority
-  const declared = useMemo(() => (group ? MODULES.filter((m) => group.module_counts[m.countKey] > 0) : []), [group])
-
-  /* who this group starts or stops beating, counted only where it matters:
-     hosts shared with the other group, and a module both declare */
-  const flips = useMemo(() => {
-    if (!group) return []
-    return others
-      .map((o) => {
-        const was = group.priority > o.priority
-        const now = prio > o.priority
-        if (was === now) return null
-        const shared = hosts.filter((h) => h.group_ids.includes(group.id) && h.group_ids.includes(o.id)).length
-        const mods = declared.filter((m) => o.module_counts[m.countKey] > 0)
-        if (!shared || !mods.length) return null
-        return { o, shared, mods, now }
-      })
-      .filter((x): x is { o: GroupSummary; shared: number; mods: typeof declared; now: boolean } => x !== null)
-  }, [group, others, prio, hosts, declared])
+  const { prio, others, tie, moved, declared, flips, nameErr } = useGroupMerge({ group, groups, hosts, name: f.name, priority: f.priority })
 
   const ladder = useMemo(() => {
     const rows: { id: string; name: string; p: number; hosts: number; self?: boolean; ghost?: boolean }[] = others.map((g) => ({ id: String(g.id), name: g.name, p: g.priority, hosts: g.host_count }))
@@ -87,7 +125,6 @@ export function GroupEditor({
     return rows.sort((a, b) => b.p - a.p || (a.ghost ? 1 : -1))
   }, [others, f.name, prio, members.length, moved, group])
 
-  const nameErr = !f.name.trim() ? "required" : others.some((o) => o.name === f.name.trim()) ? "already taken" : null
   const valid = !nameErr && prio > 0 && !busy
 
   const invalidate = async () => {
@@ -179,7 +216,7 @@ export function GroupEditor({
         <label className="flex flex-col gap-[5px]">
           <L>category</L>
           <select className="inp" value={f.category} onChange={(e) => set("category", e.target.value)}>
-            {[...new Set([...CATEGORIES, ...groups.map((g) => g.category).filter((c): c is string => !!c)])].map((c) => (
+            {categoryOptions(groups).map((c) => (
               <option key={c}>{c}</option>
             ))}
           </select>

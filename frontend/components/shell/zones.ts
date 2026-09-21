@@ -1,16 +1,19 @@
-import { MODULES } from "@/lib/modules"
-
 /**
- * The five-zone information architecture.
+ * The four-zone information architecture.
  *
  * The rail holds a fixed set of zones; each zone's pane lists its
  * destinations. Every route in the app maps to exactly one zone (see
  * `zoneForPath`) so the rail can show where you are even on pages that
  * predate the shell and still live at their old URLs.
+ *
+ * Config is not a zone. A module's desired state belongs to the group
+ * that declares it, so it is edited on the group's own page (Config tab)
+ * and a host's effective state on the host's page — the palette indexes
+ * every module × group pair to keep that one keystroke away.
  */
-export type ZoneKey = "overview" | "fleet" | "config" | "ops" | "assistant" | "settings"
+export type ZoneKey = "overview" | "fleet" | "ops" | "assistant" | "settings"
 
-export type GlyphShape = "ring" | "grid" | "diamond" | "stack" | "tri" | "gear"
+export type GlyphShape = "ring" | "grid" | "stack" | "tri" | "gear"
 
 /** Live numbers the pane and rail can show next to an item. */
 export interface ShellCounts {
@@ -36,8 +39,6 @@ export interface PaneItem {
   n?: (c: ShellCounts) => number | undefined
   /** Attention badge — only for things that block or expire. */
   badge?: (c: ShellCounts) => number | undefined
-  /** Config module items carry the current scope across navigation. */
-  module?: string
 }
 
 export interface ZoneDef {
@@ -74,13 +75,6 @@ export const ZONE_DEFS: ZoneDef[] = [
       { label: "Groups", href: "/groups", n: (c) => c.groups },
       { label: "Discovery", href: "/discovery", badge: (c) => nz(c.pendingHosts) },
     ],
-  },
-  {
-    k: "config",
-    label: "Config",
-    glyph: "diamond",
-    href: "/config/firewall",
-    items: MODULES.map((m) => ({ label: m.label, href: `/config/${m.id}`, module: m.id })),
   },
   {
     k: "ops",
@@ -128,7 +122,6 @@ const ROUTE_ZONES: [string, ZoneKey][] = [
   ["/hosts", "fleet"],
   ["/groups", "fleet"],
   ["/discovery", "fleet"],
-  ["/config", "config"],
   ["/plans", "ops"],
   ["/drift", "ops"],
   ["/actions", "ops"],
@@ -166,30 +159,23 @@ export function zoneDef(k: ZoneKey): ZoneDef {
  * Screens built for the shell own their own header and scroll region
  * (PageHead + a `.scroll` body); the shell gives them the full content
  * column. Everything else gets the padded, scrolling main the pages were
- * written for. Exact paths unless marked with a trailing `/`.
+ * written for. Exact paths, plus the group detail page — but not the
+ * standalone module editors or run pages beneath it.
  */
-const FLUSH_ROUTES = [
-  "/overview",
-  "/hosts",
-  "/groups",
-  "/discovery",
-  "/config/",
-  "/plans",
-  "/drift",
-  "/runs",
-  "/actions",
-  "/settings",
-]
+const FLUSH_ROUTES = ["/overview", "/hosts", "/groups", "/discovery", "/plans", "/drift", "/runs", "/actions", "/settings"]
+const FLUSH_PATTERNS = [/^\/groups\/\d+$/]
 
 export function isFlushRoute(pathname: string): boolean {
-  return FLUSH_ROUTES.some((r) => (r.endsWith("/") ? pathname.startsWith(r) || pathname === r.slice(0, -1) : pathname === r))
+  const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname
+  return FLUSH_ROUTES.includes(p) || FLUSH_PATTERNS.some((re) => re.test(p))
 }
 
 /** Which pane item is the current page. Compares path, then `view`/`tab`/`section` params. */
 export function itemIsActive(item: PaneItem, pathname: string, search: URLSearchParams): boolean {
   const [itemPath, itemQuery] = item.href.split("?")
-  const pathMatches = pathname === itemPath || pathname.startsWith(itemPath + "/")
-  if (!pathMatches) return false
+  // A page beneath the item (/groups/3?tab=config) belongs to the item's
+  // default entry; its own params say nothing about sibling items.
+  if (pathname !== itemPath) return itemQuery === undefined && pathname.startsWith(itemPath + "/")
   const itemParams = new URLSearchParams(itemQuery ?? "")
   // An item with no query is the default view of its path: active only
   // when no sibling item's discriminating param is set.

@@ -1,7 +1,8 @@
 import type { ModuleCounts } from "@/lib/types"
 
 /**
- * The eight configuration modules, in the order the Config pane lists them.
+ * The eight configuration modules, in the order the group page's Config
+ * tab lists them.
  *
  * One registry for the several spellings each module already has: the
  * segment of its group editor route (`/groups/[id]/rules`), the host
@@ -11,7 +12,7 @@ import type { ModuleCounts } from "@/lib/types"
  * through here rather than carrying its own map.
  */
 export interface ModuleDef {
-  /** Canonical id used in URLs on the new shell: `/config/<id>`. */
+  /** Canonical id used in URLs on the new shell: `/groups/<id>?tab=config&module=<id>`. */
   id: ModuleId
   label: string
   /** Unit noun for counts — "3 rules", "12 packages". */

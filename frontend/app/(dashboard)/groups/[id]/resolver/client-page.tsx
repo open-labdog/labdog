@@ -24,9 +24,9 @@ const RESOLVER_TYPE_LABELS: Record<string, string> = {
 const OPTION_KEYS = ["ndots", "timeout", "attempts", "rotate", "edns0"] as const
 
 /**
- * `groupId` lets the Config zone render this editor under
- * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
- * segment to read. The group detail page still embeds it without one.
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
  */
 export default function GroupResolverPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()

@@ -35,12 +35,14 @@ test.describe("Overview page", () => {
     await expect(page.getByRole("heading", { name: "Pending" })).toBeVisible()
   })
 
-  test("rail carries the five zones and Settings", async ({ page }) => {
+  test("rail carries the four zones and Settings", async ({ page }) => {
     await page.goto("/overview")
     const rail = page.getByRole("navigation", { name: "Zones" })
-    for (const zone of ["Overview", "Fleet", "Config", "Operations", "Assistant", "Settings"]) {
+    for (const zone of ["Overview", "Fleet", "Operations", "Assistant", "Settings"]) {
       await expect(rail.getByRole("button", { name: zone, exact: true })).toBeVisible()
     }
+    // Config is not a zone: a module's desired state is edited on its group's page.
+    await expect(rail.getByRole("button", { name: "Config", exact: true })).toHaveCount(0)
   })
 
   test("Fleet zone opens the hosts list with Hosts, Groups and Discovery in the pane", async ({ page }) => {

@@ -393,9 +393,6 @@ export default function HostsPage() {
             <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting || bulkDriftUpdating} onClick={() => setBulkConfirmOpen(true)}>
               Delete selected
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => router.push(`/plans?hosts=${selectedIds.join(",")}`)}>
-              Plan sync — {sel.size} host{sel.size === 1 ? "" : "s"}
-            </button>
           </div>
         </div>
       )}

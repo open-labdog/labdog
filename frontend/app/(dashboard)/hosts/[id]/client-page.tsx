@@ -8,7 +8,9 @@ import { SshTerminal } from "@/components/ssh-terminal"
 import { collectHostState } from "@/lib/collect-state"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { RunActionButton } from "@/components/run-action-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -2138,16 +2140,11 @@ export default function HostDetailPage() {
         </div>
         {host && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!host.ssh_key_id}
-              title={host.ssh_key_id ? "Open terminal" : "No SSH key assigned"}
-              onClick={() => setTerminalOpen(true)}
-            >
-              <TerminalIcon className="w-4 h-4 mr-1" />
-              Terminal
-            </Button>
+            {/* The terminal is a tab; the header offers what the tabs don't. */}
+            <RunActionButton scope="host" targetId={id} targetLabel={host.hostname} host={host} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <PlayIcon className="w-4 h-4 mr-1" />
+              Run action…
+            </RunActionButton>
             <Button
               variant="outline"
               size="sm"

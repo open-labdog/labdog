@@ -35,11 +35,20 @@ export default function ActionsPage() {
 
   const [pack, setPack] = useState("all")
   const [pick, setPick] = useState<ActionDefinition | null>(null)
+  /* "Run action…" from the head picks the action too; a row already has one */
+  const [choosing, setChoosing] = useState(false)
   const [target, setTarget] = useState<{ scope: "host" | "group"; id: number } | null>(null)
   const [running, setRunning] = useState<ActionDefinition | null>(null)
   const [scheduling, setScheduling] = useState<ActionDefinition | null>(null)
 
   const visible = useMemo(() => (actions ?? []).filter((a) => !a.key.startsWith("_builtin.") && (pack === "all" || a.pack_name === pack)), [actions, pack])
+  const runnable = useMemo(() => visible.filter((a) => !a.unresolved && (a.supports_host || a.supports_group)), [visible])
+
+  const startRun = (a: ActionDefinition, choose = false) => {
+    setTarget(null)
+    setChoosing(choose)
+    setPick(a)
+  }
   const packs = useMemo(() => [...new Set((actions ?? []).filter((a) => !a.key.startsWith("_builtin.")).map((a) => a.pack_name))].sort(), [actions])
   const runStats = useMemo(() => {
     const m = new Map<string, { n: number; last: string | null }>()
@@ -65,8 +74,8 @@ export default function ActionsPage() {
             <button type="button" className="btn btn-sm" onClick={() => setTab("packs")}>
               Add pack
             </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => setScheduling(visible[0] ?? null)} disabled={visible.length === 0}>
-              Schedule an action…
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => startRun(runnable[0], true)} disabled={runnable.length === 0} title="pick an action and a target">
+              Run action…
             </button>
           </>
         }
@@ -87,7 +96,7 @@ export default function ActionsPage() {
         <>
           <div className="flex shrink-0 flex-wrap items-center gap-[7px] border-b border-line bg-surface px-3.5 py-2">
             <Filter label="pack" value={pack} onChange={setPack} options={packs.map((p) => ({ k: p, label: p, n: (actions ?? []).filter((a) => a.pack_name === p && !a.key.startsWith("_builtin.")).length }))} />
-            <span className="tt ml-auto">run → pick a target · schedule → cron</span>
+            <span className="tt ml-auto">click a row to run it against a host or group · schedule → cron</span>
           </div>
           <Table
             cols={[
@@ -149,11 +158,11 @@ export default function ActionsPage() {
               {
                 k: "go",
                 label: "",
-                w: "150px",
+                w: "140px",
                 right: true,
                 sortable: false,
                 cell: (a) => (
-                  <span className="flex justify-end gap-1.5">
+                  <span className="flex items-center justify-end gap-2">
                     <button
                       type="button"
                       className="btn btn-sm btn-ghost"
@@ -164,25 +173,22 @@ export default function ActionsPage() {
                     >
                       schedule…
                     </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={a.unresolved}
-                      title={a.unresolved ? "pick a winning pack first" : undefined}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setTarget(null)
-                        setPick(a)
-                      }}
-                    >
-                      run…
-                    </button>
+                    <span className="tt" style={{ color: a.unresolved ? "var(--text-faint)" : "var(--accent)" }} title={a.unresolved ? "pick a winning pack first" : undefined}>
+                      {a.unresolved ? "unresolved" : "run →"}
+                    </span>
                   </span>
                 ),
               },
             ]}
             rows={visible}
             keyOf={(a) => a.key}
+            onRowClick={(a) => {
+              if (a.unresolved) {
+                setTab("packs")
+                return
+              }
+              startRun(a)
+            }}
             loading={isLoading}
             empty="No actions registered. Add a pack, or check that the bundled pack synced."
           />
@@ -202,8 +208,8 @@ export default function ActionsPage() {
 
       {pick && (
         <Modal
-          title={`Run ${pick.name}`}
-          meta="pick a target"
+          title={choosing ? "Run action" : `Run ${pick.name}`}
+          meta={choosing ? "pick an action and a target" : "pick a target"}
           onClose={() => setPick(null)}
           w={460}
           footer={
@@ -226,6 +232,29 @@ export default function ActionsPage() {
             </>
           }
         >
+          {choosing && (
+            <label className="flex flex-col gap-1">
+              <span className="tt">action</span>
+              <select
+                className="inp mono"
+                value={pick.key}
+                onChange={(e) => {
+                  const next = runnable.find((a) => a.key === e.target.value)
+                  if (next) {
+                    setPick(next)
+                    setTarget(null)
+                  }
+                }}
+              >
+                {runnable.map((a) => (
+                  <option key={a.key} value={a.key}>
+                    {a.name} · {a.pack_name}
+                  </option>
+                ))}
+              </select>
+              {pick.description && <span className="text-[11px] text-text-3">{pick.description}</span>}
+            </label>
+          )}
           {pick.supports_host && (
             <label className="flex flex-col gap-1">
               <span className="tt">host</span>

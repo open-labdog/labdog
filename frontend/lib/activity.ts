@@ -58,6 +58,11 @@ const RUN_STATUS: Record<string, ActivityStatus> = {
   skipped: "cancelled",
 }
 
+/** An action run's raw status folded into the stream's five words. */
+export function runStatus(status: string): ActivityStatus {
+  return RUN_STATUS[status] ?? "queued"
+}
+
 function jobToItem(j: SyncJobRow, hostname: string): ActivityItem {
   const mods = j.module_filter?.length ? j.module_filter : j.module_type === "bulk" ? null : [j.module_type]
   const what = mods === null ? "all modules" : mods.map(syncModuleLabel).join(", ")
@@ -88,7 +93,7 @@ function runToItem(r: ActionRun): ActivityItem {
         ? "collect"
         : "action"
   const name = builtin ? r.action_key.slice("_builtin.".length).replace(/_/g, " ") : r.action_key
-  const status = RUN_STATUS[r.status] ?? "queued"
+  const status = runStatus(r.status)
   return {
     id: `run:${r.id}`,
     at: r.created_at,

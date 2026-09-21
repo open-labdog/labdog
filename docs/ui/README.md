@@ -4,16 +4,18 @@ A walkthrough of every page in the LabDog web interface.
 
 ## Navigation
 
-Navigation is an icon rail of five zones with a pane of destinations beside
+Navigation is an icon rail of four zones with a pane of destinations beside
 it. The rail never grows: new destinations go into a zone's pane, or into
 the command palette (`⌘K` / `Ctrl+K`), which indexes every destination,
-every host, every group, every module × scope pair, and a handful of verbs.
+every host, every group, every module × group pair, and a handful of verbs.
+Configuration has no zone of its own: a module's desired state is edited on
+the page of the group that declares it, and a host's effective state on the
+host's page.
 
 | Zone | Pane |
 |------|------|
 | **Overview** | Summary · Pending · Fleet state · Activity · Upcoming |
 | **Fleet** | Hosts · Groups · Discovery |
-| **Config** | Firewall · Services · Hosts file · Packages · Users & SSH · Cron · DNS resolver · CA certificates — plus a scope switcher (fleet, a group) |
 | **Operations** | Plans · Drift · Actions · Runs · Audit |
 | **Assistant** | Sessions · Alerts |
 
@@ -34,12 +36,11 @@ rest redirect to their new homes.
 | Page | Description |
 |------|-------------|
 | [Overview](dashboard.md) | The landing page — fleet status bar, the Pending queue, activity, drift trend, stale hosts, upcoming schedules |
-| [Hosts](hosts.md) | Add and manage hosts; filter by status, group, firewall backend, drift check, overrides; plan a sync for a selection |
+| [Hosts](hosts.md) | Add and manage hosts; filter by status, group, firewall backend, drift check, overrides |
 | [Discovery](hosts.md#discovery) | One screen: pending approval · scan schedules · scan now (`/discovery`) |
-| [Config](groups.md) | Module × scope: every module's fleet lens at `/config/<module>`, a group's editor at `?scope=group:<id>` |
 | [Operations](operations.md) | Plans (preview → apply with a URL), Drift findings, Actions library, Runs stream, Audit |
 | [SSH Terminal](hosts.md#terminal) | Browser-based SSH terminal into any managed host |
-| [Groups](groups.md) | Host groups, priority ordering, and per-module configuration |
+| [Groups](groups.md) | Host groups in priority order; each group's own page — Overview · Config · Members · Activity — is where it is edited |
 | [Firewall Rules](groups.md#firewall-rules) | Inbound/outbound TCP/UDP/ICMP rules per group |
 | [Services](groups.md#services) | Systemd service desired state (running/stopped, enabled/disabled) |
 | [Packages](groups.md#packages) | System package install/remove/pin and custom repositories |

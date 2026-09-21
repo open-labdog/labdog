@@ -28,9 +28,9 @@ import type { HostsEntry, HostGroup, Host } from "@/lib/types"
 import { HostCombobox } from "@/components/host-combobox"
 
 /**
- * `groupId` lets the Config zone render this editor under
- * `/config/<module>?scope=group:<id>`, where the route has no `[id]`
- * segment to read. The group detail page still embeds it without one.
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
  */
 export default function GroupHostsEntriesPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()

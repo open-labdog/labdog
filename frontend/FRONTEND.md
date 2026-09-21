@@ -21,16 +21,17 @@ This document defines the frontend conventions for LabDog. All new pages, compon
 
 ## Shell: icon rail + contextual pane
 
-The navigation is five zones on a 50px icon rail, each with a 208px pane of
+The navigation is four zones on a 50px icon rail, each with a 208px pane of
 destinations, plus Settings at the foot of the rail. The rail never grows
 with the feature count — new destinations go into a zone's pane, or into
-the command palette.
+the command palette. Config is deliberately not a zone: a module's desired
+state belongs to the group that declares it and is edited on the group's
+page; a host's effective state is read on the host's page.
 
 | Zone | Pane items | Routes |
 |------|-----------|--------|
 | Overview | Summary · Pending · Fleet state · Activity · Upcoming | `/overview` (`?view=pending|state|activity|upcoming`) |
-| Fleet | Hosts · Groups · Discovery | `/hosts`, `/hosts/[id]`, `/groups`, `/groups/[id]`, `/discovery` (`?tab=pending|schedules|scan`) |
-| Config | the eight modules + a scope switcher | `/config/[module]` (`?scope=fleet|group:<id>|host:<id>`) |
+| Fleet | Hosts · Groups · Discovery | `/hosts`, `/hosts/[id]` (`?tab=`), `/groups`, `/groups/[id]` (`?tab=overview|config|members|activity`, `&module=<id>`, `&view=schedules`), `/discovery` (`?tab=pending|schedules|scan`) |
 | Operations | Plans · Drift · Actions · Runs · Audit | `/plans`, `/drift`, `/actions` (`?tab=library|packs|schedules`), `/runs`, `/audit` |
 | Assistant | Sessions · Alerts | `/assistant`, `/alerts` |
 | Settings | (no pane — five section tabs) | `/settings` (`?section=integrations|ai|access|fleet|system`) |
@@ -55,9 +56,10 @@ toggles the pane, `t` toggles the theme (never while typing in a field).
 `/hosts/discover`, `/hosts/scans`, `/schedules`, `/action-packs`,
 `/settings/about`, `/pending`) redirect to their new home so deep links keep
 working. Pages that have not been rebuilt on the shell (`/hosts/[id]`,
-`/groups/[id]`, `/assistant`, `/audit`, the integration pages …) render
-inside it unchanged, in a padded scrolling `<main>`. Screens built for the
-shell are listed in `FLUSH_ROUTES` and own their header and scroll region.
+`/assistant`, `/audit`, the integration pages …) render inside it
+unchanged, in a padded scrolling `<main>`. Screens built for the shell are
+listed in `FLUSH_ROUTES` / `FLUSH_PATTERNS` and own their header and
+scroll region.
 
 ### Screens on the shell vs legacy pages
 
@@ -68,9 +70,35 @@ wrapped by a server `page.tsx` with a `Suspense` boundary when it reads
 `components/ld` and the `.btn` classes. A legacy page keeps the
 `<div className="space-y-6">` + `Breadcrumb` + `<h1>` pattern below.
 
-Dynamic segments in a static export must be **numeric** (`/hosts/123`) or
-prerendered with `generateStaticParams` (`/config/firewall`) — the backend's
-SPA fallback only substitutes digits into the placeholder page.
+Dynamic segments in a static export must be **numeric** (`/hosts/123`,
+`/groups/7`) or prerendered with `generateStaticParams` — the backend's SPA
+fallback only substitutes digits into the placeholder page. Anything else
+that varies (a module, a tab) goes in the query string.
+
+### The group page
+
+`/groups/[id]` follows the Host detail pattern — Overview · Config ·
+Members · Activity — and is where a group is edited; there is no edit
+dialog (the `GroupEditor` modal creates groups only). The URL is the
+state: `?tab=config&module=firewall`, `?tab=activity&view=schedules`; the
+old module tabs (`?tab=rules`, `?tab=dns` …) still resolve.
+
+- **Overview** — settings inline (name, category, description, priority
+  with the tie warning and every winner/loser flip a move causes, from
+  `useGroupMerge` in `components/group-editor.tsx`), declared modules,
+  members, the danger zone, GitOps, recent runs.
+- **Config** — the eight modules on the left, the module's editor on the
+  right. The editors under `groups/[id]/<segment>/client-page.tsx` are
+  embedded with `embedded groupId={id}` and their own `<h1>` hidden; a
+  module is "declared" once the group has an item for it.
+- **Members** — add (inline picker, one POST per tick) and remove hosts.
+- **Activity** — the group's action runs, or its schedules
+  (`ScheduledActionsSection`).
+
+"Run action…" on the group and host heads is `components/run-action-button.tsx`:
+the same `ActionRunDialog` an action's own run button opens, with an action
+picker because the entry point is the target. "Plan sync — N hosts" opens
+`/plans?scope=group:<id>` (plus `&modules=` from the Config tab).
 
 ---
 
@@ -708,7 +736,7 @@ Cap: ~15 tooltips total. Only for complex/non-obvious fields.
 
 ## Command Palette
 
-`components/shell/palette.tsx`, opened with Cmd/Ctrl+K or the rail button. It indexes every destination (zone items and Settings sections), every host, every group, every module × scope pair, and a handful of verbs (plan a sync, check the fleet for drift, approve pending hosts, start a scan, add a host, new group, open a terminal on a host). Before anything is typed it shows destinations and verbs only. The palette is infrastructure: it is what lets the rail stay at five entries.
+`components/shell/palette.tsx`, opened with Cmd/Ctrl+K or the rail button. It indexes every destination (zone items and Settings sections), every host, every group, every module × group pair (landing on the group's Config tab), and a handful of verbs (plan a sync, check the fleet for drift, approve pending hosts, start a scan, add a host, new group, open a terminal on a host). Before anything is typed it shows destinations and verbs only. The palette is infrastructure: it is what lets the rail stay at four entries.
 
 ---
 

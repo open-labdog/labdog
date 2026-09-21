@@ -13,13 +13,13 @@ import { Filter, PageHead, Table, Tag, type Sort } from "@/components/ld"
 
 /**
  * Groups, in priority order — the order that makes the merge legible.
- * Click a row for the group; edit changes what the group is (name,
- * priority, category, members) with the merge consequences shown first.
+ * A row opens the group's own page, where everything about it is edited
+ * inline; only creation happens here, in the editor dialog.
  */
 export default function GroupsPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [edit, setEdit] = useState<GroupSummary | "new" | null>(null)
+  const [creating, setCreating] = useState(false)
   const [q, setQ] = useState("")
   const [category, setCategory] = useState("all")
   const [sort, setSort] = useState<Sort>({ k: "priority", dir: -1 })
@@ -91,9 +91,9 @@ export default function GroupsPage() {
             Groups <span className="mono num text-[12.5px] font-normal text-text-faint">{rows.length}</span>
           </>
         }
-        sub="Evaluated strongest first: a host's own overrides come before every group, then groups from highest priority down. Click a row to open the group; edit to change the group itself."
+        sub="Evaluated strongest first: a host's own overrides come before every group, then groups from highest priority down. Click a row to open it."
         actions={
-          <button type="button" className="btn btn-sm btn-primary" onClick={() => setEdit("new")}>
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
             New group
           </button>
         }
@@ -135,7 +135,7 @@ export default function GroupsPage() {
                 return (
                   <span className="flex min-w-0 gap-[3px]">
                     {mods.slice(0, 5).map((m, i, arr) => (
-                      <Tag key={m.id} shrink={i === arr.length - 1} onClick={(e) => { e.stopPropagation(); router.push(`/config/${m.id}?scope=group:${g.id}`) }} title={`${g.module_counts[m.countKey]} ${m.unit} — open in Config`}>
+                      <Tag key={m.id} shrink={i === arr.length - 1} onClick={(e) => { e.stopPropagation(); router.push(`/groups/${g.id}?tab=config&module=${m.id}`) }} title={`${g.module_counts[m.countKey]} ${m.unit} — open the editor`}>
                         {m.id} {g.module_counts[m.countKey]}
                       </Tag>
                     ))}
@@ -152,26 +152,7 @@ export default function GroupsPage() {
               cell: (g) => (g.gitops_enabled ? <Tag tone={g.gitops_status === "error" ? "danger" : g.gitops_status === "synced" ? "ok" : "sync"}>gitops</Tag> : null),
             },
             { k: "desc", label: "what it's for", w: "minmax(150px,1.2fr)", sortable: false, cell: (g) => <span className="text-[11.5px] text-text-3">{g.description ?? ""}</span> },
-            {
-              k: "edit",
-              label: "",
-              w: "62px",
-              right: true,
-              sortable: false,
-              cell: (g) => (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  title={`edit ${g.name} — name, priority, category, members`}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setEdit(g)
-                  }}
-                >
-                  edit
-                </button>
-              ),
-            },
+            { k: "go", label: "", w: "78px", right: true, sortable: false, cell: () => <span className="tt text-ld-accent">open →</span> },
           ]}
           rows={rows}
           keyOf={(g) => g.id}
@@ -185,7 +166,7 @@ export default function GroupsPage() {
             all.length === 0 ? (
               <>
                 No groups yet.{" "}
-                <button type="button" className="underline" onClick={() => setEdit("new")}>
+                <button type="button" className="underline" onClick={() => setCreating(true)}>
                   Create the first one
                 </button>{" "}
                 — a baseline every host joins is the usual start.
@@ -216,7 +197,7 @@ export default function GroupsPage() {
         </div>
       )}
 
-      {edit && <GroupEditor group={edit === "new" ? null : edit} groups={all} hosts={hosts ?? []} onClose={() => setEdit(null)} />}
+      {creating && <GroupEditor group={null} groups={all} hosts={hosts ?? []} onClose={() => setCreating(false)} />}
 
       <ConfirmDialog
         open={bulkConfirmOpen}
