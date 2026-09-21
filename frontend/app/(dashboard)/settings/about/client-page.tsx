@@ -3,14 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { type VersionInfo } from "@/lib/types"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { CopyButton } from "@/components/ui/copy-button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { CodeBlock, Copy, Facts } from "@/components/ld"
 
 function formatBuildDate(iso: string | null): string {
   if (!iso) return "—"
@@ -31,25 +24,11 @@ function buildSupportLine(info: VersionInfo): string {
   return `LabDog ${info.version} (${sha}, ${date})`
 }
 
-function InfoRow({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="flex items-start justify-between gap-8 py-3 border-b border-slate-700 last:border-0">
-      <span className="text-sm text-slate-400 shrink-0 w-28">{label}</span>
-      <span className="text-sm text-slate-200 text-right flex items-center gap-2">
-        {children}
-      </span>
-    </div>
-  )
-}
-
-/** `embedded` drops the header: under `/settings` it is the System section. */
-export default function AboutPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * Build and licence facts for this instance — the body of the "about"
+ * panel under Settings › System. `/settings/about` redirects there.
+ */
+export default function AboutPage() {
   const { data, isLoading, error } = useQuery<VersionInfo>({
     queryKey: ["version"],
     queryFn: () => apiFetch<VersionInfo>("/api/version"),
@@ -57,114 +36,54 @@ export default function AboutPage({ embedded = false }: { embedded?: boolean } =
     retry: 1,
   })
 
-  const supportLine = data ? buildSupportLine(data) : null
+  if (isLoading) return <div className="text-xs text-text-3">Loading…</div>
+  if (error || !data) return <div className="text-xs text-danger">Failed to load version information.</div>
+
+  const supportLine = buildSupportLine(data)
+  const ext = "text-ld-accent hover:underline"
 
   return (
-    <div className="space-y-6">
-      {!embedded && (
-        <>
-          <Breadcrumb
-            items={[
-              { label: "Settings", href: "/settings" },
-              { label: "About" },
-            ]}
-          />
-
-          <div>
-            <h1 className="text-2xl font-bold text-white">
-              {data ? `LabDog v${data.version}` : "About LabDog"}
-            </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Build and license information for this LabDog instance.
-            </p>
-          </div>
-        </>
-      )}
-
-      {isLoading && (
-        <div className="text-slate-400 py-8 text-center">Loading&hellip;</div>
-      )}
-
-      {error && (
-        <div className="text-red-400 py-8 text-center">
-          Failed to load version information.
-        </div>
-      )}
-
-      {data && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-white">Build Info</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="divide-y divide-slate-700">
-                <InfoRow label="Version">
-                  <span className="font-mono text-white">{data.version}</span>
-                </InfoRow>
-
-                <InfoRow label="Commit">
-                  {data.commit_sha && data.commit_sha_short ? (
-                    <a
-                      href={`${data.repo_url}/commit/${data.commit_sha}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-blue-400 hover:underline"
-                    >
-                      {data.commit_sha_short}
-                    </a>
-                  ) : (
-                    <span className="text-slate-500 italic">dev build</span>
-                  )}
-                </InfoRow>
-
-                <InfoRow label="Built">
-                  <span>{formatBuildDate(data.build_date)}</span>
-                </InfoRow>
-
-                <InfoRow label="License">
-                  <a
-                    href={`${data.repo_url}/blob/main/LICENSE`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline"
-                  >
-                    {data.license}
-                  </a>
-                </InfoRow>
-
-                <InfoRow label="Source">
-                  <a
-                    href={data.repo_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-400 hover:underline break-all"
-                  >
-                    {data.repo_url}
-                  </a>
-                </InfoRow>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-white">Support</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-slate-400 text-sm mb-3">
-                Copy this line when filing a bug report or opening a support ticket.
-              </p>
-              <div className="flex items-center gap-2 rounded-md bg-slate-800 border border-slate-700 px-3 py-2">
-                <code className="font-mono text-sm text-slate-200 flex-1">
-                  {supportLine}
-                </code>
-                <CopyButton text={supportLine ?? ""} />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+    <div className="flex flex-col gap-3">
+      <Facts
+        min={150}
+        items={[
+          { k: "version", v: data.version, mono: true },
+          {
+            k: "commit",
+            mono: true,
+            v:
+              data.commit_sha && data.commit_sha_short ? (
+                <a href={`${data.repo_url}/commit/${data.commit_sha}`} target="_blank" rel="noopener noreferrer" className={ext}>
+                  {data.commit_sha_short}
+                </a>
+              ) : (
+                <span className="italic text-text-faint">dev build</span>
+              ),
+          },
+          { k: "built", v: formatBuildDate(data.build_date), mono: true },
+          {
+            k: "license",
+            v: (
+              <a href={`${data.repo_url}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer" className={ext}>
+                {data.license}
+              </a>
+            ),
+          },
+          {
+            k: "source",
+            mono: true,
+            span: 2,
+            v: (
+              <a href={data.repo_url} target="_blank" rel="noopener noreferrer" className={ext}>
+                {data.repo_url}
+              </a>
+            ),
+          },
+        ]}
+      />
+      <CodeBlock title="support line" tag={<span className="tt">for bug reports</span>} actions={<Copy text={supportLine} />} maxH={80}>
+        {supportLine}
+      </CodeBlock>
     </div>
   )
 }

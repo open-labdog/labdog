@@ -1,36 +1,36 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useQuery } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { DataTable } from "@/components/ui/data-table"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
-import { TableSkeleton } from "@/components/ui/skeleton"
+import { shortAgo } from "@/lib/fleet"
 import { useAuth } from "@/lib/auth"
 import type { AdminUser } from "@/lib/types"
+import { Banner, Confirm, Empty, Field, Filter, Modal, PageHead, Table, Tag, type Sort } from "@/components/ld"
 
+const CRUMBS = [
+  { label: "settings", href: "/settings" },
+  { label: "access", href: "/settings?section=access" },
+]
+
+/**
+ * Users — the accounts that can sign in, and which of them are
+ * superusers. Administrators only; everyone else is told where the gate
+ * is rather than shown an empty table.
+ */
 export default function UsersPage() {
   const { user: currentUser, loading: authLoading } = useAuth()
+  const [q, setQ] = useState("")
+  const [status, setStatus] = useState("all")
+  const [role, setRole] = useState("all")
+  const [sort, setSort] = useState<Sort>({ k: "email", dir: 1 })
 
-  const [createDialogOpen, setCreateDialogOpen] = useState(false)
-  const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null)
 
   // Create form
@@ -56,54 +56,75 @@ export default function UsersPage() {
     queryFn: () => apiFetch<AdminUser[]>("/api/admin/users"),
     enabled: !!currentUser?.is_superuser,
   })
-  const showLoading = useDelayedLoading(isLoading)
+
+  const all = useMemo(() => users ?? [], [users])
+  const rows = useMemo(() => {
+    const ql = q.trim().toLowerCase()
+    const r = all.filter(
+      (u) =>
+        (status === "all" || (status === "active") === u.is_active) &&
+        (role === "all" || (role === "superuser") === u.is_superuser) &&
+        (!ql || u.email.toLowerCase().includes(ql)),
+    )
+    const key: Record<string, (u: AdminUser) => string | number> = {
+      email: (u) => u.email.toLowerCase(),
+      status: (u) => (u.is_active ? 1 : 0),
+      role: (u) => (u.is_superuser ? 1 : 0),
+      created: (u) => u.created_at,
+    }
+    const f = key[sort.k] ?? key.email
+    return r.sort((a, b) => {
+      const x = f(a)
+      const y = f(b)
+      return (x > y ? 1 : x < y ? -1 : 0) * sort.dir
+    })
+  }, [all, q, status, role, sort])
 
   const createMutation = useApiMutation({
-    mutationFn: (data: { email: string; password: string; is_superuser: boolean }) =>
-      apiFetch("/api/admin/users", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: (data: { email: string; password: string; is_superuser: boolean }) => apiFetch("/api/admin/users", { method: "POST", body: JSON.stringify(data) }),
     invalidateKeys: [["admin-users"]],
-    onSuccess: () => { setCreateDialogOpen(false); resetCreateForm() },
+    onSuccess: () => {
+      setCreateOpen(false)
+      resetCreateForm()
+    },
   })
 
   const editMutation = useApiMutation({
     mutationFn: ({ userId, ...data }: { userId: number; email: string; is_active: boolean; is_superuser: boolean }) =>
       apiFetch(`/api/admin/users/${userId}`, { method: "PATCH", body: JSON.stringify(data) }),
     invalidateKeys: [["admin-users"]],
-    onSuccess: () => setEditDialogOpen(false),
+    onSuccess: () => setEditOpen(false),
   })
 
   const resetPasswordMutation = useApiMutation({
     mutationFn: ({ userId, password }: { userId: number; password: string }) =>
       apiFetch(`/api/admin/users/${userId}/reset-password`, { method: "POST", body: JSON.stringify({ password }) }),
     invalidateKeys: [["admin-users"]],
-    onSuccess: () => setResetDialogOpen(false),
+    onSuccess: () => setResetOpen(false),
   })
 
   const deleteMutation = useApiMutation({
-    mutationFn: (userId: number) =>
-      apiFetch(`/api/admin/users/${userId}`, { method: "DELETE" }),
+    mutationFn: (userId: number) => apiFetch(`/api/admin/users/${userId}`, { method: "DELETE" }),
     invalidateKeys: [["admin-users"]],
-    onSuccess: () => setDeleteDialogOpen(false),
+    onSuccess: () => setDeleteOpen(false),
   })
 
-  if (authLoading) {
-    return (
-      <div className="space-y-6">
-        <TableSkeleton rows={5} columns={3} />
-      </div>
-    )
-  }
+  if (authLoading) return null
 
   if (!currentUser?.is_superuser) {
     return (
-      <div className="space-y-6">
-        <div className="text-center py-12">
-          <p className="text-slate-400">Access denied. Only administrators can manage users.</p>
-          <Link href="/overview" className="text-blue-400 hover:underline text-sm mt-2 inline-block">
-            Back to Overview
-          </Link>
-        </div>
-      </div>
+      <>
+        <PageHead crumbs={CRUMBS} title="Users" sub="Accounts and superuser status." />
+        <Empty
+          title="Administrators only"
+          note="Only a superuser can manage accounts. Ask one to make the change, or to make you one."
+          action={
+            <Link href="/settings?section=access" className="btn btn-sm hover:no-underline">
+              Settings › Access →
+            </Link>
+          }
+        />
+      </>
     )
   }
 
@@ -116,28 +137,33 @@ export default function UsersPage() {
     createMutation.reset()
   }
 
-  function openEditDialog(u: AdminUser) {
+  function openCreate() {
+    resetCreateForm()
+    setCreateOpen(true)
+  }
+
+  function openEdit(u: AdminUser) {
     setSelectedUser(u)
     setEditEmail(u.email)
     setEditIsActive(u.is_active)
     setEditIsSuperuser(u.is_superuser)
     editMutation.reset()
-    setEditDialogOpen(true)
+    setEditOpen(true)
   }
 
-  function openResetDialog(u: AdminUser) {
+  function openReset(u: AdminUser) {
     setSelectedUser(u)
     setNewPassword("")
     setConfirmNewPassword("")
     setValidationError(null)
     resetPasswordMutation.reset()
-    setResetDialogOpen(true)
+    setResetOpen(true)
   }
 
-  function openDeleteDialog(u: AdminUser) {
+  function openDelete(u: AdminUser) {
     setSelectedUser(u)
     deleteMutation.reset()
-    setDeleteDialogOpen(true)
+    setDeleteOpen(true)
   }
 
   function handleCreate(e: React.FormEvent<HTMLFormElement>) {
@@ -167,198 +193,215 @@ export default function UsersPage() {
     resetPasswordMutation.mutate({ userId: selectedUser.id, password: newPassword })
   }
 
-  function handleDelete() {
-    if (!selectedUser) return
-    deleteMutation.mutate(selectedUser.id)
-  }
-
   const formError = validationError || createMutation.error?.message || null
-  const editFormError = editMutation.error?.message || null
   const resetFormError = validationError || resetPasswordMutation.error?.message || null
-  const deleteFormError = deleteMutation.error?.message || null
+  const isSelf = (u: AdminUser) => u.id === currentUser?.id
 
   return (
-    <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Users" }]} />
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Users</h1>
-          <p className="text-slate-400 text-sm mt-1">Manage user accounts</p>
+    <>
+      <PageHead
+        crumbs={CRUMBS}
+        title={
+          <>
+            Users <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
+          </>
+        }
+        sub="Accounts that can sign in. A superuser manages accounts, integrations and settings; everyone else operates the fleet."
+        actions={
+          <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            New user…
+          </button>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-[7px]">
+          <input className="inp mono" style={{ width: 200, fontSize: 11.5, padding: "4px 8px" }} placeholder="Search by email…" aria-label="search users" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Filter
+            label="status"
+            value={status}
+            onChange={setStatus}
+            options={[
+              { k: "active", label: "active", n: all.filter((u) => u.is_active).length },
+              { k: "inactive", label: "inactive", n: all.filter((u) => !u.is_active).length },
+            ]}
+          />
+          <Filter
+            label="role"
+            value={role}
+            onChange={setRole}
+            options={[
+              { k: "superuser", label: "superuser", n: all.filter((u) => u.is_superuser).length },
+              { k: "user", label: "user", n: all.filter((u) => !u.is_superuser).length },
+            ]}
+          />
         </div>
-        <Dialog open={createDialogOpen} onOpenChange={(open) => {
-          setCreateDialogOpen(open)
-          if (!open) resetCreateForm()
-        }}>
-          <DialogTrigger render={<Button />} onClick={() => { resetCreateForm(); setCreateDialogOpen(true) }}>
-            New User
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create User</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleCreate} className="space-y-4 mt-2">
-              <div className="space-y-2">
-                <Label htmlFor="create-email">Email</Label>
-                <Input id="create-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="create-password">Password</Label>
-                <Input id="create-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="create-confirm">Confirm Password</Label>
-                <Input id="create-confirm" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required />
-              </div>
-              <div className="flex items-center gap-2">
-                <input id="create-superuser" type="checkbox" checked={isSuperuser} onChange={(e) => setIsSuperuser(e.target.checked)} className="rounded border-input" />
-                <Label htmlFor="create-superuser">Superuser</Label>
-              </div>
-              {formError && <p className="text-sm text-red-400">{formError}</p>}
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={createMutation.isPending}>{createMutation.isPending ? "Creating..." : "Create User"}</Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+      </PageHead>
 
-      {showLoading && <TableSkeleton rows={5} columns={3} />}
-      {error && <div className="text-red-400 py-8 text-center">Failed to load users</div>}
-
-      {!isLoading && !error && (
-        <DataTable<AdminUser>
-          tableId="admin-users"
-          data={users}
-          emptyMessage="No users found."
-          getRowKey={(u) => u.id}
-          columns={[
-            {
-              key: "email",
-              label: "Email",
-              accessor: (u) => u.email,
-              cell: (u) => <span className="font-medium text-white">{u.email}</span>,
-              defaultWidth: 240,
-              filter: { type: "text", placeholder: "e.g. @company.com" },
-            },
-            {
-              key: "is_active",
-              label: "Status",
-              accessor: (u) => u.is_active,
-              cell: (u) => (
-                <Badge className={u.is_active ? "bg-green-600 text-white" : "bg-red-600 text-white"}>
-                  {u.is_active ? "Active" : "Inactive"}
-                </Badge>
-              ),
-              defaultWidth: 100,
-              filter: { type: "boolean", trueLabel: "Active", falseLabel: "Inactive" },
-            },
-            {
-              key: "is_superuser",
-              label: "Superuser",
-              accessor: (u) => u.is_superuser,
-              cell: (u) => u.is_superuser
-                ? <Badge className="bg-purple-600 text-white">Superuser</Badge>
-                : <span className="text-slate-500">—</span>,
-              defaultWidth: 110,
-              filter: { type: "boolean", trueLabel: "Yes", falseLabel: "No" },
-            },
-            {
-              key: "created_at",
-              label: "Created",
-              accessor: (u) => u.created_at,
-              cell: (u) => <span className="text-slate-400">{new Date(u.created_at).toLocaleDateString()}</span>,
-              defaultWidth: 120,
-              filter: { type: "dateRange" },
-            },
-            {
-              key: "actions",
-              label: "Actions",
-              cell: (u) => (
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => openEditDialog(u)}>Edit</Button>
-                  <Button variant="outline" size="sm" onClick={() => openResetDialog(u)}>Reset Password</Button>
-                  <Button variant="destructive" size="sm" onClick={() => openDeleteDialog(u)}>Delete</Button>
-                </div>
-              ),
-              defaultWidth: 260,
-              resizable: false,
-              sortable: false,
-            },
-          ]}
-        />
+      {error && (
+        <Banner tone="danger" flush>
+          Could not load users: {error.message}
+        </Banner>
       )}
 
-      {/* Edit User Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={(open) => { if (!open) setEditDialogOpen(false) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleEdit} className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="edit-email">Email</Label>
-              <Input id="edit-email" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required />
-            </div>
-            <div className="flex items-center gap-2">
-              <input id="edit-active" type="checkbox" checked={editIsActive} onChange={(e) => setEditIsActive(e.target.checked)} className="rounded border-input" />
-              <Label htmlFor="edit-active">Active</Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <input id="edit-superuser" type="checkbox" checked={editIsSuperuser} onChange={(e) => setEditIsSuperuser(e.target.checked)} className="rounded border-input" />
-              <Label htmlFor="edit-superuser">Superuser</Label>
-            </div>
-            {editFormError && <p className="text-sm text-red-400">{editFormError}</p>}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={editMutation.isPending}>{editMutation.isPending ? "Saving..." : "Save Changes"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <Table<AdminUser>
+        cols={[
+          {
+            k: "email",
+            label: "email",
+            w: "minmax(220px,1.4fr)",
+            cell: (u) => (
+              <span className="flex items-center gap-1.5">
+                <span className="mono trunc font-medium text-text">{u.email}</span>
+                {isSelf(u) && <span className="tt text-text-faint">you</span>}
+              </span>
+            ),
+          },
+          { k: "status", label: "status", w: "96px", cell: (u) => <Tag tone={u.is_active ? "ok" : "danger"}>{u.is_active ? "active" : "inactive"}</Tag> },
+          { k: "role", label: "role", w: "110px", cell: (u) => (u.is_superuser ? <Tag tone="hold">superuser</Tag> : <span className="text-text-faint">—</span>) },
+          { k: "created", label: "created", w: "96px", cell: (u) => <span className="mono num text-[11px]" title={new Date(u.created_at).toLocaleString()}>{shortAgo(u.created_at)} ago</span> },
+          {
+            k: "actions",
+            label: "",
+            w: "230px",
+            right: true,
+            sortable: false,
+            cell: (u) => (
+              <span className="flex gap-0.5">
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(u)}>
+                  edit
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => openReset(u)}>
+                  reset password
+                </button>
+                <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={isSelf(u)} title={isSelf(u) ? "you cannot delete your own account" : undefined} onClick={() => openDelete(u)}>
+                  delete
+                </button>
+              </span>
+            ),
+          },
+        ]}
+        rows={rows}
+        keyOf={(u) => u.id}
+        sort={sort}
+        onSort={(k) => setSort((s) => ({ k, dir: s.k === k ? ((-s.dir) as 1 | -1) : 1 }))}
+        loading={isLoading}
+        empty={all.length === 0 ? "No users." : "No user matches."}
+      />
 
-      {/* Reset Password Dialog */}
-      <Dialog open={resetDialogOpen} onOpenChange={(open) => { if (!open) setResetDialogOpen(false) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset Password — {selectedUser?.email}</DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleResetPassword} className="space-y-4 mt-2">
-            <div className="space-y-2">
-              <Label htmlFor="reset-password">New Password</Label>
-              <Input id="reset-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="reset-confirm">Confirm Password</Label>
-              <Input id="reset-confirm" type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required />
-            </div>
-            {resetFormError && <p className="text-sm text-red-400">{resetFormError}</p>}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setResetDialogOpen(false)}>Cancel</Button>
-              <Button type="submit" disabled={resetPasswordMutation.isPending}>{resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {createOpen && (
+        <Modal
+          title="New user"
+          w={460}
+          onClose={() => {
+            setCreateOpen(false)
+            resetCreateForm()
+          }}
+          onSubmit={handleCreate}
+          footer={
+            <>
+              <button type="button" className="btn ml-auto" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={createMutation.isPending}>
+                {createMutation.isPending ? "Creating…" : "Create user"}
+              </button>
+            </>
+          }
+        >
+          <Field label="email" htmlFor="create-email">
+            <input id="create-email" type="email" className="inp mono" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="off" />
+          </Field>
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label="password" htmlFor="create-password">
+              <input id="create-password" type="password" className="inp mono" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="new-password" />
+            </Field>
+            <Field label="confirm password" htmlFor="create-confirm">
+              <input id="create-confirm" type="password" className="inp mono" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required autoComplete="new-password" />
+            </Field>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="create-superuser" type="checkbox" checked={isSuperuser} onChange={(e) => setIsSuperuser(e.target.checked)} />
+            superuser — manages accounts, integrations and settings
+          </label>
+          {formError && <Banner tone="danger">{formError}</Banner>}
+        </Modal>
+      )}
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={(open) => { if (!open) setDeleteDialogOpen(false) }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete User</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-slate-400 mt-2">
-            Are you sure you want to delete <span className="text-white font-medium">{selectedUser?.email}</span>? This action cannot be undone.
-          </p>
-          {deleteFormError && <p className="text-sm text-red-400 mt-2">{deleteFormError}</p>}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+      {editOpen && selectedUser && (
+        <Modal
+          title="Edit user"
+          meta={selectedUser.email}
+          w={460}
+          onClose={() => setEditOpen(false)}
+          onSubmit={handleEdit}
+          footer={
+            <>
+              <button type="button" className="btn ml-auto" onClick={() => setEditOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={editMutation.isPending}>
+                {editMutation.isPending ? "Saving…" : "Save changes"}
+              </button>
+            </>
+          }
+        >
+          <Field label="email" htmlFor="edit-email">
+            <input id="edit-email" type="email" className="inp mono" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} required />
+          </Field>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="edit-active" type="checkbox" checked={editIsActive} onChange={(e) => setEditIsActive(e.target.checked)} />
+            active — an inactive account cannot sign in
+          </label>
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="edit-superuser" type="checkbox" checked={editIsSuperuser} onChange={(e) => setEditIsSuperuser(e.target.checked)} disabled={isSelf(selectedUser)} />
+            superuser{isSelf(selectedUser) ? " — you cannot change your own role" : ""}
+          </label>
+          {editMutation.error && <Banner tone="danger">{editMutation.error.message}</Banner>}
+        </Modal>
+      )}
+
+      {resetOpen && selectedUser && (
+        <Modal
+          title="Reset password"
+          meta={selectedUser.email}
+          w={460}
+          onClose={() => setResetOpen(false)}
+          onSubmit={handleResetPassword}
+          footer={
+            <>
+              <span className="tt mr-auto">their sessions stay signed in</span>
+              <button type="button" className="btn" onClick={() => setResetOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={resetPasswordMutation.isPending}>
+                {resetPasswordMutation.isPending ? "Resetting…" : "Reset password"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label="new password" htmlFor="reset-password">
+              <input id="reset-password" type="password" className="inp mono" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required autoComplete="new-password" />
+            </Field>
+            <Field label="confirm password" htmlFor="reset-confirm">
+              <input id="reset-confirm" type="password" className="inp mono" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required autoComplete="new-password" />
+            </Field>
+          </div>
+          {resetFormError && <Banner tone="danger">{resetFormError}</Banner>}
+        </Modal>
+      )}
+
+      {selectedUser && (
+        <Confirm
+          open={deleteOpen}
+          onOpenChange={(open) => !open && setDeleteOpen(false)}
+          title="Delete user"
+          description={`${selectedUser.email} loses access immediately. This cannot be undone.${deleteMutation.error ? ` ${deleteMutation.error.message}` : ""}`}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={deleteMutation.isPending}
+          onConfirm={() => deleteMutation.mutate(selectedUser.id)}
+        />
+      )}
+    </>
   )
 }

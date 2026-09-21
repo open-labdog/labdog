@@ -1,41 +1,19 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { UsagePanel } from "@/components/ai/usage-panel"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { Banner, Confirm, Field, Help, Modal, PageHead, Panel, Table, Tag } from "@/components/ld"
 import { MODEL_PRESETS, type ModelPreset } from "@/lib/ai-presets"
 import { apiFetch, ApiError } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import type { AIProvider, AIProviderTestResult, AIProviderType } from "@/lib/types"
+
+const CRUMBS = [
+  { label: "settings", href: "/settings" },
+  { label: "ai", href: "/settings?section=ai" },
+]
 
 const TYPE_LABEL: Record<AIProviderType, string> = {
   openai_compat: "OpenAI-compatible",
@@ -205,10 +183,17 @@ const EMPTY_FORM: FormState = {
   verify_ssl: true,
 }
 
+/**
+ * AI providers — the LLM backends the assistant can use. One is the
+ * default; each is tested from here. AI stays off until `ai.enabled` is
+ * on under Settings › AI, and cloud providers until
+ * `ai.allow_cloud_providers` is.
+ */
 export default function AIProvidersPage() {
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<AIProvider | null>(null)
+  const [deleting, setDeleting] = useState<AIProvider | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [error, setError] = useState<string | null>(null)
   const [testResults, setTestResults] = useState<Record<number, AIProviderTestResult>>({})
@@ -338,7 +323,10 @@ export default function AIProvidersPage() {
   const remove = useMutation({
     mutationFn: (id: number) =>
       apiFetch<void>(`/api/ai/providers/${id}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ai-providers"] }),
+    onSuccess: () => {
+      setDeleting(null)
+      queryClient.invalidateQueries({ queryKey: ["ai-providers"] })
+    },
   })
 
   const test = useMutation({
@@ -347,486 +335,329 @@ export default function AIProvidersPage() {
     onSuccess: (result, id) => setTestResults((prev) => ({ ...prev, [id]: result })),
   })
 
+  const all = providers ?? []
+  const claude = isClaudeCode(form.provider_type)
+  const setField = <K extends keyof FormState>(k: K, v: FormState[K]) => setForm((prev) => ({ ...prev, [k]: v }))
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-white">AI Providers</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Connect a local or hosted LLM for the assistant to use. AI stays off
-            until you enable <span className="font-mono">ai.enabled</span> in
-            Settings.
-          </p>
-        </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger render={<Button onClick={openCreate}>Add provider</Button>} />
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{editing ? "Edit provider" : "Add provider"}</DialogTitle>
-            </DialogHeader>
+    <>
+      <PageHead
+        crumbs={CRUMBS}
+        title={
+          <>
+            AI providers <span className="mono num text-[12.5px] font-normal text-text-faint">{all.length}</span>
+          </>
+        }
+        sub={
+          <>
+            Connect a local or hosted LLM for the assistant to use. AI stays off until <span className="mono">ai.enabled</span> is on under{" "}
+            <Link href="/settings?section=ai" className="text-ld-accent">
+              Settings › AI
+            </Link>
+            .
+          </>
+        }
+        actions={
+          <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            Add provider…
+          </button>
+        }
+      />
 
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Name</Label>
-                <Input
-                  id="name"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={NAME_PLACEHOLDER[form.provider_type]}
-                />
-              </div>
+      <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
+        <UsagePanel />
 
-              <div>
-                <Label>Type</Label>
-                <Select
-                  value={form.provider_type}
-                  onValueChange={(v) => v && changeType(v as AIProviderType)}
-                >
-                  <SelectTrigger>
-                    {/* base-ui renders the raw value unless given a
-                        formatter, so without this the field reads
-                        "openai_compat" rather than "OpenAI-compatible". */}
-                    <SelectValue>
-                      {(v: AIProviderType) => TYPE_LABEL[v] ?? v}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(TYPE_LABEL) as AIProviderType[]).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {TYPE_LABEL[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="mt-1 text-xs text-slate-400">
-                  {TYPE_HELP[form.provider_type]}
-                </p>
-                {TYPE_LIMITATION[form.provider_type] && (
-                  <p className="mt-2 rounded-md border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200">
-                    {TYPE_LIMITATION[form.provider_type]}
-                  </p>
-                )}
-              </div>
-
-              {!isClaudeCode(form.provider_type) && (
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="base_url">
-                      Base URL
-                      {form.provider_type === "anthropic" && (
-                        <span className="ml-1 font-normal text-slate-400">
-                          (optional)
+        <Panel title="providers" meta="who answers the assistant">
+          <Table<AIProvider>
+            cols={[
+              {
+                k: "name",
+                label: "name",
+                w: "minmax(160px,1.2fr)",
+                sortable: false,
+                nowrap: false,
+                cell: (provider) => {
+                  const result = testResults[provider.id]
+                  return (
+                    <span className="flex min-w-0 flex-col gap-0.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="mono trunc font-medium text-text">{provider.name}</span>
+                        {provider.is_default && <Tag tone="accent">default</Tag>}
+                        {!provider.enabled && <Tag>disabled</Tag>}
+                      </span>
+                      {result && (
+                        <span className="text-[11px]" style={{ color: result.ok ? "var(--ok)" : "var(--danger)" }}>
+                          {result.message}
                         </span>
                       )}
-                    </Label>
-                    <InfoPopover title="Base URL">
-                      {form.provider_type === "anthropic"
-                        ? "Leave blank to use the public Anthropic API. Set it only if you route through a proxy or gateway that speaks the Messages API."
-                        : "Where your OpenAI-compatible server listens, including the version path — Ollama uses http://localhost:11434/v1 by default."}
-                    </InfoPopover>
-                  </div>
-                  <Input
-                    id="base_url"
-                    value={form.base_url}
-                    onChange={(e) => setForm({ ...form, base_url: e.target.value })}
-                    placeholder={
-                      form.provider_type === "anthropic"
-                        ? "Blank — uses https://api.anthropic.com"
-                        : "http://localhost:11434/v1"
-                    }
-                  />
-                </div>
-              )}
-
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="model">Model</Label>
-                  <InfoPopover title="Model">
-                    The model identifier sent to the provider — for Ollama the
-                    tag you pulled, for a hosted API the published model id.
-                    Pick a suggestion below to fill this in, or type any name
-                    the endpoint serves.
-                  </InfoPopover>
-                </div>
-                <Input
-                  id="model"
-                  value={form.model}
-                  onChange={(e) => setForm({ ...form, model: e.target.value })}
-                  placeholder={
-                    form.provider_type === "anthropic"
-                      ? "claude-opus-5"
-                      : isClaudeCode(form.provider_type)
-                        ? "Blank — uses Claude Code's own default model"
-                        : "llama3.1:8b"
-                  }
-                />
-                {presets.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {presets.map((preset) => (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        title={preset.hint}
-                        onClick={() => applyPreset(preset)}
-                        className={cn(
-                          "rounded-md px-2 py-1 text-xs transition-colors",
-                          form.model === preset.id
-                            ? "bg-slate-700 text-white"
-                            : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
-                        )}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <Label htmlFor="api_key">
-                    {isClaudeCode(form.provider_type)
-                      ? "Subscription token"
-                      : "API key"}
-                    {form.provider_type === "anthropic" && (
-                      <span className="ml-1 font-normal text-slate-400">
-                        (required)
-                      </span>
-                    )}
-                  </Label>
-                  {form.provider_type === "anthropic" && (
-                    <InfoPopover title="API key">
-                      Create one in the Claude Console at{" "}
-                      <span className="font-mono">platform.claude.com</span> under
-                      API keys. It starts with{" "}
-                      <span className="font-mono">sk-ant-</span> and is billed per
-                      token. A Pro or Max subscription does not cover API usage —
-                      to spend against a subscription instead, use the Claude CLI
-                      provider type.
-                    </InfoPopover>
-                  )}
-                  {isClaudeCode(form.provider_type) && (
-                    <InfoPopover title="Subscription token">
-                      Run <span className="font-mono">claude setup-token</span>{" "}
-                      on your own machine, not the server. It shows you three
-                      strings in turn, and only the last belongs here:
-                      <span className="mt-2 block">
-                        1. an <strong>authorize URL</strong> — open it in a
-                        browser
-                      </span>
-                      <span className="block">
-                        2. an <strong>authorization code</strong> — paste it
-                        back at the terminal prompt
-                      </span>
-                      <span className="block">
-                        3. the <strong>token</strong>, starting{" "}
-                        <span className="font-mono">sk-ant-oat01-</span> — that
-                        is this field
-                      </span>
-                      <span className="mt-2 block">
-                        It is stored encrypted, like every other LabDog
-                        credential, and injected only into the CLI process.
-                        Leave blank to use whatever the host is already logged
-                        in as.
-                      </span>
-                      <span className="mt-2 block">
-                        The token lasts a year, and sessions count against
-                        your plan&apos;s usage limits — the same ones the
-                        Claude apps use. Anthropic&apos;s terms allow this for
-                        your own use but not for routing other people&apos;s
-                        requests through your plan, so use your own token on
-                        your own instance; pick an API-key provider if you are
-                        running LabDog for someone else.
-                      </span>
-                    </InfoPopover>
-                  )}
-                </div>
-                <Input
-                  id="api_key"
-                  type="password"
-                  value={form.api_key}
-                  onChange={(e) => setForm({ ...form, api_key: e.target.value })}
-                  placeholder={
-                    editing?.has_api_key
-                      ? "Stored — leave blank to keep it"
-                      : isClaudeCode(form.provider_type)
-                        ? "sk-ant-oat01-… from `claude setup-token` — blank uses the host's own login"
-                        : form.provider_type === "anthropic"
-                          ? "sk-ant-… from platform.claude.com (required)"
-                          : "Leave blank for an unauthenticated local server"
-                  }
-                />
-                {isClaudeCode(form.provider_type) && (
-                  <p className="mt-1 text-xs text-slate-400">
-                    Billed to your Claude subscription rather than API credits.
-                    Two things outrank this token in Claude Code&apos;s own
-                    credential order, and both would quietly authenticate as a
-                    different account: the{" "}
-                    <span className="font-mono">ANTHROPIC_API_KEY</span> and{" "}
-                    <span className="font-mono">ANTHROPIC_AUTH_TOKEN</span>{" "}
-                    environment variables, and a login left on disk by{" "}
-                    <span className="font-mono">claude login</span>. When a
-                    token is set LabDog neutralises both variables and points
-                    Claude Code at its own config directory, so neither can
-                    shadow what you enter here.
-                  </p>
-                )}
-              </div>
-
-              {/*
-                Every field below is inert on a subscription, and a Monthly
-                cap is actively misleading there: it can never fire, so an
-                operator who set one would believe they were capped when they
-                were not. Hidden rather than disabled — a greyed-out budget
-                still reads as a budget.
-
-                The two backends reach that state differently. The single-shot
-                CLI reports no usage at all, so recorded spend stays zero. The
-                agentic backend does report tokens, so the token and iteration
-                caps work normally — but the money is still flat-rate, so a
-                USD figure would be fiction either way.
-              */}
-              {isClaudeCode(form.provider_type) ? (
-                <p className="rounded-md border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-                  Cost settings do not apply to a subscription: it is billed
-                  flat rather than per token, so the money budgets under
-                  Settings will not act on this provider. The per-session
-                  iteration, command, and wall-clock caps still apply.
-                </p>
-              ) : (
-              <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="input_cost">Input {currency}/M tokens</Label>
-                    <InfoPopover title="Input cost per million tokens">
-                      What the provider charges for the tokens you send it —
-                      the prompt, the conversation so far, and every tool
-                      result read back on each turn. This is usually the larger
-                      share of an investigation&apos;s cost, because the
-                      transcript is re-sent every turn.
-                    </InfoPopover>
-                  </div>
-                  <Input
-                    id="input_cost"
-                    value={form.input_cost_per_mtok}
-                    onChange={(e) =>
-                      setForm({ ...form, input_cost_per_mtok: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="output_cost">Output {currency}/M tokens</Label>
-                    <InfoPopover title="Output cost per million tokens">
-                      What the provider charges for the tokens it generates —
-                      the assistant&apos;s replies and the commands it decides
-                      to run. Usually several times the input rate per token,
-                      but far fewer tokens, so it is often the smaller half of
-                      the bill.
-                    </InfoPopover>
-                  </div>
-                  <Input
-                    id="output_cost"
-                    value={form.output_cost_per_mtok}
-                    onChange={(e) =>
-                      setForm({ ...form, output_cost_per_mtok: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <p className="-mt-2 text-xs text-slate-400">
-                Rates are entered by hand — an OpenAI-compatible endpoint cannot
-                report its own pricing. Enter them in {currency}; LabDog never
-                converts between currencies. Leave both at 0 for a self-hosted
-                model, which makes the money budgets a no-op for it.
-              </p>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="max_tokens">Max tokens per turn</Label>
-                    <InfoPopover title="Max tokens per turn">
-                      The ceiling on a single reply. It bounds one message, not
-                      a whole session — the session caps under Settings do
-                      that. Too low and long answers get cut off mid-sentence;
-                      the model must also fit any commands it wants to run
-                      inside this budget.
-                    </InfoPopover>
-                  </div>
-                  <Input
-                    id="max_tokens"
-                    value={form.max_tokens}
-                    onChange={(e) => setForm({ ...form, max_tokens: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <Label htmlFor="monthly_budget">Monthly cap ({currency})</Label>
-                    <InfoPopover title="Monthly cap">
-                      A ceiling for this provider alone, on top of the global
-                      daily and monthly budgets in Settings. Useful when a free
-                      local model and a paid one are both configured and you
-                      want to bound only the paid one. 0 means no per-provider
-                      limit. Priced at 0? Then this never triggers — the token
-                      and iteration caps still apply.
-                    </InfoPopover>
-                  </div>
-                  <Input
-                    id="monthly_budget"
-                    value={form.monthly_budget}
-                    onChange={(e) =>
-                      setForm({ ...form, monthly_budget: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              </>
-              )}
-
-              <label className="flex items-center gap-2 text-sm text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={form.is_default}
-                  onChange={(e) => setForm({ ...form, is_default: e.target.checked })}
-                />
-                Use as the default provider
-              </label>
-
-              {ALWAYS_SENDS_OFFSITE.has(form.provider_type) && (
-                <p className="rounded-md border border-slate-700 bg-slate-800/50 px-3 py-2 text-xs text-slate-400">
-                  This provider sends host data off your network. It stays
-                  blocked until{" "}
-                  <span className="font-mono">ai.allow_cloud_providers</span> is
-                  enabled in{" "}
-                  <a href="/settings" className="underline underline-offset-4">
-                    Settings
-                  </a>
-                  , which is off by default.
-                </p>
-              )}
-
-              {error && <p className="text-sm text-red-400">{error}</p>}
-            </div>
-
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={() => save.mutate()} disabled={save.isPending}>
-                {save.isPending ? "Saving…" : "Save"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+                    </span>
+                  )
+                },
+              },
+              {
+                k: "type",
+                label: "type",
+                w: "minmax(150px,1fr)",
+                sortable: false,
+                cell: (provider) => (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="trunc text-text-2">{TYPE_LABEL[provider.provider_type]}</span>
+                    {provider.base_url && <span className="mono trunc text-[10.5px] text-text-faint">{provider.base_url}</span>}
+                  </span>
+                ),
+              },
+              {
+                k: "model",
+                label: "model",
+                w: "minmax(140px,1fr)",
+                sortable: false,
+                cell: (provider) => {
+                  const expiry = describeCredentialExpiry(provider)
+                  return (
+                    <span className="flex min-w-0 flex-col">
+                      <span className="mono trunc text-[11px] text-text">{provider.model || <span className="text-text-faint">provider default</span>}</span>
+                      {expiry && <span className={`trunc text-[10.5px] ${isCredentialUrgent(provider) ? "text-warn" : "text-text-faint"}`}>{expiry}</span>}
+                    </span>
+                  )
+                },
+              },
+              { k: "pricing", label: "pricing", w: "minmax(120px,0.9fr)", sortable: false, cell: (provider) => <span className="mono text-[11px] text-text-3">{pricingLabel(provider, currency)}</span> },
+              { k: "data", label: "data", w: "80px", sortable: false, cell: (provider) => (provider.sends_data_offsite ? <Tag tone="warn">off-site</Tag> : <Tag tone="ok">local</Tag>) },
+              {
+                k: "actions",
+                label: "",
+                w: "170px",
+                right: true,
+                sortable: false,
+                cell: (provider) => (
+                  <span className="flex gap-0.5">
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => test.mutate(provider.id)} disabled={test.isPending}>
+                      test
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(provider)}>
+                      edit
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => setDeleting(provider)}>
+                      delete
+                    </button>
+                  </span>
+                ),
+              },
+            ]}
+            rows={all}
+            keyOf={(p) => p.id}
+            loading={isLoading}
+            empty="No providers yet. Add a local Ollama, an Anthropic API key, or a Claude Code subscription token — the assistant cannot run without one."
+          />
+        </Panel>
       </div>
 
-      <UsagePanel />
+      {dialogOpen && (
+        <Modal
+          title={editing ? "Edit provider" : "Add provider"}
+          meta={editing?.name}
+          w={560}
+          onClose={() => setDialogOpen(false)}
+          onSubmit={(e) => {
+            e.preventDefault()
+            save.mutate()
+          }}
+          footer={
+            <>
+              <span className="tt mr-auto">credentials are stored encrypted</span>
+              <button type="button" className="btn" onClick={() => setDialogOpen(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={save.isPending}>
+                {save.isPending ? "Saving…" : "Save"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+            <Field label="name" htmlFor="name">
+              <input id="name" className="inp mono" value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder={NAME_PLACEHOLDER[form.provider_type]} />
+            </Field>
+            <Field label="type" htmlFor="provider_type">
+              <select id="provider_type" className="inp" value={form.provider_type} onChange={(e) => changeType(e.target.value as AIProviderType)}>
+                {(Object.keys(TYPE_LABEL) as AIProviderType[]).map((t) => (
+                  <option key={t} value={t}>
+                    {TYPE_LABEL[t]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="text-[11.5px] text-text-3">{TYPE_HELP[form.provider_type]}</div>
+          {TYPE_LIMITATION[form.provider_type] && <Banner tone="warn">{TYPE_LIMITATION[form.provider_type]}</Banner>}
 
-      {isLoading && <div className="py-8 text-center text-slate-400">Loading…</div>}
+          {!claude && (
+            <Field label="base url" htmlFor="base_url" hint={form.provider_type === "anthropic" ? "optional — blank uses the public API" : "including the version path"}>
+              <input
+                id="base_url"
+                className="inp mono"
+                value={form.base_url}
+                onChange={(e) => setField("base_url", e.target.value)}
+                placeholder={form.provider_type === "anthropic" ? "blank — uses https://api.anthropic.com" : "http://localhost:11434/v1"}
+              />
+              <Help>
+                {form.provider_type === "anthropic"
+                  ? "Leave blank to use the public Anthropic API. Set it only if you route through a proxy or gateway that speaks the Messages API."
+                  : "Where your OpenAI-compatible server listens, including the version path — Ollama uses http://localhost:11434/v1 by default."}
+              </Help>
+            </Field>
+          )}
 
-      {!isLoading && providers?.length === 0 && (
-        <div className="py-8 text-center text-slate-400">
-          No providers configured yet.
-        </div>
+          <Field label="model" htmlFor="model" hint="the identifier sent to the provider">
+            <input
+              id="model"
+              className="inp mono"
+              value={form.model}
+              onChange={(e) => setField("model", e.target.value)}
+              placeholder={form.provider_type === "anthropic" ? "claude-opus-5" : claude ? "blank — uses Claude Code's own default model" : "llama3.1:8b"}
+            />
+            {presets.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {presets.map((preset) => (
+                  <Tag key={preset.id} tone={form.model === preset.id ? "accent" : undefined} title={preset.hint} onClick={() => applyPreset(preset)}>
+                    {preset.label}
+                  </Tag>
+                ))}
+              </div>
+            )}
+            <Help>For Ollama the tag you pulled, for a hosted API the published model id. Pick a suggestion to fill this in, or type any name the endpoint serves.</Help>
+          </Field>
+
+          <Field label={claude ? "subscription token" : "api key"} htmlFor="api_key" hint={form.provider_type === "anthropic" ? "required" : editing?.has_api_key ? "stored — blank keeps it" : undefined}>
+            <input
+              id="api_key"
+              type="password"
+              className="inp mono"
+              autoComplete="off"
+              value={form.api_key}
+              onChange={(e) => setField("api_key", e.target.value)}
+              placeholder={
+                editing?.has_api_key
+                  ? "stored — leave blank to keep it"
+                  : claude
+                    ? "sk-ant-oat01-… from `claude setup-token` — blank uses the host's own login"
+                    : form.provider_type === "anthropic"
+                      ? "sk-ant-… from platform.claude.com"
+                      : "leave blank for an unauthenticated local server"
+              }
+            />
+            {form.provider_type === "anthropic" && (
+              <Help summary="where to get one">
+                Create one in the Claude Console at <span className="mono">platform.claude.com</span> under API keys. It starts with <span className="mono">sk-ant-</span> and is billed per token. A Pro or Max
+                subscription does not cover API usage — to spend against a subscription instead, use a Claude Code provider type.
+              </Help>
+            )}
+            {claude && (
+              <Help summary="how to get one, and what it authenticates as">
+                Run <span className="mono">claude setup-token</span> on your own machine, not the server. It shows three strings in turn, and only the last belongs here: an <strong>authorize URL</strong> to open in a
+                browser, an <strong>authorization code</strong> to paste back at the terminal, then the <strong>token</strong> starting <span className="mono">sk-ant-oat01-</span> — that is this field. It is stored
+                encrypted, like every other LabDog credential, and injected only into the CLI process; leave it blank to use whatever the host is already logged in as. The token lasts a year, and sessions count against
+                your plan&apos;s usage limits — the same ones the Claude apps use. Anthropic&apos;s terms allow this for your own use but not for routing other people&apos;s requests through your plan, so use your own
+                token on your own instance and pick an API-key provider if you run LabDog for someone else.
+                <br />
+                <br />
+                Two things outrank this token in Claude Code&apos;s own credential order, and both would quietly authenticate as a different account: the <span className="mono">ANTHROPIC_API_KEY</span> and{" "}
+                <span className="mono">ANTHROPIC_AUTH_TOKEN</span> environment variables, and a login left on disk by <span className="mono">claude login</span>. When a token is set LabDog neutralises both variables and
+                points Claude Code at its own config directory, so neither can shadow what you enter here.
+              </Help>
+            )}
+          </Field>
+
+          {/*
+            Every field below is inert on a subscription, and a Monthly
+            cap is actively misleading there: it can never fire, so an
+            operator who set one would believe they were capped when they
+            were not. Hidden rather than disabled — a greyed-out budget
+            still reads as a budget.
+
+            The two backends reach that state differently. The single-shot
+            CLI reports no usage at all, so recorded spend stays zero. The
+            agentic backend does report tokens, so the token and iteration
+            caps work normally — but the money is still flat-rate, so a
+            USD figure would be fiction either way.
+          */}
+          {claude ? (
+            <Banner tone="idle">
+              Cost settings do not apply to a subscription: it is billed flat rather than per token, so the money budgets under Settings will not act on this provider. The per-session iteration, command and wall-clock caps
+              still apply.
+            </Banner>
+          ) : (
+            <>
+              <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <Field label={`input ${currency} / M tokens`} htmlFor="input_cost">
+                  <input id="input_cost" className="inp mono num" value={form.input_cost_per_mtok} onChange={(e) => setField("input_cost_per_mtok", e.target.value)} />
+                  <Help>
+                    What the provider charges for the tokens you send it — the prompt, the conversation so far, and every tool result read back on each turn. Usually the larger share of an investigation&apos;s cost,
+                    because the transcript is re-sent every turn.
+                  </Help>
+                </Field>
+                <Field label={`output ${currency} / M tokens`} htmlFor="output_cost">
+                  <input id="output_cost" className="inp mono num" value={form.output_cost_per_mtok} onChange={(e) => setField("output_cost_per_mtok", e.target.value)} />
+                  <Help>
+                    What the provider charges for the tokens it generates — the assistant&apos;s replies and the commands it decides to run. Usually several times the input rate per token, but far fewer tokens, so it is
+                    often the smaller half of the bill.
+                  </Help>
+                </Field>
+              </div>
+              <div className="text-[11.5px] text-text-3">
+                Rates are entered by hand — an OpenAI-compatible endpoint cannot report its own pricing. Enter them in {currency}; LabDog never converts between currencies. Leave both at 0 for a self-hosted model,
+                which makes the money budgets a no-op for it.
+              </div>
+              <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <Field label="max tokens per turn" htmlFor="max_tokens">
+                  <input id="max_tokens" className="inp mono num" value={form.max_tokens} onChange={(e) => setField("max_tokens", e.target.value)} />
+                  <Help>
+                    The ceiling on a single reply. It bounds one message, not a whole session — the session caps under Settings do that. Too low and long answers get cut off mid-sentence; the model must also fit any
+                    commands it wants to run inside this budget.
+                  </Help>
+                </Field>
+                <Field label={`monthly cap (${currency})`} htmlFor="monthly_budget" hint="0 = unlimited">
+                  <input id="monthly_budget" className="inp mono num" value={form.monthly_budget} onChange={(e) => setField("monthly_budget", e.target.value)} />
+                  <Help>
+                    A ceiling for this provider alone, on top of the global daily and monthly budgets in Settings. Useful when a free local model and a paid one are both configured and you want to bound only the paid
+                    one. Priced at 0? Then this never triggers — the token and iteration caps still apply.
+                  </Help>
+                </Field>
+              </div>
+            </>
+          )}
+
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input type="checkbox" checked={form.is_default} onChange={(e) => setField("is_default", e.target.checked)} />
+            use as the default provider
+          </label>
+
+          {ALWAYS_SENDS_OFFSITE.has(form.provider_type) && (
+            <Banner tone="hold">
+              This provider sends host data off your network. It stays blocked until <span className="mono">ai.allow_cloud_providers</span> is enabled under{" "}
+              <Link href="/settings?section=ai" className="underline">
+                Settings › AI
+              </Link>
+              , which is off by default.
+            </Banner>
+          )}
+
+          {error && <Banner tone="danger">{error}</Banner>}
+        </Modal>
       )}
 
-      {!isLoading && providers && providers.length > 0 && (
-        <div className="rounded-lg border border-slate-700 bg-slate-900">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead>Name</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Model</TableHead>
-                <TableHead>Pricing</TableHead>
-                <TableHead>Data</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {providers.map((provider) => {
-                const result = testResults[provider.id]
-                return (
-                  <TableRow key={provider.id} className="border-slate-700">
-                    <TableCell className="font-medium text-white">
-                      <div className="flex items-center gap-2">
-                        {provider.name}
-                        {provider.is_default && (
-                          <Badge className="bg-blue-600 text-white">default</Badge>
-                        )}
-                        {!provider.enabled && (
-                          <Badge className="bg-slate-600 text-slate-300">disabled</Badge>
-                        )}
-                      </div>
-                      {result && (
-                        <p
-                          className={`mt-1 text-xs ${
-                            result.ok ? "text-green-400" : "text-red-400"
-                          }`}
-                        >
-                          {result.message}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-400">
-                      {TYPE_LABEL[provider.provider_type]}
-                      {provider.base_url && (
-                        <span className="block font-mono">{provider.base_url}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-slate-300">
-                      {provider.model}
-                      {describeCredentialExpiry(provider) && (
-                        <span
-                          className={`mt-1 block font-sans ${
-                            isCredentialUrgent(provider) ? "text-amber-400" : "text-slate-500"
-                          }`}
-                        >
-                          {describeCredentialExpiry(provider)}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-slate-400">
-                      {pricingLabel(provider, currency)}
-                    </TableCell>
-                    <TableCell>
-                      {provider.sends_data_offsite ? (
-                        <Badge className="bg-amber-600 text-white">off-site</Badge>
-                      ) : (
-                        <Badge className="bg-green-600 text-white">local</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex justify-end gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => test.mutate(provider.id)}
-                          disabled={test.isPending}
-                        >
-                          Test
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(provider)}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-red-400"
-                          onClick={() => remove.mutate(provider.id)}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
+      {deleting && (
+        <Confirm
+          open
+          onOpenChange={(open) => !open && setDeleting(null)}
+          title="Delete provider"
+          description={`${deleting.name} is removed${deleting.is_default ? " — it is the default, so the assistant has no provider until another is made default" : ""}. Sessions that used it keep their history. This cannot be undone.`}
+          confirmLabel="Delete"
+          variant="destructive"
+          loading={remove.isPending}
+          onConfirm={() => remove.mutate(deleting.id)}
+        />
       )}
-    </div>
+    </>
   )
 }
