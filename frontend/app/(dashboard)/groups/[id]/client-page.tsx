@@ -16,14 +16,14 @@ import { categoryOptions, useGroupMerge } from "@/components/group-editor"
 import { RunActionButton } from "@/components/run-action-button"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 
-import GroupRulesPage from "./rules/client-page"
-import GroupServicesPage from "./services/client-page"
-import GroupHostsEntriesPage from "./hosts-entries/client-page"
-import GroupPackagesPage from "./packages/client-page"
-import GroupUsersPage from "./users/client-page"
-import GroupCronJobsPage from "./cron-jobs/client-page"
-import GroupResolverPage from "./resolver/client-page"
-import GroupCACertsPage from "./ca-certs/client-page"
+import { FirewallEditor } from "@/components/config/firewall-editor"
+import { ServicesEditor } from "@/components/config/services-editor"
+import { HostsFileEditor } from "@/components/config/hosts-file-editor"
+import { PackagesEditor } from "@/components/config/packages-editor"
+import { UsersEditor } from "@/components/config/users-editor"
+import { CronEditor } from "@/components/config/cron-editor"
+import { ResolverEditor } from "@/components/config/resolver-editor"
+import { CaCertsEditor } from "@/components/config/ca-certs-editor"
 
 /**
  * A group's own page, on the Host detail pattern: Overview · Config ·
@@ -39,15 +39,15 @@ import GroupCACertsPage from "./ca-certs/client-page"
 type Tab = "overview" | "config" | "members" | "activity"
 type ActivityView = "runs" | "schedules"
 
-const EDITORS: Record<ModuleId, React.ComponentType<{ embedded?: boolean; groupId?: number }>> = {
-  firewall: GroupRulesPage,
-  services: GroupServicesPage,
-  "hosts-file": GroupHostsEntriesPage,
-  packages: GroupPackagesPage,
-  users: GroupUsersPage,
-  cron: GroupCronJobsPage,
-  resolver: GroupResolverPage,
-  "ca-certs": GroupCACertsPage,
+const EDITORS: Record<ModuleId, React.ComponentType<{ groupId: number }>> = {
+  firewall: FirewallEditor,
+  services: ServicesEditor,
+  "hosts-file": HostsFileEditor,
+  packages: PackagesEditor,
+  users: UsersEditor,
+  cron: CronEditor,
+  resolver: ResolverEditor,
+  "ca-certs": CaCertsEditor,
 }
 
 
@@ -297,9 +297,8 @@ export default function GroupDetailPage() {
             })}
             <span className="mt-2 hidden px-2 text-[10.5px] leading-[1.45] text-text-faint md:block">A module is declared once it has an item; adding the first declares it, deleting the last undeclares it.</span>
           </div>
-          {/* The editor's own title repeats the module list; its toolbar stays. */}
-          <div className="scroll flex-1 p-3.5 [&_h1]:hidden">
-            <Editor key={mod.id} embedded groupId={id} />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <Editor key={mod.id} groupId={id} />
           </div>
         </div>
       )}
