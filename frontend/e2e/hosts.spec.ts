@@ -58,13 +58,8 @@ test.describe("Hosts page", () => {
     // Select SSH key from native select
     await page.locator("#ssh_key").selectOption({ value: String(sshKey.id) })
 
-    // GroupMultiSelect uses a custom dropdown — click the trigger to open it
-    await page.getByText("Select groups...").click()
-    // Now the dropdown is open — check the group by its label text
+    // GroupMultiSelect is an always-visible checkbox list — no dropdown to open
     await page.getByLabel(group.name).check()
-    // Close the dropdown by clicking outside the component (hostname field)
-    // so the floating dropdown doesn't intercept the submit button click
-    await page.locator("#hostname").click()
 
     await page.getByRole("button", { name: "Add Host" }).click()
 

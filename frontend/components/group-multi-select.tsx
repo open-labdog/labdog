@@ -1,10 +1,7 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { X } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { useState } from "react"
+import { Field } from "@/components/ld"
 import type { HostGroup } from "@/lib/types"
 
 interface GroupMultiSelectProps {
@@ -15,129 +12,40 @@ interface GroupMultiSelectProps {
   label?: string
 }
 
-export function GroupMultiSelect({
-  groups,
-  selected,
-  onChange,
-  disabled = false,
-  label = "Groups",
-}: GroupMultiSelectProps) {
-  const [open, setOpen] = useState(false)
-  const [search, setSearch] = useState("")
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
-
-  const filtered = groups.filter((g) =>
-    g.name.toLowerCase().includes(search.toLowerCase()) ||
-    (g.description?.toLowerCase().includes(search.toLowerCase()) ?? false)
-  )
-
-  const selectedGroups = groups.filter((g) => selected.includes(g.id))
+/**
+ * An always-visible checkbox box, not a dropdown — the design has no
+ * popover primitive that would sit above a modal's own layer, and a plain
+ * list reads fine at the handful of groups most fleets have.
+ */
+export function GroupMultiSelect({ groups, selected, onChange, disabled = false, label = "groups" }: GroupMultiSelectProps) {
+  const [q, setQ] = useState("")
+  const ql = q.trim().toLowerCase()
+  const filtered = ql ? groups.filter((g) => g.name.toLowerCase().includes(ql) || (g.description ?? "").toLowerCase().includes(ql)) : groups
 
   function toggle(id: number) {
     if (disabled) return
-    if (selected.includes(id)) {
-      onChange(selected.filter((s) => s !== id))
-    } else {
-      onChange([...selected, id])
-    }
-  }
-
-  function remove(id: number) {
-    if (disabled) return
-    onChange(selected.filter((s) => s !== id))
+    onChange(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id])
   }
 
   return (
-    <div className="space-y-2">
-      <Label>{label}</Label>
-      <div ref={containerRef} className="relative">
-        <button
-          type="button"
-          onClick={() => !disabled && setOpen(!open)}
-          disabled={disabled}
-          className="flex min-h-[36px] w-full flex-wrap items-center gap-1.5 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30 disabled:pointer-events-none disabled:opacity-50"
-        >
-          {selectedGroups.length === 0 && (
-            <span className="text-muted-foreground">Select groups...</span>
-          )}
-          {selectedGroups.map((g) => (
-            <Badge
-              key={g.id}
-              variant="secondary"
-              className="gap-1 pr-1"
-            >
-              {g.name}
-              <span
-                role="button"
-                tabIndex={0}
-                className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20 cursor-pointer"
-                onMouseDown={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  remove(g.id)
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    remove(g.id)
-                  }
-                }}
-              >
-                <X className="h-3 w-3" />
-              </span>
-            </Badge>
-          ))}
-        </button>
-
-        {open && (
-          <div className="absolute z-50 mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 shadow-lg">
-            <div className="p-2">
-              <Input
-                placeholder="Search groups..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                autoFocus
-                className="h-7 text-sm"
-              />
-            </div>
-            <div className="max-h-48 overflow-y-auto px-1 pb-1">
-              {filtered.length === 0 && (
-                <div className="px-2 py-3 text-center text-sm text-muted-foreground">
-                  No groups found
-                </div>
-              )}
-              {filtered.map((group) => (
-                <label
-                  key={group.id}
-                  className="flex items-center gap-2 cursor-pointer rounded-md px-2 py-1.5 hover:bg-slate-800"
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(group.id)}
-                    onChange={() => toggle(group.id)}
-                    className="rounded border-input"
-                  />
-                  <span className="text-sm text-foreground">{group.name}</span>
-                  {group.description && (
-                    <span className="text-xs text-muted-foreground truncate">— {group.description}</span>
-                  )}
-                </label>
-              ))}
-            </div>
+    <Field as="div" label={label} hint={`${selected.length} selected`}>
+      <div className="rounded-r border border-line bg-surface-2">
+        {groups.length > 6 && (
+          <div className="border-b border-line-faint p-[7px]">
+            <input className="inp" placeholder="filter groups…" value={q} onChange={(e) => setQ(e.target.value)} disabled={disabled} />
           </div>
         )}
+        <div className="scroll max-h-[168px] p-1">
+          {filtered.length === 0 && <div className="px-[5px] py-1.5 text-[11.5px] text-text-3">No groups found.</div>}
+          {filtered.map((g) => (
+            <label key={g.id} className="flex cursor-pointer items-center gap-2 rounded px-[5px] py-[3px]">
+              <input type="checkbox" checked={selected.includes(g.id)} disabled={disabled} onChange={() => toggle(g.id)} style={{ accentColor: "var(--accent)" }} />
+              <span className="flex-1 text-[11.5px] text-text">{g.name}</span>
+              {g.description && <span className="trunc text-[10.5px] text-text-faint" style={{ maxWidth: 160 }}>{g.description}</span>}
+            </label>
+          ))}
+        </div>
       </div>
-    </div>
+    </Field>
   )
 }

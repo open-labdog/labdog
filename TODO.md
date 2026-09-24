@@ -45,6 +45,11 @@ deleted when it lands.
   `Steps`, `RunStatus` — and `lib/status.ts` (the status vocabularies
   beside `lib/fleet.ts`); document the modal form idiom (`Modal onSubmit`,
   `Field` + `.inp`, footer caption · Cancel · primary).
+- "Page file rules": a screen with enough going on gets private `_tabs/`
+  and `_dialogs/` folders beside its `page.tsx` (the host detail split is
+  the example — `app/(dashboard)/hosts/[id]/_tabs/config/*.tsx` etc.),
+  each file a single tab or dialog, sharing query keys by string rather
+  than a prop-drilled hook.
 - "Confirmation Dialogs": `Confirm` from `@/components/ld`
   (`components/ui/confirm-dialog.tsx` is a shim until its last caller goes).
 - "Loading States": no skeletons — `Table loading`, a pulsing `Dot`, a
@@ -81,6 +86,16 @@ deleted when it lands.
   standalone URLs (`/groups/{id}/rules` etc., and `/groups/{id}/actions`)
   now redirect into the Config/Activity tab — mention this once, since
   every module editor's screenshot section referenced its own URL.
+- `hosts.md`, `host-metrics.md` — the host page is Overview · Config ·
+  Metrics · Terminal · Activity, same five-tab shape as the group page;
+  the eight module tabs behind Config are head filters instead of
+  per-column filter popovers, the same effective/override table pattern
+  as `groups.md` describes for the group editors. Terminal renders in
+  place now — drop the sentence about a bottom drawer. Group membership
+  on Overview is the add/remove picker, not a dialog with confirmations.
+  New host (`/hosts/new`) and New group (`/groups/new`) are shell screens
+  with the design's form recipe; the group multi-select on both is an
+  always-visible checkbox box, not a dropdown.
 
 ### `docs/ui/screenshots/`
 
@@ -89,7 +104,9 @@ deleted when it lands.
   `group-rules.png`, `group-services.png`, `group-hosts-entries.png`,
   `group-packages.png`, `group-users.png`, `group-cron-jobs.png`,
   `group-resolver.png` (all currently show the old per-module standalone
-  page — retake them as the group page's Config tab instead).
+  page — retake them as the group page's Config tab instead), and
+  `hosts.png` (host detail — retake with the Config tab open on a module
+  that has both group and host rows, and once with Terminal open).
 
 ---
 

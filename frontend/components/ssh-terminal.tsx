@@ -6,7 +6,6 @@ import { FitAddon } from "@xterm/addon-fit"
 import { WebLinksAddon } from "@xterm/addon-web-links"
 import "@xterm/xterm/css/xterm.css"
 import { useTerminalWebSocket } from "@/hooks/use-terminal-websocket"
-import { Button } from "@/components/ui/button"
 
 interface SshTerminalProps {
   hostId: number
@@ -88,18 +87,18 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
   return (
     <div className="flex flex-col h-full">
       {state === "connecting" && (
-        <div className="flex items-center justify-center p-4 text-slate-400 text-sm">
+        <div className="flex items-center justify-center p-4 text-sm text-text-3">
           Connecting to {hostname}...
         </div>
       )}
       {(state === "error" || state === "disconnected") && (
         <div className="flex items-center justify-center gap-3 p-4">
-          <span className="text-slate-400 text-sm">
+          <span className="text-sm text-text-3">
             {state === "error" ? `Connection failed: ${closeReason}` : "Session ended."}
           </span>
-          <Button
-            size="sm"
-            variant="outline"
+          <button
+            type="button"
+            className="btn btn-sm"
             onClick={() => {
               xtermRef.current?.dispose()
               xtermRef.current = null
@@ -107,7 +106,7 @@ export function SshTerminal({ hostId, hostname }: SshTerminalProps) {
             }}
           >
             Reconnect
-          </Button>
+          </button>
         </div>
       )}
       <div

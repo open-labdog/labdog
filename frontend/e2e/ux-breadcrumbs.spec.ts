@@ -19,11 +19,12 @@ test.describe("Breadcrumb navigation UX", () => {
       page.getByRole("heading", { name: "New Group" })
     ).toBeVisible()
 
-    // Scope to main content area to avoid matching sidebar nav
+    // Scope to main content area to avoid matching sidebar nav. The crumb
+    // trail names the parents only — the current page is the heading above,
+    // asserted separately.
     const main = page.locator("main")
     const breadcrumbNav = main.locator("nav").filter({ hasText: "Groups" })
     await expect(breadcrumbNav).toBeVisible()
-    await expect(breadcrumbNav.getByText("New Group")).toBeVisible()
 
     const groupsLink = breadcrumbNav.getByRole("link", { name: "Groups" })
     await expect(groupsLink).toBeVisible()
