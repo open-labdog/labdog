@@ -6,9 +6,8 @@ import { apiFetch, API_BASE } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
 import { Banner, Confirm, Field, Modal, Provenance, Seg, Table, Toolbar } from "@/components/ld"
-import type { EffectiveHostsEntry, Host, HostsEntry } from "@/lib/types"
+import type { EffectiveHostsEntry, Host, HostsEntry, ModuleCurrentState } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const defaults = { mode: "literal" as "literal" | "host", refId: null as number | null, ip: "", hostname: "", aliases: "", comment: "", priority: 100 }
 

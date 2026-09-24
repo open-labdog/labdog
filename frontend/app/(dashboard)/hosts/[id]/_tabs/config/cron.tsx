@@ -8,9 +8,8 @@ import { plural } from "@/lib/fleet"
 import { cronToHuman } from "@/lib/cron"
 import { def, ITEM_STATE } from "@/lib/status"
 import { Banner, Confirm, Field, Modal, Provenance, Table, Tag, Toolbar } from "@/components/ld"
-import type { CronJob, EffectiveCronJob } from "@/lib/types"
+import type { CronJob, EffectiveCronJob, ModuleCurrentState } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const defaults = { name: "", user: "root", schedule: "", command: "", state: "present" as "present" | "absent", priority: 100, comment: "", env: [] as { key: string; value: string }[] }
 

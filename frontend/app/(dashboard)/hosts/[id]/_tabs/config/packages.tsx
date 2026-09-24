@@ -8,9 +8,8 @@ import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
 import { def, ITEM_STATE, PACKAGE_STATE } from "@/lib/status"
 import { Banner, Confirm, Field, Modal, Provenance, Tag, Table, Toolbar } from "@/components/ld"
-import type { EffectivePackage, HostGroup, PackageRepository, PackageRule } from "@/lib/types"
+import type { EffectivePackage, HostGroup, ModuleCurrentState, PackageRepository, PackageRule } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const defaults = { name: "", version: "", state: "present" as "present" | "absent" | "latest", manager: "auto" as "auto" | "apt" | "dnf" | "yum", comment: "", hold: false }
 

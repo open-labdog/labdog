@@ -5,9 +5,8 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { Banner, Confirm, Empty, Facts, Field, Modal, Provenance, Tag, Toolbar } from "@/components/ld"
-import type { EffectiveResolverConfig, ResolverConfig } from "@/lib/types"
+import type { EffectiveResolverConfig, ModuleCurrentState, ResolverConfig } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const notFoundNoRetry = (count: number, error: unknown) => {
   if (error && typeof error === "object" && "status" in error && (error as { status: number }).status === 404) return false

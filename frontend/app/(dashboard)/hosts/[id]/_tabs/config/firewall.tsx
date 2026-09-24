@@ -5,12 +5,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
-import { Banner, Confirm, Field, Modal, Provenance, Seg, Table, Toolbar } from "@/components/ld"
-import type { EffectiveFirewallRule, ChainPolicies, Host } from "@/lib/types"
-import { CurrentStateSection, FirewallBackendTag, InstallFirewallSection, formatPorts } from "./shared"
+import { Banner, Confirm, Field, Modal, Provenance, Seg, Table, Tag, Toolbar } from "@/components/ld"
 import { def, FIREWALL_ACTION } from "@/lib/status"
-import { Tag } from "@/components/ld"
-import type { ModuleCurrentState } from "@/lib/types"
+import type { ChainPolicies, EffectiveFirewallRule, Host, ModuleCurrentState } from "@/lib/types"
+import { CurrentStateSection, FirewallBackendTag, InstallFirewallSection, formatPorts } from "./shared"
 
 const defaults = {
   action: "allow", protocol: "tcp", direction: "input",

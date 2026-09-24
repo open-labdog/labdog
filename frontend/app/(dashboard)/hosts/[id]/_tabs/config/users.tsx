@@ -7,9 +7,8 @@ import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
 import { def, ITEM_STATE } from "@/lib/status"
 import { Banner, Confirm, Field, Modal, Provenance, Tag, Table, Toolbar } from "@/components/ld"
-import type { EffectiveLinuxGroup, EffectiveLinuxUser, LinuxGroup, LinuxUser } from "@/lib/types"
+import type { EffectiveLinuxGroup, EffectiveLinuxUser, LinuxGroup, LinuxUser, ModuleCurrentState } from "@/lib/types"
 import { CurrentStateSection, type CollectedGroup, type CollectedUser } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const userDefaults = { username: "", uid: "", shell: "/bin/bash", homeDir: "", state: "present" as "present" | "absent", comment: "", sudoRule: "", authorizedKeys: "", supplementaryGroups: "", priority: 100 }
 const groupDefaults = { groupname: "", gid: "", state: "present" as "present" | "absent", priority: 100 }

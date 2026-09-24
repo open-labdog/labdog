@@ -7,9 +7,8 @@ import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
 import { def, enabledDef, SYSTEMD_STATE } from "@/lib/status"
 import { Banner, Confirm, Field, Modal, Provenance, Table, Tag, Toolbar } from "@/components/ld"
-import type { EffectiveService, Host, LiveService, ServiceCommandResult, ServiceRule } from "@/lib/types"
+import type { EffectiveService, Host, LiveService, ModuleCurrentState, ServiceCommandResult, ServiceRule } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
-import type { ModuleCurrentState } from "@/lib/types"
 
 const defaults = { name: "", deployMode: "override" as "full" | "override", unitContent: "", state: "running" as "running" | "stopped", enabled: true }
 
