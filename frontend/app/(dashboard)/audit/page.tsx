@@ -63,13 +63,12 @@ export default function AuditPage() {
 
   // The action vocabulary is fixed (lib/status.ts AUDIT_ACTION), so every
   // kind is always offered — not just the ones on the currently-loaded
-  // page — with a count for whichever have loaded rows.
+  // page, which may hold none of a kind that is simply rarer — with a
+  // count for however many of each have loaded so far (0 if none yet).
   const actionOptions = useMemo(() => {
     const counts = new Map<string, number>()
     for (const e of entries) counts.set(e.action, (counts.get(e.action) ?? 0) + 1)
-    return Object.keys(AUDIT_ACTION)
-      .filter((k) => counts.has(k))
-      .map((k) => ({ k, label: def(AUDIT_ACTION, k).label, n: counts.get(k) }))
+    return Object.keys(AUDIT_ACTION).map((k) => ({ k, label: def(AUDIT_ACTION, k).label, n: counts.get(k) ?? 0 }))
   }, [entries])
   const entityOptions = useMemo(() => {
     const counts = new Map<string, number>()
