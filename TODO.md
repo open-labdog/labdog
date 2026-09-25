@@ -72,10 +72,24 @@ deleted when it lands.
   contested key expands under the registry table; row actions are the
   lowercase `sync · win all keys · edit · delete`.
 
+- `groups.md` — "## Group Detail" › Config: the module list + editor pattern
+  is unchanged, but every editor (rules, services, hosts file, packages,
+  users, cron, resolver, CA certs) is now `components/config/*-editor.tsx`,
+  embedded-only (`groupId` prop, no `embedded` flag, no own head/h1). Drop
+  the sentence about dragging rows to reorder firewall rules — the design
+  uses ▲/▼ only and that is what shipped; `@dnd-kit/*` is gone. The
+  standalone URLs (`/groups/{id}/rules` etc., and `/groups/{id}/actions`)
+  now redirect into the Config/Activity tab — mention this once, since
+  every module editor's screenshot section referenced its own URL.
+
 ### `docs/ui/screenshots/`
 
-- (nothing yet — every PNG predates the theme; the list is appended as the
-  screens they show are rebuilt)
+- Every PNG predates the theme; the list grows as each PR rebuilds the
+  screens they show. From the module editors:
+  `group-rules.png`, `group-services.png`, `group-hosts-entries.png`,
+  `group-packages.png`, `group-users.png`, `group-cron-jobs.png`,
+  `group-resolver.png` (all currently show the old per-module standalone
+  page — retake them as the group page's Config tab instead).
 
 ---
 

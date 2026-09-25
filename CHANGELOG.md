@@ -127,6 +127,15 @@ The format follows [Keep a Changelog]; LabDog follows
   design's key/value rows, and the Actions › Packs tab is two panels:
   the registry and the sources.
 
+- **The eight module editors are on the theme.** Firewall rules, services,
+  hosts file, packages, users & groups, cron jobs, the DNS resolver and CA
+  certificates — embedded in the group page's Config tab — are the kit
+  table and modal now, each with the GitOps banner where Git owns the
+  module (CA certificates gains the banner it never had). The firewall
+  editor's row order is ▲/▼ only; the drag handle is gone. Their standalone
+  URLs (`/groups/{id}/rules` and the rest, plus `/groups/{id}/actions`)
+  redirect into the group page instead of rendering their own page.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -144,6 +153,8 @@ The format follows [Keep a Changelog]; LabDog follows
 - Per-column filter popovers and drag-to-resize columns on the Settings
   tables; filtering is a search box and filter chips in the page head, as
   on Hosts and Groups.
+- The `@dnd-kit/*` dependencies: their only caller was the firewall
+  editor's drag handle, and rules reorder with ▲/▼ now.
 
 ## [0.10.0] — 2026-09-18
 
