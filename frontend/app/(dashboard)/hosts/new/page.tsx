@@ -71,7 +71,7 @@ export default function NewHostPage() {
                 <input id="ssh_user" className="inp mono" placeholder="root" {...form.register("ssh_user")} />
               </Field>
             </div>
-            <Field as="div" label="ssh key">
+            <Field label="ssh key" htmlFor="ssh_key">
               <select id="ssh_key" className="inp" {...form.register("ssh_key_id")}>
                 <option value="">No SSH key</option>
                 {sshKeys?.map((key) => <option key={key.id} value={key.id}>{key.name}{key.is_default ? " (default)" : ""}</option>)}

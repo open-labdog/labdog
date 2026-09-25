@@ -18,12 +18,12 @@ const RESOLVER_TYPE_LABEL: Record<string, string> = { resolv_conf: "resolv.conf"
 export function ResolverTab({
   hostId,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -105,7 +105,7 @@ export function ResolverTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncBusy} onClick={onSync}>sync dns</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync dns</button>
             {override && (
               <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleteMutation.isPending} onClick={() => setDeleteConfirm(true)}>
                 delete override
@@ -154,8 +154,8 @@ export function ResolverTab({
             </>
           }
         >
-          <Field as="div" label="resolver type">
-            <select className="inp" value={resolverType} onChange={(e) => setResolverType(e.target.value as typeof resolverType)}>
+          <Field label="resolver type" htmlFor="resolver-type">
+            <select id="resolver-type" className="inp" value={resolverType} onChange={(e) => setResolverType(e.target.value as typeof resolverType)}>
               <option value="resolv_conf">resolv.conf</option>
               <option value="systemd_resolved">systemd-resolved</option>
               <option value="networkmanager">NetworkManager</option>

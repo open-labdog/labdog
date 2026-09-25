@@ -7,22 +7,20 @@ import { useApiMutation } from "@/lib/mutations"
 import { plural } from "@/lib/fleet"
 import { def, enabledDef, SYSTEMD_STATE } from "@/lib/status"
 import { Banner, Confirm, Field, Modal, Provenance, Table, Tag, Toolbar } from "@/components/ld"
-import type { EffectiveService, Host, LiveService, ModuleCurrentState, ServiceCommandResult, ServiceRule } from "@/lib/types"
+import type { EffectiveService, LiveService, ModuleCurrentState, ServiceCommandResult, ServiceRule } from "@/lib/types"
 import { CurrentStateSection } from "./shared"
 
 const defaults = { name: "", deployMode: "override" as "full" | "override", unitContent: "", state: "running" as "running" | "stopped", enabled: true }
 
 export function ServicesTab({
   hostId,
-  host,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
-  host: Host | undefined
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -67,11 +65,24 @@ export function ServicesTab({
     setDialogOpen(true)
   }
 
-  async function openEditFromEffective(svc: EffectiveService) {
-    setForm({ name: svc.service_name, deployMode: svc.deploy_mode, unitContent: svc.unit_content ?? "", state: svc.state === "stopped" ? "stopped" : "running", enabled: svc.enabled })
+  /** The unit as the host has it on disk (`systemctl cat`), shown above
+   *  the editor so an override starts from what is actually running. */
+  async function fetchOriginal(unitName: string) {
     setOriginalUnit(null)
     setOriginalLoading(true)
     setOriginalAttempted(true)
+    try {
+      const res = await apiFetch<{ content: string }>(`/api/services/hosts/${hostId}/unit-file/${unitName}`)
+      setOriginalUnit(res.content)
+    } catch {
+      setOriginalUnit(null)
+    } finally {
+      setOriginalLoading(false)
+    }
+  }
+
+  function openEditFromEffective(svc: EffectiveService) {
+    setForm({ name: svc.service_name, deployMode: svc.deploy_mode, unitContent: svc.unit_content ?? "", state: svc.state === "stopped" ? "stopped" : "running", enabled: svc.enabled })
     saveMutation.reset()
     if (svc.source === "host") {
       const override = overrides?.find((o) => o.service_name === svc.service_name)
@@ -82,15 +93,26 @@ export function ServicesTab({
       setEditRuleId(null)
     }
     setDialogOpen(true)
-    const unitName = svc.service_name.endsWith(".service") ? svc.service_name : `${svc.service_name}.service`
-    try {
-      const res = await apiFetch<{ content: string }>(`/api/services/hosts/${hostId}/unit-file/${unitName}`)
-      setOriginalUnit(res.content)
-    } catch {
-      setOriginalUnit(null)
-    } finally {
-      setOriginalLoading(false)
-    }
+    void fetchOriginal(svc.service_name.endsWith(".service") ? svc.service_name : `${svc.service_name}.service`)
+  }
+
+  /** From the live inventory: edit this host's override of the unit if
+   *  it has one; otherwise start one, prefilled from whatever the host's
+   *  groups declare for it, or blank for a unit nothing manages yet. */
+  function openEditFromInventory(svc: LiveService) {
+    const name = svc.unit.replace(/\.service$/, "")
+    const effective = services?.find((s) => s.service_name === svc.unit || s.service_name === name)
+    const override = overrides?.find((o) => o.service_name === svc.unit || o.service_name === name)
+    setForm(
+      effective
+        ? { name: effective.service_name, deployMode: effective.deploy_mode, unitContent: effective.unit_content ?? "", state: effective.state === "stopped" ? "stopped" : "running", enabled: effective.enabled }
+        : { ...defaults, name },
+    )
+    setMode(override ? "edit" : "add")
+    setEditRuleId(override?.id ?? null)
+    saveMutation.reset()
+    setDialogOpen(true)
+    void fetchOriginal(svc.unit)
   }
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -111,7 +133,7 @@ export function ServicesTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={!host?.ssh_key_id || syncBusy} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
               sync services
             </button>
             <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
@@ -131,7 +153,7 @@ export function ServicesTab({
           { k: "name", label: "unit", w: "minmax(160px,1.2fr)", sortable: false, cell: (s) => <span className="mono font-medium text-text">{s.service_name}</span> },
           { k: "state", label: "state", w: "96px", sortable: false, cell: (s) => <Tag tone={def(SYSTEMD_STATE, s.state).tone}>{s.state}</Tag> },
           { k: "enabled", label: "at boot", w: "96px", sortable: false, cell: (s) => <Tag tone={enabledDef(s.enabled).tone}>{enabledDef(s.enabled).label}</Tag> },
-          { k: "source", label: "source", w: "minmax(120px,1fr)", sortable: false, cell: (s) => <Provenance origin={s.source} label={s.source === "host" ? "this host" : s.source_name} /> },
+          { k: "origin", label: "comes from", w: "minmax(120px,1fr)", sortable: false, cell: (s) => <Provenance origin={s.source} label={s.source === "host" ? "this host" : s.source_name} /> },
           {
             k: "actions", label: "", w: "118px", right: true, sortable: false,
             cell: (s) =>
@@ -230,7 +252,7 @@ export function ServicesTab({
         />
       )}
 
-      <ServiceInventory hostId={hostId} overrides={overrides} onDelete={handleDelete} deleting={deleteMutation.isPending} />
+      <ServiceInventory hostId={hostId} overrides={overrides} onEdit={openEditFromInventory} onRemove={setDeleting} removing={deleteMutation.isPending} />
 
       <CurrentStateSection moduleType="service" modules={currentState} hostId={hostId} />
     </div>
@@ -242,13 +264,17 @@ export function ServicesTab({
 function ServiceInventory({
   hostId,
   overrides,
-  onDelete,
-  deleting,
+  onEdit,
+  onRemove,
+  removing,
 }: {
   hostId: number
   overrides: ServiceRule[] | undefined
-  onDelete: (serviceName: string) => void
-  deleting: boolean
+  onEdit: (svc: LiveService) => void
+  /** Called with the override's own service name — the unit's may carry a
+   *  `.service` suffix the override was saved without. */
+  onRemove: (serviceName: string) => void
+  removing: boolean
 }) {
   const [loaded, setLoaded] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -341,7 +367,7 @@ function ServiceInventory({
               { k: "sub", label: "sub state", w: "100px", sortable: false, cell: (s) => <span className="text-text-3">{s.sub_state}</span> },
               { k: "description", label: "description", w: "minmax(160px,1.6fr)", sortable: false, cell: (s) => <span className="trunc text-text-3">{s.description}</span> },
               {
-                k: "actions", label: "", w: "220px", right: true, sortable: false,
+                k: "actions", label: "", w: "260px", right: true, sortable: false,
                 cell: (svc) => {
                   const override = overrides?.find((o) => o.service_name === svc.unit || o.service_name === svc.unit.replace(/\.service$/, ""))
                   return (
@@ -351,8 +377,11 @@ function ServiceInventory({
                           {actionLoading && pending?.service === svc.unit && pending?.action === action ? "…" : action}
                         </button>
                       ))}
+                      {!svc.is_protected && (
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => onEdit(svc)}>edit</button>
+                      )}
                       {svc.is_managed && !svc.is_protected && override && (
-                        <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={deleting} onClick={() => onDelete(svc.unit)}>remove</button>
+                        <button type="button" className="btn btn-sm btn-ghost text-danger" disabled={removing} onClick={() => onRemove(override.service_name)}>remove</button>
                       )}
                     </span>
                   )

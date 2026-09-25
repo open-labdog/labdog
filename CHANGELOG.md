@@ -127,26 +127,6 @@ The format follows [Keep a Changelog]; LabDog follows
   design's key/value rows, and the Actions › Packs tab is two panels:
   the registry and the sources.
 
-### Removed
-
-- The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
-  the dashboard stat cards, "Discover" as a concept separate from
-  "Discovery", the category rename/remove affordance on the groups list
-  (category is edited on the group's page), the group **Edit** dialog and
-  the group **Sync all modules** dialog (`components/group-sync-dialog.tsx`;
-  Plan sync opens the Plans screen instead), the hosts list's bulk
-  **Plan sync** button (plans start from a host, a group or Operations ›
-  Plans), and Change Password as a sidebar button — it lives in the account
-  menu with Log out.
-- The dashboard's chart and feed panels (`components/dashboard/*`) and the
-  `recharts` dependency: nothing rendered them once `/dashboard` became a
-  redirect to Overview.
-- Per-column filter popovers and drag-to-resize columns on the Settings
-  tables; filtering is a search box and filter chips in the page head, as
-  on Hosts and Groups.
-
-### Changed (module editors)
-
 - **The eight module editors are on the theme.** Firewall rules, services,
   hosts file, packages, users & groups, cron jobs, the DNS resolver and CA
   certificates — embedded in the group page's Config tab — are the kit
@@ -155,8 +135,6 @@ The format follows [Keep a Changelog]; LabDog follows
   editor's row order is ▲/▼ only; the drag handle is gone. Their standalone
   URLs (`/groups/{id}/rules` and the rest, plus `/groups/{id}/actions`)
   redirect into the group page instead of rendering their own page.
-
-### Changed (host detail)
 
 - **The host page is on the theme, and its one 5,500-line file is now eight
   tabs and three dialogs.** Firewall, services, hosts file, users & groups,
@@ -199,6 +177,23 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Removed
 
+- The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
+  the dashboard stat cards, "Discover" as a concept separate from
+  "Discovery", the category rename/remove affordance on the groups list
+  (category is edited on the group's page), the group **Edit** dialog and
+  the group **Sync all modules** dialog (`components/group-sync-dialog.tsx`;
+  Plan sync opens the Plans screen instead), the hosts list's bulk
+  **Plan sync** button (plans start from a host, a group or Operations ›
+  Plans), and Change Password as a sidebar button — it lives in the account
+  menu with Log out.
+- The dashboard's chart and feed panels (`components/dashboard/*`) and the
+  `recharts` dependency: nothing rendered them once `/dashboard` became a
+  redirect to Overview.
+- Per-column filter popovers and drag-to-resize columns on the Settings
+  tables; filtering is a search box and filter chips in the page head, as
+  on Hosts and Groups.
+- The `@dnd-kit/*` dependencies: their only caller was the firewall
+  editor's drag handle, and rules reorder with ▲/▼ now.
 - `GroupMultiSelect`'s dropdown trigger and search popover — it is an
   always-visible checkbox box now, since no popover sits above a modal's
   own layer; the New host form and the Edit host dialog are its only
@@ -216,6 +211,14 @@ The format follows [Keep a Changelog]; LabDog follows
   `skeleton.tsx` from `components/ui/`, plus `hooks/use-table-state.ts` and
   `hooks/use-column-resize.ts` — every remaining caller of each was
   converted in this PR or the three before it.
+
+### Fixed
+
+- **Refresh on a host's page reloads again**, and so do the reloads after
+  a sync finishes and after trusting a new host key. They asked for the
+  host's queries under a string id (`["host", "5"]`) while every one of
+  them is stored under a number, and React Query compares key parts
+  strictly, so none of them ever matched.
 
 ## [0.10.0] — 2026-09-18
 

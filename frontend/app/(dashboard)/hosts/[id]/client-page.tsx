@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useParams, useSearchParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { apiFetch, ApiError } from "@/lib/api"
 import { collectHostState } from "@/lib/collect-state"
@@ -84,20 +84,24 @@ export default function HostDetailPage() {
   const [syncPreview, setSyncPreview] = useState<SyncPreviewState | null>(null)
   const [applying, setApplying] = useState(false)
   const [applyError, setApplyError] = useState<string | null>(null)
-  const [pendingSyncJobs, setPendingSyncJobs] = useState<{ id: number; keys: string[][] }[]>([])
+  const [pendingSyncJobs, setPendingSyncJobs] = useState<{ id: number; keys: QueryKey[] }[]>([])
 
-  const tabQueryKeys: Record<string, string[][]> = useMemo(() => ({
-    overview: [["host", String(id)], ["host-current-state", String(id)], ["host-metrics", String(id)]],
-    groups: [["host", String(id)], ["groups"]],
-    rules: [["host-effective-rules", String(id)], ["host-current-state", String(id)]],
-    services: [["host-effective-services", String(id)], ["host-service-overrides", String(id)]],
-    "hosts-file": [["host-effective-hosts-entries", String(id)], ["host-hosts-overrides", String(id)]],
-    users: [["host-effective-linux-users", String(id)], ["host-effective-linux-groups", String(id)]],
-    "cron-jobs": [["host-effective-cron-jobs", String(id)], ["host-cron-overrides", String(id)]],
-    packages: [["host-effective-packages", String(id)], ["host-package-overrides", String(id)], ["host-effective-repos", String(id)]],
-    "ca-certs": [["host-effective-ca-certs", String(id)], ["host-ca-cert-overrides", String(id)], ["host-ca-cert-runs", String(id)]],
-    dns: [["host-effective-resolver", String(id)], ["host-resolver-override", String(id)]],
-    actions: [["actions-catalog"], ["action-runs", "host", String(id)]],
+  // Each key must match its query part for part: TanStack Query compares
+  // them strictly, so ["host", "5"] never matched ["host", 5] and Refresh
+  // (and the reload after a sync) used to refresh nothing. host-metrics is
+  // the one query keyed by a string id.
+  const tabQueryKeys: Record<string, QueryKey[]> = useMemo(() => ({
+    overview: [["host", id], ["host-current-state", id], ["host-metrics", String(id)]],
+    groups: [["host", id], ["groups"]],
+    rules: [["host-effective-rules", id], ["host-current-state", id]],
+    services: [["host-effective-services", id], ["host-service-overrides", id]],
+    "hosts-file": [["host-effective-hosts-entries", id], ["host-hosts-overrides", id]],
+    users: [["host-effective-linux-users", id], ["host-effective-linux-groups", id]],
+    "cron-jobs": [["host-effective-cron-jobs", id], ["host-cron-overrides", id]],
+    packages: [["host-effective-packages", id], ["host-package-overrides", id], ["host-effective-repos", id]],
+    "ca-certs": [["host-effective-ca-certs", id], ["host-ca-cert-overrides", id], ["host-ca-cert-runs", id]],
+    dns: [["host-effective-resolver", id], ["host-resolver-override", id]],
+    actions: [["actions-catalog"], ["action-runs", "host", id]],
   }), [id])
 
   const openModulePreview = async (tabKey: string) => {
@@ -168,7 +172,7 @@ export default function HostDetailPage() {
     const TERMINAL = new Set(["success", "failed", "cancelled"])
     const finished = pendingSyncJobs.filter((p) => TERMINAL.has(trayJobs[p.id]?.status ?? ""))
     if (finished.length === 0) return
-    const keys: string[][] = [["host", String(id)], ["host-current-state", String(id)], ...finished.flatMap((p) => p.keys)]
+    const keys: QueryKey[] = [["host", id], ["host-current-state", id], ...finished.flatMap((p) => p.keys)]
     void (async () => { for (const key of keys) await queryClient.invalidateQueries({ queryKey: key }) })()
     const finishedIds = new Set(finished.map((p) => p.id))
     setPendingSyncJobs((prev) => prev.filter((p) => !finishedIds.has(p.id)))
@@ -190,10 +194,11 @@ export default function HostDetailPage() {
   async function handleRefresh() {
     setRefreshing(true)
     for (const key of tabQueryKeys[activeTab] ?? []) await queryClient.invalidateQueries({ queryKey: key })
-    await queryClient.invalidateQueries({ queryKey: ["host", String(id)] })
+    await queryClient.invalidateQueries({ queryKey: ["host", id] })
     setRefreshing(false)
   }
 
+  const syncDisabled = !host?.ssh_key_id || !!syncPreview
   const moduleStatus = (m: (typeof MODULES)[number]) => currentStateQuery.data?.find((r) => m.statusTypes.includes(r.module_type))?.sync_status
   const errors = currentStateQuery.data?.filter((m) => m.error_message) ?? []
   const errorDetail = (() => {
@@ -302,14 +307,14 @@ export default function HostDetailPage() {
 
       {primaryTab === "config" && host && (
         <>
-          {activeTab === "rules" && <FirewallTab hostId={id} host={host} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("rules")} />}
-          {activeTab === "services" && <ServicesTab hostId={id} host={host} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("services")} />}
-          {activeTab === "hosts-file" && <HostsFileTab hostId={id} host={host} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("hosts-file")} />}
-          {activeTab === "users" && <UsersTab hostId={id} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("users")} />}
-          {activeTab === "cron-jobs" && <CronTab hostId={id} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("cron-jobs")} />}
-          {activeTab === "packages" && <PackagesTab hostId={id} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("packages")} />}
+          {activeTab === "rules" && <FirewallTab hostId={id} host={host} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("rules")} />}
+          {activeTab === "services" && <ServicesTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("services")} />}
+          {activeTab === "hosts-file" && <HostsFileTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("hosts-file")} />}
+          {activeTab === "users" && <UsersTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("users")} />}
+          {activeTab === "cron-jobs" && <CronTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("cron-jobs")} />}
+          {activeTab === "packages" && <PackagesTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("packages")} />}
           {activeTab === "ca-certs" && <CaCertsTab hostId={id} host={host} />}
-          {activeTab === "dns" && <ResolverTab hostId={id} currentState={currentStateQuery.data} syncBusy={!!syncPreview} onSync={() => openModulePreview("dns")} />}
+          {activeTab === "dns" && <ResolverTab hostId={id} currentState={currentStateQuery.data} syncDisabled={syncDisabled} onSync={() => openModulePreview("dns")} />}
         </>
       )}
 
@@ -332,7 +337,7 @@ export default function HostDetailPage() {
             setTrustingKey(true)
             try {
               await apiFetch(`/api/hosts/${id}/trust-host-key`, { method: "POST" })
-              await queryClient.invalidateQueries({ queryKey: ["host", String(id)] })
+              await queryClient.invalidateQueries({ queryKey: ["host", id] })
               toast.success("Host key cleared. Next connection will re-TOFU.")
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Failed to clear host key")

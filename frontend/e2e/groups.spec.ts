@@ -133,6 +133,40 @@ test.describe("Groups page", () => {
     await expect(page.getByRole("button", { name: "Services", pressed: true })).toBeVisible()
   })
 
+  // A real CA certificate (EC P-256, CA:TRUE, valid 2026–2126) that the
+  // backend's PEM validator accepts, so the add goes all the way through
+  // the API. The editor once sent `pem` for `pem_content`; only a live
+  // backend rejects that, so this runs the form rather than seeding by API.
+  const E2E_CA_PEM = `-----BEGIN CERTIFICATE-----
+MIIBejCCASGgAwIBAgIUN+SuaZjYowWTWSwCkJAq+tE+8uowCgYIKoZIzj0EAwIw
+MjEbMBkGA1UEAwwSTGFiRG9nIGUyZSB0ZXN0IENBMRMwEQYDVQQKDApMYWJEb2cg
+ZTJlMCAXDTI2MDEwMTAwMDAwMFoYDzIxMjYwMTAxMDAwMDAwWjAyMRswGQYDVQQD
+DBJMYWJEb2cgZTJlIHRlc3QgQ0ExEzARBgNVBAoMCkxhYkRvZyBlMmUwWTATBgcq
+hkjOPQIBBggqhkjOPQMBBwNCAASvMh75uiNeWis4hVlYDFS5Uh4hfZxrmiW4X1Sr
+rKhqKow1wUZEILBNh/YZvU/vHrsmDT+G9pjN0wTZCoyMojm6oxMwETAPBgNVHRMB
+Af8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCIAJpdT141l/f6LZbd0q2oyyWLGAN
+TjIIGPY0y9owejh0AiBZDQ3rkCgh7O9lkUGjPac4TmKyBVy5h9OBxBhBKeccGQ==
+-----END CERTIFICATE-----`
+
+  test("CA certificates editor adds a certificate", async ({ request, page }) => {
+    const res = await request.post(`${API_BASE}/api/groups`, {
+      data: { name: `e2e-ca-${Date.now()}`, description: null, priority: 990 },
+    })
+    const group = await res.json()
+
+    await page.goto(`/groups/${group.id}?tab=config&module=ca-certs`)
+    await page.getByRole("button", { name: "Add certificate" }).click()
+    const dialog = page.getByRole("dialog")
+    await dialog.getByLabel("display name").fill("e2e test CA")
+    await dialog.getByLabel("pem").fill(E2E_CA_PEM)
+    await dialog.getByRole("button", { name: "Add certificate" }).click()
+
+    await expect(dialog).toBeHidden()
+    // The subject column is parsed from the PEM server-side.
+    const row = page.getByRole("row").filter({ hasText: "e2e test CA" })
+    await expect(row).toContainText("CN=LabDog e2e test CA")
+  })
+
   test("Members tab adds and removes a host", async ({ request, page }) => {
     const stamp = Date.now()
     const groupRes = await request.post(`${API_BASE}/api/groups`, {

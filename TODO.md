@@ -114,27 +114,30 @@ deleted when it lands.
   every module editor's screenshot section referenced its own URL.
 - `hosts.md`, `host-metrics.md` — the host page is Overview · Config ·
   Metrics · Terminal · Activity, same five-tab shape as the group page;
-  the eight module tabs behind Config are head filters instead of
-  per-column filter popovers, the same effective/override table pattern
-  as `groups.md` describes for the group editors. Terminal renders in
-  place now — drop the sentence about a bottom drawer. Group membership
-  on Overview is the add/remove picker, not a dialog with confirmations.
-  New host (`/hosts/new`) and New group (`/groups/new`) are shell screens
-  with the design's form recipe; the group multi-select on both is an
-  always-visible checkbox box, not a dropdown.
+  the eight module tabs behind Config use the same effective/override
+  table pattern as `groups.md` describes for the group editors, with a
+  "comes from" provenance column; their per-column filter popovers are
+  gone and nothing replaces them (each list is one host's worth). The
+  Services tab's live inventory keeps start/stop/restart, edit (opens the
+  override dialog with the on-disk unit) and remove (confirmed). Terminal
+  renders in place now — drop the sentence about a bottom drawer. Group
+  membership on Overview is the add/remove picker, not a dialog with
+  confirmations. New host (`/hosts/new`) and New group (`/groups/new`) are
+  shell screens with the design's form recipe; the group multi-select on
+  both is an always-visible checkbox box, not a dropdown.
 
 ### `docs/ui/screenshots/`
 
-- (nothing yet — every PNG predates the theme; the list is appended as the
-  screens they show are rebuilt). Add to the retake list from this PR:
+- Every PNG predates the theme; the list grows as each PR rebuilds the
+  screens they show. From the module editors:
   `group-rules.png`, `group-services.png`, `group-hosts-entries.png`,
   `group-packages.png`, `group-users.png`, `group-cron-jobs.png`,
   `group-resolver.png` (all currently show the old per-module standalone
-  page — retake them as the group page's Config tab instead), and
-  `hosts.png` (host detail — retake with the Config tab open on a module
-  that has both group and host rows, and once with Terminal open). Add
-  from this PR: `hosts-discover.png` (the scan-now tab, mid-scan and with
-  results), `discovery.png` (the scan-schedules tab).
+  page — retake them as the group page's Config tab instead). From the
+  host detail: `hosts.png` (retake with the Config tab open on a module
+  that has both group and host rows, and once with Terminal open). From
+  operations and discovery: `hosts-discover.png` (the scan-now tab,
+  mid-scan and with results), `discovery.png` (the scan-schedules tab).
 
 ---
 

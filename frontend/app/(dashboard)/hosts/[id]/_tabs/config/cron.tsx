@@ -16,12 +16,12 @@ const defaults = { name: "", user: "root", schedule: "", command: "", state: "pr
 export function CronTab({
   hostId,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -83,7 +83,7 @@ export function CronTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncBusy} onClick={onSync}>sync</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync</button>
             <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>add override</button>
           </>
         }
@@ -101,7 +101,7 @@ export function CronTab({
           { k: "schedule", label: "schedule", w: "minmax(120px,0.9fr)", sortable: false, cell: (j) => <span className="mono text-[11px] text-text-3" title={cronToHuman(j.schedule)}>{j.schedule}</span> },
           { k: "command", label: "command", w: "minmax(160px,1.4fr)", sortable: false, cell: (j) => <span className="mono trunc text-[11px] text-text-3" title={j.command}>{j.command}</span> },
           { k: "state", label: "state", w: "80px", sortable: false, cell: (j) => <Tag tone={def(ITEM_STATE, j.state).tone}>{j.state}</Tag> },
-          { k: "source", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (j) => <Provenance origin={j.source} label={j.source === "host" ? "this host" : j.source_name} /> },
+          { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (j) => <Provenance origin={j.source} label={j.source === "host" ? "this host" : j.source_name} /> },
           {
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (j) =>
@@ -149,8 +149,8 @@ export function CronTab({
             <textarea id="cj-command" className="inp mono" rows={3} placeholder="e.g. /usr/local/bin/backup.sh --full" value={form.command} onChange={(e) => setForm((f) => ({ ...f, command: e.target.value }))} required />
           </Field>
           <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[1fr_100px]">
-            <Field as="div" label="state">
-              <select className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
+            <Field label="state" htmlFor="cj-state">
+              <select id="cj-state" className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
                 <option value="present">present</option>
                 <option value="absent">absent</option>
               </select>

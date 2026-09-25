@@ -13,15 +13,13 @@ const defaults = { mode: "literal" as "literal" | "host", refId: null as number 
 
 export function HostsFileTab({
   hostId,
-  host,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
-  host: Host | undefined
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -112,7 +110,7 @@ export function HostsFileTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={!host?.ssh_key_id || syncBusy} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
               sync
             </button>
             <button type="button" className="btn btn-sm btn-ghost" disabled={previewLoading} onClick={fetchPreview}>
@@ -146,7 +144,7 @@ export function HostsFileTab({
           { k: "ip", label: "ip address", w: "130px", sortable: false, cell: (e) => <span className="mono font-medium text-text">{e.ip_address}</span> },
           { k: "hostname", label: "hostname", w: "minmax(150px,1fr)", sortable: false, cell: (e) => <span className="mono text-text-2">{e.hostname}</span> },
           { k: "aliases", label: "aliases", w: "minmax(140px,1.2fr)", sortable: false, cell: (e) => <span className="trunc text-text-3">{e.aliases.length ? e.aliases.join(", ") : "—"}</span> },
-          { k: "source", label: "source", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <Provenance origin={e.source} label={e.source === "system" ? "system" : e.source === "host" ? "this host" : e.source_name} /> },
+          { k: "origin", label: "comes from", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <Provenance origin={e.source} label={e.source === "system" ? "system" : e.source === "host" ? "this host" : e.source_name} /> },
           {
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (e) => {
@@ -194,8 +192,8 @@ export function HostsFileTab({
               </Field>
             </div>
           ) : (
-            <Field as="div" label="host" hint="uses the host's current IP and hostname at sync time">
-              <select className="inp mono" value={form.refId ?? ""} onChange={(e) => setForm((f) => ({ ...f, refId: e.target.value ? Number(e.target.value) : null }))}>
+            <Field label="host" htmlFor="hosts-ref" hint="uses the host's current IP and hostname at sync time">
+              <select id="hosts-ref" className="inp mono" value={form.refId ?? ""} onChange={(e) => setForm((f) => ({ ...f, refId: e.target.value ? Number(e.target.value) : null }))}>
                 <option value="">— pick a host —</option>
                 {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname} · {h.ip_address}</option>)}
               </select>

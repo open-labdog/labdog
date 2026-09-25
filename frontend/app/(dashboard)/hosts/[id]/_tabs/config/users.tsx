@@ -16,12 +16,12 @@ const groupDefaults = { groupname: "", gid: "", state: "present" as "present" | 
 export function UsersTab({
   hostId,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [luOpen, setLuOpen] = useState(false)
@@ -151,7 +151,7 @@ export function UsersTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncBusy} onClick={onSync}>sync</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync</button>
             <button type="button" className="btn btn-sm" onClick={openLuCreate}>add user override</button>
             <button type="button" className="btn btn-sm btn-primary" onClick={openLgCreate}>add group override</button>
           </>
@@ -173,7 +173,7 @@ export function UsersTab({
             { k: "state", label: "state", w: "90px", sortable: false, cell: (u) => <Tag tone={def(ITEM_STATE, u.state).tone}>{u.state}</Tag> },
             { k: "keys", label: "keys", w: "70px", sortable: false, cell: (u) => <Tag>{u.authorized_keys.length}</Tag> },
             { k: "sudo", label: "sudo", w: "60px", sortable: false, cell: (u) => (u.sudo_rule ? <Tag tone="warn">yes</Tag> : <span className="text-text-faint">no</span>) },
-            { k: "source", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (u) => <Provenance origin={u.source} label={u.source === "host" ? "this host" : u.source_name} /> },
+            { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (u) => <Provenance origin={u.source} label={u.source === "host" ? "this host" : u.source_name} /> },
             {
               k: "actions", label: "", w: "108px", right: true, sortable: false,
               cell: (u) =>
@@ -204,7 +204,7 @@ export function UsersTab({
             { k: "groupname", label: "group name", w: "minmax(150px,1fr)", sortable: false, cell: (g) => <span className="mono font-medium text-text">{g.groupname}</span> },
             { k: "gid", label: "gid", w: "70px", sortable: false, cell: (g) => <span className="mono text-[11px] text-text-3">{g.gid ?? "auto"}</span> },
             { k: "state", label: "state", w: "90px", sortable: false, cell: (g) => <Tag tone={def(ITEM_STATE, g.state).tone}>{g.state}</Tag> },
-            { k: "source", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (g) => <Provenance origin={g.source} label={g.source === "host" ? "this host" : g.source_name} /> },
+            { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (g) => <Provenance origin={g.source} label={g.source === "host" ? "this host" : g.source_name} /> },
             {
               k: "actions", label: "", w: "108px", right: true, sortable: false,
               cell: (g) =>
@@ -254,8 +254,8 @@ export function UsersTab({
               <input id="lu-home" className="inp mono" placeholder="e.g. /home/deploy" value={luForm.homeDir} onChange={(e) => setLuForm((f) => ({ ...f, homeDir: e.target.value }))} />
             </Field>
           </div>
-          <Field as="div" label="state">
-            <select className="inp" value={luForm.state} onChange={(e) => setLuForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
+          <Field label="state" htmlFor="lu-state">
+            <select id="lu-state" className="inp" value={luForm.state} onChange={(e) => setLuForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
               <option value="present">present</option>
               <option value="absent">absent</option>
             </select>
@@ -317,8 +317,8 @@ export function UsersTab({
             </Field>
           </div>
           <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[1fr_100px]">
-            <Field as="div" label="state">
-              <select className="inp" value={lgForm.state} onChange={(e) => setLgForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
+            <Field label="state" htmlFor="lg-state">
+              <select id="lg-state" className="inp" value={lgForm.state} onChange={(e) => setLgForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
                 <option value="present">present</option>
                 <option value="absent">absent</option>
               </select>
