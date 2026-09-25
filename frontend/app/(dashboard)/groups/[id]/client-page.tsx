@@ -5,12 +5,13 @@ import Link from "next/link"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { runStatus, type ActivityStatus } from "@/lib/activity"
-import { countStatuses, shortAgo } from "@/lib/fleet"
+import { runStatus } from "@/lib/activity"
+import { countStatuses, plural, shortAgo } from "@/lib/fleet"
+import { GITOPS_STATUS, def } from "@/lib/status"
 import { MODULES, moduleByAnyName, moduleById, type ModuleDef, type ModuleId } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import type { ActionDefinition, ActionRun, GitRepository, GroupSummary, HostGroup, HostSummary } from "@/lib/types"
-import { Dot, Modal, PageHead, Panel, Seg, Status, Table, Tabs, Tag, type Tone } from "@/components/ld"
+import { Banner, Facts, Field, Modal, PageHead, Panel, RunStatus, Seg, Status, Table, Tabs, Tag } from "@/components/ld"
 import { categoryOptions, useGroupMerge } from "@/components/group-editor"
 import { RunActionButton } from "@/components/run-action-button"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
@@ -49,8 +50,6 @@ const EDITORS: Record<ModuleId, React.ComponentType<{ embedded?: boolean; groupI
   "ca-certs": GroupCACertsPage,
 }
 
-const RUN_TONE: Record<ActivityStatus, Tone> = { ok: "ok", failed: "danger", running: "sync", queued: "idle", cancelled: "idle" }
-const GITOPS_TONE: Record<string, Tone> = { synced: "ok", error: "danger", importing: "sync", disconnected: "idle" }
 
 function resolveTab(raw: string | null): { tab: Tab; module?: ModuleId; view?: ActivityView } {
   if (!raw || raw === "overview") return { tab: "overview" }
@@ -62,7 +61,6 @@ function resolveTab(raw: string | null): { tab: Tab; module?: ModuleId; view?: A
 }
 
 const byHostname = (a: HostSummary, b: HostSummary) => a.hostname.localeCompare(b.hostname)
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`
 
 export default function GroupDetailPage() {
   const params = useParams<{ id: string }>()
@@ -154,7 +152,7 @@ export default function GroupDetailPage() {
             {group?.category && <Tag>{group.category}</Tag>}
             {group && <Tag title="merge priority — higher wins">priority {group.priority}</Tag>}
             {group?.gitops_enabled && (
-              <Tag tone={GITOPS_TONE[group.gitops_status ?? "disconnected"]} title="desired state is imported from a Git repository">
+              <Tag tone={def(GITOPS_STATUS, group.gitops_status ?? "disconnected").tone} title="desired state is imported from a Git repository">
                 gitops
               </Tag>
             )}
@@ -260,17 +258,14 @@ export default function GroupDetailPage() {
                 </button>
               }
             >
-              {(runs ?? []).slice(0, 5).map((r) => {
-                const st = runStatus(r.status)
-                return (
-                  <Link key={r.id} href={`/groups/${id}/actions/runs/${r.id}`} className="row-hover flex items-center gap-2.5 border-b border-line-faint px-[11px] py-[7px] text-text hover:no-underline">
-                    <span className="mono num w-[52px] shrink-0 text-[10.5px] text-text-faint">{shortAgo(r.created_at)} ago</span>
-                    <Tag tone={RUN_TONE[st]}>{st}</Tag>
-                    <span className="trunc flex-1 text-xs">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span>
-                    <span className="tt text-[9px]">{r.scheduled_action_id ? "schedule" : r.triggered_by_user_id ? "user" : "system"}</span>
-                  </Link>
-                )
-              })}
+              {(runs ?? []).slice(0, 5).map((r) => (
+                <Link key={r.id} href={`/groups/${id}/actions/runs/${r.id}`} className="row-hover flex items-center gap-2.5 border-b border-line-faint px-[11px] py-[7px] text-text hover:no-underline">
+                  <span className="mono num w-[52px] shrink-0 text-[10.5px] text-text-faint">{shortAgo(r.created_at)} ago</span>
+                  <RunStatus s={r.status} reason={r.pending_reason} />
+                  <span className="trunc flex-1 text-xs">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span>
+                  <span className="tt text-[9px]">{r.scheduled_action_id ? "schedule" : r.triggered_by_user_id ? "user" : "system"}</span>
+                </Link>
+              ))}
               {runs && runs.length === 0 && <div className="p-[11px] text-[11.5px] text-text-3">No runs against this group yet. Run action… starts one; plans show up under Operations › Runs.</div>}
             </Panel>
           </div>
@@ -321,15 +316,7 @@ export default function GroupDetailPage() {
               label: "status",
               w: "104px",
               sortable: false,
-              cell: (r) => {
-                const st = runStatus(r.status)
-                return (
-                  <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: `var(--${RUN_TONE[st]})` }}>
-                    <Dot tone={RUN_TONE[st]} pulse={st === "running"} />
-                    {st}
-                  </span>
-                )
-              },
+              cell: (r) => <RunStatus s={r.status} reason={r.pending_reason} />,
             },
             { k: "action", label: "action", w: "minmax(160px,1.2fr)", sortable: false, cell: (r) => <span className="text-text">{catalog?.find((a) => a.key === r.action_key)?.name ?? r.action_key}</span> },
             { k: "target", label: "target", w: "minmax(140px,1fr)", sortable: false, cell: (r) => <span className="mono text-[11px]">{r.target_label}</span> },
@@ -559,25 +546,16 @@ function GitOpsPanel({ group, onChanged }: { group: HostGroup; onChanged: () => 
         </div>
       ) : (
         <div className="flex flex-col gap-2 p-[11px]">
-          <div className="grid grid-cols-2 gap-2 text-[11.5px]">
-            <div>
-              <div className="tt mb-0.5">status</div>
-              <Tag tone={GITOPS_TONE[group.gitops_status ?? "disconnected"]}>{group.gitops_status ?? "disconnected"}</Tag>
-            </div>
-            <div className="min-w-0">
-              <div className="tt mb-0.5">repository</div>
-              <div className="trunc text-text-2">{repo?.name ?? "unknown"}</div>
-            </div>
-            <div className="min-w-0">
-              <div className="tt mb-0.5">file</div>
-              <div className="mono trunc text-text-2">{group.gitops_file_path ?? "—"}</div>
-            </div>
-            <div>
-              <div className="tt mb-0.5">last import</div>
-              <div className="mono num text-text-2">{group.gitops_last_import_at ? `${shortAgo(group.gitops_last_import_at)} ago` : "never"}</div>
-            </div>
-          </div>
-          {group.gitops_status === "error" && group.gitops_error_message && <div className="rounded-r border border-danger bg-danger-soft px-2 py-1.5 text-[11px] text-danger-ink">{group.gitops_error_message}</div>}
+          <Facts
+            min={120}
+            items={[
+              { k: "status", v: <Tag tone={def(GITOPS_STATUS, group.gitops_status ?? "disconnected").tone}>{group.gitops_status ?? "disconnected"}</Tag> },
+              { k: "repository", v: repo?.name ?? "unknown" },
+              { k: "file", v: group.gitops_file_path ?? "—", mono: true },
+              { k: "last import", v: group.gitops_last_import_at ? `${shortAgo(group.gitops_last_import_at)} ago` : "never", mono: true },
+            ]}
+          />
+          {group.gitops_status === "error" && group.gitops_error_message && <Banner tone="danger">{group.gitops_error_message}</Banner>}
           <div className="flex items-center gap-1.5">
             <button type="button" className={`btn btn-sm ${confirmDisable ? "btn-danger" : "btn-ghost text-danger"}`} onClick={() => void disable()} disabled={busy}>
               {busy ? "Disabling…" : confirmDisable ? "Confirm — stop importing" : "Disable GitOps"}
@@ -608,8 +586,7 @@ function GitOpsPanel({ group, onChanged }: { group: HostGroup; onChanged: () => 
             </>
           }
         >
-          <label className="flex flex-col gap-1">
-            <span className="tt">repository</span>
+          <Field label="repository">
             <select className="inp mono" value={repoId} onChange={(e) => setRepoId(e.target.value)}>
               <option value="">— pick a repository —</option>
               {(repos ?? []).map((r) => (
@@ -618,11 +595,10 @@ function GitOpsPanel({ group, onChanged }: { group: HostGroup; onChanged: () => 
                 </option>
               ))}
             </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="tt">file path</span>
+          </Field>
+          <Field label="file path">
             <input className="inp mono" value={filePath} placeholder="groups/my-group.yaml" onChange={(e) => setFilePath(e.target.value)} />
-          </label>
+          </Field>
           <span className="text-[11px] text-text-3">The file replaces what is declared here; edits made in LabDog are overwritten on the next import.</span>
         </Modal>
       )}

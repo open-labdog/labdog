@@ -27,6 +27,44 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ---
 
+## Theme migration — documentation and screenshot follow-ups
+
+**Context:** The remaining pages, modals and shared components move onto
+the LabDog kit in a stacked series of PRs (`feat/theme-*`). The user guide
+and the frontend reference are deliberately *not* updated in those PRs —
+CONTRIBUTING asks for docs per PR, but here every screen changes and the
+prose would be rewritten six times. Docs and the `docs/ui/screenshots/`
+set land together in one follow-up once the last PR is in. Each PR appends
+what it made stale; this section is the input to that follow-up and is
+deleted when it lands.
+
+### `frontend/FRONTEND.md`
+
+- "The LabDog kit": list the new pieces — `Field`, `Help`, `Banner`,
+  `Toolbar`, `BulkBar`, `Facts`, `Stat`, `CodeBlock`, `Copy`, `Confirm`,
+  `Steps`, `RunStatus` — and `lib/status.ts` (the status vocabularies
+  beside `lib/fleet.ts`); document the modal form idiom (`Modal onSubmit`,
+  `Field` + `.inp`, footer caption · Cancel · primary).
+- "Confirmation Dialogs": `Confirm` from `@/components/ld`
+  (`components/ui/confirm-dialog.tsx` is a shim until its last caller goes).
+- "Loading States": no skeletons — `Table loading`, a pulsing `Dot`, a
+  button label swap.
+- "Tooltips": `title=` on icon-only affordances, `Help` (a `<details>`)
+  for paragraphs, `Field hint=` for one-liners; `InfoPopover` goes.
+- The `.btn` comment in `globals.css` no longer says `components/ui/button`
+  stays for dialogs; the "Stack" row still lists shadcn.
+
+### `docs/ui/*.md`
+
+- (nothing yet — appended per PR)
+
+### `docs/ui/screenshots/`
+
+- (nothing yet — every PNG predates the theme; the list is appended as the
+  screens they show are rebuilt)
+
+---
+
 ## k8s-upgrade — broaden OS support
 
 **Context:** The bundled `k8s-upgrade` action is currently apt-only;

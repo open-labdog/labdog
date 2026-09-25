@@ -10,8 +10,7 @@ import { MODULES } from "@/lib/modules"
 import { showError, showSuccess } from "@/lib/toast"
 import { useViewportWidth } from "@/hooks/use-viewport"
 import type { HostGroup, HostSummary, ProxmoxNode, VMMapping } from "@/lib/types"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import { Filter, PageHead, Status, Table, Tag, type Col, type Sort } from "@/components/ld"
+import { BulkBar, Confirm, Filter, PageHead, Status, Table, Tag, type Col, type Sort } from "@/components/ld"
 
 type Filters = {
   status: string
@@ -356,48 +355,35 @@ export default function HostsPage() {
         />
       )}
 
-      {sel.size > 0 && (
-        <div className="fade flex shrink-0 flex-wrap items-center gap-[9px] border-t border-ld-accent-line bg-ld-accent-soft px-3.5 py-[9px]">
-          <span className="mono num text-xs font-semibold">{sel.size} selected</span>
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSel(new Set())}>
-            clear
-          </button>
-          {bulkProgress && (
-            <span className="text-xs text-text-2">
-              Deleting {bulkProgress.done}/{bulkProgress.total}…
-            </span>
-          )}
-          <div className="ml-auto flex flex-wrap gap-[7px]">
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={bulkDeleting || bulkDriftUpdating}
-              onClick={() => {
-                setBulkDriftTarget(true)
-                setBulkDriftConfirmOpen(true)
-              }}
-            >
-              Enable drift check
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              disabled={bulkDeleting || bulkDriftUpdating}
-              onClick={() => {
-                setBulkDriftTarget(false)
-                setBulkDriftConfirmOpen(true)
-              }}
-            >
-              Disable drift check
-            </button>
-            <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting || bulkDriftUpdating} onClick={() => setBulkConfirmOpen(true)}>
-              Delete selected
-            </button>
-          </div>
-        </div>
-      )}
+      <BulkBar n={sel.size} onClear={() => setSel(new Set())} status={bulkProgress ? `Deleting ${bulkProgress.done}/${bulkProgress.total}…` : undefined}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={bulkDeleting || bulkDriftUpdating}
+          onClick={() => {
+            setBulkDriftTarget(true)
+            setBulkDriftConfirmOpen(true)
+          }}
+        >
+          Enable drift check
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={bulkDeleting || bulkDriftUpdating}
+          onClick={() => {
+            setBulkDriftTarget(false)
+            setBulkDriftConfirmOpen(true)
+          }}
+        >
+          Disable drift check
+        </button>
+        <button type="button" className="btn btn-sm btn-danger" disabled={bulkDeleting || bulkDriftUpdating} onClick={() => setBulkConfirmOpen(true)}>
+          Delete selected
+        </button>
+      </BulkBar>
 
-      <ConfirmDialog
+      <Confirm
         open={bulkConfirmOpen}
         onOpenChange={setBulkConfirmOpen}
         title={`Delete ${sel.size} ${sel.size === 1 ? "host" : "hosts"}?`}
@@ -407,7 +393,7 @@ export default function HostsPage() {
         loading={bulkDeleting}
         onConfirm={handleBulkDelete}
       />
-      <ConfirmDialog
+      <Confirm
         open={bulkDriftConfirmOpen}
         onOpenChange={setBulkDriftConfirmOpen}
         title={`${bulkDriftTarget ? "Enable" : "Disable"} drift check for ${sel.size} ${sel.size === 1 ? "host" : "hosts"}?`}

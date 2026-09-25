@@ -75,6 +75,11 @@ export function staleHosts<T extends Pick<Host, "last_sync_at">>(hosts: T[]): T[
     })
 }
 
+/** "3 hosts", "1 rule" — the count and its noun, pluralised by adding an s. */
+export function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`
+}
+
 /** Short relative age — "12m", "3h", "2d" — for activity streams. */
 export function shortAgo(iso: string | null | undefined): string {
   if (!iso) return "—"

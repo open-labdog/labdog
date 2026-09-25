@@ -4,11 +4,12 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useActivityStream, type ActivityItem, type ActivityKind, type ActivityStatus } from "@/lib/activity"
 import { shortAgo } from "@/lib/fleet"
-import { Filter, PageHead, Table, Tag, type Tone } from "@/components/ld"
+import { JOB_STATUS, def } from "@/lib/status"
+import { Dot, Filter, PageHead, Table, Tag } from "@/components/ld"
 
 const KIND_LABEL: Record<ActivityKind, string> = { apply: "apply", action: "action", schedule: "scheduled", collect: "collect state", drift: "drift check" }
-const STATUS_TONE: Record<ActivityStatus, Tone | undefined> = { ok: "ok", failed: "danger", running: "sync", queued: "idle", cancelled: "idle" }
-const STATUS_LABEL: Record<ActivityStatus, string> = { ok: "ok", failed: "failed", running: "running", queued: "queued", cancelled: "cancelled" }
+/** The stream's five words, in the order the filter lists them. */
+const STATUSES: ActivityStatus[] = ["ok", "failed", "running", "queued", "cancelled"]
 
 /**
  * Runs — one stream. Applies, action runs and scheduled runs were three
@@ -42,7 +43,7 @@ export default function RunsPage() {
       >
         <div className="flex flex-wrap items-center gap-[7px]">
           <Filter label="kind" value={kind} onChange={setKind} options={(Object.keys(KIND_LABEL) as ActivityKind[]).map((k) => ({ k, label: KIND_LABEL[k], n: count((i) => i.kind === k) }))} />
-          <Filter label="status" value={status} onChange={setStatus} options={(Object.keys(STATUS_LABEL) as ActivityStatus[]).map((k) => ({ k, label: STATUS_LABEL[k], n: count((i) => i.status === k) }))} />
+          <Filter label="status" value={status} onChange={setStatus} options={STATUSES.map((k) => ({ k, label: def(JOB_STATUS, k).label, n: count((i) => i.status === k) }))} />
           <span className="tt ml-auto">the last 100 sync jobs and action runs</span>
         </div>
       </PageHead>
@@ -59,9 +60,9 @@ export default function RunsPage() {
               w: "96px",
               sortable: false,
               cell: (a) => (
-                <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: `var(--${STATUS_TONE[a.status] ?? "idle"})` }}>
-                  <span className={a.status === "running" ? "pulse" : undefined} style={{ width: 6, height: 6, borderRadius: 3, background: `var(--${STATUS_TONE[a.status] ?? "idle"})`, display: "inline-block" }} />
-                  {STATUS_LABEL[a.status]}
+                <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium" style={{ color: `var(--${def(JOB_STATUS, a.status).tone})` }}>
+                  <Dot tone={def(JOB_STATUS, a.status).tone} pulse={a.status === "running"} />
+                  {def(JOB_STATUS, a.status).label}
                 </span>
               ),
             },

@@ -4,12 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { AlertTriangle } from "lucide-react"
-import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Label } from "@/components/ui/label"
+import { Banner, Field, Modal } from "@/components/ld"
 import { ActionParameterForm } from "@/components/action-parameter-form"
 import { apiFetch } from "@/lib/api"
 import { nextCodename } from "@/lib/os-upgrade-paths"
@@ -190,132 +185,105 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
     }
   }
 
+  const blocked = submitting || !!action.unresolved || missingDestination
+  const current = scope === "host" ? hostOsCodename : groupSingleCodename
+
   return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{action.name}</DialogTitle>
-          {targetLabel && (
-            <p className="text-xs text-slate-400">
-              {scope}: <span className="font-mono text-slate-300">{targetLabel}</span>
-            </p>
-          )}
-        </DialogHeader>
-
-        {actions && actions.length > 1 && onPickAction && (
-          <div className="space-y-1.5">
-            <Label htmlFor="run-action-pick" className="text-sm font-medium text-slate-200">Action</Label>
-            <select
-              id="run-action-pick"
-              value={action.key}
-              onChange={(e) => {
-                const next = actions.find((a) => a.key === e.target.value)
-                if (next) onPickAction(next)
-              }}
-              className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white font-mono"
-            >
-              {actions.map((a) => (
-                <option key={a.key} value={a.key}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500">
-              {action.pack_name} pack{action.description ? ` · ${action.description}` : ""}
-            </p>
-          </div>
-        )}
-
-        {action.unresolved && (
-          <div className="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm space-y-1.5">
-            <p className="flex items-center gap-2 text-amber-200 font-medium">
-              <AlertTriangle className="h-4 w-4" />
-              Unresolved — pick a winner first
-            </p>
-            <p className="text-amber-300/80 text-xs">
-              Multiple packs declare action key{" "}
-              <code className="font-mono">{action.key}</code>. Choose which
-              pack wins on{" "}
-              <Link
-                href="/actions?tab=packs"
-                className="underline hover:text-amber-200"
-                onClick={onClose}
-              >
-                /action-packs
-              </Link>
-              {" "}before running.
-            </p>
-          </div>
-        )}
-
-        {scope === "group" && action.key === "linux-os-upgrade" && (
-          <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 text-sm">
-            {groupMixedCodenames ? (
-              <div className="text-amber-400">
-                <span className="font-medium">Mixed OS versions detected:</span>{" "}
-                {groupCodenameCounts.map(({ codename, count }) => `${codename} (${count})`).join(", ")}
-                {". "}Verify <em>Current codename</em> is correct before running.
-              </div>
-            ) : groupSingleCodename ? (
-              <p className="text-slate-400">
-                All hosts are on <span className="font-mono text-slate-200">{groupSingleCodename}</span>.
-              </p>
-            ) : groupHosts !== undefined ? (
-              <p className="text-slate-500 italic">OS facts not yet collected for hosts in this group.</p>
-            ) : null}
-          </div>
-        )}
-
-        <ActionParameterForm
-          action={action}
-          values={params}
-          onChange={setParams}
-          placeholderFor={(p) => {
-            const current = scope === "host" ? hostOsCodename : groupSingleCodename
-            if (action.key === "linux-os-upgrade" && p.key === "current_version") {
-              return current ?? undefined
-            }
-            if (action.key === "linux-os-upgrade" && p.key === "next_version") {
-              return nextCodename(current)
-            }
-            return undefined
-          }}
-          instancePickers={instancePickers}
-          grafanaInstances={grafanaInstances}
-        />
-
-        {scope === "group" && (
-          <div className="space-y-1.5">
-            <Label className="text-sm font-medium text-slate-200">Parallelism</Label>
-            <select
-              value={parallelism}
-              onChange={(e) => setParallelism(Number(e.target.value))}
-              className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-            >
-              <option value={-1}>All at once</option>
-              <option value={1}>Rolling — 1 at a time</option>
-              <option value={2}>Rolling — 2 at a time</option>
-              <option value={5}>Rolling — 5 at a time</option>
-            </select>
-          </div>
-        )}
-
-        <DialogFooter className="gap-2">
-          <Button
-            variant="outline"
-            onClick={() => handleSubmit(true)}
-            disabled={submitting || action.unresolved || missingDestination}
-          >
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={action.name}
+      meta={targetLabel ? `${scope}: ${targetLabel}` : scope}
+      w={440}
+      footer={
+        <>
+          <button type="button" className="btn ml-auto" disabled={blocked} onClick={() => handleSubmit(true)}>
             Preview (dry-run)
-          </Button>
-          <Button
-            onClick={() => handleSubmit(false)}
-            disabled={submitting || action.unresolved || missingDestination}
-          >
+          </button>
+          <button type="button" className="btn btn-primary" disabled={blocked} onClick={() => handleSubmit(false)}>
             {submitting ? "Starting…" : "Run"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </button>
+        </>
+      }
+    >
+      {actions && actions.length > 1 && onPickAction && (
+        <Field label="action" htmlFor="run-action-pick">
+          <select
+            id="run-action-pick"
+            className="inp mono"
+            value={action.key}
+            onChange={(e) => {
+              const next = actions.find((a) => a.key === e.target.value)
+              if (next) onPickAction(next)
+            }}
+          >
+            {actions.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      <div className="text-[11.5px] text-text-3">
+        {action.pack_name} pack{action.description ? ` · ${action.description}` : ""}
+      </div>
+
+      {action.unresolved && (
+        <Banner
+          tone="warn"
+          action={
+            <Link href="/actions?tab=packs" className="btn btn-sm hover:no-underline" onClick={onClose}>
+              packs →
+            </Link>
+          }
+        >
+          Unresolved — several packs declare <span className="mono">{action.key}</span>; pick the winning pack before running.
+        </Banner>
+      )}
+
+      {scope === "group" && action.key === "linux-os-upgrade" && (
+        groupMixedCodenames ? (
+          <Banner tone="warn">
+            Mixed OS versions: {groupCodenameCounts.map(({ codename, count }) => `${codename} (${count})`).join(", ")}. Check <em>current codename</em> before running.
+          </Banner>
+        ) : groupSingleCodename ? (
+          <div className="text-[11.5px] text-text-2">
+            All hosts are on <span className="mono text-text">{groupSingleCodename}</span>.
+          </div>
+        ) : groupHosts !== undefined ? (
+          <div className="text-[11.5px] italic text-text-3">OS facts not yet collected for hosts in this group.</div>
+        ) : null
+      )}
+
+      <ActionParameterForm
+        action={action}
+        values={params}
+        onChange={setParams}
+        placeholderFor={(p) => {
+          if (action.key === "linux-os-upgrade" && p.key === "current_version") return current ?? undefined
+          if (action.key === "linux-os-upgrade" && p.key === "next_version") return nextCodename(current)
+          return undefined
+        }}
+        instancePickers={instancePickers}
+        grafanaInstances={grafanaInstances}
+      />
+
+      {scope === "group" && (
+        <Field label="parallelism" htmlFor="run-parallelism">
+          <select id="run-parallelism" className="inp" value={parallelism} onChange={(e) => setParallelism(Number(e.target.value))}>
+            <option value={-1}>All at once</option>
+            <option value={1}>Rolling — 1 at a time</option>
+            <option value={2}>Rolling — 2 at a time</option>
+            <option value={5}>Rolling — 5 at a time</option>
+          </select>
+        </Field>
+      )}
+
+      <div className="text-[11.5px] leading-[1.5] text-text-2">
+        Preview runs the same playbook as a dry-run — nothing on any host changes until you review it and click Run.
+      </div>
+    </Modal>
   )
 }
