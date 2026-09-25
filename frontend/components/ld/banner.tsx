@@ -20,6 +20,7 @@ export function Banner({
   action,
   flush,
   pulse,
+  role,
   className,
 }: {
   tone?: Tone
@@ -27,6 +28,9 @@ export function Banner({
   action?: ReactNode
   flush?: boolean
   pulse?: boolean
+  /** A danger banner is an alert by default; `null` drops the role for a
+   *  banner that sits inside a live region of its own. */
+  role?: "alert" | "status" | null
   className?: string
 }) {
   return (
@@ -35,7 +39,7 @@ export function Banner({
         flush ? "border-b" : "rounded-r border"
       } ${className ?? ""}`}
       style={{ background: toneSoft(tone), borderColor: toneVar(tone) }}
-      role={tone === "danger" ? "alert" : undefined}
+      role={role === undefined ? (tone === "danger" ? "alert" : undefined) : (role ?? undefined)}
     >
       <Dot tone={tone} pulse={pulse} />
       <span className="min-w-0 flex-1">{children}</span>

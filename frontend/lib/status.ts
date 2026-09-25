@@ -138,11 +138,13 @@ export const AI_APPROVAL: Record<string, StatusDef> = {
   expired: { label: "expired", tone: "idle" },
 }
 
-/** The three autonomy levels as the design's three words. */
+/** The three autonomy levels, in the words the user guide and the
+ *  settings use — the design's read / propose / act would be a second
+ *  vocabulary for the same three API values. */
 export const AI_AUTONOMY: Record<string, StatusDef> = {
-  read_only: { label: "read", tone: "idle" },
-  approval: { label: "propose", tone: "hold" },
-  full_auto: { label: "act", tone: "warn" },
+  read_only: { label: "read-only", tone: "idle" },
+  approval: { label: "approval required", tone: "hold" },
+  full_auto: { label: "full auto", tone: "warn" },
 }
 
 export type { StatusDef, Tone }

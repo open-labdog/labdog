@@ -3,8 +3,8 @@
  *
  * The rail holds a fixed set of zones; each zone's pane lists its
  * destinations. Every route in the app maps to exactly one zone (see
- * `zoneForPath`) so the rail can show where you are even on pages that
- * predate the shell and still live at their old URLs.
+ * `zoneForPath`) so the rail can show where you are on any page, not
+ * only on the pane's own destinations.
  *
  * Config is not a zone. A module's desired state belongs to the group
  * that declares it, so it is edited on the group's own page (Config tab)
@@ -111,9 +111,10 @@ export const SETTINGS_ZONE: ZoneDef = {
 }
 
 /**
- * Route → zone. Longest prefix wins. Legacy routes are listed under the
- * zone their content moved to, so the rail is right even before a page
- * has been rebuilt on the new shell.
+ * Route → zone. Longest prefix wins. The old URLs that now only redirect
+ * (`/dashboard`, `/pending`, `/action-packs`, `/schedules`) stay listed
+ * under the zone their content moved to, so the rail does not flicker to
+ * Overview for the instant before the redirect lands.
  */
 const ROUTE_ZONES: [string, ZoneKey][] = [
   ["/overview", "overview"],
@@ -153,50 +154,6 @@ export function zoneForPath(pathname: string): ZoneKey {
 
 export function zoneDef(k: ZoneKey): ZoneDef {
   return k === "settings" ? SETTINGS_ZONE : (ZONE_DEFS.find((z) => z.k === k) ?? ZONE_DEFS[0])
-}
-
-/**
- * Screens built for the shell own their own header and scroll region
- * (PageHead + a `.scroll` body); the shell gives them the full content
- * column. Everything else gets the padded, scrolling main the pages were
- * written for. Exact paths, plus the group detail page — but not the
- * standalone module editors or run pages beneath it.
- */
-const FLUSH_ROUTES = [
-  "/overview",
-  "/hosts",
-  "/hosts/new",
-  "/groups",
-  "/groups/new",
-  "/discovery",
-  "/plans",
-  "/drift",
-  "/runs",
-  "/actions",
-  "/audit",
-  "/alerts",
-  "/settings",
-  "/users",
-  "/ssh-keys",
-  "/git-repos",
-  "/git-repos/new",
-  "/grafana",
-  "/hypervisors",
-  "/ai-providers",
-]
-const FLUSH_PATTERNS = [
-  /^\/groups\/\d+$/,
-  /^\/git-repos\/\d+$/,
-  /^\/hosts\/\d+$/,
-  /^\/hosts\/\d+\/terminal$/,
-  /^\/actions\/runs\/\d+$/,
-  /^\/hosts\/\d+\/actions\/runs\/\d+$/,
-  /^\/groups\/\d+\/actions\/runs\/\d+$/,
-]
-
-export function isFlushRoute(pathname: string): boolean {
-  const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname
-  return FLUSH_ROUTES.includes(p) || FLUSH_PATTERNS.some((re) => re.test(p))
 }
 
 /** Which pane item is the current page. Compares path, then `view`/`tab`/`section` params. */

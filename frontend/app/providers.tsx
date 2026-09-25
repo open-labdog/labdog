@@ -73,13 +73,14 @@ function AuthProvider({ children }: { children: ReactNode }) {
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    // Both attributes: shadcn's `dark:` variant keys off the class, the
-    // design tokens in globals.css key off `data-theme`. Stored under the
-    // same key the design prototype used, so a theme picked there carries
-    // over. Dark is the default; there is no system-follow because the
-    // light theme is a deliberate second theme, not a fallback.
+    // The design tokens in globals.css key off `data-theme`; nothing reads
+    // a theme class any more (it was for shadcn/ui's `dark:` variant).
+    // Stored under the same key the design prototype used, so a theme
+    // picked there carries over. Dark is the default; there is no
+    // system-follow because the light theme is a deliberate second theme,
+    // not a fallback.
     <ThemeProvider
-      attribute={["class", "data-theme"]}
+      attribute="data-theme"
       defaultTheme="dark"
       enableSystem={false}
       storageKey="labdog:theme"

@@ -102,10 +102,8 @@ The format follows [Keep a Changelog]; LabDog follows
 
 - **Two themes.** Dark stays primary; light is a real second theme rather
   than an inversion, with one blue accent and status hues at a shared chroma.
-  Both are tokens in `globals.css`; shadcn's variables are re-pointed at
-  them. Pages not yet rebuilt on the shell get a transitional remap of the
-  slate scale so they are not dark islands in the light theme. The typeface
-  is IBM Plex Sans / Mono, vendored like the fonts before it.
+  Both are tokens in `globals.css`, and every screen paints with them. The
+  typeface is IBM Plex Sans / Mono, vendored like the fonts before it.
 
 - **The shared dialogs are on the theme.** Run action…, the confirmation
   modal every delete goes through, Change password and the sync tray are
@@ -174,6 +172,21 @@ The format follows [Keep a Changelog]; LabDog follows
   select rows with the kit table's own checkbox column instead of a bespoke
   table component that existed only to duplicate it.
 
+- **The Assistant, sign-in and error pages are on the theme, and with them
+  every route is a screen.** The Assistant is the design's three columns:
+  sessions on the left, the transcript and composer in the middle, and a
+  right-hand column that holds a new session's choices — provider,
+  autonomy, snapshots, hosts in scope — and, once one runs, what it is and
+  what it has done: its autonomy and scope, turns, commands, tokens and
+  cost, tool calls by verdict and the snapshots taken, above the fleet-wide
+  budget meters. Each command reads as the design's command block and a
+  pending change as its approval gate; deleting a session asks in a dialog
+  instead of a browser prompt. The sign-in and first-run cards, the error
+  screen and the last-resort error page (in the dark theme's values, since
+  it cannot rely on the stylesheet) use the tokens, and a host's sync
+  preview draws its diff the way the Plan screen does. No page is left in
+  the old layout, so the shell's padded fallback column is gone.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -210,6 +223,15 @@ The format follows [Keep a Changelog]; LabDog follows
   `skeleton.tsx` from `components/ui/`, plus `hooks/use-table-state.ts` and
   `hooks/use-column-resize.ts` — every remaining caller of each was
   converted in this PR or the three before it.
+- The legacy look and the shadcn/ui layer under it: the light theme's remap
+  of Tailwind's slate scale, shadcn's variable block and stylesheet, the last
+  `components/ui/` primitives (`badge`, `button`, `input`, `label`,
+  `select`, `textarea`; the markdown renderer moved to
+  `components/ai/markdown.tsx`) and the directory itself, `components.json`,
+  and the `shadcn`, `tw-animate-css`, `lucide-react`,
+  `class-variance-authority`, `clsx` and `tailwind-merge` packages — none
+  had an importer left. Also the schedule wizard's old step indicator, which
+  had no caller since the wizard moved onto `Steps`.
 
 ### Fixed
 
@@ -218,6 +240,20 @@ The format follows [Keep a Changelog]; LabDog follows
   host's queries under a string id (`["host", "5"]`) while every one of
   them is stored under a number, and React Query compares key parts
   strictly, so none of them ever matched.
+- **The sign-in and first-run pages scroll** when the card is taller than
+  the window. The page body's `overflow: hidden` — there so the shell owns
+  scrolling — applied to them too, so on a phone held sideways the setup
+  form's button was out of reach.
+- **Opening a session by link can no longer start a different one.** While
+  `/assistant?session=<id>` was loading, or if that session no longer
+  existed, the page showed the new-session form, and a message typed there
+  started a new session. It now says it is loading, or that the session
+  could not be loaded, with the composer locked until one is open.
+- **An assistant turn that runs the same tool twice shows both calls.** The
+  transcript paired a turn's requested calls with the recorded ones by tool
+  name but marked them used only after pairing them all, so two
+  `run_ssh_command`s in one turn both showed the first — and the second, with
+  its result or the approval it was waiting on, never appeared in its place.
 
 ## [0.10.0] — 2026-09-18
 

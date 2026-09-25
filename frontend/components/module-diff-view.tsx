@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Tag, toneInk, type Tone } from "@/components/ld"
 import type { DiffChange, DiffOp, ModuleDiff } from "@/lib/types"
 
 // Human-readable labels for canonical module names (see backend
@@ -23,52 +24,53 @@ function countByOp(changes: DiffChange[], op: DiffOp): number {
   return changes.reduce((n, c) => (c.op === op ? n + 1 : n), 0)
 }
 
-// Marker glyph + color per diff op. Unchanged lines carry no background and a
-// brighter-than-before text tone so they stay legible on the slate-900 card.
-const DIFF_OP_STYLES: Record<DiffOp, { marker: string; className: string }> = {
-  add: { marker: "+", className: "text-green-400 bg-green-950/30" },
-  remove: { marker: "-", className: "text-red-400 bg-red-950/30" },
-  update: { marker: "~", className: "text-amber-400 bg-amber-950/30" },
-  unchanged: { marker: "", className: "text-slate-300" },
+// The Plan screen's vocabulary, so a host's sync preview reads like the
+// fleet-wide one: add/del tints for add and remove, the warn tint for an
+// update, and no tint for context lines.
+const OP: Record<DiffOp, { s: string; tone: Tone; bg: string }> = {
+  add: { s: "+", tone: "add", bg: "var(--add-bg)" },
+  remove: { s: "−", tone: "del", bg: "var(--del-bg)" },
+  update: { s: "~", tone: "warn", bg: "var(--warn-soft)" },
+  unchanged: { s: "·", tone: "idle", bg: "transparent" },
 }
 
 function DiffChangeLine({ change }: { change: DiffChange }) {
-  const { marker, className } = DIFF_OP_STYLES[change.op]
+  const op = OP[change.op]
   // Flex row so the marker stays in a fixed gutter and long, unbreakable tokens
   // (CIDRs, FQDNs) wrap with a hanging indent instead of sliding under the marker.
   return (
-    <div className={`flex gap-1.5 font-mono text-xs px-3 py-1 rounded ${className}`}>
-      <span className="select-none shrink-0 w-3 text-center opacity-70">{marker}</span>
-      <span className="min-w-0 break-words whitespace-pre-wrap">{change.summary}</span>
+    <div className="mono flex items-start gap-[9px] rounded-[3px] px-[7px] py-[3px] text-[11.5px]" style={{ background: op.bg }}>
+      <span className="w-[9px] shrink-0 select-none font-bold" style={{ color: toneInk(op.tone) }}>
+        {op.s}
+      </span>
+      <span className={`min-w-0 flex-1 whitespace-pre-wrap break-words ${change.op === "unchanged" ? "text-text-3" : "text-text"}`}>{change.summary}</span>
     </div>
   )
 }
 
-/** Inline counts/badge summary for a module's changes (e.g. "+2 -1 ~3"). */
+/** Inline counts for a module's changes, as the Plan screen tags them. */
 export function DiffSummary({ diff }: { diff: ModuleDiff }) {
-  if (diff.error) {
-    return <span className="text-xs text-red-400">error</span>
-  }
-  if (!diff.has_changes) {
-    return <span className="text-xs text-slate-500">no changes</span>
-  }
-  const add = countByOp(diff.changes, "add")
-  const remove = countByOp(diff.changes, "remove")
-  const update = countByOp(diff.changes, "update")
+  if (diff.error) return <Tag tone="danger">error</Tag>
+  if (!diff.has_changes) return <span className="text-[10.5px] text-text-faint">no changes</span>
   return (
-    <span className="flex items-center gap-2">
-      {add > 0 && <span className="text-xs text-green-400">+{add}</span>}
-      {remove > 0 && <span className="text-xs text-red-400">-{remove}</span>}
-      {update > 0 && <span className="text-xs text-amber-400">~{update}</span>}
+    <span className="flex gap-[5px]">
+      {(["add", "remove", "update"] as const).map((op) => {
+        const n = countByOp(diff.changes, op)
+        return n ? (
+          <Tag key={op} tone={OP[op].tone}>
+            {OP[op].s}
+            {n}
+          </Tag>
+        ) : null
+      })}
     </span>
   )
 }
 
 /**
- * Collapsible card rendering a single module's normalized diff in the
- * firewall-preview visual style (green add / red remove / amber update /
- * gray unchanged). Used for both per-module sync previews and inside the
- * "Sync All" modal.
+ * One module's normalized diff. With a header (the Sync-all preview) it is
+ * a collapsible box per module; without one (a single module's preview)
+ * it is just the lines.
  */
 export function ModuleDiffView({
   diff,
@@ -84,15 +86,15 @@ export function ModuleDiffView({
   const changed = diff.changes.filter((c) => c.op !== "unchanged")
   const unchanged = diff.changes.filter((c) => c.op === "unchanged")
 
-  // Only the collapsible Sync-All cards cap their own height; the standalone
+  // Only the collapsible Sync-All boxes cap their own height; the standalone
   // per-module preview (no header) lets the dialog's own scroll region govern,
   // avoiding a scrollbar-inside-a-scrollbar.
   const body = (
-    <div className={`space-y-1 ${showHeader ? "max-h-64 overflow-y-auto" : ""}`}>
+    <div className={`flex flex-col gap-0.5 ${showHeader ? "scroll max-h-64" : ""}`}>
       {diff.error ? (
-        <div className="text-red-400 text-xs px-3 py-2">{diff.error}</div>
+        <div className="px-[7px] py-1.5 text-[11.5px] text-danger">{diff.error}</div>
       ) : diff.changes.length === 0 ? (
-        <div className="text-slate-500 text-xs px-3 py-2">Nothing configured for this module</div>
+        <div className="px-[7px] py-1.5 text-[11.5px] text-text-3">Nothing configured for this module</div>
       ) : (
         <>
           {changed.map((c, i) => (
@@ -100,16 +102,9 @@ export function ModuleDiffView({
           ))}
           {unchanged.length > 0 && (
             <>
-              {showUnchanged &&
-                unchanged.map((c, i) => <DiffChangeLine key={`u${i}`} change={c} />)}
-              <button
-                type="button"
-                onClick={() => setShowUnchanged((v) => !v)}
-                className="font-mono text-xs text-slate-500 hover:text-slate-300 px-3 py-1"
-              >
-                {showUnchanged
-                  ? "Hide unchanged"
-                  : `Show ${unchanged.length} unchanged ${unchanged.length === 1 ? "line" : "lines"}`}
+              {showUnchanged && unchanged.map((c, i) => <DiffChangeLine key={`u${i}`} change={c} />)}
+              <button type="button" onClick={() => setShowUnchanged((v) => !v)} className="btn btn-sm btn-ghost self-start">
+                {showUnchanged ? "hide unchanged" : `show ${unchanged.length} unchanged ${unchanged.length === 1 ? "line" : "lines"}`}
               </button>
             </>
           )}
@@ -118,32 +113,23 @@ export function ModuleDiffView({
     </div>
   )
 
-  if (!showHeader) {
-    return body
-  }
+  if (!showHeader) return body
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
+    <div className="overflow-hidden rounded-r border border-line bg-surface">
       <button
         type="button"
-        className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-800 transition-colors"
+        aria-expanded={expanded}
+        className="row-hover flex w-full items-center gap-2.5 border-0 bg-transparent px-[11px] py-2 text-left"
         onClick={() => setExpanded((e) => !e)}
       >
-        <div className="flex items-center gap-3">
-          <span className="font-medium text-white">{moduleLabel(diff.module)}</span>
-          <DiffSummary diff={diff} />
-        </div>
-        <svg
-          className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
+        <span className="text-[12.5px] font-medium text-text">{moduleLabel(diff.module)}</span>
+        <DiffSummary diff={diff} />
+        <span className="ml-auto text-[10px] text-text-faint" aria-hidden>
+          {expanded ? "▾" : "▸"}
+        </span>
       </button>
-      {expanded && <div className="border-t border-slate-700 p-3">{body}</div>}
+      {expanded && <div className="border-t border-line p-2">{body}</div>}
     </div>
   )
 }

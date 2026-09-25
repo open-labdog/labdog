@@ -7,7 +7,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
  * The design's modal — title + meta + esc in the header, a scrolling body,
  * an optional footer strip — built on the base-ui dialog so it keeps the
  * focus trap, the Escape handling and the aria wiring the shadcn Dialog
- * has. Sits at 7vh from the top rather than dead-centre so a tall modal
+ * it replaced had. Sits at 7vh from the top rather than dead-centre so a tall modal
  * grows downwards instead of jumping.
  *
  * `onSubmit` turns the whole popup into a form — header, body and footer

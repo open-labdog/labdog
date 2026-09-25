@@ -10,7 +10,7 @@ import { Pane } from "@/components/shell/pane"
 import { Palette } from "@/components/shell/palette"
 import { AccountMenu } from "@/components/shell/account-menu"
 import { useShellCounts } from "@/components/shell/use-shell-counts"
-import { isFlushRoute, zoneDef, zoneForPath } from "@/components/shell/zones"
+import { zoneDef, zoneForPath } from "@/components/shell/zones"
 
 const AUTH_ROUTES = ["/login", "/register"]
 
@@ -83,7 +83,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
 
-  const flush = isFlushRoute(pathname)
   const showPane = !mobile && hasPane && paneOpen
 
   return (
@@ -119,11 +118,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <AccountMenu compact />
           </header>
         )}
-        {flush ? (
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
-        ) : (
-          <main className="min-w-0 flex-1 overflow-auto p-6">{children}</main>
-        )}
+        {/* Every screen owns its header and scroll region (PageHead + a
+            `.scroll` body), so the shell hands over the whole column. */}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</main>
       </div>
 
       {mobile && <MobileRail zone={zone} counts={counts} />}

@@ -3,7 +3,7 @@
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 
-import { cn } from "@/lib/utils"
+import { CodeBlock } from "@/components/ld"
 
 interface Props {
   children: string
@@ -36,96 +36,56 @@ interface Props {
  * query string. A health report has no need to show a picture.
  *
  * Styling is explicit per element rather than via a typography plugin:
- * LabDog does not carry one, and the defaults assume a light background.
+ * LabDog does not carry one. Everything reads the theme tokens, so a
+ * report is legible in both themes.
  */
 export function Markdown({ children, className }: Props) {
   return (
-    <div className={cn("text-sm text-slate-300", className)}>
+    <div className={`min-w-0 text-[12.5px] leading-[1.6] text-text-2 ${className ?? ""}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          h1: ({ children }) => (
-            <h1 className="mt-4 mb-2 text-base font-semibold text-slate-100 first:mt-0">
-              {children}
-            </h1>
-          ),
-          h2: ({ children }) => (
-            <h2 className="mt-4 mb-2 text-sm font-semibold text-slate-100 first:mt-0">
-              {children}
-            </h2>
-          ),
-          h3: ({ children }) => (
-            <h3 className="mt-3 mb-1 text-sm font-semibold text-slate-200 first:mt-0">
-              {children}
-            </h3>
-          ),
-          p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
-          strong: ({ children }) => (
-            <strong className="font-semibold text-slate-100">{children}</strong>
-          ),
+          h1: ({ children }) => <h1 className="mb-2 mt-4 text-[14px] font-semibold text-text first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-2 mt-4 text-[13px] font-semibold text-text first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1 mt-3 text-[12.5px] font-semibold text-text first:mt-0">{children}</h3>,
+          p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold text-text">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
-          ul: ({ children }) => (
-            <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>
-          ),
-          ol: ({ children }) => (
-            <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>
-          ),
-          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+          ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5 last:mb-0">{children}</ul>,
+          ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5 last:mb-0">{children}</ol>,
+          li: ({ children }) => <li>{children}</li>,
           code: ({ className: lang, children }) => {
             // react-markdown marks fenced blocks with a language class and
             // leaves inline spans bare; only the latter should be styled as
             // a chip, since the block is handled by `pre`.
             const isBlock = typeof lang === "string" && lang.includes("language-")
-            if (isBlock) {
-              return <code className="font-mono text-xs">{children}</code>
-            }
-            return (
-              <code className="rounded bg-slate-800 px-1 py-0.5 font-mono text-xs text-slate-200">
-                {children}
-              </code>
-            )
+            if (isBlock) return <code>{children}</code>
+            return <code className="mono rounded-[3px] bg-surface-3 px-1 py-px text-[11px] text-text">{children}</code>
           },
           // Command output and config snippets are routinely wider than the
           // pane. Scroll inside the block so the page itself never does.
           pre: ({ children }) => (
-            <pre className="mb-2 overflow-x-auto rounded-md border border-slate-700 bg-slate-900 p-3 text-xs last:mb-0">
+            <CodeBlock wrap={false} className="mb-2 last:mb-0">
               {children}
-            </pre>
+            </CodeBlock>
           ),
           // Never fetch. Shows what the model meant to display, without
           // the browser reaching out to whatever URL it named.
-          img: ({ alt }) => (
-            <span className="text-slate-400 italic">[image omitted{alt ? `: ${alt}` : ""}]</span>
-          ),
+          img: ({ alt }) => <span className="italic text-text-3">[image omitted{alt ? `: ${alt}` : ""}]</span>,
           a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-blue-400 underline underline-offset-2 hover:text-blue-300"
-            >
+            <a href={href} target="_blank" rel="noopener noreferrer" className="text-ld-accent underline underline-offset-2">
               {children}
             </a>
           ),
-          blockquote: ({ children }) => (
-            <blockquote className="mb-2 border-l-2 border-slate-700 pl-3 text-slate-400 last:mb-0">
-              {children}
-            </blockquote>
-          ),
-          hr: () => <hr className="my-3 border-slate-700" />,
+          blockquote: ({ children }) => <blockquote className="mb-2 border-l-2 border-line-strong pl-3 text-text-3 last:mb-0">{children}</blockquote>,
+          hr: () => <hr className="my-3 border-line" />,
           table: ({ children }) => (
             <div className="mb-2 overflow-x-auto last:mb-0">
-              <table className="w-full border-collapse text-xs">{children}</table>
+              <table className="w-full border-collapse text-[11.5px]">{children}</table>
             </div>
           ),
-          th: ({ children }) => (
-            <th className="border border-slate-700 bg-slate-800/60 px-2 py-1 text-left font-semibold text-slate-200">
-              {children}
-            </th>
-          ),
-          td: ({ children }) => (
-            <td className="border border-slate-700 px-2 py-1 align-top">{children}</td>
-          ),
+          th: ({ children }) => <th className="border border-line bg-surface-2 px-2 py-1 text-left font-semibold text-text">{children}</th>,
+          td: ({ children }) => <td className="border border-line px-2 py-1 align-top">{children}</td>,
         }}
       >
         {children}
