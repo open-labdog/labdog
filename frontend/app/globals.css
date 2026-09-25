@@ -1,67 +1,20 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-
-@custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   Tailwind theme mapping.
+   Tailwind theme mapping: the LabDog design tokens below, exposed as
+   Tailwind colours (`bg-surface-2`, `text-text-3`, `border-line` …) so a
+   class and a `var(--…)` in an inline style always mean the same thing.
 
-   Two vocabularies live here. The shadcn/ui primitives in components/ui
-   read the `--background` / `--card` / `--primary` … variables; the rest
-   of the app reads the LabDog design tokens (`--surface`, `--text-2`,
-   `--ok-soft` …). Both are exposed as Tailwind colours so `bg-surface-2`
-   and `bg-card` are both valid, and both resolve to the same theme.
-
-   The one deliberate rename: shadcn's `--accent` is a neutral hover
-   background, LabDog's `--accent` is the blue. shadcn's is stored as
-   `--ui-accent` so `bg-accent` (used inside components/ui) stays neutral
-   and the design's `var(--accent)` stays blue. The blue is reachable from
-   Tailwind as `ld-accent`.
+   The blue is `ld-accent` (`text-ld-accent`, `bg-ld-accent-soft`): the
+   prefix dates from when shadcn/ui's own `accent` colour shared this
+   namespace, and dropping it now would touch every screen for no visual
+   change. Radii stay on Tailwind's scale; the design's two are
+   `rounded-r` (5px) and `rounded-r-lg` (8px).
    ------------------------------------------------------------------------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono), ui-monospace, monospace;
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--ui-accent-foreground);
-  --color-accent: var(--ui-accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* LabDog design tokens → Tailwind colours */
   --color-bg: var(--bg);
   --color-bg-grad: var(--bg-grad);
   --color-surface: var(--surface);
@@ -180,97 +133,12 @@ html[data-theme="light"] {
   color-scheme: light;
 }
 
-/* ---------------------------------------------------------------------------
-   shadcn/ui variables, expressed in LabDog tokens so the primitives in
-   components/ui (Dialog, Button, Input, Select …) follow both themes
-   without their own light/dark blocks. Theme-agnostic by construction:
-   every value here is a token that already flips on `data-theme`.
-   ------------------------------------------------------------------------- */
-:root {
-  --background: var(--bg);
-  --foreground: var(--text);
-  --card: var(--surface);
-  --card-foreground: var(--text);
-  --popover: var(--surface);
-  --popover-foreground: var(--text);
-  --primary: var(--accent-fill);
-  --primary-foreground: #ffffff;
-  --secondary: var(--surface-2);
-  --secondary-foreground: var(--text);
-  --muted: var(--surface-3);
-  --muted-foreground: var(--text-3);
-  --ui-accent: var(--surface-3);
-  --ui-accent-foreground: var(--text);
-  --destructive: var(--danger);
-  --input: var(--border);
-  --ring: var(--accent-line);
-  --chart-1: oklch(0.809 0.105 251.813);
-  --chart-2: oklch(0.623 0.214 259.815);
-  --chart-3: oklch(0.546 0.245 262.881);
-  --chart-4: oklch(0.488 0.243 264.376);
-  --chart-5: oklch(0.424 0.199 265.638);
-  --radius: 0.5rem;
-  --sidebar: var(--rail);
-  --sidebar-foreground: var(--text);
-  --sidebar-primary: var(--accent);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: var(--surface-3);
-  --sidebar-accent-foreground: var(--text);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--accent-line);
-}
-
-/* ---------------------------------------------------------------------------
-   TRANSITIONAL — legacy palette remap for the light theme.
-
-   Pages written before the token system paint with Tailwind's slate scale
-   directly (`bg-slate-900`, `text-white`, `bg-green-600 text-white` …),
-   which is a dark-only vocabulary. Rather than leave them as dark islands
-   when the operator picks the light theme, the scale is re-pointed at the
-   light tokens here. Saturated badge backgrounds become the matching
-   -soft tint so `text-white` (now the dark ink) stays readable on them.
-
-   This is a bridge, not a design: it makes the second theme usable on
-   every screen today, and each page that migrates to tokens needs it
-   less. Delete entries as their last user goes.
-   ------------------------------------------------------------------------- */
-html[data-theme="light"] {
-  --color-slate-950: var(--bg);
-  --color-slate-900: var(--surface);
-  --color-slate-800: var(--surface-3);
-  --color-slate-700: var(--border);
-  --color-slate-600: var(--border-strong);
-  --color-slate-500: var(--text-faint);
-  --color-slate-400: var(--text-3);
-  --color-slate-300: var(--text-2);
-  --color-slate-200: var(--text-2);
-  --color-slate-100: var(--text);
-  --color-slate-50: var(--text);
-  --color-white: var(--text);
-  --color-green-600: var(--ok-soft);
-  --color-green-700: var(--ok-soft);
-  --color-amber-600: var(--warn-soft);
-  --color-yellow-600: var(--warn-soft);
-  --color-red-600: var(--danger-soft);
-  --color-blue-600: var(--sync-soft);
-  --color-purple-600: var(--hold-soft);
-  --color-green-400: var(--ok);
-  --color-amber-400: var(--warn);
-  --color-amber-300: var(--warn);
-  --color-amber-200: var(--warn);
-  --color-red-400: var(--danger);
-  --color-blue-400: var(--accent);
-  --color-blue-300: var(--accent);
-  --color-purple-400: var(--hold);
-  --color-green-950: var(--ok-soft);
-  --color-amber-950: var(--warn-soft);
-  --color-red-950: var(--danger-soft);
-  --color-blue-950: var(--sync-soft);
-}
-
 @layer base {
+  /* A bare `border` class draws in the border tone, and a focus outline in
+     half the accent line, in both themes. */
   * {
-    @apply border-border outline-ring/50;
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--accent-line) 50%, transparent);
   }
   html,
   body {
@@ -448,8 +316,11 @@ html[data-theme="light"] {
     min-height: 64px;
     resize: vertical;
   }
-  /* A Field with an error paints its control's border, not a red label. */
-  .field[data-invalid="true"] .inp {
+  /* A Field with an error paints its control's border, not a red label —
+     and so does a control marked invalid on its own (the sign-in form,
+     whose error is one banner over both fields). */
+  .field[data-invalid="true"] .inp,
+  .inp[aria-invalid="true"] {
     border-color: var(--danger);
   }
   .pane-enter {

@@ -1,11 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { AlertTriangle, Check, X } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
+import { Dot, Tag } from "@/components/ld"
+import { AI_APPROVAL, AI_CLASSIFICATION, def } from "@/lib/status"
 import type { AIApprovalRequest } from "@/lib/types"
 
 interface Props {
@@ -16,7 +14,8 @@ interface Props {
 }
 
 /**
- * The one place a person authorises the agent to change a host.
+ * The one place a person authorises the agent to change a host — the
+ * design's approval gate.
  *
  * Three deliberate choices about what it shows.
  *
@@ -24,6 +23,9 @@ interface Props {
  * It is `command_preview` from the server rather than something rebuilt
  * from `arguments` here — what is displayed and what would run must not be
  * able to disagree, and rebuilding it in a second place is how they would.
+ * (The design tucks an "exact command" under a disclosure beneath a
+ * friendlier summary; here there is no second form to disclose, so the
+ * exact command stays the headline.)
  *
  * **The classifier's reason outranks the model's.** `reason` is why LabDog
  * called this a write and is shown as the primary justification; `summary`
@@ -45,79 +47,67 @@ export function ApprovalCard({ approval, hostName, onDecide, pending }: Props) {
   }
 
   const expires = approval.expires_at ? new Date(approval.expires_at) : null
+  const cls = def(AI_CLASSIFICATION, approval.classification)
 
   return (
-    <div className="rounded-md border border-amber-600/60 bg-amber-950/20 p-4">
+    <div className="flex flex-col gap-[9px] rounded-r-lg border border-hold bg-hold-soft p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-amber-400" aria-hidden />
-        <span className="text-sm font-semibold text-amber-200">
-          Waiting for your decision
-        </span>
-        <Badge className="bg-amber-600 text-white">write</Badge>
-        {hostName && (
-          <Badge variant="outline" className="text-xs">
-            {hostName}
-          </Badge>
+        <Tag tone={cls.tone}>{cls.label}</Tag>
+        <span className="text-[12.5px] font-semibold text-text">Waiting for your decision</span>
+        {hostName && <Tag>{hostName}</Tag>}
+        {expires && (
+          <span className="tt ml-auto" title={expires.toISOString()}>
+            expires {expires.toLocaleString()}
+          </span>
         )}
       </div>
 
-      <p className="mt-2 text-sm text-slate-300">
-        The assistant wants to run this. Nothing has been changed yet.
-      </p>
+      <p className="m-0 text-[11.5px] text-text-2">The assistant wants to run this. Nothing has been changed yet.</p>
 
-      <pre className="mt-2 overflow-x-auto rounded bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100">
+      <pre className="mono m-0 overflow-x-auto rounded-r border border-line bg-surface px-[9px] py-[7px] text-xs text-text">
         {approval.command_preview}
       </pre>
 
-      <p className="mt-2 text-xs text-slate-400">{approval.reason}</p>
+      <p className="m-0 text-[11.5px] leading-[1.5] text-text-2">
+        <b className="font-semibold text-text">Why it stopped here:</b> {approval.reason}
+      </p>
       {approval.summary && (
-        <p className="mt-1 text-xs text-slate-400">
-          <span className="text-slate-500">It says this is because:</span>{" "}
-          {approval.summary}
+        <p className="m-0 text-[11.5px] leading-[1.5] text-text-3">
+          <span className="text-text-faint">It says this is because:</span> {approval.summary}
         </p>
       )}
 
       {/* Whether this can be undone is part of what is being decided, so
           it is stated before the buttons rather than discovered after. */}
-      <p
-        className={`mt-2 text-xs ${
-          approval.snapshot_expected ? "text-slate-400" : "text-amber-300"
-        }`}
-      >
+      <p className={`m-0 text-[11.5px] leading-[1.5] ${approval.snapshot_expected ? "text-text-3" : "font-medium text-text"}`}>
         {approval.snapshot_expected
           ? "A snapshot will be taken first, so this can be rolled back."
           : "No snapshot will be taken — this host has no Proxmox VM mapping, or snapshots are switched off. There will be no rollback point."}
       </p>
       {expires && (
-        <p className="mt-1 text-xs text-slate-500">
-          Expires {expires.toLocaleString()} — after that it is treated as not
-          approved and the session finishes without it.
+        <p className="m-0 text-[11px] text-text-3">
+          After it expires it is treated as not approved and the session finishes without it.
         </p>
       )}
 
       {showNote && (
-        <Textarea
-          className="mt-3 text-sm"
+        <textarea
+          className="inp"
           rows={2}
+          aria-label="why not"
           placeholder="Why not? This is passed back to the assistant."
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          disabled={pending}
-          onClick={() => onDecide(true, "")}
-          className="bg-emerald-600 text-white hover:bg-emerald-500"
-        >
-          <Check className="mr-1 h-4 w-4" aria-hidden />
+      <div className="flex flex-wrap gap-[7px]">
+        <button type="button" className="btn btn-sm btn-primary" disabled={pending} onClick={() => onDecide(true, "")}>
           Approve and run
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
           disabled={pending}
           onClick={() => {
             if (!showNote) {
@@ -127,9 +117,8 @@ export function ApprovalCard({ approval, hostName, onDecide, pending }: Props) {
             onDecide(false, note)
           }}
         >
-          <X className="mr-1 h-4 w-4" aria-hidden />
           {showNote ? "Confirm rejection" : "Reject"}
-        </Button>
+        </button>
       </div>
     </div>
   )
@@ -141,12 +130,6 @@ const DECIDED_LABEL: Record<string, string> = {
   expired: "Expired — nobody decided, so it was not run",
 }
 
-const DECIDED_STYLE: Record<string, string> = {
-  approved: "border-emerald-700/60 bg-emerald-950/20",
-  rejected: "border-slate-700 bg-slate-900/60",
-  expired: "border-slate-700 bg-slate-900/60",
-}
-
 /**
  * A decided request stays in the transcript rather than disappearing.
  * "The assistant asked to restart nginx and I said no" is part of the
@@ -154,19 +137,15 @@ const DECIDED_STYLE: Record<string, string> = {
  * turn responding to something the operator can no longer see.
  */
 function DecidedApproval({ approval }: { approval: AIApprovalRequest }) {
+  const tone = def(AI_APPROVAL, approval.status).tone
   return (
-    <div className={`rounded-md border p-3 ${DECIDED_STYLE[approval.status] ?? ""}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-slate-300">
-          {DECIDED_LABEL[approval.status] ?? approval.status}
-        </span>
-      </div>
-      <pre className="mt-2 overflow-x-auto rounded bg-slate-950 px-2 py-1 font-mono text-xs text-slate-300">
-        {approval.command_preview}
-      </pre>
-      {approval.decision_note && (
-        <p className="mt-2 text-xs text-slate-400">{approval.decision_note}</p>
-      )}
+    <div className="flex flex-col gap-1.5 rounded-r border border-line bg-surface p-2.5">
+      <span className="flex items-center gap-2 text-[11.5px] font-medium text-text-2">
+        <Dot tone={tone} />
+        {DECIDED_LABEL[approval.status] ?? approval.status}
+      </span>
+      <pre className="mono m-0 overflow-x-auto text-[11px] text-text-2">{approval.command_preview}</pre>
+      {approval.decision_note && <p className="m-0 text-[11px] text-text-3">{approval.decision_note}</p>}
     </div>
   )
 }

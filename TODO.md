@@ -36,7 +36,9 @@ CONTRIBUTING asks for docs per PR, but here every screen changes and the
 prose would be rewritten six times. Docs and the `docs/ui/screenshots/`
 set land together in one follow-up once the last PR is in. Each PR appends
 what it made stale; this section is the input to that follow-up and is
-deleted when it lands.
+deleted when it lands. The sweep PR (`feat/theme-f-sweep` — assistant,
+sign-in, error pages, and the removal of the legacy palette and shadcn/ui)
+is the last of the series, so the list below is complete.
 
 ### `frontend/FRONTEND.md`
 
@@ -54,15 +56,49 @@ deleted when it lands.
   (`components/ui/confirm-dialog.tsx` is gone — every caller now imports
   `Confirm` directly).
 - "Loading States": no skeletons — `Table loading`, a pulsing `Dot`, a
-  button label swap.
+  button label swap. `useDelayedLoading` is gone from `lib/utils.ts`.
 - "Tooltips": `title=` on icon-only affordances, `Help` (a `<details>`)
-  for paragraphs, `Field hint=` for one-liners; `InfoPopover` goes.
-- The `.btn` comment in `globals.css` no longer says `components/ui/button`
-  stays for dialogs; the "Stack" row still lists shadcn. `components/ui/`
-  is down to `badge button input label markdown select textarea` —
-  `data-table table-filter-cell table dialog tooltip card breadcrumb
-  skeleton confirm-dialog` and `hooks/{use-table-state,use-column-resize}`
-  are gone, their last callers converted.
+  for paragraphs, `Field hint=` for one-liners; `InfoPopover` goes. The
+  example's lucide `InfoIcon` has nothing to import any more.
+- `components/ui/` is gone — the directory, `components.json`, and the
+  `shadcn`, `tw-animate-css`, `lucide-react`, `class-variance-authority`,
+  `clsx` and `tailwind-merge` packages (no importer was left). `lib/utils.ts`
+  keeps only `formatTimestamp`; `cn()` and `formatRelativeTime` went with
+  their callers (`shortAgo` in `lib/fleet.ts` is the relative time).
+- "Stack": the UI row is the LabDog kit (`components/ld`) alone; drop the
+  "Icons | Lucide React" row (the design is text-first: `▾ ▸ →` glyphs,
+  `Dot`, `Tag`) and the "Drag & Drop | @dnd-kit" row (gone since the
+  module-editors PR).
+- "Shell": `zones.ts` no longer exports `isFlushRoute` — `FLUSH_ROUTES` /
+  `FLUSH_PATTERNS` are deleted and the shell's `<main>` is always the flush
+  column, because every route is a screen. The "Legacy routes" paragraph's
+  second half (pages rendered unchanged in a padded `<main>`) is no longer
+  true of any route.
+- "Screens on the shell vs legacy pages" → "Screens": there is no legacy
+  page pattern left to contrast with (`space-y-6` + `Breadcrumb` + `<h1>`).
+- "Typography" › "Usage (legacy pages)", "Color Palette" › "Legacy palette"
+  with its Surfaces / Borders / Text / Semantic Badge Colors tables, the
+  "Design tokens" paragraph about shadcn's re-pointed variables and
+  `--ui-accent`, "Page Structure" (the legacy template), and "Component
+  Patterns" › "Tables" / "Dialogs" / "Badges" / "Forms" as written for
+  shadcn: all describe CSS or components that no longer exist. The
+  light-theme slate bridge in `globals.css` is deleted too; say the
+  `ld-accent` colour name is historical (see the `@theme` comment).
+- "Breadcrumbs": `PageHead crumbs` (a `<nav aria-label="breadcrumb">` of
+  parents only — the title is the current page); `ui/breadcrumb` is gone.
+- "Auth Patterns": the example paints with slate classes and links to
+  `/dashboard`; the sign-in and setup cards are `AuthCard` / `AuthHeading`
+  from `components/auth-background.tsx` with `Field` + `.inp`.
+- "Error Boundaries": `error.tsx` is a kit card — a danger `Banner` with
+  the message, "Try again" and "Go to Overview", no icon; `global-error.tsx`
+  is still inline-styled, in the dark theme's token values.
+- "File Conventions": drop the `components/ui/*.tsx` row; `lib/utils.ts`
+  is `formatTimestamp`, not `cn()`; `components/ai/*` holds the assistant's
+  pieces (transcript, tool call, approval gate, session list and aside,
+  markdown renderer).
+- "Things NOT Used": the "shadcn Select … migration planned" row — native
+  `<select className="inp">` is the design, not a stopgap; add "an icon
+  library".
 
 ### `docs/ui/*.md`
 
@@ -126,6 +162,32 @@ deleted when it lands.
   confirmations. New host (`/hosts/new`) and New group (`/groups/new`) are
   shell screens with the design's form recipe; the group multi-select on
   both is an always-visible checkbox box, not a dropdown.
+- `assistant.md` — the page is three columns: sessions on the left, the
+  transcript and composer in the middle, and a right-hand column. Before
+  a session starts that column holds its choices — provider, autonomy (a
+  Read-only · Approval · Full auto switch), skip snapshots, and hosts in
+  scope with a filter — so "Starting a session" steps 1–2 should say
+  where they are. Once it runs, the column shows the session's autonomy
+  and scope, turns / commands / tokens / cost, tool calls by verdict, the
+  snapshots taken, and the fleet-wide budget meters (today, this month).
+  Each command is a block (verdict chip, command, host, one-line result),
+  not a "badge"; the approval card is the design's approval gate with the
+  same content. Deleting a session asks in a dialog. The no-provider
+  notice points to Settings → AI. Below 1024px the columns stack:
+  sessions, transcript, composer, then the settings.
+- `README.md` — "Screenshots" says every image shows the actual UI; until
+  the retake, say they predate the theme. Every route is a screen now —
+  there is no page left in the old layout.
+- `actions.md` — the pack manifest's `icon:` field is documented as "a
+  lucide-react icon name", but nothing draws it any more: the action
+  cards that did went in the operations PR, and `lucide-react` is gone
+  with the sweep. Say the field is currently unused by the UI, or drop it.
+
+### Other stack mentions
+
+- `CLAUDE.md` (repo root) "Frontend" row, `frontend/README.md` (stack
+  list) and `docs/README.md` (the stack table, and the tree comment on
+  `components/`) still say shadcn/ui.
 
 ### `docs/ui/screenshots/`
 
@@ -139,6 +201,9 @@ deleted when it lands.
   that has both group and host rows, and once with Terminal open). From
   operations and discovery: `hosts-discover.png` (the scan-now tab,
   mid-scan and with results), `discovery.png` (the scan-schedules tab).
+  From the sweep: `login.png` (the sign-in card on the theme). There is no
+  Assistant screenshot; one of a session parked at an approval gate would
+  show all three columns.
 
 ---
 
@@ -330,11 +395,6 @@ added. These are the deferred hardening/maintenance tasks that remain.
       in `eslint.config.mjs`. The nine `incompatible-library` warnings are
       react-hook-form's `watch()` and stay until that library is replaced or
       the rule learns it.
-
-- [ ] **`lucide-react` 0.577 → 1.x.** Breaking (brand icons removed) — plan
-      separately; the safe react-query / tailwindcss / zod / react-hook-form
-      minor bumps have already landed.
-
 
 ---
 

@@ -2,32 +2,31 @@
 
 import { useEffect } from "react"
 import Link from "next/link"
-import { AlertTriangleIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Banner } from "@/components/ld"
 
-export default function DashboardError({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string }
-  reset: () => void
-}) {
+/**
+ * A screen that threw while rendering. The shell around it still works —
+ * rail, pane and palette are outside this boundary — so this only has to
+ * say what broke and offer the two ways on: try the screen again, or go
+ * somewhere that works.
+ */
+export default function DashboardError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   useEffect(() => {
     console.error(error)
   }, [error])
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950">
-      <div className="rounded-xl border border-slate-700 bg-slate-900 p-8 max-w-md w-full text-center space-y-4">
-        <AlertTriangleIcon className="w-12 h-12 text-red-400 mx-auto" />
-        <h2 className="text-xl font-bold text-white">Something went wrong</h2>
-        <p className="text-slate-400 text-sm">
-          {error.message || "An unexpected error occurred."}
-        </p>
-        <div className="flex gap-3 justify-center pt-2">
-          <Button onClick={reset}>Try Again</Button>
-          <Link href="/overview">
-            <Button variant="outline">Go to Overview</Button>
+    <div className="flex flex-1 items-center justify-center overflow-y-auto p-6">
+      <div className="flex w-full max-w-[440px] flex-col gap-3.5 rounded-r-lg border border-line-strong bg-surface p-6 shadow-ld">
+        <h1 className="m-0 text-[15px] font-semibold text-text">Something went wrong</h1>
+        <Banner tone="danger">{error.message || "An unexpected error occurred."}</Banner>
+        {error.digest && <span className="mono text-[11px] text-text-3">digest {error.digest}</span>}
+        <div className="flex flex-wrap gap-[7px]">
+          <button type="button" className="btn btn-primary" onClick={reset}>
+            Try again
+          </button>
+          <Link href="/overview" className="btn hover:no-underline">
+            Go to Overview
           </Link>
         </div>
       </div>

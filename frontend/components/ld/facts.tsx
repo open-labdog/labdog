@@ -52,7 +52,8 @@ export function Stat({ label, value, sub, tone, className }: { label: string; va
  * A command, a log, a config snippet: a bordered box with an optional
  * surface-2 header (tag + mono title + actions) over a `<pre>` at the
  * design's log measure — 11px mono, 1.75 line height. `preRef` lets a
- * live log pin itself to the bottom.
+ * live log pin itself to the bottom. With no children it is the header
+ * alone — a command that has not produced output yet.
  */
 export function CodeBlock({
   title,
@@ -67,29 +68,32 @@ export function CodeBlock({
   title?: ReactNode
   tag?: ReactNode
   actions?: ReactNode
-  children: ReactNode
+  children?: ReactNode
   maxH?: number | string
   wrap?: boolean
   preRef?: RefObject<HTMLPreElement | null>
   className?: string
 }) {
   const hasHead = title != null || tag != null || actions != null
+  const hasBody = children != null && children !== false && children !== ""
   return (
     <div className={`flex min-w-0 flex-col overflow-hidden rounded-r border border-line bg-surface ${className ?? ""}`}>
       {hasHead && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-line bg-surface-2 px-2.5 py-1.5">
+        <div className={`flex shrink-0 items-center gap-2 bg-surface-2 px-2.5 py-1.5 ${hasBody ? "border-b border-line" : ""}`}>
           {tag}
           {title != null && <span className="mono trunc text-[11.5px] text-text">{title}</span>}
           {actions && <div className="ml-auto flex items-center gap-1.5">{actions}</div>}
         </div>
       )}
-      <pre
-        ref={preRef}
-        className="mono scroll m-0 px-2.5 py-2 text-[11px] leading-[1.75] text-text-2"
-        style={{ maxHeight: maxH, whiteSpace: wrap ? "pre-wrap" : "pre", wordBreak: wrap ? "break-word" : undefined }}
-      >
-        {children}
-      </pre>
+      {hasBody && (
+        <pre
+          ref={preRef}
+          className="mono scroll m-0 px-2.5 py-2 text-[11px] leading-[1.75] text-text-2"
+          style={{ maxHeight: maxH, whiteSpace: wrap ? "pre-wrap" : "pre", wordBreak: wrap ? "break-word" : undefined }}
+        >
+          {children}
+        </pre>
+      )}
     </div>
   )
 }
