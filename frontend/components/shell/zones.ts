@@ -165,7 +165,9 @@ export function zoneDef(k: ZoneKey): ZoneDef {
 const FLUSH_ROUTES = [
   "/overview",
   "/hosts",
+  "/hosts/new",
   "/groups",
+  "/groups/new",
   "/discovery",
   "/plans",
   "/drift",
@@ -180,7 +182,7 @@ const FLUSH_ROUTES = [
   "/hypervisors",
   "/ai-providers",
 ]
-const FLUSH_PATTERNS = [/^\/groups\/\d+$/, /^\/git-repos\/\d+$/]
+const FLUSH_PATTERNS = [/^\/groups\/\d+$/, /^\/git-repos\/\d+$/, /^\/hosts\/\d+$/, /^\/hosts\/\d+\/terminal$/]
 
 export function isFlushRoute(pathname: string): boolean {
   const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname

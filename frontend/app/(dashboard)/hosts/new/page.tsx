@@ -5,16 +5,11 @@ import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { InfoIcon } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { Tooltip } from "@/components/ui/tooltip"
-import { GroupMultiSelect } from "@/components/group-multi-select"
 import { apiFetch } from "@/lib/api"
 import { hostSchema, type HostInput } from "@/lib/schemas"
 import type { SSHKey, HostGroup } from "@/lib/types"
+import { Banner, Field, PageHead, Panel } from "@/components/ld"
+import { GroupMultiSelect } from "@/components/group-multi-select"
 
 export default function NewHostPage() {
   const router = useRouter()
@@ -27,23 +22,14 @@ export default function NewHostPage() {
     mode: "onSubmit",
   })
 
-  const { data: sshKeys } = useQuery<SSHKey[]>({
-    queryKey: ["ssh-keys"],
-    queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys"),
-  })
-
-  const { data: groups } = useQuery<HostGroup[]>({
-    queryKey: ["groups"],
-    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-  })
+  const { data: sshKeys } = useQuery<SSHKey[]>({ queryKey: ["ssh-keys"], queryFn: () => apiFetch<SSHKey[]>("/api/ssh-keys") })
+  const { data: groups } = useQuery<HostGroup[]>({ queryKey: ["groups"], queryFn: () => apiFetch<HostGroup[]>("/api/groups") })
 
   const selectedGroupIds = (form.watch("group_ids") ?? []).map(Number)
-
 
   const onSubmit = form.handleSubmit(async (data) => {
     setError(null)
     setLoading(true)
-
     try {
       await apiFetch("/api/hosts", {
         method: "POST",
@@ -66,150 +52,55 @@ export default function NewHostPage() {
   })
 
   return (
-    <div className="max-w-lg space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: "New Host" }]} />
-      <div>
-        <h1 className="text-2xl font-bold text-white">Add Host</h1>
-        <p className="text-slate-400 text-sm mt-1">Register a new host for firewall management</p>
-      </div>
-
-      <div className="rounded-lg border border-slate-700 bg-slate-900 p-6">
-        <form onSubmit={onSubmit} noValidate className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5">
-              <Label htmlFor="hostname">Hostname</Label>
-              <Tooltip content="Leave empty to auto-detect via SSH (requires an SSH key)">
-                <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-              </Tooltip>
+    <>
+      <PageHead crumbs={[{ label: "fleet", href: "/hosts" }, { label: "hosts", href: "/hosts" }]} title="Add Host" sub="Register a new host for firewall management" />
+      <div className="scroll flex flex-1 flex-col p-3.5">
+        <Panel pad={13} style={{ maxWidth: 480 }}>
+          <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3">
+            <Field label="hostname" htmlFor="hostname" hint="leave empty to auto-detect via SSH" error={form.formState.errors.hostname?.message}>
+              <input id="hostname" className="inp mono" placeholder="leave empty to auto-detect via SSH" {...form.register("hostname")} />
+            </Field>
+            <Field label="ip address" htmlFor="ip_address" error={form.formState.errors.ip_address?.message}>
+              <input id="ip_address" className="inp mono" placeholder="e.g. 192.168.1.100" {...form.register("ip_address")} />
+            </Field>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="ssh port" htmlFor="ssh_port" hint="default 22" error={form.formState.errors.ssh_port?.message}>
+                <input id="ssh_port" type="number" min={1} max={65535} className="inp mono num" {...form.register("ssh_port", { valueAsNumber: true })} />
+              </Field>
+              <Field label="ssh user" htmlFor="ssh_user" hint="default root" error={form.formState.errors.ssh_user?.message}>
+                <input id="ssh_user" className="inp mono" placeholder="root" {...form.register("ssh_user")} />
+              </Field>
             </div>
-            <Input
-              id="hostname"
-              type="text"
-              placeholder="Leave empty to auto-detect via SSH"
-              {...form.register("hostname")}
-            />
-            {form.formState.errors.hostname && (
-              <p className="text-sm text-red-400">{form.formState.errors.hostname.message}</p>
+            <Field label="ssh key" htmlFor="ssh_key">
+              <select id="ssh_key" className="inp" {...form.register("ssh_key_id")}>
+                <option value="">No SSH key</option>
+                {sshKeys?.map((key) => <option key={key.id} value={key.id}>{key.name}{key.is_default ? " (default)" : ""}</option>)}
+              </select>
+            </Field>
+
+            {groups && groups.length > 0 && (
+              <GroupMultiSelect groups={groups} selected={selectedGroupIds} onChange={(ids) => form.setValue("group_ids", ids.map(String))} />
             )}
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="ip_address">IP Address</Label>
-            <Input
-              id="ip_address"
-              type="text"
-              placeholder="e.g. 192.168.1.100"
-              {...form.register("ip_address")}
-            />
-            {form.formState.errors.ip_address && (
-              <p className="text-sm text-red-400">{form.formState.errors.ip_address.message}</p>
-            )}
-          </div>
-
-           <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="ssh_port">SSH Port</Label>
-                <Tooltip content="Default is 22. Change if your server uses a non-standard SSH port.">
-                  <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                </Tooltip>
-              </div>
-              <Input
-                id="ssh_port"
-                type="number"
-                {...form.register("ssh_port", { valueAsNumber: true })}
-                min={1}
-                max={65535}
-              />
-              {form.formState.errors.ssh_port && (
-                <p className="text-sm text-red-400">{form.formState.errors.ssh_port.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-1.5">
-                <Label htmlFor="ssh_user">SSH User</Label>
-                <Tooltip content="SSH username for connecting to the host. Default is 'root'.">
-                  <InfoIcon className="w-3.5 h-3.5 text-slate-500 cursor-help" />
-                </Tooltip>
-              </div>
-              <Input
-                id="ssh_user"
-                type="text"
-                placeholder="root"
-                {...form.register("ssh_user")}
-              />
-              {form.formState.errors.ssh_user && (
-                <p className="text-sm text-red-400">{form.formState.errors.ssh_user.message}</p>
-              )}
-            </div>
-
-           <div className="space-y-2">
-            <Label htmlFor="ssh_key">SSH Key</Label>
-            <select
-              id="ssh_key"
-              {...form.register("ssh_key_id")}
-              className="w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:border-ring dark:bg-input/30"
-            >
-              <option value="">No SSH key</option>
-              {sshKeys?.map((key) => (
-                <option key={key.id} value={key.id}>
-                  {key.name}{key.is_default ? " (default)" : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {groups && groups.length > 0 && (
-            <GroupMultiSelect
-              groups={groups}
-              selected={selectedGroupIds}
-              onChange={(ids) => form.setValue("group_ids", ids.map(String))}
-            />
-          )}
-
-          {/*
-            Drift checking stays off by default at the API and for every
-            host already added — the default is a deliberate choice, not an
-            oversight. What was missing is that nobody was ever asked. This
-            asks, at the moment someone is already deciding to manage the
-            host, and it is ticked because that is the answer most people
-            adding a host to a config-management tool want.
-          */}
-          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700 bg-slate-800/40 px-4 py-3">
-            <input
-              type="checkbox"
-              className="mt-0.5 cursor-pointer"
-              {...form.register("drift_check_enabled")}
-            />
-            <span className="text-sm">
-              <span className="font-medium">Check this host for drift</span>
-              <span className="mt-0.5 block text-xs text-slate-400">
-                LabDog will connect over SSH on a timer and report where the
-                host has diverged from its desired configuration. Read-only —
-                it never changes the host. You can turn this off per module
-                later.
+            <label className="flex items-start gap-2.5 rounded-r border border-line bg-surface-2 px-3.5 py-2.5">
+              <input type="checkbox" className="mt-0.5" {...form.register("drift_check_enabled")} />
+              <span className="text-xs text-text">
+                <span className="font-medium">Check this host for drift</span>
+                <span className="mt-0.5 block text-[11px] text-text-3">
+                  LabDog connects over SSH on a timer and reports where the host has diverged from its desired configuration. Read-only — it never changes the host. Turn this off per module later.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
 
-          {error && (
-            <p className="text-sm text-red-400">{error}</p>
-          )}
+            {error && <Banner tone="danger">{error}</Banner>}
 
-          <div className="flex gap-3 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => router.push("/hosts")}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add Host"}
-            </Button>
-          </div>
-        </form>
+            <div className="flex gap-2.5 pt-1">
+              <button type="button" className="btn" onClick={() => router.push("/hosts")}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={loading}>{loading ? "Adding…" : "Add Host"}</button>
+            </div>
+          </form>
+        </Panel>
       </div>
-    </div>
+    </>
   )
 }
