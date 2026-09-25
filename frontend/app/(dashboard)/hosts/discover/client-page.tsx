@@ -166,8 +166,8 @@ export default function DiscoverHostsPage() {
       {(phase === "done" || phase === "adding") && selectedHosts.size > 0 && !addResult && (
         <Panel title={`add ${selectedHosts.size} host${selectedHosts.size !== 1 ? "s" : ""}`} pad={11}>
           <div className="flex flex-col gap-2.5">
-            <Field as="div" label="ssh key">
-              <select className="inp" value={selectedKeyId ?? ""} disabled={phase === "adding"} onChange={(e) => setSelectedKeyId(e.target.value ? Number(e.target.value) : null)}>
+            <Field label="ssh key" htmlFor="discover-ssh-key">
+              <select id="discover-ssh-key" className="inp" value={selectedKeyId ?? ""} disabled={phase === "adding"} onChange={(e) => setSelectedKeyId(e.target.value ? Number(e.target.value) : null)}>
                 <option value="">No SSH key</option>
                 {sshKeys?.map((key) => <option key={key.id} value={key.id}>{key.name}{key.is_default ? " (default)" : ""}</option>)}
               </select>

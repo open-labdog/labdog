@@ -72,8 +72,22 @@ function CidrTagInput({ value, onChange }: { value: string[]; onChange: (tags: s
     <>
       <div className="inp mono flex min-h-[32px] flex-wrap items-center gap-1.5 py-1.5" onClick={() => inputRef.current?.focus()}>
         {value.map((cidr) => (
-          <Tag key={cidr} onClick={() => onChange(value.filter((c) => c !== cidr))} title="click to remove">
-            {cidr} ×
+          <Tag key={cidr}>
+            {cidr}
+            {/* mousedown is swallowed so a half-typed CIDR is not added by
+                the input's blur before this removes the chip */}
+            <button
+              type="button"
+              className="ml-1 cursor-pointer border-0 bg-transparent p-0 text-inherit"
+              aria-label={`remove ${cidr}`}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onChange(value.filter((c) => c !== cidr))
+              }}
+            >
+              ×
+            </button>
           </Tag>
         ))}
         <input
@@ -87,6 +101,7 @@ function CidrTagInput({ value, onChange }: { value: string[]; onChange: (tags: s
           }}
           onBlur={() => (inputVal.trim() ? validateAndAdd(inputVal) : setInputError(null))}
           placeholder={value.length === 0 ? "e.g. 192.168.1.0/24 — enter to add" : ""}
+          aria-label="add a cidr"
           className="min-w-[140px] flex-1 border-0 bg-transparent p-0 outline-none"
         />
       </div>
@@ -159,7 +174,7 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
       </Field>
 
       <div className="grid grid-cols-1 gap-[11px] sm:grid-cols-[1fr_100px]">
-        <Field as="div" label="ssh key" error={errors.ssh_key_id?.message}>
+        <Field label="ssh key" htmlFor="sc-ssh-key" error={errors.ssh_key_id?.message}>
           <select id="sc-ssh-key" className="inp mono" {...form.register("ssh_key_id", { setValueAs: (v: string) => (v === "" ? 0 : parseInt(v, 10)) })}>
             <option value="">— select a key —</option>
             {sshKeys.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
@@ -181,8 +196,8 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
           <Field label="every" htmlFor="sc-interval-value" error={errors.interval_value?.message}>
             <input id="sc-interval-value" type="number" min={1} max={10080} className="inp mono num" placeholder="60" {...form.register("interval_value", { setValueAs: (v: string) => (v === "" ? null : parseInt(v, 10)) })} />
           </Field>
-          <Field as="div" label="unit">
-            <select className="inp" {...form.register("interval_unit")}>
+          <Field label="unit" htmlFor="sc-interval-unit">
+            <select id="sc-interval-unit" className="inp" {...form.register("interval_unit")}>
               <option value="minutes">minutes</option>
               <option value="hours">hours</option>
               <option value="days">days</option>
@@ -192,7 +207,19 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
       )}
 
       {scheduleType === "cron" && (
-        <Field label="cron expression" htmlFor="sc-cron" hint="5-field cron — minute hour day month weekday" error={errors.cron_expression?.message}>
+        <Field
+          label="cron expression"
+          htmlFor="sc-cron"
+          hint={
+            <>
+              5-field cron — minute hour day month weekday ·{" "}
+              <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer" className="underline hover:text-text-2">
+                crontab.guru ↗
+              </a>
+            </>
+          }
+          error={errors.cron_expression?.message}
+        >
           <input id="sc-cron" className="inp mono" placeholder="0 2 * * *" {...form.register("cron_expression")} />
         </Field>
       )}

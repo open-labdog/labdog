@@ -92,17 +92,18 @@ deleted when it lands.
   in the footer, not a slide-in drawer. `/schedules` redirects into the
   Actions page's Schedules tab (already true before this PR; the tab's
   own content is what changed here).
-- `operations.md` — Audit is a screen with `action`/`entity` head filters
-  (chips, not per-column popovers) and a `CodeBlock` transcript modal.
-  Alerts is a list screen (`Seg` firing/all) under the Assistant zone, not
-  a stack of cards.
-- `hosts-discover.md`, `discovery.md` (if these exist as separate sections —
-  otherwise fold into `hosts.md`) — Discovery's three tabs (pending,
-  schedules, scan now) are all `Toolbar` + `Table` now; the scan-schedule
-  list drops its kebab menu for inline `edit · run now · pending · delete`;
-  the pending queues (fleet-wide and per-scan) select rows with the kit
-  `Table`'s own checkbox column, not a bespoke table component.
-
+- `operations.md` › Audit — a search box (user, entity, IP address),
+  from/to dates and `action`/`entity` chips in the head, all applied to
+  the entries loaded so far (load more fetches the next 100); the SSH
+  transcript is a modal with a `CodeBlock`.
+- `alerts.md` — Alerts is a list screen (a `Seg` firing/all switch, one
+  table row per alert) under the Assistant zone, not a stack of cards;
+  investigate and view → are the row's actions.
+- `hosts.md` › Discovery — the three tabs (pending, schedules, scan now)
+  are all `Toolbar` + `Table` now; the scan-schedule list drops its kebab
+  menu for inline `edit · run now · pending · delete`; the pending queues
+  (fleet-wide and per-scan) select rows with the kit `Table`'s own
+  checkbox column, not a bespoke table component.
 - `groups.md` — "## Group Detail" › Config: the module list + editor pattern
   is unchanged, but every editor (rules, services, hosts file, packages,
   users, cron, resolver, CA certs) is now `components/config/*-editor.tsx`,

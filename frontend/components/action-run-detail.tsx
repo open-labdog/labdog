@@ -183,7 +183,7 @@ export function ActionRunDetail({ runId }: { runId: number }) {
   const cleanTargetLabel = (run?.target_label ?? "").replace(/^group:\s*/i, "")
 
   const crumbs = run?.host_id
-    ? [{ label: "fleet", href: "/hosts" }, { label: "hosts", href: "/hosts" }, { label: cleanTargetLabel, href: `/hosts/${run.host_id}?tab=activity` }]
+    ? [{ label: "fleet", href: "/hosts" }, { label: "hosts", href: "/hosts" }, { label: cleanTargetLabel, href: `/hosts/${run.host_id}?tab=actions` }]
     : run?.group_id
       ? [{ label: "fleet", href: "/hosts" }, { label: "groups", href: "/groups" }, { label: cleanTargetLabel, href: `/groups/${run.group_id}?tab=activity` }]
       : [{ label: "operations", href: "/plans" }, { label: "runs", href: "/runs" }]

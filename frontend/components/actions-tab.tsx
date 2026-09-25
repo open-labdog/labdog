@@ -71,6 +71,8 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
   // catalog here; the schedule dialog still surfaces them.
   const filteredCatalog = (catalog ?? []).filter((a) => !a.key.startsWith("_builtin.") && (scope === "host" ? a.supports_host : a.supports_group))
   const runsBasePath = scope === "host" ? `/hosts/${targetId}` : `/groups/${targetId}`
+  // Newest first, so the first match is the latest — within the 20 loaded.
+  const lastRun = (key: string) => (runs ?? []).find((r) => r.action_key === key)
 
   return (
     <div className="scroll flex flex-1 flex-col gap-3 p-3.5">
@@ -90,6 +92,15 @@ export function ActionsTab({ scope, targetId, host }: ActionsTabProps) {
                 ),
               },
               { k: "desc", label: "what it does", w: "minmax(120px,1.4fr)", sortable: false, cell: (a) => <span className="trunc text-[11px] text-text-3" title={a.description}>{a.description}</span> },
+              {
+                k: "last", label: "last run", w: "84px", sortable: false,
+                cell: (a) => {
+                  const r = lastRun(a.key)
+                  return r
+                    ? <span className="mono num text-[11px] text-text-3" title={new Date(r.created_at).toLocaleString()}>{shortAgo(r.created_at)} ago</span>
+                    : <span className="text-[11px] text-text-faint" title="not among the 20 most recent runs">—</span>
+                },
+              },
               {
                 k: "actions", label: "", w: "150px", right: true, sortable: false,
                 cell: (a) => (

@@ -151,8 +151,6 @@ The format follows [Keep a Changelog]; LabDog follows
   its own host list, so adding or removing a membership reads the same from
   either side of it.
 
-### Changed (operations and discovery)
-
 - **Run detail, schedules, the Actions tab, Discovery and Audit are on the
   theme.** A run's page (from a host, a group, or the generic fleet route)
   is a screen now: crumbs to the host or group it ran against (or
@@ -162,18 +160,19 @@ The format follows [Keep a Changelog]; LabDog follows
   is a `Modal` with `Steps` for its four stages; the schedule list's row
   actions are inline `edit · runs · delete`, and "Run history" is a modal
   with a table of runs and Run now in the footer, not a slide-in panel.
-  Audit's per-column filter popovers become `action`/`entity` chips in the
-  page head — `entity` had no fixed vocabulary before and still does not,
-  so its options are whatever has loaded; `action`'s do, so all of them are
-  always offered. Alerts is a list screen (a firing/all switch, one row per
-  alert) instead of a stack of cards, and moves under the Assistant zone's
-  crumb, matching where it already lived in the rail. Discovery's three
-  tabs — the pending queue (fleet-wide and per-scan-config), the recurring
-  scan-schedule list, and the manual scan-now form — are `Toolbar` +
-  `Table` throughout; the schedule list drops its `createPortal` kebab menu
-  for inline actions, and the pending queues select rows with the kit
-  table's own checkbox column instead of a bespoke table component that
-  existed only to duplicate it.
+  Audit's per-column filter popovers become a search box (user, entity, IP
+  address), from/to dates and `action`/`entity` chips in the page head, all
+  applied to what has loaded — `entity`'s options come from the loaded
+  entries, having no fixed vocabulary; `action`'s are the fixed list, every
+  one always offered. Alerts is a list screen (a firing/all switch, one row
+  per alert) instead of a stack of cards, and moves under the Assistant
+  zone's crumb, matching where it already lived in the rail. Discovery's
+  three tabs — the pending queue (fleet-wide and per-scan-config), the
+  recurring scan-schedule list, and the manual scan-now form — are
+  `Toolbar` + `Table` throughout; the schedule list drops its
+  `createPortal` kebab menu for inline actions, and the pending queues
+  select rows with the kit table's own checkbox column instead of a bespoke
+  table component that existed only to duplicate it.
 
 ### Removed
 

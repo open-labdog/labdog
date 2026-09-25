@@ -39,10 +39,16 @@ function TranscriptModal({ sessionId, onClose }: { sessionId: string; onClose: (
  *  worth of filtering material in hand without a slow first paint. */
 const PAGE_SIZE = 100
 
+const userLabel = (e: AuditLogEntry) => e.user_email ?? (e.user_id ? `user #${e.user_id}` : "system")
+const entityLabel = (e: AuditLogEntry) => `${e.entity_type.replace(/_/g, " ")}${e.entity_id ? ` #${e.entity_id}` : ""}`
+
 export default function AuditPage() {
   const [transcriptSessionId, setTranscriptSessionId] = useState<string | null>(null)
   const [actionFilter, setActionFilter] = useState("all")
   const [entityFilter, setEntityFilter] = useState("all")
+  const [q, setQ] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
 
   // Cursor-paginated (BUG-75). This used to fetch once with no `limit`,
   // which meant the backend default of 50 — everything older than the
@@ -76,14 +82,35 @@ export default function AuditPage() {
     return [...counts.entries()].map(([k, n]) => ({ k, label: k.replace(/_/g, " "), n }))
   }, [entries])
 
-  const filtered = entries.filter((e) => (actionFilter === "all" || e.action === actionFilter) && (entityFilter === "all" || e.entity_type === entityFilter))
+  // Every filter applies to what has loaded, as the per-column filters it
+  // replaces did. The search matches the user, the entity (`type #id`) and
+  // the IP address; the dates compare an entry's UTC day, both inclusive.
+  const ql = q.trim().toLowerCase()
+  const filtering = actionFilter !== "all" || entityFilter !== "all" || !!ql || !!from || !!to
+  const filtered = entries.filter((e) => {
+    if (actionFilter !== "all" && e.action !== actionFilter) return false
+    if (entityFilter !== "all" && e.entity_type !== entityFilter) return false
+    const day = e.created_at.slice(0, 10)
+    if (from && day < from) return false
+    if (to && day > to) return false
+    return !ql || [userLabel(e), entityLabel(e), e.entity_type, e.ip_address ?? ""].some((v) => v.toLowerCase().includes(ql))
+  })
 
   return (
     <>
       <PageHead crumbs={[{ label: "operations", href: "/plans" }]} title="Audit" sub="Track all changes made to firewall configuration">
         <div className="flex flex-wrap items-center gap-[7px]">
+          <input className="inp mono" style={{ width: 200 }} placeholder="user, entity or ip…" aria-label="search the audit log" value={q} onChange={(e) => setQ(e.target.value)} />
           <Filter label="action" value={actionFilter} onChange={setActionFilter} options={actionOptions} />
           <Filter label="entity" value={entityFilter} onChange={setEntityFilter} options={entityOptions} />
+          <label className="flex items-center gap-1.5">
+            <span className="tt">from</span>
+            <input type="date" className="inp mono" style={{ width: 140 }} aria-label="from date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="tt">to</span>
+            <input type="date" className="inp mono" style={{ width: 140 }} aria-label="to date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </label>
         </div>
       </PageHead>
 
@@ -92,9 +119,9 @@ export default function AuditPage() {
       <Table<AuditLogEntry>
         cols={[
           { k: "when", label: "when", w: "160px", sortable: false, cell: (e) => <span className="mono text-[11px] text-text-3">{new Date(e.created_at).toLocaleString()}</span> },
-          { k: "user", label: "user", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <span className="text-text-2">{e.user_email ?? (e.user_id ? `user #${e.user_id}` : "system")}</span> },
+          { k: "user", label: "user", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <span className="text-text-2">{userLabel(e)}</span> },
           { k: "action", label: "action", w: "100px", sortable: false, cell: (e) => <Tag tone={def(AUDIT_ACTION, e.action).tone}>{e.action.replace(/_/g, " ")}</Tag> },
-          { k: "entity", label: "entity", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <Tag>{e.entity_type.replace(/_/g, " ")}{e.entity_id ? ` #${e.entity_id}` : ""}</Tag> },
+          { k: "entity", label: "entity", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <Tag>{entityLabel(e)}</Tag> },
           { k: "ip", label: "ip address", w: "120px", sortable: false, cell: (e) => <span className="mono text-[11px] text-text-3">{e.ip_address ?? "—"}</span> },
           {
             k: "transcript", label: "", w: "120px", right: true, sortable: false,
@@ -107,11 +134,11 @@ export default function AuditPage() {
         rows={filtered}
         keyOf={(e) => e.id}
         loading={isLoading}
-        empty={error ? "Could not load the audit log." : "No audit entries found."}
+        empty={error ? "Could not load the audit log." : filtering && entries.length > 0 ? "No loaded entries match these filters." : "No audit entries found."}
         footer={
           entries.length > 0 && (
             <span className="flex items-center gap-2.5">
-              <span>{entries.length} {entries.length === 1 ? "entry" : "entries"} loaded{hasNextPage ? " so far" : ""}</span>
+              <span>{entries.length} {entries.length === 1 ? "entry" : "entries"} loaded{hasNextPage ? " so far" : ""}{filtering ? ` · ${filtered.length} shown` : ""}</span>
               {hasNextPage && <button type="button" className="btn btn-sm btn-ghost" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>{isFetchingNextPage ? "loading…" : "load more"}</button>}
             </span>
           )

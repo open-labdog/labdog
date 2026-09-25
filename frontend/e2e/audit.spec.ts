@@ -140,4 +140,37 @@ test.describe("Audit page", () => {
     await expect.poll(() => requested.length).toBeGreaterThan(1)
     expect(requested[1]).toContain("cursor=")
   })
+
+  // The per-column filters this page used to have searched the user and
+  // the IP address and took a date range; the head keeps all three.
+  test("search and dates narrow what has loaded", async ({ page }) => {
+    const row = (id: number, user_email: string, ip_address: string, created_at: string) => ({
+      id, user_id: 1, user_email, action: "update", entity_type: "host", entity_id: id,
+      before_state: null, after_state: null, ip_address, created_at,
+    })
+    await page.route("**/api/audit-log*", (route) =>
+      route.fulfill({
+        status: 200,
+        body: JSON.stringify([
+          row(2, "alice@example.com", "10.0.0.2", "2026-03-02T12:00:00Z"),
+          row(1, "bob@example.com", "10.0.0.1", "2026-01-15T12:00:00Z"),
+        ]),
+      }),
+    )
+    await page.goto("/audit")
+    const rows = page.getByRole("row").filter({ hasText: "@example.com" })
+    await expect(rows).toHaveCount(2)
+
+    await page.getByLabel("search the audit log").fill("10.0.0.1")
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText("bob@example.com")
+
+    await page.getByLabel("search the audit log").fill("")
+    await page.getByLabel("from date").fill("2026-02-01")
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toContainText("alice@example.com")
+
+    await page.getByLabel("to date").fill("2026-02-28")
+    await expect(page.getByText("No loaded entries match these filters.")).toBeVisible()
+  })
 })
