@@ -84,8 +84,8 @@ deleted when it lands.
 
 ### `docs/ui/screenshots/`
 
-- (nothing yet — every PNG predates the theme; the list is appended as the
-  screens they show are rebuilt). Add to the retake list from this PR:
+- Every PNG predates the theme; the list grows as each PR rebuilds the
+  screens they show. From the module editors:
   `group-rules.png`, `group-services.png`, `group-hosts-entries.png`,
   `group-packages.png`, `group-users.png`, `group-cron-jobs.png`,
   `group-resolver.png` (all currently show the old per-module standalone

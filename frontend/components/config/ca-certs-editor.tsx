@@ -89,7 +89,7 @@ export function CaCertsEditor({ groupId }: { groupId: number }) {
 
   function handleCreate(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    createMutation.mutate({ name, pem, comment: comment || null })
+    createMutation.mutate({ name, pem_content: pem, state: "present", comment: comment || null })
   }
 
   function openEdit(c: CACertRule) {
