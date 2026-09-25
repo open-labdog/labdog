@@ -1,162 +1,86 @@
 "use client"
 
+import { useState } from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { useDelayedLoading } from "@/lib/utils"
 import { showSuccess, showError } from "@/lib/toast"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { PendingHostsTable } from "@/components/scans/pending-hosts-table"
-import type { ScanConfig, PendingHost } from "@/lib/types"
-import { useState } from "react"
+import { plural, shortAgo } from "@/lib/fleet"
+import { Table, Tag, Toolbar } from "@/components/ld"
+import { SSH_ERROR_LABELS } from "@/lib/types"
+import type { PendingHost, ScanConfig } from "@/lib/types"
 
-/**
- * `scanId` lets the Discovery screen show one scan's queue under
- * `/discovery?tab=pending&scan=<id>`, where the route has no `[id]`
- * segment; `embedded` drops the header there.
- */
-export default function PendingReviewClientPage({ scanId, embedded = false }: { scanId?: number; embedded?: boolean } = {}) {
-  const params = useParams()
-  const id = scanId ?? Number(params.id)
+/** One scan config's pending queue — embedded in the Discovery screen's
+ *  Pending approval tab under `?scan=<id>`. */
+export default function PendingReviewClientPage({ scanId }: { scanId: number }) {
   const queryClient = useQueryClient()
+  const [selected, setSelected] = useState<Set<string | number>>(new Set())
+  const [busy, setBusy] = useState<"approve" | "dismiss" | null>(null)
 
-  const [approveLoading, setApproveLoading] = useState(false)
-  const [dismissLoading, setDismissLoading] = useState(false)
-
-  const { data: scan, isLoading: scanLoading } = useQuery<ScanConfig>({
-    queryKey: ["scans", id],
-    queryFn: () => apiFetch<ScanConfig>(`/api/scans/${id}`),
-    enabled: !!id,
-  })
-
-  const {
-    data: pending,
-    isLoading: pendingLoading,
-    error: pendingError,
-  } = useQuery<PendingHost[]>({
-    queryKey: ["scans", id, "pending"],
-    queryFn: () => apiFetch<PendingHost[]>(`/api/scans/${id}/pending`),
-    enabled: !!id,
+  const { data: scan } = useQuery<ScanConfig>({ queryKey: ["scans", scanId], queryFn: () => apiFetch<ScanConfig>(`/api/scans/${scanId}`) })
+  const { data: pending, isLoading } = useQuery<PendingHost[]>({
+    queryKey: ["scans", scanId, "pending"],
+    queryFn: () => apiFetch<PendingHost[]>(`/api/scans/${scanId}/pending`),
     refetchInterval: 10000,
   })
 
-  const showLoading = useDelayedLoading(scanLoading || pendingLoading)
-
-  async function handleApprove(ids: number[]) {
-    setApproveLoading(true)
+  async function act(kind: "approve" | "dismiss") {
+    if (selected.size === 0) return
+    setBusy(kind)
     try {
-      const result = await apiFetch<{ approved: number; skipped: number; skipped_ips: string[] }>(
-        `/api/scans/${id}/pending/approve`,
-        { method: "POST", body: JSON.stringify({ ids }) }
-      )
+      const result = await apiFetch<{ approved?: number; dismissed?: number; skipped?: number }>(`/api/scans/${scanId}/pending/${kind}`, { method: "POST", body: JSON.stringify({ ids: Array.from(selected) }) })
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["scans", id, "pending"] }),
-        queryClient.invalidateQueries({ queryKey: ["scans", id] }),
+        queryClient.invalidateQueries({ queryKey: ["scans", scanId, "pending"] }),
+        queryClient.invalidateQueries({ queryKey: ["scans", scanId] }),
         queryClient.invalidateQueries({ queryKey: ["scans", "pending-summary"] }),
         queryClient.invalidateQueries({ queryKey: ["hosts"] }),
       ])
-      if (result.skipped > 0) {
-        showSuccess(
-          `Approved ${result.approved} host${result.approved !== 1 ? "s" : ""}. ${result.skipped} already existed.`
-        )
-      } else {
-        showSuccess(
-          `Approved ${result.approved} host${result.approved !== 1 ? "s" : ""}`
-        )
-      }
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : "Failed to approve hosts")
+      setSelected(new Set())
+      const n = kind === "approve" ? (result.approved ?? 0) : (result.dismissed ?? 0)
+      if (kind === "approve" && (result.skipped ?? 0) > 0) showSuccess(`Approved ${plural(n, "host")}. ${result.skipped} already existed.`)
+      else showSuccess(`${kind === "approve" ? "Approved" : "Dismissed"} ${plural(n, "host")}`)
+    } catch (e) {
+      showError(e instanceof Error ? e.message : `Failed to ${kind} hosts`)
     } finally {
-      setApproveLoading(false)
+      setBusy(null)
     }
   }
 
-  async function handleDismiss(ids: number[]) {
-    setDismissLoading(true)
-    try {
-      const result = await apiFetch<{ dismissed: number }>(
-        `/api/scans/${id}/pending/dismiss`,
-        { method: "POST", body: JSON.stringify({ ids }) }
-      )
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["scans", id, "pending"] }),
-        queryClient.invalidateQueries({ queryKey: ["scans", id] }),
-        queryClient.invalidateQueries({ queryKey: ["scans", "pending-summary"] }),
-      ])
-      showSuccess(
-        `Dismissed ${result.dismissed} host${result.dismissed !== 1 ? "s" : ""}`
-      )
-    } catch (e: unknown) {
-      showError(e instanceof Error ? e.message : "Failed to dismiss hosts")
-    } finally {
-      setDismissLoading(false)
-    }
-  }
-
-  const scanName = scan?.name ?? `Scan config #${id}`
+  const scanName = scan?.name ?? `Scan config #${scanId}`
+  const rows = pending ?? []
 
   return (
-    <div className="space-y-6">
-      {!embedded && (
-        <>
-          <Breadcrumb
-            items={[
-              { label: "Fleet", href: "/hosts" },
-              { label: "Discovery", href: "/discovery" },
-              { label: scanName, href: `/discovery` },
-              { label: "Pending Review" },
-            ]}
-          />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Toolbar
+        actions={
+          <>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={selected.size === 0 || !!busy} onClick={() => act("dismiss")}>
+              {busy === "dismiss" ? "dismissing…" : "dismiss selected"}
+            </button>
+            <button type="button" className="btn btn-sm btn-primary" disabled={selected.size === 0 || !!busy} onClick={() => act("approve")}>
+              {busy === "approve" ? "approving…" : "approve selected"}
+            </button>
+          </>
+        }
+      >
+        <span className="tt">found by <span className="mono text-text-2">{scanName}</span></span>
+        <Link href="/discovery?tab=pending" className="tt text-ld-accent hover:no-underline">every scan →</Link>
+      </Toolbar>
 
-          <div>
-            <h1 className="text-2xl font-bold text-white">
-              Pending Review &mdash; {scanName}
-            </h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Hosts discovered by this scan config that are awaiting your review.
-              Approve to add them to your inventory, or dismiss to ignore them.
-            </p>
-          </div>
-        </>
-      )}
-      {embedded && (
-        <div className="flex items-center gap-2 text-xs text-text-2">
-          <span>Showing hosts found by <span className="mono text-text">{scanName}</span>.</span>
-          <Link href="/discovery?tab=pending" className="underline">every scan →</Link>
-        </div>
-      )}
-
-      {showLoading && <TableSkeleton rows={4} columns={5} />}
-
-      {!scanLoading && !pendingLoading && pendingError && (
-        <div className="text-red-400 py-8 text-center">
-          Failed to load pending hosts
-        </div>
-      )}
-
-      {!scanLoading && !pendingLoading && !pendingError && pending?.length === 0 && (
-        <div className="flex items-center justify-center">
-          <div className="rounded-lg border border-slate-700 bg-slate-900 px-8 py-12 text-center max-w-sm w-full">
-            <p className="text-slate-300 font-medium">No hosts pending review</p>
-            <p className="text-slate-500 text-sm mt-1">
-              No hosts pending review for this scan config.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {!scanLoading && !pendingLoading && !pendingError && pending && pending.length > 0 && (
-        <PendingHostsTable
-          rows={pending}
-          onApprove={handleApprove}
-          onDismiss={handleDismiss}
-          approveLoading={approveLoading}
-          dismissLoading={dismissLoading}
-          showConfigColumn={false}
-        />
-      )}
+      <Table<PendingHost>
+        cols={[
+          { k: "ip", label: "ip address", w: "140px", sortable: false, cell: (h) => <span className="mono text-text">{h.ip_address}</span> },
+          { k: "hostname", label: "hostname", w: "minmax(140px,1fr)", sortable: false, cell: (h) => <span className="text-text-2">{h.hostname ?? "—"}</span> },
+          { k: "discovered", label: "discovered", w: "100px", sortable: false, cell: (h) => <span className="mono num text-[11px] text-text-3">{shortAgo(h.discovered_at)} ago</span> },
+          { k: "ssh", label: "ssh", w: "110px", sortable: false, cell: (h) => (h.ssh_verified ? <Tag tone="ok">verified</Tag> : h.ssh_error ? <Tag tone="warn" title={SSH_ERROR_LABELS[h.ssh_error]}>{SSH_ERROR_LABELS[h.ssh_error]}</Tag> : <Tag tone="warn">unverified</Tag>) },
+        ]}
+        rows={rows}
+        keyOf={(h) => h.id}
+        selected={selected}
+        onSelect={setSelected}
+        loading={isLoading}
+        empty="No hosts pending review for this scan config."
+      />
     </div>
   )
 }

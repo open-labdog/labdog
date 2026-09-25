@@ -2,94 +2,41 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { CalendarClock } from "lucide-react"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { Button } from "@/components/ui/button"
-import { TableSkeleton } from "@/components/ui/skeleton"
+import { apiFetch } from "@/lib/api"
+import { Banner, Empty, Toolbar } from "@/components/ld"
 import { ScheduleActionDialog } from "@/components/scheduled-actions/schedule-action-dialog"
 import { ScheduledActionsList } from "@/components/scheduled-actions/scheduled-actions-list"
-import { apiFetch } from "@/lib/api"
-import { useDelayedLoading } from "@/lib/utils"
 import type { ScheduledAction } from "@/lib/types"
 
-/** `embedded` drops the header: under `/actions` it is the Schedules tab. */
-export default function SchedulesPage({ embedded = false }: { embedded?: boolean } = {}) {
+/** Embedded in the Actions page's Schedules tab — a schedule is an
+ *  action with a cron, so it has no page of its own any more. */
+export default function SchedulesPage() {
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data: rows, isLoading, error } = useQuery<ScheduledAction[]>({
     queryKey: ["scheduled-actions"],
-    queryFn: () =>
-      apiFetch<ScheduledAction[]>(
-        "/api/scheduled-actions?include_last_run=true",
-      ),
+    queryFn: () => apiFetch<ScheduledAction[]>("/api/scheduled-actions?include_last_run=true"),
     refetchInterval: (query) => {
       const data = query.state.data
-      if (
-        data?.some(
-          (r) =>
-            r.last_run?.status === "running" || r.last_run?.status === "queued",
-        )
-      ) {
-        return 3000
-      }
-      return false
+      return data?.some((r) => r.last_run?.status === "running" || r.last_run?.status === "queued") ? 3000 : false
     },
   })
-  const showLoading = useDelayedLoading(isLoading)
 
   return (
-    <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Operations" }, { label: "Schedules" }]} />}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <Toolbar actions={<button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>+ New</button>}>
+        <span className="tt">cron-driven runs of any registered action across hosts, groups, or the entire fleet</span>
+      </Toolbar>
 
-      <div className="flex items-start justify-between gap-3">
-        {embedded ? (
-          <p className="text-slate-400 text-sm">
-            A schedule is an action with a cron — same library, same detail. Snapshot-backed ones are reversible.
-          </p>
-        ) : (
-          <div>
-            <h1 className="text-2xl font-bold text-white">Schedules</h1>
-            <p className="text-slate-400 text-sm mt-1">
-              Cron-driven runs of any registered action across hosts, groups, or
-              the entire fleet.
-            </p>
-          </div>
-        )}
-        <Button onClick={() => setCreateOpen(true)}>+ New</Button>
-      </div>
+      {error && <Banner tone="danger" flush>Could not load schedules: {error.message}</Banner>}
 
-      {showLoading && <TableSkeleton rows={3} columns={6} />}
-      {error && (
-        <div className="text-red-400 py-8 text-center">
-          Failed to load schedules
-        </div>
+      {!isLoading && !error && (rows ?? []).length === 0 ? (
+        <Empty title="No schedules yet" note={<>Create one here, or hit <strong>Schedule…</strong> on any action from a host or group page.</>} action={<button type="button" className="btn btn-sm btn-primary" onClick={() => setCreateOpen(true)}>Create a schedule</button>} />
+      ) : (
+        <ScheduledActionsList rows={rows ?? []} loading={isLoading} />
       )}
 
-      {!isLoading && !error && (
-        <ScheduledActionsList
-          rows={rows ?? []}
-          tableId="schedules-page-v1"
-          emptyState={
-            <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <CalendarClock className="h-10 w-10 text-slate-700" />
-              <div>
-                <p className="text-slate-300 font-medium">No schedules yet</p>
-                <p className="text-sm text-slate-500 mt-1 max-w-md">
-                  Create one here, or hit <strong>Schedule…</strong> on any
-                  action card from a host or group page.
-                </p>
-              </div>
-              <Button onClick={() => setCreateOpen(true)} className="mt-2">
-                Create a schedule
-              </Button>
-            </div>
-          }
-        />
-      )}
-
-      {createOpen && (
-        <ScheduleActionDialog open={createOpen} onOpenChange={setCreateOpen} />
-      )}
+      {createOpen && <ScheduleActionDialog open={createOpen} onOpenChange={setCreateOpen} />}
     </div>
   )
 }

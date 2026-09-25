@@ -80,11 +80,9 @@ export default function DiscoveryPage() {
         </Banner>
       )}
 
-      <div className="scroll flex-1 p-3.5">
-        {tab === "pending" && (scanId !== null && !Number.isNaN(scanId) ? <PendingReviewClientPage embedded scanId={scanId} /> : <PendingApprovalPage embedded />)}
-        {tab === "schedules" && <ScansPage embedded />}
-        {tab === "scan" && <DiscoverHostsPage embedded />}
-      </div>
+      {tab === "pending" && (scanId !== null && !Number.isNaN(scanId) ? <PendingReviewClientPage scanId={scanId} /> : <PendingApprovalPage />)}
+      {tab === "schedules" && <ScansPage />}
+      {tab === "scan" && <DiscoverHostsPage />}
     </>
   )
 }

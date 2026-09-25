@@ -1,24 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
-import { useDelayedLoading } from "@/lib/utils"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { DataTable } from "@/components/ui/data-table"
+import { def, AUDIT_ACTION } from "@/lib/status"
+import { Banner, CodeBlock, Filter, Modal, PageHead, Table, Tag } from "@/components/ld"
 import type { AuditLogEntry } from "@/lib/types"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-
-type AuditEntry = AuditLogEntry
 
 interface TranscriptRow {
   id: number
@@ -29,71 +16,22 @@ interface TranscriptRow {
   recorded_at: string
 }
 
-const ACTION_COLORS: Record<string, string> = {
-  create: "bg-green-600 text-white",
-  update: "bg-blue-600 text-white",
-  delete: "bg-red-600 text-white",
-}
-
-function ActionBadge({ action }: { action: string }) {
-  return (
-    <Badge className={ACTION_COLORS[action] ?? "bg-slate-600 text-white"}>
-      {action.charAt(0).toUpperCase() + action.slice(1)}
-    </Badge>
-  )
-}
-
-function TranscriptModal({
-  sessionId,
-  open,
-  onClose,
-}: {
-  sessionId: string
-  open: boolean
-  onClose: () => void
-}) {
+function TranscriptModal({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
   const { data, isLoading, error } = useQuery<TranscriptRow[]>({
     queryKey: ["ssh-transcript", sessionId],
     queryFn: () => apiFetch<TranscriptRow[]>(`/api/audit-log/ssh-sessions/${sessionId}/transcript`),
-    enabled: open && !!sessionId,
     retry: false,
   })
-
   const joined = data?.map((r) => r.command_text).join("\n") ?? ""
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-3xl">
-        <DialogHeader>
-          <DialogTitle>SSH Session Transcript</DialogTitle>
-        </DialogHeader>
-
-        <div className="rounded border border-blue-800 bg-blue-950/30 px-3 py-2 text-blue-300 text-xs mb-3">
-          This transcript shows what the operator typed (stdin only) — not the
-          host output. Control characters may appear as-is.
-        </div>
-
-        {isLoading && (
-          <p className="text-slate-400 text-sm text-center py-6">Loading transcript...</p>
-        )}
-
-        {error && (
-          <p className="text-slate-400 text-sm text-center py-6">No transcript captured for this session.</p>
-        )}
-
-        {!isLoading && !error && data?.length === 0 && (
-          <p className="text-slate-400 text-sm text-center py-6">No transcript rows found for this session.</p>
-        )}
-
-        {!isLoading && !error && data && data.length > 0 && (
-          <pre className="bg-slate-950 border border-slate-700 rounded p-3 text-xs font-mono text-slate-200 overflow-auto max-h-[60vh] whitespace-pre-wrap break-all">
-            {joined}
-          </pre>
-        )}
-
-        <DialogFooter showCloseButton />
-      </DialogContent>
-    </Dialog>
+    <Modal title="SSH session transcript" w={760} onClose={onClose}>
+      <Banner tone="sync">This transcript shows what the operator typed (stdin only) — not the host output. Control characters may appear as-is.</Banner>
+      {isLoading && <span className="text-[11.5px] text-text-3">Loading transcript…</span>}
+      {error && <span className="text-[11.5px] text-text-3">No transcript captured for this session.</span>}
+      {!isLoading && !error && data?.length === 0 && <span className="text-[11.5px] text-text-3">No transcript rows found for this session.</span>}
+      {!isLoading && !error && data && data.length > 0 && <CodeBlock maxH="60vh">{joined}</CodeBlock>}
+    </Modal>
   )
 }
 
@@ -101,172 +39,113 @@ function TranscriptModal({
  *  worth of filtering material in hand without a slow first paint. */
 const PAGE_SIZE = 100
 
+const userLabel = (e: AuditLogEntry) => e.user_email ?? (e.user_id ? `user #${e.user_id}` : "system")
+const entityLabel = (e: AuditLogEntry) => `${e.entity_type.replace(/_/g, " ")}${e.entity_id ? ` #${e.entity_id}` : ""}`
+
 export default function AuditPage() {
   const [transcriptSessionId, setTranscriptSessionId] = useState<string | null>(null)
+  const [actionFilter, setActionFilter] = useState("all")
+  const [entityFilter, setEntityFilter] = useState("all")
+  const [q, setQ] = useState("")
+  const [from, setFrom] = useState("")
+  const [to, setTo] = useState("")
 
   // Cursor-paginated (BUG-75). This used to fetch once with no `limit`,
   // which meant the backend default of 50 — everything older than the
   // fiftieth entry was unreachable, and the column filters searched only
   // those fifty. The cursor is the id of the last row seen.
-  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useInfiniteQuery<AuditEntry[]>({
-      queryKey: ["audit-log"],
-      initialPageParam: undefined as number | undefined,
-      queryFn: ({ pageParam }) => {
-        const cursor = pageParam as number | undefined
-        const query = cursor === undefined ? "" : `&cursor=${cursor}`
-        return apiFetch<AuditEntry[]>(`/api/audit-log?limit=${PAGE_SIZE}${query}`)
-      },
-      getNextPageParam: (lastPage) =>
-        lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1].id : undefined,
-      retry: false,
-    })
-  const showLoading = useDelayedLoading(isLoading)
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery<AuditLogEntry[]>({
+    queryKey: ["audit-log"],
+    initialPageParam: undefined as number | undefined,
+    queryFn: ({ pageParam }) => {
+      const cursor = pageParam as number | undefined
+      return apiFetch<AuditLogEntry[]>(`/api/audit-log?limit=${PAGE_SIZE}${cursor === undefined ? "" : `&cursor=${cursor}`}`)
+    },
+    getNextPageParam: (lastPage) => (lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1].id : undefined),
+    retry: false,
+  })
 
-  const entries = data?.pages.flat() ?? []
+  const entries = useMemo(() => data?.pages.flat() ?? [], [data])
+
+  // The action vocabulary is fixed (lib/status.ts AUDIT_ACTION), so every
+  // kind is always offered — not just the ones on the currently-loaded
+  // page, which may hold none of a kind that is simply rarer — with a
+  // count for however many of each have loaded so far (0 if none yet).
+  const actionOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const e of entries) counts.set(e.action, (counts.get(e.action) ?? 0) + 1)
+    return Object.keys(AUDIT_ACTION).map((k) => ({ k, label: def(AUDIT_ACTION, k).label, n: counts.get(k) ?? 0 }))
+  }, [entries])
+  const entityOptions = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const e of entries) counts.set(e.entity_type, (counts.get(e.entity_type) ?? 0) + 1)
+    return [...counts.entries()].map(([k, n]) => ({ k, label: k.replace(/_/g, " "), n }))
+  }, [entries])
+
+  // Every filter applies to what has loaded, as the per-column filters it
+  // replaces did. The search matches the user, the entity (`type #id`) and
+  // the IP address; the dates compare an entry's UTC day, both inclusive.
+  const ql = q.trim().toLowerCase()
+  const filtering = actionFilter !== "all" || entityFilter !== "all" || !!ql || !!from || !!to
+  const filtered = entries.filter((e) => {
+    if (actionFilter !== "all" && e.action !== actionFilter) return false
+    if (entityFilter !== "all" && e.entity_type !== entityFilter) return false
+    const day = e.created_at.slice(0, 10)
+    if (from && day < from) return false
+    if (to && day > to) return false
+    return !ql || [userLabel(e), entityLabel(e), e.entity_type, e.ip_address ?? ""].some((v) => v.toLowerCase().includes(ql))
+  })
 
   return (
-    <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Operations" }, { label: "Audit" }]} />
-      <div>
-        <h1 className="text-2xl font-bold text-white">Audit</h1>
-        <p className="text-slate-400 text-sm mt-1">
-          Track all changes made to firewall configuration
-        </p>
-      </div>
-
-      {showLoading && <TableSkeleton rows={5} columns={5} />}
-
-      {/* The query used to swallow every failure and resolve with an empty
-          array, so a 500 or a dropped connection rendered as "No audit
-          entries found" and this banner was unreachable. On a compliance
-          surface, "nothing happened" and "we could not tell you what
-          happened" must not look the same. */}
-      {error && (
-        <div className="rounded-lg border border-red-800 bg-red-950/30 px-4 py-3 text-red-300 text-sm">
-          Could not load the audit log: {error instanceof Error ? error.message : "unknown error"}
+    <>
+      <PageHead crumbs={[{ label: "operations", href: "/plans" }]} title="Audit" sub="Track all changes made to firewall configuration">
+        <div className="flex flex-wrap items-center gap-[7px]">
+          <input className="inp mono" style={{ width: 200 }} placeholder="user, entity or ip…" aria-label="search the audit log" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Filter label="action" value={actionFilter} onChange={setActionFilter} options={actionOptions} />
+          <Filter label="entity" value={entityFilter} onChange={setEntityFilter} options={entityOptions} />
+          <label className="flex items-center gap-1.5">
+            <span className="tt">from</span>
+            <input type="date" className="inp mono" style={{ width: 140 }} aria-label="from date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label className="flex items-center gap-1.5">
+            <span className="tt">to</span>
+            <input type="date" className="inp mono" style={{ width: 140 }} aria-label="to date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+          </label>
         </div>
-      )}
+      </PageHead>
 
-      {!isLoading && (
-        <>
-          <DataTable<AuditEntry>
-            tableId="audit-log"
-            data={entries}
-            emptyMessage={error ? "Could not load the audit log." : "No audit entries found."}
-            getRowKey={(e) => e.id}
-            columns={[
-              {
-                key: "timestamp",
-                label: "Timestamp",
-                accessor: (e) => e.created_at,
-                cell: (e) => (
-                  <span className="font-mono text-slate-300 text-xs whitespace-nowrap">
-                    {new Date(e.created_at).toLocaleString()}
-                  </span>
-                ),
-                defaultWidth: 180,
-                filter: { type: "dateRange" },
-              },
-              {
-                key: "user",
-                label: "User",
-                accessor: (e) => e.user_email ?? (e.user_id ? `User #${e.user_id}` : "System"),
-                cell: (e) => (
-                  <span className="text-slate-300 text-sm">
-                    {e.user_email ?? (e.user_id ? `User #${e.user_id}` : "System")}
-                  </span>
-                ),
-                defaultWidth: 180,
-                filter: { type: "text" },
-              },
-              {
-                key: "action",
-                label: "Action",
-                accessor: (e) => e.action,
-                cell: (e) => <ActionBadge action={e.action} />,
-                defaultWidth: 120,
-                filter: { type: "enum", options: [{label:"Create",value:"create"},{label:"Update",value:"update"},{label:"Delete",value:"delete"}] },
-              },
-              {
-                key: "entity",
-                label: "Entity",
-                accessor: (e) => `${e.entity_type}${e.entity_id ? ` #${e.entity_id}` : ""}`,
-                cell: (e) => (
-                  <span className="text-slate-300 text-sm capitalize">
-                    {e.entity_type.replace("_", " ")}{e.entity_id ? ` #${e.entity_id}` : ""}
-                  </span>
-                ),
-                defaultWidth: 180,
-                filter: { type: "text" },
-              },
-              {
-                key: "ip_address",
-                label: "IP Address",
-                accessor: (e) => e.ip_address ?? "",
-                cell: (e) => (
-                  <span className="text-slate-400 text-xs">
-                    {e.ip_address ?? "—"}
-                  </span>
-                ),
-                defaultWidth: 160,
-                filter: { type: "text", placeholder: "e.g. 10.0.1" },
-              },
-              {
-                key: "transcript",
-                label: "",
-                accessor: () => "",
-                cell: (e) => {
-                  const sid =
-                    e.action === "session_start" &&
-                    e.entity_type === "ssh_session" &&
-                    e.after_state?.session_id
-                      ? String(e.after_state.session_id)
-                      : null
-                  if (!sid) return null
-                  return (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-xs"
-                      onClick={() => setTranscriptSessionId(sid)}
-                    >
-                      View transcript
-                    </Button>
-                  )
-                },
-                defaultWidth: 140,
-              },
-            ]}
-          />
+      {error && <Banner tone="danger" flush>Could not load the audit log: {error instanceof Error ? error.message : "unknown error"}</Banner>}
 
-          {hasNextPage && (
-            <div className="flex justify-center">
-              <Button
-                variant="outline"
-                disabled={isFetchingNextPage}
-                onClick={() => fetchNextPage()}
-              >
-                {isFetchingNextPage ? "Loading..." : "Load More"}
-              </Button>
-            </div>
-          )}
+      <Table<AuditLogEntry>
+        cols={[
+          { k: "when", label: "when", w: "160px", sortable: false, cell: (e) => <span className="mono text-[11px] text-text-3">{new Date(e.created_at).toLocaleString()}</span> },
+          { k: "user", label: "user", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <span className="text-text-2">{userLabel(e)}</span> },
+          { k: "action", label: "action", w: "100px", sortable: false, cell: (e) => <Tag tone={def(AUDIT_ACTION, e.action).tone}>{e.action.replace(/_/g, " ")}</Tag> },
+          { k: "entity", label: "entity", w: "minmax(120px,1fr)", sortable: false, cell: (e) => <Tag>{entityLabel(e)}</Tag> },
+          { k: "ip", label: "ip address", w: "120px", sortable: false, cell: (e) => <span className="mono text-[11px] text-text-3">{e.ip_address ?? "—"}</span> },
+          {
+            k: "transcript", label: "", w: "120px", right: true, sortable: false,
+            cell: (e) => {
+              const sid = e.action === "session_start" && e.entity_type === "ssh_session" && e.after_state?.session_id ? String(e.after_state.session_id) : null
+              return sid ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => setTranscriptSessionId(sid)}>view transcript</button> : null
+            },
+          },
+        ]}
+        rows={filtered}
+        keyOf={(e) => e.id}
+        loading={isLoading}
+        empty={error ? "Could not load the audit log." : filtering && entries.length > 0 ? "No loaded entries match these filters." : "No audit entries found."}
+        footer={
+          entries.length > 0 && (
+            <span className="flex items-center gap-2.5">
+              <span>{entries.length} {entries.length === 1 ? "entry" : "entries"} loaded{hasNextPage ? " so far" : ""}{filtering ? ` · ${filtered.length} shown` : ""}</span>
+              {hasNextPage && <button type="button" className="btn btn-sm btn-ghost" disabled={isFetchingNextPage} onClick={() => fetchNextPage()}>{isFetchingNextPage ? "loading…" : "load more"}</button>}
+            </span>
+          )
+        }
+      />
 
-          {entries.length > 0 && (
-            <p className="text-center text-xs text-slate-500">
-              Showing {entries.length} entries{hasNextPage ? " so far" : ""}
-            </p>
-          )}
-        </>
-      )}
-
-      {transcriptSessionId && (
-        <TranscriptModal
-          sessionId={transcriptSessionId}
-          open={!!transcriptSessionId}
-          onClose={() => setTranscriptSessionId(null)}
-        />
-      )}
-    </div>
+      {transcriptSessionId && <TranscriptModal sessionId={transcriptSessionId} onClose={() => setTranscriptSessionId(null)} />}
+    </>
   )
 }

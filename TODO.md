@@ -51,13 +51,18 @@ deleted when it lands.
   each file a single tab or dialog, sharing query keys by string rather
   than a prop-drilled hook.
 - "Confirmation Dialogs": `Confirm` from `@/components/ld`
-  (`components/ui/confirm-dialog.tsx` is a shim until its last caller goes).
+  (`components/ui/confirm-dialog.tsx` is gone — every caller now imports
+  `Confirm` directly).
 - "Loading States": no skeletons — `Table loading`, a pulsing `Dot`, a
   button label swap.
 - "Tooltips": `title=` on icon-only affordances, `Help` (a `<details>`)
   for paragraphs, `Field hint=` for one-liners; `InfoPopover` goes.
 - The `.btn` comment in `globals.css` no longer says `components/ui/button`
-  stays for dialogs; the "Stack" row still lists shadcn.
+  stays for dialogs; the "Stack" row still lists shadcn. `components/ui/`
+  is down to `badge button input label markdown select textarea` —
+  `data-table table-filter-cell table dialog tooltip card breadcrumb
+  skeleton confirm-dialog` and `hooks/{use-table-state,use-column-resize}`
+  are gone, their last callers converted.
 
 ### `docs/ui/*.md`
 
@@ -75,8 +80,30 @@ deleted when it lands.
   checkbox rows in panels; "Webhook URLs" is a modal with copy buttons).
 - `actions.md` — the Packs tab: registry and sources are two panels; a
   contested key expands under the registry table; row actions are the
-  lowercase `sync · win all keys · edit · delete`.
-
+  lowercase `sync · win all keys · edit · delete`. The host/group Activity
+  tab's Actions view is the same two-panel shape (available actions ·
+  recent runs) at a smaller size; run detail (`/hosts/{id}/actions/runs/{id}`
+  and the generic and group equivalents) is a screen now, not a bare page —
+  crumbs `fleet / hosts / <name>` (or `operations / runs` for a fleet run),
+  the per-host grid is a `Table`, the log is a `CodeBlock` with pin-to-bottom.
+- `scheduled-actions.md` — the wizard is a `Modal` with `Steps`, not a
+  plain dialog; the list's row actions are inline `edit · runs · delete`,
+  no kebab; "Run history" is a modal with a `Table` of runs and "Run now"
+  in the footer, not a slide-in drawer. `/schedules` redirects into the
+  Actions page's Schedules tab (already true before this PR; the tab's
+  own content is what changed here).
+- `operations.md` › Audit — a search box (user, entity, IP address),
+  from/to dates and `action`/`entity` chips in the head, all applied to
+  the entries loaded so far (load more fetches the next 100); the SSH
+  transcript is a modal with a `CodeBlock`.
+- `alerts.md` — Alerts is a list screen (a `Seg` firing/all switch, one
+  table row per alert) under the Assistant zone, not a stack of cards;
+  investigate and view → are the row's actions.
+- `hosts.md` › Discovery — the three tabs (pending, schedules, scan now)
+  are all `Toolbar` + `Table` now; the scan-schedule list drops its kebab
+  menu for inline `edit · run now · pending · delete`; the pending queues
+  (fleet-wide and per-scan) select rows with the kit `Table`'s own
+  checkbox column, not a bespoke table component.
 - `groups.md` — "## Group Detail" › Config: the module list + editor pattern
   is unchanged, but every editor (rules, services, hosts file, packages,
   users, cron, resolver, CA certs) is now `components/config/*-editor.tsx`,
@@ -109,7 +136,9 @@ deleted when it lands.
   `group-resolver.png` (all currently show the old per-module standalone
   page — retake them as the group page's Config tab instead). From the
   host detail: `hosts.png` (retake with the Config tab open on a module
-  that has both group and host rows, and once with Terminal open).
+  that has both group and host rows, and once with Terminal open). From
+  operations and discovery: `hosts-discover.png` (the scan-now tab,
+  mid-scan and with results), `discovery.png` (the scan-schedules tab).
 
 ---
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useApiMutation } from "@/lib/mutations"
 import { apiFetch } from "@/lib/api"
 import { Banner, Field, Modal } from "@/components/ld"
@@ -26,16 +26,6 @@ export function EditHostDialog({
   const [sshUser, setSshUser] = useState(host.ssh_user)
   const [sshKeyId, setSshKeyId] = useState<number | null>(host.ssh_key_id)
   const [groupIds, setGroupIds] = useState<number[]>(host.group_ids ?? [])
-
-  useEffect(() => {
-    setHostname(host.hostname)
-    setIp(host.ip_address)
-    setSshPort(host.ssh_port)
-    setSshUser(host.ssh_user)
-    setSshKeyId(host.ssh_key_id)
-    setGroupIds(host.group_ids ?? [])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [host.id])
 
   const saveMutation = useApiMutation({
     mutationFn: (data: Record<string, unknown>) => apiFetch(`/api/hosts/${hostId}`, { method: "PUT", body: JSON.stringify(data) }),

@@ -151,6 +151,29 @@ The format follows [Keep a Changelog]; LabDog follows
   its own host list, so adding or removing a membership reads the same from
   either side of it.
 
+- **Run detail, schedules, the Actions tab, Discovery and Audit are on the
+  theme.** A run's page (from a host, a group, or the generic fleet route)
+  is a screen now: crumbs to the host or group it ran against (or
+  `operations / runs` for a fleet run — derived from the run itself, so it
+  is correct regardless of which route opened it), the per-host grid and
+  the Ansible output are a kit `Table` and `CodeBlock`. The schedule wizard
+  is a `Modal` with `Steps` for its four stages; the schedule list's row
+  actions are inline `edit · runs · delete`, and "Run history" is a modal
+  with a table of runs and Run now in the footer, not a slide-in panel.
+  Audit's per-column filter popovers become a search box (user, entity, IP
+  address), from/to dates and `action`/`entity` chips in the page head, all
+  applied to what has loaded — `entity`'s options come from the loaded
+  entries, having no fixed vocabulary; `action`'s are the fixed list, every
+  one always offered. Alerts is a list screen (a firing/all switch, one row
+  per alert) instead of a stack of cards, and moves under the Assistant
+  zone's crumb, matching where it already lived in the rail. Discovery's
+  three tabs — the pending queue (fleet-wide and per-scan-config), the
+  recurring scan-schedule list, and the manual scan-now form — are
+  `Toolbar` + `Table` throughout; the schedule list drops its
+  `createPortal` kebab menu for inline actions, and the pending queues
+  select rows with the kit table's own checkbox column instead of a bespoke
+  table component that existed only to duplicate it.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -176,6 +199,17 @@ The format follows [Keep a Changelog]; LabDog follows
   callers. `hooks/use-host-detail.ts` (folded into the tabs that use each
   query) and `components/usage-bar.tsx` (its one caller moved onto the kit
   `Meter`).
+- `HostCombobox` (host-scoped CIDR/host and schedule-target pickers are
+  native `<select>`s now) and `components/scans/pending-hosts-table.tsx`
+  (the kit `Table`'s own `selected`/`onSelect` replaced it). `action-card.tsx`
+  and `pack-badge.tsx` — the Actions tab is two `Table`s now, not a card
+  list. `components/ui/confirm-dialog.tsx`, the shim PR A left for its
+  seventeen callers to migrate through — the last of them now imports
+  `Confirm` directly — and, with it, `data-table.tsx`, `table-filter-cell.tsx`,
+  `table.tsx`, `dialog.tsx`, `tooltip.tsx`, `card.tsx`, `breadcrumb.tsx` and
+  `skeleton.tsx` from `components/ui/`, plus `hooks/use-table-state.ts` and
+  `hooks/use-column-resize.ts` — every remaining caller of each was
+  converted in this PR or the three before it.
 
 ### Fixed
 

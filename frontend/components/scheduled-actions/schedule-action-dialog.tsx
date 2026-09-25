@@ -2,34 +2,29 @@
 
 import { useEffect, useMemo, useReducer } from "react"
 import { useQuery } from "@tanstack/react-query"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { ActionParameterForm } from "@/components/action-parameter-form"
-import { HostCombobox } from "@/components/host-combobox"
-import { CronInput } from "@/components/scheduled-actions/cron-input"
-import {
-  WizardStepIndicator,
-  type ScheduleStep,
-} from "@/components/scheduled-actions/wizard-step-indicator"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { showSuccess } from "@/lib/toast"
+import { ActionParameterForm } from "@/components/action-parameter-form"
+import { CronInput } from "@/components/scheduled-actions/cron-input"
+import { Banner, Facts, Field, Modal, Steps } from "@/components/ld"
 import type {
   ActionDefinition,
+  Host,
   HostGroup,
   ScheduledAction,
   ScheduledActionCreate,
   ScheduledActionTargetKind,
   ScheduledActionUpdate,
 } from "@/lib/types"
+
+export type ScheduleStep = "picker" | "parameters" | "schedule" | "review"
+const STEPS: { k: ScheduleStep; label: string }[] = [
+  { k: "picker", label: "Action & target" },
+  { k: "parameters", label: "Parameters" },
+  { k: "schedule", label: "Schedule" },
+  { k: "review", label: "Review" },
+]
 
 interface ScheduleActionDialogProps {
   open: boolean
@@ -58,21 +53,11 @@ interface State {
 type Action =
   | { type: "SET_STEP"; step: ScheduleStep }
   | { type: "SET_ACTION_KEY"; key: string | null }
-  | {
-      type: "SET_TARGET"
-      kind: ScheduledActionTargetKind | null
-      id: number | null
-    }
+  | { type: "SET_TARGET"; kind: ScheduledActionTargetKind | null; id: number | null }
   | { type: "SET_PARAMS"; params: Record<string, unknown> }
   | { type: "SET_CRON"; cron: string }
   | { type: "SET_ENABLED"; enabled: boolean }
-  | {
-      type: "SET_OPTIONS"
-      snapshotEnabled?: boolean
-      verifyEnabled?: boolean
-      autoRollback?: boolean
-      batchSize?: number
-    }
+  | { type: "SET_OPTIONS"; snapshotEnabled?: boolean; verifyEnabled?: boolean; autoRollback?: boolean; batchSize?: number }
   | { type: "RESET"; initial: State }
 
 function reducer(state: State, action: Action): State {
@@ -102,15 +87,12 @@ function reducer(state: State, action: Action): State {
   }
 }
 
-function buildInitialState(
-  preselected: ScheduleActionDialogProps["preselected"],
-  scheduledAction: ScheduleActionDialogProps["scheduledAction"],
-): State {
+function buildInitialState(preselected: ScheduleActionDialogProps["preselected"], scheduledAction: ScheduleActionDialogProps["scheduledAction"]): State {
   if (scheduledAction) {
     // Always start edit mode at the picker step too — both fields are
-    // locked, so the operator sees what they're editing before
-    // touching parameters. The explanation banner is rendered in
-    // PickerStep when both locks are active.
+    // locked, so the operator sees what they're editing before touching
+    // parameters. The explanation banner is rendered in PickerStep when
+    // both locks are active.
     return {
       step: "picker",
       actionKey: scheduledAction.action_key,
@@ -125,9 +107,9 @@ function buildInitialState(
       batchSize: scheduledAction.batch_size,
     }
   }
-  // Always start at picker — even when preselected. The picker shows
-  // the locked fields and gives the operator one beat to confirm
-  // context before they're asked for parameters.
+  // Always start at picker — even when preselected. The picker shows the
+  // locked fields and gives the operator one beat to confirm context
+  // before they're asked for parameters.
   return {
     step: "picker",
     actionKey: preselected?.action_key ?? null,
@@ -143,85 +125,40 @@ function buildInitialState(
   }
 }
 
-export function ScheduleActionDialog({
-  open,
-  onOpenChange,
-  preselected,
-  scheduledAction,
-}: ScheduleActionDialogProps) {
+function nextStep(step: ScheduleStep): ScheduleStep {
+  const order: ScheduleStep[] = ["picker", "parameters", "schedule", "review"]
+  return order[Math.min(order.indexOf(step) + 1, order.length - 1)]
+}
+function prevStep(step: ScheduleStep): ScheduleStep {
+  const order: ScheduleStep[] = ["picker", "parameters", "schedule", "review"]
+  return order[Math.max(order.indexOf(step) - 1, 0)]
+}
+
+export function ScheduleActionDialog({ open, onOpenChange, preselected, scheduledAction }: ScheduleActionDialogProps) {
   const isEdit = !!scheduledAction
-  const initial = useMemo(
-    () => buildInitialState(preselected, scheduledAction),
-    [preselected, scheduledAction],
-  )
+  const initial = useMemo(() => buildInitialState(preselected, scheduledAction), [preselected, scheduledAction])
   const [state, dispatch] = useReducer(reducer, initial)
 
-  // Reset state when the dialog re-opens with new props.
   useEffect(() => {
     if (open) dispatch({ type: "RESET", initial })
   }, [open, initial])
 
-  const { data: actions } = useQuery<ActionDefinition[]>({
-    queryKey: ["actions-catalog"],
-    queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"),
-    enabled: open,
-    staleTime: 60_000,
-  })
+  const { data: actions } = useQuery<ActionDefinition[]>({ queryKey: ["actions-catalog"], queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"), enabled: open, staleTime: 60_000 })
+  const { data: groups } = useQuery<HostGroup[]>({ queryKey: ["groups"], queryFn: () => apiFetch<HostGroup[]>("/api/groups"), enabled: open })
+  const { data: hosts } = useQuery<Host[]>({ queryKey: ["hosts"], queryFn: () => apiFetch<Host[]>("/api/hosts"), enabled: open })
 
-  const { data: groups } = useQuery<HostGroup[]>({
-    queryKey: ["groups"],
-    queryFn: () => apiFetch<HostGroup[]>("/api/groups"),
-    enabled: open,
-  })
-
-  const action = useMemo(
-    () => actions?.find((a) => a.key === state.actionKey) ?? null,
-    [actions, state.actionKey],
-  )
+  const action = useMemo(() => actions?.find((a) => a.key === state.actionKey) ?? null, [actions, state.actionKey])
 
   const createMutation = useApiMutation<ScheduledAction, ScheduledActionCreate>({
-    mutationFn: (body) =>
-      apiFetch<ScheduledAction>("/api/scheduled-actions", {
-        method: "POST",
-        json: body,
-      }),
-    invalidateKeys: [
-      ["scheduled-actions"],
-      ["scheduled-actions-by-target"],
-    ],
-    onSuccess: () => {
-      showSuccess("Schedule created")
-      onOpenChange(false)
-    },
+    mutationFn: (body) => apiFetch<ScheduledAction>("/api/scheduled-actions", { method: "POST", json: body }),
+    invalidateKeys: [["scheduled-actions"], ["scheduled-actions-by-target"]],
+    onSuccess: () => { showSuccess("Schedule created"); onOpenChange(false) },
   })
-
-  const updateMutation = useApiMutation<
-    ScheduledAction,
-    { id: number; body: ScheduledActionUpdate }
-  >({
-    mutationFn: ({ id, body }) =>
-      apiFetch<ScheduledAction>(`/api/scheduled-actions/${id}`, {
-        method: "PUT",
-        json: {
-          target_kind: state.targetKind,
-          target_id: state.targetId,
-          action_key: state.actionKey,
-          ...body,
-        },
-      }),
-    invalidateKeys: [
-      ["scheduled-actions"],
-      ["scheduled-actions-by-target"],
-    ],
-    onSuccess: () => {
-      showSuccess("Schedule updated")
-      onOpenChange(false)
-    },
+  const updateMutation = useApiMutation<ScheduledAction, { id: number; body: ScheduledActionUpdate }>({
+    mutationFn: ({ id, body }) => apiFetch<ScheduledAction>(`/api/scheduled-actions/${id}`, { method: "PUT", json: { target_kind: state.targetKind, target_id: state.targetId, action_key: state.actionKey, ...body } }),
+    invalidateKeys: [["scheduled-actions"], ["scheduled-actions-by-target"]],
+    onSuccess: () => { showSuccess("Schedule updated"); onOpenChange(false) },
   })
-
-  function gotoStep(step: ScheduleStep) {
-    dispatch({ type: "SET_STEP", step })
-  }
 
   function canAdvance(): boolean {
     switch (state.step) {
@@ -243,28 +180,13 @@ export function ScheduleActionDialog({
     if (isEdit && scheduledAction) {
       updateMutation.mutate({
         id: scheduledAction.id,
-        body: {
-          parameters: state.parameters,
-          schedule_cron: state.scheduleCron,
-          enabled: state.enabled,
-          snapshot_enabled: state.snapshotEnabled,
-          verify_enabled: state.verifyEnabled,
-          auto_rollback: state.autoRollback,
-          batch_size: state.batchSize,
-        },
+        body: { parameters: state.parameters, schedule_cron: state.scheduleCron, enabled: state.enabled, snapshot_enabled: state.snapshotEnabled, verify_enabled: state.verifyEnabled, auto_rollback: state.autoRollback, batch_size: state.batchSize },
       })
     } else {
       createMutation.mutate({
-        action_key: state.actionKey,
-        target_kind: state.targetKind,
-        target_id: state.targetKind === "fleet" ? null : state.targetId,
-        parameters: state.parameters,
-        schedule_cron: state.scheduleCron,
-        enabled: state.enabled,
-        snapshot_enabled: state.snapshotEnabled,
-        verify_enabled: state.verifyEnabled,
-        auto_rollback: state.autoRollback,
-        batch_size: state.batchSize,
+        action_key: state.actionKey, target_kind: state.targetKind, target_id: state.targetKind === "fleet" ? null : state.targetId,
+        parameters: state.parameters, schedule_cron: state.scheduleCron, enabled: state.enabled,
+        snapshot_enabled: state.snapshotEnabled, verify_enabled: state.verifyEnabled, auto_rollback: state.autoRollback, batch_size: state.batchSize,
       })
     }
   }
@@ -272,208 +194,106 @@ export function ScheduleActionDialog({
   const submitting = createMutation.isPending || updateMutation.isPending
   const submitError = createMutation.error || updateMutation.error
 
+  const targetLabel = (() => {
+    if (state.targetKind === "host") return hosts?.find((h) => h.id === state.targetId)?.hostname ?? (state.targetId ? `host #${state.targetId}` : "—")
+    if (state.targetKind === "group") return groups?.find((g) => g.id === state.targetId)?.name ?? (state.targetId ? `group #${state.targetId}` : "—")
+    return "fleet (all hosts)"
+  })()
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? "Edit scheduled action" : "Schedule an action"}
-          </DialogTitle>
-        </DialogHeader>
+    <Modal
+      title={isEdit ? "Edit scheduled action" : "Schedule an action"}
+      w={640}
+      onClose={() => onOpenChange(false)}
+      footer={
+        <>
+          {state.step !== "picker" && (
+            <button type="button" className="btn" onClick={() => dispatch({ type: "SET_STEP", step: prevStep(state.step) })}>Back</button>
+          )}
+          <button type="button" className="btn ml-auto" onClick={() => onOpenChange(false)}>Cancel</button>
+          {state.step === "review" ? (
+            <button type="button" className="btn btn-primary" disabled={submitting} data-testid="schedule-submit" onClick={handleSubmit}>
+              {submitting ? "Saving…" : isEdit ? "Save changes" : "Create schedule"}
+            </button>
+          ) : (
+            <button type="button" className="btn btn-primary" disabled={!canAdvance()} onClick={() => dispatch({ type: "SET_STEP", step: nextStep(state.step) })}>Continue</button>
+          )}
+        </>
+      }
+    >
+      <Steps steps={STEPS} current={state.step} />
 
-        <div className="mt-2">
-          <WizardStepIndicator current={state.step} />
-        </div>
+      {state.step === "picker" && (
+        <PickerStep
+          actions={actions ?? []}
+          groups={groups ?? []}
+          hosts={hosts ?? []}
+          actionKey={state.actionKey}
+          targetKind={state.targetKind}
+          targetId={state.targetId}
+          onActionChange={(k) => dispatch({ type: "SET_ACTION_KEY", key: k })}
+          onTargetChange={(kind, id) => dispatch({ type: "SET_TARGET", kind, id })}
+          actionLocked={isEdit || !!preselected?.action_key}
+          targetLocked={isEdit || !!preselected?.target}
+          isEdit={isEdit}
+        />
+      )}
 
-        {state.step === "picker" && (
-          <PickerStep
-            actions={actions ?? []}
-            groups={groups ?? []}
-            actionKey={state.actionKey}
-            targetKind={state.targetKind}
-            targetId={state.targetId}
-            onActionChange={(k) => dispatch({ type: "SET_ACTION_KEY", key: k })}
-            onTargetChange={(kind, id) =>
-              dispatch({ type: "SET_TARGET", kind, id })
-            }
-            actionLocked={isEdit || !!preselected?.action_key}
-            targetLocked={isEdit || !!preselected?.target}
-            isEdit={isEdit}
+      {state.step === "parameters" && action && (
+        <>
+          <ActionSummary action={action} targetLabel={targetLabel} />
+          <ActionParameterForm action={action} values={state.parameters} onChange={(params) => dispatch({ type: "SET_PARAMS", params })} />
+          {action.parameters.length === 0 && <p className="text-[11.5px] text-text-3">This action takes no parameters.</p>}
+        </>
+      )}
+
+      {state.step === "schedule" && action && (
+        <>
+          <ActionSummary action={action} targetLabel={targetLabel} />
+          <CronInput value={state.scheduleCron} onChange={(cron) => dispatch({ type: "SET_CRON", cron })} />
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input type="checkbox" checked={state.enabled} onChange={(e) => dispatch({ type: "SET_ENABLED", enabled: e.target.checked })} />
+            Enable immediately (start firing on the next due tick)
+          </label>
+        </>
+      )}
+
+      {state.step === "review" && action && (
+        <>
+          <ActionSummary action={action} targetLabel={targetLabel} />
+          <Facts
+            items={[
+              { k: "schedule", v: state.scheduleCron, mono: true },
+              { k: "enabled", v: state.enabled ? "yes" : "no" },
+              ...Object.entries(state.parameters).map(([k, v]) => ({ k, v: v === null || v === undefined ? "—" : String(v), mono: true })),
+            ]}
           />
-        )}
 
-        {state.step === "parameters" && action && (
-          <div className="mt-4">
-            <ActionPickerSummary action={action} state={state} groups={groups ?? []} />
-            <div className="mt-4">
-              <ActionParameterForm
-                action={action}
-                values={state.parameters}
-                onChange={(params) => dispatch({ type: "SET_PARAMS", params })}
-              />
-              {action.parameters.length === 0 && (
-                <p className="text-sm text-slate-500">
-                  This action takes no parameters.
-                </p>
+          {action.destructive && (
+            <div className="flex flex-col gap-2 rounded-r border border-line bg-surface-2 p-[11px]">
+              <span className="tt">destructive action options</span>
+              <Toggle label="Pre-run snapshot" checked={state.snapshotEnabled} onChange={(v) => dispatch({ type: "SET_OPTIONS", snapshotEnabled: v })} />
+              <Toggle label="Post-run verify" checked={state.verifyEnabled} onChange={(v) => dispatch({ type: "SET_OPTIONS", verifyEnabled: v })} />
+              <Toggle label="Auto-rollback on failure" checked={state.autoRollback} onChange={(v) => dispatch({ type: "SET_OPTIONS", autoRollback: v })} />
+              {state.targetKind !== "host" && (
+                <Field label="batch size" htmlFor="schedule-batch-size" className="max-w-[120px]">
+                  <input id="schedule-batch-size" type="number" min={1} className="inp mono num" value={state.batchSize} onChange={(e) => dispatch({ type: "SET_OPTIONS", batchSize: Math.max(1, Number(e.target.value)) })} />
+                </Field>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {state.step === "schedule" && action && (
-          <div className="mt-4 space-y-4">
-            <ActionPickerSummary action={action} state={state} groups={groups ?? []} />
-            <div className="space-y-2">
-              <Label className="text-sm font-medium text-slate-200">
-                Cron expression
-              </Label>
-              <CronInput
-                value={state.scheduleCron}
-                onChange={(cron) => dispatch({ type: "SET_CRON", cron })}
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <input
-                id="schedule-enabled"
-                type="checkbox"
-                checked={state.enabled}
-                onChange={(e) =>
-                  dispatch({ type: "SET_ENABLED", enabled: e.target.checked })
-                }
-                className="h-4 w-4 rounded border-slate-600"
-              />
-              <Label htmlFor="schedule-enabled" className="text-sm text-slate-300">
-                Enable immediately (start firing on the next due tick)
-              </Label>
-            </div>
-          </div>
-        )}
-
-        {state.step === "review" && action && (
-          <div className="mt-4 space-y-4">
-            <ActionPickerSummary action={action} state={state} groups={groups ?? []} />
-            <div className="rounded-lg border border-slate-700 bg-slate-900 p-4 space-y-1.5 text-sm">
-              <SummaryRow label="Schedule" value={state.scheduleCron} />
-              <SummaryRow label="Enabled" value={state.enabled ? "Yes" : "No"} />
-              {Object.entries(state.parameters).map(([k, v]) => (
-                <SummaryRow
-                  key={k}
-                  label={k}
-                  value={v === null || v === undefined ? "—" : String(v)}
-                />
-              ))}
-            </div>
-
-            {action.destructive && (
-              <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 p-4 space-y-3">
-                <p className="text-sm font-medium text-amber-300">
-                  Destructive action options
-                </p>
-                <Toggle
-                  label="Pre-run snapshot"
-                  checked={state.snapshotEnabled}
-                  onChange={(v) =>
-                    dispatch({ type: "SET_OPTIONS", snapshotEnabled: v })
-                  }
-                />
-                <Toggle
-                  label="Post-run verify"
-                  checked={state.verifyEnabled}
-                  onChange={(v) =>
-                    dispatch({ type: "SET_OPTIONS", verifyEnabled: v })
-                  }
-                />
-                <Toggle
-                  label="Auto-rollback on failure"
-                  checked={state.autoRollback}
-                  onChange={(v) =>
-                    dispatch({ type: "SET_OPTIONS", autoRollback: v })
-                  }
-                />
-                {state.targetKind !== "host" && (
-                  <div className="flex items-center gap-3">
-                    <Label className="text-sm text-slate-300">Batch size</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={state.batchSize}
-                      onChange={(e) =>
-                        dispatch({
-                          type: "SET_OPTIONS",
-                          batchSize: Math.max(1, Number(e.target.value)),
-                        })
-                      }
-                      className="w-20"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {submitError && (
-              <p className="text-sm text-red-400">{submitError.message}</p>
-            )}
-          </div>
-        )}
-
-        <DialogFooter className="mt-4">
-          <div className="flex w-full items-center justify-between gap-2">
-            <div>
-              {state.step !== "picker" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => gotoStep(prevStep(state.step))}
-                >
-                  Back
-                </Button>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-              >
-                Cancel
-              </Button>
-              {state.step === "review" ? (
-                <Button
-                  type="button"
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  data-testid="schedule-submit"
-                >
-                  {submitting
-                    ? "Saving…"
-                    : isEdit
-                    ? "Save changes"
-                    : "Create schedule"}
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={() => gotoStep(nextStep(state.step))}
-                  disabled={!canAdvance()}
-                >
-                  Continue
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          {submitError && <Banner tone="danger">{submitError.message}</Banner>}
+        </>
+      )}
+    </Modal>
   )
 }
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
 
 function PickerStep({
   actions,
   groups,
+  hosts,
   actionKey,
   targetKind,
   targetId,
@@ -485,62 +305,38 @@ function PickerStep({
 }: {
   actions: ActionDefinition[]
   groups: HostGroup[]
+  hosts: Host[]
   actionKey: string | null
   targetKind: ScheduledActionTargetKind | null
   targetId: number | null
   onActionChange: (k: string | null) => void
-  onTargetChange: (
-    kind: ScheduledActionTargetKind | null,
-    id: number | null,
-  ) => void
+  onTargetChange: (kind: ScheduledActionTargetKind | null, id: number | null) => void
   actionLocked: boolean
   targetLocked: boolean
   isEdit: boolean
 }) {
   const action = actions.find((a) => a.key === actionKey) ?? null
   // Built-in pseudo-actions (sync / drift_check / collect_state) have
-  // their own UI entry points — they're not surfaced for new
-  // schedules. Legacy rows that already target a builtin (created
-  // before this filter landed) still need to render in edit mode so
-  // the locked picker can show the current value.
-  const packs = actions.filter(
-    (a) => !a.key.startsWith("_builtin.") || a.key === actionKey,
-  )
+  // their own UI entry points — they're not surfaced for new schedules.
+  // Legacy rows that already target a builtin still need to render in
+  // edit mode so the locked picker can show the current value.
+  const packs = actions.filter((a) => !a.key.startsWith("_builtin.") || a.key === actionKey)
 
   return (
-    <div className="mt-4 space-y-4">
+    <>
       {isEdit && (
-        <p className="rounded border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
-          <span className="text-slate-300 font-medium">
-            Action and target are fixed.
-          </span>{" "}
-          To change them, delete this schedule and create a new one.
-        </p>
+        <Banner tone="idle">Action and target are fixed. To change them, delete this schedule and create a new one.</Banner>
       )}
-      <div className="space-y-2">
-        <Label className="text-sm font-medium text-slate-200">Action</Label>
-        <select
-          value={actionKey ?? ""}
-          disabled={actionLocked}
-          onChange={(e) => onActionChange(e.target.value || null)}
-          className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white disabled:opacity-60"
-          data-testid="action-picker"
-        >
-          <option value="">Select an action…</option>
-          {packs.map((a) => (
-            <option key={a.key} value={a.key}>
-              {a.name} — {a.pack_name}
-            </option>
-          ))}
-        </select>
-        {action && (
-          <p className="text-xs text-slate-500">{action.description}</p>
-        )}
-      </div>
 
-      <div className="space-y-2">
-        <Label className="text-sm font-medium text-slate-200">Target</Label>
-        <div className="flex gap-3 text-sm">
+      <Field as="div" label="action" hint={action?.description}>
+        <select value={actionKey ?? ""} disabled={actionLocked} onChange={(e) => onActionChange(e.target.value || null)} className="inp" data-testid="action-picker">
+          <option value="">Select an action…</option>
+          {packs.map((a) => <option key={a.key} value={a.key}>{a.name} — {a.pack_name}</option>)}
+        </select>
+      </Field>
+
+      <Field as="div" label="target">
+        <div className="flex gap-3.5">
           {(["host", "group", "fleet"] as const).map((kind) => {
             const disabled =
               targetLocked ||
@@ -548,134 +344,49 @@ function PickerStep({
               (kind === "group" && (action ? !action.supports_group : false)) ||
               (kind === "host" && (action ? !action.supports_host : false))
             return (
-              <label
-                key={kind}
-                className={`flex items-center gap-1.5 cursor-pointer ${
-                  disabled ? "opacity-40 cursor-not-allowed" : ""
-                }`}
-                title={disabled ? "Action does not support this target kind" : ""}
-              >
-                <input
-                  type="radio"
-                  name="target-kind"
-                  checked={targetKind === kind}
-                  disabled={disabled}
-                  onChange={() => onTargetChange(kind, null)}
-                  data-testid={`target-${kind}`}
-                />
-                <span className="text-slate-300 capitalize">{kind}</span>
+              <label key={kind} className="flex items-center gap-1.5 text-xs text-text-2" style={{ opacity: disabled ? 0.4 : 1, cursor: disabled ? "not-allowed" : "pointer" }} title={disabled ? "Action does not support this target kind" : undefined}>
+                <input type="radio" name="target-kind" checked={targetKind === kind} disabled={disabled} onChange={() => onTargetChange(kind, null)} data-testid={`target-${kind}`} style={{ accentColor: "var(--accent)" }} />
+                <span className="capitalize">{kind}</span>
               </label>
             )
           })}
         </div>
 
         {targetKind === "host" && (
-          <HostCombobox
-            value={targetId}
-            onChange={(id) => onTargetChange("host", id)}
-            disabled={targetLocked}
-          />
-        )}
-
-        {targetKind === "group" && (
-          <select
-            value={targetId ?? ""}
-            disabled={targetLocked}
-            onChange={(e) =>
-              onTargetChange(
-                "group",
-                e.target.value ? Number(e.target.value) : null,
-              )
-            }
-            className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white disabled:opacity-60"
-          >
-            <option value="">Select a group…</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
+          <select className="inp mono mt-1.5" value={targetId ?? ""} disabled={targetLocked} onChange={(e) => onTargetChange("host", e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— pick a host —</option>
+            {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname} · {h.ip_address}</option>)}
           </select>
         )}
 
-        {targetKind === "fleet" && (
-          <p className="text-xs text-amber-400">
-            This will run against every host in the inventory.
-          </p>
+        {targetKind === "group" && (
+          <select className="inp mono mt-1.5" value={targetId ?? ""} disabled={targetLocked} onChange={(e) => onTargetChange("group", e.target.value ? Number(e.target.value) : null)}>
+            <option value="">— pick a group —</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
         )}
-      </div>
+
+        {targetKind === "fleet" && <p className="mt-1.5 text-[11px] text-warn">This will run against every host in the inventory.</p>}
+      </Field>
+    </>
+  )
+}
+
+function ActionSummary({ action, targetLabel }: { action: ActionDefinition; targetLabel: string }) {
+  return (
+    <div className="rounded-r border border-line bg-surface-2 px-2.5 py-2 text-[11.5px]">
+      <span className="text-text">{action.name}</span>
+      <span className="text-text-faint"> → </span>
+      <span className="text-text-2">{targetLabel}</span>
     </div>
   )
 }
 
-function ActionPickerSummary({
-  action,
-  state,
-  groups,
-}: {
-  action: ActionDefinition
-  state: State
-  groups: HostGroup[]
-}) {
-  let targetLabel = "Fleet (all hosts)"
-  if (state.targetKind === "host") {
-    targetLabel = `Host #${state.targetId}`
-  } else if (state.targetKind === "group") {
-    const g = groups.find((x) => x.id === state.targetId)
-    targetLabel = g ? `Group: ${g.name}` : `Group #${state.targetId}`
-  }
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-400">
-      <span className="text-slate-200">{action.name}</span>
-      {" → "}
-      <span className="text-slate-300">{targetLabel}</span>
-    </div>
-  )
-}
-
-function SummaryRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[120px_1fr] gap-2">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-slate-200 font-mono break-all">{value}</span>
-    </div>
-  )
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string
-  checked: boolean
-  onChange: (v: boolean) => void
-}) {
-  return (
-    <label className="flex items-center gap-2 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 rounded border-slate-600"
-      />
-      <span className="text-sm text-slate-300">{label}</span>
+    <label className="flex items-center gap-2 text-xs text-text-2">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      {label}
     </label>
   )
-}
-
-// ---------------------------------------------------------------------------
-// Step navigation helpers
-// ---------------------------------------------------------------------------
-
-function nextStep(step: ScheduleStep): ScheduleStep {
-  const order: ScheduleStep[] = ["picker", "parameters", "schedule", "review"]
-  const i = order.indexOf(step)
-  return order[Math.min(i + 1, order.length - 1)]
-}
-
-function prevStep(step: ScheduleStep): ScheduleStep {
-  const order: ScheduleStep[] = ["picker", "parameters", "schedule", "review"]
-  const i = order.indexOf(step)
-  return order[Math.max(i - 1, 0)]
 }
