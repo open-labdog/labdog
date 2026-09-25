@@ -2,8 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Button } from "@/components/ui/button"
-import { Tooltip } from "@/components/ui/tooltip"
+import { Banner, Panel } from "@/components/ld"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
 import { showSuccess } from "@/lib/toast"
@@ -146,11 +145,7 @@ export function ReviewStep({
   })
 
   if (groupsLoading || !groups) {
-    return (
-      <div className="rounded-lg border border-slate-700 bg-slate-900 p-6 text-sm text-slate-400">
-        Preparing review…
-      </div>
-    )
+    return <div className="p-3 text-xs text-text-3">Preparing review…</div>
   }
 
   return (
@@ -349,41 +344,37 @@ function ReviewStepInner({
     activateMutation.mutate(body)
   }
 
+  const n = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-3">
       {scanResult.scan_errors.length > 0 && (
-        <div className="rounded-lg border border-red-500/40 bg-red-950/30 p-4">
-          <p className="text-sm font-medium text-red-300">
-            Scan reported infrastructure errors
-          </p>
-          <ul className="mt-2 space-y-1 text-xs text-red-200">
-            {scanResult.scan_errors.map((err, idx) => (
-              <li key={idx}>
-                <span className="font-mono">{err.file}</span> — {err.message}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <Banner tone="danger">
+          <span className="font-medium">Scan reported infrastructure errors.</span>{" "}
+          {scanResult.scan_errors.map((err, idx) => (
+            <span key={idx}>
+              <span className="mono">{err.file}</span> — {err.message}
+              {idx < scanResult.scan_errors.length - 1 ? "; " : ""}
+            </span>
+          ))}
+        </Banner>
       )}
 
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-200">
-            Action packs
-            <span className="ml-2 text-slate-500 tabular-nums">
-              ({scanResult.packs.length})
-            </span>
-          </h2>
-          {onRescan && (
-            <Button type="button" variant="outline" size="sm" onClick={onRescan}>
+      <Panel
+        title="action packs"
+        meta={n(scanResult.packs.length, "pack")}
+        actions={
+          onRescan && (
+            <button type="button" className="btn btn-sm" onClick={onRescan}>
               Re-scan
-            </Button>
-          )}
-        </div>
+            </button>
+          )
+        }
+      >
         {scanResult.packs.length === 0 ? (
-          <p className="text-sm text-slate-500">No packs detected.</p>
+          <div className="p-[11px] text-[11.5px] text-text-3">No packs detected.</div>
         ) : (
-          <div className="space-y-3">
+          <div className="flex flex-col gap-1.5 p-[11px]">
             {scanResult.packs.map((pack) => {
               const selection = selections.packs[pack.path] ?? { checked: false }
               return (
@@ -393,86 +384,42 @@ function ReviewStepInner({
                   selection={selection}
                   existingWinners={scanResult.existing_key_winners}
                   conflictKeys={conflictKeys}
-                  inUnresolvedConflict={unresolvedIntraConflictPaths.has(
-                    pack.path,
-                  )}
-                  onToggle={(checked) =>
-                    setPackSelection(pack.path, { checked })
-                  }
+                  inUnresolvedConflict={unresolvedIntraConflictPaths.has(pack.path)}
+                  onToggle={(checked) => setPackSelection(pack.path, { checked })}
                 />
               )
             })}
           </div>
         )}
-      </section>
+      </Panel>
 
       {contested.length > 0 && (
-        <section>
-          <h2 className="mb-1 text-sm font-medium text-slate-200">
-            Resolve action-key conflicts
-            <span className="ml-2 text-slate-500 tabular-nums">
-              ({contested.length})
-            </span>
-          </h2>
-          <p className="text-xs text-slate-500 mb-3">
-            For each key that already has an owner and would be contributed
-            by a new pack, choose which pack should win.
-          </p>
-          <div className="space-y-3">
+        <Panel title="resolve action-key conflicts" meta={n(contested.length, "key")}>
+          <div className="flex flex-col gap-1.5 p-[11px]">
+            <div className="text-[11.5px] text-text-3">For each key that already has an owner and would be contributed by a new pack, choose which pack wins.</div>
             {contested.map((c) => {
               const choice = keyResolutions[c.key]
-              const existingValue =
-                c.existingWinner.source === "bundled"
-                  ? "bundled"
-                  : `existing:${c.existingWinner.pack_id}`
+              const existingValue = c.existingWinner.source === "bundled" ? "bundled" : `existing:${c.existingWinner.pack_id}`
               return (
-                <div
-                  key={c.key}
-                  className="rounded-lg border border-slate-700 bg-slate-900 p-3"
-                  data-testid="contested-key-row"
-                  data-action-key={c.key}
-                >
-                  <p className="font-mono text-sm text-white">{c.key}</p>
-                  <div className="mt-2 space-y-1.5">
+                <div key={c.key} className="rounded-r border border-line bg-surface-2 px-2.5 py-2" data-testid="contested-key-row" data-action-key={c.key}>
+                  <div className="mono text-xs text-text">{c.key}</div>
+                  <div className="mt-1.5 flex flex-col gap-1">
                     {c.contributingPaths.map((path) => {
                       const value = `new:${path}`
                       const pack = scanResult.packs.find((p) => p.path === path)
                       return (
-                        <label
-                          key={value}
-                          className="flex items-center gap-2 text-sm cursor-pointer rounded px-2 py-1 hover:bg-slate-800"
-                        >
-                          <input
-                            type="radio"
-                            name={`winner-${c.key}`}
-                            checked={choice === value}
-                            onChange={() => setKeyResolution(c.key, value)}
-                          />
-                          <span className="text-slate-200 flex-1">
-                            {pack?.name ?? path}{" "}
-                            <span className="text-slate-500 text-xs">
-                              (new — {path || "repo root"})
-                            </span>
+                        <label key={value} className="row-hover flex cursor-pointer items-center gap-2 rounded-r px-1.5 py-1 text-xs">
+                          <input type="radio" name={`winner-${c.key}`} checked={choice === value} onChange={() => setKeyResolution(c.key, value)} />
+                          <span className="flex-1 text-text">
+                            {pack?.name ?? path} <span className="text-[11px] text-text-3">(new — {path || "repo root"})</span>
                           </span>
                         </label>
                       )
                     })}
-                    <label className="flex items-center gap-2 text-sm cursor-pointer rounded px-2 py-1 hover:bg-slate-800">
-                      <input
-                        type="radio"
-                        name={`winner-${c.key}`}
-                        checked={choice === existingValue}
-                        onChange={() => setKeyResolution(c.key, existingValue)}
-                      />
-                      <span className="text-slate-200 flex-1">
-                        {c.existingWinner.pack_name}{" "}
-                        <span className="text-slate-500 text-xs">
-                          (existing —{" "}
-                          {c.existingWinner.source === "bundled"
-                            ? "bundled"
-                            : "DB pack"}
-                          )
-                        </span>
+                    <label className="row-hover flex cursor-pointer items-center gap-2 rounded-r px-1.5 py-1 text-xs">
+                      <input type="radio" name={`winner-${c.key}`} checked={choice === existingValue} onChange={() => setKeyResolution(c.key, existingValue)} />
+                      <span className="flex-1 text-text">
+                        {c.existingWinner.pack_name} <span className="text-[11px] text-text-3">(existing — {c.existingWinner.source === "bundled" ? "bundled" : "DB pack"})</span>
                       </span>
                     </label>
                   </div>
@@ -480,25 +427,16 @@ function ReviewStepInner({
               )
             })}
           </div>
-        </section>
+        </Panel>
       )}
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-slate-200">
-          GitOps files
-          <span className="ml-2 text-slate-500 tabular-nums">
-            ({scanResult.gitops_files.length})
-          </span>
-        </h2>
+      <Panel title="gitops files" meta={n(scanResult.gitops_files.length, "file")}>
         {scanResult.gitops_files.length === 0 ? (
-          <p className="text-sm text-slate-500">No GitOps files detected.</p>
+          <div className="p-[11px] text-[11.5px] text-text-3">No GitOps files detected.</div>
         ) : (
-          <div className="space-y-3">
+          <div className="flex flex-col gap-1.5 p-[11px]">
             {scanResult.gitops_files.map((file) => {
-              const selection = selections.gitops[file.path] ?? {
-                checked: false,
-                host_group_id: null,
-              }
+              const selection = selections.gitops[file.path] ?? { checked: false, host_group_id: null }
               return (
                 <DetectedGitopsRow
                   key={file.path}
@@ -506,45 +444,32 @@ function ReviewStepInner({
                   selection={selection}
                   groups={groups}
                   currentRepoId={repoId}
-                  onToggle={(checked) =>
-                    setGitopsSelection(file.path, { checked })
-                  }
-                  onGroupChange={(id) =>
-                    setGitopsSelection(file.path, { host_group_id: id })
-                  }
+                  onToggle={(checked) => setGitopsSelection(file.path, { checked })}
+                  onGroupChange={(id) => setGitopsSelection(file.path, { host_group_id: id })}
                 />
               )
             })}
           </div>
         )}
-      </section>
+      </Panel>
 
-      {activateMutation.error && (
-        <p className="text-sm text-red-400">{activateMutation.error.message}</p>
-      )}
+      {activateMutation.error && <Banner tone="danger">{activateMutation.error.message}</Banner>}
 
-      <div className="flex items-center justify-between gap-3 pt-2">
-        <p className="text-xs text-slate-500">
-          {checkedPacks.length} pack{checkedPacks.length === 1 ? "" : "s"} •{" "}
-          {checkedGitops.length} group binding
-          {checkedGitops.length === 1 ? "" : "s"} selected
-        </p>
-        {activateBlockedReason ? (
-          <Tooltip content={activateBlockedReason}>
-            <Button type="button" disabled data-testid="activate-button">
-              Activate
-            </Button>
-          </Tooltip>
-        ) : (
-          <Button
-            type="button"
-            onClick={handleActivate}
-            disabled={activateMutation.isPending}
-            data-testid="activate-button"
-          >
-            {activateMutation.isPending ? "Activating..." : "Activate"}
-          </Button>
-        )}
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="tt">
+          {n(checkedPacks.length, "pack")} · {n(checkedGitops.length, "group binding")} selected
+        </span>
+        {activateBlockedReason && <span className="text-[11.5px] text-warn">{activateBlockedReason}</span>}
+        <button
+          type="button"
+          className="btn btn-primary ml-auto"
+          onClick={handleActivate}
+          disabled={!!activateBlockedReason || activateMutation.isPending}
+          title={activateBlockedReason ?? undefined}
+          data-testid="activate-button"
+        >
+          {activateMutation.isPending ? "Activating…" : "Activate"}
+        </button>
       </div>
     </div>
   )

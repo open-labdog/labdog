@@ -2,17 +2,8 @@
 
 import { useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronDownIcon, SaveIcon } from "lucide-react"
 import { apiFetch } from "@/lib/api"
-import { Button } from "@/components/ui/button"
-import {
-  Collapsible,
-  CollapsiblePanel,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { Help, Panel, Tag } from "@/components/ld"
 
 interface AppSetting {
   key: string
@@ -211,19 +202,15 @@ function derivedOpen(categoryKey: string, settingsMap: Map<string, AppSetting>):
   return settingsMap.get("ai.enabled")?.value !== "0"
 }
 
-const CARD = "rounded-lg border border-slate-700 bg-slate-900 p-5"
-
 /**
- * One category. Plain card unless the category declares `collapsible`.
+ * One category — a kit `Panel`. Plain unless the category declares
+ * `collapsible`.
  *
  * When it does, the header and the pinned row render above the fold and
  * are never hidden; only `children` goes behind the disclosure. That split
- * is the whole point — see the note on `Category.collapsible`.
- *
- * The `<h2>` wraps the trigger rather than being replaced by it, so heading
- * navigation still lands on "AI" exactly as before; it is merely
- * activatable now. `CollapsibleTrigger` supplies aria-expanded and
- * aria-controls itself.
+ * is the whole point — see the note on `Category.collapsible`. The
+ * disclosure is a native `<details>` whose `open` we control, so it needs
+ * no library and reads as one to assistive tech.
  */
 function CategoryCard({
   label,
@@ -252,54 +239,39 @@ function CategoryCard({
   onOpenChange: (open: boolean) => void
   children: ReactNode
 }) {
-  const heading = (
+  const title = (
     <span className="flex items-center gap-2">
       {label}
-      <span className="text-sm font-normal text-slate-400">({count})</span>
       {uncategorised && (
-        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-normal text-slate-400 ring-1 ring-slate-700">
-          Uncategorised
-        </span>
-      )}
-      {hasPendingEdit && (
-        <span
-          className="h-1.5 w-1.5 rounded-full bg-amber-500"
-          title="Unsaved changes"
-        />
+        <Tag tone="hold" title="no curated category claims these keys — add them to the owning one">
+          uncategorised
+        </Tag>
       )}
     </span>
   )
+  const meta = `${count} setting${count === 1 ? "" : "s"}${hasPendingEdit ? " · unsaved" : ""}`
 
   if (!pinned) {
     return (
-      <div className={CARD}>
-        <h2 className="mb-4 text-lg font-semibold text-white">{heading}</h2>
-        <div className="space-y-5">{children}</div>
-      </div>
+      <Panel title={title} meta={meta}>
+        {children}
+      </Panel>
     )
   }
 
   return (
-    <Collapsible open={open} onOpenChange={onOpenChange} className={CARD}>
-      <h2 className="text-lg font-semibold text-white">
-        <CollapsibleTrigger className="hover:text-slate-200">
-          {heading}
-          <span className="flex items-center gap-1.5 text-xs font-normal text-slate-400">
-            {open ? "Hide" : `Show ${count - 1} more`}
-            <ChevronDownIcon className="h-4 w-4 shrink-0 transition-transform data-panel-open:rotate-180" />
-          </span>
-        </CollapsibleTrigger>
-      </h2>
-
-      {/* Never inside the panel: this is the row an error message sends
-          operators here to change, and the card is collapsed by default
-          precisely when that setting is off. */}
-      <div className="mt-4">{pinned}</div>
-
-      <CollapsiblePanel>
-        <div className="mt-5 space-y-5 border-t border-slate-800 pt-5">{children}</div>
-      </CollapsiblePanel>
-    </Collapsible>
+    <Panel title={title} meta={meta}>
+      {/* Never inside the disclosure: this is the row an error message
+          sends operators here to change, and the card is collapsed by
+          default precisely when that setting is off. */}
+      {pinned}
+      <details open={open} onToggle={(e) => onOpenChange((e.target as HTMLDetailsElement).open)}>
+        <summary className="tt cursor-pointer select-none list-none px-[11px] py-2 text-text-3 hover:text-text-2 [&::-webkit-details-marker]:hidden">
+          {open ? "▾ hide" : `▸ show ${count - 1} more`}
+        </summary>
+        {children}
+      </details>
+    </Panel>
   )
 }
 
@@ -384,33 +356,41 @@ export function SettingsEditor({
     setSaving(prev => ({ ...prev, [key]: false }))
   }
 
+  const setValue = (key: string, value: string) => setEditedValues((prev) => ({ ...prev, [key]: value }))
+  const discard = (key: string) =>
+    setEditedValues((prev) => {
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+
   const renderInput = (setting: AppSetting) => {
     const currentValue = editedValues[setting.key] ?? setting.value
     const isEdited = setting.key in editedValues && editedValues[setting.key] !== setting.value
+    const busy = !!saving[setting.key]
+    const saveButton = isEdited && (
+      <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => handleSave(setting.key)}>
+        {busy ? "Saving…" : "Save"}
+      </button>
+    )
 
     if (isMultiline(setting)) {
-      const overLimit =
-        setting.max_length != null && currentValue.length > setting.max_length
+      const overLimit = setting.max_length != null && currentValue.length > setting.max_length
       const isDefault = currentValue === setting.default
       return (
-        <div className="space-y-2">
-          <Textarea
-            rows={14}
-            className="w-full bg-slate-800 border-slate-700 font-mono text-xs text-white"
+        <div className="flex w-full flex-col gap-2">
+          <textarea
+            rows={12}
+            className="inp mono text-[11.5px]"
             spellCheck={false}
             value={currentValue}
-            onChange={e => setEditedValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
+            onChange={(e) => setValue(setting.key, e.target.value)}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {isEdited && (
-              <Button
-                size="sm"
-                disabled={saving[setting.key] || overLimit}
-                onClick={() => handleSave(setting.key)}
-              >
-                <SaveIcon className="w-3.5 h-3.5 mr-1" />
-                {saving[setting.key] ? "Saving..." : "Save"}
-              </Button>
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy || overLimit} onClick={() => handleSave(setting.key)}>
+                {busy ? "Saving…" : "Save"}
+              </button>
             )}
             {/*
               Restoring the shipped wording is otherwise unreachable: the
@@ -419,36 +399,17 @@ export function SettingsEditor({
               database.
             */}
             {!isDefault && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={saving[setting.key]}
-                onClick={() =>
-                  setEditedValues(prev => ({ ...prev, [setting.key]: setting.default }))
-                }
-              >
+              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setValue(setting.key, setting.default)}>
                 Reset to default
-              </Button>
+              </button>
             )}
             {isEdited && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() =>
-                  setEditedValues(prev => {
-                    const next = { ...prev }
-                    delete next[setting.key]
-                    return next
-                  })
-                }
-              >
+              <button type="button" className="btn btn-sm btn-ghost" onClick={() => discard(setting.key)}>
                 Discard
-              </Button>
+              </button>
             )}
             {setting.max_length != null && (
-              <span
-                className={`ml-auto text-xs ${overLimit ? "text-red-400" : "text-slate-400"}`}
-              >
+              <span className={`mono num ml-auto text-[11px] ${overLimit ? "text-danger" : "text-text-3"}`}>
                 {currentValue.length} / {setting.max_length}
               </span>
             )}
@@ -459,50 +420,41 @@ export function SettingsEditor({
 
     if (setting.choices || isToggle(setting)) {
       const options = setting.choices
-        ? setting.choices.map(c => ({ value: c, label: c }))
+        ? setting.choices.map((c) => ({ value: c, label: c }))
         : [
             { value: "0", label: "Off" },
             { value: "1", label: "On" },
           ]
       return (
-        <div className="flex items-center gap-2">
-          <select
-            className="bg-slate-800 border border-slate-700 rounded-md px-3 py-1.5 text-sm text-white w-48"
-            value={currentValue}
-            onChange={e => setEditedValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
-          >
-            {options.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+        <div className="flex items-center gap-1.5">
+          <select className="inp mono" style={{ width: 140 }} value={currentValue} onChange={(e) => setValue(setting.key, e.target.value)}>
+            {options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
             ))}
           </select>
-          {isEdited && (
-            <Button size="sm" disabled={saving[setting.key]} onClick={() => handleSave(setting.key)}>
-              <SaveIcon className="w-3.5 h-3.5 mr-1" />
-              {saving[setting.key] ? "Saving..." : "Save"}
-            </Button>
-          )}
+          {saveButton}
         </div>
       )
     }
 
     return (
-      <div className="flex items-center gap-2">
-        <Input
-          type={setting.value_type === "float" ? "number" : setting.value_type === "int" ? "number" : "text"}
+      <div className="flex items-center gap-1.5">
+        <input
+          type={setting.value_type === "float" || setting.value_type === "int" ? "number" : "text"}
           step={setting.value_type === "float" ? "0.1" : undefined}
           min={setting.min ?? undefined}
           max={setting.max ?? undefined}
-          className="w-48 bg-slate-800 border-slate-700"
+          className="inp mono num"
+          style={{ width: 140 }}
           value={currentValue}
-          onChange={e => setEditedValues(prev => ({ ...prev, [setting.key]: e.target.value }))}
-          onKeyDown={e => { if (e.key === "Enter" && isEdited) handleSave(setting.key) }}
+          onChange={(e) => setValue(setting.key, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && isEdited) handleSave(setting.key)
+          }}
         />
-        {isEdited && (
-          <Button size="sm" disabled={saving[setting.key]} onClick={() => handleSave(setting.key)}>
-            <SaveIcon className="w-3.5 h-3.5 mr-1" />
-            {saving[setting.key] ? "Saving..." : "Save"}
-          </Button>
-        )}
+        {saveButton}
       </div>
     )
   }
@@ -512,41 +464,40 @@ export function SettingsEditor({
     if (!setting) return null
     const stacked = isMultiline(setting)
     return (
-      <div
-        key={key}
-        className={stacked ? "space-y-2" : "flex items-start justify-between gap-8"}
-      >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-medium text-white">{setting.description}</p>
-            {setting.help && (
-              // Titled with the key rather than the description: the popup
-              // sits right beside the description, so repeating it wastes the
-              // heading, while the key is what an operator quotes in a config
-              // file, a bug report, or a search.
-              <InfoPopover title={setting.key}>{setting.help}</InfoPopover>
+      <div key={key} className={`flex gap-3 border-b border-line-faint px-[11px] py-[9px] last:border-b-0 ${stacked ? "flex-col" : "items-center"}`}>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-text">{setting.description}</div>
+          {/* Both lines are operative text an operator reads and quotes:
+              the key is what goes in a config file or a bug report. */}
+          <div className="mono trunc text-[11px] text-text-3">
+            {setting.key}
+            {setting.min != null && setting.max != null && !isToggle(setting) && (
+              <span className="text-text-faint">
+                {" "}
+                · {setting.min} – {setting.max} · default {setting.default}
+              </span>
             )}
           </div>
-          {/* FRONTEND.md reserves text-slate-500 for decorative elements;
-              both of these are operative text an operator reads and quotes. */}
-          <p className="text-xs text-slate-400 mt-0.5 font-mono">{setting.key}</p>
-          {setting.min != null && setting.max != null && !isToggle(setting) && (
-            <p className="text-xs text-slate-400 mt-0.5">
-              Range: {setting.min} &ndash; {setting.max} (default: {setting.default})
-            </p>
+          {setting.help && (
+            // Summarised with "why" rather than the key: the key is on the
+            // line above, and the paragraph answers the question the row
+            // leaves open.
+            <Help>{setting.help}</Help>
           )}
           {errors[key] && (
-            <p className="text-xs text-red-400 mt-1">{errors[key]}</p>
+            <div className="mt-1 text-[11px] text-danger" role="alert">
+              {errors[key]}
+            </div>
           )}
         </div>
-        <div className={stacked ? "" : "flex-shrink-0"}>{renderInput(setting)}</div>
+        <div className={stacked ? "" : "shrink-0"}>{renderInput(setting)}</div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      {isLoading && <p className="text-slate-500">Loading settings...</p>}
+    <div className="flex flex-col gap-3">
+      {isLoading && <p className="m-0 text-xs text-text-3">Loading settings…</p>}
 
       {settings &&
         Object.entries(CATEGORIES)

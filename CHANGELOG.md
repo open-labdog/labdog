@@ -118,6 +118,15 @@ The format follows [Keep a Changelog]; LabDog follows
   service, audit, alert and assistant states, so an enum is painted the
   same wherever it appears.
 
+- **The Settings sub-pages are screens on the shell.** Users, SSH keys,
+  Git repositories (list, repository page, connect wizard), Grafana,
+  Proxmox (at `/hypervisors`) and AI providers get the page head with
+  crumbs, the kit table with filters in the head, modals for their forms
+  and a confirmation for every delete — AI providers had none. The
+  settings editor under Settings › AI / Fleet defaults / System is the
+  design's key/value rows, and the Actions › Packs tab is two panels:
+  the registry and the sources.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -132,6 +141,9 @@ The format follows [Keep a Changelog]; LabDog follows
 - The dashboard's chart and feed panels (`components/dashboard/*`) and the
   `recharts` dependency: nothing rendered them once `/dashboard` became a
   redirect to Overview.
+- Per-column filter popovers and drag-to-resize columns on the Settings
+  tables; filtering is a search box and filter chips in the page head, as
+  on Hosts and Groups.
 
 ## [0.10.0] — 2026-09-18
 

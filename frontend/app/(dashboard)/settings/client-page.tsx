@@ -63,7 +63,7 @@ export default function SettingsPage() {
             </Panel>
             <Panel title="about" meta="build + licence">
               <div className="p-3">
-                <AboutPage embedded />
+                <AboutPage />
               </div>
             </Panel>
           </div>

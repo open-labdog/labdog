@@ -162,8 +162,25 @@ export function zoneDef(k: ZoneKey): ZoneDef {
  * written for. Exact paths, plus the group detail page — but not the
  * standalone module editors or run pages beneath it.
  */
-const FLUSH_ROUTES = ["/overview", "/hosts", "/groups", "/discovery", "/plans", "/drift", "/runs", "/actions", "/settings"]
-const FLUSH_PATTERNS = [/^\/groups\/\d+$/]
+const FLUSH_ROUTES = [
+  "/overview",
+  "/hosts",
+  "/groups",
+  "/discovery",
+  "/plans",
+  "/drift",
+  "/runs",
+  "/actions",
+  "/settings",
+  "/users",
+  "/ssh-keys",
+  "/git-repos",
+  "/git-repos/new",
+  "/grafana",
+  "/hypervisors",
+  "/ai-providers",
+]
+const FLUSH_PATTERNS = [/^\/groups\/\d+$/, /^\/git-repos\/\d+$/]
 
 export function isFlushRoute(pathname: string): boolean {
   const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname

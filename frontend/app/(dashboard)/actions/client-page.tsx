@@ -197,7 +197,7 @@ export default function ActionsPage() {
 
       {tab === "packs" && (
         <div className="scroll flex-1 p-3.5">
-          <ActionPacksPage embedded />
+          <ActionPacksPage />
         </div>
       )}
       {tab === "schedules" && (

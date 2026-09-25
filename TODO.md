@@ -56,7 +56,21 @@ deleted when it lands.
 
 ### `docs/ui/*.md`
 
-- (nothing yet — appended per PR)
+- `settings.md`, `admin.md` — the Settings sub-pages are shell screens now
+  (crumbs `settings / access` or `settings / integrations`, `PageHead`,
+  kit tables with head filters instead of per-column filter popovers, no
+  column resizing); Users, SSH keys, Git repositories, Grafana, Proxmox and
+  AI providers forms are modals with lowercase `.tt` labels; Proxmox lives
+  at `/hypervisors` with its own head (no "Workflow tab" — that text was
+  stale); AI providers gains a delete confirmation and `why` disclosures
+  in place of the info popovers; the settings editor's AI category is a
+  native disclosure with the pinned `ai.enabled` row above it.
+- `gitops-ui.md` — the Git repositories list, repository page and the
+  connect wizard (steps as `Steps`, one panel per step, review rows as
+  checkbox rows in panels; "Webhook URLs" is a modal with copy buttons).
+- `actions.md` — the Packs tab: registry and sources are two panels; a
+  contested key expands under the registry table; row actions are the
+  lowercase `sync · win all keys · edit · delete`.
 
 ### `docs/ui/screenshots/`
 

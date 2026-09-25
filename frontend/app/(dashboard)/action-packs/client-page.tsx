@@ -3,33 +3,11 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, ChevronDown, ChevronRight, Lock } from "lucide-react"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { useDelayedLoading } from "@/lib/utils"
+import { shortAgo } from "@/lib/fleet"
 import { showSuccess, showError } from "@/lib/toast"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { TableSkeleton } from "@/components/ui/skeleton"
-import { ConfirmDialog } from "@/components/ui/confirm-dialog"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { DataTable } from "@/components/ui/data-table"
+import { Banner, Confirm, Field, Modal, Panel, Table, Tag } from "@/components/ld"
 import type {
   ActionDefinition,
   ActionPack,
@@ -81,19 +59,10 @@ const BUNDLED_PACK_ROW: BundledPackRow = {
   isBundled: true,
 }
 
-function statusChip(pack: ActionPack) {
-  if (pack.last_sync_status === "ok") {
-    return <span className="text-green-400 text-xs">OK</span>
-  }
-  if (pack.last_sync_status === "failed") {
-    return <span className="text-red-400 text-xs">Failed</span>
-  }
-  return <span className="text-slate-500 text-xs">Never</span>
-}
-
-function formatDate(iso: string | null) {
-  if (!iso) return "—"
-  return new Date(iso).toLocaleString()
+function syncTag(pack: ActionPack) {
+  if (pack.last_sync_status === "ok") return <Tag tone="ok">synced</Tag>
+  if (pack.last_sync_status === "failed") return <Tag tone="danger">failed</Tag>
+  return <Tag>never synced</Tag>
 }
 
 function packLabel(pack: { pack_id: number | null; pack_name: string }): string {
@@ -101,8 +70,12 @@ function packLabel(pack: { pack_id: number | null; pack_name: string }): string 
   return pack.pack_name
 }
 
-/** `embedded` drops the header: under `/actions` it is the Packs tab. */
-export default function ActionPacksPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * Action packs — the body of the Actions screen's Packs tab. The registry
+ * (which pack owns each action key) is the primary surface; the sources
+ * table underneath is where packs are added, synced and removed.
+ */
+export default function ActionPacksPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<ActionPack | null>(null)
   const [form, setForm] = useState<PackFormState | null>(null)
@@ -119,7 +92,6 @@ export default function ActionPacksPage({ embedded = false }: { embedded?: boole
   } | null>(null)
   const [claiming, setClaiming] = useState(false)
   const [confirmState, setConfirmState] = useState<{
-    open: boolean
     title: string
     description: string
     action: () => void | Promise<void>
@@ -136,7 +108,6 @@ export default function ActionPacksPage({ embedded = false }: { embedded?: boole
     queryKey: ["action-packs"],
     queryFn: () => apiFetch<ActionPack[]>("/api/action-packs"),
   })
-  const showLoading = useDelayedLoading(isLoading)
 
   const { data: gitRepos } = useQuery<GitRepository[]>({
     queryKey: ["git-repos"],
@@ -270,9 +241,8 @@ export default function ActionPacksPage({ embedded = false }: { embedded?: boole
 
   function handleDelete(pack: ActionPack) {
     setConfirmState({
-      open: true,
-      title: "Delete Action Pack",
-      description: `Delete "${pack.name}"? The pack's checkout will be removed, any actions it provided will disappear from the registry, and any keys pinned to this pack become unresolved (action unrunnable until you pick a new winner). The linked Git repository (if any) is not affected.`,
+      title: "Delete action pack",
+      description: `${pack.name}'s checkout is removed, the actions it provided disappear from the registry, and keys pinned to it become unresolved — unrunnable until you pick a new winner. The linked Git repository, if any, is not affected.`,
       action: async () => {
         setConfirmState((prev) => (prev ? { ...prev, loading: true } : null))
         try {
@@ -378,634 +348,366 @@ export default function ActionPacksPage({ embedded = false }: { embedded?: boole
 
   const unresolvedRows = registryRows.filter((r) => r.action.unresolved)
 
-  return (
-    <div className="space-y-6">
-      {!embedded && <Breadcrumb items={[{ label: "Operations" }, { label: "Action Packs" }]} />}
+  type RegistryRow = (typeof registryRows)[number]
+  const setF = <K extends keyof PackFormState>(k: K, v: PackFormState[K]) => setForm((prev) => (prev ? { ...prev, [k]: v } : prev))
+  const closeDialog = () => {
+    setDialogOpen(false)
+    setFormError(null)
+  }
 
-      <div className="flex items-center justify-between">
-        <div>
-          {!embedded && <h1 className="text-2xl font-bold text-white">Action Packs</h1>}
-          <p className="text-slate-400 text-sm mt-1">
-            Each action key has at most one source pack. When multiple packs
-            declare the same key, pick a winner per key below. There is no
-            global pack ordering — pack rows are unranked. To bulk-add
-            several packs from one repo, use the scan wizard from the{" "}
-            <Link href="/git-repos" className="underline hover:text-slate-200">
-              Git Repos
-            </Link>{" "}
-            page.
-          </p>
-        </div>
-        <Button onClick={openCreate}>Add Pack</Button>
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="text-[11.5px] text-text-3">
+        Each action key has at most one source pack. When several packs declare the same key, pick a winner per key — there is no global pack ordering. To bulk-add packs from one repository, use the scan wizard under{" "}
+        <Link href="/git-repos" className="text-ld-accent">
+          Settings › Git repositories
+        </Link>
+        .
       </div>
 
       {unresolvedRows.length > 0 && (
-        <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-950/40 border border-amber-800">
-          <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
-          <div className="text-sm">
-            <p className="text-amber-200 font-medium">
-              {unresolvedRows.length} action{" "}
-              {unresolvedRows.length === 1 ? "key needs" : "keys need"} a
-              decision
-            </p>
-            <p className="text-amber-300/80 mt-0.5">
-              Pick a winning pack below for each unresolved key. Until then
-              these actions are blocked.
-            </p>
-            <p className="mt-2 text-amber-200/90 font-mono text-xs">
-              {unresolvedRows.map((r) => r.action.key).join(", ")}
-            </p>
-          </div>
-        </div>
+        <Banner tone="warn">
+          <span className="font-medium">
+            {unresolvedRows.length} action {unresolvedRows.length === 1 ? "key needs" : "keys need"} a decision
+          </span>{" "}
+          — pick a winning pack for each; until then these actions are blocked: <span className="mono">{unresolvedRows.map((r) => r.action.key).join(", ")}</span>
+        </Banner>
       )}
 
       {/* ---- Action Registry — the primary surface ---- */}
-      <section className="rounded-lg border border-slate-700 bg-slate-900">
-        <div className="px-4 py-3 border-b border-slate-700">
-          <h2 className="text-sm font-semibold text-white">Action Registry</h2>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Every action key the live registry knows about, and which pack
-            owns it. Uncontested keys win automatically; contested keys
-            require a per-key pin.
-          </p>
-        </div>
-
-        {catalogLoading && (
-          <p className="text-slate-400 text-sm px-4 py-6 text-center">
-            Loading…
-          </p>
-        )}
-
-        {!catalogLoading && registryRows.length === 0 && (
-          <p className="text-slate-400 text-sm px-4 py-6 text-center">
-            No actions in the registry yet. Add and sync an action pack to
-            populate this list.
-          </p>
-        )}
-
-        {!catalogLoading && registryRows.length > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700">
-                <TableHead className="text-slate-400 text-xs font-medium w-8" />
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Action Key
-                </TableHead>
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Winner
-                </TableHead>
-                <TableHead className="text-slate-400 text-xs font-medium">
-                  Status
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {registryRows.flatMap((row) => {
-                const { action, contested } = row
-                const isContested = contested !== null
-                const isUnresolved = action.unresolved
-                const isExpanded = expandedRow === action.key
-                const rowClass = isUnresolved
-                  ? "border-slate-700 bg-amber-950/20"
-                  : "border-slate-700"
-
-                const main = (
-                  <TableRow key={action.key} className={rowClass}>
-                    <TableCell className="align-top">
-                      {isContested ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedRow(isExpanded ? null : action.key)
-                          }
-                          className="text-slate-400 hover:text-slate-200"
-                          aria-label={isExpanded ? "Collapse" : "Expand"}
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
-                          ) : (
-                            <ChevronRight className="h-4 w-4" />
-                          )}
-                        </button>
-                      ) : null}
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <span className="font-mono text-slate-300 text-xs">
-                        {action.key}
-                      </span>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      {isUnresolved ? (
-                        <span className="text-amber-300 text-xs italic">
-                          (no winner pinned)
-                        </span>
-                      ) : (
-                        <span className="text-slate-200 text-xs">
-                          {action.pack_name}
-                          {action.winning_pack_id === null &&
-                          action.pack_name === "bundled" ? (
-                            <span className="ml-1 text-[10px] text-slate-500">
-                              (bundled)
-                            </span>
-                          ) : null}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell className="align-top">
-                      {isUnresolved ? (
-                        <span className="text-amber-300 text-xs font-medium">
-                          Pick winner
-                        </span>
-                      ) : isContested && contested?.is_frozen ? (
-                        <span className="text-amber-300 text-xs">Frozen</span>
-                      ) : isContested ? (
-                        <span className="text-slate-500 text-xs">Pinned</span>
-                      ) : (
-                        <span className="text-emerald-400 text-xs">OK</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-
-                if (!isContested || !isExpanded || contested === null) {
-                  return [main]
-                }
-
-                // Inline radio group for contested rows.
-                const expansion = (
-                  <TableRow
-                    key={`${action.key}-detail`}
-                    className="border-slate-700 bg-slate-950/40"
-                  >
-                    <TableCell />
-                    <TableCell colSpan={3} className="py-3">
-                      <div className="space-y-1.5">
-                        {contested.candidates.map((c) => {
-                          const checked =
-                            contested.resolution?.pack_id === c.pack_id
-                          return (
-                            <label
-                              key={`${action.key}-${c.pack_id ?? "bundled"}`}
-                              className="flex items-center gap-2 text-sm cursor-pointer rounded px-2 py-1 hover:bg-slate-800"
-                            >
-                              <input
-                                type="radio"
-                                name={`winner-${action.key}`}
-                                checked={checked}
-                                disabled={upsertResolution.isPending}
-                                onChange={() =>
-                                  upsertResolution.mutate({
-                                    action_key: action.key,
-                                    pack_id: c.pack_id,
-                                  })
-                                }
-                              />
-                              <span className="text-slate-200 flex-1">
-                                {packLabel(c)}
-                              </span>
-                            </label>
-                          )
-                        })}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-
-                return [main, expansion]
-              })}
-            </TableBody>
-          </Table>
-        )}
-      </section>
+      <Panel title="action registry" meta="every action key the live registry knows, and which pack owns it">
+        <Table<RegistryRow>
+          cols={[
+            {
+              k: "key",
+              label: "action key",
+              w: "minmax(200px,1.2fr)",
+              sortable: false,
+              cell: ({ action, contested }) => (
+                <span className="flex items-center gap-1.5">
+                  {contested !== null && <span className="tt text-[8px] text-text-faint">{expandedRow === action.key ? "▼" : "▶"}</span>}
+                  <span className="mono text-[11.5px] text-text">{action.key}</span>
+                </span>
+              ),
+            },
+            {
+              k: "winner",
+              label: "winner",
+              w: "minmax(140px,1fr)",
+              sortable: false,
+              cell: ({ action }) =>
+                action.unresolved ? (
+                  <span className="italic text-warn">no winner pinned</span>
+                ) : (
+                  <span className="text-text-2">
+                    {action.pack_name}
+                    {action.winning_pack_id === null && action.pack_name === "bundled" ? <span className="ml-1 text-[10px] text-text-faint">(bundled)</span> : null}
+                  </span>
+                ),
+            },
+            {
+              k: "status",
+              label: "status",
+              w: "110px",
+              sortable: false,
+              cell: ({ action, contested }) =>
+                action.unresolved ? (
+                  <Tag tone="warn">pick winner</Tag>
+                ) : contested?.is_frozen ? (
+                  <Tag tone="hold">frozen</Tag>
+                ) : contested ? (
+                  <Tag>pinned</Tag>
+                ) : (
+                  <Tag tone="ok">ok</Tag>
+                ),
+            },
+            {
+              k: "go",
+              label: "",
+              w: "84px",
+              right: true,
+              sortable: false,
+              cell: ({ action, contested }) => (contested ? <span className="tt text-ld-accent">{expandedRow === action.key ? "close" : "choose →"}</span> : null),
+            },
+          ]}
+          rows={registryRows}
+          keyOf={(r) => r.action.key}
+          activeKey={expandedRow ?? undefined}
+          onRowClick={(r) => r.contested && setExpandedRow(expandedRow === r.action.key ? null : r.action.key)}
+          rowTone={(r) => (r.action.unresolved ? "warn" : undefined)}
+          loading={catalogLoading}
+          empty="No actions in the registry yet. Add and sync an action pack to populate this list."
+        />
+        {expandedRow && (() => {
+          const row = registryRows.find((r) => r.action.key === expandedRow)
+          if (!row?.contested) return null
+          return (
+            <div className="border-t border-line bg-surface-2 px-[11px] py-2">
+              <div className="tt mb-1.5">
+                <span className="mono normal-case tracking-normal text-text">{row.action.key}</span> — which pack wins
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {row.contested.candidates.map((c) => {
+                  const checked = row.contested?.resolution?.pack_id === c.pack_id
+                  return (
+                    <label key={`${row.action.key}-${c.pack_id ?? "bundled"}`} className="row-hover flex cursor-pointer items-center gap-2 rounded-r px-1.5 py-1 text-xs">
+                      <input type="radio" name={`winner-${row.action.key}`} checked={checked} disabled={upsertResolution.isPending} onChange={() => upsertResolution.mutate({ action_key: row.action.key, pack_id: c.pack_id })} />
+                      <span className="flex-1 text-text">{packLabel(c)}</span>
+                    </label>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+      </Panel>
 
       {/* ---- Pack Sources — management-only ---- */}
-      <section>
-        <h2 className="text-sm font-semibold text-white">Pack Sources</h2>
-        <p className="text-xs text-slate-400 mt-0.5 mb-3">
-          Where the packs come from. Add, sync, edit, or delete here. Use
-          &ldquo;Make winner for all keys&rdquo; to pin every key a pack
-          contributes to that pack in one click.
-        </p>
-
-        {showLoading && <TableSkeleton rows={3} columns={5} />}
-
-        {error && (
-          <div className="text-red-400 py-8 text-center">
-            Failed to load action packs
-          </div>
-        )}
-
-        {!isLoading && !error && (
-          <DataTable<PackRow>
-            tableId="action-packs"
-            data={[BUNDLED_PACK_ROW, ...orderedPacks]}
-            emptyMessage={
-              <>
-                No action packs configured. Click <strong>Add Pack</strong>{" "}
-                to add one.
-              </>
-            }
-            getRowKey={(p) => p.id}
-            columns={[
-              {
-                key: "name",
-                label: "Name",
-                cell: (p) => {
-                  const bundled = isBundledRow(p)
-                  return (
-                    <div className="flex items-center gap-2">
-                      {bundled ? <Lock className="h-3 w-3 text-slate-500" /> : null}
-                      <span className="font-medium text-white">{p.name}</span>
-                      {bundled ? (
-                        <span className="ml-1 text-[10px] rounded border border-slate-700 bg-slate-800 px-1 py-0.5 text-slate-400">
-                          built-in
-                        </span>
-                      ) : null}
-                    </div>
-                  )
-                },
-                defaultWidth: 200,
-                sortable: false,
-              },
-              {
-                key: "source",
-                label: "Source",
-                cell: (p) => {
-                  if (isBundledRow(p)) {
-                    return (
-                      <span className="text-xs text-slate-500">
-                        baked into the container image
-                      </span>
-                    )
-                  }
-                  if (p.source_type === "local") {
-                    return (
-                      <div className="flex flex-col">
-                        <span className="font-mono text-slate-300 text-sm truncate">
-                          {p.local_path}
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          local directory
-                        </span>
-                      </div>
-                    )
-                  }
-                  return (
-                    <div className="flex flex-col">
-                      <span className="text-slate-300 text-sm truncate">
-                        {p.git_repository_name ?? "(missing)"}
-                        {p.path ? (
-                          <span className="font-mono text-slate-500">
-                            {" "}
-                            / {p.path}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="text-xs text-slate-500">git repo</span>
-                    </div>
-                  )
-                },
-                defaultWidth: 320,
-                sortable: false,
-              },
-              {
-                key: "enabled",
-                label: "Enabled",
-                cell: (p) => {
-                  if (isBundledRow(p)) {
-                    return <span className="text-slate-500 text-sm">—</span>
-                  }
-                  return p.enabled ? (
-                    <span className="text-green-400 text-sm">Yes</span>
-                  ) : (
-                    <span className="text-yellow-400 text-sm">No</span>
-                  )
-                },
-                defaultWidth: 100,
-                sortable: false,
-              },
-              {
-                key: "status",
-                label: "Last Sync",
-                cell: (p) => {
-                  if (isBundledRow(p)) {
-                    return (
-                      <span className="text-xs text-slate-500">at build</span>
-                    )
-                  }
-                  return (
-                    <div className="flex flex-col gap-0.5">
-                      {statusChip(p)}
-                      <span className="text-xs text-slate-500">
-                        {formatDate(p.last_synced_at)}
-                      </span>
-                      {p.current_sha && (
-                        <span className="text-xs text-slate-600 font-mono">
-                          {p.current_sha.slice(0, 8)}
-                        </span>
-                      )}
-                    </div>
-                  )
-                },
-                defaultWidth: 180,
-                sortable: false,
-              },
-              {
-                key: "actions",
-                label: "Actions",
-                cell: (pack) => {
-                  if (isBundledRow(pack)) {
-                    return (
-                      <span className="text-xs text-slate-600">
-                        immutable
-                      </span>
-                    )
-                  }
-                  const packKeyCount = packKeyCounts[pack.name] ?? 0
-                  return (
-                    <div className="flex gap-1 flex-wrap">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={syncingId === pack.id || !pack.enabled}
-                        onClick={() => handleSync(pack)}
-                      >
-                        {syncingId === pack.id ? "Syncing..." : "Sync"}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={packKeyCount === 0}
-                        onClick={() => openClaimDialog(pack)}
-                        title={
-                          packKeyCount === 0
-                            ? "This pack hasn't contributed any actions yet. Sync it first, or check that its manifest is valid."
-                            : "Pin every key this pack contributes to this pack"
-                        }
-                      >
-                        Make winner for all keys
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEdit(pack)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-400 hover:text-red-300 hover:bg-red-950"
-                        onClick={() => handleDelete(pack)}
-                        disabled={deleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  )
-                },
-                defaultWidth: 360,
-                resizable: false,
-                sortable: false,
-              },
-            ]}
-          />
-        )}
-      </section>
-
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDialogOpen(false)
-            setFormError(null)
-          }
-        }}
+      <Panel
+        title="pack sources"
+        meta="where the packs come from"
+        actions={
+          <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
+            Add pack…
+          </button>
+        }
       >
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? "Edit Action Pack" : "Add Action Pack"}
-            </DialogTitle>
-          </DialogHeader>
-          {form && (
-            <div className="space-y-4 mt-2">
-              <div className="space-y-2">
-                <Label htmlFor="pack-name">Name</Label>
-                <Input
-                  id="pack-name"
-                  placeholder="labdog-default"
-                  value={form.name}
-                  onChange={(e) =>
-                    setForm((p) => (p ? { ...p, name: e.target.value } : p))
-                  }
-                />
-              </div>
+        {error && <Banner tone="danger">Could not load action packs: {error.message}</Banner>}
+        <Table<PackRow>
+          cols={[
+            {
+              k: "name",
+              label: "pack",
+              w: "minmax(140px,1fr)",
+              sortable: false,
+              cell: (p) => (
+                <span className="flex items-center gap-1.5">
+                  <span className="mono trunc font-medium text-text">{p.name}</span>
+                  {isBundledRow(p) && <Tag title="baked into the container image">built-in</Tag>}
+                </span>
+              ),
+            },
+            {
+              k: "source",
+              label: "source",
+              w: "minmax(220px,1.8fr)",
+              sortable: false,
+              cell: (p) => {
+                if (isBundledRow(p)) return <span className="text-text-faint">baked into the container image</span>
+                if (p.source_type === "local")
+                  return (
+                    <span className="flex min-w-0 flex-col">
+                      <span className="mono trunc text-[11px]">{p.local_path}</span>
+                      <span className="text-[10.5px] text-text-faint">local directory</span>
+                    </span>
+                  )
+                return (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="trunc">
+                      {p.git_repository_name ?? "(missing)"}
+                      {p.path ? <span className="mono text-text-faint"> / {p.path}</span> : null}
+                    </span>
+                    <span className="text-[10.5px] text-text-faint">git repository</span>
+                  </span>
+                )
+              },
+            },
+            {
+              k: "enabled",
+              label: "enabled",
+              w: "90px",
+              sortable: false,
+              cell: (p) => (isBundledRow(p) ? <span className="text-text-faint">—</span> : p.enabled ? <Tag tone="ok">enabled</Tag> : <Tag tone="warn">disabled</Tag>),
+            },
+            {
+              k: "sync",
+              label: "last sync",
+              w: "170px",
+              sortable: false,
+              cell: (p) =>
+                isBundledRow(p) ? (
+                  <span className="text-text-faint">at build</span>
+                ) : (
+                  <span className="flex items-center gap-1.5" title={p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : undefined}>
+                    {syncTag(p)}
+                    {p.last_synced_at && <span className="mono num text-[11px]">{shortAgo(p.last_synced_at)} ago</span>}
+                    {p.current_sha && <span className="mono text-[10.5px] text-text-faint">{p.current_sha.slice(0, 8)}</span>}
+                  </span>
+                ),
+            },
+            {
+              k: "actions",
+              label: "",
+              w: "300px",
+              right: true,
+              sortable: false,
+              cell: (pack) => {
+                if (isBundledRow(pack)) return <span className="text-text-faint">immutable</span>
+                const packKeyCount = packKeyCounts[pack.name] ?? 0
+                return (
+                  <span className="flex flex-wrap justify-end gap-0.5">
+                    <button type="button" className="btn btn-sm btn-ghost" disabled={syncingId === pack.id || !pack.enabled} onClick={() => handleSync(pack)}>
+                      {syncingId === pack.id ? "syncing…" : "sync"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      disabled={packKeyCount === 0}
+                      onClick={() => openClaimDialog(pack)}
+                      title={packKeyCount === 0 ? "this pack hasn't contributed any actions yet — sync it first, or check that its manifest is valid" : "pin every key this pack contributes to this pack"}
+                    >
+                      win all keys
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost" onClick={() => openEdit(pack)}>
+                      edit
+                    </button>
+                    <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => handleDelete(pack)} disabled={deleteMutation.isPending}>
+                      delete
+                    </button>
+                  </span>
+                )
+              },
+            },
+          ]}
+          rows={[BUNDLED_PACK_ROW, ...orderedPacks]}
+          keyOf={(p) => p.id}
+          loading={isLoading}
+          empty="No action packs. Add one to bring more actions into the library."
+        />
+      </Panel>
 
-              {form.source_type === "git" && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="pack-repo">Git repository</Label>
-                    {!hasGitRepos ? (
-                      <p className="text-sm text-yellow-400">
-                        No git repositories configured yet. Add one under{" "}
-                        <Link
-                          href="/git-repos"
-                          className="underline hover:text-yellow-200"
-                        >
-                          Git Repos
-                        </Link>{" "}
-                        first.
-                      </p>
-                    ) : (
-                      <select
-                        id="pack-repo"
-                        value={form.git_repository_id ?? ""}
-                        onChange={(e) =>
-                          setForm((p) =>
-                            p
-                              ? {
-                                  ...p,
-                                  git_repository_id: e.target.value
-                                    ? Number(e.target.value)
-                                    : null,
-                                }
-                              : p,
-                          )
-                        }
-                        className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-                      >
-                        <option value="">— Select a repository —</option>
-                        {gitRepos!.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name} ({r.url} @ {r.branch})
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+      {dialogOpen && form && (
+        <Modal
+          title={editing ? "Edit action pack" : "Add action pack"}
+          meta={editing?.name}
+          w={560}
+          onClose={closeDialog}
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSave()
+          }}
+          footer={
+            <>
+              <span className="tt mr-auto">LabDog looks for actions/*.manifest.yml</span>
+              <button type="button" className="btn" onClick={closeDialog}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={formSaving}>
+                {formSaving ? "Saving…" : editing ? "Save changes" : "Add pack"}
+              </button>
+            </>
+          }
+        >
+          <div className="grid gap-[11px]" style={{ gridTemplateColumns: "1fr 160px" }}>
+            <Field label="name" htmlFor="pack-name">
+              <input id="pack-name" className="inp mono" placeholder="labdog-default" value={form.name} onChange={(e) => setF("name", e.target.value)} />
+            </Field>
+            <Field label="source" htmlFor="pack-source">
+              <select id="pack-source" className="inp" value={form.source_type} onChange={(e) => setF("source_type", e.target.value as PackSourceType)}>
+                <option value="git">git repository</option>
+                <option value="local">local directory</option>
+              </select>
+            </Field>
+          </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="pack-path">Path inside the repo</Label>
-                    <Input
-                      id="pack-path"
-                      placeholder="(leave empty if the pack is at the repo root)"
-                      value={form.path}
-                      onChange={(e) =>
-                        setForm((p) => (p ? { ...p, path: e.target.value } : p))
-                      }
-                      className="font-mono"
-                    />
-                    <p className="text-xs text-slate-400">
-                      LabDog looks for <code>actions/*.manifest.yml</code>{" "}
-                      under this subpath.
-                    </p>
-                  </div>
-                </>
-              )}
-
-              {form.source_type === "local" && (
-                <div className="space-y-2">
-                  <Label htmlFor="pack-local-path">Filesystem path</Label>
-                  <Input
-                    id="pack-local-path"
-                    placeholder="/var/lib/labdog/my-pack"
-                    value={form.local_path}
-                    onChange={(e) =>
-                      setForm((p) =>
-                        p ? { ...p, local_path: e.target.value } : p,
-                      )
-                    }
-                    className="font-mono"
-                  />
-                  <p className="text-xs text-slate-400">
-                    Absolute path on the LabDog host. Nothing is cloned; the
-                    directory is read in place.
-                  </p>
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  id="pack-enabled"
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={(e) =>
-                    setForm((p) =>
-                      p ? { ...p, enabled: e.target.checked } : p,
-                    )
-                  }
-                  className="rounded border-input"
-                />
-                <Label htmlFor="pack-enabled">Enabled</Label>
-              </div>
-
-              <div className="flex items-start gap-2">
-                <input
-                  id="pack-trusted"
-                  type="checkbox"
-                  checked={form.trusted}
-                  onChange={(e) =>
-                    setForm((p) => (p ? { ...p, trusted: e.target.checked } : p))
-                  }
-                  className="mt-1 rounded border-input"
-                />
-                <div>
-                  <Label htmlFor="pack-trusted">
-                    Allow content that runs on the LabDog host
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Ansible plugin directories, and plays targeting{" "}
-                    <code>localhost</code>, execute on the LabDog server itself
-                    rather than on a managed host. A pack containing either is
-                    refused unless this is set. Leave it off unless you have
-                    read the pack and intend it.
-                  </p>
-                </div>
-              </div>
-
-              {formError && (
-                <p className="text-sm text-red-400">{formError}</p>
-              )}
-
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setDialogOpen(false)
-                    setFormError(null)
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={formSaving}>
-                  {formSaving
-                    ? "Saving..."
-                    : editing
-                      ? "Save Changes"
-                      : "Add Pack"}
-                </Button>
-              </DialogFooter>
-            </div>
+          {form.source_type === "git" && (
+            <>
+              <Field label="git repository" htmlFor="pack-repo">
+                {!hasGitRepos ? (
+                  <Banner tone="warn">
+                    No git repositories yet — add one under{" "}
+                    <Link href="/git-repos" className="underline">
+                      Settings › Git repositories
+                    </Link>{" "}
+                    first.
+                  </Banner>
+                ) : (
+                  <select id="pack-repo" className="inp mono" value={form.git_repository_id ?? ""} onChange={(e) => setF("git_repository_id", e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">— pick a repository —</option>
+                    {gitRepos!.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name} ({r.url} @ {r.branch})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+              <Field label="path inside the repo" htmlFor="pack-path" hint="blank when the pack is at the repository root">
+                <input id="pack-path" className="inp mono" placeholder="packs/ops" value={form.path} onChange={(e) => setF("path", e.target.value)} />
+              </Field>
+            </>
           )}
-        </DialogContent>
-      </Dialog>
+
+          {form.source_type === "local" && (
+            <Field label="filesystem path" htmlFor="pack-local-path" hint="absolute, on the LabDog host — read in place, nothing is cloned">
+              <input id="pack-local-path" className="inp mono" placeholder="/var/lib/labdog/my-pack" value={form.local_path} onChange={(e) => setF("local_path", e.target.value)} />
+            </Field>
+          )}
+
+          <label className="flex items-center gap-2 text-xs text-text">
+            <input id="pack-enabled" type="checkbox" checked={form.enabled} onChange={(e) => setF("enabled", e.target.checked)} />
+            enabled
+          </label>
+          <label className="flex items-start gap-2 text-xs text-text">
+            <input id="pack-trusted" type="checkbox" className="mt-0.5" checked={form.trusted} onChange={(e) => setF("trusted", e.target.checked)} />
+            <span>
+              allow content that runs on the LabDog host
+              <span className="mt-0.5 block text-[11px] text-text-3">
+                Ansible plugin directories, and plays targeting <span className="mono">localhost</span>, execute on the LabDog server itself rather than on a managed host. A pack containing either is refused unless this
+                is set. Leave it off unless you have read the pack and intend it.
+              </span>
+            </span>
+          </label>
+
+          {formError && <Banner tone="danger">{formError}</Banner>}
+        </Modal>
+      )}
 
       {claimDialog && (
-        <Dialog
-          open
-          onOpenChange={(o) => !o && setClaimDialog(null)}
-        >
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>
-                Make {claimDialog.pack.name} winner for all its keys
-              </DialogTitle>
-            </DialogHeader>
-            <div className="text-sm text-slate-300 space-y-2">
-              {claimDialog.contested + claimDialog.uncontested === 0 ? (
-                <p className="text-slate-400">
-                  <strong className="text-slate-200">{claimDialog.pack.name}</strong>{" "}
-                  hasn&apos;t contributed any action keys yet. There&apos;s
-                  nothing to pin. Sync the pack first, or check that its
-                  manifest is valid and discoverable.
-                </p>
-              ) : (
-                <>
-                  <p>This pack contributes to <strong>{claimDialog.contested + claimDialog.uncontested}</strong> action key{claimDialog.contested + claimDialog.uncontested === 1 ? "" : "s"}.</p>
-                  <ul className="ml-4 list-disc text-slate-400 text-xs space-y-0.5">
-                    <li>{claimDialog.uncontested} uncontested (no-op for the resolver, but pinned explicitly so future contestants don&apos;t auto-claim them)</li>
-                    <li>{claimDialog.contested} contested:
-                      {" "}
-                      <span className="text-emerald-300">{claimDialog.pinnedHere} already pinned here</span>,
-                      {" "}
-                      <span className="text-amber-300">{claimDialog.pinnedElsewhere} pinned elsewhere (will be overwritten)</span>,
-                      {" "}
-                      <span className="text-slate-300">
-                        {claimDialog.contested - claimDialog.pinnedHere - claimDialog.pinnedElsewhere} unpinned (will become pinned here)
-                      </span>
-                    </li>
-                  </ul>
-                </>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setClaimDialog(null)} disabled={claiming}>
+        <Modal
+          title={`Make ${claimDialog.pack.name} the winner for all its keys`}
+          w={480}
+          onClose={() => setClaimDialog(null)}
+          footer={
+            <>
+              <button type="button" className="btn ml-auto" onClick={() => setClaimDialog(null)} disabled={claiming}>
                 {claimDialog.contested + claimDialog.uncontested === 0 ? "Close" : "Cancel"}
-              </Button>
+              </button>
               {claimDialog.contested + claimDialog.uncontested > 0 && (
-                <Button onClick={handleClaim} disabled={claiming}>
+                <button type="button" className="btn btn-primary" onClick={() => void handleClaim()} disabled={claiming}>
                   {claiming ? "Pinning…" : "Pin all keys"}
-                </Button>
+                </button>
               )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </>
+          }
+        >
+          {claimDialog.contested + claimDialog.uncontested === 0 ? (
+            <div className="text-[12.5px] text-text-2">
+              <span className="mono text-text">{claimDialog.pack.name}</span> hasn&apos;t contributed any action keys yet, so there is nothing to pin. Sync the pack first, or check that its manifest is valid and
+              discoverable.
+            </div>
+          ) : (
+            <>
+              <div className="text-[12.5px] text-text-2">
+                This pack contributes to <span className="mono num text-text">{claimDialog.contested + claimDialog.uncontested}</span> action key{claimDialog.contested + claimDialog.uncontested === 1 ? "" : "s"}.
+              </div>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[11.5px] text-text-3">
+                <li>
+                  <span className="mono num text-text">{claimDialog.uncontested}</span> uncontested — a no-op for the resolver, but pinned explicitly so future contestants don&apos;t auto-claim them
+                </li>
+                <li>
+                  <span className="mono num text-text">{claimDialog.contested}</span> contested: <span className="text-ok">{claimDialog.pinnedHere} already pinned here</span>,{" "}
+                  <span className="text-warn">{claimDialog.pinnedElsewhere} pinned elsewhere (overwritten)</span>, {claimDialog.contested - claimDialog.pinnedHere - claimDialog.pinnedElsewhere} unpinned (pinned here)
+                </li>
+              </ul>
+            </>
+          )}
+        </Modal>
       )}
 
       {confirmState && (
-        <ConfirmDialog
-          open={confirmState.open}
+        <Confirm
+          open
           onOpenChange={(open) => !open && setConfirmState(null)}
           title={confirmState.title}
           description={confirmState.description}
