@@ -21,13 +21,13 @@ export function FirewallTab({
   hostId,
   host,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
   host: Host | undefined
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const queryClient = useQueryClient()
@@ -101,6 +101,9 @@ export function FirewallTab({
   }
 
   const rows = rules ?? []
+  // Editing a group's rule creates this host's override of it; only a
+  // host rule is edited in place.
+  const editingOverride = editing?.source === "host"
   const showPorts = form.protocol !== "icmp" && form.protocol !== "any"
 
   return (
@@ -108,7 +111,7 @@ export function FirewallTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={!host?.ssh_key_id || syncBusy} onClick={onSync}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>
               sync rules
             </button>
             <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>
@@ -137,7 +140,7 @@ export function FirewallTab({
           { k: "source", label: "source", w: "minmax(100px,1fr)", sortable: false, cell: (r) => <span className="mono trunc text-[11px]" title={r.source_host_name ?? r.source_cidr ?? "any"}>{r.source_host_name ?? r.source_cidr ?? "any"}</span> },
           { k: "destination", label: "destination", w: "minmax(100px,1fr)", sortable: false, cell: (r) => <span className="mono trunc text-[11px]" title={r.destination_host_name ?? r.destination_cidr ?? "any"}>{r.destination_host_name ?? r.destination_cidr ?? "any"}</span> },
           { k: "ports", label: "port(s)", w: "76px", sortable: false, cell: (r) => <span className="mono text-[11px]">{formatPorts(r)}</span> },
-          { k: "group", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (r) => <Provenance origin={r.source} label={r.source === "system" ? "system" : r.source === "host" ? "this host" : (r.group_name ?? "")} priority={r.source === "group" ? r.group_priority : undefined} /> },
+          { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (r) => <Provenance origin={r.source} label={r.source === "system" ? "system" : r.source === "host" ? "this host" : (r.group_name ?? "")} priority={r.source === "group" ? r.group_priority : undefined} /> },
           { k: "comment", label: "comment", w: "minmax(100px,1fr)", sortable: false, cell: (r) => <span className="trunc text-text-3" title={r.comment ?? ""}>{r.comment ?? "—"}</span> },
           {
             k: "actions", label: "", w: "108px", right: true, sortable: false,
@@ -164,7 +167,7 @@ export function FirewallTab({
 
       {dialogOpen && (
         <Modal
-          title={editing ? "Edit firewall rule override" : "Add firewall rule override"}
+          title={editingOverride ? "Edit firewall rule override" : "Add firewall rule override"}
           w={600}
           onClose={() => setDialogOpen(false)}
           onSubmit={onSubmit}
@@ -173,7 +176,7 @@ export function FirewallTab({
               <span className="tt mr-auto">host overrides win over every group</span>
               <button type="button" className="btn" onClick={() => setDialogOpen(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Create override"}
+                {saveMutation.isPending ? "Saving…" : editingOverride ? "Save changes" : "Create override"}
               </button>
             </>
           }
@@ -203,11 +206,11 @@ export function FirewallTab({
           </div>
 
           <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[1fr_1fr]">
-            <Field as="div" label={<>source <span className="ml-auto normal-case tracking-normal"><Seg sm options={[{ k: "cidr", label: "CIDR" }, { k: "host", label: "Host" }]} value={form.sourceMode} onChange={(k) => setForm((f) => ({ ...f, sourceMode: k as "cidr" | "host" }))} /></span></>} className="flex-row items-center justify-between">
+            <Field as="div" label={<>source <span className="ml-auto normal-case tracking-normal"><Seg sm options={[{ k: "cidr", label: "CIDR" }, { k: "host", label: "Host" }]} value={form.sourceMode} onChange={(k) => setForm((f) => ({ ...f, sourceMode: k as "cidr" | "host" }))} /></span></>}>
               {form.sourceMode === "cidr" ? (
-                <input className="inp mono" placeholder="0.0.0.0/0" value={form.sourceCidr} onChange={(e) => setForm((f) => ({ ...f, sourceCidr: e.target.value }))} />
+                <input className="inp mono" placeholder="0.0.0.0/0" aria-label="source cidr" value={form.sourceCidr} onChange={(e) => setForm((f) => ({ ...f, sourceCidr: e.target.value }))} />
               ) : (
-                <select className="inp mono" value={form.sourceHostId ?? ""} onChange={(e) => setForm((f) => ({ ...f, sourceHostId: e.target.value ? Number(e.target.value) : null }))}>
+                <select className="inp mono" aria-label="source host" value={form.sourceHostId ?? ""} onChange={(e) => setForm((f) => ({ ...f, sourceHostId: e.target.value ? Number(e.target.value) : null }))}>
                   <option value="">— pick a host —</option>
                   {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname} · {h.ip_address}</option>)}
                 </select>
@@ -215,9 +218,9 @@ export function FirewallTab({
             </Field>
             <Field as="div" label={<>destination <span className="ml-auto normal-case tracking-normal"><Seg sm options={[{ k: "cidr", label: "CIDR" }, { k: "host", label: "Host" }]} value={form.destMode} onChange={(k) => setForm((f) => ({ ...f, destMode: k as "cidr" | "host" }))} /></span></>}>
               {form.destMode === "cidr" ? (
-                <input className="inp mono" placeholder="0.0.0.0/0" value={form.destCidr} onChange={(e) => setForm((f) => ({ ...f, destCidr: e.target.value }))} />
+                <input className="inp mono" placeholder="0.0.0.0/0" aria-label="destination cidr" value={form.destCidr} onChange={(e) => setForm((f) => ({ ...f, destCidr: e.target.value }))} />
               ) : (
-                <select className="inp mono" value={form.destHostId ?? ""} onChange={(e) => setForm((f) => ({ ...f, destHostId: e.target.value ? Number(e.target.value) : null }))}>
+                <select className="inp mono" aria-label="destination host" value={form.destHostId ?? ""} onChange={(e) => setForm((f) => ({ ...f, destHostId: e.target.value ? Number(e.target.value) : null }))}>
                   <option value="">— pick a host —</option>
                   {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname} · {h.ip_address}</option>)}
                 </select>

@@ -104,7 +104,7 @@ export function CaCertsTab({ hostId, host }: { hostId: number; host: Host | unde
           { k: "expires", label: "expires", w: "100px", sortable: false, cell: (c) => <span className="text-text-3">{c.not_after ? new Date(c.not_after).toLocaleDateString() : "—"}</span> },
           { k: "fingerprint", label: "fingerprint", w: "minmax(140px,1.2fr)", sortable: false, cell: (c) => <span className="mono trunc text-[10.5px] text-text-faint" title={c.fingerprint_sha256}>{c.fingerprint_sha256}</span> },
           { k: "state", label: "state", w: "80px", sortable: false, cell: (c) => <Tag tone={def(ITEM_STATE, c.state).tone}>{c.state}</Tag> },
-          { k: "source", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (c) => <Provenance origin={c.source} label={c.source === "host" ? "this host" : c.source_name} /> },
+          { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (c) => <Provenance origin={c.source} label={c.source === "host" ? "this host" : c.source_name} /> },
           {
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (c) =>
@@ -157,8 +157,8 @@ export function CaCertsTab({ hostId, host }: { hostId: number; host: Host | unde
             <textarea id="ca-pem" className="inp mono" rows={9} placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"} value={form.pem} onChange={(e) => setForm((f) => ({ ...f, pem: e.target.value }))} required />
           </Field>
           <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[120px_1fr]">
-            <Field as="div" label="state">
-              <select className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
+            <Field label="state" htmlFor="ca-state">
+              <select id="ca-state" className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" }))}>
                 <option value="present">present</option>
                 <option value="absent">absent</option>
               </select>

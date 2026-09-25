@@ -136,6 +136,21 @@ The format follows [Keep a Changelog]; LabDog follows
   URLs (`/groups/{id}/rules` and the rest, plus `/groups/{id}/actions`)
   redirect into the group page instead of rendering their own page.
 
+- **The host page is on the theme, and its one 5,500-line file is now eight
+  tabs and three dialogs.** Firewall, services, hosts file, users & groups,
+  cron jobs, packages, CA certificates and the DNS resolver each get the
+  same effective/override pattern as the group editors — a kit table with a
+  `Provenance` chip for group vs. host vs. system, a modal for the host's
+  own override — as their own file under a private `_tabs/config/` folder;
+  the live service inventory, the `/etc/hosts` preview and the current-state
+  collector panel move with the tabs that use them. Terminal is a fifth
+  primary tab that renders `SshTerminal` in place; the fixed bottom drawer
+  is gone, and the standalone `/hosts/{id}/terminal` page renders the same
+  panel. Group membership drops its add-dialog and two confirmation dialogs
+  for the always-visible add/remove picker the group page already draws for
+  its own host list, so adding or removing a membership reads the same from
+  either side of it.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
@@ -155,32 +170,20 @@ The format follows [Keep a Changelog]; LabDog follows
   on Hosts and Groups.
 - The `@dnd-kit/*` dependencies: their only caller was the firewall
   editor's drag handle, and rules reorder with ▲/▼ now.
-
-### Changed (host detail)
-
-- **The host page is on the theme, and its one 5,500-line file is now eight
-  tabs and three dialogs.** Firewall, services, hosts file, users & groups,
-  cron jobs, packages, CA certificates and the DNS resolver each get the
-  same effective/override pattern as the group editors — a kit table with a
-  `Provenance` chip for group vs. host vs. system, a modal for the host's
-  own override — as their own file under a private `_tabs/config/` folder;
-  the live service inventory, the `/etc/hosts` preview and the current-state
-  collector panel move with the tabs that use them. Terminal is a fifth
-  primary tab that renders `SshTerminal` in place; the fixed bottom drawer
-  is gone, and the standalone `/hosts/{id}/terminal` page renders the same
-  panel. Group membership drops its add-dialog and two confirmation dialogs
-  for the always-visible add/remove picker the group page already draws for
-  its own host list, so adding or removing a membership reads the same from
-  either side of it.
-
-### Removed
-
 - `GroupMultiSelect`'s dropdown trigger and search popover — it is an
   always-visible checkbox box now, since no popover sits above a modal's
   own layer; the New host form and the Edit host dialog are its only
   callers. `hooks/use-host-detail.ts` (folded into the tabs that use each
   query) and `components/usage-bar.tsx` (its one caller moved onto the kit
   `Meter`).
+
+### Fixed
+
+- **Refresh on a host's page reloads again**, and so do the reloads after
+  a sync finishes and after trusting a new host key. They asked for the
+  host's queries under a string id (`["host", "5"]`) while every one of
+  them is stored under a number, and React Query compares key parts
+  strictly, so none of them ever matched.
 
 ## [0.10.0] — 2026-09-18
 

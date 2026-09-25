@@ -75,7 +75,7 @@ export function EditHostDialog({
       <Field label="ssh user" htmlFor="edit-ssh-user">
         <input id="edit-ssh-user" className="inp mono" value={sshUser} onChange={(e) => setSshUser(e.target.value)} required />
       </Field>
-      <Field as="div" label="ssh key">
+      <Field label="ssh key" htmlFor="edit-ssh-key">
         <select id="edit-ssh-key" className="inp" value={sshKeyId ?? ""} onChange={(e) => setSshKeyId(e.target.value ? Number(e.target.value) : null)}>
           <option value="">No SSH key</option>
           {sshKeys?.map((key) => <option key={key.id} value={key.id}>{key.name}{key.is_default ? " (default)" : ""}</option>)}

@@ -16,12 +16,12 @@ const defaults = { name: "", version: "", state: "present" as "present" | "absen
 export function PackagesTab({
   hostId,
   currentState,
-  syncBusy,
+  syncDisabled,
   onSync,
 }: {
   hostId: number
   currentState: ModuleCurrentState[] | undefined
-  syncBusy: boolean
+  syncDisabled: boolean
   onSync: () => void
 }) {
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -95,7 +95,7 @@ export function PackagesTab({
       <Toolbar
         actions={
           <>
-            <button type="button" className="btn btn-sm btn-ghost" disabled={syncBusy} onClick={onSync}>sync</button>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={syncDisabled} onClick={onSync}>sync</button>
             <button type="button" className="btn btn-sm btn-primary" onClick={openCreate}>add override</button>
           </>
         }
@@ -118,7 +118,7 @@ export function PackagesTab({
           { k: "state", label: "state", w: "80px", sortable: false, cell: (p) => <Tag tone={def(PACKAGE_STATE, p.state).tone}>{p.state}</Tag> },
           { k: "manager", label: "manager", w: "90px", sortable: false, cell: (p) => <Tag>{p.package_manager}</Tag> },
           { k: "hold", label: "hold", w: "70px", sortable: false, cell: (p) => (p.hold ? <Tag tone="warn">held</Tag> : <span className="text-text-faint">—</span>) },
-          { k: "source", label: "source", w: "minmax(110px,1fr)", sortable: false, cell: (p) => <Provenance origin={p.source as "group" | "host"} label={p.source === "host" ? "this host" : p.source_name} /> },
+          { k: "origin", label: "comes from", w: "minmax(110px,1fr)", sortable: false, cell: (p) => <Provenance origin={p.source as "group" | "host"} label={p.source === "host" ? "this host" : p.source_name} /> },
           {
             k: "actions", label: "", w: "108px", right: true, sortable: false,
             cell: (p) =>
@@ -144,6 +144,7 @@ export function PackagesTab({
           { k: "name", label: "name", w: "minmax(130px,1fr)", sortable: false, cell: (r) => <span className="font-medium text-text">{r.name}</span> },
           { k: "url", label: "url", w: "minmax(160px,1.6fr)", sortable: false, cell: (r) => <span className="mono trunc text-[11px] text-text-3">{r.url}</span> },
           { k: "type", label: "type", w: "70px", sortable: false, cell: (r) => <Tag>{r.repo_type}</Tag> },
+          { k: "dist", label: "distribution", w: "110px", sortable: false, cell: (r) => <span className="mono text-[11px] text-text-3">{r.distribution ?? "—"}</span> },
           { k: "state", label: "state", w: "80px", sortable: false, cell: (r) => <Tag tone={def(ITEM_STATE, r.state).tone}>{r.state}</Tag> },
           { k: "group", label: "group", w: "minmax(110px,1fr)", sortable: false, cell: (r) => <Link href={`/groups/${r.group_id}`} className="tt text-ld-accent hover:no-underline">{groups?.find((g) => g.id === r.group_id)?.name ?? r.group_id} →</Link> },
         ]}
@@ -174,15 +175,15 @@ export function PackagesTab({
             </Field>
           </div>
           <div className="grid gap-[11px] grid-cols-1 sm:grid-cols-[1fr_1fr]">
-            <Field as="div" label="state">
-              <select className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" | "latest" }))}>
+            <Field label="state" htmlFor="pp-state">
+              <select id="pp-state" className="inp" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value as "present" | "absent" | "latest" }))}>
                 <option value="present">present</option>
                 <option value="absent">absent</option>
                 <option value="latest">latest</option>
               </select>
             </Field>
-            <Field as="div" label="package manager">
-              <select className="inp" value={form.manager} onChange={(e) => setForm((f) => ({ ...f, manager: e.target.value as "auto" | "apt" | "dnf" | "yum" }))}>
+            <Field label="package manager" htmlFor="pp-manager">
+              <select id="pp-manager" className="inp" value={form.manager} onChange={(e) => setForm((f) => ({ ...f, manager: e.target.value as "auto" | "apt" | "dnf" | "yum" }))}>
                 <option value="auto">auto-detect</option>
                 <option value="apt">apt</option>
                 <option value="dnf">dnf</option>
