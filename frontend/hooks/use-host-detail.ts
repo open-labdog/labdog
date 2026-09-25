@@ -32,7 +32,7 @@ import type {
   CACertActionRun,
 } from "@/lib/types"
 
-type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules"
+type ActiveTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules" | "metrics"
 
 export function useHostQueries(id: number, activeTab: ActiveTab) {
   const host = useQuery<Host>({

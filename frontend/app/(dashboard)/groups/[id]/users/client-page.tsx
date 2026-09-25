@@ -26,9 +26,14 @@ import { TableSkeleton } from "@/components/ui/skeleton"
 import type { LinuxUser, LinuxGroup, HostGroup } from "@/lib/types"
 
 
-export default function GroupUsersPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
+ */
+export default function GroupUsersPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const [userDialogOpen, setUserDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<LinuxUser | null>(null)

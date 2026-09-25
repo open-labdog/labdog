@@ -8,7 +8,9 @@ import { SshTerminal } from "@/components/ssh-terminal"
 import { collectHostState } from "@/lib/collect-state"
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import { RunActionButton } from "@/components/run-action-button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -40,6 +42,9 @@ import { TableSkeleton, CardSkeleton } from "@/components/ui/skeleton"
 import { ActionsTab } from "@/components/actions-tab"
 import { ModuleDiffView, moduleLabel } from "@/components/module-diff-view"
 import { HostMetricsSection } from "@/components/host-metrics-section"
+import { Dot, Seg, Tabs } from "@/components/ld"
+import { statusDef } from "@/lib/fleet"
+import { MODULES, type ModuleDef } from "@/lib/modules"
 import { ScheduledActionsSection } from "@/components/scheduled-actions/scheduled-actions-section"
 import { apiFetch, API_BASE, ApiError } from "@/lib/api"
 import { toast } from "sonner"
@@ -725,7 +730,24 @@ function SyncStatusMessage({
   )
 }
 
-type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules"
+type HostTab = "overview" | "groups" | "rules" | "services" | "hosts-file" | "users" | "cron-jobs" | "packages" | "ca-certs" | "dns" | "actions" | "schedules" | "metrics"
+
+/**
+ * The page keeps its twelve tab values — every query, refresh key and sync
+ * handler is keyed on them — but presents five: Overview · Config ·
+ * Metrics · Terminal · Activity. The eight module tabs sit behind Config
+ * with a module sub-nav; group membership is Overview content; actions
+ * and schedules are Activity. Legacy `?tab=rules` links keep working.
+ */
+const MODULE_TABS: HostTab[] = ["rules", "services", "hosts-file", "users", "cron-jobs", "packages", "ca-certs", "dns"]
+type PrimaryTab = "overview" | "config" | "metrics" | "terminal" | "activity"
+function primaryOf(t: HostTab): PrimaryTab {
+  if (MODULE_TABS.includes(t)) return "config"
+  if (t === "actions" || t === "schedules") return "activity"
+  if (t === "groups") return "overview"
+  if (t === "metrics") return "metrics"
+  return "overview"
+}
 
 export default function HostDetailPage() {
   const params = useParams()
@@ -735,6 +757,8 @@ export default function HostDetailPage() {
   const searchParams = useSearchParams()
   const initialTab = (searchParams.get("tab") as HostTab) || "overview"
   const [activeTab, setActiveTab] = useState<HostTab>(initialTab)
+  // Which module the Config tab reopens on; remembers the operator's last pick.
+  const [lastModuleTab, setLastModuleTab] = useState<HostTab>(MODULE_TABS.includes(initialTab) ? initialTab : "rules")
 
   const {
     host: hostQuery, effectiveRules: effectiveRulesQuery, effectivePolicies: effectivePoliciesQuery, showRulesLoading, sshKeys: sshKeysQuery, groups: groupsQuery,
@@ -2105,7 +2129,7 @@ export default function HostDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Hosts", href: "/hosts" }, { label: host?.hostname ?? "Host" }]} />
+      <Breadcrumb items={[{ label: "Fleet", href: "/hosts" }, { label: "Hosts", href: "/hosts" }, { label: host?.hostname ?? "Host" }]} />
       {/* Host Info */}
       <div className="flex items-center justify-between">
         <div>
@@ -2116,16 +2140,11 @@ export default function HostDetailPage() {
         </div>
         {host && (
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!host.ssh_key_id}
-              title={host.ssh_key_id ? "Open terminal" : "No SSH key assigned"}
-              onClick={() => setTerminalOpen(true)}
-            >
-              <TerminalIcon className="w-4 h-4 mr-1" />
-              Terminal
-            </Button>
+            {/* The terminal is a tab; the header offers what the tabs don't. */}
+            <RunActionButton scope="host" targetId={id} targetLabel={host.hostname} host={host} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
+              <PlayIcon className="w-4 h-4 mr-1" />
+              Run action…
+            </RunActionButton>
             <Button
               variant="outline"
               size="sm"
@@ -2290,152 +2309,64 @@ export default function HostDetailPage() {
         )}
       </div>
 
-      <div role="tablist" className="flex gap-1 border-b border-slate-700 flex-wrap">
-        <button
-          role="tab"
-          aria-selected={activeTab === "overview"}
-          onClick={() => setActiveTab("overview")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "overview"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Overview
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "groups"}
-          onClick={() => setActiveTab("groups")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "groups"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Groups
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "rules"}
-          onClick={() => setActiveTab("rules")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "rules"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Rules
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "services"}
-          onClick={() => setActiveTab("services")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "services"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Services
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "hosts-file"}
-          onClick={() => setActiveTab("hosts-file")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "hosts-file"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Hosts File
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "users"}
-          onClick={() => setActiveTab("users")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "users"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Users
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "cron-jobs"}
-          onClick={() => setActiveTab("cron-jobs")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "cron-jobs"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Cron Jobs
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "packages"}
-          onClick={() => setActiveTab("packages")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "packages"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Packages
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "ca-certs"}
-          onClick={() => setActiveTab("ca-certs")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "ca-certs"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          CA Certs
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "dns"}
-          onClick={() => setActiveTab("dns")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "dns"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          DNS Resolver
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "actions"}
-          onClick={() => setActiveTab("actions")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "actions"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Actions
-        </button>
-        <button
-          role="tab"
-          aria-selected={activeTab === "schedules"}
-          onClick={() => setActiveTab("schedules")}
-          className={`px-4 py-2 text-sm font-medium transition-colors whitespace-nowrap ${
-            activeTab === "schedules"
-              ? "text-white border-b-2 border-white"
-              : "text-slate-400 hover:text-white"
-          }`}
-        >
-          Schedules
-        </button>
-      </div>
+      {(() => {
+        const primary = primaryOf(activeTab)
+        const moduleStatus = (m: ModuleDef) => currentStateQuery.data?.find((r) => m.statusTypes.includes(r.module_type))?.sync_status
+        return (
+          <div className="flex flex-wrap items-center gap-3 border-b border-line">
+            <Tabs
+              tabs={[
+                { k: "overview", label: "Overview" },
+                { k: "config", label: "Config" },
+                { k: "metrics", label: "Metrics" },
+                { k: "terminal", label: "Terminal" },
+                { k: "activity", label: "Activity" },
+              ]}
+              value={primary}
+              onChange={(k) => {
+                if (k === "terminal") {
+                  setTerminalOpen(true)
+                  return
+                }
+                if (k === "config") setActiveTab(MODULE_TABS.includes(activeTab) ? activeTab : lastModuleTab)
+                else if (k === "activity") setActiveTab(activeTab === "schedules" ? "schedules" : "actions")
+                else setActiveTab(k as HostTab)
+              }}
+              counts={{ config: MODULES.length }}
+            />
+            {primary === "config" && (
+              <div className="ml-auto flex flex-wrap items-center gap-1 pb-1.5">
+                {MODULES.map((m) => {
+                  const on = activeTab === m.hostTab
+                  const st = moduleStatus(m)
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(m.hostTab as HostTab)
+                        setLastModuleTab(m.hostTab as HostTab)
+                      }}
+                      aria-pressed={on}
+                      className="flex items-center gap-1.5 rounded-r px-2 py-1 text-[11.5px]"
+                      style={{ background: on ? "var(--surface-3)" : "transparent", color: on ? "var(--text)" : "var(--text-2)", fontWeight: on ? 600 : 400 }}
+                      title={st ? `${m.label}: ${statusDef(st).label}` : m.label}
+                    >
+                      {st && st !== "unknown" && <Dot tone={statusDef(st).tone} />}
+                      {m.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+            {primary === "activity" && (
+              <div className="ml-auto pb-1.5">
+                <Seg sm value={activeTab === "schedules" ? "schedules" : "actions"} onChange={(k) => setActiveTab(k as HostTab)} options={[{ k: "actions", label: "Actions" }, { k: "schedules", label: "Schedules" }]} />
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {(() => {
         const errors = currentStateQuery.data?.filter(m => m.error_message) ?? []
@@ -2543,7 +2474,7 @@ export default function HostDetailPage() {
             </>
       )}
 
-      {activeTab === "groups" && (
+      {(activeTab === "overview" || activeTab === "groups") && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <div>
@@ -5406,6 +5337,12 @@ export default function HostDetailPage() {
           </Dialog>
 
           <CurrentStateSection moduleType="resolver" modules={currentStateQuery.data} hostId={id} />
+        </div>
+      )}
+
+      {activeTab === "metrics" && host && (
+        <div className="rounded-lg border border-slate-700 bg-slate-900 p-4">
+          <HostMetricsSection hostId={Number(id)} />
         </div>
       )}
 

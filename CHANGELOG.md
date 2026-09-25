@@ -7,7 +7,117 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **The navigation is a four-zone icon rail with a contextual pane, replacing
+  the 256px sidebar.** The old sidebar held thirteen links in three labelled
+  groups plus a collapsible child that appeared only sometimes, and a third
+  of it was integrations that are configured once a quarter. The rail now
+  holds a fixed set of zones — Overview, Fleet, Operations, Assistant —
+  drawn as line icons (a gauge, server rows, a terminal, a chat bubble),
+  with Settings and the account at its foot; each zone's destinations live
+  in a 208px pane beside it. Below 1180px the pane
+  overlays the content; below 640px the rail becomes a bottom tab bar. `[`
+  toggles the pane, `t` toggles the theme, `⌘K` opens the palette.
+
+  The command palette indexes everything now — every destination, every
+  host, every group, every module × group pair, and verbs (plan a sync,
+  check for drift, approve pending hosts, start a scan) — which is what lets
+  the rail stay at four entries: the rail is the cold path, the palette the
+  fast path. It used to index nine of ~34 destinations and no objects.
+
+- **Overview replaces the dashboard.** `/overview` is the landing route:
+  fleet state and what is waiting weighted evenly. The four single-number
+  stat cards are gone in favour of a status bar whose every segment is a
+  filter into the hosts list; **Pending** is one queue with typed lanes —
+  assistant approval gates, discovered hosts, firing alerts, drift — sorted
+  soonest-to-expire, with a rail badge that counts only what blocks or
+  expires. Stale hosts (30+ days since a sync — the failure mode nobody
+  notices), a 14-day drift trend, the last 24h of activity failures-first,
+  upcoming schedules with their blast radius, and integration health round
+  it out. `/dashboard` redirects.
+
+- **A group has its own page, on the host detail pattern.** `/groups/<id>`
+  is Overview · Config · Members · Activity, and it is where a group is
+  edited — inline, with no dialog: name, category, description and
+  priority on Overview (a priority move shows the tie warning and every
+  winner/loser flip it causes before Save), the eight module editors behind
+  Config with the module list beside them, membership on Members (an
+  inline picker to add, remove per row), the group's runs and schedules on
+  Activity, GitOps and delete on Overview. Configuration is not a zone of
+  its own: a module's desired state belongs to the group that declares it,
+  so the palette's *Firewall — group: web* lands on that editor, and a
+  host's effective state stays on the host's page. `?tab=rules` and the
+  other legacy tab links still open the right module.
+
+- **Run action… from a host or a group.** Both heads gain the button; it
+  opens the same run dialog an action's own button does — the action as
+  the title, **Preview (dry-run)** and **Run** in the footer, parallelism
+  for a group — with an action picker, since here the target is known
+  first. The Actions library's rows open the same flow against a chosen
+  target, and its head gets **Run action…** too.
+
+- **Plan → apply is a screen with a URL, not a dialog.** `/plans` computes a
+  dry run on every host in scope, lays the per-host diffs side by side with
+  a checkbox per host, derives the blast radius and acknowledgements from
+  the *selection* (so a partial run is never described with the whole plan's
+  numbers), arms Apply behind typing the host count, then runs one coalesced
+  playbook per selected host and polls the jobs to a per-host result.
+  `?scope=group:3&modules=firewall` recomputes the same plan, so a second
+  pair of eyes can review before anyone clicks Apply. Every "Plan sync"
+  button in the app lands here.
+
+- **Operations gains Drift and Runs as destinations.** `/drift` is the
+  fleet-wide findings list — one (host, module) per row from the per-module
+  status rows, remediate writes a plan, re-check reads the host again.
+  `/runs` is one stream of sync jobs and action runs (scheduled runs
+  included), replacing three lists that rendered the same object.
+  `/actions` holds Library · Packs · Schedules; `/schedules` and
+  `/action-packs` redirect to its tabs.
+
+- **Discovery is one route with three tabs** — pending approval, scan
+  schedules, scan now — promoted out from under Hosts. `/hosts/discovery`,
+  `/hosts/discover`, `/hosts/pending` and `/hosts/scans` redirect, including
+  the per-scan queues.
+
+- **Settings has five sections** — Integrations (a registry of cards:
+  Proxmox, Grafana, Git remotes, AI providers, Prometheus export, webhooks),
+  AI, Access, Fleet defaults, System (logging, scrape export, about). The
+  key-value editor is unchanged underneath; each section shows its
+  categories, and the uncategorised-keys safety net lives in Fleet defaults.
+
+- **Host detail presents five tabs instead of twelve.** Overview · Config ·
+  Metrics · Terminal · Activity; the eight module tabs sit behind Config with
+  a module sub-nav that shows each module's drift dot, group membership is
+  Overview content, actions and schedules are Activity. The header's
+  Terminal button is gone (the tab is the terminal) and **Run action…**
+  takes its place. `?tab=rules` and the other legacy tab links still open
+  the right module.
+
+- **Groups list is in priority order.** Priority is the merge order, so it
+  is the first column; each row shows what the group declares as chips into
+  that module's editor, and the row opens the group's page. **New group**
+  opens an editor dialog that shows the merge ladder — where the new
+  priority lands — before creating.
+
+- **Two themes.** Dark stays primary; light is a real second theme rather
+  than an inversion, with one blue accent and status hues at a shared chroma.
+  Both are tokens in `globals.css`; shadcn's variables are re-pointed at
+  them. Pages not yet rebuilt on the shell get a transitional remap of the
+  slate scale so they are not dark islands in the light theme. The typeface
+  is IBM Plex Sans / Mono, vendored like the fonts before it.
+
+### Removed
+
+- The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,
+  the dashboard stat cards, "Discover" as a concept separate from
+  "Discovery", the category rename/remove affordance on the groups list
+  (category is edited on the group's page), the group **Edit** dialog and
+  the group **Sync all modules** dialog (`components/group-sync-dialog.tsx`;
+  Plan sync opens the Plans screen instead), the hosts list's bulk
+  **Plan sync** button (plans start from a host, a group or Operations ›
+  Plans), and Change Password as a sidebar button — it lives in the account
+  menu with Log out.
 
 ## [0.10.0] — 2026-09-18
 

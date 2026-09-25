@@ -1,100 +1,68 @@
-# Dashboard
+# Overview
 
-![Dashboard](screenshots/dashboard.png)
+**Path:** `/overview` (`/dashboard` and `/` redirect here)
 
-**Path:** `/dashboard`
+The landing page: fleet state and what is waiting on you, weighted evenly.
+It is the first zone on the rail, and the only one whose rail icon carries a
+badge. The badge counts only what blocks or expires — assistant approval
+gates, firing alerts, and one for the discovery queue when it is non-empty.
+Drift never inflates it: a badge that says 214 because of drift findings is
+a badge you stop reading.
 
-Fleet-wide health overview. Heading reads **Fleet Overview**; the page
-auto-refreshes every 30 seconds.
+The Overview pane lists five views of the same data. Each is a URL
+(`/overview?view=pending` …), so any of them can be deep-linked.
 
-## Metric Cards
+## Summary
 
-Two rows of summary cards at the top:
-
-**Triage tier**
-
-| Card | What it shows |
-|------|---------------|
-| **Total Hosts** | All hosts registered in LabDog |
-| **Hosts in Sync** | Hosts whose current state matches desired state |
-| **Hosts Drifted** | Hosts where actual state has diverged from desired |
-| **Hosts with Errors** | Hosts where the last sync or drift check failed |
-| **Unknown / Pending** | Hosts not yet checked or with a check in flight |
-
-**Coverage tier**
-
-| Card | What it shows |
-|------|---------------|
-| **Last Fleet Check** | Relative time since the most recent host drift check |
-| **Never Checked** | Hosts with no drift-check history |
-| **Never Synced** | Hosts that have never had Ansible applied |
-
-## Charts and feeds
-
-Below the cards sit two rows of panels. All four share a fixed height
-and refresh on the same 30-second cycle as the rest of the page.
+The default view. Every panel is a filter, a list or a trend — there are no
+single-number cards.
 
 | Panel | What it shows |
 |-------|---------------|
-| **Sync Success Rate** | Share of syncs that succeeded, bucketed by day over the last 7 days. Sourced from LabDog's full sync-job history, so it has data immediately. |
-| **Drift Trend** | Drift checks that found a host out of sync, per day over the last 7 days, with total drift volume in the tooltip. |
-| **Recent Activity** | The last 10 audit events — config and operator changes. "View all" opens the full [Audit Log](admin.md#audit-log). |
-| **Recent Scheduled Runs** | Runs dispatched from a schedule. Defaults to one row per run; the **Grouped** toggle collapses them to one row per schedule with a status strip you can expand. |
+| **Fleet status bar** | in sync · drifted · syncing · failed · unknown, segment width proportional to count. Every segment is a click-through into the hosts list filtered to that status. |
+| **Pending** | The first four items of the queue (see below), soonest to expire first, with **Review** and, where allowed, **Hide**. |
+| **Activity · last 24h** | Applies, action runs, scheduled runs and state collections from the last day, failures pinned to the top. **open →** on a run goes to its transcript. |
+| **Drift trend** | How many hosts are drifted right now and a 14-day sparkline of drifted checks. When drift checking is off on every host it says so, with a link to turn it on — an empty chart otherwise reads as "all clear". |
+| **Stale hosts** | Hosts not synced in 30+ days (or never), oldest first. The failure mode nobody notices: neither drifted nor failed, just forgotten. |
+| **Upcoming** | The next enabled schedules with their blast radius — how many hosts, and whether a snapshot is taken first. |
 
-**Drift Trend starts empty, and that is expected.** LabDog only stores
-each host's *current* drift state, so trend history had to be recorded
-going forward rather than reconstructed. The chart shows "Drift history
-is being collected" until the first drift checks run, then fills in.
+**Drift-check fleet** (top right) queues a state collection on every host,
+the same operation the old Collect State button ran; **Plan a sync** opens
+[Plans](operations.md#plans).
 
-If it stays empty, the usual cause is that **drift checking is disabled**
-— it is off by default on every host. Enable it per host on the Host
-detail page, or for many hosts at once from the [Hosts](hosts.md) list.
-A chart reading "No drift detected" (green) is the opposite situation:
-checks are running and finding nothing.
+## Pending
 
-## Host Table
+One queue, typed lanes, sorted by expiry rather than recency. Nothing here
+is a message: an item is a decision waiting to be made, and it leaves the
+list when the decision is.
 
-Below the panels, a table lists hosts with IP address, current status
-badge, **Last Check**, and **Last Sync** timestamps. Click the hostname
-to open the host detail page.
+| Lane | Source | Expires |
+|------|--------|---------|
+| **Approvals** | Assistant sessions paused at an approval gate; discovered hosts awaiting approval, one item per scan | Gates carry the approval's expiry; discovered hosts do not expire |
+| **Alerts** | Alerts currently firing (Grafana webhook or Alertmanager poll), critical ones marked blocking | "firing" for as long as they fire |
+| **Drift** | One informational item when any host is drifted | never |
 
-The table shows the **top 10** hosts, and a selector above it chooses
-which 10:
+**Review** goes to the place the decision is made — the session, the
+Discovery queue, the alert, Drift. **Hide** removes an alert or a discovery
+item from *this browser's* queue only; it stays in history and comes back in
+a new session. Approval gates cannot be hidden: a hidden gate would still
+block its session, and the only honest way off the list is a decision.
 
-| Option | Ordering |
-|--------|----------|
-| **Needs attention** (default) | Triage priority — errors first, then drifted, pending, unknown, in sync |
-| **Recently synced** | Most recently synced first |
-| **Stalest sync** | Longest since last sync; never-synced hosts first |
-| **Longest since check** | Longest since last drift check; never-checked first |
-| **Recently drifted** | Drifted hosts, most recently confirmed first |
-| **Never checked** | Only hosts with no drift-check history |
-| **Errors only** | Only hosts in an error state |
-| **Newest hosts** | Most recently added first |
+## Fleet state
 
-**View all hosts** opens the full [Hosts](hosts.md) list, which is not
-capped.
+The status bar again, with every stale host, a per-group breakdown (host
+count and how many of them are drifted; click a row for the hosts list
+filtered to that group) and the drift trend at full size. This is standing
+condition, not a queue.
 
-**Status badges:**
+## Activity
 
-| Badge | Meaning |
-|-------|---------|
-| `In Sync` (green) | All modules match desired state |
-| `Out of Sync` (amber) | At least one module has drifted |
-| `Error` (red) | Last check or sync returned an error |
-| `Unknown` (grey) | Host has never been checked |
+The whole last 24 hours, failures first, with a link to the full
+[Runs](operations.md#runs) history.
 
-Each row also has a **Collect** button that re-runs state collection
-for that single host.
+## Upcoming
 
-## Collect State
-
-The **Collect State** button in the top-right SSHes into every host
-and refreshes its **current state** in LabDog's database. This is
-distinct from:
-
-- the **Last Check** column (drift detection — diff against desired state)
-- the **Last Sync** column (Ansible push — apply desired state)
-
-State collection feeds both views: it's the read step that makes the
-drift comparison and the dashboard's status badges accurate.
+Every schedule with its cron, scope and blast radius, plus **integration
+health**: what is connected (Proxmox, Grafana/Mimir/Loki, Git remotes, the
+AI provider and today's spend, the Prometheus export) — the things the
+scheduled runs depend on.

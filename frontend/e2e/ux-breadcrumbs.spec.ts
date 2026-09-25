@@ -5,10 +5,10 @@ test.describe("Breadcrumb navigation UX", () => {
     await page.goto("/groups")
     await expect(page.getByRole("heading", { name: "Groups" })).toBeVisible()
 
-    // Scope to main content area to avoid matching sidebar nav
+    // Screens on the rail-and-pane shell render their crumb trail inside
+    // the page head: Groups sits in the Fleet zone.
     const main = page.locator("main")
-    const breadcrumbNav = main.locator("nav").filter({ hasText: "Groups" })
-    await expect(breadcrumbNav).toBeVisible()
+    await expect(main.getByText("fleet", { exact: true })).toBeVisible()
   })
 
   test("breadcrumb on groups/new shows parent link and navigates back", async ({

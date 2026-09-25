@@ -20,12 +20,16 @@ teaches you to re-run without reading the log.
 
 | File | Family | Weights | Used as |
 | --- | --- | --- | --- |
-| `dm-sans.woff2` | DM Sans | 400–700 (variable) | `--font-sans` |
-| `jetbrains-mono.woff2` | JetBrains Mono | 400–500 (variable) | `--font-mono` |
+| `ibm-plex-sans.woff2` | IBM Plex Sans | 400–700 (variable) | `--font-sans` |
+| `ibm-plex-mono-400.woff2` | IBM Plex Mono | 400 | `--font-mono` |
+| `ibm-plex-mono-500.woff2` | IBM Plex Mono | 500 | `--font-mono` |
+| `ibm-plex-mono-600.woff2` | IBM Plex Mono | 600 | `--font-mono` |
 
-Both are the **variable** builds of the **latin** subset, which is what
-`next/font/google` was fetching before. One file covers the whole weight
-range, so this is two files and ~68 kB rather than six static weights.
+All four are the **latin** subset. Plex Sans ships as a variable build
+on Google Fonts so one file covers the whole weight range; Plex Mono
+does not, so it is three static weights — the three the UI actually
+uses (body, emphasis, and the uppercase mono section labels). Together
+they are ~91 kB.
 
 Nothing outside `app/layout.tsx` refers to a font by name — the rest of
 the app reads the `--font-sans` / `--font-mono` CSS variables, and
@@ -35,11 +39,10 @@ call.
 
 ## Licensing
 
-Both are SIL Open Font License 1.1, which permits redistribution
-including bundling with software. The full texts are next to the fonts as
-`OFL-DM-Sans.txt` and `OFL-JetBrains-Mono.txt`; keep them with the files
-if you replace or move them, and check the licence of anything you swap
-in.
+IBM Plex is SIL Open Font License 1.1, which permits redistribution
+including bundling with software. The full text is next to the fonts as
+`OFL-IBM-Plex.txt`; keep it with the files if you replace or move them,
+and check the licence of anything you swap in.
 
 ## Updating them
 
@@ -48,15 +51,17 @@ subset and axis ranges match what was there before:
 
 ```bash
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-curl -sS -A "$UA" "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400..700&display=swap"
+curl -sS -A "$UA" "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400..700&display=swap"
+curl -sS -A "$UA" "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap"
 ```
 
-The response has one `@font-face` per subset. Take the `src: url(...)`
-from the block commented `/* latin */` — the `latin-ext` block above it
-is a different, larger file. Then verify what you downloaded is actually
-a font before committing it, since a failed request will happily write an
-HTML error page to a `.woff2` path:
+The response has one `@font-face` per subset (and, for Mono, per
+weight). Take the `src: url(...)` from the block commented `/* latin */`
+— the `latin-ext` block above it is a different, larger file. Then
+verify what you downloaded is actually a font before committing it,
+since a failed request will happily write an HTML error page to a
+`.woff2` path:
 
 ```bash
-file dm-sans.woff2   # => Web Open Font Format (Version 2), ...
+file ibm-plex-sans.woff2   # => Web Open Font Format (Version 2), ...
 ```

@@ -12,7 +12,8 @@ import { apiFetch } from "@/lib/api"
 import { useDelayedLoading } from "@/lib/utils"
 import type { ScheduledAction } from "@/lib/types"
 
-export default function SchedulesPage() {
+/** `embedded` drops the header: under `/actions` it is the Schedules tab. */
+export default function SchedulesPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [createOpen, setCreateOpen] = useState(false)
 
   const { data: rows, isLoading, error } = useQuery<ScheduledAction[]>({
@@ -38,16 +39,22 @@ export default function SchedulesPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Schedules" }]} />
+      {!embedded && <Breadcrumb items={[{ label: "Operations" }, { label: "Schedules" }]} />}
 
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Schedules</h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Cron-driven runs of any registered action across hosts, groups, or
-            the entire fleet.
+        {embedded ? (
+          <p className="text-slate-400 text-sm">
+            A schedule is an action with a cron — same library, same detail. Snapshot-backed ones are reversible.
           </p>
-        </div>
+        ) : (
+          <div>
+            <h1 className="text-2xl font-bold text-white">Schedules</h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Cron-driven runs of any registered action across hosts, groups, or
+              the entire fleet.
+            </p>
+          </div>
+        )}
         <Button onClick={() => setCreateOpen(true)}>+ New</Button>
       </div>
 

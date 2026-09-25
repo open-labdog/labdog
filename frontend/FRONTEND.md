@@ -9,8 +9,8 @@ This document defines the frontend conventions for LabDog. All new pages, compon
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js 16 (App Router) |
-| UI Components | shadcn/ui (base-ui variant, **NOT Radix**) |
-| Styling | Tailwind CSS v4 (dark mode only) |
+| UI Components | shadcn/ui (base-ui variant, **NOT Radix**) for dialogs, inputs and legacy pages; the LabDog kit in `components/ld` for screens on the shell |
+| Styling | Tailwind CSS v4 over the LabDog design tokens in `app/globals.css` — dark is primary, light is a real second theme |
 | Data Fetching | TanStack Query (`@tanstack/react-query`) |
 | API Client | `apiFetch()` from `lib/api.ts` |
 | Auth | `useAuth()` context from `lib/auth.ts` |
@@ -19,16 +19,109 @@ This document defines the frontend conventions for LabDog. All new pages, compon
 
 ---
 
+## Shell: icon rail + contextual pane
+
+The navigation is four zones on a 50px icon rail, each with a 208px pane of
+destinations, plus Settings at the foot of the rail. The rail never grows
+with the feature count — new destinations go into a zone's pane, or into
+the command palette. Config is deliberately not a zone: a module's desired
+state belongs to the group that declares it and is edited on the group's
+page; a host's effective state is read on the host's page.
+
+| Zone | Pane items | Routes |
+|------|-----------|--------|
+| Overview | Summary · Pending · Fleet state · Activity · Upcoming | `/overview` (`?view=pending|state|activity|upcoming`) |
+| Fleet | Hosts · Groups · Discovery | `/hosts`, `/hosts/[id]` (`?tab=`), `/groups`, `/groups/[id]` (`?tab=overview|config|members|activity`, `&module=<id>`, `&view=schedules`), `/discovery` (`?tab=pending|schedules|scan`) |
+| Operations | Plans · Drift · Actions · Runs · Audit | `/plans`, `/drift`, `/actions` (`?tab=library|packs|schedules`), `/runs`, `/audit` |
+| Assistant | Sessions · Alerts | `/assistant`, `/alerts` |
+| Settings | (no pane — five section tabs) | `/settings` (`?section=integrations|ai|access|fleet|system`) |
+
+Everything lives in `components/shell/`:
+
+- `zones.ts` — the zone/route registry: `ZONE_DEFS`, `zoneForPath`,
+  `isFlushRoute`, `itemIsActive`. Add a destination here, never a new rail
+  entry. Legacy routes are mapped to the zone their content moved to.
+- `rail.tsx`, `pane.tsx`, `palette.tsx`, `account-menu.tsx`, `glyph.tsx`
+- `use-shell-counts.ts` — the numbers the pane and the Overview badge show;
+  every query shares its key with the page that owns the data.
+- `redirect.tsx` — client-side redirect for moved routes (the production
+  build is a static export, so there is no server to 301).
+
+`components/app-shell.tsx` composes them. Breakpoints: below 1180px the pane
+becomes an overlay that closes on navigation; below 640px the rail is a
+bottom tab bar and the pane is gone. Keyboard: `⌘K`/`Ctrl+K` palette, `[`
+toggles the pane, `t` toggles the theme (never while typing in a field).
+
+**Legacy routes** (`/dashboard`, `/hosts/discovery`, `/hosts/pending`,
+`/hosts/discover`, `/hosts/scans`, `/schedules`, `/action-packs`,
+`/settings/about`, `/pending`) redirect to their new home so deep links keep
+working. Pages that have not been rebuilt on the shell (`/hosts/[id]`,
+`/assistant`, `/audit`, the integration pages …) render inside it
+unchanged, in a padded scrolling `<main>`. Screens built for the shell are
+listed in `FLUSH_ROUTES` / `FLUSH_PATTERNS` and own their header and
+scroll region.
+
+### Screens on the shell vs legacy pages
+
+A screen built on the shell is a `PageHead` (crumbs, title, sub, actions,
+optional filter row) followed by a `.scroll` body or a `Table`, and is
+wrapped by a server `page.tsx` with a `Suspense` boundary when it reads
+`useSearchParams` (required by the static export). It uses the kit in
+`components/ld` and the `.btn` classes. A legacy page keeps the
+`<div className="space-y-6">` + `Breadcrumb` + `<h1>` pattern below.
+
+Dynamic segments in a static export must be **numeric** (`/hosts/123`,
+`/groups/7`) or prerendered with `generateStaticParams` — the backend's SPA
+fallback only substitutes digits into the placeholder page. Anything else
+that varies (a module, a tab) goes in the query string.
+
+### The group page
+
+`/groups/[id]` follows the Host detail pattern — Overview · Config ·
+Members · Activity — and is where a group is edited; there is no edit
+dialog (the `GroupEditor` modal creates groups only). The URL is the
+state: `?tab=config&module=firewall`, `?tab=activity&view=schedules`; the
+old module tabs (`?tab=rules`, `?tab=dns` …) still resolve.
+
+- **Overview** — settings inline (name, category, description, priority
+  with the tie warning and every winner/loser flip a move causes, from
+  `useGroupMerge` in `components/group-editor.tsx`), declared modules,
+  members, the danger zone, GitOps, recent runs.
+- **Config** — the eight modules on the left, the module's editor on the
+  right. The editors under `groups/[id]/<segment>/client-page.tsx` are
+  embedded with `embedded groupId={id}` and their own `<h1>` hidden; a
+  module is "declared" once the group has an item for it.
+- **Members** — add (inline picker, one POST per tick) and remove hosts.
+- **Activity** — the group's action runs, or its schedules
+  (`ScheduledActionsSection`).
+
+"Run action…" on the group and host heads is `components/run-action-button.tsx`:
+the same `ActionRunDialog` an action's own run button opens, with an action
+picker because the entry point is the target. "Plan sync — N hosts" opens
+`/plans?scope=group:<id>` (plus `&modules=` from the Config tab).
+
+---
+
 ## Typography
 
 | Role | Font | CSS Variable | Weights |
 |------|------|-------------|---------|
-| Body / UI | **DM Sans** (Google Fonts) | `--font-sans` | 400, 500, 600, 700 |
-| Code / Mono | **JetBrains Mono** (Google Fonts) | `--font-mono` | 400, 500 |
+| Body / UI | **IBM Plex Sans** (vendored) | `--font-sans` | 400–700 variable |
+| Code / Mono | **IBM Plex Mono** (vendored) | `--font-mono` | 400, 500, 600 |
 
-Loaded in `app/layout.tsx` via `next/font/google`. Applied to `<body>` via `font-sans` class.
+Loaded in `app/layout.tsx` via `next/font/local` from `app/fonts/` (see the
+README there). Applied to `<body>` via `font-sans` class. Body size is 13px.
 
-### Usage
+### Usage (screens on the shell)
+
+- Page titles come from `PageHead` (19px semibold); section labels are `.tt`
+  (uppercase mono, 9.5px, `--text-3`)
+- Every value an operator might copy — hostnames, IPs, ports, CIDRs, cron
+  lines — is `.mono`; counts add `.num` for tabular figures
+- Body text `text-xs`/`text-[12.5px]` in `text-text` (primary), `text-text-2`
+  (secondary), `text-text-3` (muted), `text-text-faint` (decorative only)
+
+### Usage (legacy pages)
 
 - Page titles: `text-2xl font-bold text-white`
 - Page descriptions: `text-slate-400 text-sm mt-1`
@@ -41,7 +134,41 @@ Loaded in `app/layout.tsx` via `next/font/google`. Applied to `<body>` via `font
 
 ## Color Palette
 
-Dark mode only (`<html className="dark">`). The palette is monochromatic slate with colored accents for semantics.
+Two themes, both defined as tokens in `app/globals.css` under
+`html[data-theme="dark"]` (primary) and `html[data-theme="light"]` (a real
+second theme, not an inversion). `next-themes` writes both `class` and
+`data-theme` on `<html>`, persisted under `labdog:theme`.
+
+### Design tokens (screens on the shell)
+
+| Token | Tailwind | Use |
+|-------|----------|-----|
+| `--bg` | `bg-bg` | page |
+| `--surface`, `--surface-2`, `--surface-3` | `bg-surface`, `bg-surface-2`, `bg-surface-3` | panels · panel headers/hover · segmented controls |
+| `--rail` | `bg-rail` | the rail |
+| `--border`, `--border-strong`, `--border-faint` | `border-line`, `border-line-strong`, `border-line-faint` | dividers |
+| `--text`, `--text-2`, `--text-3`, `--text-faint` | `text-text`, `text-text-2`, `text-text-3`, `text-text-faint` | four grades of ink |
+| `--accent`, `--accent-soft`, `--accent-line`, `--accent-fill`, `--accent-ink` | `ld-accent*` | the one blue: active states, primary buttons, host overrides |
+| `--ok` `--warn` `--danger` `--sync` `--idle` `--hold` `--add` `--del` | `bg-ok` … | status tones, all at one chroma so nothing shouts louder than its severity |
+| `--<tone>-soft` / `--<tone>-ink` | `bg-ok-soft text-ok-ink` | a tint and the ink solved against it (≥5:1). **Never paint a raw tone on its own tint.** |
+
+In TSX the tone helpers in `components/ld/tone.ts` (`toneVar`, `toneSoft`,
+`toneInk`, `tint`) resolve a tone name to these variables; `Tag tone="warn"`
+and `Dot tone="ok"` do it for you. The status vocabulary — which word and
+tone each backend `sync_status` gets — is `lib/fleet.ts` (`STATUS`), used by
+`Status`, `StatusBar` and the palette alike.
+
+shadcn's own variables (`--background`, `--card`, `--primary` …) are
+re-pointed at these tokens, so components/ui follow both themes with no
+`dark:` blocks. shadcn's neutral hover `--accent` is stored as `--ui-accent`
+so `bg-accent` stays neutral while `var(--accent)` is the blue.
+
+### Legacy palette (pages not yet on the shell)
+
+The slate vocabulary below still works. In the light theme a transitional
+block in `globals.css` re-points the slate scale and the saturated badge
+colours at the light tokens, so legacy pages are not dark islands; it is a
+bridge to delete entry by entry as pages migrate, not a design.
 
 ### Surfaces
 
@@ -58,7 +185,7 @@ Dark mode only (`<html className="dark">`). The palette is monochromatic slate w
 
 | Element | Class |
 |---------|-------|
-| Cards, tables, sidebar | `border-slate-700` |
+| Cards, tables, pane | `border-slate-700` (legacy) / `border-line` |
 | Table rows | `border-slate-700` |
 | Form inputs | `border-slate-700` or `border-input` |
 | Sidebar dividers | `border-slate-700` |
@@ -91,23 +218,23 @@ Dark mode only (`<html className="dark">`). The palette is monochromatic slate w
 ## Layout Architecture
 
 ```
-app/layout.tsx          — Font loading, Providers, AppShell
-├── components/app-shell.tsx — Conditionally renders sidebar (hidden on /login, /register)
-├── components/sidebar.tsx   — Navigation, user menu, logout, password change
-└── app/(dashboard)/...      — All dashboard pages (with sidebar)
-    app/(auth)/...           — Login/register pages (no sidebar, centered card layout)
+app/layout.tsx              — Fonts, Providers (theme, query client, auth), AppShell
+├── components/app-shell.tsx    — Rail + pane + content column; mobile header + bottom rail; palette; shortcuts
+├── components/shell/*          — zones registry, Rail, Pane, Palette, AccountMenu, redirect helper
+├── components/ld/*             — the LabDog UI kit (see below)
+└── app/(dashboard)/...         — All dashboard pages (inside the shell)
+    app/(auth)/...              — Login/register pages (no shell, centered card layout)
 ```
 
 ### AppShell Pattern
 
-`components/app-shell.tsx` checks the current pathname. Auth routes (`/login`, `/register`) render children without the sidebar. All other routes render the standard `flex h-screen` layout with sidebar + scrollable main area.
+`components/app-shell.tsx` checks the current pathname. Auth routes (`/login`, `/register`) render children bare. Everything else renders the rail, the current zone's pane and a content column. Account things — email, change password, log out — live behind the avatar at the foot of the rail (`components/shell/account-menu.tsx`), where they cannot be mistaken for navigation.
 
-### Sidebar
+### The LabDog kit (`components/ld`)
 
-- Width: `w-64`
-- Nav items are conditionally rendered (e.g., "Users" only for `user?.is_superuser`)
-- Active state uses `startsWith()` for parent matching (except `/dashboard` which uses exact match)
-- User email + logout + password change pinned to bottom via `mt-auto`
+Dense, token-driven primitives ported from the design prototype: `PageHead`, `Panel`, `Tabs`, `Seg`, `Filter`, `Table` (a CSS-grid table with table roles, sort, select, sticky head), `Tag`, `Dot`, `Status`, `Provenance`, `Spark`, `Meter`, `StatusBar`, `Modal`, `Empty`, `Kbd`. Buttons on these screens are the `.btn` / `.btn-sm` / `.btn-primary` / `.btn-ghost` / `.btn-danger` classes from `globals.css`; inputs are `.inp`. `components/ui` (shadcn) remains for dialogs, forms and legacy pages.
+
+Shared vocabulary: `lib/modules.ts` is the one registry of the eight modules and their several spellings (route segment, host tab, `ModuleCounts` key, sync `module_filter` name); `lib/fleet.ts` holds the status vocabulary and age helpers; `lib/activity.ts` merges sync jobs and action runs into one stream; `lib/pending.ts` builds the Pending queue's lanes.
 
 ---
 
@@ -453,10 +580,10 @@ if (!user?.is_superuser) {
 
 | Path | Purpose |
 |------|---------|
-| `app/(dashboard)/*/page.tsx` | Dashboard pages (with sidebar) |
-| `app/(auth)/*/page.tsx` | Auth pages (no sidebar, centered card) |
+| `app/(dashboard)/*/page.tsx` | Dashboard pages (inside the shell) |
+| `app/(auth)/*/page.tsx` | Auth pages (no shell, centered card) |
 | `components/ui/*.tsx` | shadcn/ui primitives (do not modify) |
-| `components/*.tsx` | Custom app components (sidebar, status-badge, rule-dialog, app-shell) |
+| `components/*.tsx` | Custom app components (app-shell, group-editor, status-badge, rule-dialog); `components/shell/*` the rail, pane and palette; `components/ld/*` the LabDog kit |
 | `lib/api.ts` | API client (`apiFetch`, `API_BASE`) |
 | `lib/auth.ts` | Auth context and `useAuth()` hook |
 | `lib/types.ts` | All TypeScript interfaces for API responses |
@@ -609,22 +736,24 @@ Cap: ~15 tooltips total. Only for complex/non-obvious fields.
 
 ## Command Palette
 
-`CommandPalette` in `app-shell.tsx`. Opens with Cmd/Ctrl+K. Navigation-only — quick-jump to pages. No mutations, no entity search.
+`components/shell/palette.tsx`, opened with Cmd/Ctrl+K or the rail button. It indexes every destination (zone items and Settings sections), every host, every group, every module × group pair (landing on the group's Config tab), and a handful of verbs (plan a sync, check the fleet for drift, approve pending hosts, start a scan, add a host, new group, open a terminal on a host). Before anything is typed it shows destinations and verbs only. The palette is infrastructure: it is what lets the rail stay at four entries.
 
 ---
 
 ## Keyboard Shortcuts
 
 - `Cmd/Ctrl+K` — open command palette
+- `[` — toggle the contextual pane
+- `t` — toggle dark/light theme
 - `Escape` — close any open dialog or command palette (handled natively by base-ui)
 
-No other shortcuts.
+The single-key shortcuts never fire while an input, textarea, select or contenteditable has focus.
 
 ---
 
 ## Mobile Responsive
 
-Sidebar collapses at `md:` breakpoint (768px). Below 768px: hamburger button in top bar opens sidebar as slide-over sheet. CSS `transition-transform` only (no Framer Motion).
+Below 1180px the pane overlays the content (opened from the `›` strip, closes on navigation). Below 640px the rail moves to the bottom edge as five labelled tabs, a slim header carries the zone name, search and theme toggle, and there is no pane. CSS transitions only (no Framer Motion).
 
 ---
 
@@ -661,7 +790,7 @@ Optimistic updates available via `optimisticUpdate` option (for simple delete/to
 |------|-----|
 | shadcn Select | Native `<select>` elements used currently. Migration to styled Select component planned. |
 | `DialogTrigger asChild` | Not supported by base-ui. Wrap children directly. |
-| Dark/light toggle | Dark mode only, hardcoded `className="dark"` on `<html>`. |
+| System theme following | Dark is the default and light is an explicit choice (`t` or the rail toggle); there is no `prefers-color-scheme` follow. |
 | Framer Motion | No animation library. CSS transitions only. |
-| Separate `/profile` page | Password change lives in sidebar dialog. |
+| Separate `/profile` page | Password change lives in the account menu at the foot of the rail. |
 | Pagination | Tables show all data. LabDog manages tens/hundreds of items, not thousands. |

@@ -29,11 +29,29 @@ interface ActionRunDialogProps {
   open: boolean
   onClose: () => void
   hostOsCodename?: string | null
+  /**
+   * When opened from a target rather than from an action ("Run action…"
+   * on a host or group), the dialog also picks the action: pass every
+   * action that supports the target and take the choice back here.
+   */
+  actions?: ActionDefinition[]
+  onPickAction?: (action: ActionDefinition) => void
+  /** Shown under the title — the target's name, so the dialog says what it will run against. */
+  targetLabel?: string
 }
 
-export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename }: ActionRunDialogProps) {
+const NO_PARAMS: Record<string, unknown> = {}
+
+export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOsCodename, actions, onPickAction, targetLabel }: ActionRunDialogProps) {
   const router = useRouter()
-  const [params, setParams] = useState<Record<string, unknown>>({})
+  // Parameters are kept per action key so switching the picked action
+  // never carries one playbook's values into another's form.
+  const [paramsByAction, setParamsByAction] = useState<Record<string, Record<string, unknown>>>({})
+  const params = (action && paramsByAction[action.key]) ?? NO_PARAMS
+  const setParams = (next: Record<string, unknown>) => {
+    if (action) setParamsByAction((prev) => ({ ...prev, [action.key]: next }))
+  }
+  const actionKey = action?.key
   const [parallelism, setParallelism] = useState(1)
   const [submitting, setSubmitting] = useState(false)
 
@@ -78,10 +96,11 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
   // Seed each picker param with its kind's default (or first) instance URL
   // once instances load, so the shown selection is what actually runs.
   useEffect(() => {
-    if (!grafanaInstances) return
-    setParams((prev) => {
+    if (!grafanaInstances || !actionKey) return
+    setParamsByAction((prev) => {
+      const cur = prev[actionKey] ?? {}
       let changed = false
-      const next = { ...prev }
+      const next = { ...cur }
       for (const [key, kind] of Object.entries(instancePickers)) {
         if (next[key] !== undefined) continue
         const list = grafanaInstances.filter((i) => i.kind === kind)
@@ -91,9 +110,9 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
           changed = true
         }
       }
-      return changed ? next : prev
+      return changed ? { ...prev, [actionKey]: next } : prev
     })
-  }, [grafanaInstances, instancePickers])
+  }, [grafanaInstances, instancePickers, actionKey])
 
   // Block running when a required picker has no registered instance.
   const missingDestination =
@@ -176,7 +195,36 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{action.name}</DialogTitle>
+          {targetLabel && (
+            <p className="text-xs text-slate-400">
+              {scope}: <span className="font-mono text-slate-300">{targetLabel}</span>
+            </p>
+          )}
         </DialogHeader>
+
+        {actions && actions.length > 1 && onPickAction && (
+          <div className="space-y-1.5">
+            <Label htmlFor="run-action-pick" className="text-sm font-medium text-slate-200">Action</Label>
+            <select
+              id="run-action-pick"
+              value={action.key}
+              onChange={(e) => {
+                const next = actions.find((a) => a.key === e.target.value)
+                if (next) onPickAction(next)
+              }}
+              className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white font-mono"
+            >
+              {actions.map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500">
+              {action.pack_name} pack{action.description ? ` · ${action.description}` : ""}
+            </p>
+          </div>
+        )}
 
         {action.unresolved && (
           <div className="rounded-lg border border-amber-800 bg-amber-950/40 p-3 text-sm space-y-1.5">
@@ -189,7 +237,7 @@ export function ActionRunDialog({ action, scope, targetId, open, onClose, hostOs
               <code className="font-mono">{action.key}</code>. Choose which
               pack wins on{" "}
               <Link
-                href="/action-packs"
+                href="/actions?tab=packs"
                 className="underline hover:text-amber-200"
                 onClick={onClose}
               >

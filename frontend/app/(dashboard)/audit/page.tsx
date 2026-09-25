@@ -127,9 +127,9 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-6">
-      <Breadcrumb items={[{ label: "Audit Log" }]} />
+      <Breadcrumb items={[{ label: "Operations" }, { label: "Audit" }]} />
       <div>
-        <h1 className="text-2xl font-bold text-white">Audit Log</h1>
+        <h1 className="text-2xl font-bold text-white">Audit</h1>
         <p className="text-slate-400 text-sm mt-1">
           Track all changes made to firewall configuration
         </p>

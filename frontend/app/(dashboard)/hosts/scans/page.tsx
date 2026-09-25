@@ -1,12 +1,10 @@
-"use client"
+import { Suspense } from "react"
+import { Redirect } from "@/components/shell/redirect"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-
-export default function ScansRedirect() {
-  const router = useRouter()
-  useEffect(() => {
-    router.replace("/hosts/discovery")
-  }, [router])
-  return null
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <Redirect to="/discovery?tab=schedules" />
+    </Suspense>
+  )
 }

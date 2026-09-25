@@ -35,9 +35,14 @@ function RepoTypeBadge({ type }: { type: string }) {
   )
 }
 
-export default function GroupPackagesPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
+ */
+export default function GroupPackagesPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const [pkgDialogOpen, setPkgDialogOpen] = useState(false)
   const [pkgEditing, setPkgEditing] = useState<PackageRule | null>(null)

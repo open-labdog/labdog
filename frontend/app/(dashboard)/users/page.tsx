@@ -99,8 +99,8 @@ export default function UsersPage() {
       <div className="space-y-6">
         <div className="text-center py-12">
           <p className="text-slate-400">Access denied. Only administrators can manage users.</p>
-          <Link href="/dashboard" className="text-blue-400 hover:underline text-sm mt-2 inline-block">
-            Back to Dashboard
+          <Link href="/overview" className="text-blue-400 hover:underline text-sm mt-2 inline-block">
+            Back to Overview
           </Link>
         </div>
       </div>

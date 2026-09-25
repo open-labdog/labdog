@@ -11,8 +11,8 @@ export default function GroupActionRunPage() {
     <div className="p-6">
       <ActionRunDetail
         runId={runId}
-        backHref={`/groups/${groupId}?tab=actions`}
-        backLabel="Back to Actions"
+        backHref={`/groups/${groupId}?tab=activity`}
+        backLabel="Back to the group's activity"
       />
     </div>
   )

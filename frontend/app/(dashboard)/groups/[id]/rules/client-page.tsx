@@ -100,9 +100,14 @@ function SortableRow({
   )
 }
 
-export default function GroupRulesPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
+ */
+export default function GroupRulesPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
   const [confirmState, setConfirmState] = useState<{

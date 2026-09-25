@@ -258,14 +258,17 @@ async function setupCommonMocks(
 }
 
 test.describe("Schedules", () => {
-  test("sidebar label and /schedules page render", async ({ page }) => {
+  test("/schedules lands on the Schedules tab of Actions", async ({ page }) => {
     await setupCommonMocks(page)
+    // The old route redirects: a schedule is an action with a cron, so it
+    // lives as a tab of Operations · Actions.
     await page.goto("/schedules")
+    await expect(page).toHaveURL(/\/actions\/?\?tab=schedules/)
     await expect(
-      page.getByRole("heading", { name: "Schedules" }),
+      page.getByRole("heading", { name: "Actions" }),
     ).toBeVisible()
     await expect(
-      page.getByRole("link", { name: "Schedules" }),
+      page.getByRole("tab", { name: "Schedules", selected: true }),
     ).toBeVisible()
   })
 

@@ -96,5 +96,9 @@ test.describe("Hosts page", () => {
 
     await page.goto(`/hosts/${host.id}`)
     await expect(page.getByText(host.hostname).first()).toBeVisible()
+    // The header offers what the tabs don't: Run action… opens the action
+    // picker; the terminal is its own tab, not a header button.
+    await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
+    await expect(page.getByRole("tab", { name: "Terminal" })).toBeVisible()
   })
 })

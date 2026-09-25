@@ -23,9 +23,14 @@ const RESOLVER_TYPE_LABELS: Record<string, string> = {
 
 const OPTION_KEYS = ["ndots", "timeout", "attempts", "rotate", "edns0"] as const
 
-export default function GroupResolverPage({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * `groupId` lets a caller name the group explicitly instead of reading
+ * the route's `[id]` segment — the group page's Config tab embeds this
+ * editor that way. Standalone, the route parameter is used.
+ */
+export default function GroupResolverPage({ embedded = false, groupId }: { embedded?: boolean; groupId?: number } = {}) {
   const params = useParams()
-  const id = Number(params.id)
+  const id = groupId ?? Number(params.id)
 
   const { data: group } = useQuery<HostGroup>({
     queryKey: ["group", id],
