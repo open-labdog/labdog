@@ -1,10 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { apiFetch } from "@/lib/api"
 import { cronToHuman } from "@/lib/cron"
+import { Field } from "@/components/ld"
 import type { ValidateCronResponse } from "@/lib/types"
 
 interface CronInputProps {
@@ -32,9 +31,7 @@ function presetForCron(cron: string): string {
 }
 
 export function CronInput({ value, onChange }: CronInputProps) {
-  const [validation, setValidation] = useState<ValidateCronResponse | null>(
-    null,
-  )
+  const [validation, setValidation] = useState<ValidateCronResponse | null>(null)
   const [validating, setValidating] = useState(false)
 
   // Debounced server-side validation. The endpoint is cheap; the
@@ -48,19 +45,10 @@ export function CronInput({ value, onChange }: CronInputProps) {
     setValidating(true)
     const handle = setTimeout(async () => {
       try {
-        const resp = await apiFetch<ValidateCronResponse>(
-          "/api/scheduled-actions/validate-cron",
-          { method: "POST", json: { cron: value } },
-        )
+        const resp = await apiFetch<ValidateCronResponse>("/api/scheduled-actions/validate-cron", { method: "POST", json: { cron: value } })
         if (!cancelled) setValidation(resp)
       } catch {
-        if (!cancelled) {
-          setValidation({
-            valid: false,
-            message: "Validation failed",
-            next_run_at: [],
-          })
-        }
+        if (!cancelled) setValidation({ valid: false, message: "Validation failed", next_run_at: [] })
       } finally {
         if (!cancelled) setValidating(false)
       }
@@ -74,63 +62,41 @@ export function CronInput({ value, onChange }: CronInputProps) {
   const presetValue = presetForCron(value)
 
   return (
-    <div className="space-y-2">
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase text-slate-500">Preset</Label>
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-1 gap-[11px] sm:grid-cols-2">
+        <Field as="div" label="preset">
           <select
+            className="inp"
+            aria-label="Cron preset"
             value={presetValue}
             onChange={(e) => {
               if (e.target.value === CUSTOM) return
               onChange(e.target.value)
             }}
-            className="w-full rounded-md border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-            aria-label="Cron preset"
           >
             <option value={CUSTOM}>Custom…</option>
             {PRESETS.map((p) => (
-              <option key={p.cron} value={p.cron}>
-                {p.label}
-              </option>
+              <option key={p.cron} value={p.cron}>{p.label}</option>
             ))}
           </select>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs uppercase text-slate-500">
-            Cron expression
-          </Label>
-          <Input
-            type="text"
-            placeholder="0 3 * * *"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className="font-mono"
-            aria-label="Cron expression"
-          />
-        </div>
+        </Field>
+        <Field as="div" label="cron expression" error={validation && !validation.valid ? (validation.message ?? "Invalid cron expression") : undefined}>
+          <input type="text" className="inp mono" placeholder="0 3 * * *" aria-label="Cron expression" value={value} onChange={(e) => onChange(e.target.value)} />
+        </Field>
       </div>
 
-      {value && (
-        <p className="text-xs text-slate-400">{cronToHuman(value)}</p>
-      )}
-      {validation && !validation.valid && (
-        <p className="text-xs text-red-400">
-          {validation.message ?? "Invalid cron expression"}
-        </p>
-      )}
+      {value && <p className="text-[11px] text-text-3">{cronToHuman(value)}</p>}
       {validation?.valid && validation.next_run_at.length > 0 && (
-        <div className="text-xs text-slate-500">
-          <span className="text-slate-400">Next runs:</span>
-          <ul className="mt-1 space-y-0.5 font-mono">
+        <div className="text-[11px] text-text-faint">
+          <span className="text-text-3">next runs:</span>
+          <ul className="mono m-0 mt-0.5 flex list-none flex-col gap-0.5 p-0">
             {validation.next_run_at.slice(0, 3).map((iso) => (
               <li key={iso}>{new Date(iso).toLocaleString()}</li>
             ))}
           </ul>
         </div>
       )}
-      {validating && !validation && (
-        <p className="text-xs text-slate-600">Checking…</p>
-      )}
+      {validating && !validation && <p className="text-[11px] text-text-faint">checking…</p>}
     </div>
   )
 }

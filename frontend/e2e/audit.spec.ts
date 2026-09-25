@@ -8,28 +8,33 @@ test.describe("Audit page", () => {
 
   test("audit page shows filter controls", async ({ page }) => {
     await page.goto("/audit")
-    // The audit table uses DataTable column filter buttons (aria-label="Filter Action" etc.)
-    await expect(page.getByRole("button", { name: "Filter Action" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Filter Entity" })).toBeVisible()
+    // The kit Filter's accessible name is its label plus the ▾ glyph —
+    // "action ▾" — until a value is picked, when the picked label is
+    // inserted before the glyph.
+    await expect(page.getByRole("button", { name: /^action\s*▾$/i })).toBeVisible()
+    await expect(page.getByRole("button", { name: /^entity\s*▾$/i })).toBeVisible()
   })
 
   test("action filter dropdown has expected options", async ({ page }) => {
     await page.goto("/audit")
     // Open the Action filter popover
-    await page.getByRole("button", { name: "Filter Action" }).click()
+    await page.getByRole("button", { name: /^action\s*▾$/i }).click()
 
-    // The filter popover appears as a fixed-position div after clicking.
-    // Action filter has enum options: Create, Update, Delete
-    // They are rendered as buttons — find them by role with exact name
-    await expect(page.getByRole("button", { name: "Create" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Update" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Delete" })).toBeVisible()
+    // Options are lowercase labels from lib/status.ts AUDIT_ACTION, each
+    // with a loaded-count suffix — substring, case-insensitive matching
+    // finds them regardless of the count.
+    await expect(page.getByRole("button", { name: "create" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "update" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "delete" })).toBeVisible()
   })
 
   test("entity filter dropdown has expected options", async ({ page }) => {
     await page.goto("/audit")
-    // The DataTable filter for Entity is a text filter, not enum — just check the button exists
-    await expect(page.getByRole("button", { name: "Filter Entity" })).toBeVisible()
+    // Entity has no fixed vocabulary — its options come from whatever
+    // has loaded — so just check the control opens with at least one row.
+    await expect(page.getByRole("button", { name: /^entity\s*▾$/i })).toBeVisible()
+    await page.getByRole("button", { name: /^entity\s*▾$/i }).click()
+    await expect(page.getByRole("button", { name: /^all entity/i })).toBeVisible()
   })
 
   test("audit entries table is visible with data", async ({ page }) => {
@@ -53,7 +58,7 @@ test.describe("Audit page", () => {
     await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
 
     // Open Action filter and click Create option
-    await page.getByRole("button", { name: "Filter Action" }).click()
+    await page.getByRole("button", { name: /^action\s*▾$/i }).click()
     // After filtering, either entries remain or empty state shows
     await expect(page.getByRole("table")).toBeVisible()
   })
@@ -67,7 +72,7 @@ test.describe("Audit page", () => {
     await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
 
     // Entity filter is present
-    await expect(page.getByRole("button", { name: "Filter Entity" })).toBeVisible()
+    await expect(page.getByRole("button", { name: /^entity\s*▾$/i })).toBeVisible()
     await expect(page.getByRole("table")).toBeVisible()
   })
 
@@ -77,12 +82,11 @@ test.describe("Audit page", () => {
     await expect(page.getByRole("table")).toBeVisible({ timeout: 10000 })
 
     const headers = page.getByRole("columnheader")
-    await expect(headers.filter({ hasText: "Timestamp" })).toBeVisible()
-    await expect(headers.filter({ hasText: "User" })).toBeVisible()
-    await expect(headers.filter({ hasText: "Action" })).toBeVisible()
-    await expect(headers.filter({ hasText: "Entity" })).toBeVisible()
-    // The column is "IP Address", not "Details" — updated to match current schema
-    await expect(headers.filter({ hasText: "IP Address" })).toBeVisible()
+    await expect(headers.filter({ hasText: "when" })).toBeVisible()
+    await expect(headers.filter({ hasText: "user" })).toBeVisible()
+    await expect(headers.filter({ hasText: "action" })).toBeVisible()
+    await expect(headers.filter({ hasText: "entity" })).toBeVisible()
+    await expect(headers.filter({ hasText: "ip address" })).toBeVisible()
   })
 
   // BUG-75: a failure used to be swallowed and resolved with an empty

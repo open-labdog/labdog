@@ -1,16 +1,15 @@
 import { Suspense } from "react"
-
-import PendingReviewClientPage from "./client-page"
+import { Redirect } from "@/components/shell/redirect"
 
 export async function generateStaticParams() {
   return [{ id: "placeholder" }]
 }
 
-/** Kept for deep links; the same queue is a tab of Discovery. */
+/** The same queue is a tab of Discovery now. */
 export default function Page() {
   return (
     <Suspense fallback={null}>
-      <PendingReviewClientPage />
+      <Redirect to="/discovery?tab=pending&scan=:id" />
     </Suspense>
   )
 }

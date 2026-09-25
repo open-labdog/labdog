@@ -200,11 +200,7 @@ export default function ActionsPage() {
           <ActionPacksPage />
         </div>
       )}
-      {tab === "schedules" && (
-        <div className="scroll flex-1 p-3.5">
-          <SchedulesPage embedded />
-        </div>
-      )}
+      {tab === "schedules" && <SchedulesPage />}
 
       {pick && (
         <Modal

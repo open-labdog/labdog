@@ -173,6 +173,8 @@ const FLUSH_ROUTES = [
   "/drift",
   "/runs",
   "/actions",
+  "/audit",
+  "/alerts",
   "/settings",
   "/users",
   "/ssh-keys",
@@ -182,7 +184,15 @@ const FLUSH_ROUTES = [
   "/hypervisors",
   "/ai-providers",
 ]
-const FLUSH_PATTERNS = [/^\/groups\/\d+$/, /^\/git-repos\/\d+$/, /^\/hosts\/\d+$/, /^\/hosts\/\d+\/terminal$/]
+const FLUSH_PATTERNS = [
+  /^\/groups\/\d+$/,
+  /^\/git-repos\/\d+$/,
+  /^\/hosts\/\d+$/,
+  /^\/hosts\/\d+\/terminal$/,
+  /^\/actions\/runs\/\d+$/,
+  /^\/hosts\/\d+\/actions\/runs\/\d+$/,
+  /^\/groups\/\d+\/actions\/runs\/\d+$/,
+]
 
 export function isFlushRoute(pathname: string): boolean {
   const p = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname
