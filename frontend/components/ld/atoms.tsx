@@ -50,10 +50,16 @@ export function RunStatus({ s, reason, dim }: { s: string | null | undefined; re
   )
 }
 
+/**
+ * A chip. Sans by default — most tags are words (a state, a kind, a
+ * count). Pass `mono` when the chip holds something an operator might
+ * copy or type: a hostname, a module or group name, a CIDR, a branch, a
+ * priority, a `+3 −1` diff count.
+ */
 export function Tag({
   children,
   tone,
-  mono = true,
+  mono = false,
   title,
   onClick,
   shrink,
@@ -107,7 +113,7 @@ export function Provenance({
         : "LabDog control-plane rule, cannot be removed"
   return (
     <span className="inline-flex items-center gap-1.5" style={{ opacity: shadowed ? 0.45 : 1 }}>
-      <Tag tone={tone} title={title}>
+      <Tag tone={tone} title={title} mono>
         {label}
       </Tag>
       {origin === "group" && priority != null && (

@@ -99,6 +99,14 @@ is the last of the series, so the list below is complete.
 - "Things NOT Used": the "shadcn Select … migration planned" row — native
   `<select className="inp">` is the design, not a stopgap; add "an icon
   library".
+- "Typography" (from the typeface PR, `feat/atkinson-type`): the table
+  names IBM Plex. The fonts are Atkinson Hyperlegible Next (`--font-sans`)
+  and Atkinson Hyperlegible Mono (`--font-mono`), each one variable file,
+  200–800. In "Usage (screens on the shell)", `.tt` section labels are
+  uppercase **sans**, not mono; page titles are sans even when they are a
+  hostname or group name; and `Tag` is sans by default, with `mono` passed
+  for identifiers (hostnames, module and group names, CIDRs, branches,
+  priorities, `+3 −1` diff counts). The `.mono` bullet stands.
 
 ### `docs/ui/*.md`
 

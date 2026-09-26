@@ -12,26 +12,24 @@ import { AppShell } from '@/components/app-shell'
 // neither the network nor the font. CI hit it, and a build that fails for
 // reasons unrelated to the diff teaches you to re-run without reading.
 //
-// IBM Plex is the typeface of the rail-and-pane redesign: Sans for UI
-// text, Mono for every value an operator might copy (hostnames, ports,
-// CIDRs, cron lines) and for the uppercase section labels. Plex Sans is
-// a variable build so one file covers 400–700; Plex Mono is not, so it
-// is the three static weights the UI uses. See app/fonts/README.md for
-// licensing and how to update them.
-const plexSans = localFont({
-  src: './fonts/ibm-plex-sans.woff2',
+// Atkinson Hyperlegible is the typeface: Next for UI text and the
+// uppercase section labels, Mono for every value an operator might copy
+// (hostnames, ports, CIDRs, cron lines). Both are drawn so that easily
+// confused shapes — l/I/1, O/0, rn/m — stay distinct, which is most of
+// what reading a hostname or an address needs. Each is one variable file
+// covering 200–800. See app/fonts/README.md for licensing and how to
+// update them.
+const atkinsonSans = localFont({
+  src: './fonts/atkinson-hyperlegible-next.woff2',
   variable: '--font-sans',
-  weight: '400 700',
+  weight: '200 800',
   display: 'swap',
 })
 
-const plexMono = localFont({
-  src: [
-    { path: './fonts/ibm-plex-mono-400.woff2', weight: '400', style: 'normal' },
-    { path: './fonts/ibm-plex-mono-500.woff2', weight: '500', style: 'normal' },
-    { path: './fonts/ibm-plex-mono-600.woff2', weight: '600', style: 'normal' },
-  ],
+const atkinsonMono = localFont({
+  src: './fonts/atkinson-hyperlegible-mono.woff2',
   variable: '--font-mono',
+  weight: '200 800',
   display: 'swap',
 })
 
@@ -52,7 +50,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${plexSans.variable} ${plexMono.variable} font-sans antialiased bg-bg text-text`}
+        className={`${atkinsonSans.variable} ${atkinsonMono.variable} font-sans antialiased bg-bg text-text`}
       >
         <Providers>
           <AppShell>{children}</AppShell>

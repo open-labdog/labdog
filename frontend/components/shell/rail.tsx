@@ -126,7 +126,7 @@ export function MobileRail({ zone, counts }: { zone: ZoneKey; counts: ShellCount
             className="relative flex flex-1 flex-col items-center gap-[5px] border-0 bg-transparent pb-[5px] pt-[9px]"
           >
             <Glyph shape={z.glyph} on={on} size={16} />
-            <span className="mono text-[9px] font-semibold" style={{ color: on ? "var(--accent)" : "var(--text-3)" }}>
+            <span className="text-[9px] font-semibold" style={{ color: on ? "var(--accent)" : "var(--text-3)" }}>
               {z.label}
             </span>
             {z.k === "overview" && pendingTotal > 0 && (

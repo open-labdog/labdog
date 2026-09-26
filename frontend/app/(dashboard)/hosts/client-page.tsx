@@ -120,7 +120,7 @@ export default function HostsPage() {
         return (
           <span className="flex min-w-0 items-center gap-[3px]">
             {gs.slice(0, shown).map((g, i, arr) => (
-              <Tag key={g.id} shrink={i === arr.length - 1} title={`priority ${g.priority}`}>
+              <Tag key={g.id} mono shrink={i === arr.length - 1} title={`priority ${g.priority}`}>
                 {g.name}
               </Tag>
             ))}
@@ -143,7 +143,7 @@ export default function HostsPage() {
         return (
           <span className="flex min-w-0 items-center gap-[3px]" title={mods.map((m) => `${m.label}: ${h.override_counts[m.countKey]}`).join("\n")}>
             {mods.slice(0, 3).map((m) => (
-              <Tag key={m.id} tone="accent" shrink>
+              <Tag key={m.id} mono tone="accent" shrink>
                 {m.id} {h.override_counts[m.countKey]}
               </Tag>
             ))}

@@ -219,7 +219,7 @@ export default function GitReposPage() {
             ),
           },
           { k: "url", label: "url", w: "minmax(200px,1.6fr)", cell: (r) => <span className="mono text-[11px]" title={r.url}>{r.url}</span> },
-          { k: "branch", label: "branch", w: "96px", cell: (r) => <Tag>{r.branch}</Tag> },
+          { k: "branch", label: "branch", w: "96px", cell: (r) => <Tag mono>{r.branch}</Tag> },
           {
             k: "auth",
             label: "auth",

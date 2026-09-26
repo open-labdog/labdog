@@ -42,7 +42,7 @@ export function DetectedGitopsRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mono trunc text-xs text-text">{file.path}</span>
-            {file.group_name && <Tag title={`the file declares group: "${file.group_name}"`}>group: {file.group_name}</Tag>}
+            {file.group_name && <Tag mono title={`the file declares group: "${file.group_name}"`}>group: {file.group_name}</Tag>}
             {inUseElsewhere && (
               <Tag tone="danger" title="this group is already bound to a different repository — disable GitOps on it before re-binding">
                 already bound

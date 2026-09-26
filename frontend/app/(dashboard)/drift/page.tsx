@@ -200,7 +200,7 @@ export default function DriftPage() {
                   <div className="flex min-w-0 flex-1 flex-col gap-1">
                     <div className="flex flex-wrap items-center gap-[7px]">
                       <Tag tone={f.sev === "high" ? "danger" : "warn"}>{f.sev === "high" ? "collection failed" : "drifted"}</Tag>
-                      <Tag>{group === "host" ? f.mod?.label ?? f.moduleType : f.host.hostname}</Tag>
+                      <Tag mono>{group === "host" ? f.mod?.label ?? f.moduleType : f.host.hostname}</Tag>
                       {f.mod && <span className="text-[11px] text-text-3">{f.mod.blurb}</span>}
                       <span className="mono num ml-auto text-[10.5px] text-text-faint">{f.checkedAt ? `checked ${shortAgo(f.checkedAt)} ago` : "never checked"}</span>
                     </div>

@@ -192,7 +192,7 @@ export function ActionRunDetail({ runId }: { runId: number }) {
     <>
       <PageHead
         crumbs={crumbs}
-        title={<><span className="mono">{run?.action_key ?? (isLoading ? "Loading…" : `run #${runId}`)}</span> {run && <RunStatus s={run.status} reason={run.pending_reason} />}</>}
+        title={<><span>{run?.action_key ?? (isLoading ? "Loading…" : `run #${runId}`)}</span> {run && <RunStatus s={run.status} reason={run.pending_reason} />}</>}
         sub={run && (
           <>
             v{run.action_version} · {run.started_at ? `started ${new Date(run.started_at).toLocaleString()}` : `created ${new Date(run.created_at).toLocaleString()}`}

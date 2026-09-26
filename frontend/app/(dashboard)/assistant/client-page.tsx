@@ -379,7 +379,7 @@ export default function AssistantPage() {
             "New session"
           ) : (
             <>
-              <span className="mono">session #{selectedId}</span>
+              <span>session #{selectedId}</span>
               {status && session && (
                 <Tag tone={status.tone} title={session.status}>
                   {status.label}

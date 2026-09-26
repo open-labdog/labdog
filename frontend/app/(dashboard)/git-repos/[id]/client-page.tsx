@@ -131,8 +131,8 @@ export default function GitRepoDetailPage() {
         crumbs={CRUMBS}
         title={
           <>
-            <span className="mono">{repo.name}</span>
-            <Tag>{repo.branch}</Tag>
+            <span>{repo.name}</span>
+            <Tag mono>{repo.branch}</Tag>
             <Tag tone={auth.tone}>{auth.label}</Tag>
           </>
         }
