@@ -197,7 +197,7 @@ html[data-theme="light"] {
 
 /* ---------------------------------------------------------------------------
    LabDog utility vocabulary — the small set of classes the design reads
-   with. `.tt` is the uppercase mono section label; `.mono`/`.num` mark
+   with. `.tt` is the uppercase section label; `.mono`/`.num` mark
    copyable values; `.btn` is the dense button; `.inp` is every text
    control — input, select and textarea alike — inside a `Field`.
    ------------------------------------------------------------------------- */
@@ -214,7 +214,7 @@ html[data-theme="light"] {
     letter-spacing: 0.11em;
     font-size: 9.5px;
     font-weight: 600;
-    font-family: var(--font-mono), ui-monospace, monospace;
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
     color: var(--text-3);
   }
   .trunc {

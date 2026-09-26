@@ -104,7 +104,11 @@ The format follows [Keep a Changelog]; LabDog follows
 - **Two themes.** Dark stays primary; light is a real second theme rather
   than an inversion, with one blue accent and status hues at a shared chroma.
   Both are tokens in `globals.css`, and every screen paints with them. The
-  typeface is IBM Plex Sans / Mono, vendored like the fonts before it.
+  typeface is Atkinson Hyperlegible Next / Mono, vendored like the fonts
+  before it: it is drawn to keep l/I/1 and O/0 apart, which is most of
+  what reading a hostname or an address needs. Mono is kept for values
+  you might copy — hostnames, module and group names, CIDRs, diff counts;
+  section labels, page titles and word-chips (states, kinds) are sans.
 
 - **The shared dialogs are on the theme.** Run action…, the confirmation
   modal every delete goes through, Change password and the sync tray are

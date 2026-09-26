@@ -84,7 +84,7 @@ export function FirewallEditor({ groupId }: { groupId: number }) {
 
   const side = (cidr: string | null, hostId: number | null) => {
     const h = hostName(hostId)
-    if (h) return <Tag tone="accent" title="resolved to the host's address at sync time">{h}</Tag>
+    if (h) return <Tag mono tone="accent" title="resolved to the host's address at sync time">{h}</Tag>
     return <span className="mono text-[11px]">{cidr ?? <span className="text-text-faint">any</span>}</span>
   }
   const busy = reorderMutation.isPending || policyMutation.isPending

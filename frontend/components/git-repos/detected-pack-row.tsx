@@ -61,7 +61,7 @@ export function DetectedPackRow({
                 const winner = existingWinners[key]
                 const isConflict = conflictKeys.has(key)
                 return (
-                  <Tag
+                  <Tag mono
                     key={key}
                     tone={isConflict ? "danger" : winner ? "warn" : undefined}
                     title={

@@ -134,7 +134,7 @@ export default function GroupsPage() {
                 return (
                   <span className="flex min-w-0 gap-[3px]">
                     {mods.slice(0, 5).map((m, i, arr) => (
-                      <Tag key={m.id} shrink={i === arr.length - 1} onClick={(e) => { e.stopPropagation(); router.push(`/groups/${g.id}?tab=config&module=${m.id}`) }} title={`${g.module_counts[m.countKey]} ${m.unit} — open the editor`}>
+                      <Tag key={m.id} mono shrink={i === arr.length - 1} onClick={(e) => { e.stopPropagation(); router.push(`/groups/${g.id}?tab=config&module=${m.id}`) }} title={`${g.module_counts[m.countKey]} ${m.unit} — open the editor`}>
                         {m.id} {g.module_counts[m.countKey]}
                       </Tag>
                     ))}

@@ -223,7 +223,7 @@ export default function HostDetailPage() {
     <>
       <PageHead
         crumbs={[{ label: "fleet", href: "/hosts" }, { label: "hosts", href: "/hosts" }]}
-        title={host ? <><span className="mono">{host.hostname}</span> <Status s={host.sync_status} /></> : hostLoading ? "Loading…" : `Host #${id}`}
+        title={host ? <><span>{host.hostname}</span> <Status s={host.sync_status} /></> : hostLoading ? "Loading…" : `Host #${id}`}
         sub={host ? <>{host.ip_address} · {host.os_pretty_name ?? "not collected"} · last sync {ageLabel(host.last_sync_at)}</> : undefined}
         actions={
           host && (

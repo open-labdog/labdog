@@ -272,10 +272,10 @@ export default function PlanPage() {
         crumbs={[{ label: "operations" }, { label: "plans" }]}
         title={
           <>
-            <span className="mono">plan</span>
-            {defined && <Tag>{modulesLabel}</Tag>}
+            <span>plan</span>
+            {defined && <Tag mono>{modulesLabel}</Tag>}
             {defined && (
-              <Tag
+              <Tag mono
                 tone="accent"
                 title={group ? "open the group this plan came from" : "the hosts this plan covers"}
                 onClick={() => (group ? router.push(`/groups/${group.id}?tab=config${modules.length === 1 ? `&module=${moduleByAnyName(modules[0])?.id ?? ""}` : ""}`) : router.push("/hosts"))}
@@ -581,7 +581,7 @@ export default function PlanPage() {
                             {(["add", "remove", "update"] as const).map((op) => {
                               const n = changes.filter((c) => c.op === op).length
                               return n ? (
-                                <Tag key={op} tone={OP[op].tone}>
+                                <Tag key={op} mono tone={OP[op].tone}>
                                   {OP[op].s}
                                   {n}
                                 </Tag>

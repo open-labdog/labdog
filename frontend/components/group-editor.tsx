@@ -234,7 +234,7 @@ export function GroupEditor({
           <input className="inp mono num" type="number" min={1} max={1000} value={f.priority} onChange={(e) => set("priority", e.target.value)} style={{ width: 74, flexShrink: 0 }} />
           <input type="range" min={1} max={100} value={Math.min(prio, 100)} onChange={(e) => set("priority", e.target.value)} className="flex-1" style={{ accentColor: "var(--accent)" }} aria-label="priority" />
           {moved && group && (
-            <Tag tone="accent">
+            <Tag mono tone="accent">
               {group.priority} → {prio}
             </Tag>
           )}
@@ -309,7 +309,7 @@ export function GroupEditor({
           <L hint={`${members.length + staged.length} hosts${staged.length ? ` · ${staged.length} to add` : ""}`}>members</L>
           <div className="flex flex-wrap items-center gap-1">
             {members.slice(0, 12).map((h) => (
-              <Tag
+              <Tag mono
                 key={h.id}
                 onClick={() => {
                   onClose()

@@ -148,7 +148,7 @@ export default function GroupDetailPage() {
         crumbs={[{ label: "fleet", href: "/hosts" }, { label: "groups", href: "/groups" }]}
         title={
           <>
-            <span className="mono">{group?.name ?? "…"}</span>
+            <span>{group?.name ?? "…"}</span>
             {group?.category && <Tag>{group.category}</Tag>}
             {group && <Tag title="merge priority — higher wins">priority {group.priority}</Tag>}
             {group?.gitops_enabled && (
@@ -232,7 +232,7 @@ export default function GroupDetailPage() {
               <div className="flex flex-col gap-[9px] p-[11px]">
                 <div className="flex flex-wrap gap-[5px]">
                   {members.slice(0, 10).map((h) => (
-                    <Tag key={h.id} onClick={() => router.push(`/hosts/${h.id}`)} title={h.ip_address}>
+                    <Tag key={h.id} mono onClick={() => router.push(`/hosts/${h.id}`)} title={h.ip_address}>
                       {h.hostname}
                     </Tag>
                   ))}
@@ -412,7 +412,7 @@ function GroupSettings({
             <input className="inp mono num" type="number" min={1} max={1000} value={f.priority} onChange={(e) => set("priority", e.target.value)} style={{ width: 66, flexShrink: 0 }} aria-label="priority" />
             <input type="range" min={1} max={100} value={Math.min(prio, 100)} onChange={(e) => set("priority", e.target.value)} className="flex-1" style={{ accentColor: "var(--accent)" }} aria-label="priority slider" />
             {moved && (
-              <Tag tone="accent">
+              <Tag mono tone="accent">
                 {group.priority} → {prio}
               </Tag>
             )}
@@ -428,7 +428,7 @@ function GroupSettings({
             <span className="tt text-text">this move changes who wins</span>
             {flips.map(({ o, shared, mods, now }) => (
               <span key={o.id} className="text-[11px] text-text">
-                <span className="mono">{f.name.trim() || group.name}</span> now {now ? "wins over" : "loses to"} <span className="mono">{o.name}</span> on {plural(shared, "shared host")} for{" "}
+                <span>{f.name.trim() || group.name}</span> now {now ? "wins over" : "loses to"} <span className="mono">{o.name}</span> on {plural(shared, "shared host")} for{" "}
                 <span className="mono">{mods.map((m) => m.id).join(", ")}</span>
               </span>
             ))}

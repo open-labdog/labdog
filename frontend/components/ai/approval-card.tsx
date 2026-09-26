@@ -54,7 +54,7 @@ export function ApprovalCard({ approval, hostName, onDecide, pending }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <Tag tone={cls.tone}>{cls.label}</Tag>
         <span className="text-[12.5px] font-semibold text-text">Waiting for your decision</span>
-        {hostName && <Tag>{hostName}</Tag>}
+        {hostName && <Tag mono>{hostName}</Tag>}
         {expires && (
           <span className="tt ml-auto" title={expires.toISOString()}>
             expires {expires.toLocaleString()}

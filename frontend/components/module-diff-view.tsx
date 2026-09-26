@@ -57,7 +57,7 @@ export function DiffSummary({ diff }: { diff: ModuleDiff }) {
       {(["add", "remove", "update"] as const).map((op) => {
         const n = countByOp(diff.changes, op)
         return n ? (
-          <Tag key={op} tone={OP[op].tone}>
+          <Tag key={op} mono tone={OP[op].tone}>
             {OP[op].s}
             {n}
           </Tag>

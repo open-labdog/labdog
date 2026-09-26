@@ -72,7 +72,7 @@ function CidrTagInput({ value, onChange }: { value: string[]; onChange: (tags: s
     <>
       <div className="inp mono flex min-h-[32px] flex-wrap items-center gap-1.5 py-1.5" onClick={() => inputRef.current?.focus()}>
         {value.map((cidr) => (
-          <Tag key={cidr}>
+          <Tag key={cidr} mono>
             {cidr}
             {/* mousedown is swallowed so a half-typed CIDR is not added by
                 the input's blur before this removes the chip */}
