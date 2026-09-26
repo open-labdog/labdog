@@ -15,8 +15,9 @@ The format follows [Keep a Changelog]; LabDog follows
   of it was integrations that are configured once a quarter. The rail now
   holds a fixed set of zones — Overview, Fleet, Operations, Assistant —
   drawn as line icons (a gauge, server rows, a terminal, a chat bubble),
-  with Settings and the account at its foot; each zone's destinations live
-  in a 208px pane beside it. Below 1180px the pane
+  with Settings, the palette, the theme toggle and the account at its foot
+  in the same line style (a cog, a magnifier, a half-filled circle); each
+  zone's destinations live in a 208px pane beside it. Below 1180px the pane
   overlays the content; below 640px the rail becomes a bottom tab bar. `[`
   toggles the pane, `t` toggles the theme, `⌘K` opens the palette.
 

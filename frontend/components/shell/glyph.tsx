@@ -6,8 +6,10 @@ import type { GlyphShape } from "./zones"
  * titles, so the rail reads as an instrument panel rather than a set of
  * abstract marks. One per zone — a gauge for Overview, two server rows
  * for Fleet, a terminal for Operations, a chat bubble with a spark for
- * Assistant — and a gear at the foot of the rail. Stroke colour follows
- * the active state, so they take the accent in either theme.
+ * Assistant. The utility row at the foot of the rail uses the same 1.7
+ * stroke: a cog for Settings, a magnifier for the palette, a half-filled
+ * circle for the theme toggle. Stroke colour follows the active state, so
+ * they take the accent in either theme.
  */
 const PATHS: Record<GlyphShape, (c: string) => ReactNode> = {
   ring: (c) => (
@@ -42,9 +44,25 @@ const PATHS: Record<GlyphShape, (c: string) => ReactNode> = {
     </g>
   ),
   gear: (c) => (
+    <g fill="none" stroke={c} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="6.3" strokeWidth="1.7" />
+      <circle cx="12" cy="12" r="2.3" strokeWidth="1.7" />
+      <path
+        strokeWidth="2.4"
+        d="M18.3 12h2M16.46 16.46l1.41 1.41M12 18.3v2M7.54 16.46l-1.41 1.41M5.7 12h-2M7.54 7.54L6.13 6.13M12 5.7v-2M16.46 7.54l1.41-1.41"
+      />
+    </g>
+  ),
+  search: (c) => (
     <g fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 4v2.2M12 17.8V20M4 12h2.2M17.8 12H20M6.3 6.3l1.6 1.6M16.1 16.1l1.6 1.6M17.7 6.3l-1.6 1.6M7.9 16.1l-1.6 1.6" />
+      <circle cx="10.3" cy="10.3" r="5.8" />
+      <line x1="14.6" y1="14.6" x2="19.5" y2="19.5" />
+    </g>
+  ),
+  contrast: (c) => (
+    <g fill="none" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="7.2" />
+      <path d="M12 4.8a7.2 7.2 0 0 1 0 14.4z" fill={c} stroke="none" />
     </g>
   ),
 }

@@ -13,7 +13,7 @@
  */
 export type ZoneKey = "overview" | "fleet" | "ops" | "assistant" | "settings"
 
-export type GlyphShape = "ring" | "grid" | "stack" | "tri" | "gear"
+export type GlyphShape = "ring" | "grid" | "stack" | "tri" | "gear" | "search" | "contrast"
 
 /** Live numbers the pane and rail can show next to an item. */
 export interface ShellCounts {

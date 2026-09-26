@@ -18,7 +18,7 @@ function Badge({ n }: { n: number }) {
   )
 }
 
-export function ThemeToggle({ size = 12 }: { size?: number }) {
+export function ThemeToggle({ compact }: { compact?: boolean }) {
   const { resolvedTheme, setTheme } = useTheme()
   const dark = resolvedTheme !== "light"
   return (
@@ -28,17 +28,9 @@ export function ThemeToggle({ size = 12 }: { size?: number }) {
       title={`Switch to ${dark ? "light" : "dark"} theme — t`}
       aria-label={`Switch to ${dark ? "light" : "dark"} theme`}
       className="btn btn-sm btn-ghost"
-      style={{ padding: 7 }}
+      style={{ padding: compact ? 5 : 7 }}
     >
-      <div
-        style={{
-          width: size,
-          height: size,
-          borderRadius: "50%",
-          border: "1.6px solid var(--text-3)",
-          background: dark ? "transparent" : "var(--text-3)",
-        }}
-      />
+      <Glyph shape="contrast" size={compact ? 12 : 15} />
     </button>
   )
 }
@@ -88,10 +80,6 @@ export function Rail({
         )
       })}
       <div className="mt-auto flex flex-col items-center gap-1.5">
-        <button type="button" onClick={onPalette} title="Command palette — ⌘K" aria-label="Command palette" className="btn btn-sm btn-ghost" style={{ padding: 6 }}>
-          <span className="mono text-[10px]">⌘K</span>
-        </button>
-        <ThemeToggle />
         <button
           type="button"
           onClick={() => router.push(SETTINGS_ZONE.href)}
@@ -103,6 +91,10 @@ export function Rail({
         >
           <Glyph shape="gear" on={zone === "settings"} />
         </button>
+        <button type="button" onClick={onPalette} title="Command palette — ⌘K" aria-label="Command palette" className="btn btn-sm btn-ghost" style={{ padding: 7 }}>
+          <Glyph shape="search" />
+        </button>
+        <ThemeToggle />
         <AccountMenu />
       </div>
     </nav>
