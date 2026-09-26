@@ -114,7 +114,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button type="button" className="btn btn-sm btn-ghost ml-auto" onClick={() => setPalette(true)} aria-label="Search">
               search
             </button>
-            <ThemeToggle size={11} />
+            <ThemeToggle compact />
             <AccountMenu compact />
           </header>
         )}
