@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
@@ -316,7 +316,13 @@ async def get_host_metrics(
 
     inst = await get_default_instance(db, "mimir")
     if inst is None:
-        return HostMetrics(configured=False)
+        registered = await db.scalar(
+            select(func.count()).select_from(GrafanaInstance).where(GrafanaInstance.kind == "mimir")
+        )
+        return HostMetrics(
+            configured=False,
+            unconfigured_reason="no_default" if registered else "no_instance",
+        )
 
     client = PrometheusClient(
         query_url=derive_query_url(inst.url, inst.kind),

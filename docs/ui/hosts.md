@@ -117,8 +117,10 @@ an override.
 
 ### Metrics
 
-Instant CPU, memory and disk usage when a Grafana backend is configured —
-see [Live host metrics](host-metrics.md).
+Instant CPU, memory and disk usage from a Grafana Mimir backend. Until
+that works, the tab says what is missing — no Mimir instance, no default
+one, or no data from this host yet — and links to the fix. See
+[Live host metrics](host-metrics.md#states-you-may-see).
 
 ### Terminal
 

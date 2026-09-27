@@ -229,8 +229,11 @@ export interface HostMetricValue {
 }
 
 export interface HostMetrics {
-  /** False when no Grafana instance is registered (→ "set up" CTA). */
+  /** False when there is no Mimir instance to query (→ "set up" CTA). */
   configured: boolean
+  /** Why `configured` is false: none registered, or several with none
+   *  marked default. Null when configured. */
+  unconfigured_reason: "no_instance" | "no_default" | null
   sampled_at: string | null
   cpu: HostMetricValue | null
   memory: HostMetricValue | null

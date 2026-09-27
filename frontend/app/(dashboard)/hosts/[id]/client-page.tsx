@@ -318,7 +318,7 @@ export default function HostDetailPage() {
         </>
       )}
 
-      {primaryTab === "metrics" && <MetricsTab hostId={id} />}
+      {primaryTab === "metrics" && <MetricsTab hostId={id} host={host} />}
       {primaryTab === "terminal" && host && <TerminalTab hostId={id} hostname={host.hostname} />}
       {primaryTab === "activity" && <ActivityTab hostId={id} host={host} view={activeTab === "schedules" ? "schedules" : "actions"} />}
 

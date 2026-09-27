@@ -19,7 +19,7 @@ function formatBytes(n: number): string {
   return `${v.toFixed(v >= 100 || i === 0 ? 0 : 1)} ${units[i]}`
 }
 
-function relativeTime(iso: string, now: number): string {
+export function relativeTime(iso: string, now: number): string {
   const secs = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000))
   if (secs < 60) return `${secs}s ago`
   if (secs < 3600) return `${Math.round(secs / 60)}m ago`
@@ -32,12 +32,20 @@ function subLine(m: HostMetricValue): string | undefined {
   return undefined
 }
 
-/** Embedded resource-usage strip — rendered as the first block of the host
- *  Overview panel, and again on its own in the Metrics tab. Renders nothing
- *  until a Mimir backend is configured. Instant values only; auto-refreshes
- *  every 15s while visible. */
-export function HostMetricsSection({ hostId }: { hostId: number }) {
-  const { data } = useQuery<HostMetrics>({
+export function hasMetrics(data: HostMetrics): boolean {
+  return data.cpu != null || data.memory != null || data.disk != null
+}
+
+export function isStale(data: HostMetrics, now: number): boolean {
+  return data.sampled_at != null && now - new Date(data.sampled_at).getTime() > STALE_AFTER_MS
+}
+
+/** The host's instant metrics, refetched every 15s while the page is
+ *  visible, and a clock that ticks with it for the staleness check. The
+ *  Overview strip and the Metrics tab share the query key, so switching
+ *  between them doesn't refetch. */
+export function useHostMetrics(hostId: number) {
+  const query = useQuery<HostMetrics>({
     queryKey: ["host-metrics", String(hostId)],
     queryFn: () => apiFetch<HostMetrics>(`/api/grafana/hosts/${hostId}/metrics`),
     refetchInterval: 15_000,
@@ -50,15 +58,40 @@ export function HostMetricsSection({ hostId }: { hostId: number }) {
     return () => clearInterval(t)
   }, [])
 
+  return { query, now }
+}
+
+/** CPU, memory and root-disk meters. `detail` prints the absolute figures
+ *  under each bar; without it they are the bar's tooltip. */
+export function MetricMeters({ data, dim, detail }: { data: HostMetrics; dim?: boolean; detail?: boolean }) {
+  const cells: [string, HostMetricValue | null][] = [["cpu", data.cpu], ["memory", data.memory], ["disk /", data.disk]]
+  return (
+    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${dim ? "opacity-60" : ""}`}>
+      {cells.map(([label, m]) => (
+        <div key={label} title={!detail && m ? subLine(m) : undefined}>
+          <Meter pct={m?.percent ?? 0} label={label} value={m ? undefined : "—"} />
+          {detail && m && subLine(m) && <div className="mono num mt-1 text-[11px] text-text-3">{subLine(m)}</div>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** Embedded resource-usage strip — the first block of the host Overview
+ *  panel. Renders nothing until a Mimir backend is configured: an extra on
+ *  the host's front page shouldn't nag. The Metrics tab
+ *  (hosts/[id]/_tabs/metrics.tsx) is where the setup states are explained. */
+export function HostMetricsSection({ hostId }: { hostId: number }) {
+  const { query: { data }, now } = useHostMetrics(hostId)
+
   if (!data || !data.configured) return null
 
-  const stale = data.sampled_at != null && now - new Date(data.sampled_at).getTime() > STALE_AFTER_MS
-  const hasData = data.cpu != null || data.memory != null || data.disk != null
+  const stale = isStale(data, now)
 
   let note: React.ReactNode = null
   if (data.error) {
     note = <span className="text-[11px] text-danger" title={data.error}>query error</span>
-  } else if (!hasData) {
+  } else if (!hasMetrics(data)) {
     note = <span className="text-[11px] text-warn" title="Run the Install Alloy agent action and allow ~1 min for the first scrape.">no metrics yet</span>
   } else if (stale) {
     note = <span className="text-[11px] text-warn" title={data.sampled_at ? `Last sample ${relativeTime(data.sampled_at, now)}` : undefined}>stale</span>
@@ -70,11 +103,7 @@ export function HostMetricsSection({ hostId }: { hostId: number }) {
         <span className="tt">resource usage</span>
         {note}
       </div>
-      <div className={`grid grid-cols-1 gap-3 sm:grid-cols-3 ${stale ? "opacity-60" : ""}`}>
-        <div title={data.cpu ? subLine(data.cpu) : undefined}><Meter pct={data.cpu?.percent ?? 0} label="cpu" value={data.cpu ? undefined : "—"} /></div>
-        <div title={data.memory ? subLine(data.memory) : undefined}><Meter pct={data.memory?.percent ?? 0} label="memory" value={data.memory ? undefined : "—"} /></div>
-        <div title={data.disk ? subLine(data.disk) : undefined}><Meter pct={data.disk?.percent ?? 0} label="disk /" value={data.disk ? undefined : "—"} /></div>
-      </div>
+      <MetricMeters data={data} dim={stale} />
     </div>
   )
 }

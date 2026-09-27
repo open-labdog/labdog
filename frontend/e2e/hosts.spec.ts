@@ -96,4 +96,18 @@ test.describe("Hosts page", () => {
     await expect(page.getByRole("button", { name: "Run action…" })).toBeVisible()
     await expect(page.getByRole("tab", { name: "Terminal" })).toBeVisible()
   })
+
+  test("metrics tab explains a missing metrics backend", async ({ request, page }) => {
+    // This backend has no Mimir instance. The tab used to render an empty
+    // panel; it must say why and link to where one is added.
+    const hostRes = await request.post(`${API_BASE}/api/hosts`, {
+      data: { hostname: `e2e-metrics-host-${Date.now()}`, ip_address: "10.0.0.2", ssh_port: 22, group_ids: [] },
+    })
+    const host = await hostRes.json()
+
+    await page.goto(`/hosts/${host.id}`)
+    await page.getByRole("tab", { name: "Metrics" }).click()
+    await expect(page.getByText("No metrics backend")).toBeVisible()
+    await expect(page.getByRole("link", { name: "Add a Mimir instance…" })).toHaveAttribute("href", /^\/grafana\/?$/)
+  })
 })
