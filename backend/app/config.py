@@ -144,19 +144,34 @@ class AlertsConfig(BaseModel):
     webhook_token: str = ""
 
 
+#: ``[logging]`` keys that look like settings here but are app settings,
+#: stored in the database and set on the Settings page. They used to be
+#: fields on ``LoggingConfig`` too, and the sample config and deploy guide
+#: showed them being set, but nothing ever read the file's value — an
+#: operator who wrote ``audit_retention_days = 365`` kept 90 days of audit
+#: log. Pydantic drops unknown keys without a word, so this names them.
+_RETENTION_KEYS = ("audit_retention_days", "run_retention_days", "drift_retention_days")
+
+
 class LoggingConfig(BaseModel):
     level: Literal["debug", "info", "warning", "error", "critical"] = "info"
     format: Literal["text", "json"] = "text"
-    audit_retention_days: int = 90
-    #: Separate from the audit window on purpose: an audit trail is usually
-    #: wanted for longer than an ansible transcript (BUG-73).
-    run_retention_days: int = 90
-    #: Individual drift-check samples. Separate again: these are small, and
-    #: they feed a trend chart that offers up to 90 days, so the window
-    #: should not fall below what the chart can ask for. Deleted samples are
-    #: folded into ``drift_sample_rollup`` first — see
-    #: ``app.tasks.drift_retention``.
-    drift_retention_days: int = 90
+
+    @model_validator(mode="before")
+    @classmethod
+    def _warn_ignored_retention(cls, values: Any) -> Any:
+        # Runs after the env overrides are merged in, so this covers
+        # LABDOG_LOGGING__AUDIT_RETENTION_DAYS as well as labdog.toml.
+        if isinstance(values, dict):
+            for key in _RETENTION_KEYS:
+                if key in values:
+                    logger.warning(
+                        "logging.%s in labdog.toml or the environment has no effect "
+                        "and can be removed. Retention is set on the Settings page, "
+                        "under System.",
+                        key,
+                    )
+        return values
 
 
 class SSHConfig(BaseModel):

@@ -131,8 +131,8 @@ action_key_label = true
 level = "info"
 # Output format: "text" for human-readable, "json" for structured
 format = "text"
-# Auto-prune audit log entries older than N days (0 = keep forever)
-audit_retention_days = 90
+# How long to keep audit log entries, action runs and drift samples is not
+# set here: see Settings › System in the web UI.
 
 # ── SSH Terminal ─────────────────────────────────────────────
 [ssh]
