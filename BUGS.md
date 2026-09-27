@@ -108,54 +108,6 @@ from source.
 
 ### Correctness — Medium
 
-- [ ] **BUG-84** `backend/alembic/versions/0018_repair_id_sequences.py:79-81` —
-      the sequence repair ignores `is_called`, so it skips exactly the
-      tables seeded with a single row at id=1
-
-      Symptom: on an instance installed before `a371fe0` (2026-05-19),
-      the first insert into `git_repositories` and the first insert into
-      `action_packs` each fail once with
-      `duplicate key value violates unique constraint "pk_git_repositories"`
-      / `"pk_action_packs"`, `DETAIL: Key (id)=(1) already exists`.
-      Reproduced on lin-manager 2026-09-27 09:07:18 (POST creating git
-      repo `action_packs_private`) and 09:07:31 (POST creating pack
-      `labdog-private`).
-
-      Root cause: the repair reads `last_value` and compares it with
-      `IF max_id > COALESCE(cur, 0)`. A serial sequence that has never
-      been advanced reports `last_value = 1, is_called = false`, and
-      `nextval` on it still returns 1 — so for a table whose highest
-      seeded id *is* 1, the guard evaluates `1 > 1`, is false, and the
-      table is skipped. `0001_initial_schema.py:986-987` seeds exactly
-      one row at id=1 into both `git_repositories` and `action_packs`,
-      so neither is ever repaired. `app_settings` is seeded with nine
-      rows, so `9 > 1` fires and that table *is* fixed — which is why
-      0018 appears to work, and why its own docstring's claim that
-      "`app_settings` is where this bites" hid the other two tables.
-
-      Self-healing but user-visible: `nextval` is non-transactional, so
-      the failed insert consumes id 1 and marks the sequence called, and
-      the retry gets id 2. That costs one opaque 500 per affected table,
-      once per install, on a first-run path.
-
-      The fix cannot be an edit to 0018 — every affected database has
-      already run it. It needs a new migration whose guard accounts for
-      `is_called`, e.g.
-      `IF max_id > 0 AND (NOT is_called OR max_id > last_value) THEN`.
-
-      State of lin-manager as of filing: both sequences are now at 2
-      against `max(id) = 2`, and a sweep of every sequence-backed table
-      found the only four still uncalled (`cron_jobs`, `linux_groups`,
-      `package_repositories`, `resolver_configs`) to be empty, so
-      `max_id = 0` and no latent collision remains there. Nothing needs
-      repairing on that instance; the migration bug still affects any
-      other pre-2026-05-19 install.
-
-      Related coverage gap: `backend/tests/` has no migration tests.
-      The test DB is migrated fresh, where 0001's compensating `setval`s
-      are present, so 0018's repair path is never exercised against the
-      state it exists to fix.
-
 - [ ] **BUG-85** `backend/app/api/git_repos.py:34`,
       `backend/app/api/action_packs.py:168` — neither create endpoint
       catches `IntegrityError`, so constraint violations surface as raw
