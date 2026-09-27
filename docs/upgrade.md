@@ -75,7 +75,7 @@ combine here:
   `logging.audit_retention_days` (default 90).
 
 Set both values first if you want to keep more. Both are in
-**Settings** and in `labdog.toml`.
+**Settings** only: the same keys in `labdog.toml` have no effect.
 
 Smaller things to know:
 

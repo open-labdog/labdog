@@ -86,7 +86,7 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     "logging.audit_retention_days": {
         "type": "int",
         "default": 90,
-        "min": 1,
+        "min": 0,
         "max": 3650,
         "description": "Days to retain audit log entries (0 = keep forever)",
     },

@@ -255,6 +255,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Audit retention can be set to `0`, keep forever, as its label says.**
+  The Settings page refused it with "minimum is 1", so the longest you
+  could keep the audit log and terminal transcripts was the 3650-day
+  maximum. The daily pruner already treated `0` as "keep everything"; only
+  the validator was in the way. A test now checks that every setting whose
+  label documents a `0` value accepts it.
+- **`audit_retention_days` in `labdog.toml` never did anything, and LabDog
+  now says so at startup.** The sample config and the production deploy
+  guide both set it, but the retention jobs read only the Settings page's
+  value, so an install with `audit_retention_days = 365` in the file kept
+  whatever the page showed — 90 days by default. Set it under Settings ›
+  System instead. The key, and `run_retention_days` and
+  `drift_retention_days`, which the file also accepted, now log a warning
+  when present in `[logging]` or as `LABDOG_LOGGING__…` variables, and can
+  be removed.
 - **Refresh on a host's page reloads again**, and so do the reloads after
   a sync finishes and after trusting a new host key. They asked for the
   host's queries under a string id (`["host", "5"]`) while every one of
