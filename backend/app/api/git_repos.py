@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.logger import log_action
@@ -20,6 +21,27 @@ from app.schemas.git_repos import (
 )
 
 router = APIRouter(prefix="/git-repos", tags=["git-repos"])
+
+
+async def _flush_or_conflict(db: AsyncSession) -> None:
+    """Flush, turning a duplicate name into the intended 409 (BUG-85).
+
+    The name lookups in the handlers are a nicety for the common case; two
+    concurrent requests can both pass them, and the loser's unique
+    violation used to escape as a 500. Anything else is re-raised: a
+    constraint that should never fire is a bug worth a traceback.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        orig = getattr(exc, "orig", None)
+        marker = f"{getattr(orig, 'constraint_name', '') or ''} {orig}"
+        if "git_repositories_name" in marker:
+            raise HTTPException(
+                status_code=409, detail="Git repository name already exists"
+            ) from exc
+        raise
 
 
 @router.get("", response_model=list[GitRepoResponse])
@@ -61,7 +83,7 @@ async def create_git_repo(
         repo.encrypted_https_token = encrypt_ssh_key(body.https_token, master_key)
 
     db.add(repo)
-    await db.flush()
+    await _flush_or_conflict(db)
 
     await log_action(
         db=db,
@@ -155,6 +177,10 @@ async def update_git_repo(
 
     if webhook_secret:
         set_webhook_secret(repo, webhook_secret)
+
+    # A rename onto a taken name has no pre-check at all; flush here so it
+    # answers 409 rather than failing at commit.
+    await _flush_or_conflict(db)
 
     await log_action(
         db=db,

@@ -91,6 +91,91 @@ def _resolve_within_pack(
     return resolved
 
 
+class PlaybookImportsSiblings(Exception):
+    """A playbook pulls in files from its own directory, which a run never has."""
+
+
+#: Keys whose relative value Ansible resolves against the playbook's own
+#: directory, as a task or as a top-level playbook entry.
+_TASK_IMPORT_KEYS = (
+    "import_tasks",
+    "include_tasks",
+    "ansible.builtin.import_tasks",
+    "ansible.builtin.include_tasks",
+)
+_PLAYBOOK_IMPORT_KEYS = ("import_playbook", "ansible.builtin.import_playbook")
+
+
+def _iter_tasks(node: dict):
+    """Tasks in every section a play can carry, including nested blocks."""
+    for key in ("tasks", "pre_tasks", "post_tasks", "handlers", "block", "rescue", "always"):
+        entries = node.get(key)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if isinstance(entry, dict):
+                yield entry
+                yield from _iter_tasks(entry)
+
+
+def _sibling_references(playbook: Path) -> list[str]:
+    """Relative paths *playbook* imports from its own directory.
+
+    ``run_ansible`` copies the playbook's text alone into its run
+    directory; the rest of an action reaches a run only as roles on
+    ``ANSIBLE_ROLES_PATH``. A task file, vars file or playbook imported by
+    a relative path is therefore never there, and the run fails before its
+    first task (BUG-86). Imports inside a role resolve against the role and
+    are fine. Templated paths cannot be resolved here and are left alone,
+    as is a playbook that does not parse: its run reports that itself.
+    """
+    try:
+        doc = yaml.safe_load(playbook.read_text())
+    except (OSError, yaml.YAMLError):
+        return []
+    if not isinstance(doc, list):
+        return []
+
+    refs: list[str] = []
+
+    def add(value) -> None:
+        if isinstance(value, dict):
+            value = value.get("file") or value.get("_raw_params")
+        if not isinstance(value, str):
+            return
+        value = value.strip()
+        if value and "{{" not in value and not value.startswith("/"):
+            refs.append(value)
+
+    for entry in doc:
+        if not isinstance(entry, dict):
+            continue
+        for key in _PLAYBOOK_IMPORT_KEYS:
+            if key in entry:
+                add(entry[key])
+        vars_files = entry.get("vars_files")
+        for item in vars_files if isinstance(vars_files, list) else []:
+            # A nested list is a set of alternatives, first found wins.
+            for candidate in item if isinstance(item, list) else [item]:
+                add(candidate)
+        for task in _iter_tasks(entry):
+            for key in _TASK_IMPORT_KEYS:
+                if key in task:
+                    add(task[key])
+    return refs
+
+
+def _refuse_sibling_references(playbook: Path, manifest_path: Path, field: str) -> None:
+    refs = _sibling_references(playbook)
+    if refs:
+        raise PlaybookImportsSiblings(
+            f"Manifest {manifest_path} references {field} {playbook.name!r}, which imports "
+            f"{', '.join(repr(r) for r in refs)} from its own directory. LabDog copies only "
+            "the playbook file into a run, so those files would be missing. Move them into "
+            "a role under actions/<key>/roles/ or the pack's roles/, and import the role."
+        )
+
+
 def _manifest_to_definition(
     manifest: ActionManifest,
     manifest_path: Path,
@@ -104,6 +189,7 @@ def _manifest_to_definition(
             f"Manifest {manifest_path} references playbook "
             f"{manifest.playbook!r} which does not exist at {playbook_path}."
         )
+    _refuse_sibling_references(playbook_path, manifest_path, "playbook")
     # Roles are searched action-private first (``actions/<key>/roles/``,
     # next to this manifest), then pack-shared (``<pack>/roles/``). Each is
     # included only if present. Without the action-private path, an action
@@ -126,6 +212,7 @@ def _manifest_to_definition(
                 f"{manifest.verify_playbook!r} which does not exist at "
                 f"{candidate}."
             )
+        _refuse_sibling_references(candidate, manifest_path, "verify_playbook")
         verify_playbook_path = candidate
     return ActionDefinition(
         key=manifest.key,
@@ -233,7 +320,7 @@ def load_pack(pack: Pack) -> list[ActionDefinition]:
             continue
         try:
             defns.append(_manifest_to_definition(manifest, manifest_path, pack))
-        except FileNotFoundError as exc:
+        except (FileNotFoundError, PlaybookImportsSiblings) as exc:
             logger.error(
                 "pack %r: failed to load manifest %s: %s",
                 pack.name,
