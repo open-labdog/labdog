@@ -360,6 +360,100 @@ def test_load_pack_skips_missing_playbook(tmp_path: Path, caplog):
     assert any("does not exist" in r.message for r in caplog.records)
 
 
+@pytest.mark.parametrize(
+    "playbook",
+    [
+        pytest.param(
+            "- hosts: all\n  tasks:\n    - ansible.builtin.import_tasks: tasks/main.yml\n",
+            id="import_tasks",
+        ),
+        pytest.param(
+            "- hosts: all\n"
+            "  tasks:\n"
+            "    - block:\n"
+            "        - include_tasks:\n"
+            "            file: tasks/main.yml\n",
+            id="include_tasks-in-a-block",
+        ),
+        pytest.param("- hosts: all\n  vars_files: [vars.yml]\n  tasks: []\n", id="vars_files"),
+        pytest.param("- ansible.builtin.import_playbook: other.yml\n", id="import_playbook"),
+    ],
+)
+def test_load_pack_skips_a_playbook_that_imports_files_next_to_it(
+    tmp_path: Path, caplog, playbook: str
+):
+    """BUG-86: run_ansible copies the playbook alone into its run
+    directory, so each of these fails before its first task. Refuse it at
+    load, like a missing playbook, and say what to do instead."""
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": "---\n" + playbook,
+                "tasks/main.yml": "---\n[]\n",
+            }
+        },
+    )
+    with caplog.at_level("ERROR"):
+        defns = load_pack(Pack(name="p1", path=tmp_path / "p1"))
+    assert defns == []
+    assert any("copies only the playbook file" in r.message for r in caplog.records)
+
+
+def test_load_pack_skips_a_verify_playbook_that_imports_files_next_to_it(tmp_path: Path, caplog):
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST + "verify_playbook: verify.yml\n",
+                "playbook.yml": SIMPLE_PLAYBOOK,
+                "verify.yml": "---\n- hosts: all\n  vars_files: [expected.yml]\n  tasks: []\n",
+            }
+        },
+    )
+    with caplog.at_level("ERROR"):
+        defns = load_pack(Pack(name="p1", path=tmp_path / "p1"))
+    assert defns == []
+    assert any("verify_playbook 'verify.yml'" in r.message for r in caplog.records)
+
+
+def test_load_pack_accepts_imports_inside_a_role(tmp_path: Path):
+    """A role's own imports resolve against the role, which a run does
+    have: that is the layout BUG-86 points pack authors at."""
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={
+            "demo": {
+                "manifest.yml": SIMPLE_MANIFEST,
+                "playbook.yml": (
+                    "---\n- hosts: all\n  tasks:\n"
+                    "    - ansible.builtin.import_role:\n        name: demo_role\n"
+                ),
+                "roles/demo_role/tasks/main.yml": "---\n- ansible.builtin.import_tasks: step.yml\n",
+                "roles/demo_role/tasks/step.yml": "---\n[]\n",
+            }
+        },
+    )
+    defns = load_pack(Pack(name="p1", path=tmp_path / "p1"))
+    assert [d.key for d in defns] == ["demo"]
+
+
+def test_load_pack_leaves_a_templated_import_alone(tmp_path: Path):
+    """What a template renders to is only known at run time."""
+    playbook = '---\n- hosts: all\n  tasks:\n    - include_tasks: "{{ step }}.yml"\n'
+    _write_pack(
+        tmp_path,
+        "p1",
+        actions={"demo": {"manifest.yml": SIMPLE_MANIFEST, "playbook.yml": playbook}},
+    )
+    defns = load_pack(Pack(name="p1", path=tmp_path / "p1"))
+    assert [d.key for d in defns] == ["demo"]
+
+
 def test_load_pack_skips_invalid_yaml(tmp_path: Path, caplog):
     _write_pack(
         tmp_path,

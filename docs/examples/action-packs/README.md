@@ -63,6 +63,10 @@ An action is a directory: each contains its `manifest.yml` and
 `actions/*/manifest.yml` — a directory without a `manifest.yml` is
 ignored.
 
+A run gets only the playbook file and the roles, so anything else the
+playbook needs (task files, vars files, templates) goes in a role. See
+[Pack layout](../../ui/actions.md#pack-layout) in the user guide.
+
 ## Optional post-run hooks
 
 Manifests may declare two optional post-success hooks. Both are

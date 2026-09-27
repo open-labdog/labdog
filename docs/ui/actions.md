@@ -385,11 +385,19 @@ manifest names a `playbook` file relative to its own directory
 (conventionally `playbook.yml`). An action is a directory: copy
 `actions/<key>/` into another pack to override that action wholesale.
 
+**Only the playbook and roles reach a run.** LabDog copies the playbook
+file, alone, into the directory it runs Ansible in, and puts the action's
+roles on `ANSIBLE_ROLES_PATH`. Nothing else next to the playbook comes
+along, so task files, vars files, templates and files belong in a role.
+A playbook that pulls in a file from its own directory by a relative
+path (`import_tasks`, `include_tasks`, `vars_files`, `import_playbook`)
+is refused when the pack loads, with a log line naming the file.
+
 **Action-private vs shared roles.** Put a role under
-`actions/<key>/roles/<role-name>/` when it is private to one action —
-Ansible's playbook-adjacent role search picks it up automatically with
-zero config. Use the top-level `<pack>/roles/` only for roles genuinely
-reused across multiple actions.
+`actions/<key>/roles/<role-name>/` when it is private to one action.
+LabDog puts that directory on `ANSIBLE_ROLES_PATH` ahead of the pack's
+`roles/`, so no config is needed. Use the top-level `<pack>/roles/` only
+for roles genuinely reused across multiple actions.
 
 ### Manifest schema
 
