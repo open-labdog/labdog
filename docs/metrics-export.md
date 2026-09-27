@@ -45,8 +45,8 @@ Expect `HTTP/1.1 200` and
 `Content-Type: text/plain; version=0.0.4; charset=utf-8`.
 
 The current status, the exact scrape URL and a copy-paste Alloy snippet are also
-shown in the UI under **Integrations → Grafana**, in the
-**Metrics out — scrape endpoint** card.
+shown in the UI under **Settings › System**, in the **prometheus export**
+panel (Settings › Integrations lists it too).
 
 ### Why this is a config-file setting and not a UI toggle
 
@@ -268,9 +268,10 @@ consequences:
 
 - **The drift counters are all-time, not "last 90 days".** Retention shrinks
   the table, not the numbers.
-- **The dashboard's drift-trend chart *is* windowed**, and reads
-  `drift_samples` directly. Set the retention window at or above the longest
-  range the chart offers (90 days) or the older buckets go empty.
+- **The drift trend *is* windowed**, and reads `drift_samples` directly —
+  the Overview's chart shows 14 days, and `/api/dashboard/drift-trend`
+  serves up to 90. Set the retention window at or above the longest range
+  you read (90 days) or the older buckets go empty.
 
 `drift_sample_rollup` stores the bucket boundaries its histogram counts were
 computed against. If `_BUCKETS_DRIFT` is ever changed, rolled-up counts from

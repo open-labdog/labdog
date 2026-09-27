@@ -247,14 +247,14 @@ curl -fsS http://127.0.0.1:8000/api/version
 #    "build_date":"2026-05-12T09:14:37Z",
 #    "license":"AGPL-3.0-or-later",
 #    "repo_url":"https://github.com/open-labdog/labdog"}
-# (Also visible in the UI at Settings → About.)
+# (Also visible in the UI at Settings › System, in the About panel.)
 
 # 2. Health endpoint returns 200.
 curl -fsS http://127.0.0.1:8000/health
 # → {"status":"ok"}
 
 # 3. End-to-end: trigger one sync against a known-good test host.
-#    Use the UI (Hosts → pick a host → Plan → Sync) or the API.
+#    Use the UI (Operations → Plans, pick the host, apply) or the API.
 #    A successful sync confirms SSH keys decrypt, packs load, and
 #    the celery worker is healthy after the restart.
 ```

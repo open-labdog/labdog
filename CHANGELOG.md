@@ -192,6 +192,21 @@ The format follows [Keep a Changelog]; LabDog follows
   preview draws its diff the way the Plan screen does. No page is left in
   the old layout, so the shell's padded fallback column is gone.
 
+- **The user guide describes the new UI, with new screenshots.** Every page
+  under `docs/ui/` was checked against the screen it documents and
+  rewritten where the redesign moved or renamed things — the host page's
+  tabs, the group module editors, Discovery's three tabs, the five
+  Settings sections, the Git repository wizard, the audit log's filters.
+  The screenshots, which still showed the old sidebar (and in places the
+  project's old name), are retaken on the current UI, with new ones of a
+  host's Config tab, the Plan screen and an Assistant session.
+  `frontend/FRONTEND.md` documents the LabDog kit instead of shadcn/ui.
+  Things the old guide had wrong are corrected along the way: GitOps
+  imports only on a webhook push (there is no manual import); a host's
+  firewall backend can be pinned only through the API; group priority is
+  1–1000; and the settings reference gains `ssh.command_timeout`,
+  `logging.run_retention_days` and `logging.drift_retention_days`.
+
 ### Removed
 
 - The `INTEGRATIONS` nav group, the sometimes-present Pending collapsible,

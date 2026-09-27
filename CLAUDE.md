@@ -9,7 +9,7 @@ LabDog is a centralized Linux configuration management tool with a FastAPI backe
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.12+, FastAPI, SQLAlchemy (async), asyncpg |
-| Frontend | Next.js 16 (App Router), shadcn/ui (base-ui), TanStack Query |
+| Frontend | Next.js 16 (App Router, static export), the LabDog kit (`components/ld`), TanStack Query |
 | Database | PostgreSQL 18 |
 | Task Queue | Celery + Redis (RedBeat scheduler) |
 | Config Mgmt | Ansible (ansible-runner) |
@@ -137,7 +137,7 @@ Network scanning is async via Celery tasks. Bulk-add requires SSH verification �
 Action playbooks are supplied by pluggable packs, not the hardcoded
 registry. Bundled pack lives at `backend/app/ansible/` and is loaded at
 module import. DB-backed packs are configured from the UI at
-`/action-packs`, synced at FastAPI lifespan + Celery `worker_ready`, and
+`/actions?tab=packs` (Operations → Actions → Packs), synced at FastAPI lifespan + Celery `worker_ready`, and
 can be git-backed (public, SSH-key, or HTTPS-PAT) or local-filesystem.
 
 **Precedence is pure per-key pinning, no global ordering.** Each
@@ -295,7 +295,8 @@ because throwing it away is how a mid-check claim is handled.
 
 `GET /api/version` is a public (no-auth) endpoint exposing
 `{version, commit_sha, commit_sha_short, build_date, license,
-repo_url}`. The frontend renders it at `/settings/about`. The
+repo_url}`. The frontend renders it in Settings › System
+(`/settings?section=system`). The
 backend reads `version` via
 `importlib.metadata.version("labdog-backend")`; `commit_sha` and
 `build_date` come from env vars `LABDOG_COMMIT_SHA` /

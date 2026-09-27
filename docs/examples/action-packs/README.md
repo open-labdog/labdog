@@ -32,17 +32,17 @@ git commit -m "initial pack"
 
 Then in the LabDog UI:
 
-1. Go to **Action Packs** (sidebar → Integrations → Action Packs).
-2. Click **Add Pack**.
-3. Either point at a git URL, or pick **Local directory** and paste the
-   filesystem path.
-4. Save. The pack joins the **Pack Sources** table — packs are
+1. Go to **Operations → Actions → Packs**.
+2. Click **Add pack…**.
+3. Either point at a git repository, or pick **local directory** and paste
+   the filesystem path.
+4. Save. The pack joins the **pack sources** panel — packs are
    unordered. Uncontested keys win automatically. Contested keys
    (multiple packs declare the same action key) require a per-key
-   pin via the Action Registry table on the same page; until pinned
+   pin in the **action registry** panel on the same tab; until pinned
    the action is *unresolved* and unrunnable.
-5. The action will appear on any host's detail page under the
-   **Actions** tab.
+5. The action appears in the **Library** tab, in **Run action…** on a
+   host's or group's page, and in their **Activity** tab.
 
 ## Pack layout recap
 

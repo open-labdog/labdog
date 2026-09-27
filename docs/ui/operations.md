@@ -8,6 +8,8 @@ URL.
 
 ## Plans
 
+![Plan review for the web group](screenshots/plan.png)
+
 **Path:** `/plans`, `/plans?scope=group:<id>&modules=firewall,services`,
 `/plans?hosts=1,2,3`
 
@@ -67,11 +69,11 @@ for what a check is and the two `drift_check_enabled` flags.
   modules afterwards, and how often it has run. **run…** asks for a host or
   group target and then opens the run dialog; **schedule…** opens the
   schedule wizard preselected on the action.
-- **Packs** — the pack sources and per-key resolution, unchanged from the
-  former `/action-packs` page, which redirects here. See
-  [actions.md](actions.md).
-- **Schedules** — cron-driven runs, unchanged from the former `/schedules`
-  page, which redirects here. See [scheduled-actions.md](scheduled-actions.md).
+- **Packs** — the pack registry and its sources, with per-key resolution
+  when two packs contribute the same action. The former `/action-packs`
+  page redirects here. See [Action packs](actions.md#action-packs).
+- **Schedules** — cron-driven runs of any action. The former `/schedules`
+  page redirects here. See [Scheduled actions](scheduled-actions.md).
 
 ## Runs
 
@@ -86,5 +88,49 @@ its host. The last 100 of each source.
 
 **Path:** `/audit`
 
-The append-only record of every change with before/after state — unchanged.
-See [admin.md](admin.md#audit-log).
+An append-only record of every change made through LabDog. Events come
+from API writes (hosts, groups and every module's items, Git repositories,
+action packs, SSH keys, settings…), sync and action runs (ad-hoc and
+scheduled), discovery, assistant commands, and terminal sessions.
+
+Most entries are a plain verb on a typed object — `create`, `update` or
+`delete` of a `host`, a `host_group`, a `package_rule`, a `scan_config` —
+and the rest name a domain event: `sync_triggered` / `sync_completed` /
+`sync_failed`, `scheduled_action.dispatched`, `gitops.import.firewall`,
+`ai_command`, `session_start` / `session_end`, `trust_host_key`.
+
+Sync events come in pairs: `sync_triggered` (at API entry — records the
+operator's intent and the requested `module_filter`) and `sync_completed` or
+`sync_failed` (when the orchestrator finishes — a `{module: outcome}` payload
+covering every module that ran). One pair per sync job, whether it covered
+every module or one.
+
+| Column | Description |
+|--------|-------------|
+| when | When it happened |
+| user | The acting user's email; `system` for events nobody started, like scheduled drift checks |
+| action | What happened (`create`, `sync_triggered`, `session_start` …), coloured by kind |
+| entity | What it happened to, as type and id (`host group #4`, `ssh session #…`) |
+| ip address | Where the request came from |
+
+Each entry also stores the object's state before and after the change
+(JSON, secrets scrubbed). The screen lists the entries; the full record is
+available from the API (`GET /api/audit-log`).
+
+### Filtering
+
+The search box matches user, entity or IP address; the **from** / **to**
+dates and the **action** and **entity** chips narrow further. All of them
+apply to the entries loaded so far — **load more** fetches the next 100.
+
+### SSH session transcripts
+
+A `session_start` entry for a terminal session has **view transcript**,
+which opens what the operator typed during the session (stdin only — not
+the host's output).
+
+### Retention
+
+Entries — and terminal transcripts — older than the retention period are
+pruned daily. The period is `logging.audit_retention_days` in
+[Settings](settings.md) (default 90 days; `0` keeps them forever).
