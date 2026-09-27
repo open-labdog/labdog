@@ -13,6 +13,7 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY_CONTRIBUTORS, reload_registry_async
@@ -49,6 +50,38 @@ def _audit_snapshot(pack: ActionPack) -> dict:
         # visible after the fact, not only at the moment someone clicks.
         "trusted": pack.trusted,
     }
+
+
+async def _flush_or_conflict(db: AsyncSession) -> None:
+    """Flush, turning constraint violations into the intended 4xx (BUG-85).
+
+    * A duplicate name, from two requests that both passed the name
+      lookup, is a 409. ``name`` carries both a unique constraint and a
+      unique index, so either can be the one Postgres reports.
+    * ``ck_action_packs_source_shape`` is a 400. Only an update can reach
+      it: switching ``source_type`` without the field the new source needs,
+      which the schema cannot see because it does not know the current row.
+
+    Anything else is re-raised: a constraint that should never fire is a
+    bug worth a traceback.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        orig = getattr(exc, "orig", None)
+        marker = f"{getattr(orig, 'constraint_name', '') or ''} {orig}"
+        if "action_packs_name" in marker:
+            raise HTTPException(status_code=409, detail="Action pack name already exists") from exc
+        if "source_shape" in marker:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "source_type=git needs git_repository_id, and source_type=local "
+                    "needs local_path"
+                ),
+            ) from exc
+        raise
 
 
 async def _ensure_git_repo(db: AsyncSession, repo_id: int) -> GitRepository:
@@ -180,7 +213,7 @@ async def create_action_pack(
     pack = ActionPack()
     _apply_create(body, pack)
     db.add(pack)
-    await db.flush()
+    await _flush_or_conflict(db)
 
     await log_action(
         db=db,
@@ -244,6 +277,7 @@ async def update_action_pack(
         await _ensure_git_repo(db, body.git_repository_id)
 
     needs_resync, drop_git_checkout = _apply_update(body, pack)
+    await _flush_or_conflict(db)
 
     await log_action(
         db=db,

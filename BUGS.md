@@ -108,26 +108,6 @@ from source.
 
 ### Correctness — Medium
 
-- [ ] **BUG-85** `backend/app/api/git_repos.py:34`,
-      `backend/app/api/action_packs.py:168` — neither create endpoint
-      catches `IntegrityError`, so constraint violations surface as raw
-      500s
-
-      Symptom: a failed insert escapes as `Exception in ASGI
-      application` with a SQLAlchemy traceback and no usable message in
-      the UI. Surfaced while investigating BUG-84, but it is not
-      specific to that bug — the ordinary duplicate-name case on
-      `uq_action_packs_name` / the `git_repositories` name constraint
-      takes the same path, as does the
-      `ck_action_packs_source_shape` check constraint.
-
-      Root cause: both modules have zero `IntegrityError` handlers,
-      unlike `app/api/packages.py`, `app/api/cron_jobs.py`,
-      `app/api/ca_certs.py`, `app/api/groups.py` and `app/api/sync.py`,
-      which all catch it and return a 4xx. The pre-insert `select` for
-      an existing name in `create_git_repo` narrows the window but does
-      not close it and does not cover the other constraints.
-
 - [ ] **BUG-86** `backend/app/ansible_runtime/runner.py:108-115` —
       `run_ansible` stages only the playbook file, so nothing else in the
       action directory exists at run time
