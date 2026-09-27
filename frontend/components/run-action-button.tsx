@@ -18,6 +18,7 @@ export function RunActionButton({
   targetId,
   targetLabel,
   host,
+  only,
   className = "btn btn-sm",
   children = "Run action…",
 }: {
@@ -26,6 +27,9 @@ export function RunActionButton({
   targetLabel?: string
   /** The host, when the target is one — its OS codename pre-fills upgrade actions. */
   host?: Host
+  /** Narrow the offer to actions this accepts — e.g. the Metrics tab
+   *  offering only actions that ship metrics. */
+  only?: (a: ActionDefinition) => boolean
   className?: string
   children?: ReactNode
 }) {
@@ -37,7 +41,7 @@ export function RunActionButton({
     queryFn: () => apiFetch<ActionDefinition[]>("/api/actions/"),
     staleTime: 60_000,
   })
-  const actions = (catalog ?? []).filter((a) => !a.key.startsWith("_builtin.") && (scope === "host" ? a.supports_host : a.supports_group))
+  const actions = (catalog ?? []).filter((a) => !a.key.startsWith("_builtin.") && (scope === "host" ? a.supports_host : a.supports_group) && (!only || only(a)))
   const current = picked && actions.some((a) => a.key === picked.key) ? picked : (actions[0] ?? null)
 
   return (

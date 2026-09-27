@@ -54,21 +54,33 @@ automatically.
 3. **Open the host's page.** Once a Mimir instance is registered, three
    meters — cpu, memory and disk `/` — appear at the top of the Overview
    tab's host panel and in the **Metrics** tab's *resource usage* panel,
-   refreshing every 15 seconds while the page is visible. Hover a meter for
-   the absolute figures (cores, bytes). With no Mimir instance configured,
-   the Overview shows nothing and the Metrics panel stays empty.
+   refreshing every 15 seconds while the page is visible. The Metrics tab
+   prints the absolute figures (cores, bytes) under each meter and says when
+   the newest sample was taken; on the Overview, hover a meter for them.
+   Until metrics arrive, the Overview shows nothing and the Metrics tab says
+   what is missing — see below.
 
 Because metrics are matched on `labdog_host_id`, renaming a host or changing
 its IP never detaches its metrics.
 
 ## States you may see
 
-| State | Meaning |
-|-------|---------|
-| **Nothing shown** | No Mimir instance is registered. Add one under Settings › Integrations → Grafana. |
-| **no metrics yet** | A Mimir instance is configured but this host isn't shipping data — run *Install Alloy agent*, then allow a minute for the first scrape. |
-| **query error** | The query backend was unreachable or rejected the request (check the instance's URL/token with **test**). |
-| **stale** (amber) | The newest sample is older than two minutes — the agent may have stopped reporting. Last-known values are shown dimmed; hover for when the last sample was. |
+The Overview stays quiet about metrics until they work — it is the host's
+front page, and a set-up prompt on every host would be noise. The
+**Metrics** tab is where each state is explained.
+
+| Situation | Metrics tab | Overview | What to do |
+|-----------|-------------|----------|------------|
+| No Mimir instance registered | **No metrics backend**, with **Add a Mimir instance…** | nothing | Add one under Settings › Integrations → Grafana. |
+| Several Mimir instances, none marked default | **No default Mimir instance** | nothing | Edit one of them and tick **default**. LabDog won't guess which to ask. |
+| Mimir set up, nothing from this host | **No metrics from this host yet**, with a button to run the metrics agent action — **Run Install Alloy agent…** with the default pack | **no metrics yet** | Run the action on the host, then allow a minute for the first scrape. The tab checks again every 15 seconds. |
+| The query failed | **The metrics query failed:** and the backend's error | **query error** — hover for the error | Check the instance's URL and token with **test** on the Grafana page. |
+| No new sample for two minutes | A banner saying how long since the last sample; the last values dimmed | **stale** (amber), values dimmed | The agent may have stopped, or can't reach Mimir from the host. |
+
+The run button offers any action whose manifest maps a Prometheus push URL
+(`metrics_backend.prometheus_push_var`), not the Alloy action by name. With
+no such action in any pack, the tab says what the agent needs to do instead:
+label its series with `labdog_host_id`.
 
 ## Thresholds
 

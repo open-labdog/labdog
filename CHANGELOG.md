@@ -255,6 +255,19 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A host's Metrics tab says why it has nothing to show.** With no Mimir
+  instance registered it was an empty panel, and it was also blank while
+  loading or when the request failed. It now names what is missing and
+  links to the fix: **Add a Mimir instance…** when there is none; a prompt
+  to mark one as default when there are several and none is (the API now
+  reports which of the two it is, as `unconfigured_reason`); and, when
+  Mimir is set up but this host sends nothing, a button that runs the
+  metrics agent action on it — whichever action's manifest maps a
+  Prometheus push URL, so **Install Alloy agent** with the default pack. A
+  failed query shows the backend's error, a stale sample says how old it
+  is, and the absolute figures (cores, bytes) are printed under each meter
+  rather than hidden in a tooltip. The Overview strip still shows nothing
+  until metrics work.
 - **Audit retention can be set to `0`, keep forever, as its label says.**
   The Settings page refused it with "minimum is 1", so the longest you
   could keep the audit log and terminal transcripts was the 3650-day
