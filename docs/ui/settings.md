@@ -1,29 +1,41 @@
 # Settings
 
-**Path:** `/settings`
+**Path:** `/settings` — the gear at the foot of the rail
 
-The Settings page controls operational behaviour that can be tuned without restarting LabDog. Values are stored in the database and take effect immediately — no config file edit or service restart required.
+Settings has five sections, each a tab with its own URL
+(`/settings?section=ai` …):
 
-> **Note:** Infrastructure settings (database URL, TLS, secrets, rate limits) are set via environment variables or `dev/labdog.toml`. Only the settings below are managed through this page.
+| Section | What is in it |
+|---------|---------------|
+| **Integrations** | A registry of what LabDog is connected to — Proxmox, Grafana / Mimir / Loki, Git remotes, AI providers, the Prometheus export and the inbound webhooks — each with its state and a link to configure it. |
+| **AI** | The AI providers, then every `ai.*` setting. See [AI](#ai). |
+| **Access** | [SSH keys](admin.md#ssh-keys), [Users](admin.md#users) (superusers only) and your own account — change password, sign out. |
+| **Fleet defaults** | How LabDog talks to hosts: drift checks, SSH, Ansible, actions, workflows and discovery. |
+| **System** | Logging and retention, the [Prometheus export](../metrics-export.md) and [About](#about). |
 
-Each row shows a one-line description. Where a setting has caveats worth
-knowing before you change it — a condition it only applies under, or a
-consequence that is not obvious — an **ⓘ** button beside the description opens
-them. The Description column below carries the same detail in full, so nothing
-is only available behind the button.
+The settings in the sections below are stored in the database and take
+effect immediately — no config file edit or restart.
+
+> **Note:** Infrastructure settings (database URL, TLS, secrets, rate
+> limits, discovery's largest scan range, terminal session caps) are set in
+> `labdog.toml` or environment variables. Only the settings below are
+> managed here.
+
+Each row shows a one-line description, the setting's key, its range and its
+default, and the control to change it — a toggle, a select or a field, with
+**Save** (or Enter). Where a setting has caveats worth knowing before you
+change it — a condition it only applies under, or a consequence that is not
+obvious — a **why** disclosure under the description opens them. The
+Description column below carries the same detail in full, so nothing is only
+available behind the disclosure.
+
+The AI settings are a long list, so they sit in a disclosure that opens
+while AI is on; `ai.enabled` is pinned above it, so the master switch is
+always visible.
 
 ---
 
-## Settings Reference
-
-### Logging
-
-| Setting | Key | Default | Range | Description |
-|---------|-----|---------|-------|-------------|
-| Log Level | `logging.level` | `info` | `debug` `info` `warning` `error` `critical` | Application log verbosity. Use `debug` to trace API calls and task execution. Use `warning` or higher in production to reduce noise. |
-| Audit Retention | `logging.audit_retention_days` | `90` | 1 – 3650 days | How many days to keep audit log entries. Entries older than this are purged automatically. Set to `3650` (10 years) to keep effectively forever. |
-
----
+## Fleet defaults
 
 ### Drift Detection
 
@@ -31,16 +43,13 @@ is only available behind the button.
 |---------|-----|---------|-------|-------------|
 | Check Interval | `drift.check_interval_minutes` | `30` | 1 – 1440 min | How often the scheduled drift check runs across all hosts that have drift detection enabled. Lower values catch drift faster but increase SSH and CPU load. |
 
----
-
 ### SSH
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Connect Timeout | `ssh.connect_timeout` | `10` | 1 – 120 sec | How long to wait when opening an SSH connection to a host (used for sync, drift checks, and state collection). Increase if managed hosts are on high-latency links. |
+| Command Timeout | `ssh.command_timeout` | `60` | 5 – 900 sec | The longest a single remote command may take on an already-open session — state collectors and reachability probes, not Ansible playbooks, which have their own timeout. A host that accepts the connection but then hangs on one command fails after this long instead of blocking every host behind it. |
 | Idle Timeout | `ssh.idle_timeout_seconds` | `1800` | 60 – 86400 sec | How long a web terminal session can be idle before it is automatically disconnected. 1800 = 30 minutes. |
-
----
 
 ### Ansible
 
@@ -48,15 +57,17 @@ is only available behind the button.
 |---------|-----|---------|-------|-------------|
 | Playbook Timeout | `ansible.playbook_timeout` | `300` | 30 – 3600 sec | Maximum time allowed for a single Ansible playbook run. If a sync exceeds this, the run is killed and marked as failed. Increase for large host fleets or slow package installs. |
 
----
-
 ### Actions
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
 | Preflight reachability check | `actions.preflight_enabled` | `1` (on) | `0` / `1` | When enabled, every per-host action run first performs a bounded SSH liveness probe. A genuinely unreachable host fails in ~25 s with a clear `host unreachable (preflight)` error instead of tying up a worker for the full playbook timeout. Set to `0` to disable if the probe is too aggressive for flaky hosts. |
 
----
+### Workflows
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
 
 ### Discovery
 
@@ -67,15 +78,27 @@ is only available behind the button.
 
 ---
 
-### Schedules
+## System
+
+### Logging and retention
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Snapshot Max Age | `workflow.snapshot_max_age_hours` | `24` | 1 – 168 hours | Proxmox VM snapshots taken before a destructive scheduled action are automatically cleaned up after this many hours when the action completes successfully. |
+| Log Level | `logging.level` | `info` | `debug` `info` `warning` `error` `critical` | Application log verbosity. Use `debug` to trace API calls and task execution. Use `warning` or higher in production to reduce noise. |
+| Audit Retention | `logging.audit_retention_days` | `90` | 0 – 3650 days | How many days to keep audit log entries and terminal transcripts. Entries older than this are purged daily. `0` keeps them forever. |
+| Run Retention | `logging.run_retention_days` | `90` | 0 – 3650 days | How many days to keep finished action runs, their transcripts, and sync jobs. `0` keeps them forever. |
+| Drift Retention | `logging.drift_retention_days` | `90` | 0 – 3650 days | How many days to keep individual drift-check samples. Older samples are folded into running totals before they are deleted, so the exported drift counters never go backwards. `0` keeps them forever. |
+
+The System section also holds the [Prometheus export](../metrics-export.md)
+card — status, scrape URL and a config snippet — and [About](#about).
 
 ---
 
-### AI
+## AI
+
+The AI section starts with the configured
+[AI providers](assistant.md#ai-providers) — **Manage providers…** opens their
+page — followed by these settings.
 
 Every one of these defaults closed. LabDog does nothing with an LLM until
 `ai.enabled` is turned on **and** a provider is configured on the
@@ -132,7 +155,7 @@ here; see [Alerts](alerts.md).
 | Snapshot Retention | `ai.snapshot_retention_days` | `7` | 0 – 365 days | How long to keep those snapshots (0 = forever). They are deliberately *not* deleted when a session succeeds — the point of them is that you can undo the change after reading what it did, and this is how long "afterwards" lasts. |
 | Approval Expiry | `ai.approval_expiry_hours` | `24` | 1 – 720 hours | How long an approval request waits before lapsing. The session is then told the change was not approved and finishes with a report, rather than sitting parked forever. |
 
-#### The investigation prompt
+### The investigation prompt
 
 `ai.alert_mission_template` is the text an alert investigation begins with,
 and it is editable because the built-in wording has to work for an alert
@@ -172,7 +195,7 @@ make, not something the field stops you doing.
 
 ## Resetting a Setting
 
-Every setting shows its current value alongside its default, so you can
+Every row shows the setting's default beside its current value, so you can
 see at a glance what has been changed from the shipped configuration.
 
 Numeric and choice settings are reverted by typing or selecting the
@@ -185,28 +208,43 @@ retypes from memory.
 
 ## Proxmox Settings
 
-**Path:** `/settings/proxmox`
+**Path:** `/hypervisors` (Settings › Integrations › Proxmox;
+`/settings/proxmox` redirects here)
 
-Manages the connection to one or more Proxmox hypervisor nodes. See [Proxmox integration](../README.md) for setup details.
+The connections to one or more Proxmox VE nodes. See
+[Proxmox integration](../README.md) for setup details.
 
-Beyond the per-node connection settings, the page exposes a **Discover VM Mappings** action that scans every configured node and links each LabDog host to its backing Proxmox VM/CT in one pass. Individual host↔VM mappings can also be discovered from a [host's detail page](hosts.md#proxmox-vm-mapping).
+Each node row shows its name, API URL, token ID, whether TLS is
+**verified**, and whether a CA certificate is configured (with the start of
+its fingerprint), with **test**, **edit** and **delete**. **Add node…**
+asks for a name, the API URL, the API token ID and secret, and the TLS
+settings below.
+
+Two actions sit in the head:
+
+- **Discover VM mappings** scans every configured node and links each
+  LabDog host to its backing VM or container in one pass. A single host's
+  mapping can also be discovered from
+  [its page](hosts.md#proxmox-vm-mapping).
+- **Clean up orphaned snapshots** deletes LabDog's snapshots that are no
+  longer needed: those tied to a finished action run, and those older than
+  `workflow.snapshot_max_age_hours` whose run LabDog does not know.
 
 ### TLS verification
 
-Each node has two TLS-related fields that together decide how LabDog
-validates the node's HTTPS certificate when it calls the Proxmox API:
+Each node has two TLS settings that together decide how LabDog validates
+the node's HTTPS certificate when it calls the Proxmox API:
 
-- **Verify SSL certificate** — when unchecked, LabDog performs **no**
-  certificate validation at all. This is the last-resort escape hatch
-  for a node with a certificate LabDog can't otherwise trust; prefer a
-  CA certificate (below) instead.
-- **CA certificate (PEM)** — paste a PEM-encoded certificate to verify
-  the node against it, instead of the operating system's trust store.
-  Use this for nodes with a **private-CA** or **self-signed**
-  certificate so verification stays on. The field is shown only while
-  *Verify SSL certificate* is checked.
+- **verify the node's TLS certificate** — when unticked, LabDog performs
+  **no** certificate validation at all. This is the last-resort escape hatch
+  for a node with a certificate LabDog can't otherwise trust; prefer a CA
+  certificate (below) instead.
+- **ca certificate** — paste a PEM-encoded certificate to verify the node
+  against it, instead of the operating system's trust store. Use this for
+  nodes with a **private-CA** or **self-signed** certificate so verification
+  stays on. The field is shown only while verification is ticked.
 
-| Verify SSL | CA certificate | Result |
+| Verify | CA certificate | Result |
 |---|---|---|
 | Off | (ignored) | No verification — accepts any certificate. |
 | On | Set | Verify against the pasted certificate only. |
@@ -226,30 +264,29 @@ Notes:
   SHA-256 fingerprint.
 - To replace a configured certificate, paste a new PEM and save. To
   remove it (returning the node to system-trust-store verification),
-  use **Clear CA**.
+  use **clear it** in the node's edit dialog.
 
 ---
 
 ## About
 
-**Path:** `/settings/about`
+**Path:** Settings › System (`/settings?section=system`; `/settings/about`
+redirects here). **About LabDog** in the account menu opens it too.
 
-Build metadata for the running LabDog instance. The page reads
-from `GET /api/version` (a public endpoint — no authentication
-required) and renders:
+Build metadata for the running LabDog instance, read from
+`GET /api/version` (a public endpoint — no authentication required):
 
 | Field | Source |
 |---|---|
-| Version | `VERSION` file at the repo root, baked into `backend/pyproject.toml` and `frontend/package.json` by the release pipeline. Read at runtime via `importlib.metadata.version("labdog-backend")`. |
-| Commit SHA | The git commit the image / package was built from. Set via the `GIT_SHA` Docker build arg or the `bake-build-info` Makefile target (writes `app/_build_info.py`). Falls back to the `LABDOG_COMMIT_SHA` env var. `null` on a dev install with neither source populated. |
-| Build date | ISO 8601 timestamp of the build. Set via `BUILD_DATE` build arg / Makefile target / env var. `null` when not provided. |
-| License | `AGPL-3.0-or-later` (constant). |
-| Repository URL | Upstream project URL (constant). |
+| version | `VERSION` file at the repo root, baked into `backend/pyproject.toml` and `frontend/package.json` by the release pipeline. Read at runtime via `importlib.metadata.version("labdog-backend")`. |
+| commit | The git commit the image / package was built from. Set via the `GIT_SHA` Docker build arg or the `bake-build-info` Makefile target (writes `app/_build_info.py`). Falls back to the `LABDOG_COMMIT_SHA` env var. Empty on a dev install with neither source populated. |
+| built | ISO 8601 timestamp of the build. Set via `BUILD_DATE` build arg / Makefile target / env var. Empty when not provided. |
+| license | `AGPL-3.0-or-later` (constant). |
+| source | Upstream project URL (constant). |
 
-The page also exposes a one-click copy of a "support line" suitable
-for pasting into bug reports — `version` + short SHA + build date
-in one string. Use this when filing issues so maintainers know
-exactly what build you're on.
+Below them is a **support line** with a copy button — version, short SHA
+and build date in one string, for pasting into bug reports so maintainers
+know exactly what build you're on.
 
 For operators automating health checks, hit `/api/version` directly
 rather than scraping this page — it returns the same data as JSON.

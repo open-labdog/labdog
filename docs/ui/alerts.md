@@ -1,10 +1,17 @@
 # Alerts
 
-**Path:** `/alerts`
+**Path:** `/alerts` (Assistant · Alerts)
 
 Alerts LabDog has received from Grafana or Alertmanager, newest first.
 Each one can be handed to the [AI assistant](assistant.md) to investigate
 — automatically under a policy you set, or by hand from this page.
+
+The screen is one table, one row per alert: when it fired, the alert name
+(with a `×N` repeat count), severity, status, its summary, and the
+investigation — with **investigate** or **view →** at the end of the row.
+Firing critical alerts are tinted. A **Firing / All** switch in the head
+hides or shows resolved alerts. Firing alerts also land in the
+[Overview's Pending queue](dashboard.md#pending).
 
 **Recording an alert and investigating it are separate switches.**
 Recording costs nothing and starts nothing; investigating spends money
@@ -149,39 +156,40 @@ a session that hits it stops and says so. If a storm ever gets that
 far, the `×N` badge in [How deduplication works](#how-deduplication-works)
 is where to look for the rule that caused it.
 
-Whatever happened is recorded on the row and shown as a badge, because
-"nothing happened" has six different causes and each has a different fix:
+Whatever happened is recorded on the row and shown as a tag in its
+**investigation** column (hover it for the detail), because "nothing
+happened" has six different causes and each has a different fix:
 
-| Badge | Meaning |
+| Tag | Meaning |
 |---|---|
-| **Investigating** | A session was started; click through to read it |
-| **Auto-investigate off** | The policy switch is off |
-| **Below severity threshold** | Including a severity LabDog did not recognise — see below |
-| **Already resolved** | It cleared before LabDog got to it |
-| **Already investigated** | A repeat notification |
+| **investigating** | A session was started; **view →** opens it |
+| **auto-investigate off** | The policy switch is off |
+| **below severity threshold** | Including a severity LabDog did not recognise — see below |
+| **already resolved** | It cleared before LabDog got to it |
+| **already investigated** | A repeat notification |
 | **AI budget reached** | Spend limit hit; the alert is still recorded |
-| **Could not start** | AI disabled, no provider, or a provider that cannot run tools |
+| **could not start** | AI disabled, no provider, or a provider that cannot run tools |
 
 ### Reading the outcome on the row
 
 Once a session exists, the row stops reporting whether anything started
-and reports what came of it — this badge replaces the policy badge above:
+and reports what came of it — this tag replaces the policy tag above:
 
 | On the row | Meaning |
 |---|---|
-| **Investigation queued** | Accepted, not started yet |
-| **Investigating** | The session is running |
-| **Waiting for approval** | Parked on an approval request |
-| **Investigated** | Finished, with the opening of its conclusion quoted beneath |
-| **Investigation failed** | The session errored; open it to see why |
-| **Investigation stopped** | Cancelled, by you or by a cap |
+| **investigation queued** | Accepted, not started yet |
+| **investigating** | The session is running |
+| **waiting for approval** | Parked on an approval request |
+| **investigated** | Finished, with the opening of its conclusion under the alert's summary |
+| **investigation failed** | The session errored; open it to see why |
+| **investigation stopped** | Cancelled, by you or by a cap |
 
 The quoted text is the first real paragraph of the report — headings are
 skipped, so the row shows the verdict rather than the word `Summary`.
 
-**View investigation** opens that session's transcript directly. It is a
-deep link to the session, not merely a jump to the Assistant page, so the
-run you clicked is the one you land on.
+**view →** opens that session's transcript directly
+(`/assistant?session=<id>`). It is a deep link to the session, not merely a
+jump to the Assistant page, so the run you clicked is the one you land on.
 
 ### Severity is read, not guessed
 
@@ -198,7 +206,7 @@ money unattended. Relabel the alert, or investigate it by hand.
 
 ## Investigating by hand
 
-The **Investigate** button on a firing alert starts a session regardless
+**investigate** on a firing alert's row starts a session regardless
 of the severity threshold — you have already made the judgement the
 threshold exists to automate.
 
@@ -260,7 +268,7 @@ context, which is your call to make.
 a wrong token is a 401 at LabDog and a delivery error in Grafana's own
 logs.
 
-**Alerts appear but nothing is investigated.** Read the badge. It names
+**Alerts appear but nothing is investigated.** Read the investigation tag. It names
 which of the six gates stopped it.
 
 **The poller reports "No Alertmanager API at this endpoint".** Mimir

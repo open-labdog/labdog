@@ -1,111 +1,100 @@
 # Admin
 
+SSH keys and users live under **Settings › Access**; the audit trail is in
+the Operations zone.
+
 ---
 
 ## SSH Keys
 
-**Path:** `/ssh-keys`
+**Path:** `/ssh-keys` (Settings › Access)
 
-Stores the SSH private keys LabDog uses to connect to managed hosts. Keys are encrypted at rest using AES-256-GCM with the `LABDOG_SECURITY__ENCRYPTION_KEY` from your environment.
+The credentials LabDog connects to managed hosts with. Each key carries the
+user it logs in as. Private keys are encrypted at rest with AES-256-GCM
+using `LABDOG_SECURITY__ENCRYPTION_KEY`, and never shown again after upload.
 
-### Adding a Key
+### Adding a key
 
-Click **Add SSH Key**. Paste the private key in PEM format. Passphrase-protected keys are not supported — LabDog requires unencrypted private keys so it can use them from Celery workers without user interaction.
+**Upload key…** asks for a name, the SSH user (default `root`), and the
+private key in PEM or OpenSSH format. Passphrase-protected keys are not
+supported — LabDog uses keys from background workers with nobody there to
+type a passphrase. Tick **set as the default key** to make it the one new
+hosts get.
 
-After adding a key you can assign it to hosts on the host edit form, or select it as the default key during host discovery.
+### The key list
 
-### Key Details
+| Column | Description |
+|--------|-------------|
+| name | The label you gave it, a **default** tag on the default key, and the start of the public key |
+| user | The SSH user the key logs in as |
+| hosts | How many hosts use this key |
+| added | When it was uploaded |
 
-Each key row shows:
-- **Name** — label you assigned
-- **Fingerprint** — the public key fingerprint (computed on upload, never exposes the private key)
-- **Hosts** — count of hosts using this key
+Each row has **edit** (name, user, default) and **delete**; ticking rows
+offers **Delete selected**. A host with no key of its own uses the default.
 
-> Deleting a key that is still referenced by a host is blocked. Remove or reassign those hosts first.
+> Deleting a key that a host still uses is refused. Reassign those hosts
+> first — the host page's **edit**.
+
+Assign a key to a host on the host's **edit** dialog, or pick one when
+adding hosts from [Discovery](hosts.md#discovery).
 
 ---
 
 ## Git Repos
 
-**Path:** `/git-repos`
+**Path:** `/git-repos` (Settings › Integrations)
 
-Manages Git repository connections used for GitOps-driven configuration. See [GitOps UI](gitops-ui.md) for the full workflow.
+Git repository connections for GitOps-driven configuration and git-backed
+action packs. See [GitOps UI](gitops-ui.md) for the full workflow.
 
 ---
 
 ## Audit Log
 
-**Path:** `/audit`
-
-An append-only log of every change made through LabDog. Events come
-from API writes (group/host/module mutations, GitOps repo CRUD,
-action-pack mutations, settings changes), sync and action runs
-(ad-hoc and scheduled), discovery runs, and terminal session
-lifecycle events.
-
-Sync events come in pairs: `sync_triggered` (at API entry — records
-the operator's intent and the requested `module_filter`) and
-`sync_completed` or `sync_failed` (at orchestrator finish — carries
-a composite `{module: outcome}` payload covering every module that
-ran). One pair per `SyncJob`, regardless of whether the sync was
-multi-module bulk or single-module per-tab.
-
-### Columns
-
-| Column | Description |
-|--------|-------------|
-| Timestamp | When the action occurred |
-| User | The acting user's email (joined from `users` for display); `system` for non-user events like scheduled drift checks |
-| Action | What happened (e.g. `rule.create`, `sync_triggered`, `sync_completed`, `sync_failed`, `pack.sync`, `gitops.repo.create`, `terminal.open`) |
-| Entity | What was acted on (e.g. `group:4`, `host:tester3`, `pack:gh-internal`) |
-| Before | State before the change (JSON, secrets scrubbed) |
-| After | State after the change (JSON, secrets scrubbed) |
-
-The integer `user_id` is preserved internally (used for filtering and
-linking back to the user detail page) but the table shows `user_email`
-for legibility.
-
-### Filtering
-
-Use the filter bar to narrow by user, action type, or date range. The
-table paginates with cursor-based pagination — scroll to load more.
-
-### Retention
-
-Audit entries older than the configured retention period are pruned
-automatically. The retention period is set in
-[Settings](settings.md) (`logging.audit_retention_days`, default 90
-days).
+The audit log is in the Operations zone — see
+[Operations › Audit](operations.md#audit).
 
 ---
 
 ## Users
 
-**Path:** `/users` — superuser only
+**Path:** `/users` (Settings › Access) — superusers only
 
-Manage LabDog user accounts. This page is only visible to superusers.
-
-### User Table
+LabDog user accounts. Anyone else who opens the page is told it is for
+administrators rather than shown an empty table.
 
 | Column | Description |
 |--------|-------------|
-| Email | Login credential |
-| Superuser | Whether this user has admin access |
-| Active | Whether the account can log in |
-| Actions | Edit, reset password, delete |
+| user | The email address they sign in with; **you** marks your own row |
+| status | `active` or `inactive` — an inactive account cannot sign in |
+| role | **superuser** — manages accounts, integrations and settings |
+| created | When the account was created |
 
-### First User
+Each row has **edit** (email, and whether the account is active), **reset
+password** and **delete**. **New user…** creates an account from an email,
+a password typed twice, and whether it is a superuser — the role is chosen
+at creation; the screen has no promote or demote. The search box filters by
+email; the **status** (active / inactive) and **role** (superuser / user)
+chips narrow the list.
 
-The first user to register is automatically promoted to superuser. Registration is open only until the first account exists — after that, new accounts must be created by an existing superuser from this page.
+### First user
 
-### Resetting a Password
+The first account to register is made a superuser automatically.
+Registration is open only until that first account exists; after that, new
+accounts are created here by a superuser.
 
-Click **Reset Password** on any user row. You'll be prompted to enter a new password. The user does not receive any notification — inform them out of band.
+### Resetting a password
 
-### Deleting a User
+**reset password** sets a new password for the user. They are not notified
+— tell them out of band.
 
-Deleting your own account or the last superuser account is blocked. At least one superuser must always exist.
+### Deleting
 
-### Changing Your Own Password
+You cannot delete your own account, and the last superuser cannot be
+deleted — there is always at least one.
 
-Use **Change password…** in the account menu behind the avatar at the foot of the rail (visible to all users). This does not require superuser access.
+### Changing your own password
+
+Use **Change password…** in the account menu behind the avatar at the foot
+of the rail. Every user has it; it does not need superuser access.

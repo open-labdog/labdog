@@ -1,12 +1,13 @@
 # Actions & Action Packs
 
-**Paths:** Actions tab on [host](hosts.md) and [group](groups.md) detail
-pages; management UI at `/actions?tab=packs` (Operations → Actions → Packs; `/action-packs` redirects there — Action
-Packs).
+**Paths:** **Run action…** on a [host](hosts.md) or [group](groups.md)
+page, and their Activity tab; the library, packs and schedules at
+`/actions` (Operations → Actions — `?tab=library|packs|schedules`;
+`/action-packs` and `/schedules` redirect there).
 
 Actions are **Ansible playbook runs** LabDog can trigger against a host,
-a group, or the entire fleet. Run them ad-hoc from the Actions tab, or
-schedule them via cron on the [Schedules page](#scheduled-actions).
+a group, or the entire fleet. Run them ad-hoc, or schedule them via cron
+on the [Schedules tab](#scheduled-actions).
 The same execution path serves both — there's no "ad-hoc only" or
 "schedule only" action.
 
@@ -43,29 +44,35 @@ The catalog comes from two sources:
 
 ## Running actions
 
-Open a host or a group, click the **Actions** tab. Each card is one
-action:
+There are three ways to start one:
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  ⚡  Reboot host                [from my-pack]            │
-│      Reboots the target host and waits for SSH.          │
-│      ~1–3 min                                            │
-│                                                          │
-│                              ▶ Run                       │
-└──────────────────────────────────────────────────────────┘
-```
+- **Run action…** in a host's or group's head opens the run dialog on that
+  target.
+- A host's or group's **Activity** tab › **Actions** lists the
+  **available actions** — what each does and when it last ran, with
+  **run →** and **schedule…** — beside its **recent runs**.
+- The **Library** tab of Operations → Actions lists every registered
+  action, with its pack, targets and run count. **Run action…** there asks
+  for a host or group first.
 
-Click **Run**, fill in parameters (if any), click **Run** in the dialog.
-Live stdout streams into the run-detail page; when it finishes you see a
-green/red status chip and the full captured output. Runs are stored in
-the DB — history is visible in the same tab.
+The run dialog picks the **action**, takes its parameters (if any) and,
+for a group, a **parallelism** — *All at once*, or *Rolling* 1, 2 or 5 at a
+time. **Preview (dry-run)** runs the same playbook in check mode — nothing
+on any host changes — and **Run** runs it for real.
 
-For a multi-host run (a group, fleet, or scheduled run), the run-detail
-page shows a **Host Status** grid — each host listed by hostname with its
-own status chip. Click a host to filter the output to just that host's
-log; **Show all hosts** returns to the combined view. The combined view
-prefixes each host's section with a `===== hostname =====` header.
+Either way you land on the run's own screen
+(`/hosts/{id}/actions/runs/{run}`, `/groups/{id}/actions/runs/{run}`, or
+`/actions/runs/{run}` for a fleet run), crumbed back to where it came
+from. Live output streams into a log that stays pinned to the bottom while
+you are there; when the run finishes you see its status and the full
+captured output. Runs are stored in the DB — history is in the Activity tab
+and in [Runs](operations.md#runs).
+
+For a multi-host run (a group, fleet, or scheduled run), the run screen
+shows a table of hosts, each with its own status. Click a host to filter
+the output to just that host's log; **show all hosts** returns to the
+combined view, which prefixes each host's section with a
+`===== hostname =====` header.
 
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
@@ -82,15 +89,15 @@ the rest of the cluster keeps serving traffic. Such actions declare
 
 **What's different in the UI:**
 
-- The action card only appears on group views (the action's manifest
-  sets `supports_host: false`, so a host target makes no sense).
+- The action is only offered for groups (the action's manifest sets
+  `supports_host: false`, so a host target makes no sense).
 - The Run dialog has no special pre-flight — there are no per-member
   roles to assign in LabDog. Just pick the group and run.
 - The parallelism picker is hidden — group-dispatched runs are always
   one ansible-runner invocation against a flat multi-host inventory;
   the pack's playbook decides ordering with Ansible's `serial:`,
   `add_host`, `delegate_to`, and `run_once` primitives.
-- The run-detail page shows one `ActionHostRun` per member, all
+- The run-detail screen shows one `ActionHostRun` per member, all
   driven by the same ansible-runner invocation. Per-host events get
   routed back to the matching row by inventory hostname.
 - Destructive group-dispatched runs get the same per-host
@@ -122,11 +129,12 @@ row that's due into the same execution path as the ad-hoc Run button.
 
 **Three places to create a schedule:**
 
-- **+ New** on the Schedules page — pick action + target
-  through the wizard.
-- **Schedule…** button on an action card — preselects the action_key.
-- **Schedule action** on a host / group detail page — preselects the
-  target.
+- **+ New** on the Schedules tab — pick action + target through the
+  wizard.
+- **schedule…** on an action in the Library, or in a host's or group's
+  Activity › Actions — preselects the action_key.
+- **Schedule action** in a host's or group's Activity › Schedules —
+  preselects the target.
 
 **Targets:**
 
@@ -141,7 +149,8 @@ row that's due into the same execution path as the ad-hoc Run button.
   if your action genuinely makes sense fleet-wide.
 
 **Run history** is the unified `action_runs` table: scheduled runs
-appear in the same drawer as ad-hoc runs, with a `scheduled_action_id`
+appear alongside ad-hoc runs — in [Runs](operations.md#runs) and in a host's
+or group's recent runs — with a `scheduled_action_id`
 column tying them back to the row that fired them. Deleting a schedule
 sets that FK to NULL — history is preserved.
 
@@ -191,13 +200,12 @@ therefore corresponds exactly to a labdog-playbooks commit — bumping
 labdog typically bumps the bundled pack as well. The bundled pack is
 immutable — you can't edit or delete it from the UI. It exists as a
 safety net so LabDog keeps working even if all other packs are
-unreachable. It appears as a read-only row in the **Pack Sources**
-table on `/action-packs` (no Sync / Edit / Delete buttons — just a
-"built-in" badge) so its always-present-candidate status is
-discoverable.
+unreachable. It appears as a read-only row in the **pack sources**
+panel on the Packs tab (no sync / edit / delete — just a **built-in**
+tag) so its always-present-candidate status is discoverable.
 
 To override a bundled action, add a pack that declares the same key
-and pin the per-key resolution to your pack on `/action-packs`.
+and pin the per-key resolution to your pack on the Packs tab.
 
 ### Adding a pack
 
@@ -209,7 +217,7 @@ enabled flag.
 
 **Recommended path — the repo onboarding wizard.** When the repo
 contains action packs (and optionally GitOps group YAML), use
-**Integrations → Git Repos → Add Repository**. The three-step wizard
+**Settings › Integrations › Git remotes → Add Repository**. The three-step wizard
 clones the repo, walks the tree, and presents every detected pack
 and gitops file as a checkbox row. For action keys the new pack(s)
 contribute that already have an owner, the wizard shows a per-key
@@ -270,32 +278,31 @@ cases:
 
 | Case | What happens |
 |---|---|
-| **Uncontested** — one pack declares the key | That pack wins automatically. Status `OK`. No picker. |
-| **Contested + pinned** — multiple packs declare the key, operator has chosen a winner | The pinned pack wins. Status `Pinned` (or `Frozen` for auto-pins LabDog wrote on a fresh sync conflict, awaiting your confirmation). |
-| **Contested + unresolved** — multiple packs declare the key, no pin yet | Action is *unrunnable*: `POST /api/actions/runs` returns 409, the Run button is disabled on host/group action cards, and the row is amber-tinted in the registry table with a "Pick winner" prompt. |
+| **Uncontested** — one pack declares the key | That pack wins automatically. Status **ok**. No picker. |
+| **Contested + pinned** — multiple packs declare the key, operator has chosen a winner | The pinned pack wins. Status **pinned** (or **frozen** for auto-pins LabDog wrote on a fresh sync conflict, awaiting your confirmation). |
+| **Contested + unresolved** — multiple packs declare the key, no pin yet | Action is *unrunnable*: `POST /api/actions/runs` returns 409, the action is tagged **unresolved** wherever it is listed and cannot be run, and its registry row reads **pick winner**. |
 
-The **Action Packs** page is two surfaces stacked vertically:
+The **Packs** tab (Operations → Actions → Packs) is two panels:
 
-1. **Action Registry** (primary surface). One row per action key:
-   action key, winner, status. Contested rows expand on click into
-   an inline radio group with every candidate pack — pick one and
-   it auto-saves via `POST /api/action-resolutions/{key}`.
-   Uncontested rows are plain text — there's no picker because the
-   key has only one contributor; if and when another pack appears
-   later, freeze-on-fresh-conflict kicks in and you pin then.
-2. **Pack Sources** (management-only). Add, sync, edit, delete
-   packs. Each row also has a **Make winner for all keys** button
-   that bulk-pins every key the pack contributes via `POST
-   /api/action-packs/{id}/claim-all-keys` — a confirmation dialog
-   shows the diff (how many keys are already pinned here, how many
-   would be moved from other packs) before commit. The bundled pack
-   is a read-only row here so its presence is discoverable.
+1. **action registry** (primary surface). One row per action key:
+   action key, winner, status. A contested row expands under the table
+   into a choice of every candidate pack — pick one and it saves via
+   `POST /api/action-resolutions/{key}`. Uncontested rows have no picker
+   because the key has only one contributor; if and when another pack
+   appears later, freeze-on-fresh-conflict kicks in and you pin then.
+2. **pack sources** (management). **Add pack…** adds one; each row shows
+   the pack, its source, whether it is enabled and its last sync, with
+   **sync · win all keys · edit · delete**. **win all keys** bulk-pins
+   every key the pack contributes via `POST
+   /api/action-packs/{id}/claim-all-keys` — a confirmation dialog shows
+   the diff (how many keys are already pinned here, how many would be
+   moved from other packs) before **Pin all keys** commits it. The
+   bundled pack is a read-only row here so its presence is discoverable.
 
-#### Bulk-pin: "Make winner for all keys"
+#### Bulk-pin: "win all keys"
 
 When you add a new pack that should own every key it contributes,
-clicking **Make winner for all keys** in the Pack Sources row is
-the one-click flow. The endpoint writes one `action_resolution` row
+**win all keys** on its pack sources row is the one-click flow. The endpoint writes one `action_resolution` row
 per key the pack contributes (creating new rows where the key was
 unresolved, overwriting rows that pointed at other packs, leaving
 rows that already pointed here untouched). The confirmation dialog
@@ -309,9 +316,9 @@ manifest that turns a previously-uncontested key into a contested
 one, the rebuild **freezes** the winner to whichever pack was
 previously serving that key by writing an `action_resolution` row
 pinning it. The row's `decided_by_user_id` is `NULL`, which the UI
-surfaces as a **Frozen** status — you can confirm by re-pinning the
+surfaces as a **frozen** status — you can confirm by re-pinning the
 same pack (which sets `decided_by_user_id` to you and clears the
-Frozen badge) or switch to a different candidate. Without the
+frozen tag) or switch to a different candidate. Without the
 freeze, an upstream sync could turn a working action into an
 unresolved one — frozen behaviour preserves status quo until you
 look.
@@ -328,15 +335,14 @@ case until you re-pin.
 
 ### Provenance: which pack won?
 
-Every action card shows a small badge with the pack that supplied
-it, plus an extra "Unresolved" badge when the key has multiple
-contributors and no winner pinned:
+The Library and a host's or group's Activity › Actions show the pack
+that supplied each action, plus an **unresolved** tag when the key has
+multiple contributors and no winner pinned:
 
-| Badge | Meaning |
+| Tag | Meaning |
 |---|---|
-| Grey: `from <pack>` | The action is uncontested — only one pack declares this key. |
-| Amber: `from <pack> (overrides N)` | The action is contested and pinned; this pack's version won. Hover for the list of other contributors. |
-| Amber: `Unresolved` (on host/group action cards) | Multiple packs declare this key and no winner is pinned. Run is disabled. Click through to `/action-packs` to pick. |
+| `<pack>` | The pack serving this action — the only contributor, or the pinned winner. |
+| **unresolved** | Multiple packs declare this key and no winner is pinned. It cannot be run. Hover for the contributors; pick a winner on the Packs tab. |
 
 The API exposes this at `GET /api/actions/` as `pack_name`,
 `winning_pack_id` (the `ActionPack.id` of the winner, `null` for
@@ -389,13 +395,13 @@ reused across multiple actions.
 
 ```yaml
 key: my-action               # stable identifier; collisions require an operator-pinned winner per key
-name: My Action              # shown on the action card
+name: My Action              # shown in the Library and the run dialog
 description: >-              # one-paragraph description; shown under name
   Does a thing to the host.
-icon: Zap                    # lucide-react icon name (Zap, Layers, Network, etc.)
+icon: Zap                    # required, but not drawn by the UI at present
 playbook: playbook.yml       # filename relative to this manifest
 version: "1.0"               # bump on breaking parameter changes
-estimated_duration: "30 sec" # human-readable; shown on the card
+estimated_duration: "30 sec" # required, human-readable; not shown at present
 destructive: false           # see "Destructive actions" below
 supports_group: true         # can target a group of hosts?
 supports_host: true          # can target a single host?
@@ -753,25 +759,24 @@ collects state.
 
 ## Troubleshooting
 
-**"Sync failed" on a git pack.** The row is saved with a failure reason
-— click **Edit** to see the error in the modal. Common causes: wrong
-ref, expired PAT on the linked Git repository, missing ssh_key_id on
-the repo. The credentials live on the linked repo — fix them under
-**Git Repos**, then hit **Sync** on the pack.
+**"Sync failed" on a git pack.** The pack's row in **pack sources** shows
+a **failed** tag; press **sync** again and the toast names the reason.
+Common causes: wrong ref, expired PAT on the linked Git repository,
+missing ssh_key_id on the repo. The credentials live on the linked repo —
+fix them under [Git repositories](gitops-ui.md), then **sync** the pack.
 
 **"No actions appear after adding a pack."** Check: (1) the pack's
 `actions/` directory exists and contains `<key>/manifest.yml` files, (2)
 each manifest's `playbook:` field names a file that actually exists,
-(3) the pack is `Enabled` in the list view. If a single manifest fails
+(3) the pack is enabled in **pack sources**. If a single manifest fails
 to parse the rest still load — check the API server logs for
 `pack 'X': failed to load manifest …`.
 
-**"The wrong version of an action ran."** The amber badge tells you
-which pack won. If that's not what you want, pin the pack you want as
-the winner for that key on the **Action Packs** page — expand the
-contested row in the Active Action Catalog and pick it, or use the
-pack's **Make winner for all keys** button in Pack Sources to claim
-every key it contributes. Disabling the unwanted pack works too if
+**"The wrong version of an action ran."** The pack column in the
+Library tells you which pack won. If that's not what you want, pin the
+pack you want as the winner for that key on the **Packs** tab — expand
+the contested row in the action registry and pick it, or use the pack's
+**win all keys** in pack sources to claim every key it contributes. Disabling the unwanted pack works too if
 you don't need it at all. (There is no pack ordering — precedence is
 per-key pinning, not a global priority.)
 
@@ -780,7 +785,7 @@ the manifest's `supports_host` / `supports_group` flags.
 
 **"Snapshot rollback didn't happen for a failed destructive action."**
 Check that the host has a VM mapping under the Proxmox integration
-(host detail → Proxmox panel). Without a mapping, destructive actions
+(host page → Overview → vm mapping). Without a mapping, destructive actions
 run without snapshot protection.
 
 **Where the checkouts live.** LabDog clones git packs into

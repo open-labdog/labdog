@@ -1,5 +1,7 @@
 # Overview
 
+![Overview](screenshots/overview.png)
+
 **Path:** `/overview` (`/dashboard` and `/` redirect here)
 
 The landing page: fleet state and what is waiting on you, weighted evenly.

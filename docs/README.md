@@ -154,8 +154,8 @@ requests for the same host queue (`SyncJob.status="pending"`) and
 are dispatched in `created_at` order; only one ansible-runner
 invocation against a given host at a time. The new
 `POST /api/sync/hosts/{id}/bulk` endpoint exposes multi-module
-syncs to API callers; per-tab Sync buttons are unchanged externally
-but internally delegate to the same orchestrator.
+syncs to API callers; the UI's per-module and sync-all buttons, and
+the Plans screen, delegate to the same orchestrator.
 
 ### Automatic Safety Rules
 
@@ -168,7 +168,7 @@ but internally delegate to the same orchestrator.
 
 | Component | Technology | Port |
 |-----------|-----------|------|
-| Frontend | Next.js 16 + shadcn/ui + TanStack Query | 3000 |
+| Frontend | Next.js 16 + the LabDog kit + TanStack Query | 3000 |
 | Backend API | FastAPI + SQLAlchemy (async) | 8000 |
 | Database | PostgreSQL 18 | 5432 |
 | Task Queue | Celery + Redis (RedBeat scheduler) | -- |
@@ -430,7 +430,7 @@ npx playwright test          # requires running Docker stack
 npx playwright test --ui     # interactive test runner
 ```
 
-E2E spec files cover auth, dashboard, groups, hosts, rules, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
+E2E spec files cover auth and session expiry, the overview, groups, hosts, rules, scheduled actions, the Git repository wizard, SSH terminal, sync, audit, and UX patterns (breadcrumbs, command palette, confirm dialogs, host grouping, mobile, search, toasts).
 
 ## API Endpoints
 
@@ -641,7 +641,7 @@ labdog/
 │   └── pyproject.toml
 ├── frontend/
 │   ├── app/                 # Next.js App Router pages
-│   ├── components/          # React components (shadcn/ui)
+│   ├── components/          # React components — ld/ is the UI kit, shell/ the rail and pane
 │   ├── e2e/                 # Playwright E2E tests
 │   ├── hooks/               # Custom React hooks
 │   ├── lib/                 # API client, utilities

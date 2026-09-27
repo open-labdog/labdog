@@ -32,7 +32,7 @@ The Docker command above is the fastest path — see [`openlabdog/labdog`](https
 
 ## ✨ What you get
 
-**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver`
+**Configuration modules** &nbsp;`firewall` · `services` · `hosts` · `packages` · `users` · `cron` · `dns-resolver` · `ca-certs`
 
 Declare state per host or per group. Everything goes through Ansible. Same rule format for nftables and iptables.
 
