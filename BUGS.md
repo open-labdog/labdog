@@ -137,37 +137,3 @@ _No bugs are currently open._
       Severity Low: cosmetic, and the fallback keeps both settings
       reachable.
 
----
-
-## Open — 2026-09-28 usability
-
-Filed 2026-09-28 while scheduling the `nextcloud-vm-update` action.
-
-### Usability — Low
-
-- [ ] **BUG-93** `frontend/components/scheduled-actions/schedule-action-dialog.tsx:355-366`
-      — "Schedule an action" lists hosts and groups in a plain dropdown,
-      with no way to search them by typing
-
-      Symptom: to pick the target host or group, the user has to open the
-      list and scroll through the whole inventory. Typing does nothing
-      useful. A native `<select>` offers only the browser's type-ahead,
-      which jumps to the first option that starts with the typed prefix.
-      It can't match text in the middle of a name, can't match the IP
-      address after the `·`, and doesn't narrow the list. This gets worse
-      as the fleet grows.
-
-      Root cause: the host and group pickers are native `<select>`
-      elements (`:356` and `:363`) that render every host
-      (`hostname · ip_address`) and every group as an `<option>`.
-
-      Fix direction: replace both with a searchable combobox that filters
-      as the user types, on hostname, IP and group name. `cmdk` is already
-      a dependency and powers the command palette
-      (`frontend/components/shell/palette.tsx`), so a small shared picker
-      built on it adds no new dependency. The same picker would fit the
-      action picker in this dialog (`:332`) and the other host dropdowns
-      (`frontend/app/(dashboard)/hosts/[id]/_tabs/config/firewall.tsx:215`,
-      `:225`, and `hosts-file.tsx:198`).
-
-      Severity Low: every target can still be picked, only slowly.
