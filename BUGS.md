@@ -109,31 +109,4 @@ _No bugs are currently open._
 
 ### Correctness — Low
 
-- [ ] **BUG-89** `frontend/app/(dashboard)/settings/settings-editor.tsx:100-120`
-      — `ssh.command_timeout` and `logging.drift_retention_days` render in
-      "uncategorised" fallback cards instead of their SSH and Logging
-      categories
-
-      Symptom: Settings › Fleet shows two extra cards, "Ssh" and "Logging",
-      each tagged `uncategorised` and holding one setting, beside the
-      curated SSH and Logging cards. The settings still work and can be
-      edited; they are just filed under the wrong heading.
-
-      Root cause: both keys exist in `SETTING_DEFINITIONS`
-      (`backend/app/settings_service.py:45`, `:103`) but were never added
-      to the frontend's hand-kept `CATEGORIES` map. Of the 31 backend
-      keys, these are the only two missing. This is the third time
-      settings have drifted out of the map this way (the comment at
-      `settings-editor.tsx:29-47` records the earlier two), and nothing
-      checks for it.
-
-      Fix direction: add `ssh.command_timeout` to `ssh.keys` and
-      `logging.drift_retention_days` to `logging.keys`. To stop it
-      recurring, either add a backend test that asserts every
-      `SETTING_DEFINITIONS` key appears in `settings-editor.tsx`, or move
-      the category into `SETTING_DEFINITIONS` and have the frontend group
-      by the API's value.
-
-      Severity Low: cosmetic, and the fallback keeps both settings
-      reachable.
-
+_No bugs are currently open._
