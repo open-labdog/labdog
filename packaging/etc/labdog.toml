@@ -68,7 +68,9 @@ encryption_key = "CHANGE_ME"
 # lockout prevention rule (REQUIRED)
 labdog_server_ip = "127.0.0.1"
 
-# CORS allowed origins
+# Origins of a frontend served from somewhere other than LabDog itself
+# (CORS, and the web terminal's origin check). Not needed when the UI is
+# reached through the same host as the API, as behind a reverse proxy.
 allowed_origins = ["http://localhost:3000"]
 
 # Cookie security — set true in production with HTTPS
