@@ -168,7 +168,9 @@ class ActionHostRun(Base):
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    output: Mapped[str] = mapped_column(Text, nullable=False, server_default="''")
+    # ``""``, not ``"''"``: SQLAlchemy quotes a string server default itself, and
+    # the quoted form made the default the two characters ``''`` (BUG-90).
+    output: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Proxmox snapshot captured before a destructive action ran. Non-null
     # means a snapshot exists (deleted on success, kept on failure/rollback).
