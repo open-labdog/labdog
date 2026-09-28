@@ -265,7 +265,7 @@ per-session caps and the budgets.
     a label matcher) that may remediate at full auto. Everything else
     falls back to the global level. Consider a severity floor as well as
     the existing `ai.auto_investigate_min_severity`.
-  - **The webhook becomes a root trigger.** `POST /webhooks/grafana-alerts`
+  - **The webhook becomes a root trigger.** `POST /api/webhooks/grafana-alerts`
     is protected by one shared token (`settings.alerts.webhook_token`).
     With full auto, anyone holding that token can make LabDog change a
     host. Require the token to be set before full auto can be enabled;
