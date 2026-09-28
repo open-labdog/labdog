@@ -94,19 +94,19 @@ class _FakeProxmoxClient:
         self.deleted: list[tuple[str, int, str]] = []
         self.started: list[tuple[str, int]] = []
 
-    async def create_snapshot(self, pve_node, vmid, name, description=""):  # noqa: ARG002
+    async def create_snapshot(self, pve_node, vmid, name, description="", *, vm_type="qemu"):  # noqa: ARG002
         self.created.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:{name}"
 
-    async def rollback_snapshot(self, pve_node, vmid, name):
+    async def rollback_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.rolled_back.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rb:{name}"
 
-    async def delete_snapshot(self, pve_node, vmid, name):
+    async def delete_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.deleted.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rm:{name}"
 
-    async def start_vm(self, pve_node, vmid):
+    async def start_vm(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
         self.started.append((pve_node, vmid))
         return f"UPID:{pve_node}:{vmid}:start"
 
@@ -129,6 +129,8 @@ def fake_proxmox():
         host,
         ssh_key_path,
         db,  # noqa: ARG001
+        *,
+        vm_type="qemu",  # noqa: ARG001
     ):
         await proxmox_client.rollback_snapshot(pve_node, vmid, snapshot_name)
         await proxmox_client.start_vm(pve_node, vmid)

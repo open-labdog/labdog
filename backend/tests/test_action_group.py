@@ -410,19 +410,19 @@ class _FakeProxmoxClient:
         self.deleted: list[tuple[str, int, str]] = []
         self.started: list[tuple[str, int]] = []
 
-    async def create_snapshot(self, pve_node, vmid, name, description=""):  # noqa: ARG002
+    async def create_snapshot(self, pve_node, vmid, name, description="", *, vm_type="qemu"):  # noqa: ARG002
         self.created.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:{name}"
 
-    async def rollback_snapshot(self, pve_node, vmid, name):
+    async def rollback_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.rolled_back.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rb:{name}"
 
-    async def delete_snapshot(self, pve_node, vmid, name):
+    async def delete_snapshot(self, pve_node, vmid, name, *, vm_type="qemu"):  # noqa: ARG002
         self.deleted.append((pve_node, vmid, name))
         return f"UPID:{pve_node}:{vmid}:rm:{name}"
 
-    async def start_vm(self, pve_node, vmid):
+    async def start_vm(self, pve_node, vmid, *, vm_type="qemu"):  # noqa: ARG002
         self.started.append((pve_node, vmid))
         return f"UPID:{pve_node}:{vmid}:start"
 
@@ -444,6 +444,8 @@ def fake_proxmox():
         host,
         ssh_key_path,
         db,  # noqa: ARG001
+        *,
+        vm_type="qemu",  # noqa: ARG001
     ):
         # Mirror the real helper's side-effects we care about: call
         # rollback_snapshot + start_vm + wait_for_task, but skip the
@@ -629,9 +631,10 @@ async def test_partial_failure_rolls_back_failed_hosts_only(
     # Rollback only the failed host's VM.
     rolled_back_vmids = {vmid for _, vmid, _ in fake_proxmox.rolled_back}
     assert rolled_back_vmids == {302}
-    # Cleanup only the succeeded host's snapshot.
+    # Both snapshots go: the succeeded host's on cleanup, the failed host's
+    # once its rollback succeeds (9b7346c4).
     deleted_vmids = {vmid for _, vmid, _ in fake_proxmox.deleted}
-    assert deleted_vmids == {301}
+    assert deleted_vmids == {301, 302}
 
     from sqlalchemy import select
 
@@ -697,11 +700,11 @@ async def test_verify_failure_triggers_rollback_even_when_playbook_succeeded(
     ):
         await _run_action_group_async(run_id)
 
-    # vb-host should be rolled back, vg-host's snapshot should be deleted.
+    # vb-host is rolled back; both snapshots are deleted afterwards.
     rolled_back_vmids = {vmid for _, vmid, _ in fake_proxmox.rolled_back}
     assert rolled_back_vmids == {402}
     deleted_vmids = {vmid for _, vmid, _ in fake_proxmox.deleted}
-    assert deleted_vmids == {401}
+    assert deleted_vmids == {401, 402}
 
     from sqlalchemy import select
 
