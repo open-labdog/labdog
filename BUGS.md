@@ -105,49 +105,7 @@ not just read from source.
 
 ### Correctness — High
 
-- [ ] **BUG-88** `backend/app/auth/ws_auth.py:32-42`,
-      `backend/app/api/ssh_terminal.py:35-37` — the web terminal refuses
-      the UI's own origin unless `security.allowed_origins` lists it, and
-      says so nowhere
-
-      Symptom: every terminal session, on every host, ends before it
-      starts with "Connection failed: Closed (1006)". Reproduced on
-      lin-manager 2026-09-27, UI at `https://labdog.lan.tyresson.se`
-      behind nginx: a terminal handshake through the proxy is answered
-      403, and `check_ws_origin` evaluated with the live settings returns
-      False for `https://labdog.lan.tyresson.se` and True only for
-      `http://localhost:3000`.
-
-      Root cause: SEC-34 (`99860707`, 2026-09-06) made the terminal check
-      the handshake's `Origin` against `security.allowed_origins` before
-      accepting. That setting defaults to `["http://localhost:3000"]`
-      (`app/config.py:84`; `packaging/etc/labdog.toml:72` ships the same),
-      and until SEC-34 a deployment whose UI and API share an origin never
-      needed it, because CORS only applies cross-origin. So an install
-      that never set it, like lin-manager, whose compose file passes no
-      `LABDOG_SECURITY__ALLOWED_ORIGINS`, lost the terminal on upgrade.
-      The 0.10.0 notes in `docs/upgrade.md` do not mention it.
-
-      Why it was hard to see: the refusal happens before `accept()`, which
-      the ASGI server answers with an HTTP 403, so the browser gets no
-      close frame and reports 1006 with no reason. The handler's
-      `4403 "Origin not allowed"` never reaches the page, which the SEC-34
-      comment accepts as the price of authenticating before the
-      handshake. Nothing is logged either: the handler returns silently,
-      and no access line reaches the container log, so neither the UI nor
-      the logs say what happened.
-
-      Fix direction: treat a same-origin handshake as allowed, meaning the
-      `Origin` host matches the request's own `Host`, and keep
-      `allowed_origins` for genuinely cross-origin frontends such as the
-      dev server. A cross-site page still fails the check, because the
-      browser sends that page's origin. Log every refusal with the origin
-      it named. Until then the workaround is to set
-      `LABDOG_SECURITY__ALLOWED_ORIGINS='["https://labdog.lan.tyresson.se"]'`
-      in the deployment.
-
-      Severity High: the only interactive shell LabDog offers is down on
-      every deployment that relies on the default.
+_No bugs are currently open._
 
 ### Correctness — Low
 

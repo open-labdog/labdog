@@ -107,6 +107,14 @@ Smaller things to know:
   row count before dropping it.
 - **Docker:** Celery beat is now a third supervised subprocess, and
   `/health/ready` fails if it dies. No compose change is needed.
+- **The web terminal fails with "Connection failed: Closed (1006)"**
+  on 0.10.0 unless the UI's origin is listed in
+  `security.allowed_origins`, which a deployment serving the UI and API
+  from one host never needed before. Set it, for example
+  `LABDOG_SECURITY__ALLOWED_ORIGINS='["https://labdog.example.com"]'`.
+  From the release after 0.10.0 the terminal accepts its own origin
+  without it (BUG-88), and the list is only needed for a frontend served
+  from elsewhere.
 
 Fourteen migrations (`0025`–`0038`) apply with the normal step below.
 All are forward-safe; `0037` and `0038` are documented as lossy on
