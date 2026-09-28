@@ -256,8 +256,10 @@ per-session caps and the budgets.
   `AlertEvent` (or read it from the session) so the `/alerts` page shows
   whether an investigation could act. `approval` is the safe first step:
   the investigation runs, then parks each change as an approval request.
-  Needs a way to be told about a parked request, since an alert session
-  has no operator watching the chat.
+  Depends on **Email notifications** (below). An alert session has no
+  operator watching the chat, so a parked request nobody hears about
+  just expires after `ai.approval_expiry_hours`. The operator has to be
+  told both that the alert fired and that a change is waiting.
 
 - **Phase 2: full auto, scoped.** Allowing `full_auto` in the setting is
   the easy part. What has to exist before it is offered:
@@ -299,10 +301,9 @@ per-session caps and the budgets.
     fingerprint) resolves after a remediation session, record that on
     the `AlertEvent`. When it keeps firing past a window, mark the
     remediation as not effective and stop retrying.
-  - Tell someone what was done: a notification (webhook, email or a
-    Grafana annotation) with the commands that ran, the snapshot name
-    and the outcome. Unattended changes must not only live in the
-    audit log.
+  - Tell someone what was done: an email (see **Email notifications**)
+    with the commands that ran, the snapshot name and the outcome.
+    Unattended changes must not only live in the audit log.
   - Surface remediation outcomes on `/alerts` and the overview's Pending
     lane: which alerts were fixed automatically, which were escalated,
     which failed.
@@ -314,6 +315,59 @@ per-session caps and the budgets.
   alert. Phases 1-3 don't need to wait for it, but when it lands, full
   auto remediation should prefer it, and an allowlist of packs per alert
   should become the way to scope what an alert may do.
+
+---
+
+## Email notifications
+
+**Goal:** LabDog can send email, starting with the alert flow. With
+alert investigations at `approval`, the user has to hear that an alert
+fired and that a change is waiting for their decision; nothing reaches
+them today unless they have the UI open. This is the first slice of the
+"Notification system" idea in ROADMAP.md.
+
+**Context:** LabDog sends no mail at all today: there is no SMTP config,
+no mail library, and `UserManager.on_after_forgot_password`
+(`app/auth/users.py`) only logs. Every user already has an email address
+(fastapi-users). There is no setting for LabDog's public URL, which a
+link in an email needs.
+
+- **Transport.** SMTP config: host, port, TLS mode (none, STARTTLS,
+  implicit TLS), username, password and From address. Store the password
+  encrypted like other secrets (AES key), never returned by the API.
+  Editable in Settings › Integrations, with a "send test email" button
+  that reports the SMTP server's actual error. Add `server.public_url`
+  (or a setting) for building links, and refuse to send a link-bearing
+  email without it rather than guessing from a request's `Host`.
+- **Delivery.** Send from a Celery task, never inline, so a slow or down
+  mail server cannot hold up an alert, a webhook response or an approval.
+  Retry with backoff, and record every attempt (event, recipient, status,
+  error) so "why didn't I get an email?" can be answered from the UI.
+  Coalesce bursts: a storm of alerts should become one email per
+  interval, not one per alert.
+- **Who gets what.** Opt-in per user, per event type, on the account
+  page. The privilege model is flat, so any user may subscribe to any
+  event. Perhaps also a shared address (a team list) in settings.
+- **Events, in order:**
+  1. Alert fired: alertname, severity, host, and a link to the alert and
+     its investigation.
+  2. Approval requested: the command or change, the host, the
+     investigation's reasoning, the expiry time, and a link to the
+     approval. Approving happens in the UI, not by an unauthenticated
+     link in the email: an email link that runs a root command would
+     turn the inbox into a credential.
+  3. Approval about to expire, and approval expired.
+  4. Remediation done or failed (alert remediation phase 3).
+  5. Later: sync failures, drift, action-run failures, certificate
+     expiry (the rest of the ROADMAP idea), and password reset.
+- **Content.** Run every value from the alert payload or command output
+  through the same redaction the transcript uses (`app/ai/redaction.py`).
+  An email is stored in places LabDog doesn't control. Plain-text body
+  first; HTML optional.
+- **Leave room for other channels.** Put the event and recipient model
+  behind a small channel interface, so a webhook, ntfy, Slack or Matrix
+  channel can be added without touching the events. Only email ships in
+  the first version.
 
 ---
 
