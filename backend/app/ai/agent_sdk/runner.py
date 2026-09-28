@@ -193,6 +193,8 @@ class AgentSDKRunner:
         # for why these are separate from the session's own counters.
         self._live_prompt = 0
         self._live_completion = 0
+        # API responses already counted; see `_new_response`.
+        self._responses_seen: set[str] = set()
         # Whether this run's tokens reached the ledger. An interrupted run
         # never gets a ResultMessage, so without this the exits that stop a
         # run early would book nothing at all.
@@ -289,7 +291,8 @@ class AgentSDKRunner:
 
         Each ``AssistantMessage`` carries the raw per-response usage from
         the API (``data["message"]["usage"]``), so summing them gives a
-        live signal that only ever grows.
+        live signal that only ever grows, provided each response is counted
+        once: the caller only passes the first message of each (BUG-95).
 
         Deliberately kept out of the session row and the ledger. This is an
         estimate assembled from a different source than the CLI's own
@@ -303,6 +306,26 @@ class AgentSDKRunner:
         prompt, completion = self._usage_totals(usage)
         self._live_prompt += prompt
         self._live_completion += completion
+
+    def _new_response(self, message: Any) -> bool:
+        """Whether this is the first message seen from its API response.
+
+        The CLI splits one response into an ``AssistantMessage`` per content
+        block, so a turn that thinks and then calls a tool arrives as two
+        messages, and every one carries the whole response's ``usage``.
+        Counting each doubled the live estimate: session 17 on lin-manager
+        was stopped at "token budget (10000)" having used about 5,400, and
+        session 16 booked exactly twice its input tokens (BUG-95).
+
+        A message without an id counts, as each one did before.
+        """
+        message_id = getattr(message, "message_id", None)
+        if not message_id:
+            return True
+        if message_id in self._responses_seen:
+            return False
+        self._responses_seen.add(message_id)
+        return True
 
     async def _book(self, prompt: int, completion: int, *, estimated: bool) -> None:
         """Write tokens and cost onto the session and the daily ledger."""
@@ -936,11 +959,14 @@ class AgentSDKRunner:
                     # tokens are already spent by the time the message
                     # arrives, so counting them now is what lets the next
                     # turn be refused.
-                    self._note_live_usage(getattr(message, "usage", None))
+                    # Once per API response, not per message; see
+                    # `_new_response`.
+                    if self._new_response(message):
+                        self._note_live_usage(getattr(message, "usage", None))
+                        session.iterations += 1
                     text = "".join(
                         block.text for block in message.content if isinstance(block, TextBlock)
                     ).strip()
-                    session.iterations += 1
                     if text:
                         final_text = text
                         await self._emit("text", {"text": text})

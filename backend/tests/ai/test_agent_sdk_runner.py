@@ -1013,3 +1013,83 @@ class TestUninterruptible:
             return 42
 
         assert await _uninterruptible(work()) == 42
+
+
+class TestOneResponseIsCountedOnce:
+    """BUG-95: the CLI sends one ``AssistantMessage`` per content block, and
+    each carries the whole response's usage. Session 17 on lin-manager: two
+    responses, each a thinking block and a tool call, about 5,400 tokens,
+    counted as 10,712 and stopped at a 10,000 cap."""
+
+    # lin-manager session 17, response by response.
+    FIRST = {"input_tokens": 2, "cache_creation_input_tokens": 2582, "output_tokens": 66}
+    SECOND = {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 114,
+        "cache_read_input_tokens": 2582,
+        "output_tokens": 8,
+    }
+
+    def _session_17(self):
+        return [
+            assistant("", self.FIRST, message_id="msg_1"),
+            assistant("", self.FIRST, message_id="msg_1"),
+            assistant("", self.SECOND, message_id="msg_2"),
+            assistant("the clock is fine", self.SECOND, message_id="msg_2"),
+            result(),
+        ]
+
+    async def test_session_17_stays_under_its_cap(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        outcome, fake, runner = await _run(
+            db, session, ai_provider, self._session_17(), caps=LoopCaps(max_tokens_total=10_000)
+        )
+
+        assert not fake.interrupted, f"stopped at {outcome.stopped_by!r}"
+        assert runner._live_prompt + runner._live_completion == 2650 + 2706
+
+    async def test_distinct_responses_still_add_up(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        turn = {"input_tokens": 50, "output_tokens": 10}
+        outcome, fake, _ = await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("one", turn, message_id="msg_1"),
+                assistant("two", turn, message_id="msg_2"),
+                result(),
+            ],
+            caps=LoopCaps(max_tokens_total=100),
+        )
+
+        assert fake.interrupted
+        assert "token budget" in (outcome.stopped_by or "")
+
+    async def test_an_unfinished_run_books_each_response_once(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """Session 16 booked twice its input tokens: interrupted runs book
+        the live estimate, and the estimate was doubled."""
+        session = await make_session()
+        turn = {"input_tokens": 3000, "output_tokens": 100}
+        await _run(
+            db,
+            session,
+            ai_provider,
+            [
+                assistant("", turn, message_id="msg_1"),
+                assistant("", turn, message_id="msg_1"),
+                assistant("", turn, message_id="msg_2"),
+                assistant("", turn, message_id="msg_2"),
+            ],
+        )
+
+        await db.refresh(session)
+        assert session.prompt_tokens == 6000
+        assert session.completion_tokens == 200
+
+    async def test_turns_are_counted_per_response(self, db, ai_provider, make_session) -> None:
+        session = await make_session()
+        _, _, runner = await _run(db, session, ai_provider, self._session_17()[:-1])
+        assert session.iterations == 2
