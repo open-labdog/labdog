@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-97`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-98`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -223,3 +223,43 @@ container, its database and its logs.
       spec to assert `aria-current` after clicking an Overview item.
 
       Severity Low: navigation works; only the highlight is wrong.
+
+- [ ] **BUG-98** `frontend/app/(dashboard)/overview/client-page.tsx:119`,
+      `frontend/components/scheduled-actions/scheduled-actions-list.tsx:84`,
+      `frontend/components/scheduled-actions/schedule-action-dialog.tsx:121`
+      — a schedule of a non-destructive action shows "snap" although no
+      snapshot is ever taken
+
+      Symptom: Overview › Scheduled shows a green "snap" tag on "Update
+      Docker Compose images" (`docker-compose-update`, group `docker`).
+      That action's manifest says `destructive: false`, with the comment
+      "No Proxmox snapshot: the playbook waits for health itself and
+      rolls back at the image level". No run of it has snapshotted:
+      every `action_host_runs.snapshot_name` for runs 166-213 is empty.
+      The tag reads as a promise of a rollback point that does not exist,
+      and the panel's footer adds "Snapshot-backed ones are reversible."
+
+      Root cause: the schedule dialog's initial state sets
+      `snapshotEnabled: true` (also `verifyEnabled` and `autoRollback`),
+      and shows the toggles only when `action.destructive`. For a
+      non-destructive action the operator never sees them, and the
+      defaults are saved anyway: schedule 2 on lin-manager has all three
+      true, as do its runs. The runner is right to ignore them
+      (`action_host.py:594` only snapshots when
+      `spec.destructive and spec.snapshot_enabled`), but both the
+      Overview row and the schedules list render the tag from
+      `snapshot_enabled` alone.
+
+      Fix direction: render "snap" only when the action is destructive
+      *and* `snapshot_enabled`. The schedule response needs the action's
+      `destructive` flag next to `action_name`
+      (`app/api/scheduled_actions.py:160`). Also stop storing true for
+      non-destructive actions: send `false` from the dialog, or have the
+      API normalise the three flags when the action is not destructive.
+      Optionally a migration clearing them on existing schedules of
+      non-destructive actions. The run-action dialog probably defaults the
+      same way (runs 166-213 all have `snapshot_enabled = t`); check it
+      and the run view for the same tag.
+
+      Severity Low: nothing runs differently, but the UI claims a
+      rollback point for an unattended action that has none.
