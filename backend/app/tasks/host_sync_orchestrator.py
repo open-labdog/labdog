@@ -482,6 +482,7 @@ async def _finalise_run(
     marked ``error``.
     """
     from app.audit.logger import log_action
+    from app.models.host import Host
     from app.models.host_module_status import HostModuleStatus
     from app.models.sync_job import SyncJob
 
@@ -536,6 +537,13 @@ async def _finalise_run(
             row.error_message = error_message
         elif sync_status == "in_sync":
             row.error_message = None
+
+    # Roll the run timestamp up to the parent Host row too — the stale-hosts
+    # view reads Host.last_sync_at, not the per-module HostModuleStatus rows.
+    if seeded_modules:
+        host = (await db.execute(select(Host).where(Host.id == host_id))).scalar_one_or_none()
+        if host is not None:
+            host.last_sync_at = now
 
     # SyncJob final state. ``"success"`` matches the existing
     # ``JobStatus`` enum; the contract said ``"completed"`` but the
