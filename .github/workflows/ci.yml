@@ -263,7 +263,7 @@ jobs:
           ./scripts/fetch-bundled-pack.sh backend/app/ansible
       - name: pytest
         working-directory: backend
-        run: python -m pytest tests/ -v -m "not integration" --ignore=tests/integration
+        run: python -m pytest tests/ -v --ignore=tests/integration
 
   frontend-build-check:
     if: >-
@@ -812,7 +812,7 @@ jobs:
       - name: pytest
         if: steps.decide.outputs.run == 'true'
         working-directory: backend
-        run: python -m pytest tests/ -q -m "not integration" --ignore=tests/integration
+        run: python -m pytest tests/ -q --ignore=tests/integration
       - name: ruff
         if: steps.decide.outputs.run == 'true'
         working-directory: backend

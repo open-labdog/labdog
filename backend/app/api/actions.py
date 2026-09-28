@@ -180,7 +180,7 @@ async def create_run(
     try:
         build_param_model(action).model_validate(submitted)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
 
     stored_parameters = dict(submitted)
     if body.dry_run:

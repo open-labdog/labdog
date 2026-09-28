@@ -254,13 +254,15 @@ class TestSSHConnect:
         mock_asyncssh.Error = real_asyncssh.Error
         mock_asyncssh.import_private_key = MagicMock(return_value="imported-key")
 
+        # ssh_connect_host is the TOFU-verifying connect; the shell must use it.
         mock_ssh_connect = AsyncMock(return_value=mock_conn)
-        with patch("app.ssh_terminal.ssh_connect.ssh_connect", mock_ssh_connect):
+        with patch("app.ssh_terminal.ssh_connect.ssh_connect_host", mock_ssh_connect):
             conn, process = await open_ssh_shell(host_id=host.id, db=db)
 
         assert conn is mock_conn
         assert process is mock_process
         mock_ssh_connect.assert_awaited_once()
+        assert mock_ssh_connect.await_args.kwargs["client_keys"] == ["imported-key"]
         mock_conn.create_process.assert_awaited_once()
 
 

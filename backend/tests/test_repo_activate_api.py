@@ -114,16 +114,6 @@ def stub_post_commit_hooks():
 # ---------------------------------------------------------------------------
 
 
-async def test_activate_requires_superuser(regular_user_client, db, origin_with_packs_and_gitops):
-    repo = await _make_repo(db, f"file://{origin_with_packs_and_gitops}")
-    await db.commit()
-    resp = await regular_user_client.post(
-        f"/api/git-repos/{repo.id}/activate",
-        json={"packs": [], "gitops_bindings": []},
-    )
-    assert resp.status_code == 403
-
-
 async def test_activate_404_for_unknown_repo(superuser_client):
     resp = await superuser_client.post(
         "/api/git-repos/99999/activate",

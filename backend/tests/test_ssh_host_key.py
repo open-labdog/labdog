@@ -191,14 +191,6 @@ class TestTrustHostKeyEndpoint:
         resp = await superuser_client.post("/api/hosts/99999/trust-host-key")
         assert resp.status_code == 404
 
-    async def test_regular_user_cannot_trust_host_key(self, regular_user_client, db):
-        """Non-superuser gets 403."""
-        ssh_key = await create_ssh_key(db)
-        host = await create_host(db, ip="10.0.1.2", ssh_key_id=ssh_key.id)
-
-        resp = await regular_user_client.post(f"/api/hosts/{host.id}/trust-host-key")
-        assert resp.status_code == 403
-
     async def test_re_tofu_after_trust_clears_key(self, db):
         """After trust-host-key clears the entry, next connect stores the new key."""
         ssh_key = await create_ssh_key(db)

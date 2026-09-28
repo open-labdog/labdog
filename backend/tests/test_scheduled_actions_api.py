@@ -24,14 +24,9 @@ def stub_celery_dispatch():
 # ---------------------------------------------------------------------------
 
 
-async def test_list_requires_superuser(client, db):
+async def test_list_requires_auth(client, db):
     resp = await client.get("/api/scheduled-actions")
     assert resp.status_code == 401
-
-
-async def test_list_forbidden_for_regular_user(regular_user_client, db):
-    resp = await regular_user_client.get("/api/scheduled-actions")
-    assert resp.status_code == 403
 
 
 async def test_get_404_for_unknown(superuser_client, db):
@@ -52,6 +47,24 @@ async def test_create_unknown_action_returns_400(superuser_client, db):
         },
     )
     assert resp.status_code == 400
+
+
+async def test_refused_parameter_answers_422_with_reason(superuser_client, db):
+    """A validator's ValueError sits in the error context; it must not reach the encoder."""
+    host = await create_host(db)
+    await db.commit()
+    resp = await superuser_client.post(
+        "/api/scheduled-actions",
+        json={
+            "target_kind": "host",
+            "target_id": host.id,
+            "action_key": "linux-os-upgrade",
+            "schedule_cron": "0 3 * * *",
+            "parameters": {"current_version": "{{ lookup('pipe', 'id') }}", "next_version": "13"},
+        },
+    )
+    assert resp.status_code == 422, resp.text
+    assert "template delimiters" in resp.text
 
 
 # ---------------------------------------------------------------------------

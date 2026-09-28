@@ -43,15 +43,20 @@ def patch_task_session(db):
 
 
 def test_builtin_routing_table_complete():
-    """Every _builtin.* registered key has a dispatcher mapping."""
-    expected = {
-        "_builtin.sync",
-        "_builtin.drift_check",
-        "_builtin.collect_state",
-    }
+    """Every per-host built-in has a dispatcher mapping, and each names a real task."""
+    import importlib
+
+    from celery import Task
+
+    from app.actions.builtins import BUILTIN_DEFINITIONS
+
+    expected = {d.key for d in BUILTIN_DEFINITIONS if d.supports_host}
     assert set(PER_HOST_TASK_FOR_BUILTIN.keys()) == expected
     for task_name in PER_HOST_TASK_FOR_BUILTIN.values():
-        assert task_name.startswith("app.tasks.builtin_dispatchers.")
+        module, _, attr = task_name.rpartition(".")
+        task = getattr(importlib.import_module(module), attr)
+        assert isinstance(task, Task), task_name
+        assert task.name == task_name
 
 
 class _FakeRedis:
