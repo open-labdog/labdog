@@ -286,7 +286,9 @@ test.describe("Schedules", () => {
 
     await page.getByTestId("action-picker").selectOption("fleet-report")
     await page.getByTestId("target-group").click()
-    await page.locator('select').nth(1).selectOption(String(FAKE_GROUP_ID))
+    await page.getByTestId("target-group-picker").fill("e2e-test")
+    await page.getByRole("option", { name: "e2e-test-group" }).click()
+    await expect(page.getByTestId("target-group-picker")).toHaveValue("e2e-test-group")
     await page.getByRole("button", { name: "Continue" }).click()
 
     // Parameters step — collect_state has no params.

@@ -7,7 +7,7 @@ import { useApiMutation } from "@/lib/mutations"
 import { showSuccess } from "@/lib/toast"
 import { ActionParameterForm } from "@/components/action-parameter-form"
 import { CronInput } from "@/components/scheduled-actions/cron-input"
-import { Banner, Facts, Field, Modal, Steps } from "@/components/ld"
+import { Banner, Facts, Field, Modal, Picker, Steps } from "@/components/ld"
 import type {
   ActionDefinition,
   Host,
@@ -353,17 +353,29 @@ function PickerStep({
         </div>
 
         {targetKind === "host" && (
-          <select className="inp mono mt-1.5" value={targetId ?? ""} disabled={targetLocked} onChange={(e) => onTargetChange("host", e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— pick a host —</option>
-            {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname} · {h.ip_address}</option>)}
-          </select>
+          <Picker
+            className="mt-1.5"
+            options={hosts.map((h) => ({ value: h.id, label: h.hostname, meta: h.ip_address }))}
+            value={targetId}
+            disabled={targetLocked}
+            onChange={(id) => onTargetChange("host", id)}
+            placeholder="Search hosts by name or IP…"
+            empty="No host matches."
+            testId="target-host-picker"
+          />
         )}
 
         {targetKind === "group" && (
-          <select className="inp mono mt-1.5" value={targetId ?? ""} disabled={targetLocked} onChange={(e) => onTargetChange("group", e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— pick a group —</option>
-            {groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+          <Picker
+            className="mt-1.5"
+            options={groups.map((g) => ({ value: g.id, label: g.name }))}
+            value={targetId}
+            disabled={targetLocked}
+            onChange={(id) => onTargetChange("group", id)}
+            placeholder="Search groups…"
+            empty="No group matches."
+            testId="target-group-picker"
+          />
         )}
 
         {targetKind === "fleet" && <p className="mt-1.5 text-[11px] text-warn">This will run against every host in the inventory.</p>}
