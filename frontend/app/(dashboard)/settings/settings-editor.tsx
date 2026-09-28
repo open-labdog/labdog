@@ -44,6 +44,11 @@ interface AppSetting {
  * rather than as the omission it was. Add new keys to the owning category;
  * a prefix appearing twice in the rendered page is the symptom that someone
  * did not.
+ *
+ * It happened a third time with `ssh.command_timeout` and
+ * `logging.drift_retention_days` (BUG-89), so the backend test
+ * `tests/test_settings_categories.py` now fails when a key in
+ * `SETTING_DEFINITIONS` is missing from this map.
  */
 interface Category {
   label: string
@@ -98,7 +103,7 @@ const CATEGORIES: Record<string, Category> = {
   },
   ssh: {
     label: "SSH",
-    keys: ["ssh.connect_timeout", "ssh.idle_timeout_seconds"],
+    keys: ["ssh.connect_timeout", "ssh.command_timeout", "ssh.idle_timeout_seconds"],
   },
   ansible: {
     label: "Ansible",
@@ -118,7 +123,12 @@ const CATEGORIES: Record<string, Category> = {
   },
   logging: {
     label: "Logging",
-    keys: ["logging.level", "logging.audit_retention_days", "logging.run_retention_days"],
+    keys: [
+      "logging.level",
+      "logging.audit_retention_days",
+      "logging.run_retention_days",
+      "logging.drift_retention_days",
+    ],
   },
 }
 
