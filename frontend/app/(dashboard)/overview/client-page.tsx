@@ -129,13 +129,13 @@ function SchedRow({ s, radius, fleet }: { s: ScheduledAction; radius: number; fl
 }
 
 function StaleRow({ h, go }: { h: Host; go: (href: string) => void }) {
-  const d = daysSince(h.last_sync_at)
+  const d = daysSince(h.last_verified_at)
   return (
     <button type="button" className="row-hover flex w-full items-center gap-2.5 border-0 border-b border-line-faint bg-transparent px-[11px] py-[7px] text-left" onClick={() => go(`/hosts/${h.id}`)}>
       <span className="mono trunc flex-1 text-xs text-text">{h.hostname}</span>
       <Status s={h.sync_status} />
-      <span className="mono num w-11 shrink-0 text-right text-[11px]" style={{ color: d === null || d > 60 ? "var(--danger)" : "var(--warn)" }}>
-        {ageLabel(h.last_sync_at)}
+      <span className="mono num w-11 shrink-0 text-right text-[11px]" style={{ color: d === null || d > 60 ? "var(--danger)" : "var(--warn)" }} title="last verified">
+        {ageLabel(h.last_verified_at)}
       </span>
     </button>
   )
@@ -343,12 +343,12 @@ export default function OverviewPage() {
                 {hostsLoading ? (
                   <div className="p-3 text-xs text-text-3">Loading…</div>
                 ) : stale.length === 0 ? (
-                  <div className="px-[11px] py-2 text-[11.5px] text-text-3">Every host has synced in the last {STALE_DAYS} days.</div>
+                  <div className="px-[11px] py-2 text-[11.5px] text-text-3">Every host was verified in the last {STALE_DAYS} days.</div>
                 ) : (
                   <>
                     {stale.slice(0, 5).map((h) => <StaleRow key={h.id} h={h} go={go} />)}
                     <div className="px-[11px] py-2 text-[11.5px] text-text-3">
-                      {stale.length} host{stale.length === 1 ? "" : "s"} over {STALE_DAYS} days — neither drifted nor failed, just never applied.
+                      {stale.length} host{stale.length === 1 ? "" : "s"} not verified in {STALE_DAYS} days — no successful collection, drift check or sync.
                     </div>
                   </>
                 )}
@@ -399,14 +399,14 @@ export default function OverviewPage() {
           <div className="grid gap-3" style={{ gridTemplateColumns: wide ? "minmax(0,1fr) minmax(0,1fr)" : "minmax(0,1fr)", alignItems: "start" }}>
             <Panel
               title="stale hosts"
-              meta={`${stale.length} over ${STALE_DAYS} days`}
+              meta={`${stale.length} not verified in ${STALE_DAYS} days`}
               actions={
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => go("/hosts")}>
                   hosts list →
                 </button>
               }
             >
-              {stale.length === 0 ? <div className="px-[11px] py-2 text-[11.5px] text-text-3">Every host has synced in the last {STALE_DAYS} days.</div> : stale.map((h) => <StaleRow key={h.id} h={h} go={go} />)}
+              {stale.length === 0 ? <div className="px-[11px] py-2 text-[11.5px] text-text-3">Every host was verified in the last {STALE_DAYS} days.</div> : stale.map((h) => <StaleRow key={h.id} h={h} go={go} />)}
             </Panel>
             <div className="flex min-w-0 flex-col gap-3">
               <Panel title="by group" meta="hosts · drifted">

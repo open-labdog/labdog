@@ -54,20 +54,23 @@ export function ageLabel(iso: string | null | undefined): string {
 export const STALE_DAYS = 30
 
 /**
- * Hosts not synced in 30+ days (or never), oldest first. The failure mode
- * nobody notices: a host that is neither drifted nor failed, just
- * forgotten.
+ * Hosts LabDog has not verified in 30+ days (or ever), oldest first: no
+ * successful state collection, drift check or sync. The failure mode
+ * nobody notices is a host LabDog has lost track of.
+ *
+ * Not "not synced": a host that never drifts never needs a sync, so
+ * measuring that marked every healthy host as neglected (BUG-99).
  */
-export function staleHosts<T extends Pick<Host, "last_sync_at">>(hosts: T[]): T[] {
+export function staleHosts<T extends Pick<Host, "last_verified_at">>(hosts: T[]): T[] {
   return hosts
     .filter((h) => {
-      const d = daysSince(h.last_sync_at)
+      const d = daysSince(h.last_verified_at)
       return d === null || d >= STALE_DAYS
     })
     .sort((a, b) => {
-      const da = daysSince(a.last_sync_at)
-      const db = daysSince(b.last_sync_at)
-      // never-synced ranks as infinitely stale
+      const da = daysSince(a.last_verified_at)
+      const db = daysSince(b.last_verified_at)
+      // never-verified ranks as infinitely stale
       if (da === null && db === null) return 0
       if (da === null) return -1
       if (db === null) return 1

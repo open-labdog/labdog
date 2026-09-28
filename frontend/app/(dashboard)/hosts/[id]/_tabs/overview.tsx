@@ -145,6 +145,7 @@ export function OverviewTab({ hostId, host, groups }: { hostId: number; host: Ho
               { k: "sync status", v: <Status s={host.sync_status} /> },
               { k: "last sync", v: host.last_sync_at ? new Date(host.last_sync_at).toLocaleString() : "never" },
               { k: "last drift check", v: host.last_drift_check_at ? new Date(host.last_drift_check_at).toLocaleString() : "never" },
+              { k: "last verified", v: host.last_verified_at ? new Date(host.last_verified_at).toLocaleString() : "never" },
               { k: "os", v: host.os_pretty_name ?? "not collected" },
               ...(host.kernel_version ? [{ k: "kernel", v: host.kernel_version, mono: true }] : []),
               ...(host.default_nic ? [{ k: "default nic", v: host.default_nic, mono: true }] : []),

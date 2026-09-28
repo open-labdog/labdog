@@ -33,8 +33,8 @@ The format follows [Keep a Changelog]; LabDog follows
   filter into the hosts list; **Pending** is one queue with typed lanes —
   assistant approval gates, discovered hosts, firing alerts, drift — sorted
   soonest-to-expire, with a rail badge that counts only what blocks or
-  expires. Stale hosts (30+ days since a sync — the failure mode nobody
-  notices), a 14-day drift trend, the last 24h of activity failures-first,
+  expires. Stale hosts (not verified by a collection, drift check or
+  sync in 30+ days — the failure mode nobody notices), a 14-day drift trend, the last 24h of activity failures-first,
   upcoming schedules with their blast radius, and integration health round
   it out. `/dashboard` redirects.
 
