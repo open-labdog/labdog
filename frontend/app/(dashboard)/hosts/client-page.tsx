@@ -192,9 +192,15 @@ export default function HostsPage() {
       w: "86px",
       right: true,
       cell: (h) => {
-        const d = daysSince(h.last_sync_at)
+        // Coloured by staleness, which is measured on verification: an
+        // in-sync host that has never needed a sync is not neglected.
+        const v = daysSince(h.last_verified_at)
         return (
-          <span className="mono num text-[11.5px]" style={{ color: d === null || d >= STALE_DAYS ? "var(--warn)" : "var(--text-3)" }}>
+          <span
+            className="mono num text-[11.5px]"
+            style={{ color: v === null || v >= STALE_DAYS ? "var(--warn)" : "var(--text-3)" }}
+            title={`last verified ${ageLabel(h.last_verified_at)}`}
+          >
             {ageLabel(h.last_sync_at)}
           </span>
         )

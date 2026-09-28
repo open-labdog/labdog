@@ -25,7 +25,7 @@ single-number cards.
 | **Pending** | The first four items of the queue (see below), soonest to expire first, with **Review** and, where allowed, **Hide**. |
 | **Activity · last 24h** | Applies, action runs, scheduled runs and state collections from the last day, failures pinned to the top. **open →** on a run goes to its transcript. |
 | **Drift trend** | How many hosts are drifted right now and a 14-day sparkline of drifted checks. When drift checking is off on every host it says so, with a link to turn it on — an empty chart otherwise reads as "all clear". |
-| **Stale hosts** | Hosts not synced in 30+ days (or never), oldest first. The failure mode nobody notices: neither drifted nor failed, just forgotten. |
+| **Stale hosts** | Hosts LabDog has not verified in 30+ days (or ever), oldest first. Verified means a successful state collection, drift check or sync; a host whose checks all fail, such as one LabDog can no longer reach, has no verified time and shows here. Not "not synced": a host that never drifts never needs a sync. The failure mode nobody notices is a host LabDog has lost track of. |
 | **Upcoming** | The next enabled schedules with their blast radius — how many hosts, and whether a snapshot is taken first. |
 
 **Drift-check fleet** (top right) queues a state collection on every host,

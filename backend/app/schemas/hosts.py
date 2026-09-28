@@ -127,6 +127,9 @@ class HostResponse(BaseModel):
     drift_check_enabled: bool
     last_sync_at: datetime | None
     last_drift_check_at: datetime | None
+    #: When LabDog last confirmed the host's state; see
+    #: ``app.models.host_module_status._last_verified_at``.
+    last_verified_at: datetime | None = None
     ssh_key_id: int | None
     os_codename: str | None
     os_pretty_name: str | None

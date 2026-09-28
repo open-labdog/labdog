@@ -112,6 +112,9 @@ export interface Host {
   labdog_source_ip: string | null
   drift_check_enabled: boolean; last_sync_at: string | null
   last_drift_check_at: string | null; ssh_key_id: number | null
+  /** When LabDog last confirmed the host's state: a successful collection,
+   *  drift check or sync. What "stale" is measured against. */
+  last_verified_at: string | null
   group_ids: number[]
   created_at: string; updated_at: string
   os_codename: string | null

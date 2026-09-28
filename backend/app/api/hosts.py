@@ -287,6 +287,9 @@ async def list_hosts_summary(
                     "last_drift_check_at": h.last_drift_check_at.isoformat()
                     if h.last_drift_check_at
                     else None,
+                    "last_verified_at": h.last_verified_at.isoformat()
+                    if h.last_verified_at
+                    else None,
                     "ssh_key_id": h.ssh_key_id,
                     "group_ids": groups_by_host.get(hid, []),
                     "created_at": h.created_at.isoformat() if h.created_at else None,
