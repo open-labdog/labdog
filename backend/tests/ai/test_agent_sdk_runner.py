@@ -18,6 +18,7 @@ from app.ai.models import AIMessage, AISession, AIToolCall
 
 pytest.importorskip("claude_agent_sdk", reason="optional [agent] extra not installed")
 
+from app.ai.agent_sdk.runner import _INTERRUPTED_CALL as _INTERRUPTED  # noqa: E402
 from app.ai.agent_sdk.runner import AgentSDKRunner  # noqa: E402
 from app.ai.loop import LoopCaps  # noqa: E402
 from tests.ai.fake_sdk_client import (  # noqa: E402
@@ -794,3 +795,221 @@ class TestTheQuotaWarning:
         assert not [1 for name, _ in events if name == "rate_limit_warning"]
         assert outcome.status == "succeeded"
         assert outcome.stopped_by == ""
+
+
+class TestAnInterruptedCallbackLeavesTheSessionUsable:
+    """BUG-94: interrupting the SDK cancels whichever tool callback is in
+    flight, and a cancellation inside a flush left the shared session
+    needing a rollback nothing issued. The next query, ``_cancelled()`` in
+    ``run``, raised ``PendingRollbackError``, and the session failed with
+    that instead of stopping for its cap. Session 17 on lin-manager: token
+    cap hit while ``run_ssh_command`` was being recorded."""
+
+    OVER_THE_CAP = {"input_tokens": 500, "output_tokens": 10}
+
+    @staticmethod
+    def _handler(runner, run):
+        import dataclasses
+
+        return dataclasses.replace(runner._permitted["list_hosts"], run=run)
+
+    @staticmethod
+    async def _slow_inserts(db) -> None:
+        """Make every insert into ai_tool_calls take long enough to be
+        cancelled in the middle of it. Rolled back with the test."""
+        from sqlalchemy import text
+
+        await db.execute(
+            text(
+                "CREATE FUNCTION bug94_slow() RETURNS trigger AS $$ "
+                "BEGIN PERFORM pg_sleep(0.5); RETURN NEW; END $$ LANGUAGE plpgsql"
+            )
+        )
+        await db.execute(
+            text(
+                "CREATE TRIGGER bug94_slow BEFORE INSERT ON ai_tool_calls "
+                "FOR EACH ROW EXECUTE FUNCTION bug94_slow()"
+            )
+        )
+
+    @staticmethod
+    async def _cancel_midway(coro, after: float = 0.2) -> None:
+        import asyncio
+
+        task = asyncio.ensure_future(coro)
+        await asyncio.sleep(after)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    async def _run_with(self, db, session, provider_row, on_query_for, messages, fake=None):
+        from app.ai.loop import LoopCaps
+
+        fake = fake or FakeSDKClient(messages)
+        runner = AgentSDKRunner(
+            db,
+            session,
+            provider_row,
+            LoopCaps(max_tokens_total=100),
+            client_factory=fake.factory,
+        )
+        on_query = on_query_for(runner)
+        if on_query is not None:
+            # Once: the wrap-up turn after a cap asks the same fake again.
+            done = []
+
+            async def once():
+                if not done:
+                    done.append(True)
+                    await on_query()
+
+            fake._on_query = once
+        return await runner.run(), runner
+
+    async def _calls(self, db, session):
+        return (
+            (await db.execute(select(AIToolCall).where(AIToolCall.session_id == session.id)))
+            .scalars()
+            .all()
+        )
+
+    async def test_a_cancel_mid_flush_stops_the_run_for_its_reason(
+        self, db, ai_provider, make_session
+    ) -> None:
+        session = await make_session()
+        await self._slow_inserts(db)
+        ran = []
+
+        async def run_tool(ctx, arguments):  # noqa: ANN001
+            ran.append(arguments)
+            raise AssertionError("an interrupted call must not go on to run")
+
+        def on_query_for(runner):
+            async def on_query():
+                await self._cancel_midway(runner._execute_tool(self._handler(runner, run_tool), {}))
+
+            return on_query
+
+        outcome, _ = await self._run_with(
+            db,
+            session,
+            ai_provider,
+            on_query_for,
+            [assistant("checking chronyd", self.OVER_THE_CAP), result()],
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+        await db.refresh(session)
+        assert session.stopped_reason and "token budget" in session.stopped_reason
+        assert ran == []
+        [call] = await self._calls(db, session)
+        assert call.status == "error"
+        assert call.result_summary.startswith("Interrupted")
+        assert call.finished_at is not None
+
+    async def test_a_call_cancelled_while_running_is_closed_as_interrupted(
+        self, db, ai_provider, make_session
+    ) -> None:
+        import asyncio
+
+        session = await make_session()
+        finished = []
+
+        async def run_tool(ctx, arguments):  # noqa: ANN001
+            await asyncio.sleep(5)
+            finished.append(True)
+
+        def on_query_for(runner):
+            async def on_query():
+                await self._cancel_midway(runner._execute_tool(self._handler(runner, run_tool), {}))
+
+            return on_query
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, on_query_for, [assistant("done"), result()]
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert finished == []
+        [call] = await self._calls(db, session)
+        assert (call.status, call.result_summary) == ("error", _INTERRUPTED)
+
+    async def test_a_broken_session_is_rolled_back_before_it_is_used(
+        self, db, ai_provider, make_session
+    ) -> None:
+        """Covers what the shielding cannot: a tool's own queries, and the
+        driver loop on a wall-clock timeout, can still be cancelled
+        mid-operation. Broken here with a failed flush as the interrupt
+        goes out, which is when the real one broke it and leaves the
+        session in the same state."""
+        from sqlalchemy.exc import IntegrityError
+
+        class BreaksTheSessionOnInterrupt(FakeSDKClient):
+            async def interrupt(self) -> None:
+                self.interrupted = True
+                db.add(AIToolCall(session_id=2_000_000_000, tool_name="x"))
+                with pytest.raises(IntegrityError):
+                    await db.flush()
+
+        session = await make_session()
+        fake = BreaksTheSessionOnInterrupt(
+            [assistant("one", self.OVER_THE_CAP), assistant("two"), result()]
+        )
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, lambda runner: None, [], fake=fake
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+        await db.refresh(session)
+        assert session.status == "succeeded"
+        assert session.stopped_reason and "token budget" in session.stopped_reason
+
+    async def test_an_error_while_stopping_keeps_the_stop_reason(
+        self, db, ai_provider, make_session
+    ) -> None:
+        class FailsOnInterrupt(FakeSDKClient):
+            async def interrupt(self) -> None:
+                raise RuntimeError("control request failed")
+
+        session = await make_session()
+        fake = FailsOnInterrupt([assistant("one", self.OVER_THE_CAP), result()])
+
+        outcome, _ = await self._run_with(
+            db, session, ai_provider, lambda runner: None, [], fake=fake
+        )
+
+        assert outcome.status == "succeeded", outcome
+        assert "token budget" in (outcome.stopped_by or "")
+
+
+class TestUninterruptible:
+    async def test_the_work_finishes_and_the_caller_is_still_cancelled(self) -> None:
+        import asyncio
+
+        from app.ai.agent_sdk.runner import _uninterruptible
+
+        steps = []
+
+        async def work():
+            steps.append("start")
+            await asyncio.sleep(0.2)
+            steps.append("end")
+            return "done"
+
+        caller = asyncio.ensure_future(_uninterruptible(work()))
+        await asyncio.sleep(0.05)
+        caller.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+        assert steps == ["start", "end"]
+
+    async def test_without_a_cancel_it_returns_the_result(self) -> None:
+        from app.ai.agent_sdk.runner import _uninterruptible
+
+        async def work():
+            return 42
+
+        assert await _uninterruptible(work()) == 42
