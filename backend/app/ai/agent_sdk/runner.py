@@ -35,6 +35,17 @@ unusable.
 The one exception is :meth:`run` outside its ``_exchange`` call: no
 client exists there, so no callback can fire.
 
+*A tool callback can be cancelled at any await.* Interrupting the SDK, for
+a cap, a cancel or an approval, makes the CLI send
+``control_cancel_request`` for whatever callback is in flight, and the SDK
+cancels that task. Landing inside a flush left the shared session needing
+a rollback nothing issued, so the next query raised
+``PendingRollbackError`` and the run failed with that instead of stopping
+for its reason (BUG-94). The callbacks' own database writes therefore run
+through :func:`_uninterruptible`, and :meth:`run` checks the session is
+usable before it touches it again, since a tool's own queries, and the
+driver loop on a wall-clock timeout, are still cancellable.
+
 *Refusals are decided before dispatch* by :meth:`_can_use_tool`, which is
 the only place autonomy is enforced on this path. A refusal still gets an
 ``AIToolCall`` row, because "the model tried to restart nginx and was
@@ -48,7 +59,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import select, update
+from sqlalchemy.exc import PendingRollbackError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import approvals, service
@@ -91,6 +104,40 @@ _RATE_LIMIT_WINDOWS = {
     "seven_day_sonnet": "7-day Sonnet",
     "overage": "overage",
 }
+
+
+#: What an ``ai_tool_calls`` row says when the run stopped under it.
+_INTERRUPTED_CALL = "Interrupted: the session stopped before this call finished."
+
+
+async def _uninterruptible(coro: Any) -> Any:
+    """Await ``coro`` to completion even if the caller is cancelled.
+
+    For database writes a tool callback makes. The SDK cancels the
+    callback's task when LabDog interrupts it, and a cancellation that
+    lands mid-flush or mid-commit leaves the shared session unusable. The
+    work runs as its own task, so the cancellation reaches only the
+    caller, which waits for the task and then re-raises it.
+
+    ``anyio.CancelScope(shield=True)`` would not do: the SDK cancels with
+    ``asyncio.Task.cancel()`` under asyncio, which an anyio shield does
+    not stop.
+    """
+    task = asyncio.ensure_future(coro)
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        while not task.done():
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                pass
+        if not task.cancelled() and (exc := task.exception()) is not None:
+            logger.error(
+                "database write failed after its caller was cancelled",
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        raise
 
 
 def _rate_limit_window(info: Any) -> str:
@@ -184,6 +231,10 @@ class AgentSDKRunner:
         self._parked: AIApprovalRequest | None = None
         # Loaded from the transcript in run(); see _load_system_prompt.
         self._system_prompt = ""
+        # Rows of calls that started and have not been closed. Whatever is
+        # left here when the exchange ends was interrupted; see
+        # _close_interrupted_calls.
+        self._open_calls: set[int] = set()
 
     # -- plumbing ---------------------------------------------------------
 
@@ -348,7 +399,8 @@ class AgentSDKRunner:
         # rather than answering "no": the run ends here, the worker is
         # freed, and a decision restarts it.
         if verdict.needs_approval and verdict.verdict is not None:
-            async with self._db_lock:
+
+            async def park() -> AIApprovalRequest:
                 approval = await approvals.park(
                     self.db,
                     self.session,
@@ -357,6 +409,10 @@ class AgentSDKRunner:
                     verdict=verdict.verdict,
                 )
                 await self.db.commit()
+                return approval
+
+            async with self._db_lock:
+                approval = await _uninterruptible(park())
             self._parked = approval
             await self._emit(
                 "approval_required",
@@ -373,7 +429,7 @@ class AgentSDKRunner:
 
         # A refused call is part of the record. Without this the transcript
         # shows the model changing the subject for no visible reason.
-        async with self._db_lock:
+        async def record_refusal() -> None:
             self.db.add(
                 AIToolCall(
                     session_id=self.session.id,
@@ -387,6 +443,9 @@ class AgentSDKRunner:
                 )
             )
             await self.db.commit()
+
+        async with self._db_lock:
+            await _uninterruptible(record_refusal())
         await self._emit(
             "tool_result",
             {
@@ -401,53 +460,40 @@ class AgentSDKRunner:
     # -- tool execution ---------------------------------------------------
 
     async def _execute_tool(self, handler: ToolHandler, arguments: dict) -> ToolResult:
-        """Run one permitted call and record everything about it."""
+        """Run one permitted call and record everything about it.
+
+        The writes run through :func:`_uninterruptible` and the tool itself
+        does not. A call interrupted before or during ``handler.run`` must
+        stop, not run on unseen after the model was told it was cancelled,
+        but once a command has run, its row and audit entry must land.
+        """
         name = handler.spec.name
-        async with self._db_lock:
-            started = datetime.now(UTC)
+
+        async def open_record() -> AIToolCall:
             record = AIToolCall(
                 session_id=self.session.id,
                 tool_name=name,
                 arguments=arguments,
                 classification=handler.classification,
                 status="proposed",
-                started_at=started,
+                started_at=datetime.now(UTC),
             )
             self.db.add(record)
-            await self.db.flush()
+            # Committed, not flushed, so a call interrupted from here on
+            # still has a row to mark: _close_interrupted_calls finds it
+            # after a rollback that would discard a flushed one.
+            await self.db.commit()
+            self._open_calls.add(record.id)
+            return record
 
-            # Re-derived rather than carried over from the permission
-            # callback: `verdict_for` is pure, and threading state between
-            # two points in the SDK's own call stack would be one more
-            # thing to get wrong under concurrent tool dispatch.
-            snapshot_name, refusal = await snapshot_if_mutating(
-                self.db,
-                classification=handler.verdict_for(arguments).classification,
-                arguments=arguments,
-                session_id=self.session.id,
-                label=str(arguments.get("command") or name),
-                skip=self.session.skip_snapshots,
-            )
-            if refusal:
-                record.status = "blocked"
-                record.result_summary = refusal[:1000]
-                record.finished_at = datetime.now(UTC)
-                await self.db.commit()
-                return ToolResult(refusal, ok=False)
-            record.snapshot_name = snapshot_name
+        async def close_record(record: AIToolCall, status: str, summary: str) -> None:
+            record.status = status
+            record.result_summary = summary
+            record.finished_at = datetime.now(UTC)
+            await self.db.commit()
+            self._open_calls.discard(record.id)
 
-            await self._emit("tool_call", {"name": name, "arguments": arguments})
-
-            try:
-                result = await handler.run(self._ctx, arguments)
-            except Exception as exc:
-                logger.exception("ai session %s: tool %s failed", self.session.id, name)
-                record.status = "error"
-                record.result_summary = str(exc)[:500]
-                record.finished_at = datetime.now(UTC)
-                await self.db.commit()
-                return ToolResult(f"The {name} tool failed: {exc}", ok=False)
-
+        async def record_result(record: AIToolCall, result: ToolResult) -> None:
             record.classification = result.classification or handler.classification
             record.target_host_id = result.target_host_id
             record.result_summary = (result.summary or result.content)[:1000]
@@ -485,6 +531,38 @@ class AgentSDKRunner:
                 tool_call_id=self._tool_use_ids.pop(name, None),
             )
             await self.db.commit()
+            self._open_calls.discard(record.id)
+
+        async with self._db_lock:
+            record = await _uninterruptible(open_record())
+
+            # Re-derived rather than carried over from the permission
+            # callback: `verdict_for` is pure, and threading state between
+            # two points in the SDK's own call stack would be one more
+            # thing to get wrong under concurrent tool dispatch.
+            snapshot_name, refusal = await snapshot_if_mutating(
+                self.db,
+                classification=handler.verdict_for(arguments).classification,
+                arguments=arguments,
+                session_id=self.session.id,
+                label=str(arguments.get("command") or name),
+                skip=self.session.skip_snapshots,
+            )
+            if refusal:
+                await _uninterruptible(close_record(record, "blocked", refusal[:1000]))
+                return ToolResult(refusal, ok=False)
+            record.snapshot_name = snapshot_name
+
+            await self._emit("tool_call", {"name": name, "arguments": arguments})
+
+            try:
+                result = await handler.run(self._ctx, arguments)
+            except Exception as exc:
+                logger.exception("ai session %s: tool %s failed", self.session.id, name)
+                await _uninterruptible(close_record(record, "error", str(exc)[:500]))
+                return ToolResult(f"The {name} tool failed: {exc}", ok=False)
+
+            await _uninterruptible(record_result(record, result))
 
         await self._emit(
             "tool_result",
@@ -541,6 +619,64 @@ class AgentSDKRunner:
             cwd=ensure_state_dir(SESSION_STATE_DIR),
             resume=resume,
         )
+
+    async def _recover_db(self) -> None:
+        """Roll the session back if an interrupted operation broke it.
+
+        Called by :meth:`run` whenever ``_exchange`` ends, before anything
+        else touches the database. :func:`_uninterruptible` covers the
+        callbacks' own writes, but a tool's queries, a snapshot, and the
+        driver loop on a wall-clock timeout can all still be cancelled
+        mid-operation. A cancelled flush leaves the session inactive; a
+        cancelled query leaves it active on an invalidated connection, so
+        a probe is the only check that catches both.
+
+        A rollback expires every loaded object, and an expired attribute
+        cannot be lazy-loaded under asyncio, so the two this class reads
+        afterwards are refreshed. Turns counted since the last commit are
+        carried over; they are the one thing held only in memory. Read
+        from the instance's loaded state rather than the attribute, which
+        the failed transaction may already have expired.
+        """
+        async with self._db_lock:
+            state = sa_inspect(self.session)
+            if self.db.is_active:
+                try:
+                    await self.db.execute(select(1))
+                    return
+                except PendingRollbackError:
+                    pass
+            logger.warning(
+                "ai session %s: an interrupted database operation left the session "
+                "needing a rollback; rolling back",
+                state.identity[0] if state.identity else None,
+            )
+            iterations = state.dict.get("iterations") or 0
+            await self.db.rollback()
+            await self.db.refresh(self.session)
+            await self.db.refresh(self.provider_row)
+            self.session.iterations = max(self.session.iterations, iterations)
+
+    async def _close_interrupted_calls(self) -> None:
+        """Close the rows of tool calls the end of the exchange cut off.
+
+        Left alone they would read "proposed" for good, as if still
+        waiting on something.
+        """
+        if not self._open_calls:
+            return
+        async with self._db_lock:
+            await self.db.execute(
+                update(AIToolCall)
+                .where(AIToolCall.id.in_(self._open_calls), AIToolCall.status == "proposed")
+                .values(
+                    status="error",
+                    result_summary=_INTERRUPTED_CALL,
+                    finished_at=datetime.now(UTC),
+                )
+            )
+            await self.db.commit()
+        self._open_calls.clear()
 
     async def _load_system_prompt(self) -> str:
         """The system prompt this session was created with.
@@ -677,13 +813,26 @@ class AgentSDKRunner:
                 final_text = await self._exchange()
         except TimeoutError:
             self._stopped_by = f"time limit ({self.caps.wall_clock_seconds}s)"
+            await self._recover_db()
         except Exception as exc:
-            logger.exception("ai session %s: agent sdk run failed", session.id)
-            message = str(exc) or exc.__class__.__name__
-            await service.finish_session(self.db, session, status="failed", error=message)
-            await self.db.commit()
-            await self._emit("error", {"message": message})
-            return LoopOutcome("failed", "", session.iterations, message)
+            await self._recover_db()
+            if not self._stopped_by:
+                logger.exception("ai session %s: agent sdk run failed", session.id)
+                await self._close_interrupted_calls()
+                message = str(exc) or exc.__class__.__name__
+                await service.finish_session(self.db, session, status="failed", error=message)
+                await self.db.commit()
+                await self._emit("error", {"message": message})
+                return LoopOutcome("failed", "", session.iterations, message)
+            # Already stopping for a reason of its own when this was raised,
+            # most likely while the interrupt was being torn down. That
+            # reason is what the operator needs; the error goes to the log.
+            logger.exception(
+                "ai session %s: error while stopping for %s", session.id, self._stopped_by
+            )
+        else:
+            await self._recover_db()
+        await self._close_interrupted_calls()
 
         if await self._cancelled():
             await self._book_estimate_if_unbooked()
