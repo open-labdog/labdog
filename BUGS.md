@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-90`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-92`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -148,6 +148,89 @@ not just read from source.
 
       Severity High: the only interactive shell LabDog offers is down on
       every deployment that relies on the default.
+
+### Correctness — Medium
+
+- [ ] **BUG-91** `.github/workflows/ci.yml:266`, `:815` — CI never runs
+      the 71 test files marked `integration` outside `tests/integration/`,
+      and 11 of them have rotted
+
+      Symptom: both pytest jobs pass `-m "not integration"`, which drops
+      every file carrying `pytestmark = pytest.mark.integration`, not just
+      `tests/integration/`. CI has been green while 21 of those tests fail
+      and 19 more hung outright until 2026-09-28. Found 2026-09-28 running
+      the suite locally the way `CLAUDE.md` says to, which has no `-m`
+      filter.
+
+      Root cause: the filter came over from the GitLab pipeline in
+      `b210fe56` (2026-04-24) with no reason given. The CI job already
+      provides everything these files need: Postgres and Redis services,
+      and the bundled pack fetch. Nothing about them requires a separate
+      environment.
+
+      Per-file decision: **all 71 should run in CI.** 58 already pass. The
+      other 13 fail as follows (with pack and Redis present, as in CI):
+
+      - `test_host_sync_orchestrator.py` — fixed in `37f1a0cf`. The tests
+        patched only the orchestrator's `task_session`; since #119
+        `release_host_queue` opens its own from `app.db` and waited forever
+        on the advisory lock the test session held.
+      - `test_actions_runs_validation.py` (5, `TestTemplateDelimitersAreRefused`)
+        — a real bug, BUG-92 below.
+      - `test_action_group.py` (5) and `test_action_host.py` (2) — the
+        `_FakeProxmoxClient.create_snapshot` fakes
+        (`test_action_group.py:413`, `test_action_host.py:97`) lack the
+        `vm_type` argument the real client now takes
+        (`app/proxmox/client.py:229`), so every snapshot fails. Stale fake.
+      - `test_action_orchestrator_routing.py:47` — the expected set of
+        built-ins predates `_builtin.ai_task`. Stale expectation.
+      - `test_ssh_terminal.py:258` — patches
+        `app.ssh_terminal.ssh_connect.ssh_connect`, which is now
+        `open_ssh_shell`. Stale patch target.
+      - `test_discovery.py:175,179`, `test_repo_activate_api.py:117`,
+        `test_repo_scan_api.py:91`, `test_scheduled_actions_api.py:27`,
+        `test_ssh_host_key.py:194` — assert a regular user gets 403. The privilege model is flat by
+        design, so these assertions are wrong, not the endpoints. Delete
+        them (or flip them to assert the regular user is allowed).
+      - `test_action_packs.py`, `test_csp_nonce.py` — not marked
+        integration and pass in CI; they fail locally only without the
+        bundled pack, and when `frontend/out/` exists (the SPA fallback
+        answers `/docs` with 200). The latter is a brittle assertion:
+        `test_docs_are_off_by_default` should check that Swagger is not
+        served, not that the status is not 200.
+
+      Fix direction: fix the stale tests above, then drop
+      `-m "not integration"` from both jobs (keep
+      `--ignore=tests/integration`), so CI runs what the `CLAUDE.md` test
+      command runs.
+
+      Severity Medium: nothing is broken in production by this itself, but
+      it hid BUG-92 and a hang, and every change to actions, sync and
+      discovery ships with a fifth of its tests unrun.
+
+- [ ] **BUG-92** `backend/app/api/actions.py:180-183` — a refused action
+      parameter answers 500 instead of 422
+
+      Symptom: `POST /api/actions/runs` with `{{ … }}` (or any other
+      template delimiter) in a string parameter raises
+      `TypeError: Object of type ValueError is not JSON serializable`, so
+      the client gets a 500 and no message. The SEC-20 refusal itself
+      holds: the run is never created.
+
+      Root cause: the handler passes `exc.errors()` straight into
+      `HTTPException(detail=…)`. For a custom validator failure Pydantic
+      puts the raised `ValueError` object into `ctx.error`, which the JSON
+      encoder cannot serialise. Any `value_error` from the parameter model
+      hits this, not only SEC-20.
+
+      Fix direction: build the detail with
+      `exc.errors(include_context=False)` (or
+      `fastapi.encoders.jsonable_encoder(exc.errors())`). The existing
+      `TestTemplateDelimitersAreRefused` tests already cover it and pass
+      once fixed.
+
+      Severity Medium: fails closed, but the operator sees an opaque
+      server error instead of why the value was refused.
 
 ### Correctness — Low
 
