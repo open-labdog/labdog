@@ -226,6 +226,97 @@ Follow-ups it leaves open:
 
 ---
 
+## Alert remediation — let an alert investigation fix what it finds
+
+**Goal:** full auto. An alert arrives, the assistant investigates, and it
+fixes the cause without anyone watching. The lesser levels ship as well,
+as steps on the way and for operators who want a person in the loop.
+
+**Context:** alert investigations are read-only, and that is written into
+the code, not a setting. `_decide_and_run` in `app/tasks/ai_alerts.py`
+(the automatic path) and `investigate_alert` in `app/api/ai.py` (the
+"investigate" button) both create the session with
+`autonomy_level="read_only"` and build the read-only system prompt. A
+follow-up message re-runs the session at its existing level. Under
+read-only, `is_allowed` in `app/ai/safety.py` refuses every mutating
+command and does not offer an approval. So today a fix means reading the
+report and starting a new chat session by hand.
+
+Everything below the autonomy level already exists: the approval flow
+(park and resume without holding a worker or host lock), full auto,
+snapshot-before-mutating, the command classifier with its deny list, the
+per-session caps and the budgets.
+
+- **Phase 1: an autonomy setting for alert investigations.** Add
+  `ai.alert_autonomy_level` (`read_only` | `approval` | `full_auto`),
+  defaulting to `read_only` so upgrading changes nothing. Use it in both
+  places that create alert sessions, with the matching
+  `build_system_prompt(level)`. Say on the Settings page what each level
+  means for an alert that nobody triggered. Record the level on the
+  `AlertEvent` (or read it from the session) so the `/alerts` page shows
+  whether an investigation could act. `approval` is the safe first step:
+  the investigation runs, then parks each change as an approval request.
+  Needs a way to be told about a parked request, since an alert session
+  has no operator watching the chat.
+
+- **Phase 2: full auto, scoped.** Allowing `full_auto` in the setting is
+  the easy part. What has to exist before it is offered:
+  - **Scope per alert, not globally.** An allowlist of `alertname`s (or
+    a label matcher) that may remediate at full auto. Everything else
+    falls back to the global level. Consider a severity floor as well as
+    the existing `ai.auto_investigate_min_severity`.
+  - **The webhook becomes a root trigger.** `POST /webhooks/grafana-alerts`
+    is protected by one shared token (`settings.alerts.webhook_token`).
+    With full auto, anyone holding that token can make LabDog change a
+    host. Require the token to be set before full auto can be enabled;
+    consider an HMAC over the body and a source-IP allowlist.
+  - **Prompt injection through alert text.** Labels and annotations are
+    rendered into the mission (`app/ai/alert_mission.py`). They are
+    sanitised and fenced, but whoever writes alert rules or annotations,
+    or controls a label value such as a job or instance name, is now
+    writing instructions for an agent with root. The system prompt for
+    alert sessions should say the alert text is data, not instructions.
+    The classifier's deny list stays the last line.
+  - **Restrict the target.** Only the host the alert names
+    (`target_host_ids=[event.host_id]`), never fleet-wide. Refuse full
+    auto when the alert maps to no host.
+  - **Loop and flap guards.** A cooldown per (host, alertname) after a
+    remediation, and a cap on remediations per host per day. Otherwise a
+    flapping alert, or a fix that does not hold, turns into repeated
+    changes. Record every one on the alert.
+  - **Tighter caps for unattended runs.** Separate, lower
+    `max_commands`, token and wall-clock limits for alert remediation
+    than for chat.
+  - **Snapshot as a precondition.** `snapshot_if_mutating` only covers
+    Proxmox-backed hosts. Decide whether full auto is refused, or
+    downgraded to approval, on a host that cannot be snapshotted.
+  - **Coordinate with LabDog's own changes.** Alert sessions take no host
+    lock, so a remediation can overlap a sync or an action run on the
+    same host. Take the lock, or refuse while one is running.
+
+- **Phase 3: close the loop.** Did the fix work?
+  - Link the resolution to the remediation: when the same alert (by
+    fingerprint) resolves after a remediation session, record that on
+    the `AlertEvent`. When it keeps firing past a window, mark the
+    remediation as not effective and stop retrying.
+  - Tell someone what was done: a notification (webhook, email or a
+    Grafana annotation) with the commands that ran, the snapshot name
+    and the outcome. Unattended changes must not only live in the
+    audit log.
+  - Surface remediation outcomes on `/alerts` and the overview's Pending
+    lane: which alerts were fixed automatically, which were escalated,
+    which failed.
+
+- **Later: remediate through action packs.** `propose_action` (above)
+  lets the assistant run a named, vetted action pack instead of shell
+  commands, with snapshot, verify and rollback built in. It is the better
+  base for full auto, since permission can be granted per pack and per
+  alert. Phases 1-3 don't need to wait for it, but when it lands, full
+  auto remediation should prefer it, and an allowlist of packs per alert
+  should become the way to scope what an alert may do.
+
+---
+
 ## Dependency & supply-chain follow-ups (2026-07 code audit)
 
 **Context:** The 2026-07 code audit's security, correctness, and cleanup
