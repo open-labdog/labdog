@@ -179,48 +179,6 @@ not just read from source.
       Severity Low: cosmetic, and the fallback keeps both settings
       reachable.
 
-- [ ] **BUG-90** `backend/app/models/action_run.py:171` —
-      `action_host_runs.output` defaults to the two-character string `''`,
-      which the host page shows as a warning after every "collect all"
-
-      Symptom: "collect all" on any host ends with a warning toast that
-      reads `''`. Reported on lin-manager 2026-09-27 against `nextcloud`,
-      where it was taken for an SSH failure, but the collection had
-      succeeded: all seven modules came back `in_sync`. The instance holds
-      67 host runs whose output is `''`: 61 `_builtin.collect_state` runs,
-      and 6 `linux-upgrade` runs that were cancelled or timed out before
-      writing any, whose run view shows the same two characters.
-
-      Root cause: the model declares `output` with `server_default="''"`.
-      SQLAlchemy quotes a string server default itself, so the column's
-      default became the literal two characters `''` rather than an empty
-      string. `0001_initial_schema.py:124` carries the same
-      `DEFAULT ::text`, and it is what the live database has. A
-      collection with nothing to report finishes with `output=None`
-      (`app/tasks/builtin_dispatchers.py:279`), `_finish_host_run` then
-      leaves the column alone, and it keeps the default. The host page
-      reads that output back as the collection's notices (`fetchNotices`
-      in `frontend/lib/collect-state.ts`) and shows each non-empty line
-      as a warning.
-
-      Proposed fix:
-      - Model: `server_default=""`, which renders as `DEFAULT ''`.
-      - Migration: `ALTER TABLE action_host_runs ALTER COLUMN output SET
-        DEFAULT ''`, then rewrite the rows already written: `UPDATE
-        action_host_runs SET output = '' WHERE output = repeat(chr(39), 2)`.
-        A real transcript is never exactly two quote characters, so the
-        rewrite cannot touch genuine output. Downgrade leaves the rows
-        alone, since putting the quotes back would only restore the bug.
-      - Tests: the column's server default renders as an empty string, a
-        host run finished without output reads back empty, and the
-        migration's rewrite empties a two-quote row while leaving other
-        output untouched.
-      - The frontend needs no change: once the output is empty,
-        `fetchNotices` finds no lines and shows nothing.
-
-      Severity Low: nothing breaks, but a warning on every collection is
-      noise that reads as a failure, as it did here.
-
 ---
 
 ## Open — 2026-09-28 usability
