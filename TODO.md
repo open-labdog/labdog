@@ -70,6 +70,39 @@ that the alloy-install action stamps. A few deliberate deferrals:
 
 ---
 
+## Action runs — rerun, and schedule from a run
+
+**Context:** An `ActionRun` already stores everything needed to start it
+again: `action_key`, the target (`host_id` / `group_id`), `parameters`,
+`parallelism`, and the `snapshot_enabled` / `verify_enabled` /
+`auto_rollback` flags. A `ScheduledAction` holds nearly the same fields
+plus `schedule_cron`. Today, repeating a run or making it recurring means
+filling in the action dialog again by hand.
+
+- **Rerun a failed run.** A "Rerun" button on a failed, timed-out or
+  cancelled run (run view and the Runs page), backed by something like
+  `POST /api/actions/runs/{id}/rerun`, which creates a new run from the
+  stored fields and dispatches it the way `POST /api/actions/runs` does.
+  Open questions:
+  - Whole target, or only the hosts whose `ActionHostRun` failed? For a
+    group run the latter is usually what is wanted.
+  - The action may have changed since: a new `action_version`, a renamed
+    or removed parameter, a key that is now contested. Re-validate the
+    parameters against the current manifest, and refuse or fall back to
+    a prefilled dialog rather than rerunning blind.
+  - Link the new run to the one it retries (e.g. `rerun_of_id`), so the
+    history and the audit log read as a retry.
+- **Save a run as a schedule.** A "Schedule…" action on any run that opens
+  the schedule dialog (`components/scheduled-actions/schedule-action-dialog.tsx`)
+  prefilled with the run's action, target, parameters and safety flags;
+  the user adds the cron expression and enables it.
+  `POST /api/scheduled-actions` already takes these fields, so this is
+  mostly frontend. Fields that do not map one to one: `parallelism` vs
+  `batch_size`, and a preview/report-only parameter on the run, which
+  should not silently become a recurring preview.
+
+---
+
 
 
 ## AI integration — remaining phases
