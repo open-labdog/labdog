@@ -99,7 +99,7 @@ def _validate_request(body: ScheduledActionIn) -> ActionDefinition:
     try:
         build_param_model(action).model_validate(body.parameters)
     except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
 
     return action
 
