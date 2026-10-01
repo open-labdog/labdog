@@ -7,6 +7,26 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ## [Unreleased]
 
+### Added
+
+- **Schedules can run on local time.** A new setting,
+  `scheduling.timezone` under Settings › Fleet › Scheduling, names the
+  timezone every scheduled action's and cron-scheduled discovery scan's
+  expression is read in. It defaults to `UTC`, so nothing moves on
+  upgrade. Set it to `Europe/Stockholm` and `1 4 * * 0` runs at 04:01
+  Stockholm time all year; on UTC it ran at 06:01 in summer and 05:01 in
+  winter. Across a daylight-saving change, a time the clock skips runs
+  once at the jump and a time it repeats runs once, as in Vixie cron.
+  Changing the setting keeps each schedule's clock time in the new zone,
+  so check existing schedules afterwards.
+
+  The schedule dialog used to preview the next runs in the browser's
+  timezone with nothing to say so, beside presets labelled UTC, so
+  `1 4 * * 0` previewed as 6:01 AM. The preview now uses the scheduling
+  timezone and names it, the cron field says which timezone it is read
+  in, and the presets no longer claim UTC. The plain-English line under
+  the field is hidden when it would only repeat the expression.
+
 ### Changed
 
 - **The navigation is a four-zone icon rail with a contextual pane, replacing

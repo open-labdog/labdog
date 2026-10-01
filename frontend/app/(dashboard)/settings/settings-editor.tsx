@@ -113,6 +113,10 @@ const CATEGORIES: Record<string, Category> = {
     label: "Actions",
     keys: ["actions.preflight_enabled"],
   },
+  scheduling: {
+    label: "Scheduling",
+    keys: ["scheduling.timezone"],
+  },
   workflow: {
     label: "Workflows",
     keys: ["workflow.snapshot_max_age_hours"],

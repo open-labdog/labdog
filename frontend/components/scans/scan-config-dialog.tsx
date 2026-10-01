@@ -6,6 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
+import { useScheduleTimezone } from "@/lib/schedule-timezone"
 import { scanConfigSchema, cidrNetworkRegex, type ScanConfigInput } from "@/lib/schemas"
 import { Banner, Field, Modal, Seg, Tag } from "@/components/ld"
 import { GroupMultiSelect } from "@/components/group-multi-select"
@@ -119,6 +120,7 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
   const form = useForm<ScanConfigInput>({ resolver: zodResolver(scanConfigSchema), defaultValues: config ? configToFormValues(config) : emptyDefaults, mode: "onSubmit" })
   const scheduleType = form.watch("schedule_type")
   const autoAdd = form.watch("auto_add")
+  const timezone = useScheduleTimezone(open)
   const cidrs = form.watch("cidrs")
   const defaultGroupIds = form.watch("default_group_ids") ?? []
 
@@ -212,7 +214,7 @@ export function ScanConfigDialog({ open, onOpenChange, config }: ScanConfigDialo
           htmlFor="sc-cron"
           hint={
             <>
-              5-field cron — minute hour day month weekday ·{" "}
+              5-field cron{timezone && ` in ${timezone}`} — minute hour day month weekday ·{" "}
               <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer" className="underline hover:text-text-2">
                 crontab.guru ↗
               </a>

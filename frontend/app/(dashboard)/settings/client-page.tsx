@@ -52,7 +52,7 @@ export default function SettingsPage() {
           </div>
         )}
         {section === "access" && <Access superuser={!!user?.is_superuser} />}
-        {section === "fleet" && <SettingsEditor categories={["drift", "ssh", "ansible", "actions", "workflow", "discovery"]} includeUncategorised />}
+        {section === "fleet" && <SettingsEditor categories={["drift", "ssh", "ansible", "actions", "scheduling", "workflow", "discovery"]} includeUncategorised />}
         {section === "system" && (
           <div className="flex flex-col gap-3">
             <SettingsEditor categories={["logging"]} />

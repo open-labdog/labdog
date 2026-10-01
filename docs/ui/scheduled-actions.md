@@ -89,7 +89,7 @@ The dialog is a four-step wizard — the steps across the top, **Back** and
 |------|------|
 | **Action & target** | Action picker (pack-supplied actions only — `_builtin.*` pseudo-actions have their own UI surfaces and are hidden here), target choice (Host / Group / Fleet — Fleet disabled when the action doesn't `supports_fleet`), and the host or group selector. |
 | **Parameters** | Form generated from the action's manifest. String / int / bool / choice — same shape as the ad-hoc run dialog. |
-| **Schedule** | 5-field cron input. Live `cronToHuman` preview, server-validated next-3-fire-times, plus quick picks (*Every 15 minutes*, *Hourly*, *Nightly (03:00 UTC)*, *Weekdays 03:00 UTC*, *Weekly Sun 03:00 UTC*, *Monthly 1st 03:00 UTC* …). |
+| **Schedule** | 5-field cron input, read in the [scheduling timezone](#timezone). Live `cronToHuman` preview, the next three run times as the scheduler computes them (shown in that timezone, not the browser's), plus quick picks (*Every 15 minutes*, *Hourly*, *Nightly (03:00)*, *Weekdays 03:00*, *Weekly Sun 03:00*, *Monthly 1st 03:00* …). |
 | **Review** | Read-only summary. **Destructive options block** is shown only when `action.destructive=true`: snapshot, verify, auto_rollback toggles + batch_size for non-host targets. |
 
 Submit creates the row via `POST /api/scheduled-actions`. On success
@@ -99,6 +99,27 @@ refreshes, and the row appears immediately.
 `action_key` and `target_*` are **immutable on edit** — re-creating is
 the right path for "I want a different action against this target."
 The backend rejects edits that change them with `422`.
+
+---
+
+## Timezone
+
+Every cron expression is read in one timezone, `scheduling.timezone` in
+[Settings › Fleet](settings.md#scheduling). It defaults to `UTC`; set it to
+an IANA name such as `Europe/Stockholm` and `1 4 * * 0` runs at 04:01 on
+Stockholm's clock all year, summer and winter. Discovery scans with a
+cron schedule follow the same setting. Cron jobs LabDog manages on hosts
+do not: they run on each host's own clock.
+
+Changing the setting keeps every schedule's clock time and moves it to
+the new zone, so check existing schedules afterwards.
+
+Across a daylight-saving change, a time the clock skips (02:30 on the
+spring-forward night in Europe) runs once at the jump, and a time it
+repeats (02:30 on the fall-back night) runs once, the first time. As in
+Vixie cron, an expression with `*` at the start of its minute or hour
+field — `*/15 * * * *`, `0 * * * *` — keeps following the clock through
+the repeated hour, so it runs in both passes.
 
 ---
 

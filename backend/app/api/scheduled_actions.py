@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from itertools import islice
 from typing import Any
 
 from croniter import croniter
@@ -36,6 +37,7 @@ from app.actions.run_target import describe_target
 from app.actions.validation import build_param_model
 from app.audit.logger import log_action
 from app.auth.users import current_active_user
+from app.cron_walk import get_schedule_timezone, iter_fire_times
 from app.db import get_db
 from app.models.action_run import ActionRun
 from app.models.host import Host
@@ -570,18 +572,20 @@ async def list_runs(
 @router.post("/validate-cron", response_model=ValidateCronResponse)
 async def validate_cron(
     body: ValidateCronRequest,
+    db: AsyncSession = Depends(get_db),
     _: User = Depends(current_active_user),
 ) -> ValidateCronResponse:
     """Cron syntax check + next-3-fire-times preview. Used by the
-    frontend's <CronInput /> for live feedback as the operator types."""
-    if not croniter.is_valid(body.cron):
-        return ValidateCronResponse(valid=False, message="Invalid cron expression")
-    try:
-        from datetime import UTC  # noqa: PLC0415
+    frontend's <CronInput /> for live feedback as the operator types.
 
-        now = datetime.now(UTC)
-        it = croniter(body.cron, now)
-        next_runs = [it.get_next(datetime) for _ in range(3)]
+    The times come from the scheduler's own walk, in the configured
+    timezone, which is returned so the preview can show them in it."""
+    tz = await get_schedule_timezone(db)
+    zone = str(tz)
+    if not croniter.is_valid(body.cron):
+        return ValidateCronResponse(valid=False, message="Invalid cron expression", timezone=zone)
+    try:
+        next_runs = list(islice(iter_fire_times(body.cron, datetime.now(UTC), tz), 3))
     except Exception as exc:  # noqa: BLE001
-        return ValidateCronResponse(valid=False, message=str(exc))
-    return ValidateCronResponse(valid=True, next_run_at=next_runs)
+        return ValidateCronResponse(valid=False, message=str(exc), timezone=zone)
+    return ValidateCronResponse(valid=True, next_run_at=next_runs, timezone=zone)

@@ -292,3 +292,44 @@ async def test_fleet_schedule_creates_fleet_run(db):
 
     # The two hosts above won't be touched until the orchestrator runs.
     assert h1.id != h2.id  # silence ARG003-style unused warnings
+
+
+# ---------------------------------------------------------------------------
+# Where the walk starts, and which clock it reads
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def kolkata(db):
+    """``scheduling.timezone`` = Asia/Kolkata (UTC+5:30, no daylight saving)."""
+    from app.models.app_setting import AppSetting
+    from app.settings_service import invalidate_cache
+
+    db.add(AppSetting(key="scheduling.timezone", value="Asia/Kolkata"))
+    await db.flush()
+    invalidate_cache("scheduling.timezone")
+    yield
+    invalidate_cache("scheduling.timezone")
+
+
+async def test_the_expression_is_read_in_the_scheduling_timezone(db, kolkata):
+    """Kolkata's clock time of half an hour ago has passed; as UTC it is hours off."""
+    from zoneinfo import ZoneInfo
+
+    host = await create_host(db)
+    now = datetime.now(UTC)
+    local = (now - timedelta(minutes=30)).astimezone(ZoneInfo("Asia/Kolkata"))
+    db.add(
+        ScheduledAction(
+            target_kind="host",
+            target_id=host.id,
+            action_key="_builtin.collect_state",
+            schedule_cron=f"{local.minute} {local.hour} * * *",
+            enabled=True,
+            last_dispatched_at=now - timedelta(hours=2),
+        )
+    )
+    await db.commit()
+
+    result = await _check_due_async()
+    assert result["dispatched"] == 1

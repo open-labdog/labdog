@@ -977,6 +977,8 @@ export interface ValidateCronResponse {
   valid: boolean
   message: string | null
   next_run_at: string[]
+  /** The `scheduling.timezone` the expression was read in. */
+  timezone: string
 }
 
 // ---------------------------------------------------------------------------

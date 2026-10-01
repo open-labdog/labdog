@@ -123,9 +123,11 @@ and Ubuntu nodes. RHEL / Rocky / Alma support is on the roadmap.
 
 `/actions?tab=schedules` (Operations → Actions → **Schedules**; `/schedules` redirects there) lists every cron-driven
 action across the fleet. Each row pairs an action_key with a target
-(host / group / fleet) and a 5-field cron expression. The unified
-scheduler ticks every 60 seconds, walks the table, and dispatches any
-row that's due into the same execution path as the ad-hoc Run button.
+(host / group / fleet) and a 5-field cron expression, read in the
+[scheduling timezone](scheduled-actions.md#timezone) (`UTC` unless
+changed in Settings › Fleet). The unified scheduler ticks every 60
+seconds, walks the table, and dispatches any row that's due into the
+same execution path as the ad-hoc Run button.
 
 **Three places to create a schedule:**
 

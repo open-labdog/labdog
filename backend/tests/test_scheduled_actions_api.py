@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -472,6 +473,31 @@ async def test_validate_cron_valid(superuser_client, db):
     body = resp.json()
     assert body["valid"] is True
     assert len(body["next_run_at"]) == 3
+
+
+async def test_validate_cron_previews_in_the_scheduling_timezone(superuser_client, db):
+    from app.models.app_setting import AppSetting
+    from app.settings_service import invalidate_cache
+
+    resp = await superuser_client.post(
+        "/api/scheduled-actions/validate-cron", json={"cron": "0 3 * * *"}
+    )
+    assert resp.json()["timezone"] == "UTC"
+
+    db.add(AppSetting(key="scheduling.timezone", value="Asia/Kolkata"))
+    await db.flush()
+    invalidate_cache("scheduling.timezone")
+    try:
+        resp = await superuser_client.post(
+            "/api/scheduled-actions/validate-cron", json={"cron": "0 3 * * *"}
+        )
+    finally:
+        invalidate_cache("scheduling.timezone")
+    body = resp.json()
+    assert body["timezone"] == "Asia/Kolkata"
+    # 03:00 in Kolkata is 21:30 UTC the day before.
+    runs = [datetime.fromisoformat(t) for t in body["next_run_at"]]
+    assert [(t.hour, t.minute, t.utcoffset().total_seconds()) for t in runs] == [(21, 30, 0)] * 3
 
 
 async def test_validate_cron_invalid(superuser_client, db):
