@@ -276,46 +276,7 @@ host's apt history.
 
 ### Correctness — High
 
-- [ ] **BUG-100** `backend/app/tasks/host_lock.py:309-333` (and the same
-      scan in `check_hosts_busy`, `:422-445`) — a running group-targeted
-      run holds *every* member host for its whole lifetime, so two group
-      runs that share hosts deadlock, and one slow or dead run blocks its
-      whole group for hours
-
-      Symptom:
-      - 2026-09-30 03:00: both schedules fired in the same tick (runs 237
-        and 238). On the six hosts in both groups, 237's host runs sat
-        `pending` with "Waiting for action_group 238 on host monlog" and
-        238's sat `pending` with "Waiting for action_group 237 on host
-        monlog". Neither could ever move. The sweeper failed 238 at 09:02
-        (its whole-run deadline); 237 was cancelled by hand, its six
-        pending host runs still `pending`.
-      - 2026-10-01 05:02: compose run 241 deferred every host with
-        "Waiting for action_group 240 on host monlog (linux-upgrade)",
-        although 240 had finished monlog at 03:03. 241 was swept at 11:04
-        having done nothing.
-
-      Root cause: case 3b of `check_host_busy` ("a group-targeted run
-      that has claimed its members but has not created their
-      ActionHostRun rows yet", added for BUG-62) matches any `running`
-      ActionRun with `host_id IS NULL` by group membership. Nothing
-      limits it to that window, so once a group run is `running`, every
-      member of its group reads as busy until the whole run ends: hosts
-      it already finished, hosts it has not reached, and hosts it will
-      never reach because its orchestrator is dead. With batch size 1
-      over 17 hosts that is the whole run. Two such runs sharing hosts
-      each see the other as the blocker, and neither ever releases.
-      Syncs, collections and drift checks on those hosts wait the same
-      way.
-
-      Fix direction: restrict 3b to the window it was written for, i.e.
-      only match a group run that has no ActionHostRun rows yet (`NOT
-      EXISTS` on `action_host_runs.action_run_id`). Once the rows exist,
-      case 3 (a `running` per-host row) is exact. Same change in
-      `check_hosts_busy`. Tests: two group runs over overlapping hosts
-      both complete; a member a group run has finished is free for other
-      work while the run continues; the BUG-62 window (run claimed, rows
-      not yet created) still blocks.
+_No bugs are currently open._
 
 ### Correctness — Medium
 
@@ -328,8 +289,8 @@ host's apt history.
       Symptom: run 240 (`linux-upgrade`, 17 hosts) is still `running`
       at 11:49, 8.5 hours after its orchestrator died at 03:14. Host run
       1737 (lin-manager) was swept at 04:04; media and services are
-      still `queued` and will never start. Because of BUG-100, all 17
-      hosts read as busy the whole time. The sweeper will not fail the
+      still `queued` and will never start. Until BUG-100 was fixed, all
+      17 hosts read as busy the whole time. The sweeper will not fail the
       run until about 17:36 (17 × 2880 s + 3600 s).
 
       Root cause: the orchestrator is a long-running Celery task that
@@ -365,5 +326,8 @@ host's apt history.
         LabDog host itself, so a group run takes it last or skips it.
 
       Severity Medium: no data loss, but a scheduled upgrade silently
-      skips the rest of its hosts, and with BUG-100 it also blocks
-      everything else on them for most of a day.
+      skips the rest of its hosts, and any host whose row was `running`
+      when the orchestrator died stays busy until the per-host sweep.
+
+      Mitigated on lin-manager 2026-10-01: Docker `live-restore` is now on,
+      so a patch-level Docker upgrade no longer stops the LabDog container.
