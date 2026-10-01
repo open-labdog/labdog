@@ -368,8 +368,7 @@ async def update_scheduled_action(
     before = _scheduled_action_audit_payload(sa)
 
     sa.parameters = body.parameters
-    sa.schedule_cron = body.schedule_cron
-    sa.enabled = body.enabled
+    sa.set_schedule(body.schedule_cron, body.enabled, datetime.now(UTC))
     sa.snapshot_enabled = body.snapshot_enabled
     sa.verify_enabled = body.verify_enabled
     sa.auto_rollback = body.auto_rollback

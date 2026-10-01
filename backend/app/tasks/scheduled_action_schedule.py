@@ -3,12 +3,13 @@
 Replaces the old ``app.tasks.workflow_schedule.check_scheduled_workflows``
 task. RedBeat ticks ``check_due`` every 60 s; the task walks every
 enabled ``ScheduledAction`` row, computes whether each is due since
-``last_dispatched_at`` (falling back to ``created_at``), and dispatches
-an ``ActionRun`` via the existing ``app.tasks.action_orchestrator
-.run_action`` Celery task. The orchestrator handles per-host fork-out
-and fleet target resolution (C5). Cron expressions are read in the
-``scheduling.timezone`` setting's zone; ``app.cron_walk`` has the
-daylight-saving rules.
+``ScheduledAction.walk_start()`` (the later of ``last_dispatched_at``
+and ``schedule_changed_at``, falling back to ``created_at``), and
+dispatches an ``ActionRun`` via the existing
+``app.tasks.action_orchestrator.run_action`` Celery task. The
+orchestrator handles per-host fork-out and fleet target resolution
+(C5). Cron expressions are read in the ``scheduling.timezone``
+setting's zone; ``app.cron_walk`` has the daylight-saving rules.
 
 Idempotency:
 
@@ -74,8 +75,7 @@ async def _check_due_async() -> dict:
 
         for sa in rows:
             try:
-                reference = sa.last_dispatched_at or sa.created_at
-                next_run_at = next_fire_time(sa.schedule_cron, reference, tz)
+                next_run_at = next_fire_time(sa.schedule_cron, sa.walk_start(), tz)
                 if now < next_run_at:
                     continue
 

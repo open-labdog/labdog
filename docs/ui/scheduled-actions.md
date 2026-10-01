@@ -100,6 +100,13 @@ refreshes, and the row appears immediately.
 the right path for "I want a different action against this target."
 The backend rejects edits that change them with `422`.
 
+Changing a schedule's cron expression, or switching it on, starts it
+afresh: the first run is the expression's next time after the edit.
+A run time that passed while the schedule was off, or that only the new
+expression matches, is not made up straight away. Editing anything else
+(parameters, batch size, the destructive options) leaves the schedule's
+timing alone.
+
 ---
 
 ## Timezone
@@ -156,9 +163,12 @@ Deleting a schedule sets `action_runs.scheduled_action_id` to NULL via
   module sync. The two read-only built-ins
   (`_builtin.drift_check`, `_builtin.collect_state`) are idempotent
   and don't need it.
-- `last_dispatched_at` is the cron walk's reference, not "wall-clock
-  now" — so a missed tick (worker restart, Redis hiccup) doesn't
-  fire-twice on the next minute.
+- The cron walk starts from `last_dispatched_at` (or from
+  `schedule_changed_at`, when the expression changed or the schedule
+  was switched on since), not from "wall-clock now" — so a missed tick
+  (worker restart, Redis hiccup) doesn't fire twice on the next minute,
+  and a run missed while the scheduler was down fires once when it
+  comes back.
 - The ad-hoc create-run endpoint takes a per-target advisory transaction
   lock, so two concurrent `POST /run-now` against the same schedule
   collide cleanly with a 409.

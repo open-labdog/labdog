@@ -123,6 +123,8 @@ async def test_update_existing_entry(db):
     await db.refresh(sa)
     assert sa.enabled is True
     assert sa.schedule_cron == "0 3 * * *"
+    # Switched on with a new expression: the walk starts from the import.
+    assert sa.schedule_changed_at is not None
 
 
 async def test_unchanged_entry_is_idempotent(db):

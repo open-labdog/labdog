@@ -275,6 +275,15 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Switching a schedule on, or changing its cron expression, no longer
+  runs it within a minute.** The scheduler looked for the next run after
+  the schedule's last dispatch, so a schedule re-enabled after a week
+  off, or moved from Sundays to daily, found a run time in the past and
+  fired on the next tick, while the dialog had just previewed a time in
+  the future. Both changes now restart the schedule from the moment of
+  the edit (new column `scheduled_actions.schedule_changed_at`), in the
+  UI and through GitOps alike. Other edits leave its timing alone, so a
+  run missed while the scheduler was down still fires when it returns.
 - **A host's Metrics tab says why it has nothing to show.** With no Mimir
   instance registered it was an empty panel, and it was also blank while
   loading or when the request failed. It now names what is missing and

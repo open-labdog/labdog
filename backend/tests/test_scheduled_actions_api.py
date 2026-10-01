@@ -8,6 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from app.models.action_run import ActionRun
+from app.models.scheduled_action import ScheduledAction
 from tests.conftest import create_group, create_host
 
 pytestmark = pytest.mark.integration
@@ -265,6 +266,37 @@ async def test_update_changes_fields_emits_audit(superuser_client, db):
     body = update_resp.json()
     assert body["schedule_cron"] == "0 4 * * 1"
     assert body["enabled"] is True
+
+
+async def test_update_restarts_the_walk_only_when_the_schedule_changes(superuser_client, db):
+    """Editing anything else must not move the start: a missed run still catches up."""
+    group = await create_group(db)
+    await db.commit()
+    body = {
+        "target_kind": "group",
+        "target_id": group.id,
+        "action_key": "_builtin.collect_state",
+        "schedule_cron": "0 3 * * 0",
+        "enabled": True,
+    }
+    sa_id = (await superuser_client.post("/api/scheduled-actions", json=body)).json()["id"]
+
+    async def changed_at():
+        sa = await db.get(ScheduledAction, sa_id)
+        await db.refresh(sa)
+        return sa.schedule_changed_at
+
+    resp = await superuser_client.put(
+        f"/api/scheduled-actions/{sa_id}", json=body | {"batch_size": 2}
+    )
+    assert resp.status_code == 200, resp.text
+    assert await changed_at() is None
+
+    resp = await superuser_client.put(
+        f"/api/scheduled-actions/{sa_id}", json=body | {"schedule_cron": "0 4 * * 0"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert await changed_at() is not None
 
 
 async def test_update_action_key_or_target_immutable(superuser_client, db):
