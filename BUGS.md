@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-101`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-104`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -331,3 +331,99 @@ _No bugs are currently open._
 
       Mitigated on lin-manager 2026-10-01: Docker `live-restore` is now on,
       so a patch-level Docker upgrade no longer stops the LabDog container.
+
+---
+
+## Open — 2026-10-01 found while fixing BUG-101
+
+Filed 2026-10-01. BUG-102 and BUG-103 were found reading the host queue
+for BUG-101 and reproduced in tests against Postgres; neither has shown
+up on lin-manager yet, where no host-targeted run and no built-in group
+run has deferred. BUG-104 is from lin-manager's runs 237 and 240.
+
+### Correctness — Medium
+
+- [ ] **BUG-102** `backend/app/tasks/host_lock.py:726-732`,
+      `backend/app/tasks/action_orchestrator.py:336-346` — a host-targeted
+      action that deferred behind a busy host fails with a duplicate-key
+      error when the host frees up, instead of running
+
+      Symptom: run an action on a host while a sync is running on it.
+      The per-host task defers, and its row and the run both go
+      `pending`. When the sync finishes, `dispatch_next_pending_for_host`
+      re-sends `run_action` for the run, the orchestrator inserts the
+      host's row a second time, and the insert fails on
+      `uq_action_host_run`. The run ends `failed` with the
+      IntegrityError text, and its row stays `pending` for good: the
+      queue only re-fires rows whose run is still open.
+
+      Root cause: the pick has two candidates for the same work, the run
+      and its row, and both carry the run's `created_at`. The run is
+      appended to the candidate list first, so it wins the tie. Re-sending
+      the run is right for a group dispatch (`supports_host: false`),
+      which defers before it has any rows; a host-targeted run defers
+      per row and has to be resumed through that row.
+
+      Fix direction: the run branch of the pick only takes pending runs
+      with no `ActionHostRun` rows (`_has_no_host_runs()`, as in
+      `check_host_busy`), so a host-targeted run comes back through its
+      row. When that row claims the host, put a single-host parent that
+      is `pending` back to `running` and clear its `pending_reason`, in
+      both `action_host._claim_or_defer` and
+      `builtin_dispatchers._begin_host_run`.
+
+      Severity Medium: any host action that collides with another
+      operation on its host fails instead of waiting its turn.
+
+- [ ] **BUG-103** `backend/app/tasks/host_lock.py:751-753` — a deferred
+      member of a group run of a built-in is re-dispatched to the
+      pack-playbook runner, which cannot run it
+
+      Symptom: `_builtin.drift_check` (or `_builtin.collect_state`,
+      `_builtin.ai_task`) on a group where one member is busy: that
+      member's row defers, and when the host frees up the queue sends
+      `run_action_host(run, row)`. That is the Ansible runner for pack
+      actions; the built-in has no playbook (`playbook_path` is `None`),
+      so the member fails. A deferred `_builtin.sync` row is picked up by
+      the same branch, although the SyncJob it queued is what is meant to
+      close it (BUG-81).
+
+      Root cause: the `action_host_run` branch hardcodes
+      `run_action_host`. The orchestrator picks the per-host task from
+      `PER_HOST_TASK_FOR_BUILTIN`.
+
+      Fix direction: dispatch through the same lookup the orchestrator
+      uses. Leave a `_builtin.sync` row alone when a pending SyncJob
+      carries it as `origin_action_host_run_id`, because that job closes
+      the row when it runs.
+
+      Severity Medium: a built-in run against a group reports a member as
+      failed whenever that member was busy when its turn came.
+
+### Correctness — Low
+
+- [ ] **BUG-104** `backend/app/api/actions.py:392-411` — cancelling a run
+      leaves the hosts it had not started `queued` or `pending`, and the
+      run without a finish time, unless an orchestrator is still running
+      to clean up
+
+      Symptom: as of 2026-10-01, run 240 (cancelled after its
+      orchestrator died) shows two hosts `queued`, and run 237 (cancelled
+      after its orchestrator had dispatched everything and was only
+      waiting on deferred hosts) shows six `pending`. Neither run has a
+      `finished_at`. A `pending` run, such as a host-targeted run waiting
+      for its host, is not marked cancelled at all, only given the Redis
+      token.
+
+      Root cause: the endpoint sets the run `cancelled` (only from
+      `queued`/`running`) and sets the cancel token, and leaves the hosts
+      to the orchestrator, which cancels the rest at its next check.
+      With no orchestrator left, nothing does.
+
+      Fix direction: the endpoint cancels the run's `queued` and
+      `pending` rows itself, accepts a `pending` run, and sets
+      `finished_at` once no row is `running`.
+
+      Severity Low: nothing runs that should not, but the run page
+      reports hosts that will never run as waiting, and the run never
+      shows an end.
