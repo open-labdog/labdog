@@ -35,7 +35,16 @@ def make_config(
 
 
 # Import under test — must come after env vars are set (conftest handles that)
+from app.cron_walk import resolve_timezone  # noqa: E402
 from app.tasks.scan_schedule import _is_due  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def utc_schedule_timezone():
+    """``_check`` reads the timezone setting first; the mocked sessions below can't answer."""
+    with patch("app.cron_walk.get_schedule_timezone", AsyncMock(return_value=UTC)):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # _is_due parametrized tests
@@ -138,6 +147,13 @@ NOW = datetime(2024, 6, 1, 12, 0, 0, tzinfo=UTC)
 def test_is_due(config, now, expected, description):
     result = _is_due(config, now)
     assert result is expected, f"FAILED: {description!r} — got {result!r}, want {expected!r}"
+
+
+def test_cron_is_read_in_the_scheduling_timezone():
+    """17:00 in Kolkata (UTC+5:30) is 11:30 UTC, half an hour before NOW."""
+    config = make_config(cron_expression="0 17 * * *", last_run_at=NOW - timedelta(hours=2))
+    assert _is_due(config, NOW, resolve_timezone("Asia/Kolkata")) is True
+    assert _is_due(config, NOW) is False
 
 
 # ---------------------------------------------------------------------------

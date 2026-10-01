@@ -102,3 +102,5 @@ class ValidateCronResponse(BaseModel):
     valid: bool
     message: str | None = None
     next_run_at: list[datetime] = Field(default_factory=list)
+    # The ``scheduling.timezone`` the expression was read in.
+    timezone: str = "UTC"

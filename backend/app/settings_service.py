@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
 from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
+from app.cron_walk import TIMEZONE_SETTING, validate_timezone
 from app.models.app_setting import AppSetting
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,20 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 1,
         "max": 168,
         "description": "Max age in hours before orphaned Proxmox snapshots are cleaned up",
+    },
+    TIMEZONE_SETTING: {
+        "type": "string",
+        "default": "UTC",
+        "validator": validate_timezone,
+        "description": "Timezone that schedule cron expressions are read in.",
+        "help": (
+            "An IANA name such as Europe/Stockholm. Covers scheduled actions and discovery "
+            "scans; cron jobs LabDog manages on hosts run on each host's own clock. Changing it "
+            "keeps every schedule's clock time and moves it to the new zone, so 0 3 * * * runs "
+            "at 03:00 there — check existing schedules afterwards. Across a daylight-saving "
+            "change, a time the clock skips runs once at the jump and a time it repeats runs "
+            "once."
+        ),
     },
     # --- AI subsystem -----------------------------------------------------
     # Defaults are deliberately closed: AI is off until an operator turns it
@@ -365,6 +380,12 @@ def _validate(key: str, value: str) -> str:
     if vtype == "string":
         if "choices" in defn and value not in defn["choices"]:
             raise ValueError(f"{key}: must be one of {defn['choices']}")
+        validator = defn.get("validator")
+        if validator is not None:
+            try:
+                return str(validator(value))
+            except ValueError as exc:
+                raise ValueError(f"{key}: {exc}") from exc
         return value
 
     if vtype == "text":

@@ -63,6 +63,12 @@ always visible.
 |---------|-----|---------|-------|-------------|
 | Preflight reachability check | `actions.preflight_enabled` | `1` (on) | `0` / `1` | When enabled, every per-host action run first performs a bounded SSH liveness probe. A genuinely unreachable host fails in ~25 s with a clear `host unreachable (preflight)` error instead of tying up a worker for the full playbook timeout. Set to `0` to disable if the probe is too aggressive for flaky hosts. |
 
+### Scheduling
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Timezone | `scheduling.timezone` | `UTC` | IANA name | The timezone [scheduled actions](scheduled-actions.md#timezone) and cron-scheduled discovery scans read their cron expressions in, e.g. `Europe/Stockholm`. Changing it keeps each schedule's clock time and moves it to the new zone — `0 3 * * *` then runs at 03:00 there — so check existing schedules afterwards. Cron jobs LabDog manages on hosts run on each host's own clock and are not affected. |
+
 ### Workflows
 
 | Setting | Key | Default | Range | Description |

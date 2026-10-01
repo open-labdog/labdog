@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { apiFetch } from "@/lib/api"
 import { cronToHuman } from "@/lib/cron"
+import { formatInZone, useScheduleTimezone } from "@/lib/schedule-timezone"
 import { Field } from "@/components/ld"
 import type { ValidateCronResponse } from "@/lib/types"
 
@@ -15,14 +16,17 @@ interface CronInputProps {
 // authoritative source. Any other value writes the cron string verbatim.
 const CUSTOM = "__custom__"
 
+// Times are in the scheduling timezone (Settings › Fleet), which the cron
+// field's hint names; spelling a zone out here would be wrong on every
+// install that changed it.
 const PRESETS: { label: string; cron: string }[] = [
   { label: "Every 15 minutes", cron: "*/15 * * * *" },
   { label: "Every 30 minutes", cron: "*/30 * * * *" },
   { label: "Hourly", cron: "0 * * * *" },
-  { label: "Nightly (03:00 UTC)", cron: "0 3 * * *" },
-  { label: "Weekdays 03:00 UTC", cron: "0 3 * * 1-5" },
-  { label: "Weekly Sun 03:00 UTC", cron: "0 3 * * 0" },
-  { label: "Monthly 1st 03:00 UTC", cron: "0 3 1 * *" },
+  { label: "Nightly (03:00)", cron: "0 3 * * *" },
+  { label: "Weekdays 03:00", cron: "0 3 * * 1-5" },
+  { label: "Weekly Sun 03:00", cron: "0 3 * * 0" },
+  { label: "Monthly 1st 03:00", cron: "0 3 1 * *" },
 ]
 
 function presetForCron(cron: string): string {
@@ -33,6 +37,7 @@ function presetForCron(cron: string): string {
 export function CronInput({ value, onChange }: CronInputProps) {
   const [validation, setValidation] = useState<ValidateCronResponse | null>(null)
   const [validating, setValidating] = useState(false)
+  const timezone = useScheduleTimezone()
 
   // Debounced server-side validation. The endpoint is cheap; the
   // debounce keeps us from hammering it on every keystroke.
@@ -48,7 +53,7 @@ export function CronInput({ value, onChange }: CronInputProps) {
         const resp = await apiFetch<ValidateCronResponse>("/api/scheduled-actions/validate-cron", { method: "POST", json: { cron: value } })
         if (!cancelled) setValidation(resp)
       } catch {
-        if (!cancelled) setValidation({ valid: false, message: "Validation failed", next_run_at: [] })
+        if (!cancelled) setValidation({ valid: false, message: "Validation failed", next_run_at: [], timezone: "UTC" })
       } finally {
         if (!cancelled) setValidating(false)
       }
@@ -80,18 +85,22 @@ export function CronInput({ value, onChange }: CronInputProps) {
             ))}
           </select>
         </Field>
-        <Field as="div" label="cron expression" error={validation && !validation.valid ? (validation.message ?? "Invalid cron expression") : undefined}>
+        <Field as="div" label="cron expression" hint={timezone && `in ${timezone}`} error={validation && !validation.valid ? (validation.message ?? "Invalid cron expression") : undefined}>
           <input type="text" className="inp mono" placeholder="0 3 * * *" aria-label="Cron expression" value={value} onChange={(e) => onChange(e.target.value)} />
         </Field>
       </div>
 
-      {value && <p className="text-[11px] text-text-3">{cronToHuman(value)}</p>}
+      {/* Only when it says something: for an expression it can't describe,
+          cronToHuman hands the input back, and echoing it is noise. */}
+      {value && cronToHuman(value) !== value && <p className="text-[11px] text-text-3">{cronToHuman(value)}</p>}
       {validation?.valid && validation.next_run_at.length > 0 && (
         <div className="text-[11px] text-text-faint">
-          <span className="text-text-3">next runs:</span>
+          {/* In the zone the scheduler reads the expression in, not the
+              browser's: "0 4 * * *" must read 04:00 wherever it is viewed. */}
+          <span className="text-text-3">next runs ({validation.timezone}):</span>
           <ul className="mono m-0 mt-0.5 flex list-none flex-col gap-0.5 p-0">
             {validation.next_run_at.slice(0, 3).map((iso) => (
-              <li key={iso}>{new Date(iso).toLocaleString()}</li>
+              <li key={iso}>{formatInZone(iso, validation.timezone)}</li>
             ))}
           </ul>
         </div>
