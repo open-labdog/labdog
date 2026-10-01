@@ -59,7 +59,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
-from sqlalchemy import or_, select, text, update
+from sqlalchemy import exists, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -192,6 +192,31 @@ async def acquire_host_locks(db: AsyncSession, host_ids: list[int]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _has_no_host_runs():
+    """``ActionRun`` has no ``ActionHostRun`` rows yet: the BUG-62 window.
+
+    The membership scans (3b below, and its twin in `check_hosts_busy`)
+    exist for one moment only: a group-dispatch run that has claimed every
+    member under their locks but has not yet created the per-host rows that
+    say so. Once those rows exist, scan 3 is exact, so the membership scan
+    must stop matching.
+
+    It did not, and that was BUG-100. A per-host fan-out of a group target
+    (``linux-upgrade`` on a group, say) creates its rows in the same commit
+    that marks it ``running``, so the membership scan matched it for its
+    whole lifetime: every member read as busy, including hosts it had
+    finished and hosts it had not reached. Two such runs over overlapping
+    groups each found the other and deferred, and neither ever moved.
+
+    Hosts are serialised, not groups. Two runs whose groups overlap may work
+    on different members at the same time; they never touch the same member
+    at once, because a member is held by a ``running`` per-host row.
+    """
+    from app.models.action_run import ActionHostRun, ActionRun  # noqa: PLC0415
+
+    return ~exists().where(ActionHostRun.action_run_id == ActionRun.id)
+
+
 async def check_host_busy(
     db: AsyncSession,
     host_id: int,
@@ -209,6 +234,13 @@ async def check_host_busy(
     3. ``ActionHostRun`` with ``status='running'`` and ``host_id=X``
        belonging to an ActionRun with ``status='running'``
        (group-targeted action runs whose member set includes X).
+       3b. A ``running`` group-targeted ``ActionRun`` whose group contains
+       X and which has no ``ActionHostRun`` rows yet (the claim-to-load
+       window of a group dispatch; see `_has_no_host_runs`).
+
+    So a group run holds a member only while that member's own row is
+    ``running``: two runs over overlapping groups can work on different
+    members at the same time, never on the same one.
 
     Rows whose host has been deleted carry ``host_id IS NULL`` (BUG-77)
     and match none of these scans, which is the wanted answer: a host
@@ -306,7 +338,8 @@ async def check_host_busy(
         # locks commits. Between those two points a group run held every
         # member and nothing said so, so a sync entering its gate saw the
         # host free. Matching on membership closes that window without
-        # depending on rows that do not exist yet.
+        # depending on rows that do not exist yet — and only that window
+        # (BUG-100, see `_has_no_host_runs`).
         from app.models.host import HostGroupMembership  # noqa: PLC0415
 
         claimed_group_stmt = (
@@ -319,6 +352,7 @@ async def check_host_busy(
                 HostGroupMembership.c.host_id == host_id,
                 ActionRun.host_id.is_(None),
                 ActionRun.status == "running",
+                _has_no_host_runs(),
             )
         )
         if exclude_action_run_id is not None:
@@ -427,7 +461,8 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
         )
 
     # Same window as case 3b in check_host_busy: a group run that has taken
-    # its members' locks but not yet created their per-host rows.
+    # its members' locks but not yet created their per-host rows, and only
+    # that window (BUG-100, see `_has_no_host_runs`).
     from app.models.host import HostGroupMembership  # noqa: PLC0415
 
     claimed_group_rows = (
@@ -441,6 +476,7 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
                 HostGroupMembership.c.host_id.in_(ordered),
                 ActionRun.host_id.is_(None),
                 ActionRun.status == "running",
+                _has_no_host_runs(),
             )
         )
     ).all()

@@ -804,3 +804,108 @@ class TestTheDefensiveHostGoneBranchesAreUnreachable:
             "action_runs.host_id is SET NULL, so a run whose host is deleted "
             "is routed to the group branch, never the host-gone branch"
         )
+
+
+# ---------------------------------------------------------------------------
+# BUG-100 — a group run holds a member only while that member's row runs
+# ---------------------------------------------------------------------------
+
+
+class TestGroupRunsSerialisePerHostNotPerGroup:
+    """BUG-100. The membership scan meant for the BUG-62 claim window also
+    matched per-host fan-outs of a group target for their whole lifetime.
+
+    On lin-manager, 2026-09-30, ``linux-upgrade`` (group "Default allow")
+    and ``docker-compose-update`` (group "docker", a subset) started in the
+    same tick. On the six shared hosts each run's per-host task found the
+    other run and deferred, and neither ever moved. On 2026-10-01 the
+    compose run waited on hosts the upgrade had finished hours before.
+
+    Hosts are serialised, groups are not: overlapping runs may work on
+    different members at once, never on the same one.
+    """
+
+    async def _two_groups(self, db: AsyncSession):
+        from app.models.host_group import HostGroup
+
+        ssh = await create_ssh_key(db)
+        groups = []
+        for _ in range(2):
+            g = HostGroup(
+                name=f"g-{_uuid.uuid4().hex[:8]}",
+                priority=int(_uuid.uuid4().int % 900) + 1,
+            )
+            db.add(g)
+            groups.append(g)
+        await db.flush()
+        every, docker = groups
+        shared = await create_host(
+            db, ssh_key_id=ssh.id, ip="10.0.100.1", group_ids=[every.id, docker.id]
+        )
+        other = await create_host(db, ssh_key_id=ssh.id, ip="10.0.100.2", group_ids=[every.id])
+        return every, docker, shared, other
+
+    async def test_two_overlapping_runs_do_not_deadlock(self, db: AsyncSession):
+        """The 2026-09-30 state: both runs ``running``, both rows for the
+        shared host ``pending``. Before the fix each saw the other."""
+        from app.tasks.host_lock import check_host_busy
+
+        every, docker, shared, other = await self._two_groups(db)
+        upgrade = await _create_action_run(
+            db, group_id=every.id, status="running", action_key="linux-upgrade"
+        )
+        await _create_action_host_run(db, upgrade, shared.id, status="pending")
+        await _create_action_host_run(db, upgrade, other.id, status="running")
+        compose = await _create_action_run(
+            db, group_id=docker.id, status="running", action_key="docker-compose-update"
+        )
+        await _create_action_host_run(db, compose, shared.id, status="pending")
+
+        assert await check_host_busy(db, shared.id, exclude_action_run_id=upgrade) is None
+        assert await check_host_busy(db, shared.id, exclude_action_run_id=compose) is None
+
+    async def test_the_same_host_is_still_held_while_its_row_runs(self, db: AsyncSession):
+        from app.tasks.host_lock import check_host_busy, check_hosts_busy
+
+        every, docker, shared, _ = await self._two_groups(db)
+        upgrade = await _create_action_run(
+            db, group_id=every.id, status="running", action_key="linux-upgrade"
+        )
+        await _create_action_host_run(db, upgrade, shared.id, status="running")
+        compose = await _create_action_run(
+            db, group_id=docker.id, status="running", action_key="docker-compose-update"
+        )
+        await _create_action_host_run(db, compose, shared.id, status="pending")
+
+        blocker = await check_host_busy(db, shared.id, exclude_action_run_id=compose)
+        assert blocker is not None and blocker.id == upgrade
+        multi = await check_hosts_busy(db, [shared.id])
+        assert multi is not None and multi.id == upgrade
+
+    @pytest.mark.parametrize("finished", ["succeeded", "failed", "skipped", "cancelled"])
+    async def test_a_member_the_run_has_finished_is_free(self, db: AsyncSession, finished):
+        """The 2026-10-01 state: the upgrade finished monlog at 03:03, and
+        the compose run still waited on it at 05:02."""
+        from app.tasks.host_lock import check_host_busy, check_hosts_busy
+
+        every, _, shared, other = await self._two_groups(db)
+        upgrade = await _create_action_run(
+            db, group_id=every.id, status="running", action_key="linux-upgrade"
+        )
+        await _create_action_host_run(db, upgrade, shared.id, status=finished)
+        await _create_action_host_run(db, upgrade, other.id, status="queued")
+
+        assert await check_host_busy(db, shared.id) is None
+        assert await check_hosts_busy(db, [shared.id]) is None
+
+    async def test_a_member_the_run_has_not_reached_is_free(self, db: AsyncSession):
+        from app.tasks.host_lock import check_host_busy
+
+        every, _, shared, other = await self._two_groups(db)
+        upgrade = await _create_action_run(
+            db, group_id=every.id, status="running", action_key="linux-upgrade"
+        )
+        await _create_action_host_run(db, upgrade, other.id, status="running")
+        await _create_action_host_run(db, upgrade, shared.id, status="queued")
+
+        assert await check_host_busy(db, shared.id) is None
