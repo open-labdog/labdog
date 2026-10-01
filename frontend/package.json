@@ -19,7 +19,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
     "cmdk": "^1.1.1",
-    "next": "^16.3.4",
+    "next": "^16.3.8",
     "next-themes": "^0.4.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -30,7 +30,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@next/eslint-plugin-next": "16.3.5",
+    "@next/eslint-plugin-next": "16.3.8",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
