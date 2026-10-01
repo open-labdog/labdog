@@ -129,31 +129,18 @@ async def test_orchestrator_routes_group_target_with_supports_host_false(db, fak
         sent.append((name, args or []))
         return MagicMock()
 
-    # Stub send_task so we observe the handoff without dispatching.
-    # Also stub celery group/signature so any per-host fall-through would
+    # Stub send_task so we observe the handoff without dispatching. A
+    # per-host fall-through would publish through it too, so it would
     # surface in the captured list (it shouldn't).
-    captured_per_host: list[str] = []
-
-    def signature(name, args=None, queue=None, **_):
-        captured_per_host.append(name)
-        return ("sig", name, args)
-
-    with (
-        patch(
-            "app.tasks.action_orchestrator.celery_app.send_task",
-            side_effect=_send_task,
-        ),
-        patch(
-            "app.tasks.action_orchestrator.celery_app.signature",
-            side_effect=signature,
-        ),
+    with patch(
+        "app.tasks.action_orchestrator.celery_app.send_task",
+        side_effect=_send_task,
     ):
         await _run_action_async(run_id)
 
-    # Group dispatch task was triggered exactly once with our run id.
-    assert ("app.tasks.action_group.run_action_group", [run_id]) in sent
-    # No per-host signatures were built.
-    assert captured_per_host == []
+    # Group dispatch task was triggered exactly once with our run id, and
+    # nothing else was sent.
+    assert sent == [("app.tasks.action_group.run_action_group", [run_id])]
 
 
 # ---------------------------------------------------------------------------

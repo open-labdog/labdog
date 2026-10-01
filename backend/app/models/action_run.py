@@ -97,6 +97,19 @@ class ActionRun(Base):
     # to ``None`` when the run is re-dispatched and successfully claims.
     # Nullable so existing rows and non-deferred runs don't need a value.
     pending_reason: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    # The orchestrator task driving this run, and when it last proved it
+    # was alive. Both NULL when nothing is driving it: not started yet,
+    # handed to the group task (``supports_host=False``), or the
+    # orchestrator has dispatched everything it is going to and left the
+    # rest to the per-host tasks.
+    #
+    # A stale heartbeat is how the action sweeper tells a dead orchestrator
+    # from a slow run, and it hands the run to a new one (BUG-101). The id
+    # is the fencing token for that hand-over: an old orchestrator that
+    # turns out to be alive after all finds it is no longer the owner at
+    # its next heartbeat, and stops.
+    orchestrator_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # What this run targeted, said in the run's own columns rather than
     # inferred from the FKs. The FKs above are ON DELETE SET NULL, so
     # deleting a host erases the only description an ad-hoc run had of

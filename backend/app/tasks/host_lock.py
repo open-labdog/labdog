@@ -497,6 +497,27 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     return blockers[first_host]
 
 
+def is_claimable(host_run) -> bool:
+    """Whether a per-host task may claim this ``ActionHostRun``.
+
+    Only a ``queued`` row is ever claimed. An orchestrator taking over from
+    a dead one re-sends every row still queued, and the dead one may
+    already have sent some of them (BUG-101): the copy of the task that
+    comes second finds the row claimed, or finished, and must leave it
+    alone. Ask once on the first read, and again after taking the host
+    lock — the second copy waits on that lock for the first one's commit,
+    and only a fresh read sees it.
+    """
+    if host_run.status == "queued":
+        return True
+    logger.info(
+        "host_run %d is %r, not queued — another copy of its task has it",
+        host_run.id,
+        host_run.status,
+    )
+    return False
+
+
 # ---------------------------------------------------------------------------
 # pending_reason formatting
 # ---------------------------------------------------------------------------
