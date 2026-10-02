@@ -290,11 +290,14 @@ async def grafana_alerts_webhook(
         logger.info("grafana-alerts: payload contained no usable alerts")
         return {"status": "accepted", "recorded": 0, "investigating": 0}
 
+    from app.notifications.service import notify_alert_fired
+
     new_ids: list[int] = []
     for alert in alerts:
         event, created = await record(db, alert, source="grafana_webhook")
         if created and alert.is_firing:
             new_ids.append(event.id)
+            await notify_alert_fired(db, event)
     await db.commit()
 
     for event_id in new_ids:

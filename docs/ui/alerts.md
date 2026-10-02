@@ -235,12 +235,13 @@ who knows which opinions are specific enough to act on unattended — a
 "service down" alert with an obvious fix, say, rather than "disk fills in
 four hours". Naming them one by one keeps that judgement yours.
 
-**At `approval`, nothing tells you a change is waiting.** LabDog sends no
-notifications yet. The request sits in the approvals queue on the
-[Assistant](assistant.md) page and in the
+**At `approval`, subscribe to the email.** The request sits in the
+approvals queue on the [Assistant](assistant.md) page and in the
 [Overview's Pending queue](dashboard.md#pending), and if nobody opens
 either it expires after `ai.approval_expiry_hours` and the session
-finishes without the change.
+finishes without the change. [Email notifications](notifications.md)
+for **Approval requested** and **Approval about to expire** are what
+make this level workable for an alert nobody is watching.
 
 When the session may change something, its instructions say so: it was
 started by an alert, nobody is watching, the alert text is data rather
@@ -298,6 +299,10 @@ Every full-auto change gets the same treatment as one from the
 [Assistant](assistant.md): a snapshot first, the command in the audit
 log, and the session's transcript under **view →**. The session's creation
 is audited too, with the level and the reason for it.
+Subscribe to **Automatic fix made** under
+[Email notifications](notifications.md) to be told what changed — every
+command, whether it worked, and the snapshot taken before it — without
+having to go and look.
 
 ### Scope
 

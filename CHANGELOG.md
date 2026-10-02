@@ -9,6 +9,29 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **LabDog can send email.** Configure a mail server on the new Email
+  page (Settings › Integrations › Email, or **Email notifications…** in
+  the account menu) — host, port, STARTTLS / TLS / none, login, From
+  address — and **Send test** shows the server's own answer. The SMTP
+  password is encrypted at rest, rotated with the other secrets, and
+  never returned by the API. Each person then opts in to what they want:
+  an alert fired; the assistant is waiting for an approval; that request
+  is about to expire (`notifications.approval_expiry_warning_hours`,
+  default 2) or has expired; a full-auto alert investigation changed a
+  host, with each command, whether it worked and the snapshot taken
+  before it.
+
+  Messages are queued in the same transaction as what caused them and
+  sent by a background task once a minute, never inline, so a slow mail
+  server cannot hold up an alert or an approval. Everything due for one
+  person in that minute is one email, so an alert storm is one message a
+  minute rather than one per alert. Failures are retried after 1, 2, 4, 8
+  and 16 minutes, and the page lists what was sent, to whom, and what the
+  server said. Links point at `notifications.public_url`, which must be
+  set — LabDog will not build links from a request's `Host` header — and
+  no email can approve anything. Alert and command text is redacted
+  before it is mailed.
+
 - **Alert investigations can fix what they find.** They were read-only
   with no way to raise them. `ai.alert_autonomy_level` now sets what every
   alert's session may change — `read_only` (the default, so nothing

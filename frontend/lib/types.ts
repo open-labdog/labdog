@@ -1275,3 +1275,49 @@ export interface AlertEvent {
   investigation_autonomy_note: string | null
   created_at: string
 }
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+export type SMTPTLSMode = "none" | "starttls" | "tls"
+
+/** The mail server. `password_set` is all that ever comes back about the
+ *  password — it is write-only. */
+export interface EmailSettings {
+  enabled: boolean
+  host: string
+  port: number
+  tls_mode: SMTPTLSMode
+  username: string | null
+  password_set: boolean
+  from_address: string
+  updated_at: string | null
+  /** `notifications.public_url` — nothing with a link is sent without it. */
+  public_url: string
+  /** On, complete, and with a public URL: notifications will go out. */
+  ready: boolean
+}
+
+export interface NotificationEventType {
+  key: string
+  label: string
+  description: string
+}
+
+/** One queued message — the outbox row and its delivery record. */
+export interface NotificationDelivery {
+  id: number
+  event_type: string
+  channel: string
+  user_id: number | null
+  recipient: string
+  subject: string
+  status: "pending" | "sent" | "failed"
+  attempts: number
+  next_attempt_at: string
+  last_attempt_at: string | null
+  last_error: string | null
+  created_at: string
+  sent_at: string | null
+}

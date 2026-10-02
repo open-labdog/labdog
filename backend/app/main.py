@@ -47,6 +47,7 @@ from app.api.linux_groups import router as linux_groups_router
 from app.api.linux_users import router as linux_users_router
 from app.api.metrics import router as metrics_router
 from app.api.metrics import status_router as metrics_status_router
+from app.api.notifications import router as notifications_router
 from app.api.package_sync import router as package_sync_router
 from app.api.packages import router as packages_router
 from app.api.proxmox_discovery import router as proxmox_discovery_router
@@ -745,6 +746,7 @@ def create_app() -> FastAPI:
     app.include_router(proxmox_discovery_router, prefix="/api")
     app.include_router(grafana_router, prefix="/api")
     app.include_router(ai_router, prefix="/api")
+    app.include_router(notifications_router, prefix="/api")
     app.include_router(metrics_status_router, prefix="/api")
     app.include_router(ssh_terminal_router)
 

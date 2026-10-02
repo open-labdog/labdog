@@ -247,4 +247,5 @@ celery_app.conf.include = [
     "app.tasks.ai_approvals",
     "app.tasks.ai_snapshots",
     "app.tasks.ai_alerts",
+    "app.tasks.notifications",
 ]

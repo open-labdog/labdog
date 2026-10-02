@@ -14,6 +14,7 @@ from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
 from app.cron_walk import TIMEZONE_SETTING, validate_timezone
 from app.models.app_setting import AppSetting
+from app.notifications.urls import validate_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,8 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "min": 0,
         "max": 3650,
         "description": (
-            "Days to retain finished action runs, their transcripts, and sync "
-            "jobs (0 = keep forever)"
+            "Days to retain finished action runs, their transcripts, sync jobs "
+            "and sent notifications (0 = keep forever)"
         ),
     },
     "logging.drift_retention_days": {
@@ -411,6 +412,30 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 21600,
         "description": "Maximum wall-clock seconds for a full-auto alert session.",
         "help": "The lower of this and ai.wall_clock_seconds applies.",
+    },
+    # --- Notifications. Shown on the Email page rather than here, beside
+    # the mail server they only matter with.
+    "notifications.public_url": {
+        "type": "string",
+        "default": "",
+        "validator": validate_public_url,
+        "description": "LabDog's address, for links in notifications.",
+        "help": (
+            "Such as https://labdog.example.com. Every notification links back to the page "
+            "it is about, and none is sent while this is empty: LabDog will not guess its "
+            "own address from a request's Host header, which the client chooses."
+        ),
+    },
+    "notifications.approval_expiry_warning_hours": {
+        "type": "int",
+        "default": 2,
+        "min": 0,
+        "max": 168,
+        "description": "Warn this many hours before an approval request expires (0 = never).",
+        "help": (
+            "For subscribers to 'Approval about to expire'. One warning per request. "
+            "Requests expire after ai.approval_expiry_hours."
+        ),
     },
 }
 

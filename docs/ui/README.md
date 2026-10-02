@@ -52,6 +52,7 @@ rest redirect to their new homes.
 | [Syncing changes](groups.md#syncing-changes) | Preview-then-apply syncs on the Plans screen — per module or all modules, per host or per group — with live progress in the global sync tray; every sync goes through one per-host orchestrator, so two never race on a host |
 | [Schedules](scheduled-actions.md) | Cron-driven runs of any action — pack-supplied or built-in — against hosts, groups, or the entire fleet, with snapshot/rollback for destructive actions (a tab of Operations · Actions) |
 | [Alerts](alerts.md) | Alerts received from Grafana and Alertmanager, with the AI investigation each one did or did not get |
+| [Email](notifications.md) | `/notifications` — the mail server, and which alerts, approvals and automatic fixes each person is emailed about (Settings · Integrations) |
 | [Assistant](assistant.md) | Hand an investigation to a connected LLM; it works through LabDog's tools with every command classified, bounded, and audited |
 | [Actions](actions.md) | Ad-hoc playbook runs on hosts or groups; includes snapshot-wrapped destructive actions |
 | [Action Packs](actions.md#action-packs) | Configure the pack sources that supply actions (bundled, git, local) — a tab of Operations · Actions |

@@ -115,6 +115,11 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
     no_token_id = await _insert_git_repo_no_token(db)
     grafana_id, grafana_plain = await _insert_grafana_instance(db, key_a)
 
+    from app.notifications.models import SMTPSettings
+
+    db.add(SMTPSettings(id=1, encrypted_password=encrypt_ssh_key("smtp-pass", key_a)))
+    await db.flush()
+
     counts = await rotate(db, key_a, key_b)
 
     # Every encrypted-column table must appear in the report
@@ -122,6 +127,9 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
     assert counts["proxmox_nodes"] == 1
     assert counts["git_repositories"] == 1  # only the row that has a token
     assert counts["grafana_instances"] == 1
+    # Added with email notifications; a secret the rotation skipped would
+    # stop decrypting the moment the key changed.
+    assert counts["smtp_settings"] == 1
 
     # rotate() issues Core UPDATE statements that bypass the ORM identity map.
     # Expire all cached objects so the next SELECT hits the DB.
@@ -143,6 +151,9 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
         await db.execute(select(GrafanaInstance).where(GrafanaInstance.id == grafana_id))
     ).scalar_one()
     assert decrypt_ssh_key(grafana_row.encrypted_token, key_b) == grafana_plain  # type: ignore[arg-type]
+
+    smtp_row = (await db.execute(select(SMTPSettings))).scalar_one()
+    assert decrypt_ssh_key(smtp_row.encrypted_password, key_b) == "smtp-pass"  # type: ignore[arg-type]
 
     # The NULL-token row must still have NULL after rotation
     no_token_row = (

@@ -139,6 +139,7 @@ const ROUTE_ZONES: [string, ZoneKey][] = [
   ["/hypervisors", "settings"],
   ["/grafana", "settings"],
   ["/ai-providers", "settings"],
+  ["/notifications", "settings"],
 ]
 
 export function zoneForPath(pathname: string): ZoneKey {

@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { shortAgo } from "@/lib/fleet"
-import type { AIProvider, AIUsageSummary, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
+import type { AIProvider, AIUsageSummary, EmailSettings, GitRepository, GrafanaInstance, MetricsStatus, ProxmoxNode, SSHKey } from "@/lib/types"
 import { MetricsScrapeCard } from "@/components/metrics-scrape-card"
 import { Dot, PageHead, Panel, Tabs, type Tone } from "@/components/ld"
 
@@ -99,6 +99,7 @@ function Integrations() {
   const { data: repos } = useQuery<GitRepository[]>({ queryKey: ["git-repos"], queryFn: () => apiFetch<GitRepository[]>("/api/git-repos"), ...q })
   const { data: providers } = useQuery<AIProvider[]>({ queryKey: ["ai-providers"], queryFn: () => apiFetch<AIProvider[]>("/api/ai/providers"), ...q })
   const { data: metrics } = useQuery<MetricsStatus>({ queryKey: ["metrics-status"], queryFn: () => apiFetch<MetricsStatus>("/api/metrics/status"), ...q })
+  const { data: email } = useQuery<EmailSettings>({ queryKey: ["notification-email"], queryFn: () => apiFetch<EmailSettings>("/api/notifications/email"), ...q })
 
   const enabledProviders = (providers ?? []).filter((p) => p.enabled)
   const lastGit = repos?.map((r) => r.last_sync_at).filter(Boolean).sort().at(-1) ?? null
@@ -135,6 +136,14 @@ function Integrations() {
         detail={enabledProviders.length ? enabledProviders.map((p) => `${p.name} · ${p.model}`).join(", ") : "none enabled"}
         meta={enabledProviders.length ? "budgets and autonomy under Settings · AI" : "the assistant is off until a provider is enabled"}
         href="/ai-providers"
+        action="Configure…"
+      />
+      <Card
+        name="Email"
+        state={email?.ready ? "ok" : email?.enabled ? "warn" : "idle"}
+        detail={email?.host ? `${email.host}:${email.port} · ${email.from_address}` : "no mail server"}
+        meta={email?.ready ? "alerts, approvals and automatic fixes, for whoever subscribes" : email?.enabled ? "on, but not sending — the page says why" : "nothing is sent until a mail server is set"}
+        href="/notifications"
         action="Configure…"
       />
       <Card
@@ -203,6 +212,13 @@ function Access({ superuser }: { superuser: boolean }) {
       <Panel title="your account" meta="password + sign out">
         <div className="flex flex-col gap-2 p-[11px] text-[11.5px] text-text-3">
           <span>Changing your password and signing out live behind the avatar at the foot of the rail, where they cannot be mistaken for navigation.</span>
+          <span>
+            What LabDog emails you is under{" "}
+            <Link href="/notifications#yours" className="underline">
+              Email
+            </Link>
+            .
+          </span>
         </div>
       </Panel>
     </div>
