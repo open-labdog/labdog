@@ -10,7 +10,7 @@
 # scan is the backstop that makes ignoring one loud.
 
 # ── Stage 1: Build frontend static export ─────────────────────────────
-FROM node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf AS frontend-builder
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS frontend-builder
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci --silent
