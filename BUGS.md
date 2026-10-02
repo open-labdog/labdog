@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-107`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-108`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -400,3 +400,46 @@ against `safety.py` and bash.
 
       Severity Low: it fails safe, and a model that is refused can use
       `curl -sI`, which is allowed, though that sends HEAD rather than GET.
+
+---
+
+## Open — 2026-10-02 found adding the SMTP password to key rotation
+
+Filed 2026-10-02 while adding `smtp_settings.encrypted_password` to the
+rotation script, and confirmed against source.
+
+### Correctness — Medium
+
+- [ ] **BUG-108** `backend/scripts/rotate_encryption_key.py:39-57` — key
+      rotation skips `git_repositories.encrypted_webhook_secret`, so after
+      a rotation every signed Git push webhook fails with a 500
+
+      Symptom (from source, not yet seen live): after
+      `python -m scripts.rotate_encryption_key`, a push webhook for any
+      repository with a webhook secret reaches `get_webhook_secret`
+      (`backend/app/gitops/webhook_secret.py:37-46`), which decrypts the
+      unrotated ciphertext with the new key and raises `InvalidTag`. The
+      three handlers in `backend/app/api/webhooks.py` (`:116`, `:162`,
+      `:201`) do not catch it, so GitHub, GitLab and Gitea all get a 500,
+      and GitOps sync on push stops for every such repository. The script
+      reports success, and nothing in LabDog says why pushes stopped
+      arriving.
+
+      Root cause: `_build_column_registry` lists one column per secret, and
+      SEC-28 (`40c75d6d`) moved the webhook secret into
+      `encrypted_webhook_secret` without adding it. It lists
+      `GitRepository.encrypted_https_token`, the other secret on the same
+      row. `test_rotate_re_encrypts_all_columns` checks the registry's
+      columns, not the model's, so it could not notice, and
+      `docs/encryption-key-rotation.md` leaves it out of its list too.
+
+      Fix direction: add `(GitRepository, "encrypted_webhook_secret",
+      True)` to the registry, and the column to the doc's list. Then make
+      the omission impossible to repeat: a test that collects every
+      `encrypted_*` column on `Base.metadata` and fails if the registry
+      does not name it. Until the fix, re-entering each repository's
+      webhook secret after a rotation restores it.
+
+      Severity Medium: rotation is rare and the repair is a re-entry per
+      repository, but it fails silently and stops automation the operator
+      relies on.
