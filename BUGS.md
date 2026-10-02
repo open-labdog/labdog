@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-104`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-105`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -377,3 +377,67 @@ run has deferred. BUG-104 is from lin-manager's runs 237 and 240.
       Severity Low: nothing runs that should not, but the run page
       reports hosts that will never run as waiting, and the run never
       shows an end.
+
+---
+
+## Open — 2026-10-02 found while fixing BUG-96
+
+Filed 2026-10-02 from lin-manager's schedules, its run history and its
+container log, and confirmed against source.
+
+### Correctness — High
+
+- [ ] **BUG-105** `backend/app/tasks/__init__.py:126-160`,
+      `backend/app/tasks/scheduled_action_schedule.py:117-128` — Celery
+      pool processes serve the bundled actions only until something makes
+      them reload, and no worker sees a registry change made after it
+      started
+
+      Symptom: the `docker-compose-update` schedule (`labdog-private`,
+      `0 3 * * *`) dispatched at 03:16 on 2026-09-28, 03:18 on 09-29 and
+      05:02 on 10-01, each time after LabDog had been restarted that
+      night (dockhand's 02:00 UTC recreate, docker-ce's 03:14 restart).
+      On 09-30 and 10-02 it dispatched on time. `linux-upgrade`, whose key
+      the bundled pack also has, dispatched on time every night. In
+      today's boot log, `ForkPoolWorker-1` logged `loaded 11 action(s)
+      from 2 pack(s)` (the bundled pack plus the built-ins) five seconds
+      after its parent had loaded 13 from 3.
+
+      Root cause: `worker_ready` syncs the packs and rebuilds the
+      registry in each worker's main process, after the prefork pool has
+      already been forked. A pool process imports `app.actions.registry`
+      the first time it needs it, which installs only the bundled pack,
+      and rebuilds only when a lookup misses. The orchestrator's Phase 1,
+      `action_host` and `action_group` do rebuild on a miss. Two lookups
+      do not:
+      - `check_due` logs "references unknown action; skipping" and tries
+        again next minute, so a git-pack schedule waits until the tick
+        lands on a pool process that has rebuilt, or one forked after its
+        parent's rebuild (pool processes are replaced every 100 tasks).
+        The log lines from those nights went with the old containers.
+      - The orchestrator's Phase 0 reads the registry to choose the
+        dispatch shape, so a git-pack action with `supports_host: false`
+        would be fanned out per host.
+
+      A key the bundled pack also has never misses, so a pool process
+      runs the bundled definition even where the operator pinned a git
+      pack. That is harmless only while `LABDOG_PLAYBOOKS_REF` matches
+      `labdog-playbooks`' main, as it does today. And nothing tells a
+      worker when the API rebuilds after a pin or a sync: the main
+      processes, and every pool process they fork, keep the registry they
+      built at boot.
+
+      Fix direction:
+      - Rebuild in each pool process when it starts
+        (`worker_process_init`), from disk, without syncing.
+      - Give the registry a generation that every rebuild advances (the
+        snapshot's newest `computed_at`, or a counter of its own). Each
+        process compares it with the one it loaded before it uses the
+        registry — in the action tasks and in `check_due` — and rebuilds
+        when it is behind.
+      - Rebuild on a miss in `check_due` and in the orchestrator's Phase 0,
+        as the other lookups already do.
+
+      Severity High: after any restart a scheduled git-pack action can
+      run hours late, and a pin or pack sync made in the UI changes what
+      the UI shows but not what the workers run.
