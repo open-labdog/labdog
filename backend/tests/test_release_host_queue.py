@@ -134,6 +134,10 @@ class TestTheClaimStillCommitsInOneTransaction:
             async def execute(self, _stmt):
                 return _Result()
 
+            async def refresh(self, _row):
+                # The claim re-reads its row under the host lock (BUG-101).
+                return None
+
             async def commit(self):
                 return None
 

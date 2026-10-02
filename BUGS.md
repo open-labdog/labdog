@@ -280,57 +280,7 @@ _No bugs are currently open._
 
 ### Correctness — Medium
 
-- [ ] **BUG-101** `backend/app/tasks/action_sweeper.py:218-235`,
-      `backend/app/tasks/action_timeouts.py:120-128` — a group run whose
-      orchestrator dies is not noticed for up to
-      `batches × per-host deadline + 1h`, and its remaining hosts never
-      run
-
-      Symptom: run 240 (`linux-upgrade`, 17 hosts) is still `running`
-      at 11:49, 8.5 hours after its orchestrator died at 03:14. Host run
-      1737 (lin-manager) was swept at 04:04; media and services are
-      still `queued` and will never start. Until BUG-100 was fixed, all
-      17 hosts read as busy the whole time. The sweeper will not fail the
-      run until about 17:36 (17 × 2880 s + 3600 s).
-
-      Root cause: the orchestrator is a long-running Celery task that
-      dispatches batches and waits on them. When the worker dies, the
-      task is lost with it, and nothing resumes or ends the run. The
-      sweeper's only rule for a `running` run with unfinished children
-      is the worst-case whole-run deadline, which for a sequential group
-      run is many hours. The worker-start sweep
-      (`_sweep_orphans_on_worker_start`) applies the same deadlines, so a
-      restart doesn't help either. Separately, when the sweeper fails a
-      run it cancels that run's queued and pending children but does not
-      dispatch work on those hosts that other runs left pending behind
-      it (237's six host runs after 238 was swept).
-
-      What killed the orchestrator here: the 03:14 host run was
-      `linux-upgrade` on lin-manager itself. Apt upgraded `docker-ce`
-      (apt history 05:14 local), which restarted dockerd, which sent
-      SIGTERM to the LabDog container in the middle of the run that
-      caused it. Any action that restarts LabDog's own host or runtime
-      will do the same.
-
-      Fix direction:
-      - Give the orchestrator a heartbeat (e.g. `action_runs.heartbeat_at`,
-        updated every loop) and have the sweeper treat a `running` run
-        whose heartbeat is older than a few minutes as orphaned. Resume
-        it by re-dispatching the orchestrator for the still-`queued`
-        children, or fail it and cancel them; resuming is better for a
-        nightly upgrade.
-      - When the sweeper ends a run, call `dispatch_next_pending_for_host`
-        for each of its member hosts, as Pass 1 already does for a swept
-        host run.
-      - Consider letting an action declare, or the operator mark, the
-        LabDog host itself, so a group run takes it last or skips it.
-
-      Severity Medium: no data loss, but a scheduled upgrade silently
-      skips the rest of its hosts, and any host whose row was `running`
-      when the orchestrator died stays busy until the per-host sweep.
-
-      Mitigated on lin-manager 2026-10-01: Docker `live-restore` is now on,
-      so a patch-level Docker upgrade no longer stops the LabDog container.
+_No bugs are currently open._
 
 ---
 

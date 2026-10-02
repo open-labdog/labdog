@@ -56,10 +56,10 @@ celery_app.conf.update(
         "app.tasks.ca_cert_action.*": {"queue": "long_running"},
         "app.tasks.resolver_sync.*": {"queue": "long_running"},
         "app.tasks.resolver_drift.*": {"queue": "long_running"},
-        # Its own queue, served by its own worker. run_action blocks in
-        # result.join() waiting for children it publishes to
-        # long_running; sharing that pool is a self-deadlock at
-        # concurrency=4. See app/celery_manager.py.
+        # Its own queue, served by its own worker. run_action blocks
+        # waiting for children it publishes to long_running; sharing that
+        # pool is a self-deadlock at concurrency=4. See
+        # app/celery_manager.py.
         "app.tasks.action_orchestrator.*": {"queue": "orchestrator"},
         "app.tasks.action_host.*": {"queue": "long_running"},
         "app.tasks.builtin_dispatchers.*": {"queue": "long_running"},

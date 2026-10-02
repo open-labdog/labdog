@@ -198,7 +198,7 @@ class DiscoveryConfig(BaseModel):
 class CeleryConfig(BaseModel):
     concurrency: int = 4
     #: Slots on the dedicated orchestrator worker. Each slot holds one
-    #: ``run_action`` sitting in ``result.join()``; the work it is waiting
+    #: ``run_action`` waiting on its batch; the work it is waiting
     #: for runs on the ``work`` pool, so this caps concurrent action *runs*,
     #: not concurrent host operations.
     #:

@@ -275,6 +275,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A multi-host run carries on when LabDog restarts under it.** The task
+  that hands a run's hosts out, a batch at a time, died with the
+  container, and nothing took over: the hosts it had not reached stayed
+  queued, and the run stayed "running" for hours, until its overall
+  deadline failed it. On lin-manager the nightly `linux-upgrade` did this
+  to itself by upgrading Docker on LabDog's own host. That task now
+  records a heartbeat while it works; when the heartbeat stops, LabDog
+  hands the run to a new one within about ten minutes, and it carries on
+  with the hosts not yet run, at the same parallelism. A host that was
+  mid-action at the time is marked failed at its deadline. Two smaller
+  fixes come with it: a cancel now holds however long the host in
+  progress takes (it was seen only through a token that expired after an
+  hour), and when LabDog fails a run for running too long, operations
+  queued behind it on its hosts start instead of waiting on.
+
 - **Switching a schedule on, or changing its cron expression, no longer
   runs it within a minute.** The scheduler looked for the next run after
   the schedule's last dispatch, so a schedule re-enabled after a week

@@ -387,7 +387,12 @@ async def _claim_or_defer(ctx: _RunCtx) -> bool:
 
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
-    from app.tasks.host_lock import acquire_host_lock, check_host_busy, format_pending_reason
+    from app.tasks.host_lock import (
+        acquire_host_lock,
+        check_host_busy,
+        format_pending_reason,
+        is_claimable,
+    )
 
     async with task_session() as db:
         hr_row = (
@@ -395,6 +400,8 @@ async def _claim_or_defer(ctx: _RunCtx) -> bool:
         ).scalar_one_or_none()
         if hr_row is None:
             logger.warning("action_host: host_run %d missing — exiting", ctx.host_run_id)
+            return False
+        if not is_claimable(hr_row):
             return False
 
         host_id_for_lock = hr_row.host_id
@@ -410,6 +417,9 @@ async def _claim_or_defer(ctx: _RunCtx) -> bool:
             return False
 
         await acquire_host_lock(db, host_id_for_lock)
+        await db.refresh(hr_row)
+        if not is_claimable(hr_row):
+            return False
         blocker = await check_host_busy(
             db, host_id_for_lock, exclude_action_run_id=ctx.action_run_id
         )
@@ -1329,7 +1339,7 @@ async def _release_host(ctx: _RunCtx) -> None:
     # Close the parent run if this was the last member outstanding.
     #
     # BUG-62: a member deferred behind a busy host is re-dispatched long
-    # after the orchestrator's batch join returned, so nothing else would
+    # after the orchestrator's batch wait returned, so nothing else would
     # ever aggregate. No-op unless every sibling is terminal, and idempotent
     # if two finish at once.
     try:

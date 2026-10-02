@@ -16,14 +16,20 @@ than its action's own deadline (ansible-runner wall-clock timeout +
 verify + envelope grace — see :mod:`app.tasks.action_timeouts`), so a
 legitimately slow run can never be swept: ansible's own timeout always
 fires first on a live worker.
+
+An orchestrator is different: it is not doing the work, only handing it
+out, so there is nothing to wait for when it dies. Its heartbeat going
+stale is enough, and the run is handed to a new orchestrator that carries
+on where the dead one stopped (BUG-101).
 """
 
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db import task_session
 from app.tasks import celery_app
@@ -56,7 +62,6 @@ async def _sweep_stale_host_runs(now: datetime) -> tuple[list[int], list[int]]:
     """
     from app.models.action_run import ActionHostRun, ActionRun
     from app.tasks.action_timeouts import per_host_deadline_seconds
-    from app.tasks.host_lock import dispatch_next_pending_for_host
 
     # Candidate scan in a short read transaction; per-row deadline check
     # happens against the joined parent's action_key.
@@ -110,39 +115,58 @@ async def _sweep_stale_host_runs(now: datetime) -> tuple[list[int], list[int]]:
         # commit above is durable first (mirrors the executors'
         # finally-block ordering).
         if host_id is not None:
-            try:
-                async with task_session() as db:
-                    result = await dispatch_next_pending_for_host(
-                        db, host_id, exclude_action_run_id=parent_run_id
-                    )
-                    if result is not None:
-                        dispatched.append(result[1])
-            except Exception:
-                logger.exception(
-                    "action_sweeper: dispatch-next-pending failed for host_id=%s",
-                    host_id,
-                )
+            dispatched += await _release_hosts([host_id], exclude_action_run_id=parent_run_id)
 
     return swept, dispatched
 
 
-async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
+async def _release_hosts(host_ids, *, exclude_action_run_id: int | None) -> list[int]:
+    """Dispatch the next pending op on each host; return what was dispatched.
+
+    One session per host, as ``release_host_queue`` does and for the same
+    reason: each dispatch takes that host's lock. A failure on one host is
+    logged and does not stop the others.
+    """
+    from app.tasks.host_lock import dispatch_next_pending_for_host
+
+    dispatched: list[int] = []
+    for host_id in sorted(host_ids):
+        try:
+            async with task_session() as db:
+                result = await dispatch_next_pending_for_host(
+                    db, host_id, exclude_action_run_id=exclude_action_run_id
+                )
+                if result is not None:
+                    dispatched.append(result[1])
+        except Exception:
+            logger.exception(
+                "action_sweeper: dispatch-next-pending failed for host_id=%s",
+                host_id,
+            )
+    return dispatched
+
+
+async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int], list[int], list[int]]:
     """Pass 2: reconcile parent ``ActionRun`` rows.
 
     * ``running`` with all children terminal → aggregate (the
       orchestrator died after its children finished, or Pass 1 just
       reaped them).
     * ``running`` past the whole-run deadline → failed; queued children
-      cancelled; running children left for Pass 1 on a later sweep.
+      cancelled; running children left for Pass 1 on a later sweep; the
+      hosts the run was holding handed to whatever waits on them.
+    * ``running`` with a stale orchestrator heartbeat → handed to a new
+      orchestrator (:func:`app.tasks.action_orchestrator.resume_run`).
     * ``queued`` for over an hour with no orchestrator trace → failed.
 
     ``pending`` (legitimate host-busy wait) and ``cancelled`` rows are
     never touched.
 
-    Returns ``(finalised_run_ids, failed_run_ids)``.
+    Returns ``(finalised_run_ids, failed_run_ids, resumed_run_ids,
+    dispatched_ids)``.
     """
     from app.models.action_run import ActionHostRun, ActionRun
-    from app.tasks.action_timeouts import run_deadline_seconds
+    from app.tasks.action_timeouts import ORCHESTRATOR_STALE_SECONDS, run_deadline_seconds
 
     async with task_session() as db:
         candidate_ids = [
@@ -156,8 +180,11 @@ async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
 
     finalised: list[int] = []
     failed: list[int] = []
+    resumed: list[int] = []
+    dispatched: list[int] = []
 
     for run_id in candidate_ids:
+        held: set[int] = set()
         async with task_session() as db:
             run = (
                 await db.execute(select(ActionRun).where(ActionRun.id == run_id))
@@ -219,6 +246,7 @@ async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
             started = _aware(run.started_at) or _aware(run.created_at)
             deadline = run_deadline_seconds(run.action_key, max(1, len(children)), run.parallelism)
             if started is not None and started < now - timedelta(seconds=deadline):
+                held = await _hosts_held(db, run, children)
                 run.status = "failed"
                 run.finished_at = now
                 run.error_message = (
@@ -235,7 +263,103 @@ async def _sweep_stale_runs(now: datetime) -> tuple[list[int], list[int]]:
                 await db.commit()
                 failed.append(run_id)
 
-    return finalised, failed
+            elif await _take_over(db, run, now, ORCHESTRATOR_STALE_SECONDS):
+                resumed.append(run_id)
+
+        # Outside the session above: each release takes its host's lock in
+        # a session of its own. Ops deferred behind this run wait for an op
+        # on the host to *finish*, and the sweeper failing the run is not
+        # one, so without this they would wait until something else
+        # happened to run on that host (BUG-101).
+        if held:
+            dispatched += await _release_hosts(held, exclude_action_run_id=run_id)
+
+    return finalised, failed, resumed, dispatched
+
+
+async def _hosts_held(db, run, children) -> set[int]:
+    """The hosts ``check_host_busy`` counts as busy because of this run.
+
+    A host-targeted run holds its host for as long as it is ``running``,
+    whatever its per-host row is doing. A group run holds each member its
+    row is ``running`` on — or, before it has rows at all, every member of
+    its group (the claim window of a group dispatch). Those holds lapse
+    the moment the run stops being ``running``, so these are the hosts to
+    release when the sweeper ends it.
+    """
+    from app.models.host import HostGroupMembership  # noqa: PLC0415
+
+    held = {c.host_id for c in children if c.status == "running" and c.host_id is not None}
+    if run.host_id is not None:
+        held.add(run.host_id)
+    elif not children and run.group_id is not None:
+        held.update(
+            (
+                await db.execute(
+                    select(HostGroupMembership.c.host_id).where(
+                        HostGroupMembership.c.group_id == run.group_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return held
+
+
+async def _take_over(db, run, now: datetime, stale_after: int) -> bool:
+    """Hand a run whose orchestrator has died to a new one.
+
+    The orchestrator writes ``heartbeat_at`` every few seconds while it
+    drives the run, and clears it when it stops driving it, so a stale one
+    means it died mid-run — LabDog's own host upgrading Docker and
+    restarting the container under it, on lin-manager. The run then sat
+    ``running`` with its remaining hosts ``queued`` until the whole-run
+    deadline, hours later, failed it (BUG-101).
+
+    The new owner is written before the task is sent, conditionally on the
+    heartbeat still being stale, so a live orchestrator that beats in the
+    meantime keeps its run; one that comes back after the hand-over finds
+    it no longer owns the run and stops.
+    """
+    from app.models.action_run import ActionRun  # noqa: PLC0415
+
+    heartbeat = _aware(run.heartbeat_at)
+    stale_before = now - timedelta(seconds=stale_after)
+    if heartbeat is None or heartbeat >= stale_before:
+        return False
+
+    new_owner = str(uuid.uuid4())
+    taken = (
+        await db.execute(
+            update(ActionRun)
+            .where(
+                ActionRun.id == run.id,
+                ActionRun.status == "running",
+                ActionRun.heartbeat_at < stale_before,
+            )
+            .values(orchestrator_id=new_owner, heartbeat_at=now)
+            .returning(ActionRun.id)
+        )
+    ).scalar_one_or_none()
+    await db.commit()
+    if taken is None:
+        return False
+
+    logger.warning(
+        "action_sweeper: action_run %d lost its orchestrator (last heartbeat %s); resuming it",
+        run.id,
+        heartbeat.isoformat(),
+    )
+    try:
+        celery_app.send_task(
+            "app.tasks.action_orchestrator.resume_run", args=[run.id], task_id=new_owner
+        )
+    except Exception:
+        # Owned by a task that never left: its heartbeat goes stale like
+        # any other, and the next sweep tries again.
+        logger.exception("action_sweeper: could not send resume for action_run %d", run.id)
+    return True
 
 
 async def _sweep_stale_action_runs_async() -> dict:
@@ -243,15 +367,17 @@ async def _sweep_stale_action_runs_async() -> dict:
     now = datetime.now(UTC)
 
     host_runs_swept, dispatched = await _sweep_stale_host_runs(now)
-    runs_finalised, runs_failed = await _sweep_stale_runs(now)
+    runs_finalised, runs_failed, runs_resumed, released = await _sweep_stale_runs(now)
+    dispatched += released
 
-    if host_runs_swept or runs_finalised or runs_failed:
+    if host_runs_swept or runs_finalised or runs_failed or runs_resumed:
         logger.warning(
             "action_sweeper: swept %d stuck host-run(s), finalised %d run(s), "
-            "failed %d run(s), dispatched %d queued successor(s)",
+            "failed %d run(s), resumed %d run(s), dispatched %d queued successor(s)",
             len(host_runs_swept),
             len(runs_finalised),
             len(runs_failed),
+            len(runs_resumed),
             len(dispatched),
         )
 
@@ -259,6 +385,7 @@ async def _sweep_stale_action_runs_async() -> dict:
         "host_runs_swept": host_runs_swept,
         "runs_finalised": runs_finalised,
         "runs_failed": runs_failed,
+        "runs_resumed": runs_resumed,
         "dispatched": dispatched,
     }
 

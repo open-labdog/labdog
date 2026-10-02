@@ -74,6 +74,15 @@ the output to just that host's log; **show all hosts** returns to the
 combined view, which prefixes each host's section with a
 `===== hostname =====` header.
 
+A multi-host run survives LabDog restarting in the middle of it — which
+upgrading Docker on LabDog's own host will do. Within about ten minutes
+LabDog notices that nothing is handing out the run's hosts any more and
+picks the run up again. A host that was mid-action when LabDog went down
+is marked failed once it passes its deadline (the action's timeout plus
+verify and grace), since there is no telling how far it got; its log
+stops where the restart cut it off. The hosts the run had not reached
+then run as usual, at the run's parallelism.
+
 **Who can run actions:** any logged-in user. **Who can configure packs
 or schedules:** superusers only.
 

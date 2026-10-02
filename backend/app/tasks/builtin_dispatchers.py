@@ -92,11 +92,18 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
     from app.models.action_run import ActionHostRun
 
     async with task_session() as db:
-        host_run = (
-            await db.execute(select(ActionHostRun).where(ActionHostRun.id == host_run_id))
-        ).scalar_one_or_none()
+        stmt = select(ActionHostRun).where(ActionHostRun.id == host_run_id)
+        if not with_lock:
+            # No host lock to serialise two copies of this task on, so the
+            # row's own lock does it.
+            stmt = stmt.with_for_update()
+        host_run = (await db.execute(stmt)).scalar_one_or_none()
         if host_run is None:
             logger.warning("builtin_dispatchers: ActionHostRun %d not found", host_run_id)
+            return None
+        from app.tasks.host_lock import is_claimable
+
+        if not is_claimable(host_run):
             return None
         host_id = host_run.host_id
         if host_id is None:
@@ -121,6 +128,9 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
             )
 
             await acquire_host_lock(db, host_id)
+            await db.refresh(host_run)
+            if not is_claimable(host_run):
+                return None
             # The exclusion is not optional here. The orchestrator marks the
             # parent ActionRun ``running`` in its init phase, *before*
             # dispatching this task, so without it every built-in finds its
