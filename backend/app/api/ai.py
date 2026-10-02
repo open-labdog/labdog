@@ -937,7 +937,8 @@ async def investigate_alert_now(
     operator asking for this has already made the judgement the threshold
     exists to automate — but not the kill switch, the provider check, or
     the budget. Those are about whether LabDog *may* spend, which a
-    button press does not change.
+    button press does not change. Nor does it change the autonomy level,
+    which comes from the same remediation policy as an automatic start.
     """
     alert = await db.get(AlertEvent, alert_id)
     if alert is None:
@@ -960,32 +961,13 @@ async def investigate_alert_now(
     except BudgetExceededError as exc:
         raise HTTPException(status_code=402, detail=str(exc)) from exc
 
-    from app.ai.loop import build_system_prompt
     from app.tasks import celery_app
-    from app.tasks.ai_alerts import build_mission
+    from app.tasks.ai_alerts import start_investigation
 
-    mission = await build_mission(db, alert)
-    session = AISession(
-        provider_id=provider.id,
-        mode="alert_investigation",
-        title=f"Alert: {alert.alertname}"[:200],
-        mission=mission,
-        autonomy_level="read_only",
-        status="queued",
-        target_host_ids=[alert.host_id] if alert.host_id else [],
-        alert_event_id=alert.id,
-        created_by_user_id=user.id,
-    )
-    db.add(session)
-    await db.flush()
-    await service.append_message(
-        db, session.id, role="system", content=build_system_prompt("read_only")
-    )
-    await service.append_message(db, session.id, role="user", content=mission)
-
-    alert.investigation_session_id = session.id
-    alert.investigation_outcome = "started"
-    alert.investigation_detail = f"started by {user.email}"
+    # The same policy as the automatic path, full auto included: pressing
+    # the button decides that the alert is worth a look, not what the
+    # session may change. That stays with the remediation settings.
+    session = await start_investigation(db, alert, provider, user=user)
     await db.commit()
     await db.refresh(alert)
 

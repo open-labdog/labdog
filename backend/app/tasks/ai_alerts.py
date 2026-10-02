@@ -43,6 +43,79 @@ async def build_mission(db, event) -> str:  # noqa: ANN001 - AlertEvent, AsyncSe
     return render(template, event)
 
 
+async def start_investigation(db, event, provider, *, user=None):  # noqa: ANN001, ANN201
+    """Create ``event``'s session at the level its policy allows.
+
+    The one place an alert session is made, shared by the automatic path
+    and the investigate button, so the two cannot disagree about what an
+    alert may change. The level comes from :mod:`app.ai.alert_autonomy`;
+    the system prompt is built for it, so a session that may fix things
+    is told what fixing is allowed to mean.
+
+    Flushes and does not commit. The caller commits and only then
+    dispatches, so a worker cannot read a session that has not landed —
+    and the remediation lock :func:`app.ai.alert_autonomy.resolve` takes
+    is held until that commit, which is what makes its in-flight check
+    see a session another alert has just created.
+    """
+    from app.ai import service
+    from app.ai.alert_autonomy import resolve
+    from app.ai.loop import build_system_prompt
+    from app.ai.models import AISession
+    from app.audit.logger import log_action
+
+    mission = await build_mission(db, event)
+    autonomy = await resolve(db, event)
+    session = AISession(
+        provider_id=provider.id,
+        mode="alert_investigation",
+        title=f"Alert: {event.alertname}"[:200],
+        mission=mission,
+        autonomy_level=autonomy.level,
+        status="queued",
+        target_host_ids=[event.host_id] if event.host_id else [],
+        alert_event_id=event.id,
+        created_by_user_id=user.id if user else None,
+    )
+    db.add(session)
+    await db.flush()
+    await service.append_message(
+        db,
+        session.id,
+        role="system",
+        content=build_system_prompt(autonomy.level, mode="alert_investigation"),
+    )
+    await service.append_message(db, session.id, role="user", content=mission)
+
+    event.investigation_session_id = session.id
+    event.investigation_outcome = "started"
+    event.investigation_detail = f"started by {user.email}" if user else None
+    event.investigation_autonomy = autonomy.level
+    event.investigation_autonomy_note = autonomy.note or None
+
+    # A read-only investigation changes nothing and is already on the
+    # alert row. One that may change a host is a decision LabDog made on
+    # the operator's behalf, and belongs in the audit trail beside the
+    # commands it goes on to run.
+    if autonomy.level != "read_only":
+        await log_action(
+            db,
+            action="ai_session_created",
+            entity_type="ai_session",
+            entity_id=session.id,
+            user_id=user.id if user else None,
+            after_state={
+                "autonomy_level": autonomy.level,
+                "autonomy_note": autonomy.note,
+                "alert_event_id": event.id,
+                "alertname": event.alertname,
+                "target_host_ids": session.target_host_ids,
+                "provider": provider.name,
+            },
+        )
+    return session
+
+
 async def _decide_and_run(alert_event_id: int) -> dict:
     """Apply the auto-investigation policy to one recorded alert.
 
@@ -53,8 +126,7 @@ async def _decide_and_run(alert_event_id: int) -> dict:
     """
     from app.ai import service
     from app.ai.alerts import meets_severity
-    from app.ai.loop import build_system_prompt
-    from app.ai.models import AISession, AlertEvent
+    from app.ai.models import AlertEvent
     from app.db import task_session
     from app.settings_service import get_setting_typed
 
@@ -101,30 +173,7 @@ async def _decide_and_run(alert_event_id: int) -> dict:
             outcome = "skipped_budget" if isinstance(exc, service.BudgetExceededError) else "failed"
             return await _finish(db, event, outcome, str(exc))
 
-        mission = await build_mission(db, event)
-        session = AISession(
-            provider_id=provider.id,
-            mode="alert_investigation",
-            title=f"Alert: {event.alertname}"[:200],
-            mission=mission,
-            # Never anything else. An alert is a machine's opinion that
-            # something is wrong; acting on it unattended is a different
-            # feature with a different risk, and this one only looks.
-            autonomy_level="read_only",
-            status="queued",
-            target_host_ids=[event.host_id] if event.host_id else [],
-            alert_event_id=event.id,
-        )
-        db.add(session)
-        await db.flush()
-        await service.append_message(
-            db, session.id, role="system", content=build_system_prompt("read_only")
-        )
-        await service.append_message(db, session.id, role="user", content=mission)
-
-        event.investigation_session_id = session.id
-        event.investigation_outcome = "started"
-        event.investigation_detail = None
+        session = await start_investigation(db, event, provider)
         await db.commit()
 
         celery_app.send_task(

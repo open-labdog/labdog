@@ -477,6 +477,17 @@ class AlertEvent(Base):
     )
     # Free text for the outcome, e.g. the budget message that stopped it.
     investigation_detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # The autonomy level the investigation was started at, and why when
+    # that is not simply the instance setting — see app.ai.alert_autonomy.
+    # Stored here rather than only read off the session: whether LabDog
+    # was allowed to change a host because of this alert is worth keeping
+    # after the session itself has been deleted.
+    investigation_autonomy: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default=None
+    )
+    investigation_autonomy_note: Mapped[str | None] = mapped_column(
+        Text, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )

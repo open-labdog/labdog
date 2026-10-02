@@ -7,6 +7,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.alert_autonomy import BASE_LEVELS as ALERT_BASE_LEVELS
+from app.ai.alert_autonomy import validate_alertnames
 from app.ai.alert_mission import DEFAULT_TEMPLATE as DEFAULT_ALERT_MISSION
 from app.ai.alert_mission import FIELDS as ALERT_MISSION_FIELDS
 from app.ai.alert_mission import validate_template as validate_alert_mission
@@ -301,10 +303,10 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "default": 0,
         "min": 0,
         "max": 1,
-        "description": "Start a read-only AI investigation when an eligible alert arrives.",
+        "description": "Start an AI investigation when an eligible alert arrives.",
         "help": (
             "This spends money without anyone asking, so it is off by default and bounded by the "
-            "AI budgets."
+            "AI budgets. What the investigation may change is ai.alert_autonomy_level."
         ),
     },
     "ai.alert_mission_template": {
@@ -328,6 +330,87 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
             "Read from the alert's 'severity' label. An alert whose severity is missing or not "
             "one of these is skipped and says so, rather than being guessed either way."
         ),
+    },
+    # --- Alert remediation. Full auto is per alert, never instance-wide —
+    # see app.ai.alert_autonomy for why the level has no full_auto choice.
+    "ai.alert_autonomy_level": {
+        "type": "string",
+        "default": "read_only",
+        "choices": list(ALERT_BASE_LEVELS),
+        "description": "What an alert investigation may change on the host.",
+        "help": (
+            "read_only: it only looks. approval: each change it wants to make waits in the "
+            "approvals queue — LabDog sends no notification yet, so a request nobody opens the "
+            "page to see expires after ai.approval_expiry_hours. Alerts named in "
+            "ai.alert_full_auto_alertnames may go further."
+        ),
+    },
+    "ai.alert_full_auto_alertnames": {
+        "type": "text",
+        "default": "",
+        "max_length": 4000,
+        "validator": validate_alertnames,
+        "description": "Alerts that may change the host without asking, one name per line.",
+        "help": (
+            "Exact alert names, no wildcards. Their investigations run at full auto — changes are "
+            "made with nobody approving them — but only while every safeguard holds: the alert "
+            "is firing and names a LabDog host, the webhook token is at least 32 characters, a "
+            "snapshot can be taken first, no other automatic fix is running on the host, and the "
+            "cooldown and daily cap allow it. Otherwise the alert runs at "
+            "ai.alert_autonomy_level, and its row on the Alerts page says why."
+        ),
+    },
+    "ai.alert_full_auto_requires_snapshot": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "Allow full auto only on hosts LabDog can snapshot first.",
+        "help": (
+            "Needs ai.snapshot_before_mutating on and a Proxmox VM mapping for the host. Turn off "
+            "to allow full auto on bare metal and unmapped hosts, whose changes then have no "
+            "rollback point."
+        ),
+    },
+    "ai.alert_remediation_cooldown_minutes": {
+        "type": "int",
+        "default": 60,
+        "min": 0,
+        "max": 10080,
+        "description": "Minutes before an alert may automatically fix the same host again.",
+        "help": (
+            "Starts when a full-auto session for that alert changes the host. A fix that does not "
+            "hold, or a flapping alert, would otherwise make the same change over and over. The "
+            "alert is still investigated during the cooldown, at ai.alert_autonomy_level. "
+            "0 = no cooldown."
+        ),
+    },
+    "ai.alert_remediation_daily_cap": {
+        "type": "int",
+        "default": 3,
+        "min": 1,
+        "max": 100,
+        "description": "Most automatic fixes one host may get in 24 hours.",
+        "help": (
+            "Counts full-auto alert sessions that changed the host, across every alert. Past it, "
+            "investigations of that host run at ai.alert_autonomy_level."
+        ),
+    },
+    "ai.alert_max_commands": {
+        "type": "int",
+        "default": 10,
+        "min": 1,
+        "max": 200,
+        "description": "Maximum shell commands in a full-auto alert session.",
+        "help": "The lower of this and ai.max_commands applies.",
+    },
+    "ai.alert_wall_clock_seconds": {
+        "type": "int",
+        "default": 600,
+        "min": 30,
+        "max": 21600,
+        "description": "Maximum wall-clock seconds for a full-auto alert session.",
+        "help": "The lower of this and ai.wall_clock_seconds applies.",
     },
 }
 

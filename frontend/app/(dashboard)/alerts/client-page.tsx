@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { apiFetch, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { shortAgo } from "@/lib/fleet"
-import { def, ALERT_SEVERITY, ALERT_STATUS, AI_SESSION_STATUS } from "@/lib/status"
+import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_SESSION_STATUS } from "@/lib/status"
 import { PageHead, Seg, Table, Tag } from "@/components/ld"
 import type { AlertEvent } from "@/lib/types"
 
@@ -33,6 +33,18 @@ const INVESTIGATION_LABEL: Record<string, string> = {
   succeeded: "investigated",
   failed: "investigation failed",
   cancelled: "investigation stopped",
+}
+
+/** What the investigation was allowed to change. Shown when that is more
+ *  than looking, or when the alert is on the full-auto list and a
+ *  safeguard held it back — a plain read-only row says nothing, because
+ *  that is every row until remediation is switched on. The note (why this
+ *  level) is on hover, like the outcome detail beside it. */
+function AutonomyTag({ alert }: { alert: AlertEvent }) {
+  const level = alert.investigation_autonomy
+  if (!level || (level === "read_only" && !alert.investigation_autonomy_note)) return null
+  const { label, tone } = def(AI_AUTONOMY, level)
+  return <Tag tone={tone} title={alert.investigation_autonomy_note ?? undefined}>{label}</Tag>
 }
 
 export default function AlertsPage() {
@@ -100,12 +112,17 @@ export default function AlertsPage() {
             },
           },
           {
-            k: "investigation", label: "investigation", w: "minmax(120px,1fr)", sortable: false,
-            cell: (a) => a.investigation_status ? (
-              <Tag tone={def(AI_SESSION_STATUS, a.investigation_status).tone} title={a.investigation_detail ?? undefined}>{INVESTIGATION_LABEL[a.investigation_status] ?? a.investigation_status}</Tag>
-            ) : a.investigation_outcome ? (
-              <Tag title={a.investigation_detail ?? undefined}>{OUTCOME_LABEL[a.investigation_outcome] ?? a.investigation_outcome}</Tag>
-            ) : <span className="text-text-faint">—</span>,
+            k: "investigation", label: "investigation", w: "minmax(150px,1fr)", sortable: false,
+            cell: (a) => (
+              <span className="flex flex-wrap items-center gap-1">
+                {a.investigation_status ? (
+                  <Tag tone={def(AI_SESSION_STATUS, a.investigation_status).tone} title={a.investigation_detail ?? undefined}>{INVESTIGATION_LABEL[a.investigation_status] ?? a.investigation_status}</Tag>
+                ) : a.investigation_outcome ? (
+                  <Tag title={a.investigation_detail ?? undefined}>{OUTCOME_LABEL[a.investigation_outcome] ?? a.investigation_outcome}</Tag>
+                ) : <span className="text-text-faint">—</span>}
+                <AutonomyTag alert={a} />
+              </span>
+            ),
           },
           {
             k: "go", label: "", w: "110px", right: true, sortable: false,

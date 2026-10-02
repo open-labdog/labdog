@@ -9,6 +9,30 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **Alert investigations can fix what they find.** They were read-only
+  with no way to raise them. `ai.alert_autonomy_level` now sets what every
+  alert's session may change — `read_only` (the default, so nothing
+  changes on upgrade) or `approval` — and `ai.alert_full_auto_alertnames`
+  names alerts, one per line, whose session may change the host without
+  asking. There is no instance-wide full auto for alerts: you name each
+  one whose fix you trust to run unattended.
+
+  A named alert runs at full auto only while every safeguard holds: it is
+  firing and names a LabDog host, which is the only host it may touch; a
+  webhook-delivered alert needs a webhook token of at least 32
+  characters; the host can be snapshotted first
+  (`ai.alert_full_auto_requires_snapshot`, on by default); no other
+  automatic fix is running on the host; no full-auto session for that
+  alert changed the host within `ai.alert_remediation_cooldown_minutes`
+  (60); and fewer than `ai.alert_remediation_daily_cap` (3) changed it in
+  the last 24 hours. Otherwise it is still investigated, at the base
+  level, and the Alerts page says which safeguard held it back. Full-auto
+  alert sessions run under lower caps (`ai.alert_max_commands`,
+  `ai.alert_wall_clock_seconds`), are told what a fix may and may not be,
+  and refuse a change while a sync or action run is working on the host.
+  The Alerts page tags each investigation that could change something
+  with its level.
+
 - **Schedules can run on local time.** A new setting,
   `scheduling.timezone` under Settings › Fleet › Scheduling, names the
   timezone every scheduled action's and cron-scheduled discovery scan's

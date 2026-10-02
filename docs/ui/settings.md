@@ -149,9 +149,24 @@ here; see [Alerts](alerts.md).
 |---------|-----|---------|-------|-------------|
 | Alert Intake | `ai.alert_intake_enabled` | `0` (off) | 0 – 1 | Accept alerts from Grafana and Alertmanager. |
 | Alertmanager Poll | `ai.alertmanager_poll_minutes` | `0` (never) | 0 – 1440 min | Poll the default Mimir instance's Alertmanager API, as a fallback for alerts that arrived while LabDog was unreachable. **Only useful when your alert rules live in Mimir's ruler** — Grafana-managed rules go to Grafana's own Alertmanager, which this cannot see, and the poll then records nothing while looking healthy. See [Alerts](alerts.md#alertmanager-poll-catch-up). |
-| Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start a read-only investigation when an eligible alert arrives. |
+| Auto Investigate | `ai.auto_investigate_enabled` | `0` (off) | 0 – 1 | Start an investigation when an eligible alert arrives. What it may change is set under *Alert remediation* below. |
 | Minimum Severity | `ai.auto_investigate_min_severity` | `critical` | info / warning / critical | Lowest severity that triggers one. An alert whose severity is missing or not one of these is **skipped and says so**, rather than being guessed either way. |
 | Investigation Prompt | `ai.alert_mission_template` | built-in wording | up to 8000 characters | The prompt an alert investigation starts from. See below. |
+
+**Alert remediation.** What an alert's investigation may change. Full auto
+is reached only by naming an alert, never instance-wide — see
+[Alerts](alerts.md#what-the-session-can-do) for why, and for the
+safeguards a named alert must pass.
+
+| Setting | Key | Default | Range | Description |
+|---------|-----|---------|-------|-------------|
+| Alert Autonomy | `ai.alert_autonomy_level` | `read_only` | read_only / approval | What every alert's session may change. At `approval` each change waits in the approvals queue; LabDog sends no notification yet, so a request nobody sees expires after `ai.approval_expiry_hours`. |
+| Full-Auto Alerts | `ai.alert_full_auto_alertnames` | empty | up to 4000 characters | Alerts, one exact name per line, whose session may change the host without asking. No wildcards. |
+| Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts LabDog can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
+| Remediation Cooldown | `ai.alert_remediation_cooldown_minutes` | `60` | 0 – 10080 min | After a full-auto session for an alert changes a host, how long before that alert may change it again (0 = no cooldown). |
+| Remediation Daily Cap | `ai.alert_remediation_daily_cap` | `3` | 1 – 100 | Most full-auto sessions that may change one host in 24 hours, across all alerts. |
+| Alert Max Commands | `ai.alert_max_commands` | `10` | 1 – 200 | Shell commands in a full-auto alert session. The lower of this and `ai.max_commands` applies. |
+| Alert Wall Clock | `ai.alert_wall_clock_seconds` | `600` | 30 – 21600 s | Run time for a full-auto alert session. The lower of this and `ai.wall_clock_seconds` applies. |
 
 **Changes and approvals.**
 
