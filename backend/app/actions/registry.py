@@ -31,6 +31,14 @@ so a rebuild takes a lock that serialises it against every other one
 (:mod:`app.packs.locks`), and installs what it merged before it records
 anything (BUG-96).
 
+A copy goes stale when another process changes what it was built from:
+the API syncs a pack or records a pin, and a worker's copy still says
+what it said at boot. And a Celery pool process starts with the bundled
+pack alone, from the import below. So worker code calls
+:func:`ensure_registry_current` before it relies on the registry, which
+rebuilds whenever the database no longer matches what this copy was
+built from (BUG-105).
+
 Callers (API handlers, Celery tasks) keep using ``ACTION_REGISTRY``
 exactly as before — they don't need to know where the actions came
 from. They MUST check ``ActionDefinition.is_unresolved`` (or
@@ -40,6 +48,7 @@ from. They MUST check ``ActionDefinition.is_unresolved`` (or
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from pathlib import Path
 
@@ -52,6 +61,7 @@ __all__ = [
     "ActionParameter",
     "ANSIBLE_DIR",
     "BUNDLED_PACK_NAME",
+    "ensure_registry_current",
     "reload_registry_async",
 ]
 
@@ -68,6 +78,11 @@ ACTION_REGISTRY: dict[str, ActionDefinition] = {}
 #: ``GET /api/action-resolutions`` so the UI doesn't need to re-scan
 #: manifests on every render.
 ACTION_REGISTRY_CONTRIBUTORS: dict[str, list] = {}
+
+#: :func:`registry_inputs` as this process's registry was last built from
+#: them. ``None`` until it has been built from the database at all: the
+#: import-time registry is the bundled pack alone.
+_BUILT_FROM: str | None = None
 
 
 def _bundled_pack():
@@ -131,8 +146,14 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     from app.packs.locks import lock_registry  # noqa: PLC0415
     from app.packs.service import scan_db_packs  # noqa: PLC0415
 
+    global _BUILT_FROM
+
     await lock_registry(db)
 
+    # Read before the inputs themselves, so that a change landing between
+    # the two can only make this process rebuild once more than it needed
+    # to, never once less.
+    built_from = await registry_inputs(db)
     db_packs, missing = await scan_db_packs(db)
     packs = [_bundled_pack(), *db_packs]
 
@@ -151,6 +172,7 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
         prior_winners=prior_winners,
     )
     _install(result)
+    _BUILT_FROM = built_from
 
     stale_keys = result.stale_resolution_keys
     snapshot = result.new_snapshot
@@ -183,6 +205,86 @@ async def reload_registry_async(db) -> dict[str, ActionDefinition]:
     # flight, which every caller has always relied on.
     await db.commit()
     return ACTION_REGISTRY
+
+
+async def ensure_registry_current(db) -> None:
+    """Rebuild this process's registry unless it matches the database.
+
+    For worker code to call before it relies on the registry. Two ways a
+    worker's copy went wrong, both BUG-105:
+
+    * A Celery pool process is forked before its parent's boot rebuild and
+      imports this module itself, so its registry was the bundled pack
+      alone. Every git-pack action was missing from it, and a key the
+      bundled pack also has resolved to the bundled definition whatever
+      the operator had pinned. The scheduler skipped a git-pack schedule
+      as "unknown action" on every tick that landed on such a process.
+    * Nothing told a worker when the API rebuilt after a pack sync or a
+      pin, so the worker went on running what it had loaded at boot.
+
+    Costs two small queries when nothing has changed. Commits the
+    caller's session when it does rebuild, as every rebuild does, and
+    rolls it back when the rebuild fails, so call it first, before the
+    caller has anything of its own in the session.
+
+    Never raises. A rebuild that fails — a pack whose path no longer
+    passes the containment check, the database gone for a moment — is
+    logged, and the process carries on with the registry it has: callers
+    include the scheduler, and a stale registry stops fewer schedules
+    than none.
+    """
+    try:
+        if _BUILT_FROM is not None and await registry_inputs(db) == _BUILT_FROM:
+            return
+        await reload_registry_async(db)
+    except Exception:
+        logger.warning(
+            "could not bring the action registry up to date; using the one this process has",
+            exc_info=True,
+        )
+        try:
+            await db.rollback()
+        except Exception:
+            logger.debug("rollback after a failed registry rebuild failed too", exc_info=True)
+
+
+async def registry_inputs(db) -> str:
+    """A digest of everything in the database that a rebuild depends on.
+
+    The packs — which exist, which are enabled, where they live, whether
+    they are trusted, and the commit and time of their last sync — and
+    the operator's pins. Not the snapshot: every rebuild rewrites it, so
+    including it would have each process's rebuild send all the others
+    to rebuild in turn.
+    """
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from app.packs.models import ActionPack, ActionResolution  # noqa: PLC0415
+
+    packs = (
+        await db.execute(
+            select(
+                ActionPack.id,
+                ActionPack.enabled,
+                ActionPack.source_type,
+                ActionPack.git_repository_id,
+                ActionPack.path,
+                ActionPack.local_path,
+                ActionPack.trusted,
+                ActionPack.current_sha,
+                ActionPack.last_synced_at,
+            ).order_by(ActionPack.id)
+        )
+    ).all()
+    pins = (
+        await db.execute(
+            select(ActionResolution.action_key, ActionResolution.pack_id).order_by(
+                ActionResolution.action_key
+            )
+        )
+    ).all()
+    material = repr(([tuple(r) for r in packs], [tuple(r) for r in pins]))
+    return hashlib.sha256(material.encode()).hexdigest()
 
 
 # ---------------------------------------------------------------------------

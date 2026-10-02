@@ -43,7 +43,7 @@ def check_due() -> dict:
 async def _check_due_async() -> dict:
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.actions.run_target import describe_target
     from app.audit.logger import log_action
     from app.cron_walk import get_schedule_timezone, next_fire_time
@@ -59,6 +59,11 @@ async def _check_due_async() -> dict:
     now = datetime.now(UTC)
 
     async with task_session() as db:
+        # Before any lookup below. This runs on whichever pool process the
+        # tick lands on, and one that had not rebuilt since it was forked
+        # held the bundled pack alone: every git-pack schedule was skipped
+        # as unknown until a tick happened to land elsewhere (BUG-105).
+        await ensure_registry_current(db)
         tz = await get_schedule_timezone(db)
         rows = (
             (
@@ -117,8 +122,10 @@ async def _check_due_async() -> dict:
                 action = ACTION_REGISTRY.get(sa.action_key)
                 if action is None:
                     # The pack was disabled or removed; the schedule
-                    # outlived its action. Log and move on — operators
-                    # see this in the row's UI as "action not found".
+                    # outlived its action — the registry was brought up
+                    # to date above, so the miss is real. Log and move on
+                    # — operators see this in the row's UI as "action not
+                    # found".
                     logger.warning(
                         "scheduled_action %d references unknown action %r; skipping",
                         sa.id,
