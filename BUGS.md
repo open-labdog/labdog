@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-105`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-106`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -316,3 +316,62 @@ container log, and confirmed against source.
 ### Correctness — High
 
 _No bugs are currently open._
+
+---
+
+## Open — 2026-10-02 found investigating AI session 18
+
+Filed 2026-10-02 from AI session 18 on lin-manager (a read-only chat
+session on k8s-0) and the other sessions' refused calls, and confirmed
+against `safety.py` and bash.
+
+### Correctness — Medium
+
+- [ ] **BUG-106** `backend/app/ai/safety.py:452`, `:510`, `:518` — the
+      command classifier reads shell operators inside quotes as operators,
+      so a read-only session cannot run `grep -E 'a|b'`
+
+      Symptom: session 18 asked what Kubernetes version k8s-0 runs, and
+      the model ran ``dpkg -l | grep -E 'kubelet|kubeadm|kubectl'``. It was
+      refused: "'kubeadm' is not a known read-only command, so it is
+      treated as a write". The command runs `dpkg` and `grep` and nothing
+      else. Of the six calls the classifier has refused across sessions
+      12–18, five contain a quoted `|` (`grep -E '8096|8920'`,
+      `grep -iE "fail|error|oom"`, `grep "Started\|Stopping"`, and the
+      one above); with the quoted `|` taken out, three are read-only, one is
+      refused for `curl -s -o /dev/null` (see below), and the sixth was
+      never a quoting problem (`kubelet` is not on the allowlist).
+
+      Root cause: `_SEGMENT_SPLIT` cuts the line at every `|`, `;`, `&` and
+      newline, quoted or not. Its comment says so and calls it
+      conservative, and for safety it is. For usability it is not:
+      `grep -E 'kubelet|kubeadm'` becomes `grep -E 'kubelet` and
+      `kubeadm'`, whose head is not on the allowlist, so the line is
+      `mutating` and the refusal quotes a fragment of the model's regex as
+      though it were a command. `;`, `&`, `&&`, `||` and a newline inside a
+      quoted pattern do the same. `_REDIRECT` and `_INPUT_REDIRECT` read a
+      quoted `>` or `<` as a redirect, so ``grep -r '<title>' /var/www`` is
+      refused as "input is redirected from a file" and
+      ``ip route | grep '->'`` as "output is redirected to a file". A
+      read-only session has no approval path, so the model loses the
+      commonest filter idiom outright, and under `approval` it raises a
+      prompt for a read.
+
+      `curl -s -o /dev/null -w '%{http_code}'` is refused by the `-o` gate
+      in `_ARG_GATED_HEADS`, which does not know that `/dev/null` is not a
+      file. Separate from the quoting, and left for its own change.
+
+      Fix direction: read the line quote-aware for the two things that
+      depend on it, splitting into segments and finding redirects, and
+      leave everything else as it is. The denylist and the substitution
+      check stay quote-blind on purpose: `sh -c 'rm -rf /'` is quoted, and
+      `"$(...)"` still runs. Fall back to today's reading whenever the
+      quoting is something the reader cannot follow with certainty — an
+      unterminated quote, `$'…'` or `$"…"`, an unquoted `#` — so the
+      change can only turn a refusal into a read for plainly quoted text.
+      Check it against bash rather than against intent: every line the
+      classifier calls read-only must run nothing but its allowed heads
+      and create no file.
+
+      Severity Medium: it fails safe, but it makes the read-only default
+      unusable for the pipelines a sysadmin writes first.
