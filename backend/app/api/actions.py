@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.actions.registry import ACTION_REGISTRY, reload_registry
+from app.actions.registry import ACTION_REGISTRY, reload_registry_async
 from app.actions.run_target import describe_target
 from app.actions.validation import DRY_RUN_PARAM, build_param_model
 from app.auth.users import current_active_user
@@ -86,14 +86,22 @@ async def list_actions(
 @router.post("/refresh")
 async def refresh_actions(
     _: User = Depends(current_active_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """Re-sync the remote default pack and rescan user packs.
+    """Sync every enabled pack from its source, then rebuild ACTION_REGISTRY.
 
-    Pulls the configured remote default pack (if any) and re-scans disk,
-    then rebuilds ACTION_REGISTRY in place. Returns a summary so admins
-    can confirm which packs contributed.
+    The same as the API does in the background at startup. Returns a
+    summary so admins can confirm which packs contributed.
+
+    This used to call a synchronous rebuild that needed psycopg2, which
+    LabDog does not install. It fell back to the bundled pack alone and
+    installed that, so every call dropped every DB pack's actions from
+    the API until something rebuilt the registry again (BUG-96).
     """
-    registry = reload_registry()
+    from app.packs.service import sync_enabled_packs  # noqa: PLC0415
+
+    await sync_enabled_packs(db)
+    registry = await reload_registry_async(db)
     packs = sorted({defn.pack_name for defn in registry.values()})
     return {
         "action_count": len(registry),

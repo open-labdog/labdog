@@ -14,7 +14,7 @@ and the ``/api/scheduled-actions`` API can treat them identically.
 The leading ``_builtin.`` prefix is reserved (manifest validation
 rejects pack keys starting with ``_``); built-ins always win on key
 collision because they're applied last in
-``app.actions.registry.reload_registry``.
+``app.actions.registry.reload_registry_async``.
 
 Per-host dispatch is handled by the routing in
 ``app.tasks.action_orchestrator.run_action``; built-ins have no
