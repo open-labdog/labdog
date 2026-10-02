@@ -88,7 +88,7 @@ entry for the work itself.
 
 | Idea | Notes |
 |------|-------|
-| **Notification system** | Email/webhook/Slack alerts on drift detection, sync failures, certificate expiry |
+| **Notification system** | Email ships for alerts, approvals and automatic fixes ([Email notifications](docs/ui/notifications.md)). Open: the same for drift detection, sync failures and certificate expiry, and webhook/Slack channels — see TODO.md |
 | **API tokens** | Non-cookie auth for CI/CD integration or scripting against the LabDog API |
 | **Host tagging & filtering** | Tags beyond groups for flexible organisation (e.g. `region:eu`, `env:prod`) |
 | **Import/export configuration** | Backup and restore group configs, rules, service definitions |

@@ -90,6 +90,14 @@ export function AccountMenu({ compact }: { compact?: boolean }) {
           </button>
           <Link
             role="menuitem"
+            href="/notifications#yours"
+            onClick={() => setOpen(false)}
+            className="rounded-r px-2.5 py-1.5 text-left text-xs text-text-2 hover:bg-surface-2 hover:text-text hover:no-underline"
+          >
+            Email notifications…
+          </Link>
+          <Link
+            role="menuitem"
             href="/settings?section=system"
             onClick={() => setOpen(false)}
             className="rounded-r px-2.5 py-1.5 text-left text-xs text-text-2 hover:bg-surface-2 hover:text-text hover:no-underline"

@@ -124,6 +124,12 @@ async def park(
 
     session.status = "waiting_approval"
     await db.flush()
+
+    # A parked session is waiting on a person, and nothing else tells them.
+    # Queued in this transaction, so a park that rolls back sends nothing.
+    from app.notifications.service import notify_approval_requested
+
+    await notify_approval_requested(db, approval)
     return approval
 
 

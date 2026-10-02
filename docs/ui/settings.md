@@ -92,7 +92,7 @@ always visible.
 |---------|-----|---------|-------|-------------|
 | Log Level | `logging.level` | `info` | `debug` `info` `warning` `error` `critical` | Application log verbosity. Use `debug` to trace API calls and task execution. Use `warning` or higher in production to reduce noise. |
 | Audit Retention | `logging.audit_retention_days` | `90` | 0 – 3650 days | How many days to keep audit log entries and terminal transcripts. Entries older than this are purged daily. `0` keeps them forever. |
-| Run Retention | `logging.run_retention_days` | `90` | 0 – 3650 days | How many days to keep finished action runs, their transcripts, and sync jobs. `0` keeps them forever. |
+| Run Retention | `logging.run_retention_days` | `90` | 0 – 3650 days | How many days to keep finished action runs, their transcripts, sync jobs, and the record of sent and failed [notifications](notifications.md). `0` keeps them forever. |
 | Drift Retention | `logging.drift_retention_days` | `90` | 0 – 3650 days | How many days to keep individual drift-check samples. Older samples are folded into running totals before they are deleted, so the exported drift counters never go backwards. `0` keeps them forever. |
 
 The System section also holds the [Prometheus export](../metrics-export.md)
@@ -160,7 +160,7 @@ safeguards a named alert must pass.
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Alert Autonomy | `ai.alert_autonomy_level` | `read_only` | read_only / approval | What every alert's session may change. At `approval` each change waits in the approvals queue; LabDog sends no notification yet, so a request nobody sees expires after `ai.approval_expiry_hours`. |
+| Alert Autonomy | `ai.alert_autonomy_level` | `read_only` | read_only / approval | What every alert's session may change. At `approval` each change waits in the approvals queue, and a request nobody sees expires after `ai.approval_expiry_hours` — subscribe to [email](notifications.md) for it. |
 | Full-Auto Alerts | `ai.alert_full_auto_alertnames` | empty | up to 4000 characters | Alerts, one exact name per line, whose session may change the host without asking. No wildcards. |
 | Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts LabDog can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
 | Remediation Cooldown | `ai.alert_remediation_cooldown_minutes` | `60` | 0 – 10080 min | After a full-auto session for an alert changes a host, how long before that alert may change it again (0 = no cooldown). |

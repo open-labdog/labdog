@@ -156,11 +156,13 @@ async def _run_session_async(session_id: int) -> dict:
         except Exception as exc:
             logger.exception("ai_task: session %s failed", session_id)
             await _force_fail(db, session_id, str(exc))
+            await _report_remediation(db, session_id)
             await publish("error", {"message": str(exc)})
             await publish("status", {"status": "failed"})
             redis_client.close()
             return {"session_id": session_id, "status": "failed", "error": str(exc)}
 
+        await _report_remediation(db, session_id)
         redis_client.close()
         return {
             "session_id": session_id,
@@ -168,6 +170,29 @@ async def _run_session_async(session_id: int) -> dict:
             "iterations": outcome.iterations,
             "stopped_by": outcome.stopped_by,
         }
+
+
+async def _report_remediation(db, session_id: int) -> None:
+    """Tell subscribers what an unattended alert session changed.
+
+    Called on the failure path too: a session that restarted a service
+    and then crashed still restarted the service. Re-read rather than
+    trusted from the runner's object, which ``_force_fail`` bypasses.
+    Never raises — the session's own outcome is already recorded, and a
+    notification problem must not turn it into a task failure.
+    """
+    from app.ai.alert_autonomy import is_unattended_remediation
+    from app.notifications.service import notify_remediation
+
+    try:
+        session = await db.get(AISession, session_id, populate_existing=True)
+        if session is None or not is_unattended_remediation(session):
+            return
+        await notify_remediation(db, session)
+        await db.commit()
+    except Exception:
+        logger.exception("ai_task: could not queue the remediation notice for %s", session_id)
+        await db.rollback()
 
 
 @celery_app.task(

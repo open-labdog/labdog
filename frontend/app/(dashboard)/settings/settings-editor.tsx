@@ -133,6 +133,12 @@ const CATEGORIES: Record<string, Category> = {
     label: "Discovery",
     keys: ["discovery.scan_timeout", "discovery.max_concurrent"],
   },
+  // Rendered on the Email page (/notifications), beside the mail server
+  // these only matter with, rather than on Settings itself.
+  notifications: {
+    label: "Notifications",
+    keys: ["notifications.public_url", "notifications.approval_expiry_warning_hours"],
+  },
   logging: {
     label: "Logging",
     keys: [

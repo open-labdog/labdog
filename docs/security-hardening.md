@@ -355,6 +355,16 @@ one feature that runs commands nobody wrote in advance.
   master key as every other secret, and participate in
   [key rotation](encryption-key-rotation.md).
 
+**Email notifications** store an SMTP password the same way, and the API
+never returns it — only whether one is set. Two choices limit what an
+email can do. Links in it are built from `notifications.public_url`,
+never from a request's `Host` header, which the client controls; with no
+URL set, nothing with a link is sent. And no email can approve a change:
+approval happens signed in, because a link that ran a root command would
+make a mailbox a credential. Alert and command text in a message goes
+through the transcript's credential redaction first. See
+[Email notifications](ui/notifications.md).
+
 **Alert intake** adds one unauthenticated-by-default surface and closes
 it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
 a LabDog session — it has to be, since Grafana has none — so it is gated

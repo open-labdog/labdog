@@ -46,6 +46,7 @@ def _build_column_registry() -> list[tuple[Any, str, bool]]:
     from app.grafana.models import GrafanaInstance
     from app.models.git_repository import GitRepository
     from app.models.ssh_key import SSHKey
+    from app.notifications.models import SMTPSettings
     from app.proxmox.models import ProxmoxNode
 
     return [
@@ -54,6 +55,7 @@ def _build_column_registry() -> list[tuple[Any, str, bool]]:
         (GitRepository, "encrypted_https_token", True),
         (GrafanaInstance, "encrypted_token", True),
         (AIProvider, "encrypted_api_key", True),
+        (SMTPSettings, "encrypted_password", True),
     ]
 
 

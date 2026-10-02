@@ -49,6 +49,7 @@ async def _expire_stale_approvals() -> dict:
 
     from app.ai.models import AIApprovalRequest, AISession  # noqa: PLC0415
     from app.db import task_session  # noqa: PLC0415
+    from app.notifications.service import notify_approval_expired  # noqa: PLC0415
 
     now = datetime.now(UTC)
     resumed: list[int] = []
@@ -79,6 +80,8 @@ async def _expire_stale_approvals() -> dict:
             session = await db.get(AISession, approval.session_id)
             if session is not None and session.status == "waiting_approval":
                 resumed.append(session.id)
+
+            await notify_approval_expired(db, approval)
 
         await db.commit()
 

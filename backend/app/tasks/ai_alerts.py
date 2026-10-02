@@ -220,12 +220,15 @@ async def _poll() -> dict:
             logger.warning("ai_alerts: Alertmanager poll failed: %s", exc)
             return {"polled": 0, "error": str(exc)}
 
+        from app.notifications.service import notify_alert_fired
+
         alerts = from_alertmanager_v2(raw)
         created_ids: list[int] = []
         for alert in alerts:
             event, created = await record(db, alert, source="alertmanager_poll")
             if created and alert.is_firing:
                 created_ids.append(event.id)
+                await notify_alert_fired(db, event)
         await db.commit()
 
     # Dispatched after the commit so the task cannot read a row that the
