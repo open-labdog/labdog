@@ -492,7 +492,14 @@ async def _sync_packs_then_reload() -> None:
     Nothing here is on the critical path: the registry has already been
     loaded from what is on disk before this starts, so the process is
     serving actions the whole time. This only picks up commits pushed
-    since the last run.
+    since the last run — and, on a container with no volume for the
+    packs, the packs themselves.
+
+    The ``work`` worker does the same at the same moment. Each pack's git
+    run and each registry rebuild is locked across processes, so the two
+    take turns rather than racing: the API's rebuild used to lose that
+    race on the snapshot table, and the API went on serving the bundled
+    pack alone (BUG-96).
     """
     logger = logging.getLogger(__name__)
     try:

@@ -136,9 +136,12 @@ def _sync_packs_on_worker_start(sender=None, **_kwargs):
     Failures are logged and swallowed so a failing git remote doesn't
     prevent the worker from starting.
 
-    The orchestrator worker reloads the registry but does **not** sync:
-    two processes running `git pull` into the same pack working trees at
-    boot is a race, and the orchestrator only ever reads the registry.
+    The orchestrator worker reloads the registry but does **not** sync: it
+    only ever reads the registry, and the API and this worker's sibling
+    already sync every pack at boot. Those two take turns in each
+    checkout, under the pack's checkout lock, and their rebuilds take
+    turns under the registry lock (BUG-96); a third sync would only wait
+    in line for nothing.
     """
     orchestrator = _is_orchestrator_worker(sender)
     try:

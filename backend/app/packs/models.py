@@ -116,7 +116,7 @@ class ActionResolution(Base):
        per-key radio writes a row here.
     2. **Per-key resolution UI** — operators set/change/clear pins
        directly on the ``/action-packs`` page.
-    3. **Sync-time freeze** — when ``reload_registry`` detects that a
+    3. **Sync-time freeze** — when ``reload_registry_async`` detects that a
        previously-uncontested key just became contested (a pack's
        upstream pushed a new manifest that conflicts with another
        pack), it auto-writes a row pinning the **previous winner**.

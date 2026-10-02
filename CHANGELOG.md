@@ -275,6 +275,24 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **A restart no longer leaves the API with only the bundled actions.**
+  The API and the Celery worker rebuild the action registry at the same
+  moment at boot, and the rebuild replaced its snapshot table with a
+  DELETE and an INSERT that failed when the two interleaved. The API
+  only took the registry it had merged once that write succeeded, so it
+  was left serving the bundled pack: every git pack's actions vanished
+  from the UI and the API while both packs said they were synced, until
+  someone happened to sync a pack. Rebuilds now take turns across
+  processes, and a process installs what it merged whether or not the
+  write succeeds. Two processes no longer run git in the same pack
+  checkout at once either. An enabled pack with nothing on disk yet, as
+  on a container without a volume for the packs before its first sync,
+  no longer gets its pins dropped as stale or its keys recorded under
+  another pack. `POST /api/actions/refresh` did the same damage on every
+  call: it used a rebuild that needs a database driver LabDog doesn't
+  install, fell back to the bundled pack, and installed that. It now
+  syncs and rebuilds like the startup job.
+
 - **A multi-host run carries on when LabDog restarts under it.** The task
   that hands a run's hosts out, a batch at a time, died with the
   container, and nothing took over: the hosts it had not reached stayed
