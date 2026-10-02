@@ -288,7 +288,7 @@ async def _run_action_group_async(action_run_id: int) -> None:
     from sqlalchemy import select
 
     from app.actions.extra_vars import sanitize_extra_vars
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.actions.validation import DRY_RUN_PARAM
     from app.ansible_runtime.known_hosts import remove_known_hosts, write_known_hosts
     from app.ansible_runtime.runner import generate_multi_host_inventory, run_ansible
@@ -336,6 +336,9 @@ async def _run_action_group_async(action_run_id: int) -> None:
         master_key = get_master_key()
 
         async with task_session() as db:
+            # Current before the lookup, not only on a miss: a key the
+            # bundled pack also has never misses (BUG-105).
+            await ensure_registry_current(db)
             run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run: ActionRun = run_result.scalar_one()
 

@@ -221,7 +221,7 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
     """
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
     from app.models.host import Host, HostGroupMembership
@@ -244,6 +244,11 @@ async def _run_action_async(action_run_id: int, orchestrator_id: str | None = No
     # path's "mark running" write before the group task even starts.
     try:
         async with task_session() as db:
+            # The dispatch shape comes from the registry, so it has to be
+            # this process's current one: a pool process still on the
+            # bundled pack alone would fan a git-pack ``supports_host:
+            # false`` action out per host (BUG-105).
+            await ensure_registry_current(db)
             run_result = await db.execute(select(ActionRun).where(ActionRun.id == action_run_id))
             run_peek: ActionRun | None = run_result.scalar_one_or_none()
             if run_peek is None:
@@ -460,13 +465,14 @@ async def _resume_run_async(action_run_id: int, orchestrator_id: str) -> None:
     """
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
     from app.tasks.action_timeouts import per_host_deadline_seconds
 
     try:
         async with task_session() as db:
+            await ensure_registry_current(db)
             run = (
                 await db.execute(
                     select(ActionRun).where(ActionRun.id == action_run_id).with_for_update()

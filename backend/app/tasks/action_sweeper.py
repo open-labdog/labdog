@@ -364,6 +364,16 @@ async def _take_over(db, run, now: datetime, stale_after: int) -> bool:
 
 async def _sweep_stale_action_runs_async() -> dict:
     """One sweep pass. Returns a summary for Celery result inspection."""
+    from app.actions.registry import ensure_registry_current  # noqa: PLC0415
+
+    # Every deadline below reads the action's own timeouts from the
+    # registry. On a pool process still holding the bundled pack alone, a
+    # git-pack action with a long ``playbook_timeout_seconds`` got the
+    # global default instead, and was swept while it was still running
+    # (BUG-105).
+    async with task_session() as db:
+        await ensure_registry_current(db)
+
     now = datetime.now(UTC)
 
     host_runs_swept, dispatched = await _sweep_stale_host_runs(now)

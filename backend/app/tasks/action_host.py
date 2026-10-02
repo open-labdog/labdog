@@ -480,7 +480,7 @@ async def _load_run_spec(ctx: _RunCtx) -> _RunSpec | None:
     """
     from sqlalchemy import select
 
-    from app.actions.registry import ACTION_REGISTRY
+    from app.actions.registry import ACTION_REGISTRY, ensure_registry_current
     from app.crypto import decrypt_ssh_key, get_master_key
     from app.db import task_session
     from app.models.action_run import ActionHostRun, ActionRun
@@ -488,6 +488,11 @@ async def _load_run_spec(ctx: _RunCtx) -> _RunSpec | None:
     from app.models.ssh_key import SSHKey
 
     async with task_session() as db:
+        # A key the bundled pack also has never misses, so the reload on a
+        # miss below never fired for one: a pool process that had not
+        # rebuilt ran the bundled definition whatever the operator pinned
+        # (BUG-105).
+        await ensure_registry_current(db)
         hr: ActionHostRun = (
             await db.execute(select(ActionHostRun).where(ActionHostRun.id == ctx.host_run_id))
         ).scalar_one()

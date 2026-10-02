@@ -275,6 +275,19 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Workers see the same actions as the UI.** Celery's worker processes
+  started with the bundled actions only, and picked up a git pack's actions
+  only if a task happened to ask for one they lacked. The scheduler never
+  asked: it skipped a git-pack schedule as "unknown action" on every tick
+  that landed on such a process, so on lin-manager a nightly
+  `labdog-private` schedule ran 16 minutes to two hours late after each
+  restart. An action the bundled pack also ships ran the bundled copy even
+  where a git pack was pinned, a long-running git-pack action could be
+  failed by the sweeper on the default timeout instead of its own, and a
+  pin or pack sync made in the UI never reached the workers at all. Worker
+  code now checks the packs and pins in the database before it relies on
+  the registry and rebuilds when they have changed.
+
 - **A restart no longer leaves the API with only the bundled actions.**
   The API and the Celery worker rebuild the action registry at the same
   moment at boot, and the rebuild replaced its snapshot table with a
