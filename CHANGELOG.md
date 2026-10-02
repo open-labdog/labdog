@@ -393,6 +393,22 @@ The format follows [Keep a Changelog]; LabDog follows
   `run_ssh_command`s in one turn both showed the first — and the second, with
   its result or the approval it was waiting on, never appeared in its place.
 
+### Security
+
+- **A read-only AI session could write a file.** The command classifier
+  skipped any redirect with a number in front of it, so that `2>/dev/null`
+  would pass, and with it `2>file`, `1>file`, `2>>file` and `word9>file`,
+  which bash opens and truncates like any other. It also judged an inline
+  shell by its payload alone, so `bash -c true > file` got the verdict on
+  `true`. Either let a session at any autonomy level, with no approval,
+  create or overwrite a file the SSH user can write. A redirect to a file
+  now counts as a write whatever is in front of it, and an inline shell's
+  own redirects are weighed with its payload's. `/dev/null` is the one file
+  that is not a write, so `> /dev/null` no longer needs approval either, and
+  a numbered input redirect (`0<file`) is read as an input redirect like any
+  other. The classifier's bash test now covers every spelling of a redirect,
+  and inline shells.
+
 ## [0.10.0] — 2026-09-18
 
 ### Security

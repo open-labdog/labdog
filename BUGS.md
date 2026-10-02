@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-107`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-107`, `SEC-37`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
