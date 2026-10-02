@@ -32,7 +32,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-106`, `SEC-35`,
+ID counter as of last housekeeping pass: `BUG-107`, `SEC-35`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -359,7 +359,7 @@ against `safety.py` and bash.
 
       `curl -s -o /dev/null -w '%{http_code}'` is refused by the `-o` gate
       in `_ARG_GATED_HEADS`, which does not know that `/dev/null` is not a
-      file. Separate from the quoting, and left for its own change.
+      file. Separate from the quoting: see BUG-107.
 
       Fix direction: read the line quote-aware for the two things that
       depend on it, splitting into segments and finding redirects, and
@@ -375,3 +375,28 @@ against `safety.py` and bash.
 
       Severity Medium: it fails safe, but it makes the read-only default
       unusable for the pipelines a sysadmin writes first.
+
+- [ ] **BUG-107** `backend/app/ai/safety.py:562-569` — `curl -s -o
+      /dev/null -w '%{http_code}'`, the usual health check, is refused as
+      a file write
+
+      Symptom: session 12, an alert investigation on lin-manager, ran
+      ``ss -tlnp 2>/dev/null | grep -E '8096|8920' ; curl -s -o /dev/null
+      -w '%{http_code}\n' http://localhost:8096/health`` and was refused:
+      "curl can write a file or upload local data with these options". The
+      model was checking whether Jellyfin answered.
+
+      Root cause: the curl gate in `_ARG_GATED_HEADS` matches any short
+      flag cluster that contains `o`, `O` or `T`, and `--output`, because
+      each of them names a file to write or upload. `-o /dev/null` names
+      the one file that discards what it is given, and `-s -o /dev/null -w
+      '%{http_code}'` is how a status code is read without the body.
+
+      Fix direction: let `-o` and `--output` through when their operand is
+      exactly `/dev/null`, and gate every other target as now. `-O` and
+      `-T` stay gated; neither has a harmless form. Needs the operand, so
+      this is a rule on the argument list, not on the flag cluster the
+      regex reads today.
+
+      Severity Low: it fails safe, and a model that is refused can use
+      `curl -sI`, which is allowed, though that sends HEAD rather than GET.
