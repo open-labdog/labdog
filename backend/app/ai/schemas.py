@@ -378,6 +378,11 @@ class AlertEventResponse(BaseModel):
     #: operator should not have to guess which one applied.
     investigation_outcome: str | None
     investigation_detail: str | None
+    #: What the investigation was allowed to change — read_only, approval
+    #: or full_auto — and, when a safeguard decided it or downgraded a
+    #: listed alert, why. NULL on rows from before alert remediation.
+    investigation_autonomy: str | None = None
+    investigation_autonomy_note: str | None = None
     #: The investigation's own status, once one exists — running,
     #: succeeded, failed, cancelled, waiting_approval.
     #:

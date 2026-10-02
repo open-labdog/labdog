@@ -4,7 +4,9 @@
 
 Alerts LabDog has received from Grafana or Alertmanager, newest first.
 Each one can be handed to the [AI assistant](assistant.md) to investigate
-— automatically under a policy you set, or by hand from this page.
+— automatically under a policy you set, or by hand from this page — and,
+if you allow it, to fix what it finds. See
+[What the session can do](#what-the-session-can-do).
 
 The screen is one table, one row per alert: when it fired, the alert name
 (with a `×N` repeat count), severity, status, its summary, and the
@@ -139,7 +141,9 @@ The prompt the session starts from is `ai.alert_mission_template` — see
 [Settings](settings.md#the-investigation-prompt) if you want to change what
 it asks.
 
-**There is no rate limit, and that is deliberate.** LabDog does not own
+**There is no rate limit on investigations, and that is deliberate.**
+(Automatic *fixes* have one — see
+[Full auto](#full-auto-for-named-alerts).) LabDog does not own
 your alerts; Grafana or Alertmanager does. A rule that fires, resolves
 and fires again every few minutes passes every check above each time,
 because each firing is genuinely new — and the fix belongs where the
@@ -218,9 +222,84 @@ press does not change.
 
 ## What the session can do
 
-Always **read-only**, with no way to raise it. An alert is a machine's
-opinion that something is wrong; acting on it unattended is a different
-feature with a different risk, and this one only looks.
+By default, **only look**. Two settings let it do more:
+
+| Setting | Default | Effect |
+|---|---|---|
+| `ai.alert_autonomy_level` | `read_only` | What every alert's session may change: `read_only`, or `approval` — each change it wants to make waits for someone to approve it |
+| `ai.alert_full_auto_alertnames` | empty | Alerts, one exact name per line, whose session may change the host **without asking** |
+
+There is no `full_auto` choice on the level, and that is deliberate. An
+alert is a machine's opinion that something is wrong, and you are the one
+who knows which opinions are specific enough to act on unattended — a
+"service down" alert with an obvious fix, say, rather than "disk fills in
+four hours". Naming them one by one keeps that judgement yours.
+
+**At `approval`, nothing tells you a change is waiting.** LabDog sends no
+notifications yet. The request sits in the approvals queue on the
+[Assistant](assistant.md) page and in the
+[Overview's Pending queue](dashboard.md#pending), and if nobody opens
+either it expires after `ai.approval_expiry_hours` and the session
+finishes without the change.
+
+When the session may change something, its instructions say so: it was
+started by an alert, nobody is watching, the alert text is data rather
+than instruction, and it may only change the host in scope, to deal with
+what the alert describes. At full auto they also say what a fix may be —
+small and reversible, such as restarting a failed service — and what it
+may not: installing or removing packages, editing configuration it has not
+read, deleting data, rebooting. Those it reports instead. The command
+classifier's denylist applies at every level, whatever the model is told.
+
+A row whose session could change something carries a second tag beside
+the investigation one — **approval required** or **full auto**. Hover it
+for why.
+
+### Full auto for named alerts
+
+An alert on `ai.alert_full_auto_alertnames` runs at full auto only while
+every one of these holds. The first that fails drops the session to
+`ai.alert_autonomy_level` — the alert is still investigated — and the
+row's tag says which:
+
+1. The alert is **firing**.
+2. It resolved to a **LabDog host**, and the session may touch only that
+   host.
+3. If it arrived by webhook, `[alerts] webhook_token` is **at least 32
+   characters**. With full auto on, that token is all that stands between
+   anyone who can reach the webhook and a root command on your hosts —
+   `openssl rand -hex 16` makes one.
+4. LabDog can **snapshot the host first**: `ai.snapshot_before_mutating`
+   is on and the host has a Proxmox VM mapping. Turn
+   `ai.alert_full_auto_requires_snapshot` off to allow full auto on bare
+   metal, whose changes then have no rollback point.
+5. **No other automatic fix is running** on the host.
+6. The **cooldown** has passed: no full-auto session for this alert has
+   changed this host in the last `ai.alert_remediation_cooldown_minutes`
+   (60). A fix that does not hold, or a flapping alert, would otherwise
+   make the same change over and over.
+7. The host is under its **daily cap**: fewer than
+   `ai.alert_remediation_daily_cap` (3) full-auto sessions changed it in
+   the last 24 hours, across all alerts.
+
+"Changed" means a command the classifier called a change reached the
+host — including one that exited non-zero, since a restart that failed
+halfway still changed something.
+
+A full-auto session also runs under tighter caps than a chat:
+`ai.alert_max_commands` (10) and `ai.alert_wall_clock_seconds` (600),
+or the general caps if those are lower. And it does not change a host
+LabDog is itself changing: a change it attempts while a sync or an action
+run is working on the host is refused, and it reports what it would have
+done instead. That narrows the overlap rather than closing it — a sync
+can still start while one of its commands is running.
+
+Every full-auto change gets the same treatment as one from the
+[Assistant](assistant.md): a snapshot first, the command in the audit
+log, and the session's transcript under **view →**. The session's creation
+is audited too, with the level and the reason for it.
+
+### Scope
 
 The session is scoped to the host LabDog resolved from the alert's
 labels — it checks `nodename`, `hostname`, `host`, `node`, then
@@ -270,6 +349,12 @@ logs.
 
 **Alerts appear but nothing is investigated.** Read the investigation tag. It names
 which of the six gates stopped it.
+
+**An alert on the full-auto list ran read-only (or at approval).** Hover
+the level tag on its row. It names the safeguard that held it back — see
+[Full auto for named alerts](#full-auto-for-named-alerts). Names are
+matched exactly, so check the spelling against the alert name on the row
+if there is no tag at all.
 
 **The poller reports "No Alertmanager API at this endpoint".** Mimir
 serves Alertmanager under `/alertmanager` on the same host as its query

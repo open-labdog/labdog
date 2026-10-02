@@ -147,7 +147,7 @@ async def _run_session_async(session_id: int) -> dict:
             redis_client.close()
             return {"session_id": session_id, "status": "failed", "error": str(exc)}
 
-        caps = await LoopCaps.from_settings(db)
+        caps = await LoopCaps.for_session(db, session)
         loop = build_runner(db, session, provider_row, caps, publish)
 
         try:
@@ -262,7 +262,7 @@ async def _resume_session_async(session_id: int) -> dict:
         session.error_message = None
         await db.commit()
 
-        caps = await LoopCaps.from_settings(db)
+        caps = await LoopCaps.for_session(db, session)
         runner = build_runner(db, session, provider_row, caps, publish, prompt=prompt)
 
         try:
@@ -383,7 +383,7 @@ async def _run_action_session(session_id: int, action_run_id: int) -> tuple[bool
             redis_client.close()
             return False, str(exc)
 
-        caps = await LoopCaps.from_settings(db)
+        caps = await LoopCaps.for_session(db, session)
         loop = build_runner(db, session, provider_row, caps, publish)
         try:
             outcome = await loop.run()

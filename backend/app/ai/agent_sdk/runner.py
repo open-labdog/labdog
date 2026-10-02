@@ -67,6 +67,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import approvals, service
 from app.ai.agent_sdk.bridge import NO_BUILTIN_TOOLS, build_tool_server, local_tool_name
 from app.ai.agent_sdk.environment import build_sdk_env, ensure_state_dir
+from app.ai.alert_autonomy import busy_refusal
 from app.ai.gate import decide
 from app.ai.loop import LoopCaps, LoopOutcome, build_system_prompt
 from app.ai.models import AIApprovalRequest, AIProvider, AISession, AIToolCall
@@ -563,14 +564,20 @@ class AgentSDKRunner:
             # callback: `verdict_for` is pure, and threading state between
             # two points in the SDK's own call stack would be one more
             # thing to get wrong under concurrent tool dispatch.
-            snapshot_name, refusal = await snapshot_if_mutating(
-                self.db,
-                classification=handler.verdict_for(arguments).classification,
-                arguments=arguments,
-                session_id=self.session.id,
-                label=str(arguments.get("command") or name),
-                skip=self.session.skip_snapshots,
+            classification = handler.verdict_for(arguments).classification
+            snapshot_name = None
+            refusal = await busy_refusal(
+                self.db, self.session, classification=classification, arguments=arguments
             )
+            if not refusal:
+                snapshot_name, refusal = await snapshot_if_mutating(
+                    self.db,
+                    classification=classification,
+                    arguments=arguments,
+                    session_id=self.session.id,
+                    label=str(arguments.get("command") or name),
+                    skip=self.session.skip_snapshots,
+                )
             if refusal:
                 await _uninterruptible(close_record(record, "blocked", refusal[:1000]))
                 return ToolResult(refusal, ok=False)
@@ -635,7 +642,10 @@ class AgentSDKRunner:
             # the gate below.
             allowed_tools=[],
             can_use_tool=self._can_use_tool,
-            system_prompt=self._system_prompt or build_system_prompt(self.session.autonomy_level),
+            system_prompt=(
+                self._system_prompt
+                or build_system_prompt(self.session.autonomy_level, mode=self.session.mode)
+            ),
             model=self.provider_row.model or None,
             max_turns=max_turns or self.caps.max_iterations,
             env=build_sdk_env(decrypt_api_key(self.provider_row), SESSION_STATE_DIR),

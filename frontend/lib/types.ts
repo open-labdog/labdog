@@ -1266,5 +1266,12 @@ export interface AlertEvent {
     | null
   /** The assistant's conclusion — the report's opening, not the transcript. */
   investigation_summary: string | null
+  /**
+   * What the investigation was allowed to change, and — when a safeguard
+   * decided it or downgraded an alert on the full-auto list — why. Null on
+   * rows from before alert remediation, which were all read-only.
+   */
+  investigation_autonomy: AIAutonomyLevel | null
+  investigation_autonomy_note: string | null
   created_at: string
 }
