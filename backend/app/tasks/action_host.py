@@ -392,6 +392,7 @@ async def _claim_or_defer(ctx: _RunCtx) -> bool:
         check_host_busy,
         format_pending_reason,
         is_claimable,
+        resume_deferred_parent,
     )
 
     async with task_session() as db:
@@ -466,6 +467,9 @@ async def _claim_or_defer(ctx: _RunCtx) -> bool:
         # gate and the flip commit together (see its BUG-38 note).
         hr_row.status = "running"
         hr_row.started_at = datetime.now(UTC)
+        # A host-targeted run that deferred is ``pending`` along with this
+        # row; it holds the host only once it reads ``running`` again.
+        await resume_deferred_parent(db, ctx.action_run_id)
         ctx.claimed = True
         ctx.claimed_host_id = host_id_for_lock
         await db.commit()

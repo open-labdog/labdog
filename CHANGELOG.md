@@ -334,6 +334,18 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **An action that waits for a busy host runs when the host frees up.**
+  Run an action on a host while a sync was running on it, and it
+  waited, as it should — then failed the moment the sync finished, with
+  a duplicate-key error, and its host stayed "pending" for good. The
+  host queue re-sent the whole run instead of the host's own task. A
+  built-in run on a group had the same trouble in another form: a
+  member that had to wait was handed to the playbook runner, which has
+  nothing to run for a drift check or a state collection, so it failed.
+  Both now resume exactly as they would have started, with the
+  action's own task and time limits, and a resumed run holds its host
+  again, so a sync cannot start alongside it.
+
 - **Rotating the encryption key no longer breaks Git push webhooks.** The
   rotation script re-encrypted every stored secret except the Git
   webhook secret, so after a rotation every signed push webhook got a
