@@ -346,6 +346,17 @@ The format follows [Keep a Changelog]; LabDog follows
   action's own task and time limits, and a resumed run holds its host
   again, so a sync cannot start alongside it.
 
+- **Rotating the encryption key no longer breaks Git push webhooks.** The
+  rotation script re-encrypted every stored secret except the Git
+  webhook secret, so after a rotation every signed push webhook got a
+  500 and GitOps stopped syncing on push, while the script reported
+  success. It now rotates that secret too, and reports each encrypted
+  column on its own line (`git_repositories.encrypted_https_token: 1
+  value(s) rotated`) instead of one line per table. A test now fails if
+  a model gains an encrypted column the script does not rotate. If you
+  rotated the key on an earlier version, re-enter each repository's
+  webhook secret.
+
 - **`curl -s -o /dev/null -w '%{http_code}'` no longer needs approval.** The
   AI assistant's usual way to check that a web service answers was refused
   as a file write, because `-o` names a file and the check did not know
