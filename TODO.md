@@ -25,6 +25,19 @@ git log -- frontend/app/\(dashboard\)/groups/page.tsx
 
 ### Polish
 
+- **Timezone setting: searchable dropdown, not free text.**
+  `scheduling.timezone` (Settings → Scheduling) is a plain text input, so
+  a typo is only caught on save by `validate_timezone`, and nothing shows
+  which names exist. Make it a dropdown of IANA zones with type-to-filter
+  search. `settings-editor.tsx` renders `choices` settings as a native
+  `<select>`, which has no search and is unwieldy at ~400 entries, so
+  this needs a combobox. Source the list on the backend (`zoneinfo.
+  available_timezones()`, sorted, so it matches what `validate_timezone`
+  accepts) or from `Intl.supportedValuesOf("timeZone")`; the backend list
+  avoids the browser and server disagreeing. Keep the current value
+  selectable even if it is not in the list (a legacy or alias name), and
+  keep the "why" help text.
+
 ---
 
 ## k8s-upgrade — broaden OS support
