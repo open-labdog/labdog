@@ -446,9 +446,11 @@ DENYLIST_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 # network. Always gated, never auto-run.
 _HALT_COMMANDS = frozenset({"shutdown", "reboot", "poweroff", "halt", "init", "telinit"})
 
-# Splits a command line into pipeline segments. Deliberately naive about
-# quoting: a segment boundary inside a quoted string yields a *more*
-# conservative parse, never a less conservative one.
+# Splits a command line into pipeline segments. It is run over the line as
+# `_unquoted_view` reads it, so an operator inside quotes is not a boundary
+# (BUG-106). Over the raw line, when that reading is not available, it is
+# deliberately naive about quoting: a segment boundary inside a quoted
+# string yields a *more* conservative parse, never a less conservative one.
 _SEGMENT_SPLIT = re.compile(r"\|\||&&|[;|&\n]")
 
 # The `&` of an fd duplication is not a segment boundary (BUG-60).
@@ -475,6 +477,81 @@ _FD_DUP = re.compile(r"\d*>&\s*\d+(?=\s|$)")
 # arrives, masking is skipped rather than risking the reverse
 # substitution turning a literal NUL into a `&` that escapes the split.
 _FD_DUP_MARK = "\x00"
+
+# What the shell reads as data and what it reads as syntax (BUG-106).
+#
+# `_SEGMENT_SPLIT` and `_REDIRECT` used to look at the raw line, so the `|`
+# in `grep -E 'kubelet|kubeadm'` cut it in two — `kubeadm'` is not on
+# READ_ONLY_HEADS, and default-deny called a plain read `mutating` — and
+# the `>` in `grep '->'` was a redirect. A read-only session has no
+# approval to fall back on, so the model simply lost `grep -E 'a|b'`.
+#
+# `_unquoted_view` returns the line with every character inside quotes, and
+# every character a backslash escapes, replaced by `_BLANK`: same length, so
+# an offset in the view is an offset in the line. Operators are looked for
+# in the view and the segments are cut from the line. It follows exactly
+# three things — single quotes, double quotes, backslash — and gives up on
+# anything else that changes what is quoted, so the caller falls back to
+# the raw line, which is the reading the classifier had before:
+#
+#   * an unterminated quote: there is nothing to trust;
+#   * `$'…'` and `$"…"`: ANSI-C quoting lets `\'` sit inside the quotes,
+#     which this does not follow, so it would close the quote early and call
+#     the rest of the line data while the shell runs it;
+#   * an unquoted `#`: a comment runs to the end of the line and a quote
+#     character inside one opens nothing, so a reader that took it for a
+#     quote would call the next line data and the shell would run it.
+#
+# Giving up is always safe. A view that called something data which the
+# shell runs would not be, and tests/ai/test_safety_vs_bash.py checks that
+# it never does by running the lines it accepts in bash.
+#
+# Only the segmenting and the redirect rules read the view. The denylist and
+# the substitution check stay blind to quoting on purpose: `sh -c 'rm -rf /'`
+# is quoted, and `"$(rm -rf /)"` still runs.
+_BLANK = "."
+
+
+def _unquoted_view(text: str) -> str | None:
+    """*text* with quoted and escaped characters blanked out, or ``None``.
+
+    ``None`` means the quoting is something this does not follow; see the
+    note above ``_BLANK``.
+    """
+    view: list[str] = []
+    quote = ""
+    end = len(text)
+    i = 0
+    while i < end:
+        char = text[i]
+        if not quote:
+            if char == "\\":
+                # The next character is a literal, whatever it is.
+                view.append(char if i + 1 >= end else char + _BLANK)
+                i += 2
+                continue
+            if char == "#":
+                return None
+            if char in "'\"":
+                if i and text[i - 1] == "$":
+                    return None
+                quote = char
+            view.append(char)
+            i += 1
+        elif char == quote:
+            quote = ""
+            view.append(char)
+            i += 1
+        elif quote == '"' and char == "\\" and i + 1 < end and text[i + 1] in '$`"\\\n':
+            # Inside double quotes a backslash escapes only these five;
+            # before anything else it is itself a literal, as in `"a\|b"`.
+            view.append(_BLANK * 2)
+            i += 2
+        else:
+            view.append(_BLANK)
+            i += 1
+    return None if quote else "".join(view)
+
 
 # Shell constructs that run a *second* command the classifier never sees.
 #
@@ -507,6 +584,8 @@ _COMMAND_SUBSTITUTION = re.compile(r"\$\(|`|<\(|>\(")
 # also skipped bash's `>&FILE` spelling — so `echo pwned >& /etc/cron.d/x`
 # classified as a read. The second alternation required a *digit* after the
 # `&`, so it did not catch that either.
+#
+# Read over a segment's syntax view, so a quoted `>` is data (BUG-106).
 _REDIRECT = re.compile(r"(?<![0-9<>])>{1,2}(?!&\s*\d+(?:\s|$))|\btee\b")
 
 # Input redirection feeds a file into a command. On its own that is not a
@@ -618,21 +697,42 @@ class Verdict:
         return self.classification == "read_only"
 
 
-def _segments(command: str) -> list[str]:
-    """Split *command* into pipeline segments, keeping fd-dups intact.
+def _split(command: str) -> list[tuple[str, str]]:
+    """Cut *command* into pipeline segments, each with its syntax view.
 
-    See ``_FD_DUP``: the ``&`` in ``2>&1`` is part of a redirection, not a
-    separator, and splitting on it produced a bogus segment headed by a
-    digit.
+    The view of a segment is what the redirect rules read: the segment with
+    its quoted characters blanked out, or the segment itself when the line
+    could not be read quote-aware (see ``_unquoted_view``). The two are the
+    same length.
+
+    Keeps fd-dups intact. See ``_FD_DUP``: the ``&`` in ``2>&1`` is part of
+    a redirection, not a separator, and splitting on it produced a bogus
+    segment headed by a digit.
     """
-    if _FD_DUP_MARK in command:
-        return [seg.strip() for seg in _SEGMENT_SPLIT.split(command) if seg.strip()]
-    masked = _FD_DUP.sub(lambda m: m.group(0).replace("&", _FD_DUP_MARK), command)
-    return [
-        seg.replace(_FD_DUP_MARK, "&").strip()
-        for seg in _SEGMENT_SPLIT.split(masked)
-        if seg.strip()
-    ]
+    nul = _FD_DUP_MARK in command
+    view = None if nul else _unquoted_view(command)
+    if view is None:
+        view = command
+    reading = view if nul else _FD_DUP.sub(lambda m: m.group(0).replace("&", _FD_DUP_MARK), view)
+
+    segments: list[tuple[str, str]] = []
+    start = 0
+    for stop, resume in [
+        *((m.start(), m.end()) for m in _SEGMENT_SPLIT.finditer(reading)),
+        (len(command), len(command)),
+    ]:
+        raw = command[start:stop]
+        text = raw.strip()
+        if text:
+            at = start + len(raw) - len(raw.lstrip())
+            segments.append((text, view[at : at + len(text)]))
+        start = resume
+    return segments
+
+
+def _segments(command: str) -> list[str]:
+    """The pipeline segments of *command*, without their views."""
+    return [text for text, _ in _split(command)]
 
 
 def _tokenize(segment: str) -> list[str]:
@@ -692,7 +792,15 @@ def _strip_wrappers(tokens: list[str]) -> tuple[list[str], list[str]]:
     return tokens[idx:], assignments
 
 
-def _classify_segment(segment: str) -> Verdict:
+def _classify_segment(segment: str, syntax: str | None = None) -> Verdict:
+    """Classify one pipeline segment.
+
+    *syntax* is the segment as the redirect rules read it, with quoted
+    characters blanked out (see ``_unquoted_view``); the segment itself when
+    omitted.
+    """
+    if syntax is None:
+        syntax = segment
     lowered = segment.lower()
     for pattern, reason in DENYLIST_PATTERNS:
         if pattern.search(lowered):
@@ -765,10 +873,10 @@ def _classify_segment(segment: str) -> Verdict:
         if pattern.search(" ".join(args)):
             return Verdict("mutating", reason, segment)
 
-    if _REDIRECT.search(segment):
+    if _REDIRECT.search(syntax):
         return Verdict("mutating", "Output is redirected to a file", segment)
 
-    if _INPUT_REDIRECT.search(segment):
+    if _INPUT_REDIRECT.search(syntax):
         return Verdict(
             "unknown",
             "Input is redirected from a file this classifier cannot inspect",
@@ -825,8 +933,8 @@ def classify_command(command: str) -> Verdict:
     # segment still wins. Relaxing it to >= would be a one-character change
     # that silently reattributes a pipeline's verdict to a later segment.
     worst: Verdict | None = None
-    for segment in _segments(command):
-        verdict = _classify_segment(segment)
+    for segment, syntax in _split(command):
+        verdict = _classify_segment(segment, syntax)
         if worst is None or severity[verdict.classification] > severity[worst.classification]:
             worst = verdict
     if worst is None:

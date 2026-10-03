@@ -322,6 +322,21 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **The AI assistant can filter with `grep -E 'a|b'`.** The command
+  classifier cut a command at every `|`, `;` and `&`, including the ones
+  inside quotes, so `dpkg -l | grep -E 'kubelet|kubeadm'` was read as
+  three commands, the last one `kubeadm'`, and refused as a change. A
+  quoted `>` or `<` was read as a redirect, so `grep '->'` and
+  `grep '<title>'` were refused too. A read-only session has no approval
+  to fall back on, so the assistant simply could not use the commonest
+  filter there is: five of the six commands refused on one install were
+  this. Operators and redirects inside quotes are now data, and an escaped
+  one is a literal. Anything the classifier cannot follow with certainty,
+  an unterminated quote, `$'…'` or an unquoted `#`, is read as before, and
+  the denylist and the check for `$(…)` still look inside quotes. The
+  classifier's tests now run what it calls read-only in bash, and fail if
+  a line runs anything it did not allow or creates a file.
+
 - **Workers see the same actions as the UI.** Celery's worker processes
   started with the bundled actions only, and picked up a git pack's actions
   only if a task happened to ask for one they lacked. The scheduler never
