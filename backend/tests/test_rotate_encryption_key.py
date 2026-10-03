@@ -60,17 +60,20 @@ async def _insert_proxmox_node(db: AsyncSession, key_a: bytes) -> tuple[int, str
     return row.id, secret
 
 
-async def _insert_git_repo_with_token(db: AsyncSession, key_a: bytes) -> tuple[int, str]:
+async def _insert_git_repo_with_token(db: AsyncSession, key_a: bytes) -> tuple[int, str, str]:
+    """A git repo holding both of its secrets: an HTTPS token and a webhook secret."""
     token = "ghp_supersecret"
+    webhook_secret = "push-hmac-secret"
     row = GitRepository(
         name="rotate-test-repo",
         url="https://github.com/example/repo.git",
         auth_type=GitAuthType.https_token,
         encrypted_https_token=encrypt_ssh_key(token, key_a),
+        encrypted_webhook_secret=encrypt_ssh_key(webhook_secret, key_a),
     )
     db.add(row)
     await db.flush()
-    return row.id, token
+    return row.id, token, webhook_secret
 
 
 async def _insert_grafana_instance(db: AsyncSession, key_a: bytes) -> tuple[int, str]:
@@ -111,7 +114,7 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
 
     ssh_id, ssh_plain = await _insert_ssh_key(db, key_a)
     pve_id, pve_plain = await _insert_proxmox_node(db, key_a)
-    git_id, git_plain = await _insert_git_repo_with_token(db, key_a)
+    git_id, git_plain, webhook_plain = await _insert_git_repo_with_token(db, key_a)
     no_token_id = await _insert_git_repo_no_token(db)
     grafana_id, grafana_plain = await _insert_grafana_instance(db, key_a)
 
@@ -122,14 +125,17 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
 
     counts = await rotate(db, key_a, key_b)
 
-    # Every encrypted-column table must appear in the report
-    assert counts["ssh_keys"] == 1
-    assert counts["proxmox_nodes"] == 1
-    assert counts["git_repositories"] == 1  # only the row that has a token
-    assert counts["grafana_instances"] == 1
+    # Every encrypted column must appear in the report
+    assert counts["ssh_keys.encrypted_private_key"] == 1
+    assert counts["proxmox_nodes.encrypted_token_secret"] == 1
+    assert counts["git_repositories.encrypted_https_token"] == 1  # only the row that has a token
+    # BUG-108: the second secret on the same row, reported on its own line
+    # rather than overwriting the token's count.
+    assert counts["git_repositories.encrypted_webhook_secret"] == 1
+    assert counts["grafana_instances.encrypted_token"] == 1
     # Added with email notifications; a secret the rotation skipped would
     # stop decrypting the moment the key changed.
-    assert counts["smtp_settings"] == 1
+    assert counts["smtp_settings.encrypted_password"] == 1
 
     # rotate() issues Core UPDATE statements that bypass the ORM identity map.
     # Expire all cached objects so the next SELECT hits the DB.
@@ -146,6 +152,7 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
         await db.execute(select(GitRepository).where(GitRepository.id == git_id))
     ).scalar_one()
     assert decrypt_ssh_key(git_row.encrypted_https_token, key_b) == git_plain  # type: ignore[arg-type]
+    assert decrypt_ssh_key(git_row.encrypted_webhook_secret, key_b) == webhook_plain  # type: ignore[arg-type]
 
     grafana_row = (
         await db.execute(select(GrafanaInstance).where(GrafanaInstance.id == grafana_id))
@@ -160,10 +167,40 @@ async def test_rotate_re_encrypts_all_columns(db: AsyncSession) -> None:
         await db.execute(select(GitRepository).where(GitRepository.id == no_token_id))
     ).scalar_one()
     assert no_token_row.encrypted_https_token is None
+    assert no_token_row.encrypted_webhook_secret is None
 
     # The old key must no longer decrypt successfully
     with pytest.raises((InvalidTag, Exception)):
         decrypt_ssh_key(ssh_row.encrypted_private_key, key_a)
+
+
+def test_registry_covers_every_encrypted_column() -> None:
+    """Every ``encrypted_*`` column on any model is in the rotation registry.
+
+    BUG-108: SEC-28 moved the Git webhook secret into
+    ``encrypted_webhook_secret`` without adding it to the registry, and the
+    happy-path test above could not notice, because it checks the columns
+    the registry names. This one starts from the models instead.
+    """
+    from app.models import import_all_models
+    from app.models.base import Base
+    from scripts.rotate_encryption_key import _build_column_registry
+
+    import_all_models()
+
+    on_models = {
+        f"{table.name}.{column.name}"
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if column.name.startswith("encrypted_")
+    }
+    registered = {
+        f"{Model.__tablename__}.{col_name}" for Model, col_name, _ in _build_column_registry()
+    }
+
+    assert on_models, "found no encrypted_* columns; the models were not loaded"
+    assert on_models - registered == set(), "encrypted columns the rotation would skip"
+    assert registered - on_models == set(), "registry names columns no model has"
 
 
 # ---------------------------------------------------------------------------
