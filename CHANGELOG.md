@@ -76,6 +76,18 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **What the AI assistant may run without approval moved, in both
+  directions.** These now count as reads: `apt list`, `dmesg` and `sysctl`
+  without their write options, `findmnt`, `mount` on its own,
+  `lsb_release`, `hexdump`, `sleep`, `command -v`, `kubelet --version`,
+  `kubeadm version`, `kubeadm upgrade plan`, `kubeadm certs
+  check-expiration`, `containerd --version`, `ctr`'s list commands, the
+  read-only `docker compose` subcommands, and commands run under `timeout`,
+  `nice`, `sudo -u` or with `LC_ALL=C` in front. These now need approval:
+  `wget`, `man`, `xxd`, `initctl` and `at`. `curl` covers what `wget`
+  was used for, and `od` or `hexdump` what `xxd` was. A refused command's
+  reason now lists the forms of that command that would have been allowed.
+
 - **The navigation is a four-zone icon rail with a contextual pane, replacing
   the 256px sidebar.** The old sidebar held thirteen links in three labelled
   groups plus a collapsible child that appeared only sometimes, and a third
@@ -334,6 +346,12 @@ The format follows [Keep a Changelog]; LabDog follows
   action's own task and time limits, and a resumed run holds its host
   again, so a sync cannot start alongside it.
 
+- **`curl -s -o /dev/null -w '%{http_code}'` no longer needs approval.** The
+  AI assistant's usual way to check that a web service answers was refused
+  as a file write, because `-o` names a file and the check did not know
+  that `/dev/null` writes nothing. `-o /dev/null` is now a read, and so is
+  feeding a command `< /dev/null`, as in `openssl s_client … </dev/null`.
+
 - **The AI assistant can filter with `grep -E 'a|b'`.** The command
   classifier cut a command at every `|`, `;` and `&`, including the ones
   inside quotes, so `dpkg -l | grep -E 'kubelet|kubeadm'` was read as
@@ -467,6 +485,24 @@ The format follows [Keep a Changelog]; LabDog follows
   a numbered input redirect (`0<file`) is read as an input redirect like any
   other. The classifier's bash test now covers every spelling of a redirect,
   and inline shells.
+
+- **The AI assistant's read-only check lists what reads, not what writes.**
+  For many commands the classifier said "read-only unless one of these
+  known write subcommands appears", so every subcommand nobody had listed
+  ran in a read-only session without approval: most of Proxmox's `qm`,
+  `pct` and `pvesh`, container runtimes, systemd tools, `ip` and its
+  abbreviations, package managers and storage tools, along with options
+  that write a file, change a setting or send data. Options given to
+  `sudo`, `env` and similar wrappers could hide the command they ran, and
+  an environment variable could change what a command executed. A command
+  is now read-only only in a form listed in
+  `backend/app/ai/command_policy.yaml`; a subcommand or option the list
+  does not name counts as a change. `curl` is read-only for GET and HEAD
+  requests that neither upload nor save a file. Wrapper options are read
+  for what they mean, and only a short list of environment variables
+  (`LC_*`, `TZ`, `KUBECONFIG` and a few more) is accepted. In a full-auto
+  session the commands this used to misread now also get the snapshot and
+  the busy-host check that every change gets.
 
 ## [0.10.0] — 2026-09-18
 
