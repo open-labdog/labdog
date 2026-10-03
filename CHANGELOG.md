@@ -334,6 +334,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Cancelling a run cancels the hosts it has not started.** The cancel
+  left them to the run's orchestrator, so when that had died, or had
+  already handed every host out and stopped watching, they stayed
+  "queued" or "pending" for good and the run never got an end time. A
+  run waiting for a busy host was not cancelled at all, and could start
+  an hour later. Now every host that has not started is cancelled
+  straight away, a queued sync behind a cancelled built-in sync is
+  cancelled with it, and a host that is already running finishes, with
+  the run closing when it does.
+
 - **An action that waits for a busy host runs when the host frees up.**
   Run an action on a host while a sync was running on it, and it
   waited, as it should — then failed the moment the sync finished, with

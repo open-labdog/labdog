@@ -225,31 +225,7 @@ _No bugs are currently open._
 
 ### Correctness — Low
 
-- [ ] **BUG-104** `backend/app/api/actions.py:392-411` — cancelling a run
-      leaves the hosts it had not started `queued` or `pending`, and the
-      run without a finish time, unless an orchestrator is still running
-      to clean up
-
-      Symptom: as of 2026-10-01, run 240 (cancelled after its
-      orchestrator died) shows two hosts `queued`, and run 237 (cancelled
-      after its orchestrator had dispatched everything and was only
-      waiting on deferred hosts) shows six `pending`. Neither run has a
-      `finished_at`. A `pending` run, such as a host-targeted run waiting
-      for its host, is not marked cancelled at all, only given the Redis
-      token.
-
-      Root cause: the endpoint sets the run `cancelled` (only from
-      `queued`/`running`) and sets the cancel token, and leaves the hosts
-      to the orchestrator, which cancels the rest at its next check.
-      With no orchestrator left, nothing does.
-
-      Fix direction: the endpoint cancels the run's `queued` and
-      `pending` rows itself, accepts a `pending` run, and sets
-      `finished_at` once no row is `running`.
-
-      Severity Low: nothing runs that should not, but the run page
-      reports hosts that will never run as waiting, and the run never
-      shows an end.
+_No bugs are currently open._
 
 ---
 

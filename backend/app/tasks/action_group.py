@@ -1366,6 +1366,9 @@ async def _aggregate_and_finalise(action_run_id: int, channel: str, r) -> None:
         if run.status != "cancelled":
             run.status = final_status
             run.finished_at = datetime.now(UTC)
+        elif run.finished_at is None:
+            # Cancelled mid-playbook: the cancel left the end to us (BUG-104).
+            run.finished_at = datetime.now(UTC)
         await db.commit()
 
         logger.info(
