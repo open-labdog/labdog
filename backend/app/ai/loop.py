@@ -89,12 +89,16 @@ message with no further tool calls.
 
 AUTONOMY_NOTES = {
     "read_only": (
-        "You may only run commands that read state. Any command that would "
-        "modify the host will be refused."
+        "You may only run commands that read state. LabDog checks each command "
+        "against a list of commands and subcommands known to only read, and "
+        "refuses anything it cannot confirm, saying which forms of that command "
+        "it would accept. Command substitution ($(...) or backticks) is always "
+        "refused: run the inner command on its own."
     ),
     "approval": (
         "Commands that read state run immediately. Commands that would modify "
-        "the host require the operator's approval first."
+        "the host, and any command LabDog cannot confirm only reads, require "
+        "the operator's approval first."
     ),
     "full_auto": (
         "You may run commands that modify the host. Be conservative: prefer "

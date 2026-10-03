@@ -140,6 +140,15 @@ the model says it does. Anything LabDog does not recognise as read-only is
 treated as a change, so an unfamiliar command is never run unsupervised at
 the read-only level.
 
+What counts as read-only is a list of commands, and of the subcommands and
+options that only read: `docker ps` and `docker logs` but not `docker rm`,
+`systemctl status` but not `systemctl restart`, `curl` for a GET or HEAD
+request but not one that posts data or saves a file. The list ships with
+LabDog in `backend/app/ai/command_policy.yaml`, and the file explains its
+own format. When a session is refused a command, the refusal names the
+read-only forms of that command, so the assistant can usually find one that
+answers the same question.
+
 **A denylist applies at every level, including full auto.** Commands that
 destroy data or take a host off the network — `rm -rf /`, `mkfs`, writing
 directly to a block device, piping a download into a shell, flushing the

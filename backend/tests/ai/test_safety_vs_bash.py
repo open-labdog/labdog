@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from app.ai import safety
+from app.ai import policy as command_policy
 from app.ai.safety import classify_command
 
 BASH = shutil.which("bash")
@@ -71,7 +71,9 @@ exec "$@"
 
 @pytest.fixture(autouse=True)
 def only_a_is_read_only(monkeypatch):
-    monkeypatch.setattr(safety, "READ_ONLY_HEADS", frozenset({"a"}))
+    """LabDog's own policy, wrappers and all, with ``a`` the only read."""
+    data = {**command_policy.load_data(), "read_only": {"a": "any"}, "options": {}, "gates": {}}
+    monkeypatch.setattr(command_policy, "DEFAULT", command_policy.CommandPolicy.from_data(data))
 
 
 class Shell:
