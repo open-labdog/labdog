@@ -630,10 +630,11 @@ class TestQuotedOperatorsAreData:
         assert classify_command("grep mkfs /var/log/syslog").classification == "denied"
 
     def test_a_refusal_names_the_real_command_not_a_fragment(self):
-        verdict = classify_command("dpkg -l | grep -E 'kubelet|kubeadm' | kubelet --version")
+        verdict = classify_command("dpkg -l | grep -E 'kubelet|kubeadm' | kubeadm reset")
         assert verdict.classification == "mutating"
-        assert "'kubelet'" in verdict.reason
-        assert verdict.segment == "kubelet --version"
+        assert "'kubeadm reset'" in verdict.reason
+        assert "kubeadm'" not in verdict.reason.replace("'kubeadm reset'", "")
+        assert verdict.segment == "kubeadm reset"
 
     def test_segments_are_cut_from_the_line_not_the_view(self):
         from app.ai.safety import _segments
@@ -692,7 +693,7 @@ class TestReadOnlyCommandsStillWork:
             "find / -type f -name '*.conf' -print",
             "curl -sI https://example.com/",
             "curl -sSfL https://example.com/",
-            "wget -O - http://example.com/",
+            "curl -s -o /dev/null -w '%{http_code}' http://example.com/",
             "crontab -l",
             "jq '.a' file.json",
             "yq '.a' file.yaml",

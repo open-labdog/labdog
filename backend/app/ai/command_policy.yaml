@@ -1,0 +1,1316 @@
+# Which commands an AI session may run without anyone approving them.
+#
+# LabDog parses every command an AI session issues (app/ai/safety.py) and
+# looks it up here. A command this file calls read-only runs in a read-only
+# session and needs no approval in an approval session. Anything else is
+# treated as a change: refused at read-only, held for approval at approval.
+# The denylist in safety.py (rm -rf /, mkfs, piping a download into a
+# shell, ...) applies on top of this and outranks it.
+#
+# The rule that shapes everything below: a command is read-only only if
+# this file says so for the form it was given in. Not "docker, except the
+# subcommands known to write" -- "docker ps, docker logs, docker inspect,
+# ...". A subcommand, an option before the subcommand, or an argument this
+# file does not know makes the command a change. Being wrong in that
+# direction costs an approval prompt; being wrong the other way costs a
+# broken host.
+#
+#
+# read_only -- a command, or a command and its subcommand words, and what
+# may follow them:
+#
+#   any        anything, subject to the gates below      kubectl get: any
+#   operands   plain words (names, paths, patterns) and   dpkg -l: operands
+#              the options declared for the command
+#   exact      nothing but the declared options          kubectl cluster-info: exact
+#
+# A word that is * matches any one plain word (`service * status`). A word
+# ending in * matches any word that starts with the rest (`pacman -Q*`).
+# A command whose path is not listed is not read-only, so `docker` on its
+# own, `docker rm` and `kubectl config use-context` all need approval.
+#
+# options -- what may come between the words of a read_only path, and how
+# to read it. Declared on a command, they apply to its subcommands too.
+#
+#   flags      options that take no value                --no-pager
+#   values     options that take one, as `-n x`, `-nx`   --namespace
+#              or `--namespace=x`
+#   optional   options whose value, if any, is attached  --color=auto
+#   clusters   whether short options combine: -tlnp
+#
+# An option that is not declared, before the subcommand or anywhere in an
+# `operands` or `exact` command, makes the command a change. Declaring a
+# flag as taking a value, or a value option as a flag, would make LabDog
+# read a different subcommand from the one the tool runs, so every entry
+# here was checked against the tool's own --help.
+#
+# gates -- arguments that make an otherwise read-only command a change.
+# Each gate fires on any of:
+#
+#   short      a letter in a cluster of short options     sort -o, curl -sLo
+#   long       a long option, or any abbreviation of it   --output, --out
+#              (GNU tools and curl accept abbreviations)
+#   words      a word exactly                             find -delete
+#   operands   more plain words than this                 uniq IN OUT
+#   pattern    a regular expression over the arguments
+#
+# and is narrowed by if_value (fires only when the option's value fully
+# matches) or unless_value (does not fire when it does). A gate on a
+# command applies to its subcommands too. A long option a gate names is not
+# matched by the exact name of a different, declared option: --cursor is
+# journalctl's own option, not an abbreviation of --cursor-file.
+#
+# wrappers -- commands that run the rest of the line: sudo, env, timeout.
+# The command they run is what gets classified. Their options are declared
+# like a command's, and an undeclared one makes the line a change: `sudo -p
+# cat rm x` runs rm, with "cat" as the password prompt.
+#
+# environment -- the variables a command may be given (`LC_ALL=C sort`,
+# `env TZ=UTC date`). Any other assignment makes the command a change:
+# LD_PRELOAD, PATH, BASH_ENV, LESSOPEN and friends change what runs.
+
+version: 1
+
+read_only:
+  # --- files and filesystems ---------------------------------------------
+  cat: any
+  head: any
+  tail: any
+  less: any
+  more: any
+  ls: any
+  dir: any
+  stat: any
+  file: any
+  find: any
+  locate: any
+  readlink: any
+  realpath: any
+  basename: any
+  dirname: any
+  wc: any
+  du: any
+  df: any
+  tree: any
+  pwd: any
+  findmnt: any
+  mount: exact
+  md5sum: any
+  sha1sum: any
+  sha256sum: any
+  sha512sum: any
+  b2sum: any
+  cksum: any
+  diff: any
+  cmp: any
+
+  # --- text --------------------------------------------------------------
+  grep: any
+  egrep: any
+  fgrep: any
+  zgrep: any
+  cut: any
+  sort: any
+  uniq: any
+  tr: any
+  column: any
+  jq: any
+  yq: any
+  strings: any
+  od: any
+  hexdump: any
+  base64: any
+  echo: any
+  printf: any
+
+  # --- system state ------------------------------------------------------
+  uname: any
+  hostname: exact
+  uptime: any
+  date: any
+  id: any
+  whoami: any
+  who: any
+  w: any
+  last: any
+  lastlog: any
+  groups: any
+  printenv: any
+  locale: any
+  lsb_release: any
+  lscpu: any
+  lsblk: any
+  lsusb: any
+  lspci: any
+  lsmod: any
+  lsof: any
+  dmidecode: any
+  dmesg: any
+  sysctl: any
+  free: any
+  vmstat: any
+  iostat: any
+  mpstat: any
+  sar: any
+  top: any
+  htop: any
+  ps: any
+  pstree: any
+  getent: any
+  getconf: any
+  ulimit: any
+  nproc: any
+  arch: any
+  sleep: any
+  "true": any
+  "false": any
+  test: any
+  which: any
+  type: any
+  whereis: any
+  command -v: operands
+  command -V: operands
+
+  # --- networking --------------------------------------------------------
+  ip: exact
+  ip -V: exact
+  ip a: exact
+  ip a show: any
+  ip a s: any
+  ip a list: any
+  ip addr: exact
+  ip addr show: any
+  ip addr s: any
+  ip addr list: any
+  ip address: exact
+  ip address show: any
+  ip address list: any
+  ip link: exact
+  ip link show: any
+  ip link list: any
+  ip l: exact
+  ip l show: any
+  ip r: exact
+  ip r show: any
+  ip r s: any
+  ip r list: any
+  ip r get: any
+  ip route: exact
+  ip route show: any
+  ip route s: any
+  ip route list: any
+  ip route get: any
+  ip rule: exact
+  ip rule show: any
+  ip rule list: any
+  ip n: exact
+  ip n show: any
+  ip neigh: exact
+  ip neigh show: any
+  ip neighbor: exact
+  ip neighbor show: any
+  ip neighbour: exact
+  ip neighbour show: any
+  ip maddr: exact
+  ip maddr show: any
+  ip netns: exact
+  ip netns list: exact
+  ip netns identify: operands
+  ip netns pids: operands
+  ip monitor: any
+  ifconfig: operands
+  ss: any
+  netstat: any
+  route: exact
+  arp: any
+  ping: any
+  ping6: any
+  traceroute: any
+  tracepath: any
+  mtr: any
+  dig: any
+  host: any
+  nslookup: any
+  curl: any
+  resolvectl: exact
+  resolvectl status: any
+  resolvectl query: any
+  resolvectl service: any
+  resolvectl statistics: exact
+  resolvectl show-cache: exact
+  resolvectl show-server-state: exact
+  resolvectl dns: exact
+  resolvectl domain: exact
+  openssl version: any
+  openssl x509: any
+  openssl s_client: any
+  openssl verify: any
+  openssl ciphers: any
+  openssl crl: any
+  openssl pkey: any
+  openssl rsa: any
+  openssl ec: any
+  openssl dgst: any
+  openssl base64: any
+  openssl rand: any
+  openssl asn1parse: any
+  openssl list: any
+  openssl errstr: any
+  openssl prime: any
+  openssl pkcs7: any
+  openssl crl2pkcs7: any
+  openssl storeutl: any
+  nft list: any
+  nft monitor: any
+  nft describe: any
+  nft -v: exact
+  nft -V: exact
+  nft --version: exact
+  iptables: any
+  ip6tables: any
+  iptables-save: any
+  ip6tables-save: any
+  ufw status: any
+  ufw show: any
+  ufw app list: any
+  ufw app info: any
+  ufw version: exact
+  ufw --version: exact
+
+  # --- packages ----------------------------------------------------------
+  dpkg -l: operands
+  dpkg --list: operands
+  dpkg -L: operands
+  dpkg --listfiles: operands
+  dpkg -s: operands
+  dpkg --status: operands
+  dpkg -S: operands
+  dpkg --search: operands
+  dpkg -p: operands
+  dpkg --print-avail: operands
+  dpkg -C: operands
+  dpkg --audit: operands
+  dpkg -V: operands
+  dpkg --verify: operands
+  dpkg --get-selections: operands
+  dpkg --print-architecture: exact
+  dpkg --print-foreign-architectures: exact
+  dpkg --compare-versions: operands
+  dpkg -I: operands
+  dpkg --info: operands
+  dpkg -c: operands
+  dpkg --contents: operands
+  dpkg -f: operands
+  dpkg --field: operands
+  dpkg --version: exact
+  dpkg-query: any
+  apt list: any
+  apt show: any
+  apt search: any
+  apt policy: any
+  apt depends: any
+  apt rdepends: any
+  apt changelog: any
+  apt-cache policy: any
+  apt-cache show: any
+  apt-cache showpkg: any
+  apt-cache showsrc: any
+  apt-cache search: any
+  apt-cache depends: any
+  apt-cache rdepends: any
+  apt-cache madison: any
+  apt-cache pkgnames: any
+  apt-cache stats: any
+  apt-cache unmet: any
+  apt-mark showhold: any
+  apt-mark showauto: any
+  apt-mark showmanual: any
+  apt-mark showinstall: any
+  apt-mark showremove: any
+  apt-mark showpurge: any
+  rpm -q*: operands
+  rpm --query: operands
+  rpm -V*: operands
+  rpm --verify: operands
+  rpm -K: operands
+  rpm --checksig: operands
+  rpm --version: exact
+  rpm --querytags: exact
+  dnf list: any
+  dnf info: any
+  dnf search: any
+  dnf repolist: any
+  dnf repoinfo: any
+  dnf provides: any
+  dnf whatprovides: any
+  dnf repoquery: any
+  dnf deplist: any
+  dnf check-update: any
+  dnf updateinfo: any
+  dnf history: exact
+  dnf history list: any
+  dnf history info: any
+  dnf module list: any
+  dnf module info: any
+  dnf group list: any
+  dnf group info: any
+  dnf grouplist: any
+  dnf groupinfo: any
+  dnf --version: exact
+  yum list: any
+  yum info: any
+  yum search: any
+  yum repolist: any
+  yum provides: any
+  yum whatprovides: any
+  yum deplist: any
+  yum check-update: any
+  yum updateinfo: any
+  yum history: exact
+  yum history list: any
+  yum history info: any
+  yum grouplist: any
+  yum groupinfo: any
+  yum --version: exact
+  zypper search: any
+  zypper se: any
+  zypper info: any
+  zypper if: any
+  zypper repos: any
+  zypper lr: any
+  zypper services: any
+  zypper ls: any
+  zypper list-updates: any
+  zypper lu: any
+  zypper list-patches: any
+  zypper lp: any
+  zypper patch-check: any
+  zypper pchk: any
+  zypper packages: any
+  zypper pa: any
+  zypper patterns: any
+  zypper pt: any
+  zypper products: any
+  zypper pd: any
+  zypper locks: any
+  zypper ll: any
+  zypper what-provides: any
+  zypper wp: any
+  zypper ps: any
+  zypper --version: exact
+  pacman -Q*: any
+  pacman --query: any
+  pacman -Ss: any
+  pacman -Ssq: any
+  pacman -Si: any
+  pacman -Sii: any
+  pacman -Sl: any
+  pacman -Slq: any
+  pacman -Sg: any
+  pacman -Sgg: any
+  pacman -T: any
+  pacman --deptest: any
+  pacman -V: exact
+  pacman --version: exact
+  snap list: any
+  snap info: any
+  snap find: any
+  snap version: any
+  snap services: any
+  snap changes: any
+  snap change: any
+  snap tasks: any
+  snap connections: any
+  snap interfaces: any
+  snap aliases: any
+  snap warnings: any
+  snap model: any
+  snap known: any
+  snap get: any
+  flatpak list: any
+  flatpak info: any
+  flatpak remote-ls: any
+  flatpak remotes: any
+  flatpak search: any
+  flatpak history: any
+  flatpak ps: any
+  flatpak --version: exact
+  pip list: any
+  pip show: any
+  pip freeze: any
+  pip check: any
+  pip debug: any
+  pip inspect: any
+  pip config list: any
+  pip config get: any
+  pip cache list: any
+  pip cache dir: any
+  pip cache info: any
+  pip index versions: any
+  pip --version: exact
+  pip -V: exact
+  pip3 list: any
+  pip3 show: any
+  pip3 freeze: any
+  pip3 check: any
+  pip3 debug: any
+  pip3 inspect: any
+  pip3 config list: any
+  pip3 config get: any
+  pip3 cache list: any
+  pip3 cache dir: any
+  pip3 cache info: any
+  pip3 index versions: any
+  pip3 --version: exact
+  pip3 -V: exact
+  npm ls: any
+  npm list: any
+  npm ll: any
+  npm la: any
+  npm view: any
+  npm info: any
+  npm show: any
+  npm v: any
+  npm outdated: any
+  npm audit: exact
+  npm config get: any
+  npm config list: any
+  npm config ls: any
+  npm root: exact
+  npm prefix: exact
+  npm search: any
+  npm explain: any
+  npm why: any
+  npm query: any
+  npm ping: exact
+  npm whoami: exact
+  npm version: exact
+  npm -v: exact
+  npm --version: exact
+  gem list: any
+  gem info: any
+  gem search: any
+  gem environment: any
+  gem env: any
+  gem contents: any
+  gem dependency: any
+  gem specification: any
+  gem which: any
+  gem outdated: any
+  gem --version: exact
+  needrestart -r l: operands
+  needrestart -p: operands
+  debsums: any
+
+  # --- services and logs -------------------------------------------------
+  systemctl: exact
+  systemctl status: any
+  systemctl show: any
+  systemctl cat: any
+  systemctl list-units: any
+  systemctl list-unit-files: any
+  systemctl list-sockets: any
+  systemctl list-timers: any
+  systemctl list-jobs: any
+  systemctl list-dependencies: any
+  systemctl list-automounts: any
+  systemctl list-paths: any
+  systemctl list-machines: any
+  systemctl is-active: any
+  systemctl is-enabled: any
+  systemctl is-failed: any
+  systemctl is-system-running: any
+  systemctl get-default: any
+  systemctl show-environment: any
+  systemctl --version: exact
+  journalctl: any
+  service --status-all: exact
+  service * status: any
+  loginctl: exact
+  loginctl list-sessions: any
+  loginctl session-status: any
+  loginctl show-session: any
+  loginctl list-users: any
+  loginctl user-status: any
+  loginctl show-user: any
+  loginctl list-seats: any
+  loginctl seat-status: any
+  loginctl show-seat: any
+  timedatectl: exact
+  timedatectl status: any
+  timedatectl show: any
+  timedatectl list-timezones: any
+  timedatectl timesync-status: any
+  timedatectl show-timesync: any
+  hostnamectl: exact
+  hostnamectl status: exact
+  hostnamectl hostname: exact
+  hostnamectl icon-name: exact
+  hostnamectl chassis: exact
+  hostnamectl deployment: exact
+  hostnamectl location: exact
+
+  # --- containers --------------------------------------------------------
+  docker ps: any
+  docker images: any
+  docker logs: any
+  docker inspect: any
+  docker version: any
+  docker info: any
+  docker stats: any
+  docker top: any
+  docker port: any
+  docker diff: any
+  docker events: any
+  docker history: any
+  docker search: any
+  docker container ls: any
+  docker container list: any
+  docker container ps: any
+  docker container inspect: any
+  docker container logs: any
+  docker container top: any
+  docker container port: any
+  docker container stats: any
+  docker container diff: any
+  docker image ls: any
+  docker image list: any
+  docker image inspect: any
+  docker image history: any
+  docker network ls: any
+  docker network list: any
+  docker network inspect: any
+  docker volume ls: any
+  docker volume list: any
+  docker volume inspect: any
+  docker system df: any
+  docker system info: any
+  docker system events: any
+  docker context ls: any
+  docker context list: any
+  docker context show: any
+  docker context inspect: any
+  docker plugin ls: any
+  docker plugin list: any
+  docker plugin inspect: any
+  docker manifest inspect: any
+  docker node ls: any
+  docker node inspect: any
+  docker node ps: any
+  docker service ls: any
+  docker service ps: any
+  docker service inspect: any
+  docker service logs: any
+  docker stack ls: any
+  docker stack ps: any
+  docker stack services: any
+  docker secret ls: any
+  docker secret inspect: any
+  docker config ls: any
+  docker config inspect: any
+  docker compose ps: any
+  docker compose ls: any
+  docker compose config: any
+  docker compose logs: any
+  docker compose images: any
+  docker compose top: any
+  docker compose version: any
+  docker compose port: any
+  docker compose events: any
+  docker compose volumes: any
+  docker compose stats: any
+  podman ps: any
+  podman images: any
+  podman logs: any
+  podman inspect: any
+  podman version: any
+  podman info: any
+  podman stats: any
+  podman top: any
+  podman port: any
+  podman diff: any
+  podman events: any
+  podman history: any
+  podman search: any
+  podman container ls: any
+  podman container list: any
+  podman container ps: any
+  podman container inspect: any
+  podman container logs: any
+  podman container top: any
+  podman container port: any
+  podman container stats: any
+  podman container diff: any
+  podman image ls: any
+  podman image list: any
+  podman image inspect: any
+  podman image history: any
+  podman network ls: any
+  podman network inspect: any
+  podman volume ls: any
+  podman volume inspect: any
+  podman pod ps: any
+  podman pod ls: any
+  podman pod list: any
+  podman pod inspect: any
+  podman pod stats: any
+  podman pod top: any
+  podman system df: any
+  podman system info: any
+  podman secret ls: any
+  podman secret inspect: any
+  nerdctl ps: any
+  nerdctl images: any
+  nerdctl logs: any
+  nerdctl inspect: any
+  nerdctl version: any
+  nerdctl info: any
+  nerdctl stats: any
+  nerdctl top: any
+  nerdctl port: any
+  nerdctl events: any
+  nerdctl history: any
+  nerdctl container ls: any
+  nerdctl container list: any
+  nerdctl container inspect: any
+  nerdctl container logs: any
+  nerdctl container top: any
+  nerdctl container port: any
+  nerdctl container stats: any
+  nerdctl image ls: any
+  nerdctl image list: any
+  nerdctl image inspect: any
+  nerdctl image history: any
+  nerdctl network ls: any
+  nerdctl network inspect: any
+  nerdctl volume ls: any
+  nerdctl volume inspect: any
+  nerdctl namespace ls: any
+  nerdctl namespace list: any
+  nerdctl namespace inspect: any
+  nerdctl compose ps: any
+  nerdctl compose ls: any
+  nerdctl compose config: any
+  nerdctl compose logs: any
+  nerdctl compose images: any
+  nerdctl compose top: any
+  nerdctl compose version: any
+  nerdctl compose port: any
+  crictl ps: any
+  crictl pods: any
+  crictl images: any
+  crictl image: any
+  crictl img: any
+  crictl inspect: any
+  crictl inspecti: any
+  crictl inspectp: any
+  crictl logs: any
+  crictl stats: any
+  crictl statsp: any
+  crictl version: any
+  crictl info: any
+  crictl imagefsinfo: any
+  ctr version: any
+  ctr info: any
+  ctr events: any
+  ctr containers ls: any
+  ctr containers list: any
+  ctr containers info: any
+  ctr container ls: any
+  ctr container list: any
+  ctr container info: any
+  ctr c ls: any
+  ctr c list: any
+  ctr c info: any
+  ctr images ls: any
+  ctr images list: any
+  ctr images check: any
+  ctr image ls: any
+  ctr image list: any
+  ctr i ls: any
+  ctr i list: any
+  ctr tasks ls: any
+  ctr tasks list: any
+  ctr tasks ps: any
+  ctr tasks metrics: any
+  ctr task ls: any
+  ctr task list: any
+  ctr t ls: any
+  ctr t list: any
+  ctr namespaces ls: any
+  ctr namespaces list: any
+  ctr namespace ls: any
+  ctr ns ls: any
+  ctr ns list: any
+  ctr snapshots ls: any
+  ctr snapshots list: any
+  ctr snapshots info: any
+  ctr snapshots usage: any
+  ctr content ls: any
+  ctr content list: any
+  ctr plugins ls: any
+  ctr plugins list: any
+  ctr plugin ls: any
+  ctr leases ls: any
+  ctr leases list: any
+
+  # --- Kubernetes --------------------------------------------------------
+  kubectl get: any
+  kubectl describe: any
+  kubectl logs: any
+  kubectl top: any
+  kubectl explain: any
+  kubectl version: any
+  kubectl api-resources: any
+  kubectl api-versions: any
+  kubectl events: any
+  kubectl wait: any
+  kubectl cluster-info: exact
+  kubectl auth can-i: any
+  kubectl auth whoami: any
+  kubectl config view: any
+  kubectl config get-contexts: any
+  kubectl config current-context: any
+  kubectl config get-clusters: any
+  kubectl config get-users: any
+  kubectl rollout status: any
+  kubectl rollout history: any
+  kubectl plugin list: any
+  kubectl options: any
+  kubeadm version: any
+  kubeadm certs check-expiration: any
+  kubeadm upgrade plan: any
+  kubelet --version: exact
+  containerd --version: exact
+  containerd -v: exact
+
+  # --- virtualisation ----------------------------------------------------
+  virsh list: any
+  virsh dominfo: any
+  virsh domstate: any
+  virsh domid: any
+  virsh domname: any
+  virsh domuuid: any
+  virsh dumpxml: any
+  virsh domblklist: any
+  virsh domiflist: any
+  virsh domifaddr: any
+  virsh domblkinfo: any
+  virsh domblkstat: any
+  virsh domifstat: any
+  virsh dommemstat: any
+  virsh domstats: any
+  virsh domjobinfo: any
+  virsh vcpuinfo: any
+  virsh vcpucount: any
+  virsh nodeinfo: any
+  virsh nodememstats: any
+  virsh nodecpustats: any
+  virsh capabilities: any
+  virsh domcapabilities: any
+  virsh sysinfo: any
+  virsh version: any
+  virsh uri: any
+  virsh hostname: any
+  virsh freecell: any
+  virsh net-list: any
+  virsh net-info: any
+  virsh net-dumpxml: any
+  virsh net-dhcp-leases: any
+  virsh pool-list: any
+  virsh pool-info: any
+  virsh pool-dumpxml: any
+  virsh vol-list: any
+  virsh vol-info: any
+  virsh vol-dumpxml: any
+  virsh vol-path: any
+  virsh snapshot-list: any
+  virsh snapshot-info: any
+  virsh snapshot-dumpxml: any
+  virsh iface-list: any
+  virsh iface-dumpxml: any
+  virsh nodedev-list: any
+  virsh nodedev-dumpxml: any
+  virsh secret-list: any
+  virsh nwfilter-list: any
+  virsh nwfilter-dumpxml: any
+  pvesh get: any
+  pvesh ls: any
+  pvesh usage: any
+  pvesh help: any
+  qm list: any
+  qm config: any
+  qm status: any
+  qm pending: any
+  qm listsnapshot: any
+  qm showcmd: any
+  qm cloudinit dump: any
+  qm help: any
+  pct list: any
+  pct config: any
+  pct status: any
+  pct pending: any
+  pct listsnapshot: any
+  pct df: any
+  pct help: any
+
+  # --- storage -----------------------------------------------------------
+  zfs list: any
+  zfs get: any
+  zfs holds: any
+  zfs userspace: any
+  zfs groupspace: any
+  zfs projectspace: any
+  zfs version: any
+  zpool list: any
+  zpool status: any
+  zpool get: any
+  zpool iostat: any
+  zpool history: any
+  zpool events: any
+  zpool version: any
+  zpool import: exact
+  btrfs version: any
+  btrfs --version: exact
+  btrfs filesystem show: any
+  btrfs filesystem df: any
+  btrfs filesystem usage: any
+  btrfs filesystem du: any
+  btrfs fi show: any
+  btrfs fi df: any
+  btrfs fi usage: any
+  btrfs fi du: any
+  btrfs subvolume list: any
+  btrfs subvolume show: any
+  btrfs subvolume get-default: any
+  btrfs sub list: any
+  btrfs sub show: any
+  btrfs subvol list: any
+  btrfs subvol show: any
+  btrfs device stats: any
+  btrfs device usage: any
+  btrfs dev stats: any
+  btrfs dev usage: any
+  btrfs scrub status: any
+  btrfs balance status: any
+  btrfs qgroup show: any
+  btrfs property get: any
+  btrfs property list: any
+  smartctl: any
+  mdadm --detail: operands
+  mdadm -D: operands
+  mdadm --examine: operands
+  mdadm -E: operands
+  mdadm --query: operands
+  mdadm -Q: operands
+  mdadm --detail-platform: operands
+  mdadm --version: exact
+  mdadm -V: exact
+  cryptsetup status: operands
+  cryptsetup luksDump: operands
+  cryptsetup isLuks: operands
+  cryptsetup luksUUID: operands
+  cryptsetup benchmark: any
+  cryptsetup --version: exact
+
+  # --- scheduling and security -------------------------------------------
+  crontab -l: exact
+  atq: any
+  sestatus: any
+  getenforce: any
+  aa-status: any
+
+
+options:
+  # --- files and text ----------------------------------------------------
+  mount: {flags: [-l, --show-labels], values: [-t, --types]}
+  file:
+    clusters: true
+    flags: [-b, -c, -E, -h, -i, -k, -l, -L, -N, -n, -p, -r, -s, -S, -z, -Z, "-0"]
+    values: [-e, -F, -f, -m, -P]
+  sort:
+    clusters: true
+    flags: [-b, -d, -f, -g, -i, -M, -h, -n, -R, -r, -V, -c, -C, -m, -s, -u, -z, --check]
+    values: [-k, -t, -S, -T, --key, --field-separator, --buffer-size, --temporary-directory, --sort, --batch-size, --parallel, --files0-from, --random-source]
+  uniq:
+    clusters: true
+    flags: [-c, -d, -D, -i, -u, -z]
+    values: [-f, -s, -w, --skip-fields, --skip-chars, --check-chars]
+    optional: [--all-repeated, --group]
+  tree:
+    clusters: true
+    values: [-L, -P, -I, -H, -T, --charset, --filelimit, --timefmt, --sort]
+
+  # --- system state ------------------------------------------------------
+  hostname:
+    clusters: true
+    flags: [-a, --alias, -A, --all-fqdns, -d, --domain, -f, --fqdn, --long, -i, --ip-address, -I, --all-ip-addresses, -s, --short, -y, --yp, --nis, -v, --verbose, -V, --version]
+  date:
+    clusters: true
+    flags: [-u, --utc, --universal, -R, --rfc-email, --debug, --resolution]
+    values: [-d, --date, -f, --file, -r, --reference, --rfc-3339]
+    optional: [-I, --iso-8601]
+  lastlog:
+    clusters: true
+    values: [-b, --before, -R, --root, -t, --time, -u, --user]
+  dmidecode:
+    flags: [-u, --dump, -q, --quiet, --no-sysfs]
+    values: [-d, --dev-mem, -s, --string, -t, --type, -H, --handle, --from-dump, --oem-string]
+  dmesg:
+    clusters: true
+    values: [-F, --file, -f, --facility, -l, --level, -s, --buffer-size, --time-format, --since, --until]
+    optional: [-L, --color]
+  sysctl:
+    clusters: true
+    values: [-r, --pattern]
+  journalctl:
+    values: [--cursor, --after-cursor]
+  command: {flags: [-p]}
+
+  # --- networking --------------------------------------------------------
+  ip:
+    flags: ["-4", "-6", -s, -stats, -statistics, -d, -details, -br, -brief, -j, -json, -p, -pretty, -o, -oneline, -c, -color, -r, -resolve]
+  ifconfig: {flags: [-a, -s, -v]}
+  ss:
+    clusters: true
+    values: [-f, --family, -A, --query, --socket, -D, --diag, -F, --filter, -N, --net]
+  route:
+    clusters: true
+    flags: [-n, --numeric, -N, -e, --extend, -v, --verbose, -F, --fib, -C, --cache, "-4", "-6", --inet, --inet6]
+    values: [-A]
+  arp:
+    clusters: true
+    values: [-i, --device, -H, --hw-type, -A, -p, --protocol]
+  curl:
+    clusters: true
+    flags: [-s, -S, -L, -f, -I, -i, -k, -v, "-4", "-6", -g, -N, -G, -q, "-#", "-0", -B, -j, -l, -n, -p, -R, -Z, -a, -M, -V,
+            --head, --silent, --show-error, --location, --location-trusted, --fail, --fail-with-body, --include,
+            --verbose, --insecure, --compressed, --globoff, --no-buffer, --get, --http1.0, --http1.1, --http2,
+            --http3, --ipv4, --ipv6, --no-progress-meter, --path-as-is, --raw, --no-keepalive, --tcp-nodelay]
+    values: [-E, -K, -C, -b, -c, -d, -D, -F, -P, -H, -m, -o, -U, -Q, -r, -e, -X, -Y, -y, -t, -z, -T, -u, -A, -w, -x,
+             --cookie, --proxy, --url, --max-time, --connect-timeout, --write-out, --user-agent, --referer, --user,
+             --resolve, --connect-to, --cacert, --capath, --cert, --key, --retry, --retry-delay, --retry-max-time,
+             --max-redirs, --range, --interface, --unix-socket, --abstract-unix-socket, --noproxy, --proto,
+             --proto-redir, --limit-rate, --dns-servers, --oauth2-bearer]
+  resolvectl:
+    clusters: true
+    flags: ["-4", "-6", --no-pager]
+    values: [-i, --interface, -p, --protocol, -t, --type, -c, --class, --json, --legend]
+  nft:
+    clusters: true
+    flags: [-a, --handle, -j, --json, -n, --numeric, -s, --stateless, -t, --terse, -N, --reversedns, -S, --service, -T, --numeric-time, -u, --guid, -y, --numeric-priority, -p, --numeric-protocol]
+  iptables: {clusters: true, values: [-t, --table]}
+  ip6tables: {clusters: true, values: [-t, --table]}
+  iptables-save: {clusters: true, values: [-t, --table]}
+  ip6tables-save: {clusters: true, values: [-t, --table]}
+
+  # --- packages ----------------------------------------------------------
+  dpkg:
+    flags: [--no-pager]
+    values: [--admindir, --root, --verify-format]
+  apt: {flags: [-q, -qq, --quiet]}
+  apt-cache: {flags: [-q, -qq, --quiet]}
+  rpm:
+    flags: [--last, --nodigest, --nosignature, -v, --verbose, --quiet, -a, --all, -i, --info, -l, --list,
+            -c, --configfiles, -d, --docfiles, -R, --requires, --provides, --changelog, --scripts,
+            -f, --file, -p, --package, -g, --group, --whatprovides, --whatrequires, -s, --state, --dump,
+            --filesbypkg, --conflicts, --obsoletes]
+    values: [--qf, --queryformat]
+  dnf:
+    flags: [-q, --quiet, -C, --cacheonly, -v, --verbose]
+    values: [--enablerepo, --disablerepo, --repo, --repoid, --releasever]
+  yum:
+    flags: [-q, --quiet, -C, --cacheonly, -v, --verbose]
+    values: [--enablerepo, --disablerepo, --releasever]
+  zypper:
+    flags: [-q, --quiet, -n, --non-interactive, --no-refresh, -x, --xmlout, -t, --terse]
+  flatpak: {flags: [--user, --system, -v, --verbose]}
+  pip: {flags: [-q, --quiet, -v, --verbose, --disable-pip-version-check, --no-color, --isolated]}
+  pip3: {flags: [-q, --quiet, -v, --verbose, --disable-pip-version-check, --no-color, --isolated]}
+  npm:
+    flags: [--json, -g, --global, -l, --long, -p, --parseable, -a, --all]
+    values: [--depth, --omit, --include, -w, --workspace, --audit-level]
+  needrestart: {clusters: true, flags: [-k, -l, -w, -v, -q, -n]}
+
+  # --- services ----------------------------------------------------------
+  systemctl:
+    clusters: true
+    flags: [--system, --user, --failed, -a, --all, -l, --full, -r, --recursive, --reverse,
+            --with-dependencies, --show-types, --value, -q, --quiet, --no-warn, --no-pager,
+            --no-legend, --no-ask-password, --plain]
+    values: [-H, --host, -M, --machine, -t, --type, --state, -p, --property, -P, -n, --lines,
+             -o, --output, --legend, --timestamp]
+  loginctl:
+    clusters: true
+    flags: [--no-pager, --no-legend, -a, --all, -l, --full, --value, --no-ask-password]
+    values: [-p, --property, -P, -H, --host, -M, --machine, -n, --lines, -o, --output]
+  timedatectl:
+    clusters: true
+    flags: [--no-pager, --no-ask-password, -a, --all, --value, --monitor]
+    values: [-H, --host, -M, --machine, -p, --property, -P]
+  hostnamectl:
+    flags: [--static, --transient, --pretty, --no-ask-password]
+    values: [-H, --host, -M, --machine, --json]
+
+  # --- containers --------------------------------------------------------
+  docker:
+    flags: [-D, --debug]
+    values: [--config, -c, --context, -H, --host, -l, --log-level]
+  docker compose:
+    values: [-f, --file, -p, --project-name, --project-directory, --profile, --env-file, --ansi, --progress, --parallel]
+  nerdctl:
+    values: [-n, --namespace, -a, --address, -H, --host]
+  nerdctl compose:
+    values: [-f, --file, -p, --project-name, --project-directory, --profile, --env-file]
+  crictl:
+    values: [-r, --runtime-endpoint, -i, --image-endpoint, -t, --timeout, -c, --config]
+  ctr:
+    flags: [--debug]
+    values: [-a, --address, -n, --namespace, --timeout, --connect-timeout]
+  kubectl:
+    clusters: true
+    values: [-n, --namespace, --context, --kubeconfig, --cluster, --user, -s, --server, --request-timeout, -v, --v]
+  kubeadm:
+    values: [--kubeconfig, -v, --v]
+
+  # --- virtualisation and storage ----------------------------------------
+  virsh:
+    flags: [-r, --readonly, -q, --quiet]
+    values: [-c, --connect]
+  zpool import:
+    flags: [-D]
+    values: [-d]
+  btrfs:
+    flags: [-q, --quiet, -v, --verbose]
+    values: [--format]
+  smartctl:
+    clusters: true
+    values: [-d, --device, -T, --tolerance, -b, --badsum, -r, --report, -n, --nocheck, -s, -o, -S, -l, --log,
+             -v, --vendorattribute, -F, --firmwarebug, -P, --presets, -B, --drivedb, -t, --test, -g, --get, -f, --format]
+  mdadm:
+    clusters: true
+    flags: [--scan, -s, --brief, -b, --verbose, -v, --export, -Y, --test, -t]
+  cryptsetup: {flags: [-v, --verbose, --debug]}
+
+  # --- scheduling --------------------------------------------------------
+  crontab: {values: [-u]}
+
+
+gates:
+  # --- files and text ----------------------------------------------------
+  find:
+    - reason: find can delete files, run commands, or write a file with these actions
+      words: [-delete, -exec, -execdir, -ok, -okdir, -fls, -fprint, -fprint0, -fprintf]
+  file:
+    - reason: file -C writes a compiled magic file
+      short: C
+      long: [compile]
+  tree:
+    - reason: tree -o writes its output to a file, and -R writes one into every directory
+      short: oR
+  sort:
+    - reason: sort -o writes its output to a file, and --compress-program runs a program
+      short: o
+      long: [output, compress-program]
+  uniq:
+    - reason: uniq writes to its second file argument
+      operands: 1
+  jq:
+    - reason: in-place editing rewrites the file
+      short: i
+      long: [in-place]
+  yq:
+    - reason: yq -i rewrites the file in place, and -s writes a file per document
+      short: is
+      long: [inplace, in-place, split-exp]
+
+  # --- system state ------------------------------------------------------
+  date:
+    - reason: date -s, or a date given as digits, sets the system clock
+      short: s
+      long: [set]
+    - reason: date -s, or a date given as digits, sets the system clock
+      pattern: '(?:^|\s)[0-9]{8,}(?:\.[0-9]{2})?(?=\s|$)'
+  lastlog:
+    - reason: lastlog -C and -S change the login records
+      short: CS
+      long: [clear, set]
+  dmidecode:
+    - reason: dmidecode --dump-bin writes the table to a file
+      long: [dump-bin]
+  dmesg:
+    - reason: these dmesg options clear the kernel log or change what reaches the console
+      short: CcDEn
+      long: [clear, read-clear, console-off, console-on, console-level]
+  sysctl:
+    - reason: sysctl -w, -p, --system or a key=value argument changes kernel settings
+      short: wpf
+      long: [write, load, system]
+    - reason: sysctl -w, -p, --system or a key=value argument changes kernel settings
+      pattern: '(?:^|\s)[^\s=-][^\s=]*='
+  journalctl:
+    - reason: these journalctl options delete, rotate, move or re-key the journal, or write a file
+      long: [vacuum-size, vacuum-time, vacuum-files, rotate, flush, relinquish-var, smart-relinquish-var,
+             sync, setup-keys, update-catalog, cursor-file]
+  sar:
+    - reason: sar -o writes the samples to a file
+      short: o
+  debsums:
+    - reason: debsums -g writes checksum files
+      short: g
+      long: [generate]
+
+  # --- networking --------------------------------------------------------
+  ifconfig:
+    - reason: ifconfig with more than an interface name changes that interface
+      operands: 1
+  ss:
+    - reason: ss -K closes sockets, and -D writes to a file
+      short: KD
+      long: [kill, diag]
+  arp:
+    - reason: arp -s, -d and -f change the ARP table
+      short: sdfD
+      long: [set, delete, file, use-device]
+  curl:
+    - reason: curl -o writes the response to a file
+      short: o
+      long: [output]
+      unless_value: /dev/null
+    - reason: curl writes the response to a file named after the URL
+      short: OJ
+      long: [remote-name, remote-name-all, remote-header-name, output-dir, create-dirs]
+    - reason: curl sends data, which makes the request a POST or an upload
+      short: dFT
+      long: [data, data-ascii, data-binary, data-raw, data-urlencode, json, form, form-string, form-escape,
+             upload-file, url-query]
+    - reason: a request method other than GET or HEAD can change what it is sent to
+      short: X
+      long: [request]
+      unless_value: '(?i)GET|HEAD'
+    - reason: curl -K reads further options from a file
+      short: K
+      long: [config]
+    - reason: curl writes cookies, traces or caches to a file
+      short: c
+      long: [cookie-jar, trace, trace-ascii, libcurl, etag-save, hsts, alt-svc]
+    - reason: curl writes the headers or its errors to a file
+      short: D
+      long: [dump-header, stderr]
+      unless_value: '-|/dev/null'
+    - reason: a header given as @file sends that file's contents
+      short: H
+      long: [header, proxy-header]
+      if_value: '@.*'
+    - reason: curl -Q sends FTP or SFTP commands
+      short: Q
+      long: [quote]
+    - reason: curl variables and engines read files and load code
+      long: [variable, engine]
+    - reason: gopher, dict and telnet URLs send raw bytes to the service, which can be commands
+      pattern: '(?i)(?:^|[\s"''=])(?:gopher|dict|telnet)s?://'
+  openssl:
+    - reason: this option writes a file or loads code into openssl
+      words: [-out, -keyout, -writerand, -keylogfile, -sess_out, -reqout, -respout, -msgfile,
+              -CAcreateserial, -CAserial, -engine, -provider, -provider-path]
+  nft:
+    - reason: nft reads a ; or a newline in its arguments as the start of another command
+      pattern: '[;\n]'
+  iptables: &iptables
+    - reason: this iptables command changes the rules
+      short: ADIRFZNXPE
+      long: [append, delete, insert, replace, flush, zero, new-chain, delete-chain, policy, rename-chain, modprobe]
+  ip6tables: *iptables
+  iptables-save: &iptables_save
+    - reason: iptables-save -f writes a file, and -M runs a program
+      short: fM
+      long: [file, modprobe]
+  ip6tables-save: *iptables_save
+
+  # --- packages ----------------------------------------------------------
+  rpm:
+    - reason: "rpm runs what is inside %( ) and %{lua: } when it expands them"
+      pattern: '%\(|%\{\s*lua'
+  dnf: &dnf
+    - reason: --setopt and --config can load plugins from anywhere
+      short: c
+      long: [setopt, config]
+  yum: *dnf
+  pacman -Ss: &pacman_sync
+    - reason: these pacman options refresh the databases, upgrade or download
+      short: yuw
+      long: [refresh, sysupgrade, downloadonly]
+  pacman -Ssq: *pacman_sync
+  pacman -Si: *pacman_sync
+  pacman -Sii: *pacman_sync
+  pacman -Sl: *pacman_sync
+  pacman -Slq: *pacman_sync
+  pacman -Sg: *pacman_sync
+  pacman -Sgg: *pacman_sync
+
+  # --- containers --------------------------------------------------------
+  docker compose config: &compose_config
+    - reason: compose config -o writes the resolved file
+      short: o
+      long: [output]
+  nerdctl compose config: *compose_config
+
+  # --- storage -----------------------------------------------------------
+  zpool events:
+    - reason: zpool events -c clears the event log
+      short: c
+  btrfs device stats: &btrfs_stats
+    - reason: btrfs device stats -z resets the counters
+      short: z
+      long: [reset]
+  btrfs dev stats: *btrfs_stats
+  smartctl:
+    - reason: these smartctl options start or abort a self-test or change the drive's settings
+      short: tXsoS
+      long: [test, abort, smart, offlineauto, saveauto, set]
+    - reason: smartctl -l scterc with values sets the drive's error recovery timeout
+      short: l
+      long: [log]
+      if_value: '(?i)scterc,.*'
+
+
+wrappers:
+  sudo:
+    clusters: true
+    assignments: true
+    flags: [-n, --non-interactive, -E, -H, --set-home, -i, --login, -s, --shell, -P, --preserve-groups,
+            -S, --stdin, -k, --reset-timestamp, -A, --askpass, -B, --bell, -b, --background]
+    values: [-u, --user, -g, --group, -p, --prompt, -C, --close-from, -h, --host, -r, --role, -t, --type,
+             -T, --command-timeout, -U, --other-user, -D, --chdir, -R, --chroot]
+    optional: [--preserve-env]
+  doas:
+    flags: [-n]
+    values: [-u]
+  env:
+    clusters: true
+    assignments: true
+    flags: [-i, --ignore-environment, "-0", --null, -v, --debug]
+    values: [-u, --unset, -C, --chdir]
+  timeout:
+    flags: [--preserve-status, --foreground, -v, --verbose]
+    values: [-s, --signal, -k, --kill-after]
+    operands: 1
+  nice: {values: [-n, --adjustment]}
+  ionice: {flags: [-t, --ignore], values: [-c, --class, -n, --classdata]}
+  stdbuf: {values: [-i, --input, -o, --output, -e, --error]}
+  nohup: {}
+  setsid: {clusters: true, flags: [-c, --ctty, -f, --fork, -w, --wait]}
+  time: {flags: [-p, --portability, -v, --verbose, -q, --quiet], values: [-f, --format]}
+
+
+environment:
+  - LANG
+  - LANGUAGE
+  - LC_*
+  - TZ
+  - COLUMNS
+  - LINES
+  - NO_COLOR
+  - TERM
+  - SYSTEMD_COLORS
+  - KUBECONFIG
