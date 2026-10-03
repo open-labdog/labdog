@@ -497,6 +497,34 @@ async def check_hosts_busy(db: AsyncSession, host_ids: list[int]) -> BlockerInfo
     return blockers[first_host]
 
 
+async def resume_deferred_parent(db: AsyncSession, action_run_id: int) -> None:
+    """Put a single-host run back to ``running`` as its row claims the host.
+
+    Call in the transaction that flips the row to ``running``. Deferring a
+    host-targeted run flips the run to ``pending`` with its row, and the
+    host queue now resumes it through the row (BUG-102), so nothing else
+    would ever flip the run back. Left ``pending`` while its row runs, the
+    run is invisible to ``check_host_busy``: scan 2 wants a ``running`` run
+    and scan 3 a ``running`` parent, so a sync entering its gate would find
+    the host free and run alongside the action.
+
+    Only from ``pending``: a run cancelled meanwhile stays cancelled. A
+    group run's parent never goes ``pending`` when one member defers, so
+    the ``host_id`` condition only says which runs this is for.
+    """
+    from app.models.action_run import ActionRun
+
+    await db.execute(
+        update(ActionRun)
+        .where(
+            ActionRun.id == action_run_id,
+            ActionRun.host_id.is_not(None),
+            ActionRun.status == "pending",
+        )
+        .values(status="running", pending_reason=None)
+    )
+
+
 def is_claimable(host_run) -> bool:
     """Whether a per-host task may claim this ``ActionHostRun``.
 
@@ -572,6 +600,7 @@ DispatchedKind = Literal["sync", "action_host", "action_group", "action_host_run
 `action_group`: an ActionRun whose member set includes the freed host
     (the dispatched task will re-check all its members and may defer
     again if another member is still busy).
+`action_host_run`: one deferred per-host row, re-sent to its per-host task.
 """
 
 
@@ -625,12 +654,13 @@ async def dispatch_next_pending_for_host(
 
     - SyncJob → dispatches via ``run_host_sync.delay(...)`` (same
       task name the orchestrator already uses).
-    - host-targeted ActionRun → dispatches via
-      ``app.tasks.action_orchestrator.run_action.delay(...)``.
-    - group-targeted ActionRun → dispatches via
+    - ActionRun with no per-host rows yet → dispatches via
       ``app.tasks.action_orchestrator.run_action.delay(...)`` (which
       routes to action_group based on the action's `supports_host`
       flag — same routing as the original submission).
+    - ActionHostRun (a deferred per-host row, of a host-targeted run or
+      of a group run fanned out per host) → dispatches the action's own
+      per-host task via ``action_orchestrator.send_host_task``.
 
     The dispatched task does its own claim-or-defer. A group action
     picked here may re-defer if any of its OTHER members is still
@@ -683,7 +713,18 @@ async def dispatch_next_pending_for_host(
 
         # ------------------------------------------------------------------
         # ActionRun candidate: pending + (host_id matches OR group target
-        # whose member set includes this host) + not excluded.
+        # whose member set includes this host) + not excluded + no
+        # per-host rows yet.
+        #
+        # BUG-102: a host-targeted run defers per row — the orchestrator has
+        # already created the host's ActionHostRun, and action_host flips
+        # that row and the run to ``pending`` together. Both rows were then
+        # candidates with the same created_at, the run won the tie, and
+        # re-sending it through the orchestrator inserted the host's row a
+        # second time: the run failed on ``uq_action_host_run`` and the real
+        # row stayed ``pending`` for good. Such a run comes back through its
+        # row (the child scan below). Only a run that deferred before it had
+        # rows — a group dispatch, which defers as a whole — is re-sent here.
         # ------------------------------------------------------------------
         group_member_subq = (
             select(HostGroupMembership.c.group_id)
@@ -698,6 +739,7 @@ async def dispatch_next_pending_for_host(
                     ActionRun.host_id == host_id,
                     ActionRun.group_id.in_(group_member_subq),
                 ),
+                _has_no_host_runs(),
             )
             .order_by(ActionRun.created_at.asc())
             .limit(1)
@@ -707,8 +749,9 @@ async def dispatch_next_pending_for_host(
         action_candidate = (await db.execute(action_stmt)).scalar_one_or_none()
 
         # ------------------------------------------------------------------
-        # ActionHostRun candidate: a deferred *child* of a group-targeted
-        # run whose action has supports_host=True.
+        # ActionHostRun candidate: a deferred per-host row — a member of a
+        # group-targeted run whose action has supports_host=True, or the
+        # one row of a host-targeted run (BUG-102, above).
         #
         # BUG-62: nothing selected on this. action_host defers such a child
         # by flipping only the ActionHostRun to ``pending`` — the parent
@@ -718,17 +761,26 @@ async def dispatch_next_pending_for_host(
         # never touched that host, and the sweeper skipped it because the
         # parent was terminal. Reporting success for work that did not
         # happen is worse than reporting failure.
+        #
+        # A ``_builtin.sync`` row is left out while the SyncJob it queued is
+        # still open (BUG-103). That job is in the sync scan above and closes
+        # the row when it runs (BUG-81); re-sending the row as well would
+        # start a second sync for the same request.
         # ------------------------------------------------------------------
         # ActionHostRun has no created_at of its own, so a child takes its
         # parent's queue position — which is the FIFO semantic that matters
         # anyway: the run was submitted at one instant, not per member.
         child_stmt = (
-            select(ActionHostRun, ActionRun.created_at)
+            select(ActionHostRun, ActionRun.created_at, ActionRun.action_key)
             .join(ActionRun, ActionRun.id == ActionHostRun.action_run_id)
             .where(
                 ActionHostRun.host_id == host_id,
                 ActionHostRun.status == "pending",
                 ActionRun.status.in_(("queued", "running", "pending")),
+                ~exists().where(
+                    SyncJob.origin_action_host_run_id == ActionHostRun.id,
+                    SyncJob.status.in_((JobStatus.pending, JobStatus.running)),
+                ),
             )
             .order_by(ActionRun.created_at.asc(), ActionHostRun.id.asc())
             .limit(1)
@@ -754,6 +806,7 @@ async def dispatch_next_pending_for_host(
 
         if candidate_kind == "action_host_run":
             child_row: ActionHostRun = candidate_row  # type: ignore[assignment]
+            child_action_key: str = child_hit[2]  # type: ignore[index]
             # Claim it out of ``pending`` in this transaction so a second
             # finisher cannot pick the same child (see the ActionRun claim
             # below for the same reasoning).
@@ -769,9 +822,15 @@ async def dispatch_next_pending_for_host(
                 continue
             await db.commit()
 
-            from app.tasks.action_host import run_action_host
+            # The task's time limits come from the action's own timeouts, so
+            # this process's registry has to know the action: a pool process
+            # still on the bundled pack would size a git-pack action's limits
+            # from the defaults (BUG-105). After the commit, as it requires.
+            from app.actions.registry import ensure_registry_current
+            from app.tasks.action_orchestrator import send_host_task
 
-            run_action_host.delay(child_row.action_run_id, child_row.id)
+            await ensure_registry_current(db)
+            send_host_task(child_action_key, child_row.action_run_id, child_row.id)
             return ("action_host_run", child_row.id)
 
         if candidate_kind == "sync":

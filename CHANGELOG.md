@@ -344,6 +344,29 @@ The format follows [Keep a Changelog]; LabDog follows
   cancelled with it, and a host that is already running finishes, with
   the run closing when it does.
 
+- **An action that waits for a busy host runs when the host frees up.**
+  Run an action on a host while a sync was running on it, and it
+  waited, as it should — then failed the moment the sync finished, with
+  a duplicate-key error, and its host stayed "pending" for good. The
+  host queue re-sent the whole run instead of the host's own task. A
+  built-in run on a group had the same trouble in another form: a
+  member that had to wait was handed to the playbook runner, which has
+  nothing to run for a drift check or a state collection, so it failed.
+  Both now resume exactly as they would have started, with the
+  action's own task and time limits, and a resumed run holds its host
+  again, so a sync cannot start alongside it.
+
+- **Rotating the encryption key no longer breaks Git push webhooks.** The
+  rotation script re-encrypted every stored secret except the Git
+  webhook secret, so after a rotation every signed push webhook got a
+  500 and GitOps stopped syncing on push, while the script reported
+  success. It now rotates that secret too, and reports each encrypted
+  column on its own line (`git_repositories.encrypted_https_token: 1
+  value(s) rotated`) instead of one line per table. A test now fails if
+  a model gains an encrypted column the script does not rotate. If you
+  rotated the key on an earlier version, re-enter each repository's
+  webhook secret.
+
 - **`curl -s -o /dev/null -w '%{http_code}'` no longer needs approval.** The
   AI assistant's usual way to check that a web service answers was refused
   as a file write, because `-o` names a file and the check did not know
