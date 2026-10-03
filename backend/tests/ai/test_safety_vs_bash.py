@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pytest
 
-from app.ai import safety
+from app.ai import policy as command_policy
 from app.ai.safety import classify_command
 
 BASH = shutil.which("bash")
@@ -51,9 +51,29 @@ PRELUDE = (
 )
 
 
+#: Stands in for sudo, first on the PATH the lines run with. The lines
+#: include `sudo sh -c ...`, and a developer machine or a CI runner may well
+#: have passwordless sudo: run as the real thing, a line that writes a file
+#: would write it as root. This one drops its options and runs the command
+#: as whoever is running the tests.
+FAKE_SUDO = """#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -u|-g|-p|-C|-h|-r|-t|-T|-U|-D|-R) shift 2 ;;
+    --) shift; break ;;
+    -*) shift ;;
+    *) break ;;
+  esac
+done
+exec "$@"
+"""
+
+
 @pytest.fixture(autouse=True)
 def only_a_is_read_only(monkeypatch):
-    monkeypatch.setattr(safety, "READ_ONLY_HEADS", frozenset({"a"}))
+    """LabDog's own policy, wrappers and all, with ``a`` the only read."""
+    data = {**command_policy.load_data(), "read_only": {"a": "any"}, "options": {}, "gates": {}}
+    monkeypatch.setattr(command_policy, "DEFAULT", command_policy.CommandPolicy.from_data(data))
 
 
 class Shell:
@@ -63,13 +83,19 @@ class Shell:
         self.work = root / "work"
         self.work.mkdir()
         self.log = root / "log"
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        sudo = bin_dir / "sudo"
+        sudo.write_text(FAKE_SUDO)
+        sudo.chmod(0o755)
+        self.path = f"{bin_dir}:{os.defpath}"
 
     def run(self, line: str) -> tuple[list[str], list[str]]:
         self.log.write_text("")
         subprocess.run(
             [BASH, "--norc", "--noprofile", "-c", PRELUDE + line],
             cwd=self.work,
-            env={"LOG": str(self.log), "PATH": os.defpath, "LC_ALL": "C"},
+            env={"LOG": str(self.log), "PATH": self.path, "LC_ALL": "C"},
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=10,

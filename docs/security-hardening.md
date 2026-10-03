@@ -322,8 +322,11 @@ one feature that runs commands nobody wrote in advance.
 - **`ai.enabled`** gates every entry point — chat, scheduled checks, and
   AI verification. Off by default.
 - **A default-deny command classifier** parses each command; anything not
-  recognised as read-only is treated as a change. The model's own claim
-  about what a command does is advisory and never downgrades the verdict.
+  recognised as read-only is treated as a change. Read-only is an
+  allowlist of commands and of the subcommands and options that only read
+  (`backend/app/ai/command_policy.yaml`), so a subcommand or option it does
+  not list counts as a change too. The model's own claim about what a
+  command does is advisory and never downgrades the verdict.
 - **A denylist applies at every autonomy level**, including full-auto:
   `rm -rf /`, `mkfs`, writing to block devices, piping a download into a
   shell, flushing the whole firewall ruleset. No setting permits them.
