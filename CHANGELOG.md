@@ -9,6 +9,53 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **LabDog can send email.** Configure a mail server on the new Email
+  page (Settings › Integrations › Email, or **Email notifications…** in
+  the account menu) — host, port, STARTTLS / TLS / none, login, From
+  address — and **Send test** shows the server's own answer. The SMTP
+  password is encrypted at rest, rotated with the other secrets, and
+  never returned by the API. Each person then opts in to what they want:
+  an alert fired; the assistant is waiting for an approval; that request
+  is about to expire (`notifications.approval_expiry_warning_hours`,
+  default 2) or has expired; a full-auto alert investigation changed a
+  host, with each command, whether it worked and the snapshot taken
+  before it.
+
+  Messages are queued in the same transaction as what caused them and
+  sent by a background task once a minute, never inline, so a slow mail
+  server cannot hold up an alert or an approval. Everything due for one
+  person in that minute is one email, so an alert storm is one message a
+  minute rather than one per alert. Failures are retried after 1, 2, 4, 8
+  and 16 minutes, and the page lists what was sent, to whom, and what the
+  server said. Links point at `notifications.public_url`, which must be
+  set — LabDog will not build links from a request's `Host` header — and
+  no email can approve anything. Alert and command text is redacted
+  before it is mailed.
+
+- **Alert investigations can fix what they find.** They were read-only
+  with no way to raise them. `ai.alert_autonomy_level` now sets what every
+  alert's session may change — `read_only` (the default, so nothing
+  changes on upgrade) or `approval` — and `ai.alert_full_auto_alertnames`
+  names alerts, one per line, whose session may change the host without
+  asking. There is no instance-wide full auto for alerts: you name each
+  one whose fix you trust to run unattended.
+
+  A named alert runs at full auto only while every safeguard holds: it is
+  firing and names a LabDog host, which is the only host it may touch; a
+  webhook-delivered alert needs a webhook token of at least 32
+  characters; the host can be snapshotted first
+  (`ai.alert_full_auto_requires_snapshot`, on by default); no other
+  automatic fix is running on the host; no full-auto session for that
+  alert changed the host within `ai.alert_remediation_cooldown_minutes`
+  (60); and fewer than `ai.alert_remediation_daily_cap` (3) changed it in
+  the last 24 hours. Otherwise it is still investigated, at the base
+  level, and the Alerts page says which safeguard held it back. Full-auto
+  alert sessions run under lower caps (`ai.alert_max_commands`,
+  `ai.alert_wall_clock_seconds`), are told what a fix may and may not be,
+  and refuse a change while a sync or action run is working on the host.
+  The Alerts page tags each investigation that could change something
+  with its level.
+
 - **Schedules can run on local time.** A new setting,
   `scheduling.timezone` under Settings › Fleet › Scheduling, names the
   timezone every scheduled action's and cron-scheduled discovery scan's

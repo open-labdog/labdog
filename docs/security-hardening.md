@@ -355,6 +355,16 @@ one feature that runs commands nobody wrote in advance.
   master key as every other secret, and participate in
   [key rotation](encryption-key-rotation.md).
 
+**Email notifications** store an SMTP password the same way, and the API
+never returns it — only whether one is set. Two choices limit what an
+email can do. Links in it are built from `notifications.public_url`,
+never from a request's `Host` header, which the client controls; with no
+URL set, nothing with a link is sent. And no email can approve a change:
+approval happens signed in, because a link that ran a root command would
+make a mailbox a credential. Alert and command text in a message goes
+through the transcript's credential redaction first. See
+[Email notifications](ui/notifications.md).
+
 **Alert intake** adds one unauthenticated-by-default surface and closes
 it deliberately. `POST /api/webhooks/grafana-alerts` is reachable without
 a LabDog session — it has to be, since Grafana has none — so it is gated
@@ -366,10 +376,31 @@ write rows LabDog might then spend money investigating. Restrict the path
 at the reverse proxy as well if Grafana reaches LabDog over an untrusted
 network.
 
-Alert-driven sessions are **always read-only** and there is no setting
-that raises them. An alert is a machine's opinion that something is
-wrong; acting on it unattended is a different feature with a different
-risk.
+Alert-driven sessions are **read-only by default**.
+`ai.alert_autonomy_level` can raise every alert to `approval`, and only
+alerts named one by one in `ai.alert_full_auto_alertnames` can reach full
+auto — there is no instance-wide full auto for alerts. Once one is named,
+the webhook is a way to make LabDog run commands as root, so the
+safeguards matter:
+
+- **The webhook token is the trigger's only lock.** A webhook-delivered
+  alert is refused full auto while `[alerts] webhook_token` is shorter
+  than 32 characters. Use `openssl rand -hex 16` or longer, and restrict
+  the path at the reverse proxy to Grafana's address.
+- **Alert text is attacker-controlled.** Whoever writes alert rules or
+  annotations, or controls a label value such as a job or instance name,
+  is writing text an agent with root reads. It is sanitised and fenced
+  as data, and the session is told not to follow instructions in it —
+  but a model can be talked past a delimiter. The command classifier's
+  denylist is what actually holds, which is why it applies at every
+  level.
+- **Blast radius is one host, a few changes.** Full auto needs the alert
+  to name a LabDog host and may touch only that host; it needs a snapshot
+  first unless `ai.alert_full_auto_requires_snapshot` is off; and a
+  per-alert cooldown, a per-host daily cap and lower command and time
+  caps bound how much it can do before a person looks.
+
+See [Alerts](ui/alerts.md#full-auto-for-named-alerts) for the full list.
 
 **Residual risk worth naming.** The classifier parses commands rather
 than executing them symbolically, so a sufficiently creative shell

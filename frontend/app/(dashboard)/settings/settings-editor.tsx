@@ -95,6 +95,14 @@ const CATEGORIES: Record<string, Category> = {
       "ai.auto_investigate_enabled",
       "ai.auto_investigate_min_severity",
       "ai.alert_mission_template",
+      // Alert remediation.
+      "ai.alert_autonomy_level",
+      "ai.alert_full_auto_alertnames",
+      "ai.alert_full_auto_requires_snapshot",
+      "ai.alert_remediation_cooldown_minutes",
+      "ai.alert_remediation_daily_cap",
+      "ai.alert_max_commands",
+      "ai.alert_wall_clock_seconds",
     ],
   },
   drift: {
@@ -124,6 +132,12 @@ const CATEGORIES: Record<string, Category> = {
   discovery: {
     label: "Discovery",
     keys: ["discovery.scan_timeout", "discovery.max_concurrent"],
+  },
+  // Rendered on the Email page (/notifications), beside the mail server
+  // these only matter with, rather than on Settings itself.
+  notifications: {
+    label: "Notifications",
+    keys: ["notifications.public_url", "notifications.approval_expiry_warning_hours"],
   },
   logging: {
     label: "Logging",

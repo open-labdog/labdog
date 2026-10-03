@@ -5,8 +5,9 @@ the AES-256-GCM master key that protects every encrypted credential stored in
 LabDog's database (`ssh_keys.encrypted_private_key`,
 `proxmox_nodes.encrypted_token_secret`,
 `git_repositories.encrypted_https_token`,
-`grafana_instances.encrypted_token`, and
-`ai_providers.encrypted_api_key`).
+`grafana_instances.encrypted_token`,
+`ai_providers.encrypted_api_key`, and
+`smtp_settings.encrypted_password`).
 
 ---
 

@@ -103,7 +103,42 @@ filling in the action dialog again by hand.
 
 ---
 
+## Terminal and log windows — size, text size, readability
 
+**Context:** Both windows have a fixed size. The SSH terminal
+(`components/ssh-terminal.tsx`) hard-codes `fontSize: 14` and fills its
+panel. The run log (`components/action-run-detail.tsx`) is a `CodeBlock`
+capped at `maxH="60vh"`, set in the shared 11px `text-text-2` style. The
+log is also hard to scan: ANSI is stripped (`ANSIBLE_NOCOLOR=1`), so a
+long playbook is one wall of grey text in which a `fatal:` line looks the
+same as an `ok:` line.
+
+- **Resize and minimize.** Add a drag handle or `resize: vertical`, a
+  maximize toggle (fill the viewport) and a minimize/collapse toggle to
+  both windows. Minimizing the SSH terminal must hide it, not unmount it,
+  or the session drops. Skip `fitAddon.fit()` while it is hidden: fitting
+  to a 0×0 box sends a nonsense `sendResize` to the remote PTY.
+- **Text size.** Add A−/A+ (or a small picker) on both windows. For xterm,
+  set `term.options.fontSize`, then `fit()` and `sendResize`. For the log,
+  give `CodeBlock` a font-size prop or CSS variable, not a second
+  hard-coded class. Remember the choice per browser in `localStorage`;
+  this is a viewer convenience, not a setting.
+- **Easier-to-read log output.** Colour Ansible's structure on the client,
+  since the raw text carries no colour any more:
+  - `PLAY` / `TASK` headers set apart as section rules.
+  - `ok:` / `changed:` / `skipping:` / `failed:` / `fatal:` /
+    `unreachable:` lines in the status tones `RunStatus` already uses.
+  - `PLAY RECAP` rendered as a small per-host table.
+
+  Worth considering alongside it:
+  - A wrap on/off toggle.
+  - "Jump to first failure".
+  - Collapsing a task's lines under its header.
+  - In-log search.
+
+  Keep the plain text intact for copy and paste.
+
+---
 
 ## AI integration — remaining phases
 
@@ -228,82 +263,40 @@ Follow-ups it leaves open:
 
 ## Alert remediation — let an alert investigation fix what it finds
 
-**Goal:** full auto. An alert arrives, the assistant investigates, and it
-fixes the cause without anyone watching. The lesser levels ship as well,
-as steps on the way and for operators who want a person in the loop.
+**Shipped:** phases 1 and 2. `ai.alert_autonomy_level` (`read_only` |
+`approval`) sets what every alert's session may change, and
+`ai.alert_full_auto_alertnames` names the alerts that may change the host
+unattended, behind the safeguards in `app/ai/alert_autonomy.py`: firing,
+mapped to a host, a 32-character webhook token, a snapshot precondition,
+one remediation per host at a time, a per-(host, alertname) cooldown, a
+per-host daily cap, lower command and wall-clock caps, an alert section
+in the system prompt, and a refusal to change a host while a sync or
+action run is working on it. See `git log --grep "alert remediation"`.
 
-**Context:** alert investigations are read-only, and that is written into
-the code, not a setting. `_decide_and_run` in `app/tasks/ai_alerts.py`
-(the automatic path) and `investigate_alert` in `app/api/ai.py` (the
-"investigate" button) both create the session with
-`autonomy_level="read_only"` and build the read-only system prompt. A
-follow-up message re-runs the session at its existing level. Under
-read-only, `is_allowed` in `app/ai/safety.py` refuses every mutating
-command and does not offer an approval. So today a fix means reading the
-report and starting a new chat session by hand.
+Left open:
 
-Everything below the autonomy level already exists: the approval flow
-(park and resume without holding a worker or host lock), full auto,
-snapshot-before-mutating, the command classifier with its deny list, the
-per-session caps and the budgets.
+- **Take the host lock instead of refusing.** The busy guard checks
+  `check_host_busy` before each mutating command and refuses while a
+  sync or action run holds the host, but a sync can still be claimed
+  while the AI's command runs, because AI sessions are not participants
+  in the per-host queue. Closing that means a claim for the session (or
+  for each command) and a dispatch-next when it ends — the same
+  machinery `app/tasks/host_lock.py` gives syncs and runs.
 
-- **Phase 1: an autonomy setting for alert investigations.** Add
-  `ai.alert_autonomy_level` (`read_only` | `approval` | `full_auto`),
-  defaulting to `read_only` so upgrading changes nothing. Use it in both
-  places that create alert sessions, with the matching
-  `build_system_prompt(level)`. Say on the Settings page what each level
-  means for an alert that nobody triggered. Record the level on the
-  `AlertEvent` (or read it from the session) so the `/alerts` page shows
-  whether an investigation could act. `approval` is the safe first step:
-  the investigation runs, then parks each change as an approval request.
-  Depends on **Email notifications** (below). An alert session has no
-  operator watching the chat, so a parked request nobody hears about
-  just expires after `ai.approval_expiry_hours`. The operator has to be
-  told both that the alert fired and that a change is waiting.
+- **Harden the webhook as a root trigger.** Full auto now needs a token
+  of at least 32 characters. Still worth having: a source-IP allowlist,
+  and an HMAC over the body where the sender's Grafana version can sign
+  webhook requests.
 
-- **Phase 2: full auto, scoped.** Allowing `full_auto` in the setting is
-  the easy part. What has to exist before it is offered:
-  - **Scope per alert, not globally.** An allowlist of `alertname`s (or
-    a label matcher) that may remediate at full auto. Everything else
-    falls back to the global level. Consider a severity floor as well as
-    the existing `ai.auto_investigate_min_severity`.
-  - **The webhook becomes a root trigger.** `POST /api/webhooks/grafana-alerts`
-    is protected by one shared token (`settings.alerts.webhook_token`).
-    With full auto, anyone holding that token can make LabDog change a
-    host. Require the token to be set before full auto can be enabled;
-    consider an HMAC over the body and a source-IP allowlist.
-  - **Prompt injection through alert text.** Labels and annotations are
-    rendered into the mission (`app/ai/alert_mission.py`). They are
-    sanitised and fenced, but whoever writes alert rules or annotations,
-    or controls a label value such as a job or instance name, is now
-    writing instructions for an agent with root. The system prompt for
-    alert sessions should say the alert text is data, not instructions.
-    The classifier's deny list stays the last line.
-  - **Restrict the target.** Only the host the alert names
-    (`target_host_ids=[event.host_id]`), never fleet-wide. Refuse full
-    auto when the alert maps to no host.
-  - **Loop and flap guards.** A cooldown per (host, alertname) after a
-    remediation, and a cap on remediations per host per day. Otherwise a
-    flapping alert, or a fix that does not hold, turns into repeated
-    changes. Record every one on the alert.
-  - **Tighter caps for unattended runs.** Separate, lower
-    `max_commands`, token and wall-clock limits for alert remediation
-    than for chat.
-  - **Snapshot as a precondition.** `snapshot_if_mutating` only covers
-    Proxmox-backed hosts. Decide whether full auto is refused, or
-    downgraded to approval, on a host that cannot be snapshotted.
-  - **Coordinate with LabDog's own changes.** Alert sessions take no host
-    lock, so a remediation can overlap a sync or an action run on the
-    same host. Take the lock, or refuse while one is running.
+- **A severity floor for full auto** was considered and not added: the
+  alertname list is already explicit. Revisit if operators want a
+  named alert to act only at `critical`.
 
 - **Phase 3: close the loop.** Did the fix work?
   - Link the resolution to the remediation: when the same alert (by
     fingerprint) resolves after a remediation session, record that on
     the `AlertEvent`. When it keeps firing past a window, mark the
     remediation as not effective and stop retrying.
-  - Tell someone what was done: an email (see **Email notifications**)
-    with the commands that ran, the snapshot name and the outcome.
-    Unattended changes must not only live in the audit log.
   - Surface remediation outcomes on `/alerts` and the overview's Pending
     lane: which alerts were fixed automatically, which were escalated,
     which failed.
@@ -312,62 +305,40 @@ per-session caps and the budgets.
   lets the assistant run a named, vetted action pack instead of shell
   commands, with snapshot, verify and rollback built in. It is the better
   base for full auto, since permission can be granted per pack and per
-  alert. Phases 1-3 don't need to wait for it, but when it lands, full
-  auto remediation should prefer it, and an allowlist of packs per alert
-  should become the way to scope what an alert may do.
+  alert. When it lands, full auto remediation should prefer it, and an
+  allowlist of packs per alert should become the way to scope what an
+  alert may do.
 
 ---
 
-## Email notifications
+## Email notifications — follow-ups
 
-**Goal:** LabDog can send email, starting with the alert flow. With
-alert investigations at `approval`, the user has to hear that an alert
-fired and that a change is waiting for their decision; nothing reaches
-them today unless they have the UI open. This is the first slice of the
-"Notification system" idea in ROADMAP.md.
+**Shipped:** SMTP settings with a test button, per-user opt-in
+subscriptions, an outbox drained once a minute with per-recipient
+coalescing and retries, a delivery log, and five events — alert fired,
+approval requested / about to expire / expired, and a full-auto alert
+fix. See `git log --grep "email notifications"`.
 
-**Context:** LabDog sends no mail at all today: there is no SMTP config,
-no mail library, and `UserManager.on_after_forgot_password`
-(`app/auth/users.py`) only logs. Every user already has an email address
-(fastapi-users). There is no setting for LabDog's public URL, which a
-link in an email needs.
+Left open:
 
-- **Transport.** SMTP config: host, port, TLS mode (none, STARTTLS,
-  implicit TLS), username, password and From address. Store the password
-  encrypted like other secrets (AES key), never returned by the API.
-  Editable in Settings › Integrations, with a "send test email" button
-  that reports the SMTP server's actual error. Add `server.public_url`
-  (or a setting) for building links, and refuse to send a link-bearing
-  email without it rather than guessing from a request's `Host`.
-- **Delivery.** Send from a Celery task, never inline, so a slow or down
-  mail server cannot hold up an alert, a webhook response or an approval.
-  Retry with backoff, and record every attempt (event, recipient, status,
-  error) so "why didn't I get an email?" can be answered from the UI.
-  Coalesce bursts: a storm of alerts should become one email per
-  interval, not one per alert.
-- **Who gets what.** Opt-in per user, per event type, on the account
-  page. The privilege model is flat, so any user may subscribe to any
-  event. Perhaps also a shared address (a team list) in settings.
-- **Events, in order:**
-  1. Alert fired: alertname, severity, host, and a link to the alert and
-     its investigation.
-  2. Approval requested: the command or change, the host, the
-     investigation's reasoning, the expiry time, and a link to the
-     approval. Approving happens in the UI, not by an unauthenticated
-     link in the email: an email link that runs a root command would
-     turn the inbox into a credential.
-  3. Approval about to expire, and approval expired.
-  4. Remediation done or failed (alert remediation phase 3).
-  5. Later: sync failures, drift, action-run failures, certificate
-     expiry (the rest of the ROADMAP idea), and password reset.
-- **Content.** Run every value from the alert payload or command output
-  through the same redaction the transcript uses (`app/ai/redaction.py`).
-  An email is stored in places LabDog doesn't control. Plain-text body
-  first; HTML optional.
-- **Leave room for other channels.** Put the event and recipient model
-  behind a small channel interface, so a webhook, ntfy, Slack or Matrix
-  channel can be added without touching the events. Only email ships in
-  the first version.
+- **More events.** Sync failures, drift, action-run failures, and
+  certificate expiry — the rest of the ROADMAP "Notification system"
+  idea. Each is an entry in `app/notifications/events.py` and a
+  `notify()` call where it happens.
+- **Password reset by email.** `UserManager.on_after_forgot_password`
+  (`app/auth/users.py`) still only logs the token. The transport exists
+  now; the reset link needs `notifications.public_url` like every other.
+- **Other channels.** Subscriptions and the outbox are already keyed by
+  `channel`, but `notify()` only fans out to email and the drain only
+  sends email. A webhook, ntfy, Slack or Matrix channel needs a recipient
+  per channel (a URL or topic rather than the user's address) and a
+  drain of its own.
+- **A shared address.** A team list in settings that receives chosen
+  events, for an install where nobody wants them in a personal inbox.
+- **Link an alert email to its investigation.** It links to `/alerts`:
+  the email is queued when the alert is recorded, before the
+  investigation that the policy may start has a session.
+- **HTML bodies.** Plain text only for now.
 
 ---
 
