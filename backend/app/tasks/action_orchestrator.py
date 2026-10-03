@@ -721,17 +721,41 @@ async def _wait(d: _Driver, batch: list[int]) -> str:
         await _pause()
 
 
-def _dispatch(d: _Driver, host_run_ids: list[int]) -> None:
+def _send_host_task(task: str, soft_limit: int, action_run_id: int, host_run_id: int) -> None:
     from app.tasks.action_timeouts import HARD_LIMIT_MARGIN_SECONDS  # noqa: PLC0415
 
+    celery_app.send_task(
+        task,
+        args=[action_run_id, host_run_id],
+        queue=CHILD_QUEUE,
+        soft_time_limit=soft_limit,
+        time_limit=soft_limit + HARD_LIMIT_MARGIN_SECONDS,
+    )
+
+
+def _dispatch(d: _Driver, host_run_ids: list[int]) -> None:
     for host_run_id in host_run_ids:
-        celery_app.send_task(
-            d.per_host_task,
-            args=[d.action_run_id, host_run_id],
-            queue=CHILD_QUEUE,
-            soft_time_limit=d.child_soft_limit,
-            time_limit=d.child_soft_limit + HARD_LIMIT_MARGIN_SECONDS,
-        )
+        _send_host_task(d.per_host_task, d.child_soft_limit, d.action_run_id, host_run_id)
+
+
+def send_host_task(action_key: str, action_run_id: int, host_run_id: int) -> None:
+    """Send one host's task for a run, as the orchestrator would have.
+
+    For the host queue, which re-sends a member that deferred behind a busy
+    host long after the orchestrator has let go. It used to send
+    ``run_action_host`` whatever the action, and that is the pack-playbook
+    runner: a built-in has no playbook, so a deferred member of a group
+    ``_builtin.drift_check`` failed when its turn came (BUG-103). The task
+    and its limits come from the same lookups as the orchestrator's own.
+    """
+    from app.tasks.action_timeouts import per_host_deadline_seconds  # noqa: PLC0415
+
+    _send_host_task(
+        PER_HOST_TASK_FOR_BUILTIN.get(action_key, _DEFAULT_PER_HOST_TASK),
+        per_host_deadline_seconds(action_key),
+        action_run_id,
+        host_run_id,
+    )
 
 
 async def _drive(d: _Driver, batches: list[list[int]], *, sent: set[int] | None = None) -> None:

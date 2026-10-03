@@ -661,11 +661,11 @@ class TestADeferredChildIsReDispatched:
         child_id = await _create_action_host_run(db, run_id, host.id, status="pending")
         await db.commit()
 
-        with patch("app.tasks.action_host.run_action_host.delay") as delay:
+        with patch("app.tasks.action_orchestrator.send_host_task") as send:
             result = await dispatch_next_pending_for_host(db, host.id)
 
         assert result == ("action_host_run", child_id)
-        delay.assert_called_once_with(run_id, child_id)
+        send.assert_called_once_with("_builtin.collect_state", run_id, child_id)
 
     async def test_the_child_leaves_pending_so_it_is_not_picked_twice(self, db: AsyncSession):
         from app.models.action_run import ActionHostRun
@@ -684,7 +684,7 @@ class TestADeferredChildIsReDispatched:
         child_id = await _create_action_host_run(db, run_id, host.id, status="pending")
         await db.commit()
 
-        with patch("app.tasks.action_host.run_action_host.delay"):
+        with patch("app.tasks.action_orchestrator.send_host_task"):
             await dispatch_next_pending_for_host(db, host.id)
 
         status = (

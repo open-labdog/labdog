@@ -155,6 +155,12 @@ async def _begin_host_run(host_run_id: int, *, with_lock: bool = True) -> int | 
 
         host_run.status = "running"
         host_run.started_at = datetime.now(UTC)
+        # The parent of a deferred single-host row went ``pending`` with it
+        # (``_mark_deferred``); see ``resume_deferred_parent`` for why it
+        # must read ``running`` again before the claim commits.
+        from app.tasks.host_lock import resume_deferred_parent
+
+        await resume_deferred_parent(db, host_run.action_run_id)
         await db.commit()
         return host_id
 
