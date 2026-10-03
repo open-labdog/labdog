@@ -322,6 +322,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Fixed
 
+- **Cancelling a run cancels the hosts it has not started.** The cancel
+  left them to the run's orchestrator, so when that had died, or had
+  already handed every host out and stopped watching, they stayed
+  "queued" or "pending" for good and the run never got an end time. A
+  run waiting for a busy host was not cancelled at all, and could start
+  an hour later. Now every host that has not started is cancelled
+  straight away, a queued sync behind a cancelled built-in sync is
+  cancelled with it, and a host that is already running finishes, with
+  the run closing when it does.
+
 - **The AI assistant can filter with `grep -E 'a|b'`.** The command
   classifier cut a command at every `|`, `;` and `&`, including the ones
   inside quotes, so `dpkg -l | grep -E 'kubelet|kubeadm'` was read as

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy import select, text
+from sqlalchemy import exists, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.actions.registry import ACTION_REGISTRY, reload_registry_async
@@ -17,6 +18,7 @@ from app.db import get_db
 from app.models.action_run import ActionHostRun, ActionRun
 from app.models.host import Host
 from app.models.host_group import HostGroup
+from app.models.sync_job import JobStatus, SyncJob
 from app.models.user import User
 from app.schemas.actions import (
     ActionDefinitionOut,
@@ -402,7 +404,20 @@ async def cancel_run(
     _: User = Depends(current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Signal cancellation via Redis and mark the run as cancelled if queued/running."""
+    """Cancel a run: stop the hosts it has not started, let running ones finish.
+
+    The Redis token tells an orchestrator still driving the run, and a
+    group task about to start, to stop. The hosts it has not started are
+    cancelled here rather than left to that orchestrator: once it has died,
+    or has dispatched everything and returned, nothing else would, and they
+    read ``queued`` or ``pending`` for good with the run never showing an
+    end (BUG-104). A ``pending`` run is cancelled too. Its token alone
+    expired after an hour, and the host queue would then start the run.
+
+    A host already running is left to finish. The run gets its
+    ``finished_at`` here when no host is running, otherwise from
+    ``finalise_run_if_complete`` when the last one ends.
+    """
     run = await db.get(ActionRun, id)
     if run is None:
         raise HTTPException(status_code=404, detail="Action run not found")
@@ -414,9 +429,62 @@ async def cancel_run(
     r = redis_lib.from_url(settings.redis.url)
     r.setex(f"actions.cancel.{id}", 3600, "1")
 
-    if run.status in ("queued", "running"):
-        run.status = "cancelled"
-        await db.commit()
+    if run.status not in ("queued", "running", "pending"):
+        return {"ok": True}
+
+    now = datetime.now(UTC)
+    run.status = "cancelled"
+
+    # A deferred ``_builtin.sync`` row stays ``pending`` while the SyncJob it
+    # queued does the work, and that job closes it (BUG-81). Once the job is
+    # running, the row is as good as running.
+    syncing = exists().where(
+        SyncJob.origin_action_host_run_id == ActionHostRun.id,
+        SyncJob.status == JobStatus.running,
+    )
+    cancelled_ids = (
+        (
+            await db.execute(
+                update(ActionHostRun)
+                .where(
+                    ActionHostRun.action_run_id == id,
+                    ActionHostRun.status.in_(("queued", "pending")),
+                    ~syncing,
+                )
+                .values(status="cancelled", finished_at=now)
+                .returning(ActionHostRun.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if cancelled_ids:
+        # Still queued, the job would run the sync the run was cancelled out of.
+        await db.execute(
+            update(SyncJob)
+            .where(
+                SyncJob.origin_action_host_run_id.in_(cancelled_ids),
+                SyncJob.status == JobStatus.pending,
+            )
+            .values(status=JobStatus.cancelled, completed_at=now)
+        )
+
+    still_running = await db.scalar(
+        select(
+            exists().where(
+                ActionHostRun.action_run_id == id,
+                (ActionHostRun.status == "running") | syncing,
+            )
+        )
+    )
+    if not still_running:
+        run.finished_at = now
+    await db.commit()
+
+    try:
+        r.publish(f"actions.run.{id}", json.dumps({"event": "status", "status": "cancelled"}))
+    except Exception:
+        logger.debug("could not publish the cancel", exc_info=True)
 
     return {"ok": True}
 

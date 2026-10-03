@@ -202,15 +202,30 @@ async def _finish_host_run(
         action_run_id_for_dispatch = host_run.action_run_id
         await db.commit()
 
-    if not dispatch_next or host_id_for_dispatch is None:
-        return
-    from app.tasks.host_lock import release_host_queue
+    if dispatch_next and host_id_for_dispatch is not None:
+        from app.tasks.host_lock import release_host_queue
 
-    await release_host_queue(
-        host_id_for_dispatch,
-        after=f"host_run_id={host_run_id}",
-        exclude_action_run_id=action_run_id_for_dispatch,
-    )
+        await release_host_queue(
+            host_id_for_dispatch,
+            after=f"host_run_id={host_run_id}",
+            exclude_action_run_id=action_run_id_for_dispatch,
+        )
+
+    # Close the parent if this was its last host, as action_host does. The
+    # orchestrator does it after its last batch, but not for a host it had
+    # stopped waiting for: one the host queue re-sent, or one still running
+    # when the run was cancelled, which left the run without an end
+    # (BUG-104). A no-op while any sibling is open.
+    from app.tasks.action_orchestrator import finalise_run_if_complete
+
+    try:
+        await finalise_run_if_complete(action_run_id_for_dispatch)
+    except Exception:
+        logger.exception(
+            "builtin_dispatchers: could not finalise action_run %s after host_run %s",
+            action_run_id_for_dispatch,
+            host_run_id,
+        )
 
 
 async def _load_action_run_parameters(action_run_id: int) -> dict:
@@ -499,20 +514,15 @@ async def close_origin_host_run(job_id: int, payload: dict | None) -> None:
         ).scalar_one_or_none()
         if host_run is None or host_run.status not in ("pending", "queued", "running"):
             return
-        action_run_id = host_run.action_run_id
 
     succeeded = status == "success"
     error = None if succeeded else f"sync did not complete successfully (status={status!r})"
     # dispatch_next=False: ``_async_run`` already ran its own
     # dispatch-next-pending in its finally, and a second pick here would
-    # race it for the same pending row.
+    # race it for the same pending row. ``_finish_host_run`` closes the
+    # parent run: the orchestrator's own aggregation ran when the built-in
+    # first returned, long before this job was re-dispatched.
     await _finish_host_run(origin_id, succeeded=succeeded, error=error, dispatch_next=False)
-
-    from app.tasks.action_orchestrator import finalise_run_if_complete  # noqa: PLC0415
-
-    # Nothing else will: the orchestrator's own aggregation ran when the
-    # built-in first returned, long before this job was re-dispatched.
-    await finalise_run_if_complete(action_run_id)
 
 
 async def _sync_async(action_run_id: int, host_run_id: int) -> None:

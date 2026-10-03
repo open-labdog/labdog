@@ -186,6 +186,12 @@ async def finalise_run_if_complete(action_run_id: int, r=None) -> str | None:
         if run is None:
             return None
         if run.status == "cancelled":
+            if run.finished_at is None:
+                # Cancelled while this, its last host, was still running:
+                # the cancel left the end of the run to whoever finished
+                # last (BUG-104).
+                run.finished_at = datetime.now(UTC)
+                await db.commit()
             return run.status
         if run.status in ("succeeded", "failed", "partial"):
             # Already closed by whichever member finished last.
