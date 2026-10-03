@@ -33,6 +33,11 @@ from app.crypto.encryption import decrypt_ssh_key, encrypt_ssh_key
 # ---------------------------------------------------------------------------
 # Column registry — every encrypted column that must be rotated.
 # Each entry: (SQLAlchemy model class, column name, nullable)
+#
+# A column missing from here keeps its old-key ciphertext and stops
+# decrypting the moment the key changes, while the script reports success
+# (BUG-108). test_registry_covers_every_encrypted_column fails when a model
+# gains an ``encrypted_*`` column this list does not name.
 # ---------------------------------------------------------------------------
 
 
@@ -53,6 +58,7 @@ def _build_column_registry() -> list[tuple[Any, str, bool]]:
         (SSHKey, "encrypted_private_key", False),
         (ProxmoxNode, "encrypted_token_secret", False),
         (GitRepository, "encrypted_https_token", True),
+        (GitRepository, "encrypted_webhook_secret", True),
         (GrafanaInstance, "encrypted_token", True),
         (AIProvider, "encrypted_api_key", True),
         (SMTPSettings, "encrypted_password", True),
@@ -145,7 +151,10 @@ async def rotate(
         new_key: 32-byte AES-256-GCM key to protect the data going forward.
 
     Returns:
-        Mapping of table name to number of rows rotated.
+        Mapping of ``table.column`` to number of values rotated. Keyed by
+        column, not table: ``git_repositories`` holds two secrets, and a
+        per-table key would let the second column's count overwrite the
+        first's.
 
     Raises:
         cryptography.exceptions.InvalidTag: If *old_key* is wrong for any
@@ -154,25 +163,23 @@ async def rotate(
     counts: dict[str, int] = {}
 
     for Model, col_name, _nullable in _build_column_registry():
-        table = Model.__tablename__
+        column = getattr(Model, col_name)
 
-        result = await session.execute(select(Model))
-        rows = result.scalars().all()
+        # Select the id and this one column rather than whole ORM rows: a
+        # table with two encrypted columns is visited twice, and the first
+        # pass's Core UPDATEs leave any ORM objects it loaded stale.
+        result = await session.execute(select(Model.id, column).where(column.is_not(None)))
 
         rotated = 0
-        for row in rows:
-            blob: bytes | None = getattr(row, col_name)
-            if blob is None:
-                # Nullable columns may legitimately be unset — skip them.
-                continue
+        for row_id, blob in result.all():
             plaintext = decrypt_ssh_key(blob, old_key)
             new_blob = encrypt_ssh_key(plaintext, new_key)
             await session.execute(
-                update(Model).where(Model.id == row.id).values({col_name: new_blob})
+                update(Model).where(Model.id == row_id).values({col_name: new_blob})
             )
             rotated += 1
 
-        counts[table] = rotated
+        counts[f"{Model.__tablename__}.{col_name}"] = rotated
 
     return counts
 
@@ -208,8 +215,8 @@ async def _main(old_b64: str, new_b64: str) -> None:
                 )
                 raise SystemExit(1) from exc
 
-    for table, count in counts.items():
-        print(f"  {table}: {count} row(s) rotated")
+    for column, count in counts.items():
+        print(f"  {column}: {count} value(s) rotated")
     print("Key rotation complete.")
 
 
