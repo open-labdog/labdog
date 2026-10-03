@@ -113,27 +113,27 @@ class Options:
 
     def consume(self, args: list[str], i: int) -> int:
         """How many words the option at ``args[i]`` takes up, or 0 if unknown."""
-        token = args[i]
+        word = args[i]
         has_next = i + 1 < len(args)
-        name, eq, _ = token.partition("=")
-        if token.startswith("--"):
+        name, eq, _ = word.partition("=")
+        if word.startswith("--"):
             if name in self.values:
                 return 1 if eq or not has_next else 2
             return 1 if name in self.flags or name in self.optional else 0
-        if token in self.flags or token in self.optional:
+        if word in self.flags or word in self.optional:
             return 1
-        if token in self.values:
+        if word in self.values:
             return 2 if has_next else 1
         # `-color=always`, the single-dash long form some tools take.
         if eq and name in self.names:
             return 1
-        if self.clusters and len(token) > 2:
-            for k, letter in enumerate(token[1:], start=1):
+        if self.clusters and len(word) > 2:
+            for k, letter in enumerate(word[1:], start=1):
                 if f"-{letter}" in self.flags:
                     continue
                 if self.takes_value(letter):
                     # The rest of the word is its value, or the next word is.
-                    return 1 if k + 1 < len(token) or not has_next else 2
+                    return 1 if k + 1 < len(word) or not has_next else 2
                 if self.attaches_value(letter):
                     return 1
                 return 0
@@ -186,10 +186,10 @@ class Gate:
         """
         i = 0
         while i < len(args):
-            token = args[i]
+            word = args[i]
             nxt = args[i + 1] if i + 1 < len(args) else None
-            if token.startswith("--") and len(token) > 2:
-                name, eq, attached = token[2:].partition("=")
+            if word.startswith("--") and len(word) > 2:
+                name, eq, attached = word[2:].partition("=")
                 if self._matches_long(name, options):
                     if eq:
                         yield attached
@@ -200,9 +200,9 @@ class Gate:
                         yield None
                 elif not eq and f"--{name}" in options.values:
                     i += 1
-            elif token.startswith("-") and len(token) > 1:
-                for k, letter in enumerate(token[1:], start=1):
-                    rest = token[k + 1 :]
+            elif word.startswith("-") and len(word) > 1:
+                for k, letter in enumerate(word[1:], start=1):
+                    rest = word[k + 1 :]
                     if letter in self.short:
                         if self._needs_value() or options.takes_value(letter):
                             value = rest if rest else nxt
@@ -243,10 +243,10 @@ def _count_operands(args: list[str], options: Options) -> int:
     count = 0
     i = 0
     while i < len(args):
-        token = args[i]
-        if token == "--":
+        word = args[i]
+        if word == "--":
             return count + len(args) - i - 1
-        if token.startswith("-") and token != "-":
+        if word.startswith("-") and word != "-":
             i += options.consume(args, i) or 1
             continue
         count += 1
@@ -463,31 +463,31 @@ class CommandPolicy:
                 return _gated(gates, args[i:], options, seen)
             start = i
             while i < len(args):
-                token = args[i]
-                if node.child_for(token) is not None:
+                word = args[i]
+                if node.child_for(word) is not None:
                     break
-                if token == "--":
+                if word == "--":
                     i += 1
                     if node.mode == "operands":
                         return _gated(gates, args[start:], options, seen)
                     break
-                if not token.startswith("-") or token == "-":
+                if not word.startswith("-") or word == "-":
                     break
                 used = options.consume(args, i)
                 if not used:
-                    return _refuse(_unknown_option(seen, token))
+                    return _refuse(_unknown_option(seen, word))
                 i += used
             if i == len(args):
                 if node.mode in ("exact", "operands"):
                     return _gated(gates, args[start:], options, seen)
                 return _refuse(_not_known(node, seen, None))
-            token = args[i]
-            child = node.child_for(token)
+            word = args[i]
+            child = node.child_for(word)
             if child is not None:
                 node = child
                 options = options.merged(child.options)
                 gates.extend(child.gates)
-                seen.append(token)
+                seen.append(word)
                 i += 1
                 continue
             if node.mode == "operands":
@@ -497,10 +497,10 @@ class CommandPolicy:
                 return _gated(gates, args[start:], options, seen)
             if node.mode == "exact":
                 return _refuse(
-                    f"{' '.join(seen)!r} is read-only only on its own, and {token!r} "
+                    f"{' '.join(seen)!r} is read-only only on its own, and {word!r} "
                     f"makes it something else, so it is treated as a write"
                 )
-            return _refuse(_not_known(node, seen, token))
+            return _refuse(_not_known(node, seen, word))
 
 
 # -- helpers ----------------------------------------------------------------
@@ -522,15 +522,15 @@ def _unknown_option(seen: list[str], option: str) -> str:
     )
 
 
-def _not_known(node: Node, seen: list[str], token: str | None) -> str:
-    if token is None:
+def _not_known(node: Node, seen: list[str], word: str | None) -> str:
+    if word is None:
         reason = (
             f"{' '.join(seen)!r} on its own is not a known read-only command, "
             f"so it is treated as a write"
         )
     else:
         reason = (
-            f"{' '.join((*seen, token))!r} is not a known read-only command, "
+            f"{' '.join((*seen, word))!r} is not a known read-only command, "
             f"so it is treated as a write"
         )
     forms = node.read_only_forms()
@@ -550,13 +550,13 @@ def _gated(gates: list[Gate], args: list[str], options: Options, seen: list[str]
 def _first_unknown_option(args: list[str], options: Options) -> str | None:
     i = 0
     while i < len(args):
-        token = args[i]
-        if token == "--":
+        word = args[i]
+        if word == "--":
             return None
-        if token.startswith("-") and token != "-":
+        if word.startswith("-") and word != "-":
             used = options.consume(args, i)
             if not used:
-                return token
+                return word
             i += used
             continue
         i += 1
