@@ -10,7 +10,8 @@ Open bugs in LabDog. New entries are added as bugs are surfaced.
    the bug ID (e.g. `fix(sync): BUG-37 — dispatch Celery tasks after
    commit`). That commit message is the canonical record (symptom,
    root cause, fix).
-2. Delete the entry from this file in the same commit. Do **not** mark
+2. Delete the entry from this file in the same commit, and its heading
+   and intro when it was the last entry under them. Do **not** mark
    bugs `[x]` and leave them here — fixed entries belong in git history,
    not in the registry.
 
@@ -32,21 +33,9 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-108`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-110`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
-
----
-
-## Open
-
-### Security findings — High
-
-Filed 2026-05-21 from a `security-auditor` whitebox source-level
-review (see the `code-audit` branch history for the baseline). Each entry was
-spot-checked against current HEAD before filing.
-
-_No bugs are currently open._
 
 ---
 
@@ -75,8 +64,6 @@ protecting host root from an ordinary account. All three are now in
 place: the classifier hardening, the extra-vars validator, and the pack
 content policy.
 
-### Security — Medium
-
 ### Security — Low
 
 - [ ] **SEC-35** Grafana, Loki, Mimir and AI-provider base URLs are
@@ -87,30 +74,6 @@ content policy.
       repo URLs *do* block these (`app/schemas/git_repos.py:18-25`). Filed
       so it is not re-discovered as new, not because it needs changing.
 
-### Correctness — High
-
-_No bugs are currently open._
-
-### Correctness — Medium
-
-_No bugs are currently open._
-
----
-
-## Open — 2026-09-27 production investigation
-
-Filed 2026-09-27 from the lin-manager instance (`openlabdog/labdog:test`,
-image built from `8516b144`). Confirmed against the running container,
-not just read from source.
-
-### Correctness — High
-
-_No bugs are currently open._
-
-### Correctness — Low
-
-_No bugs are currently open._
-
 ---
 
 ## Open — 2026-09-28 lin-manager upgrade
@@ -119,13 +82,9 @@ Filed 2026-09-28 after upgrading lin-manager (container recreated
 15:34 UTC, migration 0040 applied). Confirmed against the running
 container, its database and its logs.
 
-### Correctness — High
-
-_No bugs are currently open._
-
 ### Usability — Low
 
-- [ ] **BUG-97** `frontend/components/shell/zones.ts:160-175` — the
+- [ ] **BUG-97** `frontend/components/shell/zones.ts:161-176` — the
       Overview pane keeps "Summary" highlighted whichever view is open
 
       Symptom: in the Overview pane, clicking Pending, Fleet state,
@@ -153,7 +112,6 @@ _No bugs are currently open._
       Severity Low: navigation works; only the highlight is wrong.
 
 - [ ] **BUG-98** `frontend/app/(dashboard)/overview/client-page.tsx:119`,
-      `frontend/components/scheduled-actions/scheduled-actions-list.tsx:84`,
       `frontend/components/scheduled-actions/schedule-action-dialog.tsx:121`
       — a schedule of a non-destructive action shows "snap" although no
       snapshot is ever taken
@@ -173,94 +131,91 @@ _No bugs are currently open._
       non-destructive action the operator never sees them, and the
       defaults are saved anyway: schedule 2 on lin-manager has all three
       true, as do its runs. The runner is right to ignore them
-      (`action_host.py:594` only snapshots when
-      `spec.destructive and spec.snapshot_enabled`), but both the
-      Overview row and the schedules list render the tag from
-      `snapshot_enabled` alone.
+      (`action_host.py:613` only snapshots when
+      `spec.destructive and spec.snapshot_enabled`), but the Overview row
+      (`SchedRow`) renders the tag from `snapshot_enabled` alone. The
+      Schedules list is not affected: it shows its snap/verify/rollback
+      tags only when `r.destructive`.
 
-      Fix direction: render "snap" only when the action is destructive
-      *and* `snapshot_enabled`. The schedule response needs the action's
-      `destructive` flag next to `action_name`
-      (`app/api/scheduled_actions.py:160`). Also stop storing true for
-      non-destructive actions: send `false` from the dialog, or have the
-      API normalise the three flags when the action is not destructive.
-      Optionally a migration clearing them on existing schedules of
-      non-destructive actions. The run-action dialog probably defaults the
-      same way (runs 166-213 all have `snapshot_enabled = t`); check it
-      and the run view for the same tag.
+      Fix direction: render "snap" on the Overview only when
+      `s.destructive && s.snapshot_enabled`. The schedule response already
+      carries `destructive` (`app/api/scheduled_actions.py:164`, typed in
+      `lib/types.ts`), so this needs no API change. Also stop storing true
+      for non-destructive actions: send `false` from the dialog, or have
+      the API normalise the three flags when the action is not
+      destructive. Optionally a migration clearing them on existing
+      schedules of non-destructive actions. Ad-hoc runs need nothing: the
+      run dialog sends no flags (the column defaults to true, which the
+      runner ignores for a non-destructive action), and the run view shows
+      no "snap" tag.
 
       Severity Low: nothing runs differently, but the UI claims a
       rollback point for an unattended action that has none.
 
 ---
 
-## Open — 2026-10-01 scheduled runs on lin-manager
+## Open — 2026-10-04 housekeeping pass
 
-Filed 2026-10-01 from lin-manager's action runs 235-241 (schedules 1
-`linux-upgrade`, group "Default allow", 17 hosts, batch size 1; and 2
-`docker-compose-update`, group "docker", 6 hosts, all also in "Default
-allow"). Confirmed against the database, the container log and the
-host's apt history.
-
-### Correctness — High
-
-_No bugs are currently open._
-
-### Correctness — Medium
-
-_No bugs are currently open._
-
----
-
-## Open — 2026-10-01 found while fixing BUG-101
-
-Filed 2026-10-01. BUG-102 and BUG-103 were found reading the host queue
-for BUG-101 and reproduced in tests against Postgres; neither has shown
-up on lin-manager yet, where no host-targeted run and no built-in group
-run has deferred. BUG-104 is from lin-manager's runs 237 and 240.
-
-### Correctness — Medium
-
-_No bugs are currently open._
+Filed 2026-10-04 while checking this file and TODO.md against `dev`
+at `f1583444`. BUG-109 was first noticed investigating AI session 18
+and is confirmed against lin-manager's database. BUG-110 was
+reproduced locally.
 
 ### Correctness — Low
 
-_No bugs are currently open._
+- [ ] **BUG-109** `backend/app/ai/agent_sdk/runner.py:456-469` — a
+      command refused on the Claude Agent SDK path is recorded without
+      its host
 
----
+      Symptom: on lin-manager, none of the 6 `run_ssh_command` calls with
+      status `blocked` has a `target_host_id`, while all 18 executed
+      calls and both errored ones do. The instance's only provider is
+      `claude_agent`. The audit trail shows that a command was refused,
+      but not which host it was for.
 
-## Open — 2026-10-02 found while fixing BUG-96
+      Root cause: this path refuses in the SDK permission callback
+      (`_can_use_tool`), before the tool runs, and its `record_refusal`
+      writes the `AIToolCall` without `target_host_id`. The API path
+      refuses inside `tools/ssh.py`, whose `ToolResult` carries
+      `target_host_id=host_id`, and `loop.py` copies it onto the record.
 
-Filed 2026-10-02 from lin-manager's schedules, its run history and its
-container log, and confirmed against source.
+      Fix direction: set `target_host_id` in `record_refusal` from the
+      call's `host_id`, but only when it is an int in the session's
+      `target_host_ids`. The column is a foreign key to `hosts.id`, so a
+      made-up id would fail the insert and lose the record. Add a test
+      that a refused SDK call records its host.
 
-### Correctness — High
+      Severity Low: nothing runs that should not; the record is
+      incomplete.
 
-_No bugs are currently open._
+### Tests — Low
 
----
+- [ ] **BUG-110** `backend/tests/integration/` — five of the seven
+      integration tests fail, and CI never runs them
 
-## Open — 2026-10-02 found investigating AI session 18
+      Symptom: `pytest tests/integration` on `dev` fails 5 of 7. Both CI
+      pytest runs pass `--ignore=tests/integration`
+      (`.github/workflows/ci.yml:266`, `:819`), so nothing noticed.
 
-Filed 2026-10-02 from AI session 18 on lin-manager (a read-only chat
-session on k8s-0) and the other sessions' refused calls, and confirmed
-against `safety.py` and bash.
+      Root cause: the tests were not updated when the code moved.
+      - `test_gitops_e2e.py::TestWebhookReceiver` (3 tests) post to
+        `/webhooks/github`. BUG-56 (`a03d438a`) moved the route to
+        `/api/webhooks/github`, and the CSRF middleware answers the old
+        path with 403.
+      - `test_gitops_e2e.py::TestMultiModuleGroupYAML::test_full_module_sweep`
+        expects a `workflow` module, which went with the legacy workflow
+        subsystem (`0b3f21c6`).
+      - `test_full_workflow.py` registers and logs in at `/auth/...`.
+        Those routes are under `/api/auth/` now, so the CSRF middleware
+        refuses the first POST. It also shells out to `alembic`, which
+        is found only when the venv's `bin` is on `PATH`.
 
-### Correctness — Medium
+      Production is unaffected: the main suite covers the moved routes
+      (`tests/test_webhook_csrf.py`).
 
-_No bugs are currently open._
+      Fix direction: update the paths, the module set and the CSRF
+      handling, then either run `tests/integration` in CI or delete what
+      the main suite already covers. A test that nothing runs will rot
+      again.
 
-### Correctness — Low
-
-_No bugs are currently open._
-
----
-
-## Open — 2026-10-02 found adding the SMTP password to key rotation
-
-Filed 2026-10-02 while adding `smtp_settings.encrypted_password` to the
-rotation script, and confirmed against source.
-
-### Correctness — Medium
-
-_No bugs are currently open._
+      Severity Low: test-only.
