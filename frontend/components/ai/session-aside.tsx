@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 
 import { Dot, Facts, Field, Meter, Seg, Tag, toneVar, type Tone } from "@/components/ld"
 import { money } from "@/components/ai/usage-panel"
+import { RollbackPanel } from "@/components/ai/rollback-panel"
 import { AUTONOMY_HELP, describeScope } from "@/components/ai/session-meta"
 import { AI_AUTONOMY, AI_CLASSIFICATION, def } from "@/lib/status"
 import { formatTimestamp } from "@/lib/utils"
@@ -231,6 +232,8 @@ export function SessionSummary({
           )}
         </div>
       )}
+
+      <RollbackPanel session={session} />
     </>
   )
 }

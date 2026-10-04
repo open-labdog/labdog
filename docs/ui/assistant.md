@@ -244,6 +244,29 @@ Hosts with no VM mapping — bare metal, unmapped containers — are changed
 without a snapshot either way. That is deliberate: refusing them would
 make write autonomy useless on exactly the hosts most likely to need it.
 
+### Rolling back
+
+A session that changed a host shows **Roll back** for it in the right
+column. It restores the snapshot taken before the session's **first**
+change there — never a later one, which would leave the earlier changes
+in place and call them undone. Proxmox restores the disk and LabDog
+starts the machine, waits for SSH to answer, and marks the host out of
+sync. The machine restarts, and **everything written on it since the
+snapshot is lost**, not only the session's changes — the dialog says so
+before anything happens.
+
+It is refused, with the reason, while the session is still running, while
+LabDog's own sync or action run is working on the host, once that host
+has already been rolled back for this session, when the snapshot has
+expired or was never taken before the first change, and on the machine
+LabDog itself runs on, where the rollback would stop LabDog with nothing
+left to start the machine again. Every rollback, refused ones included,
+is listed under the button and in the audit log.
+
+Full-auto alert sessions are also rolled back without anyone asking when
+the fix made the host worse — see
+[Checking the fix](alerts.md#checking-the-fix-and-rolling-back).
+
 One gap to know about: deleting a session removes the record of any
 snapshot it took, so the sweep can no longer find it. The names are
 recorded in the audit entry for the deletion, and the `labdog-ai-` prefix

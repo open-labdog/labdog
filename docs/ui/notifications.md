@@ -63,7 +63,7 @@ you sign in with.
 | **Approval requested** | The [assistant](assistant.md#approving-a-change) wants to change a host and has paused for a decision: the host, the exact command, its stated reason, why the classifier calls it a change, and when the request expires. |
 | **Approval about to expire** | A request is still undecided `notifications.approval_expiry_warning_hours` (default 2) before it expires. Once per request; `0` turns it off. |
 | **Approval expired** | Nobody decided in time; the session continued without the change. |
-| **Automatic fix made** | A [full-auto alert investigation](alerts.md#full-auto-for-named-alerts) changed its host: each command it ran and whether it succeeded, the snapshot taken before each, and the opening of its report. Sent however the session ended — a session that restarted a service and then hit its time limit still restarted the service — and not sent when it changed nothing. |
+| **Automatic fixes** | Two messages per fix. First, when a [full-auto alert investigation](alerts.md#full-auto-for-named-alerts) changed its host: each command it ran and whether it succeeded, the snapshot taken before each, and the opening of its report. Sent however the session ended — a session that restarted a service and then hit its time limit still restarted the service — and not sent when it changed nothing. Then, once LabDog has [checked the fix](alerts.md#checking-the-fix-and-rolling-back): whether it worked, did not, or made the host worse, and whether the host was rolled back. |
 
 **Nothing in an email can approve anything.** Approving happens in
 LabDog, signed in. A link that ran a root command would make your inbox a
