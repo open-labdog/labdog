@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-110`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-112`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -219,3 +219,82 @@ reproduced locally.
       again.
 
       Severity Low: test-only.
+
+---
+
+## Open — 2026-10-04 discovery
+
+Filed 2026-10-04 while investigating a host that "did not show up" after
+discovery. The host (`tester`, 10.10.10.164) had been auto-added by a scan
+schedule a minute earlier; confirmed against lin-manager's database and
+logs.
+
+### Usability — Low
+
+- [ ] **BUG-111** `frontend/app/(dashboard)/hosts/discover/client-page.tsx:147`,
+      `backend/app/api/discovery.py:46-53`, `backend/app/tasks/discovery.py:20-22`
+      — a Discover scan that skips already-known hosts reports "No new SSH
+      hosts found" without saying any were skipped
+
+      Symptom: on lin-manager, scan schedule "Server" (`10.10.10.0/24`,
+      `auto_add`) added `tester` at 10:52:16. A Discover scan of the same
+      range at 10:53:19 returned `hosts_found: []`, `total_scanned: 242`,
+      and the page said "No new SSH hosts found on this network." The
+      operator had just run discovery and watched the log find 10.10.10.164,
+      and read the empty result as a miss. Nothing on the page says that 12
+      of the range's 254 addresses were already hosts in LabDog, or that
+      `tester` was one of them.
+
+      Root cause: `start_scan` passes every known `Host.ip_address` to the
+      task as `exclude_ips`, and the task removes them before scanning, so
+      they are never probed and never reported. The only trace is a total
+      that is lower than the range (242, shown as "scanning N / 242
+      hosts"). The banner's "new" is the sole hint, and it does not say how
+      many were left out. The same exclusion makes a host that was added a
+      moment ago by a scan schedule invisible to Discover, which is the
+      case that confused the operator.
+
+      Fix direction: have the task return the excluded IPs that fall in the
+      range (it already has `all_hosts` and `exclude_set`) and carry them
+      through `ScanStatus` as `skipped_known`. Render "No new SSH hosts
+      found. N already in LabDog: tester (10.10.10.164), ..." (resolve IPs
+      to hostnames from the `hosts-summary` query), and show the skipped
+      count beside the results table when some hosts were found too. Add a
+      test that a scan whose range contains known hosts reports them.
+
+      Severity Low: nothing is lost or mis-added; the result is easy to
+      misread.
+
+- [ ] **BUG-112** `backend/app/api/scans.py:200`, `:413` — `POST
+      /api/scans/{id}/run` is defined twice; the second handler is dead,
+      so "run now" is never a manual run
+
+      Symptom: the UI's "run now" on a scan schedule enqueues
+      `scans.run_config` without `is_manual=True`. The documented
+      behaviour of a manual run does not happen: hosts dismissed from the
+      review queue are still suppressed
+      (`DismissedHost`, `app/models/scan_config.py:97`), although the
+      dismiss endpoint's docstring (`scans.py:357`) says a manual run
+      brings them back. Running a disabled schedule also answers 202
+      "queued" and then does nothing, because the task returns `skipped`
+      for a disabled config; the dead handler would have answered 409.
+
+      Root cause: both handlers are decorated `@router.post("/{config_id}/run")`.
+      Starlette dispatches to the first registered, `run_scan_config_now`
+      (`scans.py:200`: `args=[config_id]`, no enabled check), so
+      `run_scan_now` (`scans.py:413`: `is_manual=True`, 409 when disabled)
+      is never reached. Confirmed on lin-manager: the scans router lists
+      both routes, `run_scan_config_now` first. The second was added by
+      `487ecd3b` ("remember dismissed hosts") without removing the first.
+      The only test (`tests/test_scan_configs.py:557`) pins the dead end:
+      it asserts `send_task` was called with exactly `args=[config_id]`,
+      which only the shadowing handler does.
+
+      Fix direction: delete `run_scan_config_now` and keep `run_scan_now`.
+      Update that test to expect `kwargs={"is_manual": True}`, and add one
+      that a disabled config returns 409. The frontend already shows
+      "Run triggered" on any 2xx and would surface the 409 through
+      `showError`.
+
+      Severity Low: dismissed hosts staying hidden on a manual run is the
+      safe direction, and the disabled case only wastes a click.
