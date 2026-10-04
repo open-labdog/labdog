@@ -581,6 +581,14 @@ class TestWhereLabDogRuns:
         assert await labdog_host.labdog_runs_on(db, here, ask=False)
         assert not await labdog_host.labdog_runs_on(db, other, ask=False)
 
+    async def test_the_configured_server_address(self, db, monkeypatch) -> None:
+        """``[security] labdog_server_ip`` is the operator saying so."""
+        monkeypatch.setattr(settings.security, "labdog_server_ip", "10.10.101.5")
+        here = await create_host(db, ip="10.10.101.5")
+        elsewhere = await create_host(db, ip="10.10.101.6")
+        assert await labdog_host.labdog_runs_on(db, here, ask=False)
+        assert not await labdog_host.labdog_runs_on(db, elsewhere, ask=False)
+
     async def test_a_host_seeing_labdog_from_its_own_address(self, db) -> None:
         here = await create_host(db, ip="10.10.101.5")
         here.labdog_source_ip = "10.10.101.5"

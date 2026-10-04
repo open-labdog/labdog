@@ -359,8 +359,10 @@ notifications every fix reads as not working.
 
 Rolling that machine back would stop LabDog half-way, with nothing left
 to start it again, and put LabDog's own database back to the snapshot. So
-LabDog refuses both full auto and rollbacks there, and finds the machine
-itself from the address each host sees it connect from:
+LabDog refuses both full auto and rollbacks there. A host whose address is
+`[security] labdog_server_ip` in LabDog's configuration — the address the
+firewall rules keep SSH open for — is that machine. Otherwise LabDog finds
+it from the address each host sees it connect from:
 
 - **Every other host sees LabDog coming from this host's address.** A
   container on a bridge network — the usual Docker install — reaches the

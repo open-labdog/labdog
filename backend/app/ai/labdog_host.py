@@ -9,7 +9,9 @@ auto is refused there, and so is a rollback.
 LabDog cannot see its own address — inside a container it does not even
 have the host's — but the hosts it manages can. Every probe records the
 address a host saw LabDog connect from (``Host.labdog_source_ip``), and
-that gives the machine away in one of two ways:
+that gives the machine away in one of two ways — besides the plainest,
+the server address in LabDog's own configuration
+(``[security] labdog_server_ip``), when it has been set:
 
 * **Other hosts see LabDog coming from this host's address.** A container
   on a bridge network reaches other machines through its host's NAT, so
@@ -71,9 +73,17 @@ Address = tuple[str, ipaddress.IPv4Interface | ipaddress.IPv6Interface]
 
 
 async def seen_from(db: AsyncSession, host: Any) -> bool:
-    """The database test: does any host record LabDog as this host?"""
+    """The database test: does any host record LabDog as this host?
+
+    The configured ``[security] labdog_server_ip`` counts first. It is the
+    address the firewall rules keep SSH open for, so an operator who set
+    it has already said which machine LabDog is on.
+    """
+    from app.config import settings
     from app.models.host import Host
 
+    if host.ip_address == settings.security.labdog_server_ip:
+        return True
     if host.labdog_source_ip and host.labdog_source_ip == host.ip_address:
         return True
     other = await db.execute(
