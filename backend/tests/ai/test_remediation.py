@@ -444,6 +444,24 @@ class TestJudgingTheFix:
         assert "can no longer reach" in verdict.detail
         assert ssh.connects == remediation.PROBE_ATTEMPTS
 
+    async def test_a_timeout_says_so(self, db, ai_provider, ssh) -> None:
+        """Seen live: an unanswered SYN surfaces as a bare ``TimeoutError``."""
+        host = await _mapped_host(db)
+        event, session, _ = await _fix(db, ai_provider, host, alert_status="resolved")
+
+        def silent(host_, db_, client_keys=None, connect_timeout=None):  # noqa: ARG001
+            @asynccontextmanager
+            async def _connect():
+                raise TimeoutError
+                yield  # pragma: no cover
+
+            return _connect()
+
+        with patch("app.ssh_utils.ssh_connect_host", silent):
+            verdict = await remediation.assess(db, event, session)
+        assert verdict.outcome == "made_worse"
+        assert verdict.detail.endswith("the last with: timed out.")
+
     async def test_one_answer_in_three_is_enough(self, db, ai_provider, ssh) -> None:
         """A host mid-restart fails one probe and answers the next."""
         host = await _mapped_host(db)

@@ -411,6 +411,16 @@ Left open:
   alertname list is already explicit. Revisit if operators want a
   named alert to act only at `critical`.
 
+- **Diagnostics the command policy cannot prove read-only count as
+  changes.** Seen in the live test on 2026-10-04 (sessions 20–22 on
+  `tester`): `nginx -t`, `nginx -V`, `last -x` and `sudo journalctl -k`
+  were classified as writes, so at full auto each took a Proxmox snapshot
+  (three for one real restart), and sessions that only read were counted
+  as having changed the host — by the cooldown, the daily cap and the
+  check afterwards. Add the common diagnostic forms to
+  `command_policy.yaml`, or let operators add them (see
+  [AI command policy](#ai-command-policy--rules-operators-can-edit)).
+
 - **Show fix outcomes on the Overview.** `/alerts` tags each checked fix
   as fixed, not effective or made worse, and with any rollback. The
   Overview's Pending lane does not, and a fix that did not work or was

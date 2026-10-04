@@ -303,7 +303,11 @@ async def probe_reachable(db: AsyncSession, host: Any) -> str | None:
             # someone trusts the new one — the host is out of its reach.
             return "its SSH host key has changed, so LabDog refuses to connect"
         except Exception as exc:
-            last = str(exc) or type(exc).__name__
+            # A timeout has no message of its own; its class name is not one
+            # an operator should have to decode.
+            last = str(exc) or (
+                "timed out" if isinstance(exc, TimeoutError) else type(exc).__name__
+            )
     pause = int(PROBE_PAUSE_SECONDS)
     return f"{PROBE_ATTEMPTS} attempts {pause}s apart all failed, the last with: {last}"
 
