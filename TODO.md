@@ -274,6 +274,50 @@ Follow-ups it leaves open:
 
 ---
 
+## AI command policy — rules operators can edit
+
+**Context:** SEC-38 moved what the assistant may run without approval
+out of Python into `backend/app/ai/command_policy.yaml` (the read-only
+forms of each command, option tables, argument gates and wrappers),
+loaded and judged by `app/ai/policy.py`. The file ships in the image,
+so a read the fleet needs (`kubeadm version`, a vendor CLI) still takes
+a release. Decided 2026-10-02: any signed-in user may edit the rules,
+consistent with the flat privilege model, with the guardrails below
+keeping a rule to reads. Remaining PRs, in order:
+
+- **Database overlay and API.** The shipped file stays the default, and
+  the database holds only what operators change: added rules, and
+  shipped rules switched off. Upgrades never overwrite an edit. Build
+  each session's policy from the file plus the overlay through the same
+  loader (`CommandPolicy.from_data`), so an operator's rule is checked
+  exactly like a shipped one.
+- **A "Command policy" page** showing the effective rules, and who
+  changed each one and when.
+- **"Allow this" on a refused call.** It pre-fills a rule from the
+  refused command for the operator to narrow and confirm, so the list
+  grows where the friction is. Claude could suggest the narrowest
+  read-only form. A rule says a command only reads; it is not a
+  standing approval for changes, so the one-shot rule in `approvals.py`
+  still holds.
+
+Guardrails, whichever PR they land in:
+
+- **Precedence.** The denylist outranks the shipped gates and option
+  tables, which outrank operator rules, which outrank default-deny. An
+  operator rule can only turn "unrecognised" into "read-only"; it cannot
+  make `systemctl restart` or `kubectl exec` read-only.
+- **Blocked commands.** The loader already refuses read-only rules for
+  shells, interpreters and exec wrappers (`NEVER_READ_ONLY` in
+  `policy.py`). Operator rules go through the same refusals.
+- **Audit and consistency.** Every change is audit-logged. A session
+  reads the policy once when it starts or resumes, so nothing can go
+  stale the way BUG-105's action registry did.
+- **Later:** scoping a rule to a host group (`kubeadm` only on k8s
+  hosts), and policy as code in the GitOps `_global.yaml`, with a
+  `source` column so GitOps manages only its own rules.
+
+---
+
 ## Alert remediation — let an alert investigation fix what it finds
 
 **Shipped:** phases 1 and 2. `ai.alert_autonomy_level` (`read_only` |
@@ -367,14 +411,14 @@ added. These are the deferred hardening/maintenance tasks that remain.
 - [ ] **React Compiler readiness (frontend).** `eslint-plugin-react-hooks`
       7.1 promoted `set-state-in-effect` and `purity` to errors; the ESLint 10
       move (2026-09-18) demoted both to warnings rather than restructure
-      components in a toolchain PR. Four sites are flagged: debounced
-      validation in `cron-input.tsx`, prop→state sync in
-      `table-filter-cell.tsx`, seeding state from query data in
-      `action-run-dialog.tsx`, and `Date.now()` in a render-time helper in
-      `groups/[id]/client-page.tsx`. None is a bug. Fix them the React way
-      (derive during render, key-based reset, `useSyncExternalStore` or a
-      ticking hook for relative time) and restore the two rules to `error`
-      in `eslint.config.mjs`. The nine `incompatible-library` warnings are
+      components in a toolchain PR. Two sites are still flagged, both
+      `set-state-in-effect`: debounced validation in `cron-input.tsx` and
+      seeding state from query data in `action-run-dialog.tsx`. Neither is
+      a bug. Fix them the React way (derive during render, key-based reset)
+      and restore that rule to `error` in `eslint.config.mjs`. `purity` has
+      no hits left (`table-filter-cell.tsx` is gone, and the `groups/[id]`
+      page no longer calls `Date.now()` while rendering), so it can go back
+      to `error` now. The nine `incompatible-library` warnings are
       react-hook-form's `watch()` and stay until that library is replaced or
       the rule learns it.
 
@@ -387,16 +431,18 @@ entries in [`BUGS.md`](BUGS.md). These are hardening and maintenance
 tasks rather than defects, so they live here. Ordered roughly by value.
 
 - [ ] **Stop PR builds overwriting the floating `:test` Docker tag.**
-      `.github/workflows/ci.yml:361-407` pushes every PR to both
-      `:test-<sha>` and the mutable `:test`. BUG-55 records a production
-      instance running `openlabdog/labdog:test`, so an in-review branch is
-      one `docker compose pull` from a live fleet-management box. The
-      immutable tag next to it is what Trivy actually scans, so the
+      `build-test-image` (`.github/workflows/ci.yml:491-537`) pushes every
+      PR, and every push to `dev`, to both `:test-<sha>` and the mutable
+      `:test`. BUG-55 records a production instance running
+      `openlabdog/labdog:test` (lin-manager still does), so an in-review
+      branch is one `docker compose pull` from a live fleet-management box.
+      The immutable tag next to it is what Trivy actually scans, so the
       floating one buys nothing. **Repoint that instance before removing
-      the tag.** Also gate the job on the PR coming from this repo: on a
-      fork `DOCKER_HUB_PAT` is empty, the login fails, and the whole job
-      plus the trivy scan that `needs:` it goes red for a contributor who
-      cannot fix it.
+      the tag**: `build-dev-image` already pushes `:dev-latest`, from `dev`
+      only. Also gate the job on the PR coming from this repo: on a fork
+      `DOCKER_HUB_PAT` is empty, the login fails, and the whole job plus
+      the trivy scan that `needs:` it goes red for a contributor who cannot
+      fix it.
 
 ---
 
