@@ -14,11 +14,14 @@ match.
 
 ### `labdog-playbooks`
 
-The canonical Ansible action pack — added through **Integrations →
-Action Packs** with role `Default`. The directory at
-`backend/app/ansible/` in this repo is a byte-identical mirror of
+The canonical Ansible action pack. Every build (image, `.deb` /
+`.rpm` / `.tar.gz`, dev) clones
 [`labdog-playbooks`](https://github.com/open-labdog/labdog-playbooks)
-baked into the container image as an offline fallback.
+into `backend/app/ansible/` at the SHA pinned in
+[`LABDOG_PLAYBOOKS_REF`](LABDOG_PLAYBOOKS_REF), as the always-present
+bundled pack. A fresh install also registers it as a DB-backed pack
+tracking `main` (**Operations → Actions → Packs**), so deployed
+instances pick up newer playbooks than the image carries.
 
 Currently bundled:
 - `linux-upgrade` — apt/dnf system package upgrade with optional reboot
@@ -40,7 +43,7 @@ Currently bundled:
   file), config templating with group-based overlays, optional service
   detection (docker, mysql, postgresql, custom), and systemd / Windows
   service management. Stamps the `labdog_host_id` label and closes the
-  loop with the **Integrations → Grafana** page — registered Mimir/Loki
+  loop with the **Settings › Integrations › Grafana** page — registered Mimir/Loki
   instances auto-populate the Alloy remote-write / Loki push URLs, so
   live host metrics appear on the host Overview tab with no free-text
   endpoint entry. Remaining follow-ups (per-host metrics backend
@@ -79,6 +82,63 @@ not built. Nothing here is a substitute for reading what it did.
 
 ---
 
+## Hypervisor context — automatic backup testing
+
+**Goal.** A scheduled action that proves a VM's backups restore: pick
+the VM (or a group of them), and LabDog restores its newest backup as a
+throwaway copy, boots it with networking cut off, runs checks
+inside it, and destroys it — reporting a pass/fail per VM in the run
+history. A backup nobody has restored is a hope, not a backup.
+
+**Why packs can't do this today.** An action runs over SSH against a
+managed host, and LabDog's Proxmox credentials never reach a playbook.
+The only route is to make the Proxmox node itself a managed host and
+drive `qmrestore` over SSH — which hands LabDog a root key to every VM
+on the node, loses the link to the VM being tested, puts the hypervisor
+one group membership away from a config sync, and does not extend to
+hypervisors that are only reachable through an API (ESXi, Hyper-V,
+Nutanix, cloud).
+
+**Direction.** Give actions the *hypervisor* as context instead of
+making it a target:
+
+- **Core: a hypervisor abstraction.** Generalise `ProxmoxNode` /
+  `VMMapping` into a connection with a `kind` (Proxmox first; libvirt,
+  XCP-ng, VMware later) and an opaque VM reference, with a provider
+  interface for what LabDog itself does — snapshot, rollback, status,
+  power, VM discovery. The snapshot/verify/rollback envelope then works
+  on any supported hypervisor. (The `/hypervisors` page already exists;
+  today it is the Proxmox screen.)
+- **Packs: context, not logic.** A manifest declares
+  `hypervisor_context: required`; LabDog injects the target's VM mapping
+  and connection as `labdog_hv_*` vars, and can skip SSH to the target
+  entirely (`host_access: none`), so a dead VM can still have its backup
+  tested. API-based kinds get credentials; SSH-based kinds (libvirt) get
+  the hypervisor as a delegate host. The pack branches per
+  `labdog_hv_kind`. Backup systems (PBS, vzdump, Veeam, …) vary even
+  more than hypervisors, so restore logic stays in packs.
+- **Credential guard rails.** A separate, narrower credential per
+  connection for pack use — on Proxmox, a token scoped to a resource
+  pool, so even a broken playbook can only destroy throwaway VMs; an
+  audited per-pack opt-in, so a new commit to a tracked pack cannot
+  quietly acquire it; secrets redacted from run output and kept off disk.
+
+**Prerequisites** that matter more for an unattended test than for
+anything run by hand:
+- **Action-failure notifications.** A weekly restore test that fails
+  silently is worse than none. Listed under the email follow-ups in
+  [TODO.md](TODO.md).
+- **Cleanup after timeout or cancel.** Killing ansible-runner skips the
+  playbook's `always:` block and leaves the restored VM behind; LabDog
+  needs a cleanup hook that runs regardless, plus a sweep for tagged
+  leftovers.
+
+**Not planned:** modelling backup jobs or schedules in LabDog. It tests
+that backups restore; the backup system stays the source of truth for
+making them.
+
+---
+
 ## Ideas — exploration welcome
 
 Direction signals, not commitments. To pursue any of these, branch
@@ -91,11 +151,11 @@ entry for the work itself.
 | **Notification system** | Email ships for alerts, approvals and automatic fixes ([Email notifications](docs/ui/notifications.md)). Open: the same for drift detection, sync failures and certificate expiry, and webhook/Slack channels — see TODO.md |
 | **API tokens** | Non-cookie auth for CI/CD integration or scripting against the LabDog API |
 | **Host tagging & filtering** | Tags beyond groups for flexible organisation (e.g. `region:eu`, `env:prod`) |
-| **Import/export configuration** | Backup and restore group configs, rules, service definitions |
+| **Import/export configuration** | Import shipped as GitOps: a group bound to a YAML file in a git repo takes it as desired state on every push ([GitOps UI](docs/ui/gitops-ui.md)). Open: the reverse direction — exporting a group's current config as that YAML — and backup/restore of LabDog's own settings |
 | **CLI tool** | Command-line client for power users who prefer terminal over UI. `labdog-lint` ships today as a YAML validator; the open piece is a general API-driving CLI. |
 | **Ansible playbook export** | Export LabDog's desired state as standalone Ansible playbooks (escape hatch) |
 | **APT/YUM repository hosting** | First-class managed repository server alongside the package module |
-| **Visualise rule calculation** | UI showing how the effective per-host rule list is derived (which group contributed each rule, which conflicts were resolved, which host override won) |
+| **Visualise rule calculation** | Partly shipped: every host config tab lists the effective entries with where each comes from (group and priority, host override, or system), and the firewall tab names the group that set each default policy. Open: showing the candidates that *lost* — which conflicts were resolved and what a host override replaced |
 | **Module enable/disable per group** | `enabled_modules` list on `HostGroup` to control which modules apply — useful for groups that should only manage firewall, etc. |
 
 ---

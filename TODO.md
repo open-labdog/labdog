@@ -116,6 +116,58 @@ filling in the action dialog again by hand.
 
 ---
 
+## Protected hosts — a per-host "never write config here" flag
+
+**Context:** Some hosts are worth inventorying and watching but must
+never receive LabDog's desired state: a Proxmox node, a NAS, an
+appliance, a database box someone else owns. Today the only protection
+is keeping the host out of every group, and that fails silently the day
+someone adds it to one. A hosts-file sync to a Proxmox node, for
+example, purges the `/etc/hosts` entries PVE's cluster name resolution
+depends on.
+
+**Sketch:** a `Host.protected` boolean (name open — "protected" rather
+than "unmanaged", because reading still works and some actions still
+run):
+
+- **Config syncs are refused**, whatever triggers them. Nearly every
+  path converges on `run_host_sync`
+  (`app/tasks/host_sync_orchestrator.py`) — per-tab and bulk endpoints,
+  group fan-out, `_builtin.sync`, GitOps, `post_run_sync` — so one
+  refusal there covers them. The CA-cert path does not:
+  `app/ca_certs/actions.py` dispatches `run_ca_cert_action` directly,
+  including auto-enqueue on group membership, and needs its own check.
+  `post_run_register` should skip protected hosts too, since it writes
+  desired state that a later unprotect would push.
+- **Group membership is allowed but inert.** Group fan-out skips
+  protected members and says so in the run/sync result, rather than
+  counting them as failures.
+- **Actions run only when the manifest opts in**, e.g.
+  `allow_on_protected: true`. Without that, both dispatch paths
+  (`action_host`, `action_group`) refuse the host at creation time with
+  a clear 409, and the target picker greys it out. A blanket ban would
+  also block legitimate work (an OS upgrade, a backup restore test
+  driven over SSH), so the opt-in lives on the action, not the host.
+- **The AI SSH tool** (`app/ai/tools/ssh.py`) may read but not run
+  mutating commands on a protected host, whatever the session's
+  approval mode.
+- **Reading is unchanged:** state collection, drift reports (shown as
+  "would differ", never as something to fix), metrics.
+- **UI:** a badge on the host list and header, a toggle on the host's
+  settings, and an audit row when it changes. Under the flat privilege
+  model anyone can flip it — like the pack `trusted` flag, its value is
+  making a write deliberate, not preventing one.
+
+Open: whether the overview's drift and pending-change counts should
+leave protected hosts out or show them with the reason.
+
+This is a safety net for hosts that *are* managed hosts. It is not how
+LabDog should drive hypervisors — see "Hypervisor context" in
+[ROADMAP.md](ROADMAP.md), which avoids making the hypervisor a managed
+host at all.
+
+---
+
 ## Terminal and log windows — size, text size, readability
 
 **Context:** Both windows have a fixed size. The SSH terminal
