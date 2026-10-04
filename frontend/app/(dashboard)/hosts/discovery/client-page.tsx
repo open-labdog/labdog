@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { apiFetch } from "@/lib/api"
 import { useApiMutation } from "@/lib/mutations"
-import { showSuccess, showError } from "@/lib/toast"
+import { showSuccess, showError, showInfo } from "@/lib/toast"
+import { scanBaseline, scanRunOutcome, type ScanBaseline } from "@/lib/scan-run"
 import { plural, shortAgo } from "@/lib/fleet"
 import { Confirm, Table, Tag, Toolbar } from "@/components/ld"
 import { ScanConfigDialog } from "@/components/scans/scan-config-dialog"
@@ -22,6 +24,17 @@ function formatSchedule(scan: ScanConfig): string {
   return "—"
 }
 
+/** How long to wait for a triggered run to report back before giving up on
+ *  announcing it; the last-run column still shows what happened. */
+const RUN_WATCH_TIMEOUT_MS = 120_000
+const RUN_WATCH_POLL_MS = 2000
+
+interface RunWatch {
+  name: string
+  before: ScanBaseline
+  startedAt: number
+}
+
 function runStatus(scan: ScanConfig): "ok" | "error" | "running" | "never" {
   if (scan.last_run_status === "running") return "running"
   if (!scan.last_run_at) return "never"
@@ -33,6 +46,11 @@ function runStatus(scan: ScanConfig): "ok" | "error" | "running" | "never" {
  *  Scan schedules tab (no route of its own). */
 export default function ScansPage() {
   const queryClient = useQueryClient()
+  const router = useRouter()
+  // Schedules whose "run now" has been clicked and not yet reported back.
+  // A ref, not state: nothing renders from it, and the poll interval below
+  // and the effect only need to read the current set.
+  const watching = useRef<Record<number, RunWatch>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingScan, setEditingScan] = useState<ScanConfig | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ScanConfig | null>(null)
@@ -40,8 +58,52 @@ export default function ScansPage() {
   const { data: scans, isLoading, error } = useQuery<ScanConfig[]>({
     queryKey: ["scans"],
     queryFn: () => apiFetch<ScanConfig[]>("/api/scans"),
-    refetchInterval: 10000,
+    // Poll quickly while a triggered run is outstanding so its result is
+    // announced within a couple of seconds of finishing.
+    refetchInterval: () => (Object.keys(watching.current).length > 0 ? RUN_WATCH_POLL_MS : 10000),
   })
+
+  useEffect(() => {
+    if (!scans) return
+    for (const [key, w] of Object.entries(watching.current)) {
+      const id = Number(key)
+      const scan = scans.find((r) => r.id === id)
+      if (!scan || Date.now() - w.startedAt > RUN_WATCH_TIMEOUT_MS) {
+        delete watching.current[id]
+        continue
+      }
+      const outcome = scanRunOutcome(w.before, scan)
+      if (outcome.kind === "running") continue
+      delete watching.current[id]
+      if (outcome.kind === "error") {
+        showError(`Scan "${w.name}" failed: ${outcome.message}`)
+        continue
+      }
+      const { added, pending } = outcome
+      if (added === 0 && pending === 0) {
+        showInfo(`Scan "${w.name}" finished: no new hosts`)
+        continue
+      }
+      const message =
+        added > 0
+          ? `Scan "${w.name}" added ${plural(added, "host")}${pending > 0 ? `; ${pending} awaiting review` : ""}`
+          : `Scan "${w.name}" found ${plural(pending, "host")} awaiting review`
+      showSuccess(message, {
+        duration: 10_000,
+        action:
+          added > 0
+            ? { label: "View hosts", onClick: () => router.push("/hosts") }
+            : { label: "Review", onClick: () => router.push(`/discovery?tab=pending&scan=${id}`) },
+      })
+      // The pending counters and, when hosts were added, the hosts list are
+      // otherwise stale until their own staleTime lapses.
+      queryClient.invalidateQueries({ queryKey: ["scans"] })
+      if (added > 0) {
+        queryClient.invalidateQueries({ queryKey: ["hosts-summary"] })
+        queryClient.invalidateQueries({ queryKey: ["hosts"] })
+      }
+    }
+  }, [scans, router, queryClient])
 
   const toggleMutation = useApiMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => apiFetch(`/api/scans/${id}`, { method: "PUT", body: JSON.stringify({ enabled }) }),
@@ -56,8 +118,13 @@ export default function ScansPage() {
 
   async function handleRun(scan: ScanConfig) {
     try {
+      // The cached row can be up to a poll interval old; the baseline has to
+      // be what the server holds at the moment of the click, or a run that
+      // finished in between would be announced as this one.
+      const current = await apiFetch<ScanConfig>(`/api/scans/${scan.id}`)
       await apiFetch(`/api/scans/${scan.id}/run`, { method: "POST" })
       showSuccess(`Run triggered for "${scan.name}"`)
+      watching.current[scan.id] = { name: scan.name, before: scanBaseline(current), startedAt: Date.now() }
       await queryClient.invalidateQueries({ queryKey: ["scans"] })
     } catch (e) {
       showError(e instanceof Error ? e.message : "Failed to trigger run")

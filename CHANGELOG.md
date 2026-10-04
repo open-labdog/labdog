@@ -74,6 +74,14 @@ The format follows [Keep a Changelog]; LabDog follows
   in, and the presets no longer claim UTC. The plain-English line under
   the field is hidden when it would only repeat the expression.
 
+- **Run now on a scan schedule reports its result.** The run is queued
+  and the page used to say only "Run triggered", so you had to watch the
+  last-run column to learn whether anything was found. A toast now says
+  how many hosts the run added, how many are waiting for review, that it
+  found nothing new, or why it failed, and offers **View hosts** or
+  **Review**. The hosts list and the pending counters refresh at the same
+  time instead of lagging behind a new host.
+
 ### Changed
 
 - **What the AI assistant may run without approval moved, in both
