@@ -427,6 +427,18 @@ Left open:
   rolled back is exactly what should be in front of an operator without
   opening the alerts page.
 
+- **Let an operator lift the 24-hour lockout.** A fix judged `made_worse`
+  keeps full auto off that host for 24 hours (`WORSE_SUSPENDS_FULL_AUTO`
+  in `app/ai/remediation.py`, read by `recently_made_worse`). The window
+  is fixed, covers every alert on the host, and nothing in the UI, the
+  API or the settings shows or clears it; the only trace is the note on
+  the next listed alert that runs read-only. In the 2026-10-04 live test
+  the test host stayed locked until the window ran out, and the way past
+  it was moving `remediation_checked_at` on the old alert row by hand in
+  the database. Make the window a setting (`ai.alert_worse_suspension_hours`,
+  0 = no lockout), show "full auto suspended until …" on the host, and add
+  a button that lifts it, audit-logged.
+
 - **Later: remediate through action packs.** `propose_action` (above)
   lets the assistant run a named, vetted action pack instead of shell
   commands, with snapshot, verify and rollback built in. It is the better
