@@ -159,6 +159,9 @@ export default function AssistantPage() {
     queryKey: ["ai-session", selectedId],
     queryFn: () => apiFetch<AISessionDetail>(`/api/ai/sessions/${selectedId}`),
     enabled: selectedId !== null,
+    // A rollback runs on a worker for minutes and publishes nothing, so
+    // the page looks until it has finished.
+    refetchInterval: (query) => (query.state.data?.rollbacks?.some((r) => r.status === "running") ? 5_000 : false),
     // A deleted session (a stale `?session=` link) will not reappear, so
     // say so now rather than after three backed-off retries.
     retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 3,

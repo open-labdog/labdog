@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import { apiFetch, ApiError } from "@/lib/api"
 import { toast } from "sonner"
 import { shortAgo } from "@/lib/fleet"
-import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_SESSION_STATUS } from "@/lib/status"
+import { def, ALERT_SEVERITY, ALERT_STATUS, AI_AUTONOMY, AI_ROLLBACK, AI_SESSION_STATUS, REMEDIATION_OUTCOME } from "@/lib/status"
 import { PageHead, Seg, Table, Tag } from "@/components/ld"
 import type { AlertEvent } from "@/lib/types"
 
@@ -45,6 +45,21 @@ function AutonomyTag({ alert }: { alert: AlertEvent }) {
   if (!level || (level === "read_only" && !alert.investigation_autonomy_note)) return null
   const { label, tone } = def(AI_AUTONOMY, level)
   return <Tag tone={tone} title={alert.investigation_autonomy_note ?? undefined}>{label}</Tag>
+}
+
+/** What LabDog found when it checked a full-auto fix afterwards, and any
+ *  rollback that followed. The evidence — which alert fired, what the SSH
+ *  probe said, what Proxmox answered — is on hover. */
+function RemediationTags({ alert }: { alert: AlertEvent }) {
+  if (!alert.remediation_outcome) return null
+  const outcome = def(REMEDIATION_OUTCOME, alert.remediation_outcome)
+  const rollback = alert.rollback_status ? def(AI_ROLLBACK, alert.rollback_status) : null
+  return (
+    <>
+      <Tag tone={outcome.tone} title={alert.remediation_detail ?? undefined}>{outcome.label}</Tag>
+      {rollback && <Tag tone={rollback.tone} title={alert.rollback_detail ?? undefined}>{rollback.label}</Tag>}
+    </>
+  )
 }
 
 export default function AlertsPage() {
@@ -121,6 +136,7 @@ export default function AlertsPage() {
                   <Tag title={a.investigation_detail ?? undefined}>{OUTCOME_LABEL[a.investigation_outcome] ?? a.investigation_outcome}</Tag>
                 ) : <span className="text-text-faint">—</span>}
                 <AutonomyTag alert={a} />
+                <RemediationTags alert={a} />
               </span>
             ),
           },

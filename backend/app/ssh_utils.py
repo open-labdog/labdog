@@ -338,3 +338,31 @@ async def get_source_ip(conn: "BoundedConnection | asyncssh.SSHClientConnection"
     except Exception:
         pass
     return None
+
+
+async def load_host_key(db: "AsyncSession", host: "Host") -> asyncssh.SSHKey | None:
+    """The private key LabDog authenticates to ``host`` with, decrypted.
+
+    ``None`` when the host has no key assigned, the key row is gone, or it
+    cannot be decrypted or parsed — every caller treats those alike: there
+    is no way in, which is different from a host that refuses the key.
+    """
+    if not host.ssh_key_id:
+        return None
+    from sqlalchemy import select
+
+    from app.crypto.encryption import decrypt_ssh_key
+    from app.crypto.key_management import get_master_key
+    from app.models.ssh_key import SSHKey
+
+    row = (
+        await db.execute(select(SSHKey).where(SSHKey.id == host.ssh_key_id))
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    try:
+        return asyncssh.import_private_key(
+            decrypt_ssh_key(row.encrypted_private_key, get_master_key())
+        )
+    except Exception:
+        return None

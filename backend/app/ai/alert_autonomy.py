@@ -72,7 +72,7 @@ _IN_FLIGHT_BOUND = timedelta(seconds=7500)
 #: command that ran — a restart that failed halfway has changed something.
 #: ``blocked`` is not: the classifier, a snapshot failure, or the busy
 #: guard stopped it before a socket opened.
-_REACHED_HOST = ("executed", "error")
+REACHED_HOST = ("executed", "error")
 
 _LEVEL_LABEL = {"read_only": "read-only", "approval": "approval"}
 
@@ -189,6 +189,14 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
         if refusal:
             return refusal
 
+    # Before the lock: the live half of this test is an SSH connection,
+    # though its answer is cached (see app.ai.labdog_host).
+    if await _is_labdog_host(db, event.host_id):
+        return (
+            "LabDog runs on this host, so a fix could take LabDog down with it, and LabDog "
+            "cannot roll back the machine it runs on"
+        )
+
     await db.execute(
         text("SELECT pg_advisory_xact_lock(:namespace, :host_id)"),
         {"namespace": _LOCK_NAMESPACE, "host_id": event.host_id},
@@ -197,6 +205,23 @@ async def _full_auto_refusal(db: AsyncSession, event: Any) -> str | None:
     now = datetime.now(UTC)
     if await _in_flight(db, event.host_id, now):
         return "another automatic remediation is already running on this host"
+
+    from app.ai.remediation import WORSE_SUSPENDS_FULL_AUTO, awaiting_check, recently_made_worse
+
+    if await awaiting_check(db, event.host_id, now):
+        return (
+            "an automatic fix on this host has not been checked yet, and a second one now "
+            "would make it impossible to tell which did what"
+        )
+
+    worse_at = await recently_made_worse(db, event.host_id, now)
+    if worse_at is not None:
+        hours = int(WORSE_SUSPENDS_FULL_AUTO.total_seconds() // 3600)
+        ago = max(1, int((now - worse_at).total_seconds() // 60))
+        return (
+            f"an automatic fix made this host worse {ago} min ago, which keeps full auto off "
+            f"it for {hours} hours"
+        )
 
     cooldown = int(await get_setting_typed("ai.alert_remediation_cooldown_minutes", db))
     if cooldown > 0:
@@ -238,6 +263,14 @@ async def _snapshot_refusal(db: AsyncSession, host_id: int) -> str | None:
     return None
 
 
+async def _is_labdog_host(db: AsyncSession, host_id: int) -> bool:
+    from app.ai.labdog_host import labdog_runs_on
+    from app.models.host import Host
+
+    host = await db.get(Host, host_id)
+    return host is not None and await labdog_runs_on(db, host)
+
+
 def _full_auto_sessions():
     from app.ai.models import AISession
 
@@ -276,7 +309,7 @@ def _changes_on(column: Any, host_id: int, since: datetime):
             *_full_auto_sessions(),
             AIToolCall.target_host_id == host_id,
             AIToolCall.classification == "mutating",
-            AIToolCall.status.in_(_REACHED_HOST),
+            AIToolCall.status.in_(REACHED_HOST),
             AIToolCall.started_at >= since,
         )
     )
@@ -339,6 +372,7 @@ async def busy_refusal(
         "sync": f"sync {blocker.id}",
         "action_host": f"action run {blocker.id}",
         "action_group": f"group action run {blocker.id}",
+        "ai_rollback": f"rollback {blocker.id}",
     }.get(blocker.kind, f"{blocker.kind} {blocker.id}")
     if blocker.action_key:
         what += f" ({blocker.action_key})"

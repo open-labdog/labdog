@@ -22,11 +22,13 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -68,6 +70,9 @@ SESSION_STATUSES = (
     "failed",
     "cancelled",
 )
+
+#: A session in one of these has stopped and will not go on by itself.
+TERMINAL_SESSION_STATUSES = ("succeeded", "failed", "cancelled")
 
 APPROVAL_STATUSES = ("pending", "approved", "rejected", "expired")
 
@@ -408,6 +413,21 @@ INVESTIGATION_OUTCOMES = (
     "failed",
 )
 
+#: Whether a full-auto fix worked, as LabDog judged it afterwards — see
+#: :mod:`app.ai.remediation`. ``checking`` while the check runs;
+#: ``unchecked`` when it could not run in time, which is reported rather
+#: than guessed at.
+REMEDIATION_OUTCOMES = ("checking", "fixed", "not_effective", "made_worse", "unchecked")
+
+#: What started a rollback: the check, after a fix made the host worse, or
+#: a person pressing the button.
+ROLLBACK_TRIGGERS = ("automatic", "manual")
+
+#: ``refused`` records a rollback that was wanted and not attempted, with
+#: the reason, so "LabDog decided not to" reads differently from "LabDog
+#: never considered it".
+ROLLBACK_STATUSES = ("running", "succeeded", "failed", "refused")
+
 
 class AlertEvent(Base):
     """One alert as LabDog received it, deduplicated by fingerprint.
@@ -488,6 +508,22 @@ class AlertEvent(Base):
     investigation_autonomy_note: Mapped[str | None] = mapped_column(
         Text, nullable=True, default=None
     )
+    # Whether a full-auto fix worked — see REMEDIATION_OUTCOMES. NULL when
+    # there was nothing to check: the session could not change the host,
+    # or did not. Kept here for the same reason as the autonomy above: it
+    # outlives the session.
+    remediation_outcome: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, default=None, index=True
+    )
+    # What the check found, in words: which alert fired, what the SSH
+    # probe said.
+    remediation_detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    # When the outcome was set; while ``checking``, when the check was
+    # claimed, which is how a check killed half-way is told apart from one
+    # still running.
+    remediation_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
     )
@@ -495,4 +531,60 @@ class AlertEvent(Base):
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class AIRollback(Base):
+    """One attempt to restore a host to a snapshot the assistant took.
+
+    Started by the remediation check when a full-auto fix made its host
+    worse, or by a person from the session. The snapshot restored is the
+    one taken before the session's first change on that host, so a
+    rollback undoes the whole session there, never part of it.
+
+    At most one per session and host may be running or have succeeded.
+    A second would undo whatever has happened on the host since the first
+    — a sync, someone's own fix — which nobody asked for.
+
+    ``hostname`` is copied in rather than read through ``host_id``: the
+    record of having rolled a machine back should survive the host being
+    deleted from LabDog, the same reasoning as ``ActionHostRun.hostname``.
+    """
+
+    __tablename__ = "ai_rollbacks"
+    __table_args__ = (
+        Index(
+            "uq_ai_rollbacks_session_host_active",
+            "session_id",
+            "host_id",
+            unique=True,
+            postgresql_where=text("status IN ('running', 'succeeded')"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("ai_sessions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    host_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hosts.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    alert_event_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alert_events.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    hostname: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    snapshot_name: Mapped[str | None] = mapped_column(String(200), nullable=True, default=None)
+    # See ROLLBACK_TRIGGERS.
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    requested_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, default=None
+    )
+    # See ROLLBACK_STATUSES.
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
     )

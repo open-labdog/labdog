@@ -147,4 +147,21 @@ export const AI_AUTONOMY: Record<string, StatusDef> = {
   full_auto: { label: "full auto", tone: "warn" },
 }
 
+/** What the check after a full-auto fix found. */
+export const REMEDIATION_OUTCOME: Record<string, StatusDef> = {
+  checking: { label: "checking fix", tone: "sync" },
+  fixed: { label: "fixed", tone: "ok" },
+  not_effective: { label: "fix did not work", tone: "warn" },
+  made_worse: { label: "fix made it worse", tone: "danger" },
+  unchecked: { label: "fix not checked", tone: "warn" },
+}
+
+/** A rollback of a session's changes on one host. */
+export const AI_ROLLBACK: Record<string, StatusDef> = {
+  running: { label: "rolling back", tone: "sync" },
+  succeeded: { label: "rolled back", tone: "ok" },
+  failed: { label: "rollback failed", tone: "danger" },
+  refused: { label: "not rolled back", tone: "warn" },
+}
+
 export type { StatusDef, Tone }

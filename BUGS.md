@@ -265,40 +265,6 @@ logs.
       Severity Low: nothing is lost or mis-added; the result is easy to
       misread.
 
-- [ ] **BUG-112** `backend/app/api/scans.py:200`, `:413` — `POST
-      /api/scans/{id}/run` is defined twice; the second handler is dead,
-      so "run now" is never a manual run
-
-      Symptom: the UI's "run now" on a scan schedule enqueues
-      `scans.run_config` without `is_manual=True`. The documented
-      behaviour of a manual run does not happen: hosts dismissed from the
-      review queue are still suppressed
-      (`DismissedHost`, `app/models/scan_config.py:97`), although the
-      dismiss endpoint's docstring (`scans.py:357`) says a manual run
-      brings them back. Running a disabled schedule also answers 202
-      "queued" and then does nothing, because the task returns `skipped`
-      for a disabled config; the dead handler would have answered 409.
-
-      Root cause: both handlers are decorated `@router.post("/{config_id}/run")`.
-      Starlette dispatches to the first registered, `run_scan_config_now`
-      (`scans.py:200`: `args=[config_id]`, no enabled check), so
-      `run_scan_now` (`scans.py:413`: `is_manual=True`, 409 when disabled)
-      is never reached. Confirmed on lin-manager: the scans router lists
-      both routes, `run_scan_config_now` first. The second was added by
-      `487ecd3b` ("remember dismissed hosts") without removing the first.
-      The only test (`tests/test_scan_configs.py:557`) pins the dead end:
-      it asserts `send_task` was called with exactly `args=[config_id]`,
-      which only the shadowing handler does.
-
-      Fix direction: delete `run_scan_config_now` and keep `run_scan_now`.
-      Update that test to expect `kwargs={"is_manual": True}`, and add one
-      that a disabled config returns 409. The frontend already shows
-      "Run triggered" on any 2xx and would surface the 409 through
-      `showError`.
-
-      Severity Low: dismissed hosts staying hidden on a manual run is the
-      safe direction, and the disabled case only wastes a click.
-
 ---
 
 ## Open — 2026-10-06 full-auto live test
