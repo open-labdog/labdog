@@ -295,9 +295,12 @@ row's tag says which:
 host — including one that exited non-zero, since a restart that failed
 halfway still changed something.
 
-A full-auto session also runs under tighter caps than a chat:
-`ai.alert_max_commands` (10) and `ai.alert_wall_clock_seconds` (600),
-or the general caps if those are lower. And it does not change a host
+A full-auto session also runs under its own caps:
+`ai.alert_max_commands` (15) and `ai.alert_wall_clock_seconds` (900),
+or the general caps if those are lower. Its model turns go the other
+way: it gets at least five more than its command cap, even above
+`ai.max_iterations`, so a fix that takes a command a turn is ended by
+the command cap rather than a turn short of it. And it does not change a host
 LabDog is itself changing: a change it attempts while a sync or an action
 run is working on the host is refused, and it reports what it would have
 done instead. That narrows the overlap rather than closing it — a sync
@@ -415,7 +418,7 @@ These placeholders are filled in from the alert:
 | `{alertname}` | The alert's name |
 | `{severity}` | The severity label, or `(not labelled)` |
 | `{status}` | `firing` or `resolved` |
-| `{starts_at}` | When the alert started, in ISO 8601 |
+| `{starts_at}` | When the alert started, in UTC (2026-08-23 19:00:00 UTC) |
 | `{labels}` | Every label, one per line as `- key: value` |
 | `{annotations}` | Every annotation, one per line as `- key: value` |
 

@@ -25,8 +25,9 @@ def _scope(ctx: ToolContext):
     name="list_hosts",
     description=(
         "List the hosts this session is allowed to inspect, with their id, "
-        "hostname, IP address, and operating system. Call this first to find "
-        "the host id you need for other tools."
+        "hostname, IP address, the user run_ssh_command connects as, and "
+        "operating system. Call this first to find the host id you need for "
+        "other tools."
     ),
     parameters={"type": "object", "properties": {}, "additionalProperties": False},
     classification="read_only",
@@ -39,7 +40,7 @@ async def _list_hosts(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
             summary="0 hosts in scope",
         )
     lines = [
-        f"- id={h.id} {h.hostname} ({h.ip_address}) "
+        f"- id={h.id} {h.hostname} ({h.ip_address}) user={h.ssh_user} "
         f"{h.os_pretty_name or h.os_family or 'unknown OS'}"
         for h in hosts
     ]
@@ -85,6 +86,7 @@ async def _get_host_facts(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
     facts = [
         f"hostname: {host.hostname}",
         f"ip_address: {host.ip_address}",
+        f"ssh_user: {host.ssh_user}",
         f"os: {host.os_pretty_name or 'unknown'}",
         f"os_family: {host.os_family or 'unknown'}",
         f"os_codename: {host.os_codename or 'unknown'}",
