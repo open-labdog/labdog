@@ -33,7 +33,7 @@ Format each entry as:
       Low). If reproduced from a specific scenario, note it. Group
       related bugs under the same severity heading.
 
-ID counter as of last housekeeping pass: `BUG-112`, `SEC-38`,
+ID counter as of last housekeeping pass: `BUG-114`, `SEC-38`,
 `TYPE-03`, `DEAD-01`. Pick the next number in the relevant series
 when filing a new entry.
 
@@ -304,8 +304,9 @@ logs.
 ## Open — 2026-10-06 full-auto live test
 
 Filed 2026-10-06 after two live runs of a full-auto alert fix on a test VM
-(AI sessions 25 and 26 on lin-manager). Both were confirmed against the
-delivered email and the database.
+(AI sessions 25 and 26 on lin-manager). BUG-113 was confirmed against the
+delivered email and the database; BUG-114 is a local pytest collection
+failure, confirmed by the single-file run quoted in it.
 
 ### Correctness — Low
 
@@ -324,20 +325,36 @@ delivered email and the database.
       's/client_max_body_size 50mm;/client_max_body_size 50m;/' /etc/ngi]`.
       Seen in session 26's email; the exit status (4) is in the database.
 
-      Root cause: `_run_ssh_command` stores
-      `result_summary = f"{command[:120]} (exit {exit_status})"`, and the
-      email prints `one_line(call.result_summary, 120)` after the command
-      it has already printed. The summary is 120 characters of command
-      plus the status, so the 120-character cut always lands inside the
-      command when the command is long. Other tools' summaries
-      (`timed out`, `host key mismatch`, a refusal reason) are not prefixed
-      by a command and read fine.
+      Root cause: on a command that ran, `_run_ssh_command` returns
+      `ToolResult(summary=f"{command[:120]} (exit {exit_status})")`
+      (`ssh.py:241`). The callers store it as `result_summary` with
+      `(result.summary or result.content)[:1000]`: `loop.py:440`,
+      `agent_sdk/runner.py:523` and `approvals.py:231`
+      (`tasks/ai_task.py:270` publishes the same value to the live
+      transcript). The email then prints
+      `one_line(call.result_summary, 120)` after the command it has
+      already printed. The summary is 120 characters of command plus the
+      status, so the 120-character cut always lands inside the command
+      when the command is long. The other `run_ssh_command` outcomes have
+      no command prefix: a refusal stores its reason (`ssh.py:151`), a
+      connection failure `host key mismatch`, `timed out` or `ssh error`
+      (`ssh.py:201/210/218`), and the early returns with no summary at all
+      (no such host, no SSH key, key gone, key unusable) store
+      `result.content` instead.
 
-      Fix direction: in the email, drop the summary's leading command
-      before printing it, so the bracket holds `exit 127` or the reason.
-      Keep the stored summary as it is: the transcript and the approvals
-      page read it. Add a test with a 200-character command that the exit
-      status survives.
+      Fix direction: fix it at the source. Make the summary at
+      `ssh.py:241` just `exit {exit_status}`. The command in it is
+      redundant everywhere it is shown: the only other reader,
+      `frontend/components/ai/tool-call.tsx`, already uses
+      `arguments.command` as the headline, and the approvals page shows
+      `approval.summary` (from `arguments.purpose`, `approvals.py:96`), not
+      `result_summary`. Stripping the command in the email instead would
+      mean matching the raw `command[:120]` before `clean()` and
+      `one_line()` change it, which breaks when a secret is redacted or
+      cut at character 120, and would still have to leave every other
+      summary above alone. Add a test with a 200-character command that
+      the exit status survives in the email, through both the `AgentLoop`
+      and the Agent SDK runner (`agent_sdk/runner.py:523`) paths.
 
       Severity Low: the report and the transcript have the detail; the
       email is the only place that loses it.
@@ -350,21 +367,23 @@ delivered email and the database.
 
       Symptom: `pytest tests/ai/test_alert_autonomy.py` from `backend/`
       with no `LABDOG_SECURITY__*` variables prints "FATAL: LabDog cannot
-      start: security.secret_key is not set" and runs nothing. `pytest
-      tests/` works, which is why CI never notices.
+      start: security.secret_key is not set" and runs nothing. Running
+      the whole directory, `pytest tests/ai`, fails the same way, so it is
+      not a workaround. `pytest tests/` works, which is why CI never
+      notices.
 
       Root cause: `tests/ai/conftest.py` imports `app.ai.loop` and
       `app.ai.models` at module level. When a path under `tests/ai/` is
-      named on the command line, pytest loads that conftest as an initial
-      conftest, before any `pytest_configure` hook runs, so the import
-      reads the settings before `tests/conftest.py:76` has set the test
-      keys. Run as `pytest tests/`, the subdirectory conftest is loaded
+      (or `tests/ai` itself) is named on the command line, pytest loads
+      that conftest as an initial conftest, before any `pytest_configure`
+      hook runs, so the import reads the settings before
+      `tests/conftest.py:76` has set the test keys. Run as `pytest tests/`, the subdirectory conftest is loaded
       during collection, after `pytest_configure`.
 
       Fix direction: move the two imports into the fixtures that use them,
       or set the defaults at the top of `tests/conftest.py`, outside
-      `pytest_configure`. Check `pytest tests/ai/test_loop.py` with a clean
-      environment.
+      `pytest_configure`. Check both `pytest tests/ai/test_loop.py` and
+      `pytest tests/ai` with a clean environment.
 
       Severity Low: test-only, and the workaround is exporting the three
       variables.
