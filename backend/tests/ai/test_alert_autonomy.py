@@ -22,7 +22,7 @@ from app.ai.alert_autonomy import (
     resolve,
     validate_alertnames,
 )
-from app.ai.loop import AgentLoop, LoopCaps, build_system_prompt
+from app.ai.loop import ALERT_TURNS_BEYOND_COMMANDS, AgentLoop, LoopCaps, build_system_prompt
 from app.ai.models import AISession, AIToolCall, AlertEvent
 from app.config import settings
 from app.models.app_setting import AppSetting
@@ -207,16 +207,26 @@ class TestSystemPrompt:
         assert "held for the operator" in prompt
         assert "small, reversible" not in prompt
 
+    @pytest.mark.parametrize("mode", ["chat", "alert_investigation"])
     @pytest.mark.parametrize("autonomy", ["read_only", "approval", "full_auto"])
-    def test_every_session_is_told_how_its_commands_run(self, autonomy) -> None:
+    def test_every_session_is_told_how_its_commands_run(self, autonomy, mode) -> None:
         """A model that is not told tries `nginx -t` as a plain user and
         learns from the exit code, one command at a time. In an alert
         session each of those is a command out of a small budget."""
-        prompt = build_system_prompt(autonomy)
-        assert "usually not root" in prompt
-        assert "sudo from the start" in prompt
+        prompt = build_system_prompt(autonomy, mode=mode)
+        assert "as the user list_hosts shows" in prompt
+        assert "If that user is not root, put sudo in front" in prompt
         assert "/usr/sbin" in prompt
-        assert "Times in an alert are UTC" in prompt
+        assert "sudo may not be installed" in prompt
+        assert "the host's own timezone" in prompt
+
+    @pytest.mark.parametrize("mode", ["chat", "alert_investigation"])
+    def test_only_a_level_that_may_change_a_host_is_told_how_to(self, mode) -> None:
+        """A read-only session told to restart with sudo would spend a
+        command on a refusal."""
+        assert "restarting a service" not in build_system_prompt("read_only", mode=mode)
+        assert "restarting a service" in build_system_prompt("approval", mode=mode)
+        assert "restarting a service" in build_system_prompt("full_auto", mode=mode)
 
     def test_a_full_auto_chat_never_gets_the_alert_section(self) -> None:
         """A person started it and chose the level; nothing about it came
@@ -558,7 +568,23 @@ class TestCaps:
     async def test_a_full_auto_alert_session_gets_the_tighter_caps(self, db) -> None:
         caps = await LoopCaps.for_session(db, _session())
         assert caps.max_commands == 15
-        assert caps.wall_clock_seconds == 600
+        assert caps.wall_clock_seconds == 900
+
+    async def test_its_turns_outlast_its_commands(self, db) -> None:
+        """One command a turn: with turns and commands equal, the turn
+        limit ends a fix before its last command."""
+        caps = await LoopCaps.for_session(db, _session())
+        assert caps.max_iterations == 15 + ALERT_TURNS_BEYOND_COMMANDS
+
+    async def test_its_turns_follow_a_lower_command_cap(self, db) -> None:
+        await _set(db, "ai.alert_max_commands", "5")
+        caps = await LoopCaps.for_session(db, _session())
+        assert caps.max_iterations == 15
+
+    async def test_its_turns_never_drop_below_the_instance_cap(self, db) -> None:
+        await _set(db, "ai.max_iterations", "40")
+        caps = await LoopCaps.for_session(db, _session())
+        assert caps.max_iterations == 40
 
     async def test_they_never_loosen_the_instance_caps(self, db) -> None:
         await _set(db, "ai.max_commands", "5")
@@ -572,6 +598,7 @@ class TestCaps:
     )
     async def test_other_sessions_keep_the_instance_caps(self, db, mode, autonomy) -> None:
         caps = await LoopCaps.for_session(db, _session(mode, autonomy))
+        assert caps.max_iterations == 15
         assert caps.max_commands == 20
         assert caps.wall_clock_seconds == 900
 

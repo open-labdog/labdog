@@ -11,7 +11,7 @@ still looking at it.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -49,7 +49,7 @@ def test_every_documented_field_actually_renders():
     assert "HostDown" in out
     assert "critical" in out
     assert "firing" in out
-    assert "2026-08-23T19:00:00+00:00" in out
+    assert "2026-08-23 19:00:00 UTC" in out
     assert "- instance: jellyfin" in out
     assert "- summary: it is down" in out
 
@@ -94,6 +94,20 @@ def test_missing_severity_and_start_time_are_labelled_not_blank():
     assert "(not labelled)" in out
     assert "(unknown)" in out
     assert "(none)" in out
+
+
+def test_the_start_time_is_given_in_utc_and_says_so():
+    """A bare ISO offset was missed: a session read a host's journal,
+    in local time, as two hours after the alert started."""
+    stockholm = timezone(timedelta(hours=2))
+    out = render("{starts_at}", FakeAlert(starts_at=datetime(2026, 8, 23, 21, 0, tzinfo=stockholm)))
+    assert out == "2026-08-23 19:00:00 UTC"
+
+
+def test_a_naive_start_time_is_taken_as_utc():
+    assert render("{starts_at}", FakeAlert(starts_at=datetime(2026, 8, 23, 19, 0))) == (
+        "2026-08-23 19:00:00 UTC"
+    )
 
 
 def test_render_falls_back_when_a_stored_template_has_gone_bad():

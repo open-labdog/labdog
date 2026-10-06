@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC, datetime
 from string import Formatter
 
 from app.ai.redaction import redact
@@ -41,7 +42,7 @@ FIELDS: dict[str, str] = {
     "alertname": "The alert's name",
     "severity": "The severity label, or a note that it was not labelled",
     "status": "firing or resolved",
-    "starts_at": "When the alert started, in ISO 8601",
+    "starts_at": "When the alert started, in UTC (2026-08-23 19:00:00 UTC)",
     "labels": "Every label, one per line as '- key: value'",
     "annotations": "Every annotation, one per line as '- key: value'",
 }
@@ -131,6 +132,18 @@ def _render_pairs(mapping: dict | None) -> str:
     return "\n".join(f"- {_sanitise(k)}: {_sanitise(v)}" for k, v in sorted(mapping.items()))
 
 
+def _utc(moment: datetime) -> str:
+    """``moment`` in UTC, saying so.
+
+    A bare ISO offset was easy to miss: a session read a host's journal,
+    in local time, as two hours after the alert started. A naive value is
+    taken as UTC, which is what LabDog stores.
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def values_for(event) -> dict[str, str]:  # noqa: ANN001 - AlertEvent, imported lazily
     """The substitutions for one alert. Keys are exactly :data:`FIELDS`.
 
@@ -144,7 +157,7 @@ def values_for(event) -> dict[str, str]:  # noqa: ANN001 - AlertEvent, imported 
         "alertname": _sanitise(event.alertname),
         "severity": _sanitise(event.severity) if event.severity else "(not labelled)",
         "status": _sanitise(event.status),
-        "starts_at": event.starts_at.isoformat() if event.starts_at else "(unknown)",
+        "starts_at": _utc(event.starts_at) if event.starts_at else "(unknown)",
         "labels": _fence(_render_pairs(event.labels)),
         "annotations": _fence(_render_pairs(event.annotations)),
     }

@@ -135,7 +135,7 @@ what it established, so the work is not wasted.
 
 | Setting | Key | Default | Range | Description |
 |---------|-----|---------|-------|-------------|
-| Max Iterations | `ai.max_iterations` | `15` | 1 – 100 | Model turns in one session. |
+| Max Iterations | `ai.max_iterations` | `15` | 1 – 100 | Model turns in one session. A full-auto alert session gets at least `ai.alert_max_commands` plus five. |
 | Max Commands | `ai.max_commands` | `20` | 1 – 200 | Shell commands across all hosts in one session. |
 | Max Tokens | `ai.max_tokens_total` | `200000` | 1000 – 5000000 | Prompt + completion tokens in one session. |
 | Wall Clock | `ai.wall_clock_seconds` | `900` | 30 – 21600 s | Run time for one session. Time spent waiting for an approval does not count. |
@@ -165,8 +165,8 @@ safeguards a named alert must pass.
 | Full Auto Needs Snapshot | `ai.alert_full_auto_requires_snapshot` | `1` (on) | 0 – 1 | Allow full auto only on hosts LabDog can snapshot first. Off allows it on bare metal and unmapped hosts, whose changes then have no rollback point. |
 | Remediation Cooldown | `ai.alert_remediation_cooldown_minutes` | `60` | 0 – 10080 min | After a full-auto session for an alert changes a host, how long before that alert may change it again (0 = no cooldown). |
 | Remediation Daily Cap | `ai.alert_remediation_daily_cap` | `3` | 1 – 100 | Most full-auto sessions that may change one host in 24 hours, across all alerts. |
-| Alert Max Commands | `ai.alert_max_commands` | `15` | 1 – 200 | Shell commands in a full-auto alert session. The lower of this and `ai.max_commands` applies. |
-| Alert Wall Clock | `ai.alert_wall_clock_seconds` | `600` | 30 – 21600 s | Run time for a full-auto alert session. The lower of this and `ai.wall_clock_seconds` applies. |
+| Alert Max Commands | `ai.alert_max_commands` | `15` | 1 – 200 | Shell commands in a full-auto alert session. The lower of this and `ai.max_commands` applies. Too few, and a fix whose first attempts fail runs out partway and leaves the host half changed. The session gets this many model turns plus five, even above `ai.max_iterations`. |
+| Alert Wall Clock | `ai.alert_wall_clock_seconds` | `900` | 30 – 21600 s | Run time for a full-auto alert session. The lower of this and `ai.wall_clock_seconds` applies. Each change waits for its snapshot first, so a fix of several changes needs more time than an investigation. |
 
 **Changes and approvals.**
 
@@ -196,7 +196,7 @@ These placeholders are filled in from the alert:
 | `{alertname}` | The alert's name |
 | `{severity}` | The severity label, or `(not labelled)` |
 | `{status}` | `firing` or `resolved` |
-| `{starts_at}` | When the alert started, in ISO 8601 |
+| `{starts_at}` | When the alert started, in UTC (2026-08-23 19:00:00 UTC) |
 | `{labels}` | Every label, one per line as `- key: value` |
 | `{annotations}` | Every annotation, one per line as `- key: value` |
 

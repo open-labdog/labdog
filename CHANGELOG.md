@@ -76,15 +76,25 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
-- **The AI assistant is told how its commands run.** Its instructions now
-  say that `run_ssh_command` connects as a user who is usually not root,
-  so anything that needs root takes `sudo` from the first attempt and
-  admin tools in `/usr/sbin` are called by full path, and that alert
-  times are UTC while a host's logs use its own timezone. In a live test
-  of a full-auto fix, four of twelve commands were spent finding that out,
-  and each of those failed attempts also took a snapshot. Full-auto alert
-  sessions now get 15 commands by default (`ai.alert_max_commands`, was
-  10); the same fix did not finish inside 10.
+- **The AI assistant is told how its commands run.** `list_hosts` and
+  `get_host_facts` now show the user `run_ssh_command` connects as on each
+  host, and the instructions say what follows from it: when that user is
+  not root, anything that needs root takes `sudo` from the first attempt
+  and admin tools in `/usr/sbin` are called by full path; when it is root,
+  neither. Sessions that may change a host are also told that restarts
+  and edits under `/etc` need the same `sudo`. An alert's start time now
+  reads `2026-08-23 19:00:00 UTC` rather than a bare ISO offset, and the
+  instructions say a host's logs use its own timezone. In a live test of
+  a full-auto fix, four of twelve commands were spent finding the user
+  out, and each of those failed attempts also took a snapshot.
+
+- **Full-auto alert sessions get room to finish a fix.** 15 commands by
+  default (`ai.alert_max_commands`, was 10; the same fix did not finish
+  inside 10), 900 seconds (`ai.alert_wall_clock_seconds`, was 600, since
+  each change waits for a snapshot), and at least five model turns more
+  than their command cap, even above `ai.max_iterations`; with turns and
+  commands both at 15, the turn limit would have ended a fix before its
+  last command. Values an instance has saved are kept.
 
 - **What the AI assistant may run without approval moved, in both
   directions.** These now count as reads: `apt list`, `dmesg` and `sysctl`

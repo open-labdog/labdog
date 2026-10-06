@@ -57,14 +57,14 @@ How to work:
 - Start by finding out what is in scope with list_hosts.
 - Base every claim on something a tool actually returned. If you did not \
 verify something, say so rather than assuming.
-- run_ssh_command runs as the account LabDog connects with, which is usually \
-not root. Give anything that needs root (a protected file, restarting a \
-service, editing under /etc) sudo from the start, and give admin tools their \
-full path (/usr/sbin/nginx): /usr/sbin is often not on that account's PATH. \
-Commands are limited in number, so an attempt that fails for lack of sudo is \
-a command lost.
-- Times in an alert are UTC. Logs and `date` on a host use the host's own \
-timezone, so check which before comparing two times.
+- run_ssh_command connects to a host as the user list_hosts shows for it. \
+If that user is not root, put sudo in front of anything that needs root, \
+such as reading a protected log, and call admin tools by their full path \
+(/usr/sbin/nginx): /usr/sbin is often not on that user's PATH. If it is \
+root, do neither: sudo may not be installed. Commands are limited in \
+number, so one that fails for want of either is a command lost.
+- A host's logs and `date` use the host's own timezone. Check which before \
+comparing a time there with one given in UTC, such as an alert's start.
 
 Choosing a tool. Each result is read back in full on every later turn, so \
 a large one is paid for repeatedly, not once. Narrow first, then look \
@@ -95,6 +95,13 @@ work: complete sentences, no shorthand you invented along the way.
 message with no further tool calls.
 """
 
+#: Only for the levels that may change a host: a read-only session told
+#: how to restart a service would spend a command finding out it may not.
+_ROOT_CHANGES_NOTE = (
+    "A change that needs root (restarting a service, editing under /etc) "
+    "takes sudo the same way when the user list_hosts shows is not root."
+)
+
 AUTONOMY_NOTES = {
     "read_only": (
         "You may only run commands that read state. LabDog checks each command "
@@ -106,12 +113,14 @@ AUTONOMY_NOTES = {
     "approval": (
         "Commands that read state run immediately. Commands that would modify "
         "the host, and any command LabDog cannot confirm only reads, require "
-        "the operator's approval first."
+        "the operator's approval first. "
+        f"{_ROOT_CHANGES_NOTE}"
     ),
     "full_auto": (
         "You may run commands that modify the host. Be conservative: prefer "
         "the smallest change that addresses the problem, and verify the result "
-        "afterwards."
+        "afterwards. "
+        f"{_ROOT_CHANGES_NOTE}"
     ),
 }
 
@@ -165,6 +174,12 @@ ALERT_LEVEL_NOTES = {
 INVESTIGATIVE_MODES = frozenset({"chat", "scheduled", "alert_investigation"})
 
 
+#: Turns a full-auto alert session gets on top of its command cap: one
+#: for list_hosts, one for the final report, and three for anything else
+#: that is not a command (a Loki or Mimir query, host facts).
+ALERT_TURNS_BEYOND_COMMANDS = 5
+
+
 @dataclass
 class LoopCaps:
     max_iterations: int = 15
@@ -190,6 +205,13 @@ class LoopCaps:
         loosen what ``ai.max_commands`` and ``ai.wall_clock_seconds``
         allow. Tokens are left alone: they bound spend, which the budgets
         already cover, not what happens to the host.
+
+        Turns are the exception, and go up rather than down: the session
+        gets at least enough for every command it may run plus
+        :data:`ALERT_TURNS_BEYOND_COMMANDS`. A fix runs about one command a
+        turn, so with turns and commands both at 15 the turn limit would
+        end it a command or two before its last, with the host half
+        changed. The commands, the clock and the tokens still bound it.
         """
         caps = await cls.from_settings(db)
         if is_unattended_remediation(session):
@@ -199,6 +221,9 @@ class LoopCaps:
             caps.wall_clock_seconds = min(
                 caps.wall_clock_seconds,
                 int(await get_setting_typed("ai.alert_wall_clock_seconds", db)),
+            )
+            caps.max_iterations = max(
+                caps.max_iterations, caps.max_commands + ALERT_TURNS_BEYOND_COMMANDS
             )
         return caps
 

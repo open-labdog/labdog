@@ -404,18 +404,21 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "max": 200,
         "description": "Maximum shell commands in a full-auto alert session.",
         "help": (
-            "The lower of this and ai.max_commands applies. A fix that is a look, an edit and "
-            "a restart took seven commands when each worked first time and twelve when some "
-            "failed. A session that runs out mid-fix leaves the host half changed."
+            "The lower of this and ai.max_commands applies. Too few, and a fix whose first "
+            "attempts fail runs out partway and leaves the host half changed. The session gets "
+            "this many model turns plus five, even above ai.max_iterations."
         ),
     },
     "ai.alert_wall_clock_seconds": {
         "type": "int",
-        "default": 600,
+        "default": 900,
         "min": 30,
         "max": 21600,
         "description": "Maximum wall-clock seconds for a full-auto alert session.",
-        "help": "The lower of this and ai.wall_clock_seconds applies.",
+        "help": (
+            "The lower of this and ai.wall_clock_seconds applies. Each change waits for its "
+            "snapshot first, so a fix of several changes needs more time than an investigation."
+        ),
     },
     # --- Notifications. Shown on the Email page rather than here, beside
     # the mail server they only matter with.
