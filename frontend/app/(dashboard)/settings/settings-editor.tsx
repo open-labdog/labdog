@@ -103,6 +103,8 @@ const CATEGORIES: Record<string, Category> = {
       "ai.alert_remediation_daily_cap",
       "ai.alert_max_commands",
       "ai.alert_wall_clock_seconds",
+      "ai.alert_remediation_check_minutes",
+      "ai.alert_auto_rollback",
     ],
   },
   drift: {

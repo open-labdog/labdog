@@ -419,3 +419,77 @@ async def notify_remediation(db: AsyncSession, session: Any) -> int:
         link_path=f"/assistant?session={session.id}",
         dedupe_key=f"alert_remediation:{session.id}:{len(changes)}",
     )
+
+
+#: How each outcome reads in a message. Kept beside the subjects below so
+#: the two cannot drift.
+_REMEDIATION_LABEL = {
+    "fixed": "fixed",
+    "not_effective": "not effective — the alert is still firing",
+    "made_worse": "made the host worse",
+    "unchecked": "not checked",
+}
+
+
+async def notify_remediation_checked(
+    db: AsyncSession, event: Any, session: Any | None, rollback: Any | None = None
+) -> int:
+    """What LabDog found when it checked an automatic fix afterwards.
+
+    The second message about one fix: :func:`notify_remediation` said what
+    ran, this says whether it worked and what LabDog did about it if not.
+    Sent for every outcome — "it worked" is the message that lets someone
+    stop wondering — under the same subscription, since anyone who wants
+    to know a host was changed unattended wants to know how that went.
+    """
+    outcome = event.remediation_outcome or "unchecked"
+    alertname = one_line(event.alertname, 80)
+    host = await _hostname(db, event.host_id) or "its host"
+    rolled_back = rollback is not None and rollback.status == "succeeded"
+
+    if outcome == "fixed":
+        subject = f"Automatic fix worked on {host}: {alertname}"
+    elif outcome == "not_effective":
+        subject = f"Automatic fix did not clear {alertname} on {host}"
+    elif outcome == "made_worse" and rolled_back:
+        subject = f"Rolled back {host}: the automatic fix for {alertname} made it worse"
+    elif outcome == "made_worse":
+        subject = f"Automatic fix made {host} worse and was not rolled back: {alertname}"
+    else:
+        subject = f"Automatic fix on {host} was not checked: {alertname}"
+
+    lines = [
+        f"LabDog checked the automatic fix for {alertname} on {host}.",
+        "",
+        f"Outcome:   {_REMEDIATION_LABEL.get(outcome, outcome)}",
+    ]
+    if session is not None:
+        lines.append(f"Session:   #{session.id}")
+    if event.remediation_detail:
+        lines += ["", clean(event.remediation_detail, 1500)]
+    if rollback is not None:
+        lines += [
+            "",
+            f"Rollback:  {rollback.status}"
+            + (f", to {rollback.snapshot_name}" if rollback.snapshot_name else ""),
+        ]
+        if rollback.detail:
+            lines.append(clean(rollback.detail, 1500))
+    if outcome == "not_effective":
+        lines += [
+            "",
+            "A fix that only failed is not rolled back automatically. The session has a "
+            "Roll back button if you want the host as it was before the fix.",
+        ]
+
+    return await notify(
+        db,
+        "alert_remediation",
+        subject=subject,
+        body="\n".join(lines),
+        link_path=f"/assistant?session={session.id}" if session is not None else "/alerts",
+        dedupe_key=(
+            f"alert_remediation_checked:{event.id}:{outcome}:"
+            f"{rollback.status if rollback is not None else '-'}"
+        ),
+    )

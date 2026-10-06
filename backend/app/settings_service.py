@@ -413,6 +413,32 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
         "description": "Maximum wall-clock seconds for a full-auto alert session.",
         "help": "The lower of this and ai.wall_clock_seconds applies.",
     },
+    "ai.alert_remediation_check_minutes": {
+        "type": "int",
+        "default": 10,
+        "min": 2,
+        "max": 120,
+        "description": "Minutes after an automatic fix before LabDog checks whether it worked.",
+        "help": (
+            "Counted from the end of the session. Long enough for the alert to resolve: Grafana "
+            "sends the resolved notification after its next evaluation and group interval. The "
+            "check asks whether the alert resolved, whether LabDog can still reach the host over "
+            "SSH, and whether a new critical alert has fired on it."
+        ),
+    },
+    "ai.alert_auto_rollback": {
+        "type": "int",
+        "default": 1,
+        "min": 0,
+        "max": 1,
+        "description": "Roll a host back automatically when an automatic fix made it worse.",
+        "help": (
+            "Worse means LabDog can no longer reach the host over SSH, or a new critical alert "
+            "fired on it after the fix. The host is restored to the snapshot taken before the "
+            "session's first change, which restarts it and discards everything written since. A "
+            "fix that only failed to clear the alert is not rolled back."
+        ),
+    },
     # --- Notifications. Shown on the Email page rather than here, beside
     # the mail server they only matter with.
     "notifications.public_url": {

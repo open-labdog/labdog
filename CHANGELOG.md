@@ -9,6 +9,55 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Added
 
+- **LabDog checks an automatic fix afterwards, and rolls back one that
+  made the host worse.** `ai.alert_remediation_check_minutes` (default
+  10) after a full-auto alert session that changed its host ends, LabDog
+  asks three things: can it still reach the host over SSH (three tries,
+  twenty seconds apart), has a new critical alert fired on the host since
+  the first change, and has the alert itself resolved. A host LabDog
+  cannot reach only counts against the fix if LabDog can still reach
+  Proxmox; otherwise the fault may be LabDog's own and the fix is reported
+  as not checked. A session someone cancelled is not checked: they have
+  most likely taken the host over. The alert's row
+  says **fixed**, **fix did not work** or **fix made it worse**, with
+  what was found on hover. A fix that made the host worse is rolled back
+  while `ai.alert_auto_rollback` is on (the default): LabDog restores the
+  snapshot taken before the session's first change, starts the machine,
+  waits for SSH and marks the host out of sync, and full auto stays off
+  that host for 24 hours. If a sync or action run is working on the host,
+  LabDog waits for it and then checks the host again before restoring
+  anything. The machine restarts and loses everything
+  written since the snapshot, so a fix that only failed to clear the
+  alert is never rolled back automatically. A check that falls due while
+  LabDog is down runs up to 30 minutes late, and is reported as not
+  checked after that rather than made on stale evidence. The **Automatic
+  fix made** email is now **Automatic fixes** and sends the outcome too;
+  existing subscriptions carry over. Grafana's contact point must send
+  resolved notifications, or every fix reads as not working.
+
+- **Roll back from the session.** A session that changed a host has a
+  **Roll back** button for it, which restores the snapshot taken before
+  the session's first change there and says first that the machine
+  restarts and loses what was written since. It is refused, with the
+  reason, while the session is still running, while LabDog's own sync or
+  action run is working on the host, after the host was already rolled
+  back for that session, when the snapshot is gone, when another rollback
+  of the host has since gone back past it (restoring it would bring back
+  what that rollback undid), and on the machine LabDog runs on. A
+  rollback holds the host in the same queue as syncs and action runs:
+  they wait for it, and run after it. On ZFS, where only the newest
+  snapshot can be restored, LabDog deletes the session's own later
+  snapshots first, and refuses — deleting nothing — when a newer one is
+  someone else's. Every attempt, refused ones included, is listed on the
+  session and written to the audit log.
+
+- **Full auto is refused on the machine LabDog runs on.** A fix there
+  could take LabDog down, and a rollback would stop LabDog with nothing
+  left to start the machine again. LabDog recognises the machine from
+  the address other hosts see it connect from, or by asking the host
+  for its interfaces over SSH. A container on a macvlan network is not
+  recognised; keep that host's alerts off the full-auto list.
+
 - **LabDog can send email.** Configure a mail server on the new Email
   page (Settings › Integrations › Email, or **Email notifications…** in
   the account menu) — host, port, STARTTLS / TLS / none, login, From
