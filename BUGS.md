@@ -298,3 +298,73 @@ logs.
 
       Severity Low: dismissed hosts staying hidden on a manual run is the
       safe direction, and the disabled case only wastes a click.
+
+---
+
+## Open — 2026-10-06 full-auto live test
+
+Filed 2026-10-06 after two live runs of a full-auto alert fix on a test VM
+(AI sessions 25 and 26 on lin-manager). Both were confirmed against the
+delivered email and the database.
+
+### Correctness — Low
+
+- [ ] **BUG-113** `backend/app/notifications/service.py:403`,
+      `backend/app/ai/tools/ssh.py:241` — the "A full-auto investigation
+      changed …" email repeats each command in its status brackets and
+      loses the exit status of a long one
+
+      Symptom: each line of "What ran" is `  - <command>  [failed:
+      <summary>]`, and the summary starts with the command. For a short
+      one that is only redundant: `nginx -t  [failed: nginx -t (exit
+      127)]`. For a command of about 110 characters or more the bracket is
+      cut before the exit status, so the one fact the bracket exists for
+      is gone: `sed -i 's/…/…/' /etc/nginx/conf.d/zz-upload-limits.conf &&
+      cat /etc/nginx/conf.d/zz-upload-limits.conf  [failed: sed -i
+      's/client_max_body_size 50mm;/client_max_body_size 50m;/' /etc/ngi]`.
+      Seen in session 26's email; the exit status (4) is in the database.
+
+      Root cause: `_run_ssh_command` stores
+      `result_summary = f"{command[:120]} (exit {exit_status})"`, and the
+      email prints `one_line(call.result_summary, 120)` after the command
+      it has already printed. The summary is 120 characters of command
+      plus the status, so the 120-character cut always lands inside the
+      command when the command is long. Other tools' summaries
+      (`timed out`, `host key mismatch`, a refusal reason) are not prefixed
+      by a command and read fine.
+
+      Fix direction: in the email, drop the summary's leading command
+      before printing it, so the bracket holds `exit 127` or the reason.
+      Keep the stored summary as it is: the transcript and the approvals
+      page read it. Add a test with a 200-character command that the exit
+      status survives.
+
+      Severity Low: the report and the transcript have the detail; the
+      email is the only place that loses it.
+
+### Tests — Low
+
+- [ ] **BUG-114** `backend/tests/ai/conftest.py:9-10` — a single AI test
+      file cannot be run on its own: it fails at startup with
+      "security.secret_key is not set"
+
+      Symptom: `pytest tests/ai/test_alert_autonomy.py` from `backend/`
+      with no `LABDOG_SECURITY__*` variables prints "FATAL: LabDog cannot
+      start: security.secret_key is not set" and runs nothing. `pytest
+      tests/` works, which is why CI never notices.
+
+      Root cause: `tests/ai/conftest.py` imports `app.ai.loop` and
+      `app.ai.models` at module level. When a path under `tests/ai/` is
+      named on the command line, pytest loads that conftest as an initial
+      conftest, before any `pytest_configure` hook runs, so the import
+      reads the settings before `tests/conftest.py:76` has set the test
+      keys. Run as `pytest tests/`, the subdirectory conftest is loaded
+      during collection, after `pytest_configure`.
+
+      Fix direction: move the two imports into the fixtures that use them,
+      or set the defaults at the top of `tests/conftest.py`, outside
+      `pytest_configure`. Check `pytest tests/ai/test_loop.py` with a clean
+      environment.
+
+      Severity Low: test-only, and the workaround is exporting the three
+      variables.
