@@ -1,35 +1,41 @@
-import type { ScanConfig } from "@/lib/types"
+import { plural } from "@/lib/fleet"
 
-/** What a scan schedule's last-run fields held when "run now" was clicked. */
-export type ScanBaseline = Pick<ScanConfig, "last_run_at" | "last_run_status" | "last_run_error">
-
-export type ScanRunOutcome =
-  | { kind: "running" }
-  | { kind: "done"; added: number; pending: number }
-  | { kind: "error"; message: string }
-
-export function scanBaseline(scan: ScanConfig): ScanBaseline {
-  return { last_run_at: scan.last_run_at, last_run_status: scan.last_run_status, last_run_error: scan.last_run_error }
+/** `POST /api/scans/{id}/run` — the run is queued, not done. */
+export interface ScanRunQueued {
+  queued: boolean
+  task_id: string
 }
 
-/**
- * Has the run that was triggered against `before` finished, and how?
- *
- * The runner only commits its counters when it finishes, so a changed
- * `last_run_at` is the completion signal for a successful run. A failed
- * run rolls that back and records `status=error` plus the message in a
- * separate session, so it shows up as an error that was not there before.
- */
-export function scanRunOutcome(before: ScanBaseline, now: ScanConfig): ScanRunOutcome {
-  if (now.last_run_status === "running") return { kind: "running" }
-  const errored = now.last_run_status === "error"
-  if (errored && (before.last_run_status !== "error" || before.last_run_error !== now.last_run_error)) {
-    return { kind: "error", message: now.last_run_error ?? "unknown error" }
+/** `GET /api/scans/{id}/runs/{task_id}` — the outcome of that one run.
+ *  `pending` covers both waiting for a scan slot and running. */
+export interface ScanRunStatus {
+  status: "pending" | "done" | "skipped" | "error"
+  hosts_added: number
+  hosts_pending: number
+  error: string | null
+}
+
+export type ScanRunAnnouncement =
+  | { tone: "info"; message: string }
+  | { tone: "error"; message: string }
+  | { tone: "success"; message: string; added: number; pending: number }
+
+/** What to tell the operator about a finished run, or null while it is
+ *  still pending. */
+export function scanRunAnnouncement(name: string, run: ScanRunStatus): ScanRunAnnouncement | null {
+  switch (run.status) {
+    case "pending":
+      return null
+    case "error":
+      return { tone: "error", message: `Scan "${name}" failed: ${run.error ?? "unknown error"}` }
+    case "skipped":
+      return { tone: "info", message: `Scan "${name}" did not run: the schedule was disabled or deleted` }
   }
-  if (now.last_run_at !== before.last_run_at) {
-    return errored
-      ? { kind: "error", message: now.last_run_error ?? "unknown error" }
-      : { kind: "done", added: now.last_run_hosts_added ?? 0, pending: now.last_run_hosts_pending ?? 0 }
-  }
-  return { kind: "running" }
+  const { hosts_added: added, hosts_pending: pending } = run
+  if (added === 0 && pending === 0) return { tone: "info", message: `Scan "${name}" finished: no new hosts` }
+  const message =
+    added > 0
+      ? `Scan "${name}" added ${plural(added, "host")}${pending > 0 ? `; ${pending} awaiting review` : ""}`
+      : `Scan "${name}" found ${plural(pending, "host")} awaiting review`
+  return { tone: "success", message, added, pending }
 }

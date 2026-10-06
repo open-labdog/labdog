@@ -78,9 +78,10 @@ The format follows [Keep a Changelog]; LabDog follows
   and the page used to say only "Run triggered", so you had to watch the
   last-run column to learn whether anything was found. A toast now says
   how many hosts the run added, how many are waiting for review, that it
-  found nothing new, or why it failed, and offers **View hosts** or
-  **Review**. The hosts list and the pending counters refresh at the same
-  time instead of lagging behind a new host.
+  found nothing new, or why it failed, and offers **View hosts** and
+  **Review**. The hosts list, the pending counters and the Discovery
+  header's last run refresh at the same time instead of lagging behind a
+  new host.
 
 ### Changed
 
@@ -341,6 +342,12 @@ The format follows [Keep a Changelog]; LabDog follows
   had no caller since the wizard moved onto `Steps`.
 
 ### Fixed
+
+- **Run now on a scan schedule is a manual run again.** The endpoint was
+  defined twice and the older copy answered, so a run now still hid the
+  hosts you had dismissed from review, and on a disabled schedule it said
+  "Run triggered" and then did nothing. Run now brings dismissed hosts
+  back, as documented, and is unavailable while the schedule is disabled.
 
 - **Cancelling a run cancels the hosts it has not started.** The cancel
   left them to the run's orchestrator, so when that had died, or had
