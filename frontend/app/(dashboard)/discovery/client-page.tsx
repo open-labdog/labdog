@@ -32,7 +32,7 @@ export default function DiscoveryPage() {
     queryFn: () => apiFetch<PendingSummary>("/api/scans/pending-summary"),
     refetchInterval: 30_000,
   })
-  const { data: scans } = useQuery<ScanConfig[]>({ queryKey: ["scan-configs"], queryFn: () => apiFetch<ScanConfig[]>("/api/scans") })
+  const { data: scans } = useQuery<ScanConfig[]>({ queryKey: ["scans"], queryFn: () => apiFetch<ScanConfig[]>("/api/scans") })
   const total = pending?.total ?? 0
 
   const setTab = (t: string) => router.push(t === "pending" ? "/discovery" : `/discovery?tab=${t}`)
