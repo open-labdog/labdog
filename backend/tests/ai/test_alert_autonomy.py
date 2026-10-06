@@ -207,6 +207,17 @@ class TestSystemPrompt:
         assert "held for the operator" in prompt
         assert "small, reversible" not in prompt
 
+    @pytest.mark.parametrize("autonomy", ["read_only", "approval", "full_auto"])
+    def test_every_session_is_told_how_its_commands_run(self, autonomy) -> None:
+        """A model that is not told tries `nginx -t` as a plain user and
+        learns from the exit code, one command at a time. In an alert
+        session each of those is a command out of a small budget."""
+        prompt = build_system_prompt(autonomy)
+        assert "usually not root" in prompt
+        assert "sudo from the start" in prompt
+        assert "/usr/sbin" in prompt
+        assert "Times in an alert are UTC" in prompt
+
     def test_a_full_auto_chat_never_gets_the_alert_section(self) -> None:
         """A person started it and chose the level; nothing about it came
         from an alert."""
@@ -546,7 +557,7 @@ def _session(mode: str = "alert_investigation", autonomy: str = "full_auto") -> 
 class TestCaps:
     async def test_a_full_auto_alert_session_gets_the_tighter_caps(self, db) -> None:
         caps = await LoopCaps.for_session(db, _session())
-        assert caps.max_commands == 10
+        assert caps.max_commands == 15
         assert caps.wall_clock_seconds == 600
 
     async def test_they_never_loosen_the_instance_caps(self, db) -> None:

@@ -399,11 +399,15 @@ SETTING_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "ai.alert_max_commands": {
         "type": "int",
-        "default": 10,
+        "default": 15,
         "min": 1,
         "max": 200,
         "description": "Maximum shell commands in a full-auto alert session.",
-        "help": "The lower of this and ai.max_commands applies.",
+        "help": (
+            "The lower of this and ai.max_commands applies. A fix that is a look, an edit and "
+            "a restart took seven commands when each worked first time and twelve when some "
+            "failed. A session that runs out mid-fix leaves the host half changed."
+        ),
     },
     "ai.alert_wall_clock_seconds": {
         "type": "int",

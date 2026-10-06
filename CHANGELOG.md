@@ -76,6 +76,16 @@ The format follows [Keep a Changelog]; LabDog follows
 
 ### Changed
 
+- **The AI assistant is told how its commands run.** Its instructions now
+  say that `run_ssh_command` connects as a user who is usually not root,
+  so anything that needs root takes `sudo` from the first attempt and
+  admin tools in `/usr/sbin` are called by full path, and that alert
+  times are UTC while a host's logs use its own timezone. In a live test
+  of a full-auto fix, four of twelve commands were spent finding that out,
+  and each of those failed attempts also took a snapshot. Full-auto alert
+  sessions now get 15 commands by default (`ai.alert_max_commands`, was
+  10); the same fix did not finish inside 10.
+
 - **What the AI assistant may run without approval moved, in both
   directions.** These now count as reads: `apt list`, `dmesg` and `sysctl`
   without their write options, `findmnt`, `mount` on its own,

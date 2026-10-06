@@ -288,7 +288,7 @@ host — including one that exited non-zero, since a restart that failed
 halfway still changed something.
 
 A full-auto session also runs under tighter caps than a chat:
-`ai.alert_max_commands` (10) and `ai.alert_wall_clock_seconds` (600),
+`ai.alert_max_commands` (15) and `ai.alert_wall_clock_seconds` (600),
 or the general caps if those are lower. And it does not change a host
 LabDog is itself changing: a change it attempts while a sync or an action
 run is working on the host is refused, and it reports what it would have
